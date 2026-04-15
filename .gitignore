@@ -1,6 +1,9 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 
+# Burrito writes the wrapped single-file binary here.
+/burrito_out/
+
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 
