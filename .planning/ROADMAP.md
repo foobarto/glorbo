@@ -55,7 +55,11 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   4. `file_system` (inotify) watchers report filesystem changes under a test company with sub-second latency.
   5. A company container launches with its own directory mounted (and no other company's directory visible), `--userns keep-id`, `--read-only` root FS, `network: none`, Python available only inside the container, and can be run ephemerally (default) or persistently.
   6. A trivial Ollama inference call executes inside the container on a host with no network connectivity (airplane mode) after `init` has completed.
-**Plans**: TBD (2-3 plans)
+**Plans**: 4 plans
+- [ ] 02-01-PLAN.md — Filesystem hierarchy + append-only AuditLog + Ecto schemas + MD5 reindex (FS-01..05)
+- [ ] 02-02-PLAN.md — Podman + Ollama binary bootstrap + Doctor Phase-2 check set + severity exit codes (RT-01, LLM-01)
+- [ ] 02-03-PLAN.md — glorbo-runtime OCI image (Containerfile + FastAPI worker + ghcr.io multi-arch CI) + Elixir Container modules (RT-02..06, LLM-02)
+- [ ] 02-04-PLAN.md — FileWatcher + glorbo init orchestrator + example acme company + airplane-mode proof (FS-06, LLM-05, CLI-02)
 
 ### Phase 3: Agents, Routing, Kernel Permissions, Budgets
 **Goal**: Markdown `agent.md` files become live, supervised, kernel-isolated workers that pick up tasks, collaborate via inbox/outbox and channels, respect per-agent permissions at both app and kernel layers, honour network policy and USD budgets, and escalate approval-gated work to the Director.
@@ -104,7 +108,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Compilable Skeleton + CI Release Pipeline | 3/3 | Complete | 2026-04-15 |
-| 2. Filesystem Foundation + Container Runtime + Local LLM | 0/TBD | Not started | - |
+| 2. Filesystem Foundation + Container Runtime + Local LLM | 0/4 | Planned | - |
 | 3. Agents, Routing, Kernel Permissions, Budgets | 0/TBD | Not started | - |
 | 4. LiveView Dashboard + Real-Time Channels | 0/TBD | Not started | - |
 | 5. CLI Completeness + Backup/Restore Portability | 0/TBD | Not started | - |
