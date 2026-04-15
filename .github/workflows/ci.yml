@@ -1,0 +1,180 @@
+# .github/workflows/ci.yml
+#
+# Phase 01 — CI + release pipeline.
+# See .planning/phases/01-compilable-skeleton-ci-release-pipeline/01-RESEARCH.md
+# §CI Workflow Structure and §Cosign Keyless Signing for the full rationale
+# behind every step.
+#
+# Triggers:
+#   - pull_request          : full build+test matrix, no upload
+#   - push to main          : build+test+upload dev artifacts (unsigned, per D-17)
+#   - push tag v*.*.*       : build+test, then release job signs SHA256SUMS via
+#                             Cosign keyless (Sigstore OIDC) and publishes to
+#                             GitHub Releases (Plan 01 FND-05)
+#
+# Security note: all ${{ ... }} interpolations in `run:` blocks reference
+# either matrix values (trusted, defined in this file) or `runner.arch`
+# (set by the GitHub Actions runner itself). No user-controlled strings
+# (issue titles, PR bodies, commit messages, etc.) flow into shell commands.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.arch }} build + test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            binary_name: glorbo-linux-x86_64
+            burrito_out: glorbo_linux_x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            binary_name: glorbo-linux-aarch64
+            burrito_out: glorbo_linux_aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Erlang + Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.4'
+          otp-version: '28.0.2'
+
+      - name: Cache mix deps + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-${{ matrix.arch }}-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Test
+        run: mix test
+
+      - name: Credo (strict)
+        run: mix credo --strict
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Install Zig 0.15.2
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install xz
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+
+      # Phase 01 has no asset pipeline (esbuild/tailwind/heroicons stripped by
+      # Plan 01). Phase 04 will reintroduce `mix assets.deploy` when the
+      # LiveView dashboard lands. Until then this step is intentionally absent.
+      - name: Build release (prod)
+        env:
+          MIX_ENV: prod
+        run: |
+          mix deps.get --only prod
+          mix compile --warnings-as-errors
+          mix release --overwrite
+
+      - name: Rename binary to release convention
+        env:
+          BURRITO_OUT: ${{ matrix.burrito_out }}
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          test -f "burrito_out/$BURRITO_OUT"
+          mv "burrito_out/$BURRITO_OUT" "burrito_out/$BINARY_NAME"
+          test -x "burrito_out/$BINARY_NAME"
+
+      - name: Smoke-test binary
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.version == "0.1.0"'
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.checks | length == 5'
+          # No-args must exit 0 with help text
+          out=$("./burrito_out/$BINARY_NAME") && echo "$out" | grep -q USAGE
+          # Unknown command must exit 1
+          ( "./burrito_out/$BINARY_NAME" bogus; ec=$?; test "$ec" -eq 1 )
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: burrito_out/${{ matrix.binary_name }}
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Publish signed release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # create the GitHub Release
+      id-token: write   # Sigstore OIDC token for keyless signing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -la artifacts/
+
+      - name: Generate SHA256SUMS
+        working-directory: artifacts/
+        run: |
+          sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v3.0.6'
+
+      - name: Sign SHA256SUMS (keyless, Sigstore OIDC)
+        working-directory: artifacts/
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sig SHA256SUMS
+
+      - name: Sign each binary (keyless, Sigstore OIDC)
+        working-directory: artifacts/
+        run: |
+          cosign sign-blob --yes --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64
+          cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/glorbo-linux-x86_64
+            artifacts/glorbo-linux-x86_64.sig
+            artifacts/glorbo-linux-aarch64
+            artifacts/glorbo-linux-aarch64.sig
+            artifacts/SHA256SUMS
+            artifacts/SHA256SUMS.sig
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
