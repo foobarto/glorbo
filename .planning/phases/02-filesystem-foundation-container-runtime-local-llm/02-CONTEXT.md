@@ -49,7 +49,7 @@ Agents, routing, permissions, budgets, channel semantics, and the LiveView dashb
   6. `glorbo reindex`
   7. Doctor (post-flight verification)
 - **D-22:** CLI wiring — extend `Glorbo.CLI.dispatch/1` with an `:init` branch (same shape as `:doctor`). Returns the `{verb, exit_code, output}` tuple. No separate Mix task.
-- **D-23:** Flags — **`--repair`, `--force`, `--skip-pull`, `--example`**. `--repair` rebuilds the container image (Phase 5 fuller semantics); `--force` ignores warnings; `--skip-pull` skips binary + image downloads; `--example` toggles example-company scaffolding.
+- **D-23:** Flags — **`--force`, `--skip-pull`, `--example`**. `--force` ignores warnings (e.g. missing `uidmap`); `--skip-pull` skips binary + image downloads; `--example` toggles example-company scaffolding. **No `--repair` flag on `init`** — repair lives under `doctor --fix` (see D-46). `init` remains idempotent and is safe to re-run on an existing install.
 - **D-24:** Audit granularity — **one audit event per init step** (doctor, download-podman, download-ollama, pull-image, scaffold-company, reindex, post-doctor). Every `init` run leaves a structured trail in `audit/YYYY-MM.jsonl`.
 - **D-25:** Doctor coupling — `init` calls `Glorbo.Doctor.run_checks/0` programmatically, parses the result (shared module from Phase 1), and reports per-check status in its own output.
 
@@ -93,7 +93,7 @@ Agents, routing, permissions, budgets, channel semantics, and the LiveView dashb
   - `2` = **warnings only** (missing podman binary, stopped ollama daemon, unbuilt image, missing uidmap-soft)
   
   Lets `glorbo init` script-distinguish "host broken" from "needs bootstrap".
-- **D-46:** Doctor mutation posture — **read-only + `~/.glorbo/` creation** (unchanged from Phase 1) for the plain `doctor` invocation. Introduce `doctor --fix` as an **alias to `init --repair`** — a more-discoverable entry point from the doctor output without forking the implementation. Mental model: doctor reports; `--fix`/`init --repair` repair; plain `init` bootstraps from scratch.
+- **D-46:** Doctor mutation posture — **read-only + `~/.glorbo/` creation** (unchanged from Phase 1) for the plain `doctor` invocation. Introduce `doctor --fix` as the **standalone repair entry point** — runs the subset of init steps needed to address flagged problems (download missing podman/ollama, re-pull container image, re-verify ACLs on `~/.glorbo/` dirs, etc.). **No `init --repair` command exists** — repair logic lives exclusively under `doctor --fix`. Mental model: `init` bootstraps from scratch (idempotent, safe to re-run on an existing install); `doctor` reports; `doctor --fix` repairs specific flagged problems. Supersedes the earlier discussion-phase pick (`doctor --fix = alias to init --repair`) per user note 2026-04-15.
 
 ### Claude's Discretion
 - Exact doctor table layout for new Phase 2 rows (colors, spacing, truncation of version strings).
@@ -163,7 +163,7 @@ Agents, routing, permissions, budgets, channel semantics, and the LiveView dashb
 - **Phase 3 handoff:** `reindex_state`, `audit_events`, `companies`, `agents` Ecto schemas are the contract Phase 3 builds on. Column names must be stable across Phase 2 → 3. Agent Linux-user provisioning and POSIX ACL application happen in Phase 3 on top of Phase 2's directory hierarchy.
 - **Phase 3 handoff:** The Unix socket path convention (`~/.glorbo/runtime/sockets/<company>/<agent>.sock`) and the `/run` / `/cancel` FastAPI contract become the Router's transport in Phase 3. Don't break either.
 - **Phase 4 handoff:** `stdout.log` tailing via inotify, published to PubSub, is what powers the dashboard's live-stdout pane in Phase 4. Phase 2 must wire the file-watcher → PubSub pipeline even though no dashboard consumer exists yet — the publish side is reusable.
-- **Phase 5 handoff:** `init --repair` is invoked after `glorbo restore` on a new host. Phase 2 defines the semantic ("rebuild/refetch container image, re-verify binaries, reindex from disk") that Phase 5 must preserve.
+- **Phase 5 handoff:** `doctor --fix` is invoked after `glorbo restore` on a new host — the new-machine recovery path becomes `glorbo restore && glorbo doctor --fix && glorbo up`, **not** `... && glorbo init --repair && ...`. Phase 2 defines the semantic ("rebuild/refetch container image, re-verify binaries, reindex from disk") under `doctor --fix`; Phase 5 must preserve that semantic and remove/never-introduce an `init --repair` verb. REQUIREMENTS.md CLI-03, PROJECT.md, ROADMAP.md Phase 5, and DESIGN.md §10/§11 still reference `init --repair` — they need reconciling when Phase 5 lands (tracked in `.planning/notes/2026-04-15-keep-doctor-fix-remove.md`).
 
 </code_context>
 
