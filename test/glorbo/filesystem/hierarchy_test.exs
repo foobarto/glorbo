@@ -1,0 +1,117 @@
+defmodule Glorbo.Filesystem.HierarchyTest do
+  use Glorbo.DataCase, async: false
+
+  alias Glorbo.Filesystem.Hierarchy
+  alias Glorbo.Test.TmpGlorboHome
+
+  @expected_dirs ~w(
+    bin
+    models
+    containers/glorbo-runtime
+    containers/cache
+    companies
+    runtime/sockets
+    logs/containers
+  )
+
+  describe "ensure!/1 (Tests 1–4)" do
+    test "Test 1: creates every DESIGN.md §3 directory under base" do
+      base = TmpGlorboHome.setup()
+      assert :ok = Hierarchy.ensure!(base)
+
+      for d <- @expected_dirs do
+        path = Path.join(base, d)
+        assert File.dir?(path), "expected directory #{d} to exist"
+      end
+
+      # config.md + logs/glorbo.log also present
+      assert File.exists?(Path.join(base, "config.md"))
+      assert File.exists?(Path.join(base, "logs/glorbo.log"))
+    end
+
+    test "Test 2: idempotent — re-running does not delete or re-create content" do
+      base = TmpGlorboHome.setup()
+      :ok = Hierarchy.ensure!(base)
+
+      # Drop a sentinel file inside one of the managed directories
+      sentinel = Path.join([base, "companies", "sentinel.txt"])
+      File.write!(sentinel, "keep-me")
+
+      # Also put content into config.md that must survive
+      config_path = Path.join(base, "config.md")
+      File.write!(config_path, "# my config\n")
+
+      :ok = Hierarchy.ensure!(base)
+
+      assert File.read!(sentinel) == "keep-me"
+      assert File.read!(config_path) == "# my config\n"
+    end
+
+    test "Test 3: runtime/sockets/ is created with mode 0700" do
+      base = TmpGlorboHome.setup()
+      :ok = Hierarchy.ensure!(base)
+
+      sockets_dir = Path.join(base, "runtime/sockets")
+      {:ok, stat} = File.stat(sockets_dir)
+      # POSIX mode stored in stat.mode — mask off file-type bits (higher octal digits)
+      assert Bitwise.band(stat.mode, 0o777) == 0o700
+    end
+
+    test "Test 4: config.md — created empty when absent, content preserved when present" do
+      base = TmpGlorboHome.setup()
+
+      # Case A: absent → empty
+      :ok = Hierarchy.ensure!(base)
+      assert File.read!(Path.join(base, "config.md")) == ""
+
+      # Case B: present → preserved
+      File.write!(Path.join(base, "config.md"), "preserved content\n")
+      :ok = Hierarchy.ensure!(base)
+      assert File.read!(Path.join(base, "config.md")) == "preserved content\n"
+    end
+  end
+
+  describe "migrations (Tests 5–6)" do
+    # DataCase starts the sandbox; the test DB is already migrated by the
+    # `mix test` alias (ecto.create + ecto.migrate) so we assert the post-state.
+    test "Test 5: all 4 tables exist after migrations" do
+      rows =
+        Glorbo.Repo.query!(
+          "SELECT name FROM sqlite_master WHERE type='table' " <>
+            "AND name IN ('companies','agents','audit_events','reindex_state')"
+        ).rows
+
+      assert length(rows) == 4
+    end
+
+    test "Test 6: each schema has the documented columns" do
+      # companies
+      assert column_set("companies") ==
+               MapSet.new(~w(id name mission file_path inserted_at updated_at))
+
+      # agents
+      assert column_set("agents") ==
+               MapSet.new(
+                 ~w(id company_id name role provider model file_path inserted_at updated_at)
+               )
+
+      # audit_events
+      assert column_set("audit_events") ==
+               MapSet.new(~w(id company actor action target detail ts))
+
+      # reindex_state — PK is file_path, no synthetic id
+      reindex_cols = column_set("reindex_state")
+      assert MapSet.member?(reindex_cols, "file_path")
+      assert MapSet.member?(reindex_cols, "md5")
+      assert MapSet.member?(reindex_cols, "size")
+      assert MapSet.member?(reindex_cols, "mtime")
+      refute MapSet.member?(reindex_cols, "id")
+    end
+
+    defp column_set(table) do
+      Glorbo.Repo.query!("PRAGMA table_info(#{table})").rows
+      |> Enum.map(fn row -> Enum.at(row, 1) end)
+      |> MapSet.new()
+    end
+  end
+end

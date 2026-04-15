@@ -56,7 +56,9 @@ defmodule Glorbo.MixProject do
       {:telemetry_poller, "~> 1.1"},
       {:burrito, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:file_system, "~> 1.0"}
+      {:file_system, "~> 1.0"},
+      {:yaml_front_matter, "~> 1.0"},
+      {:yaml_elixir, "~> 2.9"}
     ]
   end
 
