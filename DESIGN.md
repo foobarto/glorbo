@@ -672,7 +672,7 @@ glorbo restore <archive>        # Extract + reindex
 
 ```bash
 # Download the binary for your architecture
-curl -L https://github.com/glorbo/glorbo/releases/latest/download/glorbo-linux-x86_64 \
+curl -L https://github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-x86_64 \
   -o ~/.local/bin/glorbo
 chmod +x ~/.local/bin/glorbo
 
