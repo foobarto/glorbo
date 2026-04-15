@@ -9,8 +9,8 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 
 ### Foundation (FND)
 
-- [ ] **FND-01**: Phoenix project generated with `mix phx.new`, SQLite via `ecto_sqlite3`, modules reshaped to domain-nested layout matching `DESIGN.md`
-- [ ] **FND-02**: SQLite configured in WAL mode for dev, test, and runtime
+- [x] **FND-01**: Phoenix project generated with `mix phx.new`, SQLite via `ecto_sqlite3`, modules reshaped to domain-nested layout matching `DESIGN.md`
+- [x] **FND-02**: SQLite configured in WAL mode for dev, test, and runtime
 - [ ] **FND-03**: Single-binary release built via `mix release` with `include_erts: true` — no Erlang required on target
 - [ ] **FND-04**: Linux x86_64 **and** aarch64 release artifacts produced
 - [ ] **FND-05**: CI pipeline compiles, tests, and uploads signed binary artifacts per push to `main`
@@ -100,8 +100,8 @@ Deferred from v1 — tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FND-01 | Phase 1 | Pending |
-| FND-02 | Phase 1 | Pending |
+| FND-01 | Phase 1 | Complete |
+| FND-02 | Phase 1 | Complete |
 | FND-03 | Phase 1 | Pending |
 | FND-04 | Phase 1 | Pending |
 | FND-05 | Phase 1 | Pending |

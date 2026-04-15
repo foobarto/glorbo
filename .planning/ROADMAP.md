@@ -40,7 +40,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   4. CI builds, tests, signs, and uploads x86_64 **and** aarch64 artifacts on every push to `main`.
   5. Running `./glorbo doctor` on a bare host reports pass/fail for kernel version, `uidmap` presence, disk space, and `~/.glorbo/` write permissions.
 **Plans**: 3 plans
-- [ ] 01-01-PLAN.md — Phoenix skeleton + domain-nested §4.1 module stubs + SQLite WAL + Wave 0 tests (FND-01, FND-02)
+- [x] 01-01-PLAN.md — Phoenix skeleton + domain-nested §4.1 module stubs + SQLite WAL + Wave 0 tests (FND-01, FND-02)
 - [ ] 01-02-PLAN.md — `Glorbo.Doctor` shared module + `Mix.Tasks.Glorbo.Doctor` with `--json` flag (FND-06)
 - [ ] 01-03-PLAN.md — Burrito single-binary release + argv dispatch + GitHub Actions CI matrix + Cosign keyless signing + VERIFY.md (FND-03, FND-04, FND-05)
 
