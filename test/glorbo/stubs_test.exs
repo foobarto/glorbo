@@ -34,6 +34,10 @@ defmodule Glorbo.StubsTest do
   end
 
   test "Glorbo.Company.AuditLog exposes only append/2 (append-only invariant from CLAUDE.md)" do
+    # function_exported?/3 returns false on modules that have not yet been
+    # loaded — force-load first so this assertion is deterministic.
+    Code.ensure_loaded!(Glorbo.Company.AuditLog)
+
     assert function_exported?(Glorbo.Company.AuditLog, :append, 2)
     refute function_exported?(Glorbo.Company.AuditLog, :update, 2)
     refute function_exported?(Glorbo.Company.AuditLog, :delete, 2)
