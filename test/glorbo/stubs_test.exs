@@ -1,0 +1,42 @@
+defmodule Glorbo.StubsTest do
+  use ExUnit.Case, async: true
+
+  @moduledoc """
+  Asserts every §4.1 domain stub is real, exports `start_link/1`, and obeys
+  load-bearing invariants from CLAUDE.md — most importantly the audit log's
+  append-only surface.
+  """
+
+  @modules [
+    Glorbo.ContainerManager,
+    Glorbo.Company.FileWatcher,
+    Glorbo.Company.Router,
+    Glorbo.Company.Scheduler,
+    Glorbo.Company.BudgetTracker,
+    Glorbo.Company.AuditLog,
+    Glorbo.Agent.Server
+  ]
+
+  for mod <- @modules do
+    test "#{inspect(mod)} is a loaded module exporting start_link/1" do
+      assert Code.ensure_loaded?(unquote(mod)),
+             "Module #{unquote(inspect(mod))} not loaded"
+
+      assert function_exported?(unquote(mod), :start_link, 1)
+    end
+  end
+
+  alias Glorbo.Company.Router
+
+  test "Glorbo.Company.Router.route/2 returns {:error, :not_implemented} placeholder" do
+    # Phase 1 stub — called without running pid; returns placeholder regardless.
+    assert Router.route(:anything, %{}) == {:error, :not_implemented}
+  end
+
+  test "Glorbo.Company.AuditLog exposes only append/2 (append-only invariant from CLAUDE.md)" do
+    assert function_exported?(Glorbo.Company.AuditLog, :append, 2)
+    refute function_exported?(Glorbo.Company.AuditLog, :update, 2)
+    refute function_exported?(Glorbo.Company.AuditLog, :delete, 2)
+    refute function_exported?(Glorbo.Company.AuditLog, :edit, 2)
+  end
+end
