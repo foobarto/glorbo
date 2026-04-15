@@ -26,6 +26,8 @@ defmodule Glorbo.Filesystem.Watcher do
   use GenServer
   require Logger
 
+  alias Glorbo.Filesystem.Reindex
+
   @debounce_ms 100
   @interesting_events [:created, :modified, :deleted, :removed]
 
@@ -57,7 +59,7 @@ defmodule Glorbo.Filesystem.Watcher do
        dir: company_dir,
        fs_pid: pid,
        pending: %{},
-       reindex_fun: Keyword.get(opts, :reindex_fun, &Glorbo.Filesystem.Reindex.mark_dirty/2)
+       reindex_fun: Keyword.get(opts, :reindex_fun, &Reindex.mark_dirty/2)
      }}
   end
 

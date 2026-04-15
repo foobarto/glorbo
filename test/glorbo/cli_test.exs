@@ -74,4 +74,68 @@ defmodule Glorbo.CLITest do
   test "help_text references DESIGN.md" do
     assert CLI.help_text() =~ "DESIGN.md"
   end
+
+  test "help_text advertises the init verb (Plan 04 D-22)" do
+    assert CLI.help_text() =~ "init"
+    assert CLI.help_text() =~ "--skip-pull"
+    assert CLI.help_text() =~ "--force"
+  end
+
+  describe ~S{dispatch(["init" | ...]) (Plan 04, D-22, D-23)} do
+    alias Glorbo.Company.AuditLog
+    alias Glorbo.Test.TmpGlorboHome
+
+    setup do
+      # Isolate to a tmp base by rebinding HOME for the duration of the test.
+      base = TmpGlorboHome.setup()
+      original_home = System.get_env("HOME")
+      System.put_env("HOME", base)
+      on_exit(fn -> if original_home, do: System.put_env("HOME", original_home) end)
+
+      # Ensure no lingering named AuditLog from a prior test.
+      case Process.whereis(AuditLog) do
+        nil -> :ok
+        pid -> GenServer.stop(pid)
+      end
+
+      {:ok, base: base}
+    end
+
+    test "returns :init tuple with exit_code 0/1/2 and a rendered summary", %{base: _base} do
+      {verb, code, output} = CLI.dispatch(["init", "--skip-pull", "--no-example"])
+      assert verb == :init
+      assert code in [0, 1, 2]
+      assert output =~ "Glorbo init"
+      assert output =~ "Next steps:"
+      assert output =~ "OLLAMA_HOST=unix"
+    end
+
+    test ~S|dispatch(["init", "--skip-pull"]) skips binary_bootstrap + image_pull| do
+      {:init, _, output} = CLI.dispatch(["init", "--skip-pull", "--no-example"])
+      assert output =~ "binary_bootstrap — --skip-pull"
+      assert output =~ "image_pull — --skip-pull"
+    end
+
+    test ~S|dispatch(["init", "--force"]) parses without error| do
+      {:init, _, output} = CLI.dispatch(["init", "--force", "--skip-pull", "--no-example"])
+      assert output =~ "Glorbo init"
+    end
+  end
+
+  describe ~S|dispatch(["doctor", "--fix"]) (Plan 04, D-46)| do
+    test "accepts --fix flag and emits Phase-5 deferral notice" do
+      {verb, code, output} = CLI.dispatch(["doctor", "--fix"])
+      assert verb == :doctor
+      assert code in [0, 1, 2]
+      assert output =~ "Phase 5"
+    end
+
+    test "--fix with --json returns JSON only (no notice noise in machine output)" do
+      {verb, _code, output} = CLI.dispatch(["doctor", "--fix", "--json"])
+      assert verb == :doctor
+      refute output =~ "Phase 5"
+      # Still parses as JSON.
+      assert %{"checks" => _} = Jason.decode!(output)
+    end
+  end
 end

@@ -20,30 +20,32 @@ defmodule Glorbo.Init.ImagePull do
 
   @spec run(keyword()) :: step_result()
   def run(opts \\ []) do
+    if Keyword.get(opts, :skip_pull, false) do
+      %{status: :skipped, detail: "--skip-pull"}
+    else
+      do_pull(opts)
+    end
+  end
+
+  defp do_pull(opts) do
     image = Keyword.get(opts, :image, Invocation.runtime_image())
     ensure_fun = Keyword.get(opts, :ensure_image_fun, &ContainerManager.ensure_image/1)
     cached_fun = Keyword.get(opts, :image_cached_fun, &image_cached?/1)
 
-    cond do
-      Keyword.get(opts, :skip_pull, false) ->
-        %{status: :skipped, detail: "--skip-pull"}
+    case ensure_fun.(image) do
+      :ok -> %{status: :ok, detail: "image ready: #{image}"}
+      {:error, _} = err -> fallback_or_error(image, cached_fun, err)
+    end
+  end
 
-      true ->
-        case ensure_fun.(image) do
-          :ok ->
-            %{status: :ok, detail: "image ready: #{image}"}
-
-          {:error, _} = err ->
-            if cached_fun.(image) do
-              %{status: :skipped, detail: "using cached image: #{image}"}
-            else
-              %{
-                status: :error,
-                detail:
-                  "LLM execution requires network for first pull (#{inspect(err)})"
-              }
-            end
-        end
+  defp fallback_or_error(image, cached_fun, err) do
+    if cached_fun.(image) do
+      %{status: :skipped, detail: "using cached image: #{image}"}
+    else
+      %{
+        status: :error,
+        detail: "LLM execution requires network for first pull (#{inspect(err)})"
+      }
     end
   end
 

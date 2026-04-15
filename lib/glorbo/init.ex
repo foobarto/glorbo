@@ -7,6 +7,8 @@ defmodule Glorbo.Init do
   than the orchestrator internals.
   """
 
+  alias Glorbo.Init.Orchestrator
+
   @spec run(keyword()) :: {:ok | :error, map()}
-  def run(opts \\ []), do: Glorbo.Init.Orchestrator.run(opts)
+  def run(opts \\ []), do: Orchestrator.run(opts)
 end
