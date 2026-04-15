@@ -103,12 +103,12 @@ defmodule Glorbo.Init.BinaryBootstrapTest do
           which_fun: fn _ -> nil end,
           base: base,
           arch: :amd64,
-          expected_sha:
-            "0000000000000000000000000000000000000000000000000000000000000001",
+          expected_sha: "0000000000000000000000000000000000000000000000000000000000000001",
           download_fun: download_fun
         )
 
       assert {:error, {:checksum_mismatch, expected, actual}} = result
+
       assert expected ==
                "0000000000000000000000000000000000000000000000000000000000000001"
 

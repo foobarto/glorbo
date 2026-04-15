@@ -125,7 +125,10 @@ defmodule Glorbo.Company.AuditLogTest do
       assert length(sys_path) == 1
 
       [decoded] =
-        sys_path |> List.first() |> File.read!() |> String.split("\n", trim: true)
+        sys_path
+        |> List.first()
+        |> File.read!()
+        |> String.split("\n", trim: true)
         |> Enum.map(&Jason.decode!/1)
 
       assert decoded["actor"] == "system"

@@ -110,9 +110,7 @@ defmodule Glorbo.Company.AuditLog do
     })
   rescue
     e ->
-      Logger.error(
-        "audit_events mirror failed: #{Exception.message(e)} (JSONL still written)"
-      )
+      Logger.error("audit_events mirror failed: #{Exception.message(e)} (JSONL still written)")
 
       :error
   else

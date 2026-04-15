@@ -358,11 +358,17 @@ defmodule Glorbo.DoctorTest do
         TestHelpers.deps(
           cmd_fun: fn cmd, args ->
             cond do
-              cmd == "uname" -> {"6.17.0\n", 0}
-              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              cmd == "uname" ->
+                {"6.17.0\n", 0}
+
+              cmd == "df" ->
+                {"Avail\n2147483648\n", 0}
+
               String.ends_with?(cmd, "podman") and args == ["--version"] ->
                 {"podman version 5.8.1\n", 0}
-              true -> {"", 1}
+
+              true ->
+                {"", 1}
             end
           end,
           which_fun: fn
@@ -403,7 +409,9 @@ defmodule Glorbo.DoctorTest do
 
   describe "Phase 2: check_ollama (PATH + ~/.glorbo/bin/ollama)" do
     test "fail when ollama binary is absent from PATH and ~/.glorbo/bin/" do
-      tmp = Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+      tmp =
+        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+
       on_exit(fn -> File.rm_rf!(tmp) end)
       File.mkdir_p!(tmp)
 
@@ -506,11 +514,17 @@ defmodule Glorbo.DoctorTest do
         TestHelpers.deps(
           cmd_fun: fn cmd, args ->
             cond do
-              cmd == "uname" -> {"6.17.0\n", 0}
-              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              cmd == "uname" ->
+                {"6.17.0\n", 0}
+
+              cmd == "df" ->
+                {"Avail\n2147483648\n", 0}
+
               String.ends_with?(cmd, "podman") and Enum.take(args, 2) == ["image", "exists"] ->
                 {"", 1}
-              true -> {"", 1}
+
+              true ->
+                {"", 1}
             end
           end,
           which_fun: fn
@@ -528,7 +542,9 @@ defmodule Glorbo.DoctorTest do
 
   describe "Phase 2: check_audit_dir + check_sockets_dir (D-46 idempotent)" do
     test "creates + cleans probe in ~/.glorbo/audit/_system/ and ~/.glorbo/runtime/sockets/" do
-      tmp = Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+      tmp =
+        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+
       on_exit(fn -> File.rm_rf!(tmp) end)
       File.mkdir_p!(tmp)
 
@@ -571,11 +587,17 @@ defmodule Glorbo.DoctorTest do
         TestHelpers.deps(
           cmd_fun: fn cmd, args ->
             cond do
-              cmd == "uname" -> {"6.17.0\n", 0}
-              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              cmd == "uname" ->
+                {"6.17.0\n", 0}
+
+              cmd == "df" ->
+                {"Avail\n2147483648\n", 0}
+
               cmd == "tar" and args == ["--version"] ->
                 {"tar (GNU tar) 1.35\nzstd support compiled in\n", 0}
-              true -> {"", 1}
+
+              true ->
+                {"", 1}
             end
           end,
           which_fun: fn _ -> "/bin/true" end,

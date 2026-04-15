@@ -43,6 +43,9 @@ defmodule Glorbo.Application do
       Glorbo.Repo,
       {DNSCluster, query: Application.get_env(:glorbo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Glorbo.PubSub},
+      # Shared Finch pool — used by Glorbo.Container.WorkerClient over Unix
+      # domain sockets (Phase 2 Plan 03) and by Init downloads (Plan 02).
+      {Finch, name: Glorbo.Finch},
       GlorboWeb.Telemetry,
       Glorbo.ContainerManager,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},

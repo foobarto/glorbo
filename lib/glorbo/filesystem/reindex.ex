@@ -195,8 +195,7 @@ defmodule Glorbo.Filesystem.Reindex do
         file_path: path,
         company_id: company_id
       },
-      on_conflict:
-        {:replace, [:name, :role, :provider, :model, :company_id, :updated_at]},
+      on_conflict: {:replace, [:name, :role, :provider, :model, :company_id, :updated_at]},
       conflict_target: :file_path
     )
   end

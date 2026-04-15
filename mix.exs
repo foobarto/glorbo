@@ -58,7 +58,9 @@ defmodule Glorbo.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:file_system, "~> 1.0"},
       {:yaml_front_matter, "~> 1.0"},
-      {:yaml_elixir, "~> 2.9"}
+      {:yaml_elixir, "~> 2.9"},
+      {:finch, "~> 0.21"},
+      {:muontrap, "~> 1.6"}
     ]
   end
 
