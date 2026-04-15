@@ -1,0 +1,37 @@
+# Glorbo agent runtime — OCI image definition.
+#
+# Published to ghcr.io/foobarto/glorbo-runtime via
+# .github/workflows/runtime-image.yml on `runtime-v*` tag pushes.
+#
+# The Elixir host never runs Python (CLAUDE.md invariant "Python never runs
+# on the host"). This image is the SOLE place Python code executes, and the
+# in-image pytest suite (`/app/tests`) is the SOLE Python correctness surface.
+#
+# Invocation flags are NOT set here — Glorbo.Container.Invocation builds the
+# exact `podman run` argv list at launch time (RT-04 locked flags:
+# --userns keep-id --read-only --network none --tmpfs /tmp). This CMD is a
+# sane default for manual `podman run`; Elixir overrides it every launch.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3.12 python3.12-venv python3-pip \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt /app/
+RUN pip3 install --break-system-packages -r requirements.txt
+
+COPY worker/ /app/worker/
+COPY tests/ /app/tests/
+
+# uvicorn binds to UDS via CLI flag at podman-run time (see
+# Glorbo.Container.Invocation.build_argv/4). CMD below is only exercised by
+# `podman run --rm ghcr.io/foobarto/glorbo-runtime` with no override; Elixir
+# supplies its own argv on every production launch.
+CMD ["uvicorn", "worker.main:app", "--uds", "/run/agent.sock"]
