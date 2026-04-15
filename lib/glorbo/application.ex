@@ -6,9 +6,10 @@ defmodule Glorbo.Application do
 
   @impl Application
   def start(_type, _args) do
-    case release_argv() do
-      [] -> start_supervision_tree()
-      argv -> run_cli_and_halt(argv)
+    if running_standalone?() do
+      run_cli_and_halt(release_argv())
+    else
+      start_supervision_tree()
     end
   end
 
@@ -20,20 +21,21 @@ defmodule Glorbo.Application do
 
   # ------ internals ------
 
-  # Returns [] UNLESS we are running inside a Burrito-wrapped binary. Burrito
-  # sets the `__BURRITO` env var when launching the wrapped release; `Util.Args.argv/0`
-  # itself falls back to `System.argv/0` outside a wrapped binary — which would
-  # incorrectly pick up `mix test` argv. Gating on the env var keeps the argv
-  # branch physically unreachable from `mix test`, `iex -S mix`, or a regular
-  # `mix phx.server`, so Plan 01's application_test.exs stays green.
+  # Returns true UNLESS we are running inside a Burrito-wrapped binary. Burrito
+  # sets the `__BURRITO` env var when launching the wrapped release. Gating on
+  # the env var keeps the CLI branch physically unreachable from `mix test`,
+  # `iex -S mix`, or a regular `mix phx.server`, so Plan 01's
+  # application_test.exs stays green under ExUnit. Under Burrito — even with
+  # zero argv — we dispatch to `Glorbo.CLI.dispatch([])` which prints help and
+  # halts 0 (user-confirmed A6: no-args `./glorbo` prints help + exits 0).
+  defp running_standalone? do
+    System.get_env("__BURRITO") != nil and
+      Code.ensure_loaded?(BurritoArgs) and
+      function_exported?(BurritoArgs, :argv, 0)
+  end
+
   defp release_argv do
-    if System.get_env("__BURRITO") != nil and
-         Code.ensure_loaded?(BurritoArgs) and
-         function_exported?(BurritoArgs, :argv, 0) do
-      BurritoArgs.argv()
-    else
-      []
-    end
+    BurritoArgs.argv()
   end
 
   defp start_supervision_tree do
