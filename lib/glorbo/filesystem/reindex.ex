@@ -44,35 +44,39 @@ defmodule Glorbo.Filesystem.Reindex do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
     companies_dir = Path.join(base, "companies")
 
-    if not File.dir?(companies_dir) do
-      {:ok, %{indexed: 0, skipped: 0, deleted: 0}}
+    if File.dir?(companies_dir) do
+      do_run(companies_dir)
     else
-      files = safe_markdown_files(companies_dir)
+      {:ok, %{indexed: 0, skipped: 0, deleted: 0}}
+    end
+  end
 
-      # Sort so `company.md` files are processed BEFORE their nested
-      # `agents/<n>/agent.md` children. This guarantees the Company row
-      # exists when the Agent row tries to resolve `company_id`. Secondary
-      # key is the full path for stable ordering.
-      ordered = Enum.sort_by(files, &{path_kind(&1), &1})
+  defp do_run(companies_dir) do
+    files = safe_markdown_files(companies_dir)
 
-      {indexed, skipped} =
-        Enum.reduce(ordered, {0, 0}, fn path, {idx, skp} ->
-          case process_file(path) do
-            :indexed ->
-              {idx + 1, skp}
+    # Sort so `company.md` files are processed BEFORE their nested
+    # `agents/<n>/agent.md` children. This guarantees the Company row
+    # exists when the Agent row tries to resolve `company_id`. Secondary
+    # key is the full path for stable ordering.
+    ordered = Enum.sort_by(files, &{path_kind(&1), &1})
 
-            :unchanged ->
-              {idx, skp}
+    {indexed, skipped} = Enum.reduce(ordered, {0, 0}, &accumulate_result/2)
+    deleted = cleanup_vanished(files)
 
-            {:skip, reason} ->
-              Logger.warning("reindex skipped #{path}: #{inspect(reason)}")
-              {idx, skp + 1}
-          end
-        end)
+    {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted}}
+  end
 
-      deleted = cleanup_vanished(files)
+  defp accumulate_result(path, {idx, skp}) do
+    case process_file(path) do
+      :indexed ->
+        {idx + 1, skp}
 
-      {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted}}
+      :unchanged ->
+        {idx, skp}
+
+      {:skip, reason} ->
+        Logger.warning("reindex skipped #{path}: #{inspect(reason)}")
+        {idx, skp + 1}
     end
   end
 
