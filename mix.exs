@@ -10,6 +10,7 @@ defmodule Glorbo.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      releases: releases(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader]
     ]
@@ -53,8 +54,28 @@ defmodule Glorbo.MixProject do
       {:dns_cluster, "~> 0.2"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.1"},
+      {:burrito, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:file_system, "~> 1.0"}
+    ]
+  end
+
+  # Burrito release configuration — wraps the Elixir release into a
+  # self-extracting single-file binary with bundled ERTS per target.
+  # See `.planning/phases/01-compilable-skeleton-ci-release-pipeline/01-RESEARCH.md`
+  # §Pattern 4 and §Pitfall 3 (missing `&Burrito.wrap/1` produces a tarball,
+  # not a binary).
+  defp releases do
+    [
+      glorbo: [
+        steps: [:assemble, &Burrito.wrap/1],
+        burrito: [
+          targets: [
+            linux_x86_64: [os: :linux, cpu: :x86_64],
+            linux_aarch64: [os: :linux, cpu: :aarch64]
+          ]
+        ]
+      ]
     ]
   end
 

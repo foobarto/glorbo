@@ -43,7 +43,7 @@ defmodule Glorbo.CLITest do
     end
   end
 
-  test "dispatch([\"doctor\", \"--json\"]) returns parseable JSON" do
+  test ~S|dispatch(["doctor", "--json"]) returns parseable JSON| do
     {verb, _code, output} = CLI.dispatch(["doctor", "--json"])
     assert verb == :doctor
     decoded = Jason.decode!(output)
