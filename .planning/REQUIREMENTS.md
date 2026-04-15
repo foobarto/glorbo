@@ -14,7 +14,7 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 - [ ] **FND-03**: Single-binary release built via `mix release` with `include_erts: true` — no Erlang required on target
 - [ ] **FND-04**: Linux x86_64 **and** aarch64 release artifacts produced
 - [ ] **FND-05**: CI pipeline compiles, tests, and uploads signed binary artifacts per push to `main`
-- [ ] **FND-06**: `mix glorbo.doctor` CLI verifies host prerequisites (kernel, `uidmap`, disk, write perms on `~/.glorbo/`)
+- [x] **FND-06**: `mix glorbo.doctor` CLI verifies host prerequisites (kernel, `uidmap`, disk, write perms on `~/.glorbo/`)
 
 ### Filesystem Layout & Index (FS)
 
@@ -105,7 +105,7 @@ Deferred from v1 — tracked but not in current roadmap.
 | FND-03 | Phase 1 | Pending |
 | FND-04 | Phase 1 | Pending |
 | FND-05 | Phase 1 | Pending |
-| FND-06 | Phase 1 | Pending |
+| FND-06 | Phase 1 | Complete |
 | FS-01 | Phase 2 | Pending |
 | FS-02 | Phase 2 | Pending |
 | FS-03 | Phase 2 | Pending |
