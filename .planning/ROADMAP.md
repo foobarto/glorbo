@@ -39,7 +39,10 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   3. `mix release` produces a single-file binary with `include_erts: true` that runs on a host with no Erlang installed.
   4. CI builds, tests, signs, and uploads x86_64 **and** aarch64 artifacts on every push to `main`.
   5. Running `./glorbo doctor` on a bare host reports pass/fail for kernel version, `uidmap` presence, disk space, and `~/.glorbo/` write permissions.
-**Plans**: TBD (2-3 plans)
+**Plans**: 3 plans
+- [ ] 01-01-PLAN.md — Phoenix skeleton + domain-nested §4.1 module stubs + SQLite WAL + Wave 0 tests (FND-01, FND-02)
+- [ ] 01-02-PLAN.md — `Glorbo.Doctor` shared module + `Mix.Tasks.Glorbo.Doctor` with `--json` flag (FND-06)
+- [ ] 01-03-PLAN.md — Burrito single-binary release + argv dispatch + GitHub Actions CI matrix + Cosign keyless signing + VERIFY.md (FND-03, FND-04, FND-05)
 
 ### Phase 2: Filesystem Foundation + Container Runtime + Local LLM
 **Goal**: `glorbo init` converts a fresh host into a working Glorbo installation — Podman and Ollama bootstrapped, `glorbo-runtime` image built, `~/.glorbo/` hierarchy created, audit log appending, reindex contract operational, offline-capable.
@@ -100,7 +103,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Compilable Skeleton + CI Release Pipeline | 0/TBD | Not started | - |
+| 1. Compilable Skeleton + CI Release Pipeline | 0/3 | Ready to execute | - |
 | 2. Filesystem Foundation + Container Runtime + Local LLM | 0/TBD | Not started | - |
 | 3. Agents, Routing, Kernel Permissions, Budgets | 0/TBD | Not started | - |
 | 4. LiveView Dashboard + Real-Time Channels | 0/TBD | Not started | - |
@@ -108,3 +111,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 ---
 *Roadmap created: 2026-04-15 — coarse granularity, 5 phases, 38/38 v1 requirements mapped.*
+*Phase 1 plans finalized: 2026-04-15 — 3 plans (01-01, 01-02, 01-03) in 3 waves; FND-01..06 fully covered.*

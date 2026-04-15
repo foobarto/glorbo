@@ -1,10 +1,11 @@
 ---
 phase: 01
 slug: compilable-skeleton-ci-release-pipeline
-status: draft
-nyquist_compliant: false
+status: ready
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-15
+updated: 2026-04-15
 ---
 
 # Phase 1 — Validation Strategy
@@ -37,27 +38,29 @@ created: 2026-04-15
 
 ## Per-Task Verification Map
 
-> Task IDs are placeholders until plans land. Plan→task bindings are filled in by the planner.
-> Format: `{plan}-{task}` (e.g., `A-01`, `B-02`, `C-03`).
+> Task IDs are bound to plans `01-01` (Plan A), `01-02` (Plan B), `01-03` (Plan C).
+> Format: `{plan}-T{task}` — e.g. `01-01-T1` = Plan 01, Task 1.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| A-?? | A | 1 | FND-01 | — | Fresh checkout compiles with domain-nested layout + no warnings | smoke | `mix compile --warnings-as-errors` | ✅ | ⬜ pending |
-| A-?? | A | 1 | FND-01 | — | `Glorbo.Application` supervision tree starts cleanly; all §4.1 children boot | unit | `mix test test/glorbo/application_test.exs` | ❌ W0 | ⬜ pending |
-| A-?? | A | 1 | FND-01 | — | Every §4.1 stub module exists, is addressable, exposes `start_link/1`, returns `{:error, :not_implemented}` for real calls | unit | `mix test test/glorbo/stubs_test.exs` | ❌ W0 | ⬜ pending |
-| A-?? | A | 1 | FND-02 | — | SQLite WAL active at runtime on the test repo | integration | `mix test test/glorbo/repo_wal_test.exs` (asserts `PRAGMA journal_mode` returns `"wal"`) | ❌ W0 | ⬜ pending |
-| A-?? | A | 1 | FND-02 | — | WAL config is grep-visible in every env config | static | `grep -rn 'journal_mode: :wal' config/ \| wc -l` ≥ 3 | ❌ W0 (shell script test) | ⬜ pending |
-| B-?? | B | 2 | FND-06 | — | `mix glorbo.doctor` runs all 5 checks and returns structured results | unit | `mix test test/mix/tasks/glorbo.doctor_test.exs` | ❌ W0 | ⬜ pending |
-| B-?? | B | 2 | FND-06 | — | `Glorbo.Doctor.run_checks/0` — each individual check is unit-tested with injected deps | unit | `mix test test/glorbo/doctor_test.exs` | ❌ W0 | ⬜ pending |
-| B-?? | B | 2 | FND-06 | — | `mix glorbo.doctor --json` emits valid JSON with stable keys (`all_passed`, `checks[]`, `name`, `pass`, `detail`, `required`) | unit | same file, `--json` case | ❌ W0 | ⬜ pending |
-| B-?? | B | 2 | FND-06 | — | No-arg `./glorbo` prints help & exits 0 (confirmed A6) | integration | CI step after release build | ❌ W0 (CI-only) | ⬜ pending |
-| C-?? | C | 3 | FND-03 | — | `mix release` produces Burrito binary at expected path | integration | `MIX_ENV=prod mix release && test -x burrito_out/glorbo_linux_x86_64` | ❌ W0 (CI only; ~8 min) | ⬜ pending |
-| C-?? | C | 3 | FND-03 | — | Binary runs on host with no Erlang installed | smoke | CI: `docker run --rm -v $PWD/burrito_out:/b ubuntu:24.04 /b/glorbo-linux-x86_64 doctor --json` | ❌ W0 (CI-only) | ⬜ pending |
-| C-?? | C | 3 | FND-03 | — | `./glorbo doctor` argv dispatch works (Burrito binary → `Glorbo.Doctor.run_checks/0`) | integration | CI step: `./burrito_out/glorbo-linux-x86_64 doctor --json \| jq -e .all_passed` | ❌ W0 (CI-only) | ⬜ pending |
-| C-?? | C | 3 | FND-04 | — | Both x86_64 and aarch64 artifacts produced and uploaded in CI | CI matrix | GitHub Actions run; `gh run view --log` shows both matrix legs succeed | ❌ W0 | ⬜ pending |
-| C-?? | C | 3 | FND-04 | — | Output filenames are hyphenated (`glorbo-linux-x86_64`, `glorbo-linux-aarch64`, confirmed A9) | static | CI: `test -f glorbo-linux-x86_64 && test -f glorbo-linux-aarch64` after rename step | ❌ W0 | ⬜ pending |
-| C-?? | C | 3 | FND-05 | — | CI compiles, tests, and uploads dev artifact on push to `main` | CI workflow | `gh run list --workflow=ci.yml --branch=main` shows success | ❌ W0 | ⬜ pending |
-| C-?? | C | 3 | FND-05 | — | Tagged release (`v*.*.*`) produces signed binaries + `SHA256SUMS.sig`; `cosign verify-blob` passes with canonical identity regex | CI + manual | Local: `cosign verify-blob --certificate-identity-regexp='^https://github.com/foobarto/glorbo/\.github/workflows/.+@refs/tags/v.+$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64` → exit 0 | ❌ W0 | ⬜ pending |
+| 01-01-T1 | 01 | 1 | FND-01, FND-02 | — | Fresh checkout compiles with phx.new skeleton + Credo strict + format pass; Wave 0 test files exist (red until T2) | smoke | `mix compile --warnings-as-errors && mix credo --strict && mix format --check-formatted && mix test test/config_test.exs` | ✅ after T1 runs | ⬜ pending |
+| 01-01-T1 | 01 | 1 | FND-02 | — | WAL config is grep-visible in every env config | static | `grep -l 'journal_mode: :wal' config/dev.exs config/test.exs config/runtime.exs \| wc -l` → 3 | ✅ after T1 | ⬜ pending |
+| 01-01-T2 | 01 | 1 | FND-01 | — | `Glorbo.Application` supervision tree starts cleanly; all §4.1 children boot | unit | `mix test test/glorbo/application_test.exs` | ✅ after T2 | ⬜ pending |
+| 01-01-T2 | 01 | 1 | FND-01 | — | Every §4.1 stub module exists, exposes `start_link/1`, returns `{:error, :not_implemented}`; AuditLog lacks `update`/`delete`/`edit` (append-only per CLAUDE.md) | unit | `mix test test/glorbo/stubs_test.exs` | ✅ after T2 | ⬜ pending |
+| 01-01-T2 | 01 | 1 | FND-02 | — | SQLite WAL active at runtime on the test repo | integration | `mix test test/glorbo/repo_wal_test.exs` (asserts `PRAGMA journal_mode` returns `"wal"`) | ✅ after T2 | ⬜ pending |
+| 01-02-T1 | 02 | 2 | FND-06 | — | `Glorbo.Doctor.run_checks/1` — each of 5 checks unit-tested via injected `cmd_fun`/`which_fun`/`home_fun`/`otp_release_fun` so tests don't require `newuidmap`, `uname`, or `df` on the runner | unit | `mix test test/glorbo/doctor_test.exs` | ✅ after T1 | ⬜ pending |
+| 01-02-T1 | 02 | 2 | FND-06 | — | `Glorbo.Doctor.Formatter.to_json/1` emits stable-keyed JSON envelope (`all_passed`, `checks[]`, `name`, `pass`, `detail`, `required`, `version`, `exit_code`) | unit | same file, JSON shape tests | ✅ after T1 | ⬜ pending |
+| 01-02-T2 | 02 | 2 | FND-06 | — | `mix glorbo.doctor` runs all 5 checks, prints human table; `mix glorbo.doctor --json \| jq -e '.version == "0.1.0"'` exits 0 | integration | `mix test test/mix/tasks/glorbo.doctor_test.exs && mix glorbo.doctor --json \| jq -e '.checks \| length == 5'` | ✅ after T2 | ⬜ pending |
+| 01-03-T1 | 03 | 3 | FND-03 | — | Burrito dep + releases block wired in `mix.exs`; `Glorbo.CLI.dispatch/1` pure-function tested | unit | `mix test test/glorbo/cli_test.exs && grep -q '&Burrito.wrap/1' mix.exs` | ✅ after T1 | ⬜ pending |
+| 01-03-T1 | 03 | 3 | FND-03 | — | `Glorbo.Application.start/2` argv branch is inert under ExUnit (Plan 01's application_test.exs stays green) | regression | `mix test test/glorbo/application_test.exs` (must pass unchanged) | ✅ after T1 | ⬜ pending |
+| 01-03-T2 | 03 | 3 | FND-03 | — | Local `MIX_ENV=prod mix release` produces executable `burrito_out/glorbo_linux_x86_64` | integration | `test -x burrito_out/glorbo_linux_x86_64 && file burrito_out/glorbo_linux_x86_64 \| grep -q 'ELF 64-bit'` | ✅ after T2 | ⬜ pending |
+| 01-03-T2 | 03 | 3 | FND-03 | — | `./glorbo doctor --json` works on binary (argv dispatch end-to-end local smoke) | integration | `./burrito_out/glorbo_linux_x86_64 doctor --json \| jq -e '.version == "0.1.0"'` | ✅ after T2 | ⬜ pending |
+| 01-03-T2 | 03 | 3 | FND-03 | — | Binary runs on host with no Erlang installed (clean Ubuntu 24.04 container smoke) | smoke | `podman run --rm -v $PWD/burrito_out:/b:ro ubuntu:24.04 /b/glorbo_linux_x86_64 doctor --json \| jq .version` → `"0.1.0"` | ✅ after T2 | ⬜ pending |
+| 01-03-T2 | 03 | 3 | FND-06 | — | No-arg `./glorbo` prints help + exits 0 (confirmed A6) | integration | CI smoke step + local: `./burrito_out/glorbo_linux_x86_64 \| grep -q USAGE` | ✅ after T2 | ⬜ pending |
+| 01-03-T3 | 03 | 3 | FND-04 | — | Both x86_64 and aarch64 artifacts produced and uploaded in CI; hyphenated names per A9 | CI matrix | `gh run view --log` shows both matrix legs succeed; artifacts named `glorbo-linux-x86_64` AND `glorbo-linux-aarch64` | ✅ after T3 PR push | ⬜ pending |
+| 01-03-T3 | 03 | 3 | FND-05 | — | CI compiles, tests, and uploads dev artifact on push to `main` (unsigned per D-17) | CI workflow | `gh run list --workflow=ci.yml --branch=main` shows success | ✅ after merge to main | ⬜ pending |
+| 01-03-T3 | 03 | 3 | FND-05 | — | `.github/workflows/ci.yml` parses and contains all load-bearing steps (matrix, setup-beam pinned, setup-zig 0.15.2, cosign v3.0.6, rename, smoke-test, tag-gated release) | static | YAML parse + 13 grep checks per Plan 03 Task 3 `<automated>` block | ✅ after T3 authored | ⬜ pending |
+| 01-03-T3 | 03 | 3 | FND-05 | — | Tagged release (`v*.*.*`) produces signed binaries + `SHA256SUMS.sig`; `cosign verify-blob` passes with canonical identity regex | CI + manual | On pre-release tag (`v0.0.1-rc1`): `cosign verify-blob --certificate-identity-regexp='^https://github.com/foobarto/glorbo/\.github/workflows/.+@refs/tags/v.+$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' --bundle SHA256SUMS.sig SHA256SUMS` → exit 0 | ⬜ manual (see Manual-Only Verifications) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,17 +68,29 @@ created: 2026-04-15
 
 ## Wave 0 Requirements
 
-Test files + CI artifacts that must be created before Phase 1 verification can proceed. All absent (greenfield):
+Test files + CI artifacts that must be created before Phase 1 verification can proceed. All absent at phase start (greenfield).
 
-- [ ] `test/glorbo/application_test.exs` — asserts supervision tree starts, expected §4.1 children present
-- [ ] `test/glorbo/stubs_test.exs` — asserts each §4.1 module exists, has `start_link/1`, returns `{:error, :not_implemented}` for public calls
-- [ ] `test/glorbo/repo_wal_test.exs` — runs `Ecto.Adapters.SQL.query!(Glorbo.Repo, "PRAGMA journal_mode;", [])`, asserts `"wal"`
-- [ ] `test/mix/tasks/glorbo.doctor_test.exs` — calls `Mix.Tasks.Glorbo.Doctor.run/1` with argv variants; asserts stdout via `ExUnit.CaptureIO`
-- [ ] `test/glorbo/doctor_test.exs` — unit-tests each `check_*` function in `Glorbo.Doctor` with dependency injection for `System.cmd`
-- [ ] `test/support/doctor_helpers.exs` — shared fixtures for check mocking
-- [ ] `.github/workflows/ci.yml` — the CI workflow itself (validated by `action-validator` locally or first push)
+**Plan 01 (Task 1) creates (red until Plan 01 Task 2):**
+- [ ] `test/glorbo/application_test.exs` — supervision tree boots with all expected children + CompanySupervisor empty + Company.Supervisor startable
+- [ ] `test/glorbo/stubs_test.exs` — each §4.1 module loaded + exports `start_link/1` + AuditLog append-only refutation (no `update`/`delete`/`edit`)
+- [ ] `test/glorbo/repo_wal_test.exs` — `PRAGMA journal_mode` returns `"wal"` on live test Repo
+- [ ] `test/config_test.exs` — grep-level WAL assertion across `config/dev.exs`, `config/test.exs`, `config/runtime.exs`
 
-**Framework install:** ExUnit ships with Elixir; no install needed. Credo is added via `{:credo, "~> 1.7", only: [:dev, :test], runtime: false}` in `mix.exs`.
+**Plan 02 (Task 1) creates:**
+- [ ] `test/glorbo/doctor_test.exs` — each of 5 checks unit-tested with injected deps; Formatter table + JSON shape tests
+- [ ] `test/support/doctor_helpers.exs` — shared fixture module (`Glorbo.Doctor.TestHelpers`) for canned cmd/which/home/otp functions
+
+**Plan 02 (Task 2) creates:**
+- [ ] `test/mix/tasks/glorbo.doctor_test.exs` — CaptureIO + exit-shutdown integration tests for the Mix task + `--json` flag
+
+**Plan 03 (Task 1) creates:**
+- [ ] `test/glorbo/cli_test.exs` — pure-function tests for `Glorbo.CLI.dispatch/1` (help, doctor, doctor --json, unknown command)
+
+**Plan 03 (Task 3) creates:**
+- [ ] `.github/workflows/ci.yml` — the CI workflow (validated by `python3 -c "import yaml; yaml.safe_load(...)"` and real first-push to a feature branch)
+- [ ] `VERIFY.md` — end-user cosign verify recipe with `foobarto/glorbo`-bound identity regex
+
+**Framework install:** ExUnit ships with Elixir; no install needed. Credo is added via `{:credo, "~> 1.7", only: [:dev, :test], runtime: false}` in `mix.exs` (Plan 01 Task 1).
 
 ---
 
@@ -83,19 +98,19 @@ Test files + CI artifacts that must be created before Phase 1 verification can p
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Cosign signature verifies end-to-end | FND-05 | Requires a real published tag with a Sigstore-signed artifact; OIDC flow cannot be unit-tested | 1. Tag pre-release: `git tag v0.0.1-rc1 && git push --tags`. 2. Wait for release workflow. 3. `cosign verify-blob --certificate-identity-regexp='^https://github.com/foobarto/glorbo/\.github/workflows/.+@refs/tags/v.+$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64` → exit 0 |
-| aarch64 binary boots on real aarch64 host | FND-04 | No aarch64 hardware on dev machine; CI proves build but not field runtime | Copy `glorbo-linux-aarch64` to a Raspberry Pi / aarch64 VM, run `./glorbo-linux-aarch64 doctor`. Document exit code. |
-| Release signing identity cannot be spoofed | FND-05 | Negative test — verifies regex excludes tampered signatures | Attempt verification against a hand-crafted signature from a different repo workflow → `cosign verify-blob` must fail with "no matching signatures" |
+| Cosign signature verifies end-to-end | FND-05 | Requires a real published tag with a Sigstore-signed artifact; OIDC flow cannot be unit-tested | 1. Tag pre-release after Plan 03 merges to main: `git tag v0.0.1-rc1 && git push origin v0.0.1-rc1`. 2. Wait for release workflow. 3. Download `glorbo-linux-x86_64`, `SHA256SUMS`, `SHA256SUMS.sig` from the release page. 4. Run `cosign verify-blob --bundle SHA256SUMS.sig --certificate-identity-regexp='^https://github.com/foobarto/glorbo/\.github/workflows/.+@refs/tags/v.+$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' SHA256SUMS` → exit 0. 5. `sha256sum -c SHA256SUMS --ignore-missing` → all OK. |
+| aarch64 binary boots on real aarch64 host | FND-04 | No aarch64 hardware on dev machine; CI proves build but not field runtime | Copy `glorbo-linux-aarch64` to a Raspberry Pi / aarch64 VM / cloud aarch64 instance. Run `./glorbo-linux-aarch64 doctor`. Document exit code and table output. |
+| Release signing identity cannot be spoofed | FND-05 | Negative test — verifies regex excludes tampered signatures | Attempt verification against a hand-crafted signature from a different repo workflow → `cosign verify-blob` must fail with "no matching signatures". Confirms the identity regex actually binds to `foobarto/glorbo`. |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (7 test files + 1 workflow YAML)
-- [ ] No watch-mode flags (CI-compatible commands only)
-- [ ] Feedback latency < 30s for task+wave sampling
-- [ ] `nyquist_compliant: true` set in frontmatter once planner binds task IDs to this table
+- [x] All tasks have `<automated>` verify commands referencing concrete test files OR Wave 0 test files the plan creates first
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify (7 tasks total, each has automated verify)
+- [x] Wave 0 covers all MISSING references (9 test/artifact files across 3 plans)
+- [x] No watch-mode flags (CI-compatible commands only)
+- [x] Feedback latency < 30s for task+wave sampling; release-build step ~10 min only in CI
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending — planner will finalize task IDs, then set `nyquist_compliant: true` in frontmatter.
+**Approval:** planner-bound to plans `01-01`, `01-02`, `01-03`. Ready for execution.
