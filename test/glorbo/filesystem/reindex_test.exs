@@ -142,4 +142,39 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert Repo.all(Agent) == []
     end
   end
+
+  describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do
+    test "process_path/2 indexes a single file without a full run" do
+      base = TmpGlorboHome.setup()
+
+      path =
+        write!(
+          base,
+          "companies/acme/company.md",
+          "---\nname: acme\nmission: x\n---\n"
+        )
+
+      assert :indexed = Reindex.process_path("acme", path)
+      [row] = Repo.all(Company)
+      assert row.name == "acme"
+    end
+
+    test "mark_dirty/2 returns :ok and triggers incremental index" do
+      base = TmpGlorboHome.setup()
+
+      path =
+        write!(
+          base,
+          "companies/acme/company.md",
+          "---\nname: acme\n---\n"
+        )
+
+      assert :ok = Reindex.mark_dirty("acme", path)
+      [row] = Repo.all(Company)
+      assert row.name == "acme"
+
+      # Second call on an unchanged file should still return :ok.
+      assert :ok = Reindex.mark_dirty("acme", path)
+    end
+  end
 end

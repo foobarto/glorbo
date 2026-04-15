@@ -34,6 +34,32 @@ defmodule Glorbo.Filesystem.Reindex do
   @type result :: %{indexed: integer(), skipped: integer(), deleted: integer()}
 
   @doc """
+  Mark a single path as dirty — triggers an incremental re-index of that
+  file only (Plan 04, B4). Thin wrapper around `process_path/2`.
+
+  Phase 2: simple — re-process this single file synchronously. Phase 3 may
+  replace with an async-queue + batch re-index.
+  """
+  @spec mark_dirty(String.t(), Path.t()) :: :ok
+  def mark_dirty(company, path) do
+    _ = process_path(company, path)
+    :ok
+  end
+
+  @doc """
+  Public wrapper around the PRIVATE `process_file/1` (B4 contract).
+
+  `process_file/1` stays `defp` — Plan 04 adds this public wrapper rather
+  than promoting the private helper, to keep Plan 01's surface stable.
+  The `company` argument is currently unused but reserved for Phase-3
+  per-company pipelining.
+  """
+  @spec process_path(String.t(), Path.t()) :: :indexed | :unchanged | {:skip, term()}
+  def process_path(_company, path) do
+    process_file(path)
+  end
+
+  @doc """
   Run a full reindex pass.
 
   Options:
