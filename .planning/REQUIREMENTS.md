@@ -28,7 +28,7 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 ### Runtime & Containers (RT)
 
 - [ ] **RT-01**: Rootless Podman auto-detected; static `podman` binary auto-downloaded into `~/.glorbo/bin/` when missing
-- [ ] **RT-02**: `glorbo-runtime` OCI image built and cached locally; `glorbo init --repair` rebuilds it after restore on a new machine
+- [ ] **RT-02**: `glorbo-runtime` OCI image built and cached locally; `glorbo doctor --fix` rebuilds it after restore on a new machine
 - [ ] **RT-03**: Each company runs in its own Podman container, mounting only that company's directory — no cross-company filesystem access possible
 - [ ] **RT-04**: Containers use `--userns keep-id`, read-only root FS, `network: none` by default
 - [ ] **RT-05**: Ephemeral container lifecycle is the default; persistent lifecycle opt-in for streaming/rapid back-and-forth agents
@@ -68,7 +68,7 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 
 - [ ] **CLI-01**: Commands implemented: `init`, `up`, `down`, `status`, `serve`, `run`, `new {company,agent,project}`, `logs`, `doctor`, `reindex`, `migrate`, `backup`, `restore`, `console`
 - [ ] **CLI-02**: `glorbo init` bootstraps missing Podman and Ollama in ~1 minute on a fresh Fedora-like host
-- [ ] **CLI-03**: `glorbo backup` + `scp` + `glorbo restore` + `glorbo init --repair` reproduces a functional install on the target machine
+- [ ] **CLI-03**: `glorbo backup` + `scp` + `glorbo restore` + `glorbo doctor --fix` reproduces a functional install on the target machine
 
 ## v2 Requirements
 

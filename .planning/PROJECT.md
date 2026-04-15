@@ -42,7 +42,7 @@ Glorbo is a self-hosted agent orchestration platform that models companies as re
 - [ ] Skills system: markdown files injected into agent context at runtime
 - [ ] Full company isolation: one container per company, no cross-company filesystem access possible
 - [ ] CLI: `init`, `up`, `down`, `status`, `serve`, `run`, `new {company,agent,project}`, `logs`, `doctor`, `reindex`, `migrate`, `backup`, `restore`, `console`
-- [ ] `glorbo init --repair` rebuilds container image after restore on a new machine
+- [ ] `glorbo doctor --fix` rebuilds container image after restore on a new machine
 - [ ] Offline-capable end-to-end: fresh install → local model → run agents with no network
 - [ ] Linux x86_64 and aarch64 release artifacts
 
@@ -71,7 +71,7 @@ Glorbo is a self-hosted agent orchestration platform that models companies as re
 - **Existing specs:** `DESIGN.md` (32KB, 14 sections, comprehensive architecture) and `README.md` are authoritative. This PROJECT.md condenses them; the source docs lead on detail.
 - **Prior-art constraints:** No comparable tool exists that combines (filesystem-first + OTP supervision + rootless containers + local LLMs + LiveView). Research should confirm this and surface adjacent patterns (Paperclip, Bumblebee, Livebook, Nerves) to borrow from.
 - **Target user flow:** `curl` binary → `glorbo init` (~1 min, bootstraps Podman+Ollama if missing) → `glorbo new company` → edit markdown → `glorbo up` → dashboard at `localhost:4000`.
-- **Portability expectation:** `glorbo backup` → `scp` → `glorbo restore` + `init --repair` → fully functional on the target machine.
+- **Portability expectation:** `glorbo backup` → `scp` → `glorbo restore` + `doctor --fix` → fully functional on the target machine.
 
 ## Constraints
 

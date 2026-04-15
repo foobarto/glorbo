@@ -281,7 +281,7 @@ glorbo backup
 
 # Target
 glorbo restore glorbo-backup-20260415.tar.gz
-glorbo init --repair    # Rebuilds container image
+glorbo doctor --fix     # Rebuilds container image
 glorbo up
 ```
 

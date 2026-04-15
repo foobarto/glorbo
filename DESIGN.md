@@ -652,6 +652,8 @@ glorbo new project <co> <name>  # Scaffold a new project
 glorbo reindex                  # Rebuild SQLite from filesystem
 glorbo migrate                  # Run Ecto migrations after upgrade
 glorbo doctor                   # Check dependencies (podman, etc.)
+glorbo doctor --fix             # Repair flagged problems (re-pull image,
+                                # re-download binaries, re-verify ACLs)
 
 glorbo logs <company> [agent]   # Tail logs
 glorbo console                  # Elixir remote console (debugging)
@@ -739,7 +741,7 @@ glorbo backup    # creates ~/.glorbo/backups/glorbo-backup-20260415.tar.gz
 
 # Target machine (install glorbo binary first)
 glorbo restore glorbo-backup-20260415.tar.gz
-glorbo init --repair   # Rebuilds container image on new machine
+glorbo doctor --fix    # Rebuilds container image on new machine
 glorbo up
 ```
 

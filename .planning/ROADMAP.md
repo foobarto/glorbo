@@ -25,7 +25,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [ ] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
 - [ ] **Phase 3: Agents, Routing, Kernel Permissions, Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, kernel-enforced ACLs matching `agent.md`, per-agent budgets and network policy, skills injection, and Director approval gates — all running offline end-to-end.
 - [ ] **Phase 4: LiveView Dashboard + Real-Time Channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
-- [ ] **Phase 5: CLI Completeness + Backup/Restore Portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `init --repair`) with verified end-to-end portability: `backup` → `scp` → `restore` + `init --repair` reproduces a functional install on a fresh host.
+- [ ] **Phase 5: CLI Completeness + Backup/Restore Portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
 
 ## Phase Details
 
@@ -86,13 +86,13 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 **UI hint**: yes
 
 ### Phase 5: CLI Completeness + Backup/Restore Portability
-**Goal**: Every CLI verb from DESIGN.md §10 works, and the portability story — `backup` on machine A, `scp` to machine B, `restore` + `init --repair`, everything functional — is end-to-end verified on a fresh host.
+**Goal**: Every CLI verb from DESIGN.md §10 works, and the portability story — `backup` on machine A, `scp` to machine B, `restore` + `doctor --fix`, everything functional — is end-to-end verified on a fresh host.
 **Depends on**: Phase 4
 **Requirements**: CLI-01, CLI-03
 **Success Criteria** (what must be TRUE):
-  1. All CLI verbs from the spec are implemented and documented: `init`, `init --repair`, `up`, `down`, `status`, `serve`, `run`, `new company`, `new agent`, `new project`, `logs`, `doctor`, `reindex`, `migrate`, `backup`, `restore`, `console`.
+  1. All CLI verbs from the spec are implemented and documented: `init`, `up`, `down`, `status`, `serve`, `run`, `new company`, `new agent`, `new project`, `logs`, `doctor`, `doctor --fix`, `reindex`, `migrate`, `backup`, `restore`, `console`.
   2. `glorbo backup` produces a `tar.gz` containing `~/.glorbo/companies/`, `config.md`, and the audit log; `glorbo restore <archive>` extracts, runs `reindex`, and leaves the install in a usable state.
-  3. End-to-end portability: on machine A run `glorbo down && glorbo backup`; `scp` the archive to machine B (fresh glorbo binary only); run `glorbo restore && glorbo init --repair && glorbo up`; a previously-running agent in a previously-existing company executes a task successfully on machine B.
+  3. End-to-end portability: on machine A run `glorbo down && glorbo backup`; `scp` the archive to machine B (fresh glorbo binary only); run `glorbo restore && glorbo doctor --fix && glorbo up`; a previously-running agent in a previously-existing company executes a task successfully on machine B.
   4. `glorbo console` opens an Elixir remote shell into the running release, `glorbo logs <company> [agent]` tails the correct log files, and `glorbo migrate` applies Ecto migrations in-place against an existing `glorbo.db`.
 **Plans**: TBD (1-2 plans)
 
