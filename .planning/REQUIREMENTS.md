@@ -11,9 +11,9 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 
 - [x] **FND-01**: Phoenix project generated with `mix phx.new`, SQLite via `ecto_sqlite3`, modules reshaped to domain-nested layout matching `DESIGN.md`
 - [x] **FND-02**: SQLite configured in WAL mode for dev, test, and runtime
-- [ ] **FND-03**: Single-binary release built via `mix release` with `include_erts: true` — no Erlang required on target
-- [ ] **FND-04**: Linux x86_64 **and** aarch64 release artifacts produced
-- [ ] **FND-05**: CI pipeline compiles, tests, and uploads signed binary artifacts per push to `main`
+- [x] **FND-03**: Single-binary release built via `mix release` with `include_erts: true` — no Erlang required on target
+- [x] **FND-04**: Linux x86_64 **and** aarch64 release artifacts produced
+- [x] **FND-05**: CI pipeline compiles, tests, and uploads signed binary artifacts per push to `main`
 - [x] **FND-06**: `mix glorbo.doctor` CLI verifies host prerequisites (kernel, `uidmap`, disk, write perms on `~/.glorbo/`)
 
 ### Filesystem Layout & Index (FS)
@@ -102,9 +102,9 @@ Deferred from v1 — tracked but not in current roadmap.
 |-------------|-------|--------|
 | FND-01 | Phase 1 | Complete |
 | FND-02 | Phase 1 | Complete |
-| FND-03 | Phase 1 | Pending |
-| FND-04 | Phase 1 | Pending |
-| FND-05 | Phase 1 | Pending |
+| FND-03 | Phase 1 | Complete |
+| FND-04 | Phase 1 | Complete |
+| FND-05 | Phase 1 | Complete |
 | FND-06 | Phase 1 | Complete |
 | FS-01 | Phase 2 | Pending |
 | FS-02 | Phase 2 | Pending |
@@ -154,4 +154,4 @@ Deferred from v1 — tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-04-15*
-*Last updated: 2026-04-15 — roadmap created, traceability populated (38/38 mapped).*
+*Last updated: 2026-04-15 — Phase 1 complete: FND-01..06 all marked Complete (6/38 v1 requirements shipped).*

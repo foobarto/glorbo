@@ -21,7 +21,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 
 ## Phases
 
-- [ ] **Phase 1: Compilable Skeleton + CI Release Pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
+- [x] **Phase 1: Compilable Skeleton + CI Release Pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
 - [ ] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
 - [ ] **Phase 3: Agents, Routing, Kernel Permissions, Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, kernel-enforced ACLs matching `agent.md`, per-agent budgets and network policy, skills injection, and Director approval gates — all running offline end-to-end.
 - [ ] **Phase 4: LiveView Dashboard + Real-Time Channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
@@ -42,7 +42,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 **Plans**: 3 plans
 - [x] 01-01-PLAN.md — Phoenix skeleton + domain-nested §4.1 module stubs + SQLite WAL + Wave 0 tests (FND-01, FND-02)
 - [x] 01-02-PLAN.md — `Glorbo.Doctor` shared module + `Mix.Tasks.Glorbo.Doctor` with `--json` flag (FND-06)
-- [ ] 01-03-PLAN.md — Burrito single-binary release + argv dispatch + GitHub Actions CI matrix + Cosign keyless signing + VERIFY.md (FND-03, FND-04, FND-05)
+- [x] 01-03-PLAN.md — Burrito single-binary release + argv dispatch + GitHub Actions CI matrix + Cosign keyless signing + VERIFY.md (FND-03, FND-04, FND-05)
 
 ### Phase 2: Filesystem Foundation + Container Runtime + Local LLM
 **Goal**: `glorbo init` converts a fresh host into a working Glorbo installation — Podman and Ollama bootstrapped, `glorbo-runtime` image built, `~/.glorbo/` hierarchy created, audit log appending, reindex contract operational, offline-capable.
@@ -103,7 +103,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Compilable Skeleton + CI Release Pipeline | 0/3 | Ready to execute | - |
+| 1. Compilable Skeleton + CI Release Pipeline | 3/3 | Complete | 2026-04-15 |
 | 2. Filesystem Foundation + Container Runtime + Local LLM | 0/TBD | Not started | - |
 | 3. Agents, Routing, Kernel Permissions, Budgets | 0/TBD | Not started | - |
 | 4. LiveView Dashboard + Real-Time Channels | 0/TBD | Not started | - |
@@ -112,3 +112,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 ---
 *Roadmap created: 2026-04-15 — coarse granularity, 5 phases, 38/38 v1 requirements mapped.*
 *Phase 1 plans finalized: 2026-04-15 — 3 plans (01-01, 01-02, 01-03) in 3 waves; FND-01..06 fully covered.*
+*Phase 1 complete: 2026-04-15 — compilable Elixir/Phoenix skeleton, `mix glorbo.doctor` CLI, Burrito single-binary release pipeline, GitHub Actions CI matrix, Cosign keyless signing. Tagged-release `cosign verify-blob` is the phase-gate manual step (pending `v0.0.1-rc1` push).*
