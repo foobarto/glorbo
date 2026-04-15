@@ -1,41 +1,26 @@
 defmodule Glorbo.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
-
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     children = [
-      GlorboWeb.Telemetry,
       Glorbo.Repo,
-      {Ecto.Migrator,
-       repos: Application.fetch_env!(:glorbo, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:glorbo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Glorbo.PubSub},
-      # Start a worker by calling: Glorbo.Worker.start_link(arg)
-      # {Glorbo.Worker, arg},
-      # Start to serve requests, typically the last entry
+      GlorboWeb.Telemetry,
+      Glorbo.ContainerManager,
+      {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       GlorboWeb.Endpoint
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Glorbo.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
-  # Tell Phoenix to update the endpoint configuration
-  # whenever the application is updated.
-  @impl true
+  @impl Application
   def config_change(changed, _new, removed) do
     GlorboWeb.Endpoint.config_change(changed, removed)
     :ok
-  end
-
-  defp skip_migrations? do
-    # By default, sqlite migrations are run when using a release
-    System.get_env("RELEASE_NAME") == nil
   end
 end

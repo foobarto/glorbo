@@ -1,9 +1,8 @@
 defmodule Glorbo do
   @moduledoc """
-  Glorbo keeps the contexts that define your domain
-  and business logic.
+  Glorbo — a filesystem-first agent orchestration platform.
 
-  Contexts are also responsible for managing your data, regardless
-  if it comes from the database, an external API or others.
+  Top-level namespace. See `Glorbo.Application` for the OTP entry point and
+  `DESIGN.md` §4.1 for the supervision tree shape.
   """
 end
