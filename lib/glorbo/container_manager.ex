@@ -88,11 +88,17 @@ defmodule Glorbo.ContainerManager do
     agent = Keyword.fetch!(opts, :agent)
     mode = Keyword.get(opts, :mode, :ephemeral)
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    extra_volumes = Keyword.get(opts, :extra_volumes, [])
 
     Socket.ensure_dir!(base, company)
     Socket.cleanup_stale(base, company, agent)
 
-    argv = Invocation.build_argv(company, agent, mode, base: base)
+    argv =
+      Invocation.build_argv(company, agent, mode,
+        base: base,
+        extra_volumes: extra_volumes
+      )
+
     reply = launch(mode, argv, company, agent)
     {:reply, reply, state}
   end

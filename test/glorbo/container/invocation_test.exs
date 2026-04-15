@@ -79,6 +79,34 @@ defmodule Glorbo.Container.InvocationTest do
     end
   end
 
+  describe "build_argv/4 extra_volumes keyword (Plan 04 back-edit)" do
+    test "extra_volumes appends additional --volume pairs before the image" do
+      extra = ["/tmp/ollama.sock:/tmp/ollama.sock:Z,rw"]
+
+      argv =
+        Invocation.build_argv("acme", "ceo", :persistent,
+          base: @base,
+          extra_volumes: extra
+        )
+
+      assert flag_pair?(argv, "--volume", "/tmp/ollama.sock:/tmp/ollama.sock:Z,rw")
+
+      image = Invocation.runtime_image()
+      image_idx = Enum.find_index(argv, &(&1 == image))
+      extra_idx = Enum.find_index(argv, &(&1 == "/tmp/ollama.sock:/tmp/ollama.sock:Z,rw"))
+
+      # extra volume must appear BEFORE the image (where podman expects --volume args).
+      assert extra_idx < image_idx
+    end
+
+    test "extra_volumes default is empty and does not alter original argv shape" do
+      argv_no = Invocation.build_argv("acme", "ceo", :persistent, base: @base)
+      argv_empty = Invocation.build_argv("acme", "ceo", :persistent, base: @base, extra_volumes: [])
+
+      assert argv_no == argv_empty
+    end
+  end
+
   # Helpers ------------------------------------------------------------
 
   # Matches "... --flag value ..." anywhere in the argv.

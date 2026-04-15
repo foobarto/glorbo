@@ -29,6 +29,10 @@ defmodule Glorbo.Container.Invocation do
       prefix for both the company bind-mount and the socket directory.
     * `:image` — override the runtime image string (default
       `#{@runtime_image_default}`). Only intended for tests.
+    * `:extra_volumes` — list of `"host:container:flags"` strings appended
+      as additional `--volume` pairs (Plan 04 back-edit). The only current
+      use is bind-mounting `/tmp/ollama.sock` for airplane-mode inference
+      (LLM-05). Default: `[]`.
 
   Modes:
 
@@ -40,12 +44,17 @@ defmodule Glorbo.Container.Invocation do
   def build_argv(company, agent, mode \\ :ephemeral, opts \\ []) do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
     image = Keyword.get(opts, :image, @runtime_image_default)
+    extra_volumes = Keyword.get(opts, :extra_volumes, [])
     host_company_dir = Path.join([base, "companies", company])
     host_socket_dir = Path.join([base, "runtime", "sockets", company])
 
     lifecycle_flag = if mode == :ephemeral, do: "--rm", else: "-d"
 
-    [
+    extra_volume_args =
+      extra_volumes
+      |> Enum.flat_map(fn spec -> ["--volume", spec] end)
+
+    base_argv = [
       "run",
       lifecycle_flag,
       "--name",
@@ -60,7 +69,10 @@ defmodule Glorbo.Container.Invocation do
       "--volume",
       "#{host_company_dir}:/company:Z,ro",
       "--volume",
-      "#{host_socket_dir}:/run:Z,rw",
+      "#{host_socket_dir}:/run:Z,rw"
+    ]
+
+    tail = [
       "--env",
       "GLORBO_COMPANY=#{company}",
       "--env",
@@ -71,6 +83,8 @@ defmodule Glorbo.Container.Invocation do
       "--uds",
       "/run/agent.sock"
     ]
+
+    base_argv ++ extra_volume_args ++ tail
   end
 
   @doc "The runtime image string this plan pins."
