@@ -1,0 +1,139 @@
+# .github/workflows/runtime-image.yml
+#
+# Phase 02 Plan 03 — multi-arch `glorbo-runtime` OCI image build + push to
+# ghcr.io. Companion to ../../containers/glorbo-runtime/{Containerfile,
+# requirements.txt, worker/, tests/}.
+#
+# Triggers:
+#   - push tag runtime-v*      : versioned build, push both the version tag
+#                                AND :latest, cosign-sign keyless.
+#   - workflow_dispatch        : manual smoke-test trigger; pushes the
+#                                dev-<short-sha> tag ONLY (never :latest).
+#
+# Security posture: all ${{ ... }} interpolations flow through `env:` to
+# avoid shell-interpolation injection; no event-derived fields
+# (issue.title, PR body, commit message, etc.) are referenced anywhere.
+#
+# B1: Python correctness is verified inside the image via
+# `pytest /app/tests` — CLAUDE.md invariant "Python never runs on the host"
+# is honoured on every path.
+name: runtime-image
+
+on:
+  push:
+    tags:
+      - 'runtime-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write       # for ghcr.io push
+  id-token: write       # for cosign keyless (Sigstore OIDC)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: foobarto/glorbo-runtime
+
+jobs:
+  build-and-push:
+    name: Multi-arch build + push
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (cross-arch buildah)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install buildah + skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y buildah skopeo
+
+      - name: Log in to ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          echo "$GHCR_TOKEN" | buildah login \
+            -u "$GHCR_USER" \
+            --password-stdin "$REGISTRY"
+
+      - name: Determine version tag
+        id: tags
+        env:
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "$REF" == refs/tags/runtime-v* ]]; then
+            VERSION="${REF#refs/tags/runtime-}"
+          else
+            VERSION="dev-${SHA::8}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building ${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+
+      - name: Build multi-arch manifest (Pitfall 8)
+        working-directory: containers/glorbo-runtime
+        env:
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          buildah build \
+            --manifest "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            --platform linux/amd64,linux/arm64 \
+            --jobs 2 \
+            -f Containerfile \
+            .
+
+      - name: Push versioned manifest
+        env:
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          buildah manifest push --all \
+            "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            "docker://${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}"
+
+      - name: Push :latest (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/runtime-v')
+        env:
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          buildah manifest push --all \
+            "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            "docker://${REGISTRY}/${IMAGE_NAME}:latest"
+
+      - name: Verify multi-arch manifest
+        env:
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          skopeo inspect --raw \
+            "docker://${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            | jq -e '.manifests
+                | map(.platform.architecture)
+                | (contains(["amd64"]) and contains(["arm64"]))'
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Cosign sign image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+          REF: ${{ github.ref }}
+        run: |
+          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}"
+          if [[ "$REF" == refs/tags/runtime-v* ]]; then
+            cosign sign --yes "${REGISTRY}/${IMAGE_NAME}:latest"
+          fi
+
+      # B1: in-image pytest is the SOLE Python validation surface. Running
+      # it here means every published image has its Python imports + worker
+      # smoke test exercised before the tag becomes consumable.
+      - name: Smoke test pulled image (pytest /app/tests)
+        env:
+          TAG_VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          podman pull "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}"
+          podman run --rm "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            python3 -c "import litellm, fastapi, uvicorn, anthropic, openai, ollama, huggingface_hub; print('OK')"
+          podman run --rm "${REGISTRY}/${IMAGE_NAME}:${TAG_VERSION}" \
+            pytest /app/tests
