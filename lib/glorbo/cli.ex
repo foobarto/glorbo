@@ -16,7 +16,7 @@ defmodule Glorbo.CLI do
   alias Glorbo.Doctor.Formatter
 
   @type verb :: :doctor | :help | :unknown
-  @type result :: {verb(), 0 | 1, String.t()}
+  @type result :: {verb(), 0 | 1 | 2, String.t()}
 
   @doctor_switches [json: :boolean]
 
@@ -37,7 +37,7 @@ defmodule Glorbo.CLI do
         Formatter.to_table(results)
       end
 
-    exit_code = if Enum.all?(results, & &1.pass), do: 0, else: 1
+    exit_code = Glorbo.Doctor.exit_code(results)
     {:doctor, exit_code, output}
   end
 

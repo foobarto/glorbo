@@ -143,18 +143,18 @@ defmodule Glorbo.DoctorTest do
 
   describe "check_erts_version (via run_checks/1)" do
     test "OTP 28 passes" do
-      [_, _, _, _, erts] = Doctor.run_checks(all_pass_deps("28"))
+      [_, _, _, _, erts | _] = Doctor.run_checks(all_pass_deps("28"))
       assert erts.name == "erts_version"
       assert erts.pass
     end
 
     test "OTP 27 passes (boundary)" do
-      [_, _, _, _, erts] = Doctor.run_checks(all_pass_deps("27"))
+      [_, _, _, _, erts | _] = Doctor.run_checks(all_pass_deps("27"))
       assert erts.pass
     end
 
     test "OTP 26 fails (below boundary)" do
-      [_, _, _, _, erts] = Doctor.run_checks(all_pass_deps("26"))
+      [_, _, _, _, erts | _] = Doctor.run_checks(all_pass_deps("26"))
       refute erts.pass
     end
   end
@@ -171,6 +171,7 @@ defmodule Glorbo.DoctorTest do
             case cmd do
               "uname" -> {"6.17.0\n", 0}
               "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
             end
           end,
           which_fun: fn _ -> "/bin/true" end,
@@ -178,19 +179,37 @@ defmodule Glorbo.DoctorTest do
         )
 
       results = Doctor.run_checks(deps)
-      assert length(results) == 5
+      # Phase 2 (D-44): 5 Phase-1 checks + 8 Phase-2 additions = 13
+      assert length(results) == 13
 
       Enum.each(results, fn r ->
         assert Map.has_key?(r, :name)
         assert Map.has_key?(r, :pass)
         assert Map.has_key?(r, :detail)
         assert Map.has_key?(r, :required)
+        assert Map.has_key?(r, :severity)
         assert is_boolean(r.pass)
         assert is_binary(r.name)
+        assert r.severity in [:blocker, :warning]
       end)
 
       names = Enum.map(results, & &1.name)
-      assert names == ["linux_kernel", "uidmap", "disk_space", "glorbo_dir", "erts_version"]
+      # D-44: Phase-1 names preserved verbatim in original order at head.
+      assert Enum.take(names, 5) ==
+               ["linux_kernel", "uidmap", "disk_space", "glorbo_dir", "erts_version"]
+
+      # Phase-2 additions appended after, order matches D-43.
+      assert Enum.drop(names, 5) ==
+               [
+                 "podman",
+                 "ollama",
+                 "ollama_daemon",
+                 "runtime_image",
+                 "runtime_exec",
+                 "audit_dir",
+                 "sockets_dir",
+                 "tar_zstd"
+               ]
     end
   end
 
@@ -237,7 +256,10 @@ defmodule Glorbo.DoctorTest do
       assert first_check["pass"] == true
     end
 
-    test "exit_code is 1 when any check fails" do
+    test "exit_code is 1 when any check fails (Phase-1 fixture, missing severity)" do
+      # Legacy 5-field fixture — no severity. Doctor.exit_code/1 falls back
+      # to treating missing severity as :blocker so Phase-1 fixtures still
+      # map to exit code 1 on any failure (backward compat).
       results = [
         %{name: "a", pass: true, detail: "", required: ""},
         %{name: "b", pass: false, detail: "", required: ""}
@@ -251,13 +273,415 @@ defmodule Glorbo.DoctorTest do
     end
   end
 
+  # ========================================================================
+  # Phase 2 extensions — D-43, D-44, D-45 (severity + 8 new checks)
+  # ========================================================================
+
+  describe "Phase 2: severity field on every check (D-44, D-45)" do
+    test "each check map carries :severity ∈ {:blocker, :warning}" do
+      deps = all_pass_deps("28")
+      results = Doctor.run_checks(deps)
+
+      Enum.each(results, fn r ->
+        assert Map.has_key?(r, :severity)
+        assert r.severity in [:blocker, :warning]
+      end)
+    end
+
+    test "severity classification matches plan spec" do
+      deps = all_pass_deps("28")
+      results = Doctor.run_checks(deps)
+      by_name = Map.new(results, &{&1.name, &1.severity})
+
+      # Blockers
+      for name <- ["linux_kernel", "uidmap", "glorbo_dir", "erts_version", "audit_dir"] do
+        assert by_name[name] == :blocker, "#{name} should be :blocker"
+      end
+
+      # Warnings
+      for name <- [
+            "disk_space",
+            "podman",
+            "ollama",
+            "ollama_daemon",
+            "runtime_image",
+            "runtime_exec",
+            "sockets_dir",
+            "tar_zstd"
+          ] do
+        assert by_name[name] == :warning, "#{name} should be :warning"
+      end
+    end
+  end
+
+  describe "Phase 2: exit_code/1 severity-weighted (D-45)" do
+    test "returns 0 when every check passes" do
+      all_pass = [
+        %{name: "k", pass: true, detail: "", required: "", severity: :blocker},
+        %{name: "w", pass: true, detail: "", required: "", severity: :warning}
+      ]
+
+      assert Doctor.exit_code(all_pass) == 0
+    end
+
+    test "returns 1 when any blocker fails" do
+      results = [
+        %{name: "k", pass: false, detail: "", required: "", severity: :blocker},
+        %{name: "w", pass: true, detail: "", required: "", severity: :warning}
+      ]
+
+      assert Doctor.exit_code(results) == 1
+    end
+
+    test "returns 2 when only warnings fail" do
+      results = [
+        %{name: "k", pass: true, detail: "", required: "", severity: :blocker},
+        %{name: "w", pass: false, detail: "", required: "", severity: :warning}
+      ]
+
+      assert Doctor.exit_code(results) == 2
+    end
+
+    test "blocker fail dominates warning fail (returns 1)" do
+      results = [
+        %{name: "k", pass: false, detail: "", required: "", severity: :blocker},
+        %{name: "w", pass: false, detail: "", required: "", severity: :warning}
+      ]
+
+      assert Doctor.exit_code(results) == 1
+    end
+  end
+
+  describe "Phase 2: check_podman" do
+    test "pass when podman is in PATH and --version exits 0" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, args ->
+            cond do
+              cmd == "uname" -> {"6.17.0\n", 0}
+              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              String.ends_with?(cmd, "podman") and args == ["--version"] ->
+                {"podman version 5.8.1\n", 0}
+              true -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "podman" -> "/usr/bin/podman"
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "podman"))
+      assert check.pass
+      assert check.detail =~ "5.8.1"
+    end
+
+    test "fail with \"not found\" when podman absent" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "podman" -> nil
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "podman"))
+      refute check.pass
+      assert check.severity == :warning
+      assert check.detail =~ "not found"
+    end
+  end
+
+  describe "Phase 2: check_ollama (PATH + ~/.glorbo/bin/ollama)" do
+    test "fail when ollama binary is absent from PATH and ~/.glorbo/bin/" do
+      tmp = Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      File.mkdir_p!(tmp)
+
+      deps =
+        TestHelpers.deps(
+          home_fun: fn -> tmp end,
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "newuidmap" -> "/bin/newuidmap"
+            "newgidmap" -> "/bin/newgidmap"
+            "ollama" -> nil
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama"))
+      refute check.pass
+      assert check.detail =~ "binary not found"
+    end
+  end
+
+  describe "Phase 2: check_ollama_daemon (HTTP injection)" do
+    test "pass on HTTP 200 from http_fun" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end,
+          http_fun: fn -> {:ok, 200, ~s({"version":"0.20.7"})} end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama_daemon"))
+      assert check.pass
+      assert check.detail =~ "daemon responding"
+    end
+
+    test "fail on connection error from http_fun" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end,
+          http_fun: fn -> {:error, :econnrefused} end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama_daemon"))
+      refute check.pass
+      assert check.detail =~ "not reachable"
+    end
+  end
+
+  describe "Phase 2: check_runtime_image / check_runtime_exec" do
+    test "both fail (warning) when podman is not in PATH" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "podman" -> nil
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      results = Doctor.run_checks(deps)
+      img = Enum.find(results, &(&1.name == "runtime_image"))
+      exec = Enum.find(results, &(&1.name == "runtime_exec"))
+      refute img.pass
+      assert img.severity == :warning
+      refute exec.pass
+      assert exec.severity == :warning
+    end
+
+    test "runtime_image fails (warning) when `podman image exists` returns non-zero" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, args ->
+            cond do
+              cmd == "uname" -> {"6.17.0\n", 0}
+              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              String.ends_with?(cmd, "podman") and Enum.take(args, 2) == ["image", "exists"] ->
+                {"", 1}
+              true -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "podman" -> "/usr/bin/podman"
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "runtime_image"))
+      refute check.pass
+      assert check.detail =~ "not present"
+    end
+  end
+
+  describe "Phase 2: check_audit_dir + check_sockets_dir (D-46 idempotent)" do
+    test "creates + cleans probe in ~/.glorbo/audit/_system/ and ~/.glorbo/runtime/sockets/" do
+      tmp = Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      File.mkdir_p!(tmp)
+
+      deps =
+        TestHelpers.deps(
+          home_fun: fn -> tmp end,
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      results = Doctor.run_checks(deps)
+      audit = Enum.find(results, &(&1.name == "audit_dir"))
+      sockets = Enum.find(results, &(&1.name == "sockets_dir"))
+
+      assert audit.pass
+      assert audit.severity == :blocker
+      assert File.dir?(Path.join([tmp, ".glorbo", "audit", "_system"]))
+
+      assert sockets.pass
+      assert sockets.severity == :warning
+      sockets_path = Path.join([tmp, ".glorbo", "runtime", "sockets"])
+      assert File.dir?(sockets_path)
+
+      %File.Stat{mode: mode} = File.stat!(sockets_path)
+      # Lower 9 bits hold permissions; assert 0700.
+      assert Bitwise.band(mode, 0o777) == 0o700
+    end
+  end
+
+  describe "Phase 2: check_tar_zstd" do
+    test "pass when tar --version output contains \"zstd\"" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, args ->
+            cond do
+              cmd == "uname" -> {"6.17.0\n", 0}
+              cmd == "df" -> {"Avail\n2147483648\n", 0}
+              cmd == "tar" and args == ["--version"] ->
+                {"tar (GNU tar) 1.35\nzstd support compiled in\n", 0}
+              true -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "tar_zstd"))
+      assert check.pass
+      assert check.detail =~ "tar --zstd"
+    end
+
+    test "pass when separate zstd binary exists" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              "tar" -> {"tar (GNU tar) 1.30\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "zstd" -> "/usr/bin/zstd"
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "tar_zstd"))
+      assert check.pass
+      assert check.detail =~ "zstd binary present"
+    end
+
+    test "fail when neither tar --zstd nor zstd binary is available" do
+      deps =
+        TestHelpers.deps(
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              "tar" -> {"tar (GNU tar) 1.30\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn
+            "zstd" -> nil
+            "newuidmap" -> "/bin/newuidmap"
+            "newgidmap" -> "/bin/newgidmap"
+            _ -> "/bin/true"
+          end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "tar_zstd"))
+      refute check.pass
+      assert check.severity == :warning
+      assert check.detail =~ "neither"
+    end
+  end
+
+  describe "Phase 2: JSON additive schema (D-44)" do
+    test "every Phase-1 key is preserved verbatim and severity is additive" do
+      deps = all_pass_deps("28")
+      results = Doctor.run_checks(deps)
+      decoded = results |> Formatter.to_json() |> Jason.decode!()
+
+      assert length(decoded["checks"]) == 13
+      # Top-level envelope keys all still present
+      for k <- ["version", "checks", "all_passed", "passed_count", "total_count", "exit_code"] do
+        assert Map.has_key?(decoded, k), "envelope key #{k} missing"
+      end
+
+      first = hd(decoded["checks"])
+      # Phase 1 contract keys preserved verbatim
+      for k <- ["name", "pass", "detail", "required"] do
+        assert Map.has_key?(first, k), "Phase-1 key #{k} missing"
+      end
+
+      # Phase 2 additive key
+      assert Map.has_key?(first, "severity")
+      assert first["severity"] in ["blocker", "warning"]
+    end
+
+    test "exit_code reflects severity-weighted logic" do
+      deps = all_pass_deps("28")
+      results = Doctor.run_checks(deps)
+      decoded = results |> Formatter.to_json() |> Jason.decode!()
+      # Phase 2 checks will fail in this fixture (no podman / no ollama / no
+      # daemon reachable), but all blockers pass — so exit_code should be 2.
+      assert decoded["exit_code"] == 2
+    end
+  end
+
   # --- helpers ---
 
   defp disk_cmd(kernel_out, df_out) do
+    # 2-arity fake used by Phase-1 kernel/uname/df checks AND by Phase-2
+    # checks via Glorbo.Doctor.invoke_cmd/4's 2-arity fallback. Non-{uname,df}
+    # commands return a non-zero exit so new Phase 2 warning checks fail
+    # cleanly (Phase-1 tests only pattern-match the first N check results).
     fn cmd, _args ->
       case cmd do
         "uname" -> {kernel_out, 0}
         "df" -> {df_out, 0}
+        _ -> {"", 1}
       end
     end
   end
@@ -268,6 +692,7 @@ defmodule Glorbo.DoctorTest do
         case cmd do
           "uname" -> {"6.17.0\n", 0}
           "df" -> {"Avail\n2147483648\n", 0}
+          _ -> {"", 1}
         end
       end,
       which_fun: fn _ -> "/bin/true" end,

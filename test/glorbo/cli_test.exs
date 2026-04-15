@@ -35,10 +35,17 @@ defmodule Glorbo.CLITest do
   test "dispatch([\"doctor\"]) runs checks and returns :doctor with table output" do
     {verb, code, output} = CLI.dispatch(["doctor"])
     assert verb == :doctor
-    assert code in [0, 1]
+    # Phase 2 (D-45): severity-weighted exit code 0/1/2.
+    assert code in [0, 1, 2]
     assert output =~ "Glorbo Doctor"
 
+    # Phase-1 check names still present (D-44 additive-only).
     for name <- ["linux_kernel", "uidmap", "disk_space", "glorbo_dir", "erts_version"] do
+      assert output =~ name
+    end
+
+    # Phase-2 check names also present.
+    for name <- ["podman", "ollama", "ollama_daemon", "runtime_image", "audit_dir"] do
       assert output =~ name
     end
   end
@@ -48,9 +55,12 @@ defmodule Glorbo.CLITest do
     assert verb == :doctor
     decoded = Jason.decode!(output)
     assert decoded["version"] == "0.1.0"
-    assert length(decoded["checks"]) == 5
+    # Phase 2: 5 Phase-1 + 8 Phase-2 = 13 checks.
+    assert length(decoded["checks"]) == 13
     assert Map.has_key?(decoded, "exit_code")
     assert Map.has_key?(decoded, "all_passed")
+    # Additive severity field on every check (D-44).
+    assert Enum.all?(decoded["checks"], &Map.has_key?(&1, "severity"))
   end
 
   test "dispatch([\"bogus\"]) returns :unknown with exit_code 1 and help text" do

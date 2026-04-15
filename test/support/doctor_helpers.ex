@@ -13,7 +13,10 @@ defmodule Glorbo.Doctor.TestHelpers do
         home_fun: &System.user_home!/0,
         otp_release_fun: fn ->
           :otp_release |> :erlang.system_info() |> List.to_string()
-        end
+        end,
+        # Phase 2 addition (D-43 ollama daemon probe). Default keeps tests
+        # host-independent by returning a connection error.
+        http_fun: fn -> {:error, :not_stubbed} end
       ],
       overrides
     )

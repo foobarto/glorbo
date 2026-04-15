@@ -30,17 +30,22 @@ defmodule Glorbo.Doctor.Formatter do
         all_passed: all_passed,
         passed_count: passed,
         total_count: total,
-        exit_code: if(all_passed, do: 0, else: 1)
+        exit_code: Glorbo.Doctor.exit_code(results)
       },
       pretty: true
     )
   end
 
-  defp format_row(%{pass: pass, name: name, detail: detail, required: required}) do
+  defp format_row(%{pass: pass, name: name, detail: detail, required: required} = check) do
     icon = if pass, do: color("✓", :green), else: color("✗", :red)
     label = String.pad_trailing(name, 20)
-    "  #{icon} #{label} #{detail} (required: #{required})"
+    sev_tag = severity_tag(Map.get(check, :severity))
+    "  #{icon} #{label} #{sev_tag}#{detail} (required: #{required})"
   end
+
+  defp severity_tag(:blocker), do: "[blocker] "
+  defp severity_tag(:warning), do: "[warn]    "
+  defp severity_tag(_), do: ""
 
   defp format_summary(results) do
     passed = Enum.count(results, & &1.pass)
