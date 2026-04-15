@@ -27,7 +27,10 @@
     "discuss_mode": "discuss",
     "skip_discuss": false,
     "code_review": true,
-    "code_review_depth": "standard"
+    "code_review_depth": "standard",
+    "security_enforcement": true,
+    "security_asvs_level": 2,
+    "security_block_on": "high"
   },
   "hooks": {
     "context_warnings": true

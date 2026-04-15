@@ -1323,7 +1323,7 @@ All of these test files must be created before Phase 1 implementation begins. Th
 ### Pitfall 6: Cosign Certificate Identity Regex Too Narrow
 **What goes wrong:** User tries `cosign verify-blob --certificate-identity-regexp '…/release\.yml@refs/tags/v0\.1\.0$' …`, then Phase 2 publishes `v0.2.0`, and the identity regex rejects the new version.
 **Why it happens:** Users copy-paste the exact tag from the release notes into the regex.
-**How to avoid:** Document the canonical verification regex as `^https://github.com/glorbo/glorbo/\.github/workflows/.+@refs/tags/v.+$` in `VERIFY.md`. Never hard-code a specific tag.
+**How to avoid:** Document the canonical verification regex as `^https://github.com/foobarto/glorbo/\.github/workflows/.+@refs/tags/v.+$` in `VERIFY.md`. Never hard-code a specific tag.
 **Warning signs:** Old releases verify, new ones reject with "no matching signatures".
 
 ### Pitfall 7: Burrito Doesn't Rebuild on Source Change Without `--force`
@@ -1337,6 +1337,23 @@ All of these test files must be created before Phase 1 implementation begins. Th
 **Why it happens:** CI workflow skips the `mix assets.deploy` step.
 **How to avoid:** Always run `MIX_ENV=prod mix assets.deploy` before `MIX_ENV=prod mix release` in CI. Phase 1 has no real assets but the step is idempotent and cheap.
 **Warning signs:** Phase 4 LiveView pages 404 on assets.
+
+### Pitfall 9: Burrito Launcher Extract Cache Persists Across Rebuilds
+**What goes wrong:** Developer iterates on `lib/glorbo/*.ex`, rebuilds with `MIX_ENV=prod mix release --overwrite`, runs `./burrito_out/glorbo_linux_x86_64 doctor` — and sees the PREVIOUS build's behavior.
+**Why it happens:** Burrito extracts the bundled ERTS + BEAM + application archive to `~/.local/share/<app>/<app>_erts-<version>_<app-version>/` on first launch, then reuses the extracted directory on subsequent runs for speed. Rebuilding the binary does NOT invalidate the cached extract — the wrapper's hash-check logic compares application versions, not content hashes.
+**How to avoid:** During local iteration, remove the extract dir between rebuilds:
+```bash
+rm -rf ~/.local/share/glorbo/
+```
+Or, for paranoid iteration, script the full cycle:
+```bash
+rm -rf ~/.local/share/glorbo/ burrito_out/ _build/prod/
+MIX_ENV=prod mix release --overwrite
+./burrito_out/glorbo_linux_x86_64 doctor
+```
+CI is immune: runners are ephemeral, so the cache never exists.
+**Warning signs:** Behavior changes don't appear in binary output; `./glorbo doctor --json` shows a version field that doesn't match `Mix.Project.config()[:version]`; binary appears to run stale code despite fresh `file mtime`.
+**Reference:** Plan 01-03 execution hit this during Wave 3 Task 2 smoke testing; see `01-03-SUMMARY.md` § "Decisions Made" → "Burrito build cache NOT cleaned between local iterations."
 
 ## Code Examples
 
