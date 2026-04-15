@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glorbo — Agent Orchestration for the Discerning Director</title>
+<meta name="description" content="Self-hosted, filesystem-first AI agent orchestration. Everything is markdown. Everything is a file. The fleeb juice is included.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elevated: #111116;
+    --bg-card: #16161c;
+    --border: #2a2a35;
+    --border-glow: #3d5a3d;
+    --text: #c8c8d0;
+    --text-dim: #6a6a78;
+    --text-bright: #eeeef2;
+    --accent: #4ade80;
+    --accent-dim: #22633a;
+    --accent-bright: #86efac;
+    --amber: #fbbf24;
+    --amber-dim: #78570a;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Instrument Serif', serif;
+    --body: 'Space Grotesk', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: var(--accent-dim);
+    color: var(--accent-bright);
+  }
+
+  /* ---- Grain overlay ---- */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ---- Layout ---- */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  section {
+    padding: 100px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  section:last-of-type { border-bottom: none; }
+
+  /* ---- Nav ---- */
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 16px 24px;
+    background: rgba(10, 10, 12, 0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .nav-logo {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: -0.5px;
+  }
+
+  .nav-logo span { color: var(--text-dim); }
+
+  .nav-links { display: flex; gap: 32px; }
+
+  .nav-links a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14px;
+    font-family: var(--mono);
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--text-bright); }
+
+  /* ---- Hero ---- */
+  .hero {
+    padding: 180px 0 120px;
+    text-align: center;
+    position: relative;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    padding: 4px 14px;
+    border-radius: 2px;
+    margin-bottom: 32px;
+    letter-spacing: 0.5px;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .hero h1 {
+    font-family: var(--display);
+    font-size: clamp(52px, 8vw, 96px);
+    font-weight: 400;
+    color: var(--text-bright);
+    line-height: 1.0;
+    margin-bottom: 24px;
+    letter-spacing: -2px;
+    animation: fadeDown 0.6s ease 0.1s both;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .hero-sub {
+    font-size: 19px;
+    color: var(--text-dim);
+    max-width: 560px;
+    margin: 0 auto 48px;
+    line-height: 1.6;
+    animation: fadeDown 0.6s ease 0.2s both;
+  }
+
+  .hero-quote {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--text-dim);
+    margin-top: 48px;
+    opacity: 0.6;
+    animation: fadeDown 0.6s ease 0.4s both;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    animation: fadeDown 0.6s ease 0.3s both;
+  }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: 3px;
+    text-decoration: none;
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-bright);
+    box-shadow: 0 0 30px rgba(74, 222, 128, 0.2);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--text-dim);
+    color: var(--text-bright);
+  }
+
+  /* ---- Section headers ---- */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+  }
+
+  .section-quote {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-dim);
+    margin-bottom: 48px;
+    padding-left: 16px;
+    border-left: 2px solid var(--border);
+    opacity: 0.7;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(32px, 5vw, 48px);
+    font-weight: 400;
+    color: var(--text-bright);
+    line-height: 1.15;
+    margin-bottom: 16px;
+    letter-spacing: -1px;
+  }
+
+  /* ---- What section ---- */
+  .what-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 48px;
+  }
+
+  .what-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 28px;
+    border-radius: 4px;
+    transition: border-color 0.3s;
+  }
+
+  .what-card:hover { border-color: var(--border-glow); }
+
+  .what-card-icon {
+    font-size: 20px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .what-card h3 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+  }
+
+  .what-card p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* ---- Tree section ---- */
+  .tree-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 32px;
+    margin-top: 32px;
+    overflow-x: auto;
+  }
+
+  .tree-block pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text);
+  }
+
+  .tree-block .tr-dir { color: var(--accent); font-weight: 600; }
+  .tree-block .tr-file { color: var(--text); }
+  .tree-block .tr-comment { color: var(--text-dim); }
+
+  /* ---- How it works ---- */
+  .steps {
+    margin-top: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 24px;
+    padding: 32px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .step:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent-dim);
+    line-height: 1;
+    padding-top: 4px;
+  }
+
+  .step h3 {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+  }
+
+  .step p {
+    font-size: 15px;
+    color: var(--text-dim);
+  }
+
+  .step code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+  }
+
+  /* ---- Install ---- */
+  .install-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-top: 32px;
+    overflow: hidden;
+  }
+
+  .install-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .install-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .dot-r { background: var(--red); opacity: 0.7; }
+  .dot-y { background: var(--amber); opacity: 0.7; }
+  .dot-g { background: var(--accent); opacity: 0.7; }
+
+  .install-body {
+    padding: 24px;
+  }
+
+  .install-body pre {
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 2;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+
+  .install-body .cmd-comment { color: var(--text-dim); }
+  .install-body .cmd-prompt { color: var(--accent); user-select: none; }
+  .install-body .cmd-flag { color: var(--amber); }
+  .install-body .cmd-url { color: var(--blue); }
+  .install-body .cmd-output { color: var(--text-dim); font-style: italic; }
+
+  /* ---- Tech stack ---- */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 48px;
+  }
+
+  .stack-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .stack-item .stack-name {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+    min-width: 100px;
+  }
+
+  .stack-item .stack-desc {
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+
+  /* ---- Portability ---- */
+  .port-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 48px;
+  }
+
+  .port-card {
+    padding: 28px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    text-align: center;
+  }
+
+  .port-card h3 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+  }
+
+  .port-card .port-cmd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .port-card p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* ---- Footer ---- */
+  footer {
+    padding: 60px 0;
+    text-align: center;
+  }
+
+  .footer-logo {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+
+  .footer-links {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-bottom: 32px;
+  }
+
+  .footer-links a {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer-links a:hover { color: var(--text-bright); }
+
+  .footer-quote {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-dim);
+    opacity: 0.5;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .footer-license {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.4;
+    margin-top: 24px;
+  }
+
+  /* ---- Animations ---- */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 700px) {
+    .what-grid,
+    .stack-grid { grid-template-columns: 1fr; }
+
+    .port-grid { grid-template-columns: 1fr; }
+
+    .nav-links { display: none; }
+
+    section { padding: 64px 0; }
+
+    .hero { padding: 140px 0 80px; }
+
+    .step { grid-template-columns: 36px 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a href="#" class="nav-logo">glorbo<span> v0.1</span></a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How It Works</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/foobarto/glorbo">GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-tag">open source · self-hosted · linux-first</div>
+    <h1>Your whole company<br>in a <em>folder</em></h1>
+    <p class="hero-sub">
+      AI agent orchestration that runs on one machine, stores everything as
+      markdown, and enforces permissions at the kernel level. No cloud. No SaaS.
+      No regrets.
+    </p>
+    <div class="hero-cta">
+      <a href="#install" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/foobarto/glorbo" class="btn btn-ghost">View Source</a>
+    </div>
+    <p class="hero-quote">
+      "Finally, a grumbo-compatible agent orchestrator. The fleeb juice is included."
+    </p>
+  </div>
+</section>
+
+<!-- What -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2>Everything an agent workforce needs.<br>Nothing it doesn't.</h2>
+    <p class="section-quote">
+      You already know what it does. Your ploobis has never been cleaner.
+    </p>
+
+    <div class="what-grid">
+      <div class="what-card">
+        <span class="what-card-icon">📁</span>
+        <h3>Filesystem-First</h3>
+        <p>Agents, tasks, chat, permissions — all markdown files on disk.
+        Back up with tar. Version-control with git. Debug with cat.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">📦</span>
+        <h3>Containerised Agents</h3>
+        <p>Python and AI SDKs live inside Podman containers. Zero Python on the
+        host. Each agent runs as a dedicated Linux user with kernel-enforced ACLs.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">🧠</span>
+        <h3>Local-First LLMs</h3>
+        <p>Ollama and Hugging Face work out of the box — private, offline, free.
+        Run Llama, Qwen, Mistral, or Gemma locally. Cloud providers (Claude, Codex,
+        Gemini) available per agent when you need them. No API keys to get started.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">💬</span>
+        <h3>Agent Chat</h3>
+        <p>Talk to your agents. Agents talk to each other. Channels are
+        append-only markdown files. Phoenix Channels handles the real-time.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">📊</span>
+        <h3>Live Dashboard</h3>
+        <p>Phoenix LiveView provides company overview, kanban board, agent
+        stdout streaming, chat, approval queue, and budget tracking. No JS framework.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">🔒</span>
+        <h3>Kernel-Level Permissions</h3>
+        <p>Declared in markdown, enforced by POSIX ACLs. If an agent doesn't
+        have write permission, the filesystem literally won't let it. ls -la is your audit.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">💰</span>
+        <h3>Budget Governance</h3>
+        <p>Per-agent monthly budgets with alerts and hard stops. Approval gates
+        for sensitive tasks. Append-only audit log. No runaway API bills at 3 AM.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">🏢</span>
+        <h3>Company Isolation</h3>
+        <p>Each company runs in its own container. Company A cannot see Company B's
+        files. Multiple companies, one machine, full separation.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">🔄</span>
+        <h3>OTP Supervision</h3>
+        <p>Agent crashes? Only that agent restarts. Company crashes?
+        Only that company restarts. Dashboard stays up. That's just what the BEAM does.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How -->
+<section id="how">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <h2>Elixir watches files.<br>Containers run Python.<br>The kernel says no.</h2>
+    <p class="section-quote">
+      The blamfs rub against the chumble. That's how messages get delivered. Don't overthink it.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div>
+          <h3>You are the Director</h3>
+          <p>You own the company. You hire agents by writing markdown files. You set
+          the mission, approve budgets, and intervene when needed. The CEO works for
+          you — not the other way around.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div>
+          <h3>Agents get mail</h3>
+          <p>An event triggers an agent — a new task in their <code>inbox/</code>, a
+          heartbeat schedule, a mention in a chat channel. Elixir detects it via
+          inotify and wakes the agent.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div>
+          <h3>Containers do the work</h3>
+          <p>Glorbo spins up a container, runs Python as the agent's Linux user,
+          calls the LLM, and writes results to the agent's <code>outbox/</code>
+          and <code>workspace/</code>. Stdout streams to the dashboard.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <div>
+          <h3>Glorbo routes the output</h3>
+          <p>Elixir picks up outbox files, checks permissions, and delivers
+          messages to recipients' inboxes or appends them to channel files. Tasks
+          update. The index refreshes. The cycle continues.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">05</div>
+        <div>
+          <h3>Everything is a file</h3>
+          <p>Chat logs, task boards, audit trails, agent configs — all markdown
+          and JSONL on disk. SQLite is just a rebuildable index. Delete it anytime.
+          Run <code>glorbo reindex</code>. Done.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Structure -->
+<section>
+  <div class="container">
+    <div class="section-label">Anatomy</div>
+    <h2>It's just a directory</h2>
+    <p class="section-quote">
+      A schlami organises the blamfs into nested hizzard compartments. This is standard.
+    </p>
+
+    <div class="tree-block">
+      <pre><span class="tr-dir">~/.glorbo/</span>
+├── <span class="tr-file">glorbo</span>                    <span class="tr-comment"># Single binary. That's the app.</span>
+├── <span class="tr-file">glorbo.db</span>                 <span class="tr-comment"># SQLite index. Rebuildable. Disposable.</span>
+│
+└── <span class="tr-dir">companies/</span>
+    └── <span class="tr-dir">acme/</span>
+        ├── <span class="tr-file">company.md</span>        <span class="tr-comment"># Mission, budget, settings</span>
+        ├── <span class="tr-dir">agents/</span>
+        │   ├── <span class="tr-dir">ceo/</span>
+        │   │   ├── <span class="tr-file">agent.md</span>  <span class="tr-comment"># Identity, permissions, model config</span>
+        │   │   ├── <span class="tr-dir">inbox/</span>    <span class="tr-comment"># Tasks and messages arrive here</span>
+        │   │   ├── <span class="tr-dir">outbox/</span>   <span class="tr-comment"># Agent writes here, Glorbo routes</span>
+        │   │   └── <span class="tr-dir">workspace/</span><span class="tr-comment"># Mounted into the container</span>
+        │   └── <span class="tr-dir">engineer/</span>
+        ├── <span class="tr-dir">channels/</span>
+        │   ├── <span class="tr-file">general.md</span>    <span class="tr-comment"># Append-only chat logs</span>
+        │   └── <span class="tr-file">engineering.md</span>
+        ├── <span class="tr-dir">projects/</span>
+        │   └── <span class="tr-dir">website-redesign/</span>
+        │       ├── <span class="tr-file">project.md</span>
+        │       └── <span class="tr-dir">tasks/</span>
+        └── <span class="tr-dir">audit/</span>
+            └── <span class="tr-file">2026-04.jsonl</span> <span class="tr-comment"># Append-only. Never modified.</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section id="install">
+  <div class="container">
+    <div class="section-label">Get Started</div>
+    <h2>Two commands. One minute.</h2>
+    <p class="section-quote">
+      Pre-schleemed. Zero hizzard leakage. One command.
+    </p>
+
+    <div class="install-block">
+      <div class="install-header">
+        <div class="install-dot dot-r"></div>
+        <div class="install-dot dot-y"></div>
+        <div class="install-dot dot-g"></div>
+      </div>
+      <div class="install-body">
+<pre><span class="cmd-comment"># Download the binary</span>
+<span class="cmd-prompt">$ </span>curl <span class="cmd-flag">-L</span> <span class="cmd-url">https://github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m)</span> \
+    <span class="cmd-flag">-o</span> ~/.local/bin/glorbo
+<span class="cmd-prompt">$ </span>chmod +x ~/.local/bin/glorbo
+
+<span class="cmd-comment"># Set up everything</span>
+<span class="cmd-prompt">$ </span>glorbo init
+<span class="cmd-output">  ✓ Created ~/.glorbo/
+  ✓ Downloaded podman static binary
+  ✓ Downloaded ollama binary
+  ✓ Built glorbo-runtime container image
+  ✓ Ready. Run `glorbo doctor` to verify.</span>
+
+<span class="cmd-comment"># Create a company and hire some agents</span>
+<span class="cmd-prompt">$ </span>glorbo new company acme
+<span class="cmd-prompt">$ </span>glorbo new agent acme ceo
+<span class="cmd-prompt">$ </span>glorbo up acme
+<span class="cmd-output">  ● acme is running — dashboard at http://localhost:4000</span></pre>
+      </div>
+    </div>
+
+    <p style="margin-top: 24px; color: var(--text-dim); font-size: 14px; font-family: var(--mono);">
+      Prerequisites: Linux (x86_64 or aarch64). That's it.
+      No Python. No Erlang. No Node.js.
+      Podman and Ollama are downloaded automatically.
+    </p>
+  </div>
+</section>
+
+<!-- Stack -->
+<section>
+  <div class="container">
+    <div class="section-label">Stack</div>
+    <h2>What's inside the Glorbo</h2>
+    <p class="section-quote">
+      The grumbo is made of Elixir. The fleeb is Python. You do NOT mix them on the host.
+    </p>
+
+    <div class="stack-grid">
+      <div class="stack-item">
+        <span class="stack-name">Elixir/OTP</span>
+        <span class="stack-desc">Orchestration, supervision, scheduling</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">LiveView</span>
+        <span class="stack-desc">Real-time dashboard, no JS build step</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Channels</span>
+        <span class="stack-desc">WebSocket agent chat and streaming</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Python</span>
+        <span class="stack-desc">AI SDKs, in containers, never on the host</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Ollama</span>
+        <span class="stack-desc">Local LLM inference, auto-downloaded</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Hugging Face</span>
+        <span class="stack-desc">Model hub, local transformer inference</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Podman</span>
+        <span class="stack-desc">Rootless, daemonless containers, auto-downloaded</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">SQLite</span>
+        <span class="stack-desc">Disposable index, rebuildable from files</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Markdown</span>
+        <span class="stack-desc">Source of truth for everything</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">POSIX ACLs</span>
+        <span class="stack-desc">Kernel-enforced permissions, not app-level</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Portable -->
+<section>
+  <div class="container">
+    <div class="section-label">Portability</div>
+    <h2>Move it like you own it</h2>
+    <p class="section-quote">
+      You take the whole Glorbo. You put it on another machine.
+      It's still a Glorbo. What part of this is complicated?
+    </p>
+
+    <div class="port-grid">
+      <div class="port-card">
+        <h3>Deploy</h3>
+        <span class="port-cmd">curl + glorbo init</span>
+        <p>Download one binary. Run one command. Podman is fetched automatically. No package manager, no system service, no root.</p>
+      </div>
+      <div class="port-card">
+        <h3>Upgrade</h3>
+        <span class="port-cmd">replace binary + glorbo migrate</span>
+        <p>Your company data is never touched. The binary is stateless. Replace it and keep going.</p>
+      </div>
+      <div class="port-card">
+        <h3>Move</h3>
+        <span class="port-cmd">glorbo backup → glorbo restore</span>
+        <p>Archive the directory. Extract on a new machine. Rebuild the container image. You're live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-logo">glorbo</div>
+    <div class="footer-links">
+      <a href="https://github.com/foobarto/glorbo">GitHub</a>
+      <a href="https://github.com/foobarto/glorbo/blob/main/DESIGN.md">Design Doc</a>
+      <a href="https://github.com/foobarto/glorbo/issues">Issues</a>
+      <a href="https://github.com/foobarto/glorbo/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p class="footer-quote">
+      "Look, we're not trying to build a whole Plumbus here. It's a Glorbo. Stay focused."
+    </p>
+    <p class="footer-license">
+      © 2026 foobarto — Open source under MIT
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
