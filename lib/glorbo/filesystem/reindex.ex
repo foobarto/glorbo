@@ -80,16 +80,55 @@ defmodule Glorbo.Filesystem.Reindex do
   defp do_run(companies_dir) do
     files = safe_markdown_files(companies_dir)
 
-    # Sort so `company.md` files are processed BEFORE their nested
-    # `agents/<n>/agent.md` children. This guarantees the Company row
-    # exists when the Agent row tries to resolve `company_id`. Secondary
-    # key is the full path for stable ordering.
-    ordered = Enum.sort_by(files, &{path_kind(&1), &1})
+    # CR-01: Group files by company prefix and skip sub-trees that lack a
+    # `company.md`. Otherwise an agent.md without a sibling company.md would
+    # be inserted with `company_id: nil`, violating FS-03 ("SQLite fully
+    # reconstructible from disk"). Within each company group we still sort
+    # so `company.md` is processed BEFORE its nested agents.
+    companies_abs = Path.expand(companies_dir)
+    by_company = Enum.group_by(files, &company_prefix(&1, companies_abs))
 
-    {indexed, skipped} = Enum.reduce(ordered, {0, 0}, &accumulate_result/2)
+    {indexed, skipped} =
+      Enum.reduce(by_company, {0, 0}, fn {co_prefix, paths}, {i, s} ->
+        cond do
+          co_prefix == nil ->
+            # Files not rooted under a company sub-tree — shouldn't happen
+            # given the safe_markdown_files filter, but defend anyway.
+            {i, s + length(paths)}
+
+          Enum.any?(paths, &String.ends_with?(&1, "/company.md")) ->
+            ordered = Enum.sort_by(paths, &{path_kind(&1), &1})
+            Enum.reduce(ordered, {i, s}, &accumulate_result/2)
+
+          true ->
+            Logger.warning(
+              "reindex skipped orphan agents: no company.md under #{co_prefix} (#{length(paths)} file(s))"
+            )
+
+            {i, s + length(paths)}
+        end
+      end)
+
     deleted = cleanup_vanished(files)
 
     {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted}}
+  end
+
+  # Returns the absolute path to the immediate child of `companies_dir` that
+  # contains `path`, or nil when the path is not nested under one.
+  defp company_prefix(path, companies_abs) do
+    expanded = Path.expand(path)
+
+    case String.split(expanded, companies_abs <> "/", parts: 2) do
+      [_, rest] ->
+        case String.split(rest, "/", parts: 2) do
+          [co | _] when co != "" -> Path.join(companies_abs, co)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
   end
 
   defp accumulate_result(path, {idx, skp}) do
