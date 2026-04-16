@@ -20,6 +20,7 @@ defmodule GlorboWeb.ChannelLive do
   surface via flash.
   """
   use GlorboWeb, :live_view
+  require Logger
   alias GlorboWeb.Components.ChannelMessage
 
   # Splits `## <ts> | <author>\n<body>` entries. `body` captures until
@@ -103,8 +104,15 @@ defmodule GlorboWeb.ChannelLive do
         {:noreply, put_flash(socket, :error, "Message exceeds 10 KB.")}
 
       {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Failed to post: #{inspect(reason)}. Message not sent.")}
+        # WR-08: never leak raw atoms (`:enoent`, `:eacces`, …) to the UI.
+        # Log the underlying reason for operators; show a generic flash.
+        Logger.warning("post_message failed",
+          company: socket.assigns.company_slug,
+          channel: socket.assigns.channel,
+          reason: inspect(reason)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not post message.")}
     end
   end
 

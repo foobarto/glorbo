@@ -20,6 +20,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
   `Glorbo.TaskDefinition.write/2`.
   """
   use GlorboWeb, :live_view
+  require Logger
 
   alias GlorboWeb.Components.ApprovalCard
 
@@ -76,7 +77,14 @@ defmodule GlorboWeb.ApprovalQueueLive do
          )}
 
       {:error, err} ->
-        {:noreply, put_flash(socket, :error, "Approve failed: #{inspect(err)}")}
+        # WR-08: humanize error; log raw atom for operators.
+        Logger.warning("set_approval approve failed",
+          company: socket.assigns.company_slug,
+          task_path: tp,
+          reason: inspect(err)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not record approval.")}
     end
   end
 
@@ -97,7 +105,14 @@ defmodule GlorboWeb.ApprovalQueueLive do
          )}
 
       {:error, err} ->
-        {:noreply, put_flash(socket, :error, "Deny failed: #{inspect(err)}")}
+        # WR-08: humanize error; log raw atom for operators.
+        Logger.warning("set_approval deny failed",
+          company: socket.assigns.company_slug,
+          task_path: tp,
+          reason: inspect(err)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not record approval.")}
     end
   end
 

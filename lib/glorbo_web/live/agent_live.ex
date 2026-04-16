@@ -21,6 +21,7 @@ defmodule GlorboWeb.AgentLive do
   streamer and view.
   """
   use GlorboWeb, :live_view
+  require Logger
 
   alias GlorboWeb.Components.{BudgetRing, StdoutTail}
 
@@ -127,7 +128,14 @@ defmodule GlorboWeb.AgentLive do
         {:noreply, put_flash(socket, :info, "Woken. Writing state/wake-request.md…")}
 
       {:error, err} ->
-        {:noreply, put_flash(socket, :error, "Wake failed: #{inspect(err)}")}
+        # WR-08: humanize error; log raw atom for operators.
+        Logger.warning("wake_agent failed",
+          company: socket.assigns.company_slug,
+          agent: socket.assigns.agent_slug,
+          reason: inspect(err)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not wake agent.")}
     end
   end
 
