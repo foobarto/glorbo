@@ -189,7 +189,9 @@ defmodule Glorbo.Doctor do
 
     try do
       File.mkdir_p!(path)
-      probe = Path.join(path, ".doctor_probe")
+      # WR-04: unique probe name per invocation so two concurrent doctors
+      # don't race on the same filename (doctor is documented idempotent).
+      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
       File.write!(probe, "ok")
       File.rm!(probe)
       {:ok, "#{path} (writable)", "writable directory"}
@@ -359,7 +361,8 @@ defmodule Glorbo.Doctor do
 
     try do
       File.mkdir_p!(path)
-      probe = Path.join(path, ".doctor_probe")
+      # WR-04: unique per-invocation probe name.
+      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
       File.write!(probe, "ok")
       File.rm!(probe)
       {:ok, "#{path} (writable)", "writable append-only audit dir"}
@@ -377,7 +380,8 @@ defmodule Glorbo.Doctor do
     try do
       File.mkdir_p!(path)
       File.chmod!(path, 0o700)
-      probe = Path.join(path, ".doctor_probe")
+      # WR-04: unique per-invocation probe name.
+      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
       File.write!(probe, "ok")
       File.rm!(probe)
       {:ok, "#{path} (writable, 0700)", "writable runtime socket dir, mode 0700"}

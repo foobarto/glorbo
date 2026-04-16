@@ -295,16 +295,16 @@ defmodule Glorbo.Filesystem.Reindex do
       Repo.all(from r in ReindexState, select: r.file_path)
       |> Enum.reject(&MapSet.member?(seen, &1))
 
-    Enum.each(vanished, fn fp ->
-      Repo.delete_all(from r in ReindexState, where: r.file_path == ^fp)
-      cleanup_domain_row(fp)
-    end)
+    # WR-03: batch the three deletes with a single `where ... in ^list` each
+    # instead of 3N queries. Company's `on_delete: :delete_all` FK means the
+    # Agent delete is redundant when company.md itself vanished, but issuing
+    # it for stray agent.md vanishings is still correct and cheap.
+    if vanished != [] do
+      Repo.delete_all(from r in ReindexState, where: r.file_path in ^vanished)
+      Repo.delete_all(from c in Company, where: c.file_path in ^vanished)
+      Repo.delete_all(from a in Agent, where: a.file_path in ^vanished)
+    end
 
     length(vanished)
-  end
-
-  defp cleanup_domain_row(file_path) do
-    Repo.delete_all(from c in Company, where: c.file_path == ^file_path)
-    Repo.delete_all(from a in Agent, where: a.file_path == ^file_path)
   end
 end
