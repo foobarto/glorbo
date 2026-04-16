@@ -61,17 +61,36 @@ defmodule Glorbo.CLI.Lifecycle.Up do
          {:ok, binary} <- locate_binary(),
          env <- [{~c"RELEASE_COOKIE", String.to_charlist(cookie)}],
          {:ok, os_pid} <- Daemon.spawn_detached(binary, env),
-         :ok <- Pidfile.write!(os_pid, base) do
+         :ok <- safe_pidfile_write(os_pid, base) do
       # NOTE: detail MUST NOT include the cookie (T-05-02).
       Audit.emit("up", "complete", %{pid: os_pid})
 
       {:up, 0,
        "glorbo up (pid=#{os_pid}). Dashboard: http://127.0.0.1:4000\n"}
     else
+      {:error, {:pidfile_write, os_pid, reason}} ->
+        # WR-04: daemon was already spawned by setsid but we cannot
+        # record its pid. SIGKILL to avoid leaking a hidden orphan BEAM.
+        _ = System.cmd("kill", ["-KILL", Integer.to_string(os_pid)], stderr_to_stdout: true)
+
+        {:up, 2,
+         "Failed to start glorbo: could not write pidfile (#{inspect(reason)}); " <>
+           "daemon killed to avoid orphan. Run `glorbo doctor` to diagnose.\n"}
+
       {:error, reason} ->
         {:up, 2,
          "Failed to start glorbo: #{inspect(reason)}. Run `glorbo doctor` to diagnose.\n"}
     end
+  end
+
+  # WR-04: wrap Pidfile.write!/2 so a raise (disk full, EACCES, etc.)
+  # becomes an error tuple the caller can act on. The orphan-kill branch
+  # lives in start_daemon/1's else clause.
+  defp safe_pidfile_write(os_pid, base) do
+    Pidfile.write!(os_pid, base)
+    :ok
+  rescue
+    e -> {:error, {:pidfile_write, os_pid, Exception.message(e)}}
   end
 
   defp locate_binary do
