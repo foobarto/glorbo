@@ -1,106 +1,141 @@
-# Phase 3: Agents, Routing, Kernel Permissions, Budgets - Context
+# Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets - Context
 
-**Gathered:** 2026-04-16
+**Gathered:** 2026-04-16 (post-CLI-agent pivot)
 **Status:** Ready for planning
-**Mode:** Auto-generated (--auto; all gray areas resolved to recommended defaults — Claude's Discretion for everything not covered below)
+**Mode:** Restructured after mission-control-inspired pivot from Python-in-container runtime to CLI-first agents. Original container-runtime design archived at `.planning/deferred/container-runtime-v0.0.2/`.
 
 <domain>
 ## Phase Boundary
 
-Markdown `agent.md` files become live, supervised, kernel-isolated Linux-user workers inside their Company's Podman container. They wake on one of four triggers (new inbox file, cron heartbeat, `@agent` channel mention, Director request), pick up task files, execute via the FastAPI worker built in Phase 2, write results to their outbox, and get routed by Elixir's Router with permission checks at BOTH the application layer (Router) and kernel layer (POSIX ACLs inside the container). Per-agent USD budgets are tracked from `litellm.completion` usage reports, network policy (`none | api-only | open`) is enforced at `podman run` time, and tasks with `requires_approval: director` pause until a Director-approved sentinel file appears (dashboard UI ships in Phase 4 — Phase 3 exercises the file-mutation path directly).
+Markdown `agent.md` files become live, supervised, bwrap-sandboxed CLI workers that pick up tasks via inotify, collaborate via filesystem-based inbox/outbox routing, honour permissions at the Elixir Router AND the bwrap namespace layer, track USD budgets parsed from each CLI tool's session telemetry, and escalate approval-gated work to the Director via task-file `status:` edits.
 
-**In scope:** Per-company supervision tree fleshed out (Router, Scheduler, BudgetTracker, per-agent GenServers, plus existing Phase-2 AuditLog + Watcher); Linux user provisioning (`glorbo-<company>-<agent>` with keep-id mapping); POSIX ACL reconciliation from `agent.md` permission frontmatter; per-agent network policy implemented via `podman run --network` modes + netavark/slirp4netns selection (v1 uses the `none | slirp4netns:allow=<hosts> | default`-equivalent ladder); Anthropic/OpenAI/Google provider support via `litellm` routed through the existing worker; skills injection into the prompt at dispatch time; approval gate file-mutation flow; Python usage reporting → SQLite budget ledger → hard-stop before dispatch; agent-creation-is-Director-only invariant enforcement.
+The agent runtime is a **short-lived `bwrap` sandbox** that spawns one of `claude -p`, `gemini`, or `codex` with the agent's workspace bind-mounted read/write, sibling agents + other companies bind-mounted denied, and network policy enforced at `bwrap` launch. Elixir writes the task prompt + skills into the workspace just before invocation; the CLI tool runs, writes results to outbox; Elixir's Router mediates every outbox→inbox transfer.
 
-**Out of scope (Phase 4/5):** LiveView dashboard (approval UI, budget widgets, audit viewer); Phoenix Channels + PubSub surface (stdout streaming is wired in Phase 2, PubSub-to-LiveView is Phase 4); `glorbo up/down` CLI verbs, `glorbo logs` streaming, `backup/restore/doctor --fix` repair semantics; skill marketplace / remote skills; agent-spawn-agent (v2 deferred, permanently out of v1).
+**In scope:**
+- Per-company OTP supervision tree extended to 6 children: `AuditLog + Filesystem.Watcher + Router + Scheduler + BudgetTracker + AgentSupervisor`
+- Per-agent GenServer under DynamicSupervisor with wake-queue state machine (4 triggers: inbox, cron, channel mention, Director request)
+- `Glorbo.Sandbox.Bwrap` invocation builder that produces a `bwrap` argv from the agent's `permissions:` + `network:` declarations
+- CLI provider dispatch: `provider: claude-code | gemini-cli | codex` spawns the right binary with the right flags
+- Skills materialisation: `skills:` list → agent workspace `.glorbo-skills/` just before invocation; removed after
+- Usage parsing per CLI tool: Claude Code session JSONL extraction; Gemini/Codex token-tracking analogs
+- Budget pre-dispatch check + hard-stop + alert threshold file markers
+- Approval gate via task `status: approved` edit → Watcher → Gate → agent wake
+- `Glorbo.Approvals.Gate` GenServer
+- Agent-creation restriction enforced via Router (no agent has `agents:create` permission)
+- Full kernel-observed integration tests (filesystem denial via bwrap, network denial via `--unshare-net`)
+
+**Out of scope (deferred to container runtime phase — see `.planning/deferred/container-runtime-v0.0.2/`):**
+- Python-in-Podman agent runtime, litellm dispatch, FastAPI worker, UDS transport
+- POSIX ACL enforcement via `setfacl` (infrastructure shipped in Plan 03-01 as dormant code; exercised when container phase ships)
+- Per-agent Linux user provisioning with `/etc/subuid`-relative UID blocks (`UidAllocator` shipped in Plan 03-01, dormant)
+- LLM-05 offline inference via Ollama — CLI tools need their providers' cloud endpoints; offline support returns with the container runtime phase (or a future `provider: ollama-cli` option)
+- Per-agent budgets via Python-worker-reported `cost_usd` (budget tracking ships in this phase but via CLI session telemetry, not litellm)
 
 </domain>
 
 <decisions>
 ## Implementation Decisions
 
-### [auto] Linux user provisioning (SEC-02 foundation)
-- **D-01:** Username scheme — `glorbo-<company_slug>-<agent_slug>` (e.g. `glorbo-acme-engineer`). Stable across restarts; derived deterministically from filesystem paths. Reason: debuggable in `podman top` output and matches the setfacl examples in DESIGN.md §7.2.
-- **D-02:** UID allocation — **dynamic, per-company offset block**. Each company reserves a 100-UID range starting at `100000 + 100*company_ordinal` (company_ordinal from a persistent `.companies-uid.json` sidecar under `~/.glorbo/runtime/`). Agent UIDs are assigned sequentially within the block. Reason: keeps `--userns keep-id` simple (deterministic host-UID → container-UID mapping) without requiring manual configuration.
-- **D-03:** Provisioning layer — users exist **inside the container only**. Elixir writes a declarative `/etc/passwd` + `/etc/group` fragment into a tmpfs-backed overlay at container start; no host-side `useradd` invoked (keeps the host unmodified per CLAUDE.md's "filesystem is user data" guarantee for `~/.glorbo/companies/`). Reason: rootless Podman honours the in-container passwd file when combined with `--userns keep-id --uidmap` — the host never learns these users exist.
-- **D-04:** Agent removal — deleting `agent.md` leaves the assigned UID "soft-retired" in the sidecar (tombstoned, not recycled) so audit log foreign keys stay valid. Reason: audit-log append-only invariant extends to UID stability.
+### CLI agent dispatch
+- **D-01:** Agent invocation shape — `bwrap <sandbox-args> <cli-tool> -p <prompt>`. One process tree per invocation, clean exit reclaims all resources. No persistent process pool. Reason: matches DESIGN.md §5 ephemeral lifecycle + avoids long-lived state complexity.
+- **D-02:** Supported providers in v0.0.1 — `claude-code`, `gemini-cli`, `codex`. Strict allowlist parsed from `agent.md`. Unknown provider → parse-time error. Reason: limits attack surface; each provider needs an explicit Elixir adapter (`Glorbo.CLI.Adapter.ClaudeCode` etc.).
+- **D-03:** Prompt delivery — each invocation writes `task-prompt.md` to the agent's workspace `.glorbo-run/<task-id>/`; the CLI tool is invoked with the prompt passed via stdin AND with the workspace as working directory. Reason: CLI tools differ in prompt mechanisms (stdin vs `-p` vs file-arg); stdin is universal, file is inspectable for audit.
+- **D-04:** Skills materialisation — Elixir copies every skill listed in `agent.md`'s `skills:` from `~/.glorbo/skills/<n>.md` to the agent workspace under `.glorbo-skills/<n>.md` just before invocation. Elixir ALSO writes a `.glorbo-skills/INDEX.md` listing the skills + their purpose. The CLI tool's prompt includes "Available skills in `.glorbo-skills/`" so the tool can read them on demand. Reason: CLI-agnostic skill injection; preserves filesystem-first principle.
+- **D-05:** Cleanup — post-invocation, Elixir removes `.glorbo-run/<task-id>/` and `.glorbo-skills/` from the workspace. Agent's own files (`outbox/`, `workspace/`, `state/`) persist. Reason: prevents stale skill/prompt leakage across invocations.
+- **D-06:** Timeout — global default 300s per CLI invocation with per-agent override via `agent.md` `timeout_seconds:`. On timeout, Elixir sends SIGTERM to the bwrap process (which cascades to the child CLI), waits 5s, then SIGKILL. Logs `timeout` audit event. Reason: mirrors Phase 2 D-41 pattern.
+- **D-07:** stdout/stderr — streamed to `agents/<name>/stdout.log` via `Port` → `File.open!([:append, :sync])`. Same tailing path as Phase 2; dashboard-ready. Reason: keeps Phase 4 dashboard hookup uniform across agent runtimes.
 
-### [auto] POSIX ACL reconciliation (SEC-02)
-- **D-05:** Reconciliation timing — ACLs are rewritten **on container start** (idempotent, `setfacl -b` followed by declarative re-apply from the parsed `permissions:` list). Not on every file change. Reason: permissions only change at agent-definition-edit time; reconciling at container start + on agent.md save is sufficient and keeps inotify handlers cheap.
-- **D-06:** Scope mapping — the `resource:action:scope` tuple maps to ACL entries via a central mapping table (e.g. `projects:write:website-redesign` → `setfacl -R -m u:<user>:rwx /company/projects/website-redesign/`). Table lives in `lib/glorbo/security/acl_mapper.ex`. Reason: single source of truth; testable without a container.
-- **D-07:** Default baseline — every agent gets **`rwx` on its own `agents/<name>/outbox/`, `workspace/`, `state/`** and **`r` on `agents/<name>/inbox/`** (one-way flow). Everything else starts denied (`u:<user>:---`) and is opened only by explicit permissions. Reason: fail-closed default matches CLAUDE.md's "kernel is the policy engine" invariant.
-- **D-08:** Channel ACLs — channel files (`channels/*.md`) get `r` for all agents with `chat:read:*` and **`---` (denied write) for every agent**. Elixir is the sole writer (§6.2). Agents write to their outbox; the Router appends to the channel. Reason: honours DESIGN.md §6.2 invariant.
-- **D-09:** Enforcement test — the "deliberate write attempt" contract (ROADMAP SC-4) is a concrete integration test: spawn a running container for Agent X with `projects:write:A` permission, `podman exec` into the container as `glorbo-<co>-<x>`, attempt `touch /company/projects/B/smoke`, assert `EACCES` in the result. Not just an Elixir-side rejection — a kernel-observed denial.
+### bwrap sandbox architecture
+- **D-08:** Base sandbox flags — `--die-with-parent --unshare-user-try --unshare-ipc --unshare-pid --unshare-uts --unshare-cgroup-try --new-session --cap-drop ALL`. Reason: namespace isolation without requiring extra capabilities.
+- **D-09:** Filesystem bind strategy:
+  - `--ro-bind /usr /usr` + `--ro-bind /bin /bin` + `--ro-bind /lib /lib` + `--ro-bind /lib64 /lib64` + `--ro-bind /etc /etc` (tool availability)
+  - `--bind <company-path>/agents/<name>/workspace /workspace` (read/write for the agent)
+  - `--bind <company-path>/agents/<name>/outbox /outbox` (write for the agent)
+  - `--ro-bind <company-path>/agents/<name>/inbox /inbox` (read-only per DESIGN.md §6.1)
+  - Per-permission mounts for `projects:read:*` / `projects:write:<name>` / `chat:read:*` etc. (see D-11)
+  - Everything else in the company filesystem: NOT mounted (invisible to sandbox)
+  - `--tmpfs /tmp` (scratch space)
+  - `--proc /proc` + `--dev /dev`
+- **D-10:** Default-deny for `~/.glorbo/companies/<other-co>/` — other companies are never mounted. Company isolation is absolute (CLAUDE.md invariant), enforced by bwrap's simple "not mounted = not visible" model. No cross-company access is possible because there's no path in the sandbox that could point to another company.
+- **D-11:** Permission → bwrap mapping (`Glorbo.Sandbox.PermissionMapper`):
+  - `projects:read:*` → `--ro-bind <co>/projects /projects`
+  - `projects:read:<name>` → `--ro-bind <co>/projects/<name> /projects/<name>` (parent dir NOT mounted; sibling projects invisible)
+  - `projects:write:<name>` → `--bind <co>/projects/<name> /projects/<name>`
+  - `chat:read:*` → `--ro-bind <co>/channels /channels`
+  - `chat:write:<channel>` → writes go through outbox (Router appends to channel), so mount is still `--ro-bind` for the channel file; this is enforced at the filesystem level AND at the Router layer
+  - `agents:message:<target>` → no filesystem mount needed (message goes via outbox → Router)
+  - `agents:list` → `--ro-bind <co>/agents /agents` (with per-agent subpath filtering — see D-12)
+  - `tools:execute:<tool>` → not a filesystem concern; handled at prompt-injection level
+- **D-12:** Sibling-agent invisibility — when `agents:list` is granted, only the sibling agents' `agent.md` files are exposed (via a staging tmpfs that Elixir populates just-in-time). Sibling agents' private dirs (`inbox/`, `workspace/`, `state/`) stay unmounted. Reason: `agents:list` should not leak other agents' data; it's a directory listing, not full read access.
+- **D-13:** Testing hook — `Glorbo.Sandbox.Bwrap.build_argv/2` returns a plain argv list; `start/2` wraps `Port` invocation. Unit tests assert argv composition without actually running bwrap. Integration tests tagged `:bwrap` require bwrap binary + kernel unprivileged user namespaces.
 
-### [auto] Network policy enforcement (SEC-03)
-- **D-10:** Transport implementation — policy strings map to podman flags:
-  - `none` → `--network none` (default; matches Phase 2 D-34 Unix-socket transport; airplane-mode path).
-  - `api-only` → `--network slirp4netns:allow_host_loopback=false` + outbound DNS resolvable, with a **netavark firewall allow-list** restricting destination IPs/CIDRs to the known LLM provider endpoints (Anthropic, OpenAI, Google, HuggingFace CDN). Allow-list lives in `lib/glorbo/security/network_policy.ex`.
-  - `open` → `--network slirp4netns` with no extra restriction (default Podman behavior).
-- **D-11:** `api-only` enforcement layer — **rootless netavark firewall rules** applied at container start via `podman network create --internal=false --dns=<resolver>` + per-container `--ip-filter` where supported, with a fallback to in-container `iptables`/`nftables` applied by the entrypoint when netavark lacks the filter primitive on the host's Podman version. Reason: defence in depth matches SEC-01/SEC-02 philosophy — a prompt-injected agent must not egress to arbitrary hosts even if the `litellm` SDK is tricked into it.
-- **D-12:** Allow-list composition — static base list (documented in `config/network_policy.exs`) plus per-company override in `company.md` frontmatter's `network_allow: [...]` (v1: optional). Reason: companies may use proxies (e.g. internal Claude gateway).
-- **D-13:** `network: none` ambush test — integration test confirms that an `api-only` agent whose LLM call is tool-using cannot perform an HTTP GET to `http://example.com` from inside the worker (the allow-list should reject it). Concrete proof of SEC-03's enforcement claim.
+### Network policy
+- **D-14:** Policy values — `none` (default), `api-only`, `open`. Same as original design.
+- **D-15:** Enforcement via bwrap:
+  - `none` → `--unshare-net` (no network namespace access, kernel-enforced)
+  - `api-only` → Elixir creates a named netns via `ip netns add` with nftables rules allowing only the provider's endpoints; sandbox joins it via `--unshare-net` + the agent UID's netns mapping (technique: precreate the netns, run bwrap with `--setenv NETNS=<name>` and an `unshare`-equivalent inside). In practice, simpler approach: spawn a userspace proxy on loopback inside the sandbox and route all egress through it (TinyProxy / Envoy). Final choice in planning.
+  - `open` → inherit host netns (bwrap default when no `--unshare-net` flag). Reason: explicit opt-in.
+- **D-16:** `api-only` allowlist — static base list in `config/network_policy.exs` (Anthropic, OpenAI, Google, Hugging Face endpoints). Per-company override in `company.md` `network_allow:`. Reason: parallel to original D-12 but simpler (no netavark).
+- **D-17:** `api-only` initial implementation — ship the simpler-but-weaker option first: spawn the CLI tool inside a shared-netns sandbox (no `--unshare-net`) but set `HTTP_PROXY` + `HTTPS_PROXY` env vars pointing at a Glorbo-managed proxy that enforces the hostname allowlist. Research "host network namespace + per-process egress filter via proxy" as the v0.0.1 route; netns + nftables is deferred to a follow-on iteration. Reason: pragmatic — a proxy is easier to test + debug than per-agent netns, and covers the threat (agents can't reach disallowed hosts if they respect proxy env vars). A motivated agent could bypass the proxy by ignoring env vars, so this is advisory-only for v0.0.1; the netns+nftables path is a hardening iteration.
+- **D-18:** `api-only` integration test — spawns agent, sets up a mock endpoint server at an allowed + a disallowed host, agent attempts both, assert only the allowed request succeeds.
 
-### [auto] Router architecture (AGT-03)
-- **D-14:** Router shape — **single per-company `Glorbo.Company.Router` GenServer**, supervised by the Company's supervision tree. Routes every outbox→inbox / outbox→channel transfer. Reason: AGT-03 inbox/outbox one-way flow must be mediated through a single choke point for auditability.
-- **D-15:** Trigger source — Router listens for file events from the existing Phase 2 `Filesystem.Watcher` (`agents/<name>/outbox/`). Each new file in an agent's outbox is a routing job. Reason: file-system is source of truth; watcher already exists.
-- **D-16:** Permission check flow — Router parses the outbox file's `to:` frontmatter, looks up the sender agent's `permissions:`, applies the ACL mapper to check `{chat:write:<channel> | agents:message:<target>}`, and either:
-  - permitted → copy file to recipient's `inbox/` (or append to channel file), move source to sender's `history/`, emit `message.route` audit event.
-  - denied → move source to sender's `history/` with `.rejected.md` suffix, append a rejection notice message to sender's `inbox/` explaining which permission was missing, emit `message.reject` audit event.
-  Reason: denial is audible (agent sees the rejection) AND auditable, not a silent drop.
-- **D-17:** Channel append — channels are append-only files (DESIGN.md §6.2); Router uses the same `[:append, :sync]` pattern as AuditLog to maintain ordering under concurrent routing.
-- **D-18:** `@agent-name` detection — Router scans channel-append payloads for `@<name>` tokens matching the company's agent list; for each hit, writes a synthetic mention message to `agents/<name>/inbox/mentions/<timestamp>-<channel>.md`. Reason: keeps channel → agent-wake uniform with the inbox trigger path (no separate wake mechanism).
+### Router + Watcher wiring (carries forward from original Phase 3)
+- **D-19:** Router shape — single per-company `Glorbo.Company.Router` GenServer under Company supervision tree. Subscribes to Watcher's outbox events. Reason: single auditable choke point per company.
+- **D-20:** Routing flow — per-outbox-file: parse `to:` frontmatter, look up sender `permissions:`, check `{chat:write:<channel> | agents:message:<target>}`, route or reject. Rejection = move source to `history/<id>.rejected.md` + append rejection notice to sender's inbox + audit event. Reason: filesystem-first, debuggable, auditable.
+- **D-21:** Channel append — append-only file via `[:append, :sync]`. `@<name>` mentions scanned in routed payloads; write synthetic mention message to `agents/<name>/inbox/mentions/<ts>-<channel>.md`. Reason: uniform wake mechanism.
+- **D-22:** Agent-creation restriction — Router rejects any routed message whose payload would write `agents/<new>/agent.md`. No agent has `agents:create` permission in v0.0.1. Reason: AGT-05 via existing permission system, no new code path.
 
-### [auto] Agent wake + execution (AGT-01, AGT-02)
-- **D-19:** Per-agent GenServer — **one `Glorbo.Company.Agent` GenServer per agent**, under a DynamicSupervisor named `Glorbo.Company.<slug>.AgentSupervisor`. Holds `{company_slug, agent_slug, last_wake_at, current_task, ...}`. Reason: AGT-01 crash isolation — one agent crashing restarts only that agent. `max_restarts: 3, max_seconds: 60` at the DynamicSupervisor level.
-- **D-20:** Wake dispatch — Router, Scheduler, and Watcher all call `Agent.wake(company, agent, trigger)` which either no-ops (already executing) or starts a `Task` under the agent's `Task.Supervisor` that runs the execution pipeline. Reason: keeps the GenServer responsive (wake is a short call), execution runs in a supervised task that can be killed on budget hard-stop or timeout.
-- **D-21:** Heartbeat implementation — `Glorbo.Company.Scheduler` parses each agent's `heartbeat: "*/30 * * * *"` cron expression (library: `crontab` — pure-Elixir, no runtime job store needed) at start, uses `Process.send_after` with recomputed intervals. Reason: no Oban/Quantum dependency needed for simple cron; agents wake frequency is low (minutes).
-- **D-22:** Task serialisation — Elixir writes `{task_path, trigger_type, trigger_payload, skills_resolved}` to a JSON file at `~/.glorbo/companies/<co>/agents/<ag>/state/current-task.json` just before invoking the worker. On crash recovery, the GenServer re-reads this to know if a task was in flight. Reason: durable wake state without Ecto roundtrip.
-- **D-23:** Worker invocation — ephemeral by default (`mode: :ephemeral` via `ContainerManager.start_container/2` from Phase 2), persistent when `agent.md` declares `lifecycle: persistent`. Reason: matches DESIGN.md §5.3/§5.4 lifecycle and Phase 2's existing mode split.
+### Scheduler (heartbeats)
+- **D-23:** Library — `crontab` Hex package (already resolved via Plan 03-01's Wave-0 foundation commit). Reason: pure Elixir, no Quantum/Oban dep.
+- **D-24:** Implementation — `Glorbo.Company.Scheduler` GenServer parses each agent's `heartbeat:` cron expression at start, computes next-run via `Crontab.Scheduler.get_next_run_date/1`, uses `Process.send_after`. Recomputes from wall-clock on every firing (Pitfall 7 self-healing across VM pauses). Reason: simple, correct under clock jumps.
 
-### [auto] Budget tracking (SEC-05)
-- **D-24:** Usage reporting — Python worker's `litellm.completion` call returns a `response.usage` dict; worker writes a JSON usage report to `agents/<name>/outbox/usage/<task_id>.json` (schema: `{task_id, timestamp, provider, model, prompt_tokens, completion_tokens, cost_usd}`) **after** writing the result. Reason: usage is a first-class outbox artifact; the Router routes it to the BudgetTracker.
-- **D-25:** Cost source — `litellm.cost_per_token` (litellm's built-in cost DB) is the canonical source. Python worker includes `cost_usd` in the usage report. Reason: single source of truth; Ollama reports `cost_usd: 0.0` (local inference, no cost).
-- **D-26:** Aggregation — `Glorbo.Company.BudgetTracker` GenServer handles usage reports, upserts into `budgets` Ecto schema (new in Phase 3: `{agent_slug, year_month, prompt_tokens, completion_tokens, cost_usd_cents}`), emits `budget.usage` audit event. Reason: one writer per company keeps monthly rollover deterministic.
-- **D-27:** Hard-stop enforcement — **pre-dispatch check**. Before invoking the worker, the agent GenServer calls `BudgetTracker.check_budget(agent_slug)` which returns `:ok | {:alert, used_usd, cap_usd} | {:stop, used_usd, cap_usd}`. On `:stop`, the wake aborts and emits a `budget.hard_stop` audit event with a rejection message appended to the agent's inbox. Reason: prevents any further LLM spend without requiring mid-call kills.
-- **D-28:** Alert propagation — at alert threshold (`alert_at_pct: 80` default), BudgetTracker emits a PubSub-ready broadcast and writes a marker file at `~/.glorbo/companies/<co>/alerts/<agent>-budget.md` (dashboard consumes in Phase 4). Reason: file artifact + PubSub hook ready for Phase 4 without requiring Phase 4 to land first.
-- **D-29:** Monthly rollover — calendar-month boundary (UTC), no mid-month top-ups in v1. Reason: simplicity; matches DESIGN.md §8.1.
+### Per-agent GenServer
+- **D-25:** Topology — `Glorbo.Agent.Server` GenServer per agent, under `Glorbo.Company.AgentSupervisor` (DynamicSupervisor). Holds `{company_slug, agent_slug, pending_wakes, current_task, budget_state}`. Reason: AGT-01 crash isolation.
+- **D-26:** Wake-queue state machine — deduplicate wakes (if a cron fires while the agent is already executing, queue one more; further queued wakes coalesce). On finish, pop next wake. Reason: prevents runaway wake accumulation under chatty inotify.
+- **D-27:** Dispatch pipeline — budget check → skills materialise → prompt write → CLI provider resolve → bwrap argv build → Port.open → stdout tail → wait for exit → usage parse → budget record → skills cleanup → workspace cleanup. Reason: linear, testable, one `Task`-supervised invocation per wake.
+- **D-28:** Task.Supervisor — per-agent `Task.Supervisor` (child of agent GenServer's supervision subtree). Keeps invocations isolated from the GenServer process so long-running Port work doesn't block message handling. Reason: OTP best practice.
 
-### [auto] Approval gates (SEC-04)
-- **D-30:** Sentinel mechanism — tasks with `requires_approval: director` in frontmatter trigger a "pause on pick-up" in the agent GenServer. The agent writes `agents/<name>/state/awaiting-approval-<task_id>.md` containing `{task_path, requested_at}`, appends an `approval.requested` audit event, and goes back to idle. Reason: no polling, no background wait — the agent sleeps and wakes on approval file change.
-- **D-31:** Approval mechanism — the Director updates the task file's `status: approved` (frontmatter) and optionally adds an `approved_by: director` + `approved_at: <ISO>` field. This is a file write to `projects/<p>/tasks/<t>.md`. The Watcher detects the change, the Router notices the status flip on an awaiting task, removes the sentinel, and wakes the agent with a `director-approval` trigger. Reason: keeps the mechanism filesystem-first and testable without dashboard UI.
-- **D-32:** Approval denial — `status: denied` triggers cleanup (sentinel removed, `approval.denied` audit event, task moved to `history/` with denial reason) and does not wake the agent. Reason: symmetric to approval and auditable.
-- **D-33:** Dashboard hook — Phase 4 will render awaiting-approval markers as an approval queue; Phase 3 ensures the markers exist and the file shape is stable.
+### Budget tracking
+- **D-29:** Usage source — **each CLI tool's session telemetry**. Concrete mechanisms (verify in research):
+  - Claude Code writes session JSONL to `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl` with `usage` entries per assistant turn. Glorbo configures `CLAUDE_PROJECT_DIR` per-invocation to capture this in the agent workspace.
+  - Gemini CLI — TBD (research: does `gemini` CLI write a usage log? if not, Glorbo parses the CLI's final-result output or uses a wrapper script).
+  - Codex — TBD (research: session/usage hooks).
+  Plan 03-02 research sub-task must resolve the Gemini + Codex paths before execution.
+- **D-30:** Cost calculation — Elixir maps `{provider, model, prompt_tokens, completion_tokens}` → USD via a per-model rate table in `config/llm_rates.exs`. Reason: CLI tools often don't report cost directly; Glorbo owns the mapping.
+- **D-31:** Ledger shape — `Glorbo.Budget` schema (already shipped in Plan 03-01) with `{company_id, agent_slug, year_month, prompt_tokens, completion_tokens, cost_usd_cents}`. One row per agent-month. Atomic upsert via `on_conflict` with increment pattern. Reason: Plan 03-01 already validated the schema; this phase exercises it.
+- **D-32:** Hard-stop — pre-dispatch check. `BudgetTracker.check_budget(agent_slug)` returns `:ok | {:alert, used, cap} | {:stop, used, cap}`. `:stop` aborts wake, writes rejection to inbox, emits `budget.hard_stop` audit event. Reason: matches original design; simpler than mid-call kills.
+- **D-33:** Alert marker — at threshold, write `alerts/<agent>-budget.md` with `used_usd, cap_usd, threshold_pct, month` frontmatter. Phase 4 dashboard consumer lands later. Reason: file-artefact pattern from Phase 2.
 
-### [auto] Skills injection (AGT-04)
-- **D-34:** Injection point — **at dispatch time**, by Elixir. Skills named in `agent.md`'s `skills:` list are resolved from `~/.glorbo/skills/<name>.md`, concatenated into the task JSON under a `skills_resolved:` key (full markdown body, not a file path). The FastAPI worker injects them into the LLM prompt as system-prompt context. Reason: Python worker stays simple (receives ready-to-use text), avoids mounting a skills volume.
-- **D-35:** Missing skill handling — unknown skill name → Router emits `skill.missing` audit event, drops the skill from the task's `skills_resolved:`, logs a warning, and proceeds. The task still runs. Reason: missing skill is recoverable; the Director notices the audit event.
-- **D-36:** Skill precedence — skills are injected in the order listed in `agent.md`. No skill priority system. Reason: deterministic, simple.
+### Approval gates (carries forward)
+- **D-34:** Sentinel mechanism — tasks with `requires_approval: director` trigger a pause: write `agents/<name>/state/awaiting-approval-<task_id>.md`, append `approval.requested` audit event, return to idle. Reason: filesystem-first; no polling.
+- **D-35:** Approval — Director edits task `status: approved` in frontmatter; Watcher detects; Router notifies Gate; Gate removes sentinel and wakes agent with `director-approval` trigger. Reason: matches DESIGN.md §8.2.
+- **D-36:** `Glorbo.Approvals.Gate` GenServer — per-company; listens to Watcher for `projects/**/*.md` status changes; correlates with sentinels in `agents/*/state/awaiting-approval-*.md`. Reason: single choke point; crash-recoverable from filesystem state.
+- **D-37:** Denial — `status: denied` triggers `approval.denied` audit event, sentinel removed, task moved to `history/`. Reason: symmetric to approval.
 
-### [auto] Cloud LLM provider wiring (LLM-03, LLM-04)
-- **D-37:** API-key source — `~/.glorbo/config.md` frontmatter carries `api_keys: {anthropic: "sk-...", openai: "sk-...", google: "..."}`. File is chmod `0600`. Reason: DESIGN.md §4.3 + the CLAUDE.md "API keys never touch company directory" invariant.
-- **D-38:** Key injection — at dispatch time, Elixir reads the relevant key based on `agent.md`'s `provider:`, injects it into the `/run` POST body (per Phase 2 D-37 — never an env var). Reason: preserves `podman inspect` leak resistance.
-- **D-39:** Provider validation — before each dispatch, `provider` must be in `[ollama, huggingface, anthropic, openai, google]`. Unknown → `provider.unknown` audit event + agent error message. Reason: fails closed.
-- **D-40:** One model per agent — enforced at `agent.md` parse time. `provider:` and `model:` are required when not `ollama`. Multiple models in one agent = validation error. Reason: locked by PROJECT.md Key Decision.
+### Skills injection (CLI-adapted)
+- **D-38:** Injection path — `Glorbo.Skills.Resolver.materialize/3` copies named skills into agent workspace's `.glorbo-skills/` just before invocation (D-04); cleanup after (D-05). Reason: avoids bind-mount complexity; CLI tools don't need to know about Glorbo's skill paths.
+- **D-39:** Missing skill — unknown skill name → `skill.missing` audit event; dropped from invocation; task still runs. Reason: recoverable; Director notices the audit.
+- **D-40:** Skill order — injected in `agent.md`'s `skills:` list order. No priority system. Reason: deterministic + simple.
 
-### [auto] Agent-creation-is-Director-only (AGT-05)
-- **D-41:** Enforcement layer — the Router rejects any outbox message from an agent that would create/edit another agent's definition. Specifically: the Router inspects every routed message and if the recipient path contains `agents/<new>/agent.md` and the sender's permissions don't include `agents:create` (which no agent has in v1), the route is rejected with `permission.denied` audit. Reason: AGT-05 is enforced through the permission system (no agent has `agents:create` permission by default).
-- **D-42:** Director path — the Director creates agents by writing `agent.md` files directly to the filesystem (outside any container). The Watcher picks up the new file, the Router does NOT apply the agent-creation restriction because the origin is not an outbox but a direct filesystem edit. Reason: trust model — the Director owns `~/.glorbo/` (PROJECT.md Out of Scope: multi-user).
-- **D-43:** Self-spawn detection — integration test: spawn Agent X with full permissions, have its Python worker write `outbox/create-new-agent.md` containing an `agent.md` targeting `agents/rogue/`, assert the Router rejects it with `permission.denied` and no `agents/rogue/` directory appears.
+### Provider adapters
+- **D-41:** Adapter behaviour — `Glorbo.CLI.Adapter` behaviour with callbacks: `binary/0` (returns CLI path), `args/3` (task_path, workspace, opts → CLI args), `usage_path/2` (agent, workspace → path to session telemetry), `parse_usage/1` (usage file → `{prompt_tokens, completion_tokens, cost_usd}`).
+- **D-42:** Initial adapters — `Glorbo.CLI.Adapter.ClaudeCode`, `Glorbo.CLI.Adapter.GeminiCli`, `Glorbo.CLI.Adapter.Codex`. ClaudeCode has the highest-confidence implementation (session JSONL documented); Gemini/Codex require research in Plan 03-02.
+- **D-43:** Validation — `agent.md` parse validates `provider:` is in `[claude-code, gemini-cli, codex]` and that the corresponding CLI binary is on `PATH`. Missing binary → `provider.unavailable` audit event + agent cannot wake (equivalent to budget hard-stop).
 
-### [auto] Supervision tree (AGT-01)
-- **D-44:** Company supervisor children — **extend** Phase 2's 2-child shape (`AuditLog`, `Filesystem.Watcher`) to a 6-child shape: `AuditLog, Filesystem.Watcher, Router, Scheduler, BudgetTracker, AgentSupervisor (DynamicSupervisor)`. Reason: matches the crash-isolation invariant (CLAUDE.md) — killing any one child restarts only that subtree.
-- **D-45:** Crash surface — Router crash → re-processes any unprocessed outbox files (Watcher rescans on init). BudgetTracker crash → rebuilds state from SQLite ledger. Scheduler crash → recomputes all agent heartbeats from `agent.md` files. Reason: all state is derivable from filesystem + SQLite (filesystem is source of truth).
+### Supervision tree
+- **D-44:** Six-child Company supervisor: `AuditLog + Filesystem.Watcher + Router + Scheduler + BudgetTracker + AgentSupervisor`. (Original plan's 7-child shape with separate `Approvals.Gate` is collapsed here — Gate lives as a DynamicSupervisor'd child of Router since both listen to the same Watcher stream; cleaner than two sibling listeners.) Reason: fewer moving parts for v0.0.1.
+- **D-45:** Crash surface — Router crash → Watcher will re-emit recent outbox events on subscriber re-register. BudgetTracker crash → rebuilds from SQLite ledger. Scheduler crash → recomputes heartbeats from `agent.md` files. Reason: all state derivable from filesystem + SQLite.
 
 ### Claude's Discretion
-- Exact ACL mapping table structure (Map vs behaviour module).
-- Router file-routing queue shape (direct handle_info vs a work queue with a separate job struct).
-- BudgetTracker internal state caching (in-memory cache with SQLite refresh, or SQLite-direct on every check).
-- Scheduler's cron parsing library choice (`crontab` strongly recommended; alternatives acceptable).
-- Whether per-agent Task.Supervisor is its own child of Company or a child of the agent GenServer.
-- Audit event key names for new Phase 3 events (stable across the phase, refine in later milestones).
-- Whether `budgets` table uses cents or fractional USD (cents strongly recommended — integer math).
-- Whether skill files get a schema validation pass at Director-commit time or only at dispatch time (dispatch-time OK for v1).
-- Inbox cleanup policy (message lifecycle inside `inbox/` — TTL, archive-to-history on read, etc.).
+- Exact `bwrap` argv ordering and grouping (security-relevant — researcher should propose a locked canonical order).
+- Whether skill materialisation happens at wake-time or at container-start (for persistent agents — but persistent agents may not apply to CLI mode; decide during planning).
+- TinyProxy vs HTTP-filtering proxy vs `Glorbo.Proxy` custom for `api-only` — weigh in research; pick the smallest thing that meets the threat.
+- Cron parsing library edge cases — `crontab` Hex is selected but minor alternatives acceptable if needed.
+- Per-agent Task.Supervisor placement (child of agent GenServer vs sibling of agent GenServer under AgentSupervisor).
+- Workspace cleanup granularity — per-task-id vs per-invocation vs per-day.
+- Adapter module naming (e.g., `Glorbo.CLI.Adapter.ClaudeCode` vs `Glorbo.Providers.ClaudeCode` — cosmetic).
+- Whether `agent.md`'s `model:` field is required for `claude-code`/`gemini-cli`/`codex` (each CLI has its own model-selection mechanism — probably yes, forwarded as `--model` equivalent).
+- Audit event naming for Phase 3 events (stable within phase; refine in later milestones). AUDIT_EVENTS.md shipped by Plan 03-01 is the starting point.
 
 </decisions>
 
@@ -110,94 +145,97 @@ Markdown `agent.md` files become live, supervised, kernel-isolated Linux-user wo
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Architecture (authoritative)
-- `DESIGN.md` §5 — Agent Lifecycle (definition, waking, execution, sleeping). Full `agent.md` example at §5.1 is the schema contract.
-- `DESIGN.md` §6 — Communication (inbox/outbox, channels, stdout). §6.1 has the message format; §6.2 has the channel append contract.
-- `DESIGN.md` §7 — Permissions & Isolation. §7.1 defines `resource:action:scope`; §7.2 shows the two-layer enforcement; §7.3 covers company isolation.
-- `DESIGN.md` §8 — Budget & Governance. §8.1 budget tracking; §8.2 approval gates (task frontmatter + workflow); §8.3 audit log (already implemented in Phase 2).
-- `DESIGN.md` §12 — Security Considerations (threat model, defence-in-depth, prompt injection resistance).
-- `DESIGN.md` §14 — Open Questions (may apply to Phase 3 decisions).
+- `DESIGN.md` §5 — Agent Lifecycle. Definition frontmatter (§5.1) stays valid; §5.3 execution pipeline now replaces `podman run` with `bwrap + CLI`.
+- `DESIGN.md` §6 — Communication. Inbox/outbox/channel mechanics unchanged.
+- `DESIGN.md` §7 — Permissions & Isolation. §7.2 two-layer enforcement now reads: Layer 1 Router (unchanged) + Layer 2 bwrap namespace (replaces POSIX ACL).
+- `DESIGN.md` §8 — Budget & Governance. §8.1 now sources usage from CLI telemetry instead of Python worker.
 
-### Project-level constraints
-- `CLAUDE.md` — Load-bearing invariants. Phase 3 is the phase where "kernel is the policy engine" and "inbox write-only for Elixir, outbox write-only for agent" become real (not stubs).
-- `.planning/PROJECT.md` — Key Decisions table: POSIX ACLs for kernel-level enforcement; one provider+model per agent; filesystem-first; append-only audit.
-- `.planning/REQUIREMENTS.md` — AGT-01..05, SEC-01..05, LLM-03, LLM-04 (12 requirements this phase must satisfy).
-- `.planning/ROADMAP.md` Phase 3 — nine success criteria.
+### Project-level
+- `CLAUDE.md` — Load-bearing invariants (kernel is policy engine — bwrap is the kernel layer now; filesystem source of truth; audit append-only).
+- `.planning/PROJECT.md` — Key Decisions table (still accurate; add "CLI-first agents in v0.0.1" entry in transition).
+- `.planning/REQUIREMENTS.md` — AGT-01..05, SEC-01..05, LLM-03, LLM-04 (re-scoped definitions for SEC-02, SEC-03, SEC-05, LLM-03 — see REQUIREMENTS.md).
+- `.planning/ROADMAP.md` Phase 3 — Updated success criteria (bwrap, CLI telemetry).
 
-### Phase 2 handoff (direct dependencies)
-- `.planning/phases/02-filesystem-foundation-container-runtime-local-llm/02-CONTEXT.md` — Read D-30..D-33 (Watcher topology/events/debounce/path-prefix), D-34..D-42 (Python worker API contract including `/run` body schema with `api_key` field and `litellm` dispatch), D-43..D-45 (Doctor schema additive-only rule).
-- `.planning/phases/02-filesystem-foundation-container-runtime-local-llm/02-04-SUMMARY.md` — `Glorbo.Company.Supervisor` current 2-child shape + B5 test contract that Phase 3 must extend, not replace.
-- `lib/glorbo/company/supervisor.ex` — the supervisor Phase 3 will extend.
-- `lib/glorbo/company/router.ex`, `scheduler.ex`, `budget_tracker.ex` — Phase 1 stubs that Phase 3 fills in.
-- `lib/glorbo/container/invocation.ex` — Phase 2's argv builder; Phase 3 passes `network: policy` through `extra_volumes:` + new `network_mode:` keyword.
-- `lib/glorbo/container/worker_client.ex` — Phase 2's Finch-over-UDS client; Phase 3 adds `api_key` to the request body (already supported).
+### Plan 03-01 (executed; foundations still in codebase)
+- `lib/glorbo/security/acl_mapper.ex` — DORMANT in v0.0.1; reserved for container runtime phase.
+- `lib/glorbo/runtime/uid_allocator.ex` — DORMANT in v0.0.1; reserved for container runtime phase.
+- `lib/glorbo/budget.ex`, `lib/glorbo/tasks_approval_state.ex` — Ecto schemas, exercised by this phase's BudgetTracker + Gate.
+- `priv/repo/migrations/20260416*.exs` — migrations applied.
+- `containers/glorbo-runtime/worker/*` — worker extensions (skills_resolved, usage reports) — DORMANT; revived with container runtime phase.
+- `.planning/phases/03-agents-routing-kernel-permissions-budgets/AUDIT_EVENTS.md` — audit event registry; stays authoritative.
+
+### Deferred archive (reference for future container runtime phase)
+- `.planning/deferred/container-runtime-v0.0.2/README.md` — restoration guide.
+- `.planning/deferred/container-runtime-v0.0.2/03-CONTEXT.md` — original 45 decisions; many transferable.
+- `.planning/deferred/container-runtime-v0.0.2/03-RESEARCH.md` — netavark, subuid, litellm research; still relevant.
 
 ### External specs to investigate during research
-- POSIX ACL semantics inside rootless Podman: https://docs.podman.io/en/latest/markdown/podman-run.1.html#userns — `keep-id` mapping behaviour with `setfacl`.
-- `setfacl`/`getfacl` man pages — Fedora default acl tooling; the `setfacl -R -m u:<user>:rwx <path>` pattern.
-- Netavark firewall primitives: https://github.com/containers/netavark — which versions support per-container egress filter rules; fallback to in-container iptables/nftables.
-- slirp4netns allow-list options: https://github.com/rootless-containers/slirp4netns — `--allow-host-loopback=false` and CIDR filter support.
-- Elixir `crontab` library: https://hex.pm/packages/crontab — cron expression parser + next-run calculator (used by Scheduler).
-- litellm usage/cost API: https://docs.litellm.ai/docs/observability/custom_callback — `cost_per_token` + `completion_cost` helpers; response.usage shape.
-- Ecto upsert patterns for monthly-bucket aggregation tables: https://hexdocs.pm/ecto/Ecto.Repo.html#c:insert/2 — `on_conflict: {:replace, [...]}` for usage accumulation.
-- Cron heartbeat coexistence with DynamicSupervisor restarts: Elixir `Process.send_after` vs Erlang `:timer.send_interval` — choose the monotonic-clock-safe option.
+- bubblewrap docs: https://github.com/containers/bubblewrap — argv reference, `--ro-bind-try` semantics, `--unshare-net` behaviour, `--die-with-parent`, userns requirements.
+- bwrap + user namespace requirements: kernel ≥ 3.8, `user.max_user_namespaces > 0`, `kernel.unprivileged_userns_clone = 1` (Debian/Ubuntu); Fedora has this enabled by default.
+- Claude Code session telemetry format: investigate `~/.claude/projects/<path>/<session>.jsonl` schema. Look for `usage` event entries.
+- Gemini CLI token-tracking: is there a `--log-usage` flag or session export? Research needed.
+- Codex CLI session/usage output: same.
+- Mission Control reference implementation: https://github.com/MeisnerDan/mission-control — inspiration for CLI-agent dispatch patterns.
+- HTTP allowlist proxy options: TinyProxy (https://tinyproxy.github.io/), Envoy's "Direct Response" filter (hostname allowlist), or a custom Elixir proxy (OTP-native).
+- Elixir Port cleanup semantics: https://hexdocs.pm/elixir/Port.html — `:noshell`, `:exit_status`, signal propagation.
+- `elixir:Process.alive?` + `MuonTrap` interaction with bwrap — does MuonTrap.Daemon cleanly kill the whole `bwrap` process tree on SIGTERM? (Phase 2 used MuonTrap; verify the cleanup path.)
+- nftables vs HTTP proxy for `api-only` enforcement — tradeoffs.
 
 </canonical_refs>
 
 <code_context>
 ## Existing Code Insights
 
-### Reusable Assets
-- **`Glorbo.Company.Supervisor`** (`lib/glorbo/company/supervisor.ex`) — Phase 2 shipped a 2-child supervisor (AuditLog + Watcher). Phase 3 extends to 6 children without replacing the existing shape (B5 test assertion must be updated, not broken).
-- **`Glorbo.Company.AuditLog`** (`lib/glorbo/company/audit_log.ex`) — `append/2` is the sole sink for every routing/budget/approval/permission event. No new audit primitives needed; just new event `action:` names.
-- **`Glorbo.Filesystem.Watcher`** — already dispatches by path prefix (`agents/<n>/inbox|outbox`, `audit/`, `channels/`, else → reindex). Phase 3 wires the new Router GenServer as the subscriber for outbox events.
-- **`Glorbo.Container.Invocation`** — `build_argv/4` accepts `extra_volumes: [...]` and enforces the RT-04 flag set. Phase 3 adds a `:network_mode` keyword → `--network none | slirp4netns:... | default`.
-- **`Glorbo.Container.WorkerClient`** — `post_run/3` already sends `api_key` in the POST body. Phase 3 just populates it from the `~/.glorbo/config.md` lookup.
-- **`Glorbo.Repo` + Ecto schemas** — Phase 2 shipped `companies, agents, audit_events, reindex_state`. Phase 3 adds `budgets, tasks_approval_state` (new) and possibly extends `agents` with `permissions_hash` (for cheap ACL-change detection).
+### Reusable assets (from Plan 03-01 + Phase 2)
+- **`Glorbo.Company.Supervisor`** — extend from Phase-2's 2-child to 6-child shape (AuditLog + Watcher already present; add Router + Scheduler + BudgetTracker + AgentSupervisor).
+- **`Glorbo.Company.AuditLog`** — sole audit sink; just new `action:` keys (AUDIT_EVENTS.md registry).
+- **`Glorbo.Filesystem.Watcher`** — already path-prefix routes; wire outbox events → Router, approval status events → Approvals.Gate, usage events → BudgetTracker.
+- **`Glorbo.Budget`** schema (Plan 03-01) — exercised by new `Glorbo.Budget.Ledger` module.
+- **`Glorbo.TasksApprovalState`** schema (Plan 03-01) — exercised by `Glorbo.Approvals.Gate`.
+- **`Glorbo.Company.Router/Scheduler/BudgetTracker`** — Phase-1 stubs to fill in.
+- **`Glorbo.Agent.Server`** — Phase-1 stub dir; fill with the per-agent GenServer design (D-25..D-28).
 
-### Established Patterns
-- **Dep-injection via keyword opts** — Phase 1 Doctor pattern, preserved in Phase 2 Orchestrator. Phase 3 extends the pattern: Router, Scheduler, BudgetTracker all accept `opts` for testability (mock filesystem, mock Ecto, mock container invocation).
-- **Integration tests gated with `@moduletag :integration`** — Phase 3 adds `@moduletag :acl` (requires setfacl + kernel FS with ACL support — tmpfs may not) and `@moduletag :netavark` (requires compatible Podman/netavark version). Host-less CI jobs exclude both; doctor check flags gaps.
-- **File-artefact + PubSub hook readiness** — Phase 2 established the pattern (sockets dir, stdout.log, alert marker files) of creating dashboard-consumable artefacts even before the dashboard exists. Phase 3 continues this with `state/awaiting-approval-*.md` and `alerts/<agent>-budget.md`.
-- **W2-scope integration test pattern** — Phase 2 introduced it; Phase 3 extends the same convention to `W3: kernel ACL enforcement round-trip`, `W4: api-only egress rejection`.
+### Established patterns (from prior phases)
+- **Dep-injection via keyword opts** — all new GenServers accept `opts` keyword for testability (mock filesystem, mock CLI adapter, mock budget ledger).
+- **Integration test tags** — add `:bwrap` (requires bubblewrap binary + kernel unprivileged userns) and `:claude_code` (requires `claude` CLI on PATH). Doctor flags host gaps.
+- **File-artefact + PubSub hook** — approval sentinels, budget alerts, rejection messages — all dashboard-consumable shapes to finalize now, Phase 4 reads them.
 
-### Integration Points
-- **Phase 4 handoff:** All file-artefact shapes created in Phase 3 (approval sentinels, budget alerts, rejection messages) become the consumer set for the LiveView dashboard. Shapes must be stable between Phase 3 commit and Phase 4 read.
-- **Phase 5 handoff:** `glorbo logs <agent>` surfaces the agent's recent audit events + usage reports + inbox/outbox deltas. The audit-event key naming in Phase 3 determines the log shape in Phase 5.
-- **Backward compat with Phase 2:** Phase 3 MUST NOT change the `/run` POST body shape (stability invariant). New fields are additive: Phase 3 may ADD `skills_resolved:` to the request body but must not rename or remove `api_key`, `task_path`, `provider`, `model`.
+### Integration points
+- **Phase 4 handoff:** Dashboard consumes approval sentinels + budget alerts + audit events + stdout tails; shapes must be stable post-Phase 3.
+- **v0.0.2 container runtime handoff:** `ACLMapper` + `UidAllocator` + worker extensions already in tree; the container runtime phase adds the dispatch shell around them without revisiting foundations.
 
 </code_context>
 
 <specifics>
 ## Specific Ideas
 
-- **"Kernel is the policy engine" becomes real in Phase 3.** This is the phase where CLAUDE.md's load-bearing invariant gets operationalised: every outbox-to-inbox transfer is Router-mediated, every filesystem write by a Python worker has to pass through POSIX ACLs, every LLM call has to pass the budget hard-stop check. The whole point of Phase 3 is to stop trusting the agent (or its LLM-generated Python) and let the kernel enforce.
-- **Defence in depth is three-layered here, not two.** DESIGN.md §7.2 describes two layers (Elixir Router + POSIX ACLs); in practice Phase 3 adds a third (network policy via Podman/netavark). The integration test suite must exercise all three independently: (a) Router rejects a permission-missing outbox message; (b) ACL rejects a `podman exec` filesystem write; (c) Network policy rejects an egress attempt from an `api-only` agent to a non-allowed host.
-- **Budget hard-stop is pre-dispatch by design.** Not "kill the container mid-call" — that would waste tokens already paid for and could leave the agent in a weird intermediate state. Check-before-dispatch means the worst case is one call slightly over the cap (the one that crosses the threshold during execution), which is acceptable trivia; next call refuses. This matches the litellm cost-reporting shape (cost is known AFTER the call, not before).
-- **Approval gates use file mutation deliberately.** The dashboard in Phase 4 is "a tail of file state" — if approval can be expressed as a file edit, the dashboard is a render of that file state and nothing more. Any approval mechanism that doesn't reduce to a file edit adds a parallel source of truth that the dashboard would have to learn. This is why `status: approved` in task frontmatter is the canonical approval signal, not a Phoenix Channel message or a SQLite UPDATE.
-- **Agent-creation restriction is a permission, not a special case.** AGT-05 is enforced purely through the `permissions:` system: no agent is issued `agents:create`, so no agent can write `agents/<new>/agent.md`. The Director has implicit `agents:create` by owning `~/.glorbo/` (filesystem UID). This falls out of the existing mechanism; no new code path.
-- **litellm is the one-error-surface promise.** Every provider's errors — OpenAI 429s, Anthropic overload, Ollama connection refused, Google auth expired — surface as `litellm.exceptions.*`. The Router's retry/budget logic handles one taxonomy, not five. This reaffirms Phase 2 D-40 from the Phase 3 perspective.
-- **Target feel for Phase 3:** Director edits `companies/acme/agents/engineer/agent.md`, saves, the Engineer's GenServer picks up the change, ACLs get reconciled at next container start, budget ledger resets on month boundary, an @Engineer mention in `channels/engineering.md` wakes the agent which picks a task, requests Director approval for a `requires_approval: director` task, the Director flips `status: approved` in the task file, the agent executes, writes result to outbox, Router routes back to CEO's inbox with permission checks. All of that happens without the dashboard existing.
+- **bwrap is the right kernel isolation for the CLI-first approach.** Podman + POSIX ACL was the right isolation for an arbitrary-code Python runtime where the threat model includes "LLM-generated Python escapes its scope". For CLI tools whose executable code Glorbo doesn't control (the CLI tool itself is trusted, the LLM's *output* is what varies), bwrap's mount-namespace + netns isolation plus Elixir's Router checks are defence-in-depth at the right level. A malicious agent prompt can only do what the bwrap-permitted mounts + network policy allow.
+- **Claude Code's session JSONL is a gift.** Token usage is already structured + persisted. Glorbo just has to point `CLAUDE_PROJECT_DIR` at the agent workspace and tail the JSONL. Gemini + Codex are the research unknowns — if neither has clean telemetry, Glorbo wraps them with a usage-tracking proxy that counts stdin/stdout tokens approximately and flags the imprecision to the Director.
+- **"Filesystem is source of truth" stays 100% intact.** Every state change the agent cares about is a file write; Elixir mediates every file write across agent boundaries. The CLI tool works in its own sandboxed filesystem view and emits results there; the Router picks them up.
+- **v0.0.2 is the "hardened" story.** v0.0.1 ships something the user can actually run with their existing CLI tools this week. v0.0.2 adds the full container-isolated Python runtime for agents where the user wants bulletproof isolation (e.g., running agents with LLM-generated tools, or running untrusted agent definitions). Both runtimes coexist — the `provider:` field picks which path.
+- **Target feel for Phase 3:** Director writes `agents/engineer/agent.md` with `provider: claude-code`. Director starts Glorbo. Agent wakes on inbox event, Glorbo spawns `bwrap --ro-bind / / --bind workspace /workspace --unshare-net -- claude -p < task.md`, Claude does its thing with workspace access only, writes to outbox. Elixir routes outbox to CEO's inbox. Budget ledger shows `$0.12 this month`. All without any container, Podman, Python, or litellm — just Elixir + bwrap + the CLI tool Director already has.
 
 </specifics>
 
 <deferred>
 ## Deferred Ideas
 
-- **Agent-spawn-agent** — permanently out of v1 per PROJECT.md. Revisit in v2 with a governance model that a single-Director trust model doesn't need.
-- **Mid-run budget rebalancing / top-ups** — v1 uses calendar-month buckets with no mid-month adjustment. v2 may add if a user requests.
-- **Fine-grained time-based permissions** (e.g. "chat:write only on weekdays") — not in v1; all permissions are unconditional.
-- **Per-message quotas** (separate from USD budget) — v1 uses only USD; message-count caps deferred.
-- **Remote skills marketplace / skill sharing across companies** — v1 skills are local-filesystem only.
-- **Router-level rate limiting** (e.g. max 100 messages/minute per agent) — deferred; OTP supervisor's `max_restarts` handles pathological cases for now.
-- **ACL enforcement on host-side `~/.glorbo/` dirs** — v1 only applies ACLs inside the container (where the Python worker runs). Host-side ACLs would matter only in a multi-user trust model (PROJECT.md Out of Scope).
-- **`agents:create` permission for "agent template bots"** — v2; meshes with template marketplace.
-- **Websocket-level stdout streaming** from worker → Elixir (bypassing the file-tail indirection) — Phase 2 already committed to file-tail; revisit only if dashboard latency becomes a UX problem.
-- **Per-company proxy** (HTTP proxy for `api-only` egress going through a corporate proxy) — configurable via `network_allow:` + proxy env var in v1.1 if needed; out of Phase 3.
+- **Python-in-container agent runtime + litellm dispatch** — moved to `.planning/deferred/container-runtime-v0.0.2/`. Returns as a future phase.
+- **POSIX ACL enforcement** — moved; `ACLMapper` sits dormant in `lib/` until revived.
+- **Per-agent Linux user provisioning** — moved; `UidAllocator` sits dormant.
+- **LLM-05 offline Ollama inference** — CLI tools need cloud endpoints. Offline returns with container runtime phase OR a future `provider: ollama-cli` that spawns `ollama run` as an agent. Not in Phase 3.
+- **Anthropic/OpenAI/Google direct-SDK providers** — v0.0.2+ via litellm-in-container. v0.0.1 delegates auth to each CLI tool.
+- **`api-only` via netavark / in-namespace nftables** — v0.0.1 ships proxy-based enforcement (D-17); netns + nftables deferred to iteration.
+- **Agent-created agents** — permanently out of v1.
+- **Router-level rate limiting** — OTP `max_restarts` handles pathological cases; explicit rate limiting deferred.
+- **Websocket/SSE stdout streaming** — file-tail path still wins.
+- **Time-based permission windows** — not in v1.
+- **Per-message quotas** — USD-only in v1.
 
 </deferred>
 
 ---
 
 *Phase: 03-agents-routing-kernel-permissions-budgets*
-*Context gathered: 2026-04-16*
-*Mode: --auto (all decisions at recommended defaults; override by editing before /gsd-plan-phase)*
+*Context gathered: 2026-04-16 (CLI-agent pivot)*
+*Supersedes: `.planning/deferred/container-runtime-v0.0.2/03-CONTEXT.md`*

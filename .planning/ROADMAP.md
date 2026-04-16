@@ -23,7 +23,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 
 - [x] **Phase 1: Compilable Skeleton + CI Release Pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
 - [ ] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
-- [ ] **Phase 3: Agents, Routing, Kernel Permissions, Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, kernel-enforced ACLs matching `agent.md`, per-agent budgets and network policy, skills injection, and Director approval gates — all running offline end-to-end.
+- [ ] **Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
 - [ ] **Phase 4: LiveView Dashboard + Real-Time Channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
 - [ ] **Phase 5: CLI Completeness + Backup/Restore Portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
 
@@ -61,21 +61,27 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] 02-03-PLAN.md — glorbo-runtime OCI image (Containerfile + FastAPI worker + ghcr.io multi-arch CI) + Elixir Container modules (RT-02..06, LLM-02)
 - [x] 02-04-PLAN.md — FileWatcher + glorbo init orchestrator + example acme company + airplane-mode proof (FS-06, LLM-05, CLI-02)
 
-### Phase 3: Agents, Routing, Kernel Permissions, Budgets
-**Goal**: Markdown `agent.md` files become live, supervised, kernel-isolated workers that pick up tasks, collaborate via inbox/outbox and channels, respect per-agent permissions at both app and kernel layers, honour network policy and USD budgets, and escalate approval-gated work to the Director.
+### Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets
+**Goal**: Markdown `agent.md` files become live, supervised CLI workers. Each agent runs as a short-lived `bwrap` sandbox that spawns the configured CLI tool (Claude Code `claude -p`, Gemini CLI `gemini`, or Codex `codex`) with the agent's workspace mounted writable, sibling/other-company paths denied, and network policy enforced via `--unshare-net`. Agents pick up tasks via inotify-driven inbox/outbox routing, respect per-agent permissions at the Elixir Router layer AND the bwrap namespace layer, honour USD budgets parsed from CLI session telemetry, and escalate approval-gated work to the Director via file mutation.
 **Depends on**: Phase 2
 **Requirements**: AGT-01, AGT-02, AGT-03, AGT-04, AGT-05, SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, LLM-03, LLM-04
 **Success Criteria** (what must be TRUE):
-  1. Per-company OTP supervision tree (FileWatcher, Router, Scheduler, BudgetTracker, AuditLog, per-agent GenServers) is running; killing an agent restarts only that agent, killing a company restarts only that company's agents, and other companies and the dashboard are unaffected.
-  2. An agent wakes on each of the four triggers — new inbox file (inotify), cron-style heartbeat, `@agent` channel mention, Director request — and executes a task via `podman run` in its Linux user, with stdout streamed to `agents/<name>/stdout.log`.
+  1. Per-company OTP supervision tree (FileWatcher, Router, Scheduler, BudgetTracker, AuditLog, AgentSupervisor with per-agent GenServers) is running; killing an agent restarts only that agent, killing a company restarts only that company's agents, and other companies and the dashboard are unaffected.
+  2. An agent wakes on each of the four triggers — new inbox file (inotify), cron-style heartbeat, `@agent` channel mention, Director request — and executes a task by spawning `bwrap <sandbox-args> <cli-tool> -p <prompt>` with stdout streamed to `agents/<name>/stdout.log`.
   3. Inbox/outbox one-way flow is enforced: an agent cannot write to another agent's inbox or to a channel file directly; the Router mediates every transfer, and writes routed to a channel the sender lacks `chat:write` for are rejected and audited.
-  4. For an agent declaring `permissions: [projects:write:website-redesign]`, POSIX ACLs inside the container physically reject `open(O_WRONLY)` on `projects/other/` — verified by running a deliberate write attempt from the Python worker and observing `EACCES` at the kernel layer, not just an Elixir-side rejection.
-  5. Per-agent network policy (`none` default / `api-only` / `open`) is enforced at container-launch time; `network: none` agents cannot reach the public internet even when the LLM requests it.
-  6. Per-agent USD budget is tracked: the Python worker reports `tokens_used` and `cost_usd` after each LLM call, Elixir aggregates into the SQLite budget ledger, alerts fire at the configured threshold, and a hard stop refuses further task execution when the monthly cap is exceeded.
+  4. For an agent declaring `permissions: [projects:write:website-redesign]`, the `bwrap` sandbox mounts `projects/website-redesign/` read/write and `projects/other/` with `--ro-bind-try /dev/null` (denied) — verified by spawning the sandboxed CLI with a deliberate write attempt and observing `EACCES` at the kernel layer, not just an Elixir-side rejection.
+  5. Per-agent network policy is enforced at `bwrap` launch time: `none` uses `--unshare-net` (no network namespace access); `api-only` uses a named network namespace with nftables allowlist; `open` shares the host network namespace. `network: none` agents cannot reach the public internet.
+  6. Per-agent USD budget is tracked: Elixir parses CLI tool session telemetry after each invocation (Claude Code's JSONL session export; Gemini/Codex analogs), extracts token counts + cost, aggregates into the SQLite budget ledger, alerts fire at the configured threshold, and a hard stop refuses further task execution when the monthly cap is exceeded.
   7. A task with `requires_approval: director` frontmatter pauses before execution until the Director explicitly approves (dashboard-driven in Phase 4; file-mutation-driven here), and agent creation is rejected unless performed by the Director — agents cannot spawn agents.
-  8. An agent using `provider: anthropic` (or `openai` / `google`) with its API key in `~/.glorbo/config.md` executes a task using cloud inference; the key is injected as a container env var and is never written to the company directory. One provider + model per `agent.md` is enforced.
-  9. Skills declared in an agent's `skills:` list are injected into the LLM prompt at runtime from `skills/<name>.md`.
-**Plans**: TBD (2-3 plans)
+  8. An agent using `provider: claude-code` (or `gemini-cli` / `codex`) executes tasks using each CLI tool's native authentication (tool-managed credentials, never copied into company directories or agent env). One provider + model per `agent.md` is enforced at parse time.
+  9. Skills declared in an agent's `skills:` list are materialised into the agent workspace under `.glorbo-skills/` just before invocation, and referenced from the prompt in the form each CLI tool expects (e.g., Claude Code's skill-file loading; Gemini's system-prompt injection).
+**Non-goals (deferred to a future milestone, see `.planning/deferred/container-runtime-v0.0.2/`)**:
+  - Python-in-Podman agent runtime with litellm-based LLM dispatch
+  - POSIX ACL enforcement (`setfacl`) for agent filesystem permissions — bwrap namespaces cover v1's needs
+  - Per-agent Linux user provisioning with `/etc/subuid`-relative UID allocation
+  - Offline inference via bundled Ollama — LLM-05 moves to the container runtime phase since CLI tools require their providers' cloud endpoints (an `ollama` CLI provider could be added as a follow-on, but is not in Phase 3)
+**Plans**: TBD (fresh planning after CLI-agent pivot — 4-5 plans expected)
+- [x] 03-01-PLAN.md — Wave 0 foundations: schemas, ACLMapper (dormant, reserved for container runtime), UidAllocator (dormant), worker skills/usage extensions, AUDIT_EVENTS.md. Executed before pivot; most artifacts reusable as-is.
 
 ### Phase 4: LiveView Dashboard + Real-Time Channels
 **Goal**: A Director opens `http://localhost:4000` and sees the filesystem come alive — every company, agent, task, chat message, approval request, audit event, and live stdout stream, updating in sub-second real time via inotify → PubSub → LiveView.

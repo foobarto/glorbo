@@ -38,7 +38,7 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 
 - [ ] **LLM-01**: Ollama auto-downloaded by `glorbo init`; local inference works offline out of the box
 - [ ] **LLM-02**: Hugging Face local models supported via `huggingface_hub`
-- [ ] **LLM-03**: Cloud providers — Anthropic, OpenAI, Google — usable via per-agent config in `agent.md`; API keys read from `~/.glorbo/config.md` and injected as env vars, never written to company directories
+- [ ] **LLM-03**: Cloud providers usable via per-agent config in `agent.md`. In v0.0.1: providers are `claude-code`, `gemini-cli`, `codex` (each CLI manages its own auth — Glorbo never handles API keys directly; `config.md` key injection is deferred). In container runtime phase: providers extend to `anthropic`, `openai`, `google` via litellm with keys from `~/.glorbo/config.md` injected per-request.
 - [ ] **LLM-04**: One provider + model per agent; no multi-model routing per agent
 - [ ] **LLM-05**: Full end-to-end flow works offline after `init` completes (local model only)
 
@@ -53,10 +53,10 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 ### Permissions & Security (SEC)
 
 - [ ] **SEC-01**: Declarative permissions in `agent.md` frontmatter (`resource:action:scope`) enforced at the Elixir Router (application layer)
-- [ ] **SEC-02**: Same permissions enforced at the kernel layer via POSIX ACLs (`setfacl`) inside the company container — application-only checks are a design bug
-- [ ] **SEC-03**: Per-agent network policy: `none` (default) / `api-only` / `open`
+- [ ] **SEC-02**: Same permissions enforced at the kernel layer via `bwrap` namespace isolation when launching CLI agents (filesystem bind-mounts per agent scope; denied paths mounted as `/dev/null`) — application-only checks are a design bug. *Originally scoped to POSIX ACLs inside Podman containers; re-scoped in v0.0.1 to bwrap for the CLI-agent runtime. POSIX ACL enforcement returns with the container runtime phase — see `.planning/deferred/container-runtime-v0.0.2/`.*
+- [ ] **SEC-03**: Per-agent network policy: `none` (default) / `api-only` / `open` — enforced via `bwrap --unshare-net` (none), named netns with nftables allowlist (api-only), or shared host netns (open). *Podman-based enforcement deferred to container runtime phase.*
 - [ ] **SEC-04**: Director-approved approval gates for tasks with `requires_approval: director` frontmatter
-- [ ] **SEC-05**: Per-agent monthly budget in USD with alert threshold and hard stop; usage reported by Python worker after each LLM call and indexed into SQLite
+- [ ] **SEC-05**: Per-agent monthly budget in USD with alert threshold and hard stop; usage parsed from each CLI tool's session telemetry (Claude Code JSONL export, Gemini/Codex analogs) and indexed into SQLite. *Originally scoped to Python worker reporting via litellm; re-scoped in v0.0.1 to CLI telemetry parsing. litellm reporting returns with the container runtime phase.*
 
 ### Dashboard & Real-Time (UI)
 
