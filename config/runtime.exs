@@ -35,18 +35,28 @@ if config_env() == :prod do
   # install is configured-by-file (matches D-06/D-07 "filesystem is source
   # of truth"). Env vars still override — useful for one-off overrides
   # in test harnesses and CI smoke tests.
+  #
+  # WR-04: if Glorbo.Config.load/0 fails we generate an ephemeral 64-byte
+  # random key rather than derive one from $HOME (deterministic,
+  # low-entropy, trivially forgeable on a shared host). Sessions die on
+  # restart but entropy is adequate; the error is logged at :error so ops
+  # notice. The sha256($HOME) fallback is intentionally removed.
   cfg =
     case Glorbo.Config.load() do
       {:ok, c} ->
         c
 
-      {:error, _} ->
-        # Fall back to a derived secret so the endpoint still boots when
-        # config.md is unreadable. Log nothing (T-04-05: never leak config
-        # state into logs).
+      {:error, reason} ->
+        require Logger
+
+        Logger.error(
+          "Glorbo.Config.load/0 failed (reason=#{inspect(reason)}); " <>
+            "booting with an ephemeral secret_key_base. Sessions will not " <>
+            "survive restart. Fix ~/.glorbo/config.md to persist configuration."
+        )
+
         %{
-          secret_key_base:
-            :crypto.hash(:sha256, System.get_env("HOME", "/tmp")) |> Base.encode64(),
+          secret_key_base: :crypto.strong_rand_bytes(64) |> Base.url_encode64(),
           host: "127.0.0.1",
           port: 4000,
           dashboard_token: nil
