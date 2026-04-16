@@ -33,6 +33,10 @@ defmodule Glorbo.Filesystem.Reindex do
 
   @type result :: %{indexed: integer(), skipped: integer(), deleted: integer()}
 
+  # WR-14: match Frontmatter's 10 MB cap so a multi-GB markdown file can't
+  # OOM the BEAM via File.read!/1 before the parser would have rejected it.
+  @max_file_bytes 10_485_760
+
   @doc """
   Mark a single path as dirty — triggers an incremental re-index of that
   file only (Plan 04, B4). Thin wrapper around `process_path/2`.
@@ -178,23 +182,35 @@ defmodule Glorbo.Filesystem.Reindex do
   # B4 CONTRACT: process_file/1 is PRIVATE. Plan 04 will wrap it via a
   # public process_path/2 — do NOT promote this to `def`.
   defp process_file(path) do
-    content = File.read!(path)
-    digest = :crypto.hash(:md5, content) |> Base.encode16(case: :lower)
+    # WR-14: stat-check first so an oversize file never gets slurped into
+    # memory. Frontmatter.parse/1 has its own cap but only after the full
+    # read. Streaming the MD5 for under-cap files keeps memory bounded.
+    case File.stat(path) do
+      {:ok, %File.Stat{size: size}} when size > @max_file_bytes ->
+        {:skip, :too_large}
 
-    case Repo.get(ReindexState, path) do
-      %ReindexState{md5: ^digest} ->
-        :unchanged
+      {:ok, _stat} ->
+        content = File.read!(path)
+        digest = :crypto.hash(:md5, content) |> Base.encode16(case: :lower)
 
-      _ ->
-        case Frontmatter.parse(content) do
-          {:ok, meta, _body} ->
-            upsert_domain_row(path, meta)
-            upsert_reindex_state(path, digest)
-            :indexed
+        case Repo.get(ReindexState, path) do
+          %ReindexState{md5: ^digest} ->
+            :unchanged
 
-          {:error, reason} ->
-            {:skip, reason}
+          _ ->
+            case Frontmatter.parse(content) do
+              {:ok, meta, _body} ->
+                upsert_domain_row(path, meta)
+                upsert_reindex_state(path, digest)
+                :indexed
+
+              {:error, reason} ->
+                {:skip, reason}
+            end
         end
+
+      {:error, reason} ->
+        {:skip, {:stat_failed, reason}}
     end
   end
 
