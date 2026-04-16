@@ -114,8 +114,8 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 **Plans**: 4 plans (2 original + 2 gap-closure)
 - [x] 05-01-PLAN.md — Wave 0: CLI dispatch extension + module skeletons + test harness + pidfile + erl_cookie + vm.args (CLI-01, CLI-03 scaffolding)
 - [x] 05-02-PLAN.md — Wave 1: Lifecycle (up/down/status/serve/run) + scaffolding (new company/agent/project) + logs (CLI-01)
-- [ ] 05-03-PLAN.md — Wave 2 (gap-closure, parallel with 05-04): Backup + Restore + Portability integration tests (CLI-03)
-- [ ] 05-04-PLAN.md — Wave 2 (gap-closure, parallel with 05-03): Console + Migrate + Doctor.Fixer registry + doctor --fix (CLI-01 residual)
+- [x] 05-03-PLAN.md — Wave 2 (gap-closure, parallel with 05-04): Backup + Restore + Portability integration tests (CLI-03)
+- [x] 05-04-PLAN.md — Wave 2 (gap-closure, parallel with 05-03): Console + Migrate + Doctor.Fixer registry + doctor --fix (CLI-01 residual)
 
 ## Progress
 
