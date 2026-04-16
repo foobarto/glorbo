@@ -21,6 +21,7 @@ defmodule Glorbo.Filesystem.Hierarchy do
     companies
     runtime/sockets
     logs/containers
+    run
   )
 
   # Files touched empty if absent; preserved if present.
@@ -46,6 +47,12 @@ defmodule Glorbo.Filesystem.Hierarchy do
     end)
 
     File.chmod!(Path.join(base, "runtime/sockets"), 0o700)
+
+    # Plan 05-01: `run/` holds the glorbo.pid (0600) — restrict the
+    # containing dir to 0700 so only the Director can enumerate it
+    # (threat T-05-03, parity with runtime/sockets/).
+    run_dir = Path.join(base, "run")
+    if File.exists?(run_dir), do: File.chmod!(run_dir, 0o700)
     :ok
   end
 

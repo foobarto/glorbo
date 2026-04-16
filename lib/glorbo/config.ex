@@ -105,11 +105,13 @@ defmodule Glorbo.Config do
   defp write_default!(path) do
     File.mkdir_p!(Path.dirname(path))
     secret = generate_secret()
+    cookie = generate_cookie()
 
     body = """
     ---
     secret_key_base: #{secret}
     dashboard_token: null
+    erl_cookie: #{cookie}
     host: "127.0.0.1"
     port: 4000
     ---
@@ -129,8 +131,70 @@ defmodule Glorbo.Config do
     :crypto.strong_rand_bytes(64) |> Base.encode64()
   end
 
+  # Plan 05-01 (D-25): 24-byte url-safe cookie for Erlang distribution.
+  # Url-safe encoding avoids quoting hassles when written to config.md or
+  # passed as a `-setcookie` argument via `RELEASE_COOKIE`. 24 bytes
+  # (> 128-bit security) exceeds the 16-byte minimum enforced by
+  # `erl_cookie/1`.
+  defp generate_cookie do
+    :crypto.strong_rand_bytes(24) |> Base.url_encode64(padding: false)
+  end
+
   defp maybe_string(nil), do: nil
   defp maybe_string(""), do: nil
   defp maybe_string(s) when is_binary(s), do: s
   defp maybe_string(other), do: to_string(other)
+
+  @doc """
+  Return the Erlang distribution cookie for this Glorbo install.
+
+  Ensures the key is present (and ≥ 16 bytes) in `<base>/config.md`; if
+  absent or too short, generates a fresh 24-byte url-safe cookie, persists
+  it to disk (preserving other frontmatter lines + body), and reasserts
+  mode 0600.
+
+  The returned value is opaque — callers MUST treat it as a secret and
+  MUST NEVER emit it to logs or audit (threat T-05-02).
+  """
+  @spec erl_cookie(Path.t()) :: {:ok, String.t()} | {:error, :config_parse}
+  def erl_cookie(base \\ Path.expand("~/.glorbo")) do
+    path = Path.join(base, "config.md")
+    unless File.exists?(path), do: write_default!(path)
+
+    with {:ok, content} <- File.read(path),
+         {:ok, meta, body} <- Frontmatter.parse(content) do
+      case meta["erl_cookie"] do
+        c when is_binary(c) and byte_size(c) >= 16 ->
+          {:ok, c}
+
+        _ ->
+          cookie = generate_cookie()
+          write_cookie!(path, content, meta, body, cookie)
+          {:ok, cookie}
+      end
+    else
+      _ -> {:error, :config_parse}
+    end
+  end
+
+  # Line-level rewrite so we preserve other frontmatter keys, comments
+  # (if any sneak past yamerl), and the body verbatim. `:sync` gives us a
+  # durable write so a crash mid-write leaves either the old or the new
+  # file — never a torn middle.
+  defp write_cookie!(path, content, meta, _body, cookie) do
+    new_content =
+      if Map.has_key?(meta, "erl_cookie") do
+        # Replace the single `erl_cookie:` line wherever it sits in the
+        # frontmatter — multi-line flag `m` anchors `^`/`$` per line.
+        String.replace(content, ~r/^erl_cookie:.*$/m, "erl_cookie: #{cookie}")
+      else
+        # Inject the key immediately after the opening `---\n` fence
+        # (global: false to only touch the first occurrence — the body
+        # may contain markdown horizontal rules that look like fences).
+        String.replace(content, "---\n", "---\nerl_cookie: #{cookie}\n", global: false)
+      end
+
+    File.write!(path, new_content, [:sync])
+    File.chmod!(path, 0o600)
+  end
 end
