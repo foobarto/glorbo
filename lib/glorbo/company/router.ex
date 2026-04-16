@@ -117,8 +117,24 @@ defmodule Glorbo.Company.Router do
   end
 
   defp validate_message(%{sender: s, to: to, body: b, raw_path: rp, msg_id: id})
-       when is_binary(s) and is_binary(to) and is_binary(b) and is_binary(rp) and is_binary(id),
-       do: :ok
+       when is_binary(s) and is_binary(to) and is_binary(b) and is_binary(rp) and is_binary(id) do
+    # WR-02: reject control chars in fields that get interpolated into YAML
+    # frontmatter. A sender-controlled newline in `msg_id` or `to` could
+    # otherwise smuggle frontmatter keys like `from: ceo` past a downstream
+    # parser (agent inbox reader, dashboard, audit log). `/` in msg_id is
+    # additionally rejected since it would let the attacker pick the on-disk
+    # path.
+    cond do
+      String.contains?(id, ["\n", "\r", "\0", "/"]) ->
+        {:error, {:invalid_message, :control_chars_in_msg_id}}
+
+      String.contains?(to, ["\n", "\r", "\0"]) ->
+        {:error, {:invalid_message, :control_chars_in_to}}
+
+      true ->
+        :ok
+    end
+  end
 
   defp validate_message(_), do: {:error, {:invalid_message, :malformed}}
 
