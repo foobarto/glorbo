@@ -62,21 +62,33 @@ defmodule Glorbo.Doctor.Fixer do
           handle_check(check, dry_run?, acc)
         end)
 
-      exit_code = if summary.failed > 0, do: 1, else: 0
+      exit_code = resolve_exit_code(summary, dry_run?)
       {:doctor, exit_code, format_summary(summary)}
     end
+  end
+
+  # WR-05: after repairs, use Doctor.run_checks + Doctor.exit_code/1 to
+  # get the severity-weighted truth. Unregistered blockers (no fixer
+  # exists) were previously counted as `skipped` → exit 0, which
+  # contradicts D-28. Re-running also covers WR-06 (check→fix→recheck)
+  # automatically. For dry-run we keep the legacy semantics (no state
+  # change → static summary-based code).
+  defp resolve_exit_code(summary, true = _dry_run) do
+    if summary.failed > 0, do: 1, else: 0
+  end
+
+  defp resolve_exit_code(_summary, false) do
+    Doctor.exit_code(Doctor.run_checks())
   end
 
   defp handle_check(check, true = _dry_run, acc) do
     case Map.fetch(@fixers, check.name) do
       {:ok, _fixer} ->
         line = "would repair: #{check.name}"
-        IO.puts(line)
         %{acc | attempted: acc.attempted + 1, lines: [line | acc.lines]}
 
       :error ->
         line = "no fixer registered for: #{check.name}"
-        IO.puts(line)
         %{acc | skipped: acc.skipped + 1, lines: [line | acc.lines]}
     end
   end
@@ -88,7 +100,6 @@ defmodule Glorbo.Doctor.Fixer do
 
       :error ->
         line = "no fixer registered for: #{check.name}"
-        IO.puts(line)
         %{acc | skipped: acc.skipped + 1, lines: [line | acc.lines]}
     end
   end
@@ -96,20 +107,53 @@ defmodule Glorbo.Doctor.Fixer do
   defp run_fixer(fixer, check, acc) do
     case safe_apply(fixer, check) do
       {:ok, msg} ->
-        line = "✓ #{check.name}: #{msg}"
-        IO.puts(line)
-        Audit.emit("doctor", "fix.#{check.name}.ok", %{detail: msg})
+        # WR-06: re-invoke the single check by name; promote to `repaired`
+        # only if the fresh check passes. A fixer that reports {:ok, _}
+        # but leaves the check still failing is a genuine failure.
+        case Doctor.recheck(check.name) do
+          %{pass: true} ->
+            line = "✓ #{check.name}: #{msg}"
+            Audit.emit("doctor", "fix.#{check.name}.ok", %{detail: msg})
 
-        %{
-          acc
-          | attempted: acc.attempted + 1,
-            repaired: acc.repaired + 1,
-            lines: [line | acc.lines]
-        }
+            %{
+              acc
+              | attempted: acc.attempted + 1,
+                repaired: acc.repaired + 1,
+                lines: [line | acc.lines]
+            }
+
+          %{pass: false, detail: detail} ->
+            line = "✗ #{check.name}: fixer reported ok but recheck failed: #{detail}"
+
+            Audit.emit("doctor", "fix.#{check.name}.recheck_failed", %{
+              fixer_detail: msg,
+              recheck_detail: detail
+            })
+
+            %{
+              acc
+              | attempted: acc.attempted + 1,
+                failed: acc.failed + 1,
+                lines: [line | acc.lines]
+            }
+
+          nil ->
+            # Recheck impossible (check vanished from registry). Trust the
+            # fixer's {:ok, _} and count as repaired — but log a warning
+            # line so the Director sees the degraded verification.
+            line = "✓ #{check.name}: #{msg} (recheck unavailable)"
+            Audit.emit("doctor", "fix.#{check.name}.ok", %{detail: msg})
+
+            %{
+              acc
+              | attempted: acc.attempted + 1,
+                repaired: acc.repaired + 1,
+                lines: [line | acc.lines]
+            }
+        end
 
       {:error, reason} ->
         line = "✗ #{check.name}: #{inspect(reason)}"
-        IO.puts(line)
         Audit.emit("doctor", "fix.#{check.name}.failed", %{reason: inspect(reason)})
 
         %{
@@ -120,10 +164,10 @@ defmodule Glorbo.Doctor.Fixer do
         }
 
       {:explain, guidance} ->
-        IO.puts("ℹ  #{check.name}:")
-        IO.puts(guidance)
         Audit.emit("doctor", "fix.#{check.name}.explained", %{guidance: guidance})
-        line = "ℹ #{check.name}: (guidance printed)"
+
+        line =
+          "ℹ #{check.name}:\n#{String.trim_trailing(guidance)}"
 
         %{
           acc

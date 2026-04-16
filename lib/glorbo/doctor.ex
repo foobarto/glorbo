@@ -44,6 +44,20 @@ defmodule Glorbo.Doctor do
   @spec run_checks() :: [check()]
   def run_checks, do: run_checks([])
 
+  @doc """
+  Re-run a single check by its string name (e.g. `"sockets_dir"`).
+  Returns the `check()` map if the name is known, `nil` otherwise.
+
+  Used by `Glorbo.Doctor.Fixer` to implement check→fix→recheck (WR-06):
+  after a fixer reports success the caller invokes `recheck/1` on the
+  same name and promotes `{:ok, _}` to `repaired` only when the fresh
+  run returns `pass: true`.
+  """
+  @spec recheck(String.t()) :: check() | nil
+  def recheck(name) when is_binary(name) do
+    Enum.find(run_checks(), &(&1.name == name))
+  end
+
   @spec run_checks(keyword()) :: [check()]
   def run_checks(deps) when is_list(deps) do
     [

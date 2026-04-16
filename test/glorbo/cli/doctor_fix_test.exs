@@ -27,13 +27,14 @@ defmodule Glorbo.CLI.DoctorFixTest do
       assert out =~ "nothing to repair" or out =~ "doctor --fix summary"
     end
 
-    test "exit_code is 0 when no checks failed OR all failed checks were repaired/explained" do
-      # On a healthy dev host, all checks pass → exit 0. If a warning-level
-      # check fails but the fixer repairs/explains it → still exit 0. We
-      # can't force a specific state here; just assert the tuple shape.
+    test "exit_code is severity-weighted per Doctor.exit_code/1" do
+      # WR-05 fix: after repairs, exit code comes from Doctor.exit_code/1
+      # on a fresh run_checks. Valid codes are 0 (all pass), 1 (blocker
+      # failing), 2 (only warnings failing). The previous [0, 1]
+      # assertion was tied to the broken `failed > 0` heuristic.
       {result, _io} = ExUnit.CaptureIO.with_io(fn -> DoctorFix.run([]) end)
       assert {:doctor, code, _out} = result
-      assert code in [0, 1]
+      assert code in [0, 1, 2]
     end
 
     test "delegation is literal: DoctorFix.run/1 is equivalent to Fixer.run/1" do
