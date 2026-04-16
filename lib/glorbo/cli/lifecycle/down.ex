@@ -64,13 +64,37 @@ defmodule Glorbo.CLI.Lifecycle.Down do
 
     case final_status do
       :running ->
-        # 10s grace elapsed — SIGKILL.
-        _ = System.cmd("kill", ["-KILL", Integer.to_string(pid)], stderr_to_stdout: true)
-        :ok = Pidfile.rm(base)
-        Audit.emit("down", "complete", %{pid: pid, escalated: true})
+        # WR-06: before escalating to SIGKILL, re-read the pidfile. In
+        # the 10s SIGTERM grace window the original pid may have exited
+        # and the OS may have recycled it for an unrelated process —
+        # killing it would be a cross-user footgun. Only SIGKILL if the
+        # pidfile still points at the SAME pid we started with.
+        case Pidfile.status(base) do
+          :running ->
+            current = Pidfile.read!(base)
 
-        {:down, 0,
-         "glorbo stopped (SIGKILL after 10s SIGTERM grace; pid=#{pid}).\n"}
+            if current == pid do
+              _ = System.cmd("kill", ["-KILL", Integer.to_string(pid)], stderr_to_stdout: true)
+              :ok = Pidfile.rm(base)
+              Audit.emit("down", "complete", %{pid: pid, escalated: true})
+
+              {:down, 0,
+               "glorbo stopped (SIGKILL after 10s SIGTERM grace; pid=#{pid}).\n"}
+            else
+              # pidfile contents changed mid-shutdown — treat as
+              # already-stopped to avoid targeting an unrelated pid.
+              :ok = Pidfile.rm(base)
+              Audit.emit("down", "complete", %{pid: pid, escalated: false, pidfile_changed: true})
+
+              {:down, 0,
+               "glorbo stopped (pidfile changed during shutdown; not escalating).\n"}
+            end
+
+          _stopped_or_stale ->
+            :ok = Pidfile.rm(base)
+            Audit.emit("down", "complete", %{pid: pid, escalated: false})
+            {:down, 0, "glorbo stopped.\n"}
+        end
 
       _stopped_or_stale ->
         :ok = Pidfile.rm(base)
