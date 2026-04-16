@@ -289,59 +289,59 @@ defmodule Glorbo.Sandbox.Bwrap do
     run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir)
   end
 
-  # Run bwrap via Port with stdin delivery (Pitfall 8: close stdin to signal EOF).
-  # We use Port directly rather than MuonTrap.cmd because the latter lacks a
-  # stdin-input option. --die-with-parent + --unshare-pid cover the cleanup
-  # semantics MuonTrap would otherwise add (RESEARCH Pattern 2 / Pitfall 1).
+  # Invoke bwrap, piping the prompt through stdin AND closing stdin when the
+  # prompt is fully written. CLI tools (claude --print, codex exec -, gemini
+  # -p) all wait for EOF on stdin before processing the prompt; Port.open
+  # with {:command, ""} sends a zero-length chunk but does NOT close the
+  # stdin-half, so those tools block indefinitely until our timeout fires
+  # (CR-01). `System.cmd/3` with :input closes stdin after writing the
+  # prompt — this matches what the CLI tools expect.
+  #
+  # System.cmd has no built-in timeout, so we wrap it in a Task and rely on
+  # Task.yield + Task.shutdown for the timeout. Task.shutdown/:brutal_kill
+  # sends SIGKILL to the port's Elixir process which closes the port, which
+  # kernel-terminates bwrap; bwrap's --die-with-parent + --unshare-pid
+  # triple-cleanup then reaps the CLI tool and all its descendants.
   defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir) do
-    port =
-      Port.open(
-        {:spawn_executable, bwrap_bin},
-        [
-          :binary,
-          :exit_status,
-          :stderr_to_stdout,
-          :use_stdio,
-          :hide,
-          args: argv
-        ]
-      )
+    task =
+      Task.async(fn ->
+        try do
+          # :input writes the iodata to stdin and closes it — this is the
+          # stdin-EOF signal every supported CLI needs. stderr_to_stdout: true
+          # mirrors the prior port behaviour (stderr merged into stdout).
+          {output, status} =
+            System.cmd(bwrap_bin, argv,
+              input: prompt,
+              stderr_to_stdout: true,
+              parallelism: true
+            )
 
-    if prompt != "", do: Port.command(port, prompt)
-    # Closing stdin signals EOF; many CLI tools (claude, gemini, codex) require
-    # this to begin processing.
-    _ = send(port, {self(), {:command, ""}})
-    # :eof is signalled by closing the stdin-half — Port.close/1 would close the
-    # whole port. Use :erlang.port_close after the process has exited.
+          {:ok, output, status}
+        rescue
+          e -> {:error, Exception.message(e)}
+        catch
+          kind, reason -> {:error, {kind, reason}}
+        end
+      end)
 
-    wait_for_exit(port, [], timeout_s * 1_000, usage_dir)
-  end
-
-  defp wait_for_exit(port, acc, timeout_ms, usage_dir) do
-    receive do
-      {^port, {:data, chunk}} ->
-        wait_for_exit(port, [acc, chunk], timeout_ms, usage_dir)
-
-      {^port, {:exit_status, status}} ->
+    case Task.yield(task, timeout_s * 1_000) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {:ok, output, status}} ->
         {:ok,
          %{
            exit_status: status,
-           stdout: acc |> IO.iodata_to_binary(),
+           stdout: output,
            usage_dir: usage_dir
          }}
-    after
-      timeout_ms ->
-        Logger.warning("bwrap invocation exceeded #{div(timeout_ms, 1000)}s — closing port")
-        safe_port_close(port)
+
+      {:ok, {:error, reason}} ->
+        {:error, reason}
+
+      {:exit, reason} ->
+        {:error, {:task_exit, reason}}
+
+      nil ->
+        Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
         {:error, :timeout}
     end
-  end
-
-  defp safe_port_close(port) do
-    Port.close(port)
-  rescue
-    _ -> :ok
-  catch
-    _, _ -> :ok
   end
 end
