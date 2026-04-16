@@ -50,8 +50,7 @@ defmodule Glorbo.Application do
       # CR-04: DaemonSupervisor MUST start before ContainerManager so
       # persistent-mode launches register Daemons out-of-band instead of
       # linking them to ContainerManager (crash isolation invariant).
-      {DynamicSupervisor,
-       name: Glorbo.Container.DaemonSupervisor, strategy: :one_for_one},
+      {DynamicSupervisor, name: Glorbo.Container.DaemonSupervisor, strategy: :one_for_one},
       Glorbo.ContainerManager,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       GlorboWeb.Endpoint

@@ -30,6 +30,11 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Phase 3 config — LLM rate table (D-30) + api-only network policy allowlist (D-16).
+# These are loaded BEFORE the env-specific import so test/dev/prod can override.
+import_config "llm_rates.exs"
+import_config "network_policy.exs"
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

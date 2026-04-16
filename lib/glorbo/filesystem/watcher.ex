@@ -111,9 +111,7 @@ defmodule Glorbo.Filesystem.Watcher do
   # WR-15: treat FileSystem subprocess DOWN as fatal — we'd otherwise sit
   # happily while events never arrive (e.g. inotify watch-limit hit).
   def handle_info({:DOWN, ref, :process, pid, reason}, %{fs_ref: ref, fs_pid: pid} = state) do
-    Logger.error(
-      "[watcher/#{state.company}] FileSystem process died: #{inspect(reason)}"
-    )
+    Logger.error("[watcher/#{state.company}] FileSystem process died: #{inspect(reason)}")
 
     {:stop, {:filesystem_down, reason}, state}
   end
