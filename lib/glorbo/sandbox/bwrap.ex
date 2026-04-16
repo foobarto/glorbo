@@ -434,13 +434,14 @@ defmodule Glorbo.Sandbox.Bwrap do
     sh_path = System.find_executable("sh") || "/bin/sh"
 
     # The shell script:
-    #   exec "$1" "${@:3}" < "$2"
+    #   bwrap_bin="$1"; prompt_file="$2"; shift 2; exec "$bwrap_bin" "$@" < "$prompt_file"
     # - positional arg 1 = bwrap binary
     # - positional arg 2 = prompt file
     # - positional args 3+ = bwrap argv
     # Using `exec` makes sh replace itself with bwrap (tighter parent/child
-    # relationship for --die-with-parent).
-    sh_script = ~s|exec "$1" "${@:3}" < "$2"|
+    # relationship for --die-with-parent). POSIX-only — `${@:3}` is a
+    # bash-ism that dash (Ubuntu's /bin/sh) rejects with "Bad substitution".
+    sh_script = ~s|b="$1"; p="$2"; shift 2; exec "$b" "$@" < "$p"|
 
     port_args = [sh_script, "glorbo-bwrap-launcher", bwrap_bin, prompt_file | argv]
 
