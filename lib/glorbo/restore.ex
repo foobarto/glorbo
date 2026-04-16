@@ -307,6 +307,8 @@ defmodule Glorbo.Restore do
       :ok
     rescue
       e -> {:error, {:migrate_failed, Exception.message(e)}}
+    catch
+      :exit, reason -> {:error, {:migrate_failed, inspect(reason)}}
     end
   end
 
