@@ -112,7 +112,9 @@ jobs:
                 | (contains(["amd64"]) and contains(["arm64"]))'
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.1
+        with:
+          cosign-release: 'v3.0.6'
 
       - name: Cosign sign image (keyless)
         env:
