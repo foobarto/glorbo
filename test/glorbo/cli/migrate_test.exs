@@ -1,6 +1,6 @@
 defmodule Glorbo.CLI.MigrateTest do
   @moduledoc "Plan 04 — Migrate verb contract."
-  use ExUnit.Case, async: false
+  use Glorbo.DataCase, async: false
 
   alias Glorbo.CLI.Migrate
 

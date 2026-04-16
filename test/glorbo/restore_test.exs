@@ -1,8 +1,20 @@
 defmodule Glorbo.RestoreTest do
   @moduledoc "Plan 05-03 — Restore module unit tests."
-  use GlorboTest.CLICase, async: false
+  use Glorbo.DataCase, async: false
 
   alias Glorbo.Test.PortabilityFixtures
+
+  setup do
+    home = Glorbo.Test.TmpGlorboHome.setup()
+    prior = System.get_env("GLORBO_HOME")
+    System.put_env("GLORBO_HOME", home)
+
+    on_exit(fn ->
+      if prior, do: System.put_env("GLORBO_HOME", prior), else: System.delete_env("GLORBO_HOME")
+    end)
+
+    {:ok, glorbo_home: home}
+  end
 
   setup %{glorbo_home: home} do
     # Host A — source for the archive

@@ -122,27 +122,23 @@ defmodule Glorbo.CLITest do
     end
   end
 
-  describe ~S|dispatch(["doctor", "--fix"]) (Plan 05-01, D-16)| do
-    test "routes --fix through Glorbo.CLI.DoctorFix.run/1 (Wave-0 stub)" do
-      # Plan 05-01 replaces the Plan-04 "Phase 5 deferral" in-line with a
-      # Wave-0 stub returned from the dedicated DoctorFix module. Plan 03
-      # fills the actual fixer registry; until then the stub tuple is the
-      # contract the dispatch switch asserts.
-      {verb, code, output} = CLI.dispatch(["doctor", "--fix"])
+  describe ~S|dispatch(["doctor", "--fix"]) (Plan 05-04, D-16)| do
+    test "routes --fix through Glorbo.CLI.DoctorFix.run/1" do
+      # Plan 05-04 fills the fixer registry. Dispatch routes to the live
+      # module; we only assert the verb atom + shape here (contents are
+      # covered by doctor_fix_test and fixer_test).
+      {verb, code, output} = CLI.dispatch(["doctor", "--fix", "--help"])
       assert verb == :doctor
       assert code in [0, 1, 2, 3]
-      assert output =~ "doctor --fix"
-      assert output =~ "not implemented in Wave 0"
+      assert is_binary(output)
     end
 
-    test "--fix with --json still routes to DoctorFix (no JSON check output)" do
+    test "--fix with --json still routes to DoctorFix" do
       # D-27 reserves --json for read-only doctor; --fix is an action verb.
-      # Wave-0 DoctorFix.run/1 returns the same stub text regardless of
-      # --json. Plan 03 may introduce per-flag behavior.
-      {verb, _code, output} = CLI.dispatch(["doctor", "--fix", "--json"])
+      # --help lets us assert the verb without triggering a live fixer run.
+      {verb, _code, output} = CLI.dispatch(["doctor", "--fix", "--json", "--help"])
       assert verb == :doctor
-      assert output =~ "doctor --fix"
-      assert output =~ "not implemented in Wave 0"
+      assert is_binary(output)
     end
   end
 end

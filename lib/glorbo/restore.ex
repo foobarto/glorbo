@@ -180,10 +180,13 @@ defmodule Glorbo.Restore do
   end
 
   defp reindex(base) do
-    case Glorbo.Filesystem.Reindex.run(base: base) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, {:reindex_failed, reason}}
-      other -> {:error, {:reindex_unexpected, other}}
+    try do
+      {:ok, _} = Glorbo.Filesystem.Reindex.run(base: base)
+      :ok
+    rescue
+      e -> {:error, {:reindex_failed, Exception.message(e)}}
+    catch
+      :exit, reason -> {:error, {:reindex_failed, inspect(reason)}}
     end
   end
 
