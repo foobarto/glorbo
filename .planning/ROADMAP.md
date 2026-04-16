@@ -21,15 +21,15 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 
 ## Phases
 
-- [x] **Phase 1: Compilable Skeleton + CI Release Pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
-- [x] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
-- [x] **Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
-- [ ] **Phase 4: LiveView Dashboard + Real-Time Channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
-- [ ] **Phase 5: CLI Completeness + Backup/Restore Portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
+- [x] **Phase 01: compilable skeleton ci release pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
+- [x] **Phase 02: filesystem foundation container runtime local llm** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
+- [x] **Phase 03: agents routing kernel permissions budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
+- [ ] **Phase 04: liveview dashboard real time channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
+- [ ] **Phase 05: cli completeness backup restore portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
 
 ## Phase Details
 
-### Phase 1: Compilable Skeleton + CI Release Pipeline
+### Phase 01: compilable skeleton ci release pipeline
 **Goal**: A fresh checkout compiles to a signed, self-contained Linux binary on both x86_64 and aarch64, and that binary runs `glorbo doctor` to verify the host can eventually host Glorbo.
 **Depends on**: Nothing (first phase)
 **Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06
@@ -44,9 +44,9 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] 01-02-PLAN.md — `Glorbo.Doctor` shared module + `Mix.Tasks.Glorbo.Doctor` with `--json` flag (FND-06)
 - [x] 01-03-PLAN.md — Burrito single-binary release + argv dispatch + GitHub Actions CI matrix + Cosign keyless signing + VERIFY.md (FND-03, FND-04, FND-05)
 
-### Phase 2: Filesystem Foundation + Container Runtime + Local LLM
+### Phase 02: filesystem foundation container runtime local llm
 **Goal**: `glorbo init` converts a fresh host into a working Glorbo installation — Podman and Ollama bootstrapped, `glorbo-runtime` image built, `~/.glorbo/` hierarchy created, audit log appending, reindex contract operational, offline-capable.
-**Depends on**: Phase 1
+**Depends on**: Phase 01
 **Requirements**: FS-01, FS-02, FS-03, FS-04, FS-05, FS-06, RT-01, RT-02, RT-03, RT-04, RT-05, RT-06, LLM-01, LLM-02, LLM-05, CLI-02
 **Success Criteria** (what must be TRUE):
   1. `glorbo init` on a fresh Fedora-like host completes in ~1 minute: creates the `~/.glorbo/` hierarchy matching DESIGN.md §3, auto-downloads static `podman` and `ollama` into `~/.glorbo/bin/` when missing, builds the `glorbo-runtime` OCI image from the bundled `Containerfile` and `requirements.txt`, and pulls a default local model.
@@ -61,9 +61,9 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] 02-03-PLAN.md — glorbo-runtime OCI image (Containerfile + FastAPI worker + ghcr.io multi-arch CI) + Elixir Container modules (RT-02..06, LLM-02)
 - [x] 02-04-PLAN.md — FileWatcher + glorbo init orchestrator + example acme company + airplane-mode proof (FS-06, LLM-05, CLI-02)
 
-### Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets
+### Phase 03: agents routing kernel permissions budgets
 **Goal**: Markdown `agent.md` files become live, supervised CLI workers. Each agent runs as a short-lived `bwrap` sandbox that spawns the configured CLI tool (Claude Code `claude -p`, Gemini CLI `gemini`, or Codex `codex`) with the agent's workspace mounted writable, sibling/other-company paths denied, and network policy enforced via `--unshare-net`. Agents pick up tasks via inotify-driven inbox/outbox routing, respect per-agent permissions at the Elixir Router layer AND the bwrap namespace layer, honour USD budgets parsed from CLI session telemetry, and escalate approval-gated work to the Director via file mutation.
-**Depends on**: Phase 2
+**Depends on**: Phase 02
 **Requirements**: AGT-01, AGT-02, AGT-03, AGT-04, AGT-05, SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, LLM-03, LLM-04
 **Success Criteria** (what must be TRUE):
   1. Per-company OTP supervision tree (FileWatcher, Router, Scheduler, BudgetTracker, AuditLog, AgentSupervisor with per-agent GenServers) is running; killing an agent restarts only that agent, killing a company restarts only that company's agents, and other companies and the dashboard are unaffected.
@@ -87,9 +87,9 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] 03-04-PLAN.md — Wave 1: TaskDefinition parser + Approvals.Gate GenServer with PubSub subscription + sentinel lifecycle + denial-to-history move (SEC-04)
 - [x] 03-05-PLAN.md — Wave 2 (checkpoint): Sandbox.Bwrap + PermissionMapper + Network.Proxy (HTTPS CONNECT allowlist) + Company.Supervisor 2→6 + Watcher PubSub extension + Application Registry + Doctor bwrap check + 8 integration tests + human-verify checkpoint (AGT-01 e2e, AGT-05 e2e, SEC-02 kernel, SEC-03 kernel, full phase integration)
 
-### Phase 4: LiveView Dashboard + Real-Time Channels
+### Phase 04: liveview dashboard real time channels
 **Goal**: A Director opens `http://localhost:4000` and sees the filesystem come alive — every company, agent, task, chat message, approval request, audit event, and live stdout stream, updating in sub-second real time via inotify → PubSub → LiveView.
-**Depends on**: Phase 3
+**Depends on**: Phase 03
 **Requirements**: UI-01, UI-02, UI-03
 **Plans**: 3 plans
 - [x] 04-01-PLAN.md — Wave 0 foundation: esbuild asset pipeline + CSS token scaffold + Watcher PubSub extension (stdout/wake/per-channel topics) + `Glorbo.TaskDefinition.write/2` atomic frontmatter rewrite + `GlorboWeb.StdoutStreamer` + `DynamicSupervisor` + `GlorboWeb.Actions` (post_message / set_approval / wake_agent) + `Glorbo.Config` (secret_key_base + dashboard_token) + test fixtures + `GlorboWeb.LiveCase` (UI-01, UI-02, UI-03)
@@ -102,9 +102,9 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   4. `@agent-name` mentions posted in a channel wake the named agent via the Router, and approval-gated tasks surfaced in the approval queue can be approved/rejected with one click, which updates the task file's frontmatter status.
 **UI hint**: yes
 
-### Phase 5: CLI Completeness + Backup/Restore Portability
+### Phase 05: cli completeness backup restore portability
 **Goal**: Every CLI verb from DESIGN.md §10 works, and the portability story — `backup` on machine A, `scp` to machine B, `restore` + `doctor --fix`, everything functional — is end-to-end verified on a fresh host.
-**Depends on**: Phase 4
+**Depends on**: Phase 04
 **Requirements**: CLI-01, CLI-03
 **Success Criteria** (what must be TRUE):
   1. All CLI verbs from the spec are implemented and documented: `init`, `up`, `down`, `status`, `serve`, `run`, `new company`, `new agent`, `new project`, `logs`, `doctor`, `doctor --fix`, `reindex`, `migrate`, `backup`, `restore`, `console`.
