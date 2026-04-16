@@ -137,7 +137,10 @@ jobs:
           BINARY_NAME: ${{ matrix.binary_name }}
         run: |
           "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.version == "0.1.0"'
-          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.checks | length == 5'
+          # Check count grows as phases add new doctor probes (Phase 1: 5,
+          # Phase 2: +8, Phase 3: +2 = 16). Assert it's non-empty rather
+          # than pinning to a phase-specific count.
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.checks | length >= 5'
           # No-args must exit 0 with help text
           out=$("./burrito_out/$BINARY_NAME") && echo "$out" | grep -q USAGE
           # Unknown command must exit 1
