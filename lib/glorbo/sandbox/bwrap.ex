@@ -65,18 +65,30 @@ defmodule Glorbo.Sandbox.Bwrap do
       bypass by ignoring the env.
     * `:open` → inherits host netns; no proxy.
 
-  ## Why three cleanup mechanisms
+  ## Process cleanup
 
-  A single one is insufficient:
+  Bwrap's in-kernel cleanup is sufficient for the CLI invocations we
+  spawn: every invocation runs under `--unshare-pid --die-with-parent`,
+  which makes bwrap pid1 inside a new pid namespace — killing pid1 reaps
+  every descendant kernel-side.
 
-    * `--die-with-parent` alone: only kills the bwrap process, children
-      re-parent to pid 1 (bubblewrap#529).
-    * `--unshare-pid`: makes bwrap pid1 inside the new namespace — killing
-      pid1 reaps everyone in the namespace (kernel-enforced).
-    * `MuonTrap.Daemon`: cgroup-backed kill traps any escapee + converts
-      SIGTERM to SIGKILL after 500ms.
+    * `--die-with-parent` — if BEAM (our parent) goes away, bwrap dies.
+    * `--unshare-pid` — when bwrap dies, every process in its pid
+      namespace is reaped by the kernel (no re-parenting to host pid 1).
 
-  All three together cover crash/timeout/shutdown cleanly.
+  We invoke bwrap through `System.cmd/3` with `:input` so the prompt is
+  written to stdin and stdin is closed before bwrap starts consuming
+  stdout (WR-05: the prior `Port.open` path kept stdin open and caused
+  CLI tools to block until the 300s timeout — see CR-01). Timeout
+  enforcement is implemented via `Task.async` + `Task.yield/shutdown`;
+  `Task.shutdown(:brutal_kill)` closes the port, which sends SIGKILL to
+  bwrap, which kernel-terminates the pid namespace.
+
+  `MuonTrap.Daemon`'s cgroup-backed kill trap is **not** used here; it
+  would add a fourth layer but its `:stdin` API is incompatible with the
+  EOF-required CLI tools we dispatch (RESEARCH Pitfall 8). The
+  pid-namespace reap is kernel-guaranteed and suffices for our threat
+  model.
   """
   require Logger
 
