@@ -46,27 +46,46 @@ class RunResponse(BaseModel):
     error: Optional[str] = None
 
 
+def _scrub(text: str, api_key: Optional[str]) -> str:
+    """CR-07: strip the request's api_key from any error text before it
+    escapes the worker. litellm's provider shims have historically echoed
+    request kwargs into exception messages; D-37 says keys live in
+    request-scope memory only and must never be logged or audited.
+    """
+    if api_key and api_key in text:
+        return text.replace(api_key, "[REDACTED]")
+    return text
+
+
 @router.post("/run", response_model=RunResponse)
 async def run(req: RunRequest) -> RunResponse:
+    # CR-05: reject duplicate request_id up-front so two concurrent /run
+    # calls with the same id can't clobber each other's _live_tasks entry.
+    if req.request_id in _live_tasks:
+        return RunResponse(ok=False, error="duplicate request_id")
+
     try:
         ctx = load_task_context(req.task_path, req.skills)
     except FileNotFoundError as exc:
         return RunResponse(ok=False, error=str(exc))
 
     timeout = req.timeout_seconds or 300
-    task = asyncio.create_task(
+    task = asyncio.ensure_future(
         run_task(ctx, req.provider, req.model, req.api_key, timeout)
     )
     _live_tasks[req.request_id] = task
     try:
-        result = await asyncio.wait_for(task, timeout=timeout)
+        # CR-05: shield the task from wait_for's own cancel on timeout so
+        # /cancel can distinguish "timed out" from "cancelled by caller".
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
         return RunResponse(ok=True, result=result)
     except asyncio.TimeoutError:
+        task.cancel()
         return RunResponse(ok=False, error="timeout")
     except asyncio.CancelledError:
         return RunResponse(ok=False, error="cancelled")
     except Exception as exc:  # noqa: BLE001 — surface any provider error
-        return RunResponse(ok=False, error=str(exc))
+        return RunResponse(ok=False, error=_scrub(str(exc), req.api_key))
     finally:
         _live_tasks.pop(req.request_id, None)
 
