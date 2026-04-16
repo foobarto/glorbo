@@ -8,43 +8,30 @@ Glorbo is a self-hosted agent orchestration platform that models companies as re
 
 **It's just a directory.** Agents, tasks, chat, permissions, goals, and audit logs are markdown/JSONL on disk — deployable by copying a binary, backup-able with `tar`, debuggable with `cat`, version-controllable with `git`. If that invariant breaks, Glorbo is no longer Glorbo.
 
+## Current State
+
+**Shipped:** v0.0.2 (2026-04-16) — 5 phases, 20 plans, 219 commits, 621/621 tests green. Covers filesystem foundation, Podman/Ollama runtime, per-company OTP supervision, CLI agents via bwrap sandboxes, LiveView dashboard, and CLI completeness including `backup`/`restore`/`console`/`migrate`/`doctor --fix`. Full requirements archive: [`milestones/v0.0.2-REQUIREMENTS.md`](milestones/v0.0.2-REQUIREMENTS.md). Audit: [`v0.0.2-MILESTONE-AUDIT.md`](v0.0.2-MILESTONE-AUDIT.md).
+
+## Next Milestone Goals
+
+_To be scoped via `/gsd-new-milestone`._ Likely candidates from audit deferrals:
+- Gate→Agent.Server post-approval wake wiring (Registry lookup forward)
+- `api-only` netns + nftables egress hardening
+- POSIX ACLs enforcement inside Podman (kernel-layer permission fallback)
+- Python/litellm runtime inside the container image (tracked in `.planning/deferred/container-runtime-v0.0.2/`)
+- Human-verify items from milestone audit → pre-release checklist (live `up/down/console`, cross-host `scp` portability, `glorbo init` wall-clock)
+
 ## Requirements
 
-### Validated
+### Validated (v0.0.2)
 
-<!-- Shipped and confirmed valuable. -->
-
-(None yet — ship to validate)
+All 38 v0.0.2 requirements shipped and verified — see `milestones/v0.0.2-REQUIREMENTS.md` for the full archive. Categories: FND×6, FS×6, RT×6, LLM×5, AGT×5, SEC×5, UI×3, CLI×3.
 
 ### Active
 
-<!-- Current scope. Building toward these. -->
+<!-- Populated by /gsd-new-milestone. -->
 
-- [ ] Filesystem-first architecture: markdown + YAML frontmatter as source of truth for companies, agents, tasks, channels, goals, skills, permissions
-- [ ] Single-binary Elixir/OTP release with bundled ERTS (`mix release`, `include_erts: true`)
-- [ ] SQLite index (via `ecto_sqlite3`) with `glorbo reindex` rebuild contract — DB deletable without data loss
-- [ ] Per-company OTP supervision trees: crashing agent restarts only that agent; crashing company restarts only that company
-- [ ] Rootless Podman container runtime; auto-download static `podman` binary if absent; read-only root FS, `--userns keep-id`
-- [ ] Ollama local LLM backend, auto-downloaded by `glorbo init`; works offline out of the box
-- [ ] Cloud LLM providers (Anthropic, OpenAI, Google) via Python-in-container SDKs, API keys from `~/.glorbo/config.md` injected as env vars
-- [ ] Hugging Face local models via `huggingface_hub`
-- [ ] Inbox/outbox message routing with `file_system` (inotify) watchers, one-way flow enforced by ACLs
-- [ ] Append-only channel markdown files, Elixir is the sole writer; `@agent` mention triggers wake
-- [ ] Phoenix LiveView dashboard on `localhost:4000`: company overview, kanban board, agent detail with stdout streaming, chat, approval queue, audit log, system health
-- [ ] Phoenix Channels + PubSub for real-time agent chat and stdout streaming
-- [ ] Declarative permissions in `agent.md` frontmatter (`resource:action:scope`), enforced at app layer (Elixir Router) AND kernel layer (POSIX ACLs via `setfacl`)
-- [ ] Per-agent monthly budget in USD with alert threshold and hard stop; usage reported by Python worker after each LLM call
-- [ ] Director-approved approval gates for tasks with `requires_approval: director` frontmatter
-- [ ] Append-only JSONL audit log (`audit/YYYY-MM.jsonl`), never modified/deleted, indexed into SQLite
-- [ ] Per-agent network policy: `none` (default) / `api-only` / `open`
-- [ ] Agent wake triggers: inbox inotify, cron-style heartbeat, channel mention, Director request
-- [ ] Ephemeral container lifecycle (default); persistent lifecycle for streaming/rapid back-and-forth
-- [ ] Skills system: markdown files injected into agent context at runtime
-- [ ] Full company isolation: one container per company, no cross-company filesystem access possible
-- [ ] CLI: `init`, `up`, `down`, `status`, `serve`, `run`, `new {company,agent,project}`, `logs`, `doctor`, `reindex`, `migrate`, `backup`, `restore`, `console`
-- [ ] `glorbo doctor --fix` rebuilds container image after restore on a new machine
-- [ ] Offline-capable end-to-end: fresh install → local model → run agents with no network
-- [ ] Linux x86_64 and aarch64 release artifacts
+_(None — awaiting next milestone scoping.)_
 
 ### Out of Scope
 
