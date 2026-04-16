@@ -22,6 +22,11 @@ defmodule Glorbo.Test.Fixtures do
   @doc """
   Plant the acme fixture under `base`. Returns the seed context
   (`%{base: base, company: "acme"}`).
+
+  > **Phase 5 note.** For portability + backup/restore tests, prefer
+  > `Glorbo.Test.PortabilityFixtures.write_minimal_company/3` — it stages
+  > a DB + cookie-stable config.md and omits the kanban/approval fixtures
+  > which the portability suite doesn't exercise.
   """
   @spec seed_acme(Path.t()) :: seed_result()
   def seed_acme(base) do
