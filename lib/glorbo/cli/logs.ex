@@ -304,8 +304,7 @@ defmodule Glorbo.CLI.Logs do
   end
 
   defp usage do
-    {:logs, 1,
-     "Usage: glorbo logs <company> [agent] [--lines N] [--follow]\n"}
+    {:logs, 1, "Usage: glorbo logs <company> [agent] [--lines N] [--follow]\n"}
   end
 
   @spec help_text() :: String.t()

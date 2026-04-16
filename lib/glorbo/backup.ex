@@ -188,8 +188,7 @@ defmodule Glorbo.Backup do
   end
 
   defp format_cli_result({:error, :glorbo_running}) do
-    {:backup, 2,
-     "⚠ glorbo is running. Run `glorbo down` first, or pass --force-live.\n"}
+    {:backup, 2, "⚠ glorbo is running. Run `glorbo down` first, or pass --force-live.\n"}
   end
 
   defp format_cli_result({:error, :glorbo_started_during_backup}) do
@@ -202,8 +201,7 @@ defmodule Glorbo.Backup do
   end
 
   defp format_cli_result({:error, reason}) do
-    {:backup, 2,
-     "Backup failed: #{inspect(reason)}. Run `glorbo doctor` for diagnostics.\n"}
+    {:backup, 2, "Backup failed: #{inspect(reason)}. Run `glorbo doctor` for diagnostics.\n"}
   end
 
   defp default_output_path do

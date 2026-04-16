@@ -71,16 +71,10 @@ defmodule GlorboWeb.Components.Icon do
       )
 
   defp glyph("folder"),
-    do:
-      Phoenix.HTML.raw(
-        ~s(<path d="M1.5,4.5 L6.5,4.5 L8,6 L14.5,6 L14.5,13 L1.5,13 Z"/>)
-      )
+    do: Phoenix.HTML.raw(~s(<path d="M1.5,4.5 L6.5,4.5 L8,6 L14.5,6 L14.5,13 L1.5,13 Z"/>))
 
   defp glyph("message"),
-    do:
-      Phoenix.HTML.raw(
-        ~s(<path d="M2,3 L14,3 L14,11 L6,11 L3,14 L3,11 L2,11 Z"/>)
-      )
+    do: Phoenix.HTML.raw(~s(<path d="M2,3 L14,3 L14,11 L6,11 L3,14 L3,11 L2,11 Z"/>))
 
   defp glyph("lightning"),
     do:

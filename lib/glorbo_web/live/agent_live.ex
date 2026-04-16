@@ -88,8 +88,7 @@ defmodule GlorboWeb.AgentLive do
 
   @impl true
   def handle_info({:stdout_line, _co, _ag, %{id: id, body: body}}, socket) do
-    {:noreply,
-     stream_insert(socket, :stdout, %{id: id, body: body}, at: -1, limit: -1000)}
+    {:noreply, stream_insert(socket, :stdout, %{id: id, body: body}, at: -1, limit: -1000)}
   end
 
   def handle_info({:file_event, _rel, _events}, socket), do: {:noreply, socket}

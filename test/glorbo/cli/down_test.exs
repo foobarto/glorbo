@@ -13,12 +13,13 @@ defmodule Glorbo.CLI.DownTest do
   describe "down" do
     test "sends SIGTERM to the pid in the pidfile + removes it", %{glorbo_home: home} do
       # Spawn a real long-running child we can kill.
-      port = Port.open({:spawn_executable, "/bin/sleep"}, [
-        :binary,
-        :exit_status,
-        :hide,
-        args: ["60"]
-      ])
+      port =
+        Port.open({:spawn_executable, "/bin/sleep"}, [
+          :binary,
+          :exit_status,
+          :hide,
+          args: ["60"]
+        ])
 
       {:os_pid, child_pid} = Port.info(port, :os_pid)
       Pidfile.write!(child_pid, home)

@@ -35,8 +35,7 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
         Process.sleep(opts[:exit_after])
         Audit.emit("serve", "complete", %{exit_after_ms: opts[:exit_after]})
 
-        {:serve, 0,
-         "glorbo serve exited (test mode after #{opts[:exit_after]}ms).\n"}
+        {:serve, 0, "glorbo serve exited (test mode after #{opts[:exit_after]}ms).\n"}
 
       true ->
         Audit.emit("serve", "start", %{})

@@ -58,7 +58,8 @@ defmodule GlorboWeb.ActionsTest do
       base: base,
       audit: audit
     } do
-      assert :ok = Actions.post_message("acme", "general", "hello world", base: base, audit: audit)
+      assert :ok =
+               Actions.post_message("acme", "general", "hello world", base: base, audit: audit)
 
       content = File.read!(Path.join([base, "companies", "acme", "channels", "general.md"]))
       assert content =~ "# general\n"

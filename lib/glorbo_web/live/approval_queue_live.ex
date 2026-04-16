@@ -157,7 +157,9 @@ defmodule GlorboWeb.ApprovalQueueLive do
           case File.ls(state_dir) do
             {:ok, files} ->
               files
-              |> Enum.filter(&(String.starts_with?(&1, "awaiting-approval-") and String.ends_with?(&1, ".md")))
+              |> Enum.filter(
+                &(String.starts_with?(&1, "awaiting-approval-") and String.ends_with?(&1, ".md"))
+              )
               |> Enum.map(&build_sentinel(base, co, ag, &1))
               |> Enum.reject(&is_nil/1)
 

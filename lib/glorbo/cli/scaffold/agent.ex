@@ -45,8 +45,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
         if company =~ @slug_re and agent =~ @slug_re do
           scaffold(company, agent, opts)
         else
-          {:new_agent, 1,
-           "Invalid slug in '#{co_slash_ag}'. Slug regex: #{inspect(@slug_re)}.\n"}
+          {:new_agent, 1, "Invalid slug in '#{co_slash_ag}'. Slug regex: #{inspect(@slug_re)}.\n"}
         end
 
       _ ->
@@ -122,8 +121,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
   end
 
   defp usage do
-    {:new_agent, 1,
-     "Usage: glorbo new agent <company>/<slug> [--role R] [--provider P]\n"}
+    {:new_agent, 1, "Usage: glorbo new agent <company>/<slug> [--role R] [--provider P]\n"}
   end
 
   @spec help_text() :: String.t()

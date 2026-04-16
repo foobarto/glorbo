@@ -39,8 +39,7 @@ defmodule Glorbo.CLI.Lifecycle.Up do
       :running ->
         pid = Pidfile.read!(base)
 
-        {:up, 2,
-         "glorbo is already running (pid=#{pid}). Run `glorbo down` first.\n"}
+        {:up, 2, "glorbo is already running (pid=#{pid}). Run `glorbo down` first.\n"}
 
       :stale ->
         :ok = Pidfile.rm(base)
@@ -62,8 +61,7 @@ defmodule Glorbo.CLI.Lifecycle.Up do
       # NOTE: detail MUST NOT include the cookie (T-05-02).
       Audit.emit("up", "complete", %{pid: os_pid})
 
-      {:up, 0,
-       "glorbo up (pid=#{os_pid}). Dashboard: http://127.0.0.1:4000\n"}
+      {:up, 0, "glorbo up (pid=#{os_pid}). Dashboard: http://127.0.0.1:4000\n"}
     else
       {:error, {:pidfile_write, os_pid, reason}} ->
         # WR-04: daemon was already spawned by setsid but we cannot
@@ -75,8 +73,7 @@ defmodule Glorbo.CLI.Lifecycle.Up do
            "daemon killed to avoid orphan. Run `glorbo doctor` to diagnose.\n"}
 
       {:error, reason} ->
-        {:up, 2,
-         "Failed to start glorbo: #{inspect(reason)}. Run `glorbo doctor` to diagnose.\n"}
+        {:up, 2, "Failed to start glorbo: #{inspect(reason)}. Run `glorbo doctor` to diagnose.\n"}
     end
   end
 

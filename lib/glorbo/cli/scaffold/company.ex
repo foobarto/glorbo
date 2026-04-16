@@ -61,8 +61,7 @@ defmodule Glorbo.CLI.Scaffold.Company do
   end
 
   defp usage do
-    {:new_company, 1,
-     "Usage: glorbo new company <slug>\n  Slug regex: #{inspect(@slug_re)}\n"}
+    {:new_company, 1, "Usage: glorbo new company <slug>\n  Slug regex: #{inspect(@slug_re)}\n"}
   end
 
   @spec help_text() :: String.t()

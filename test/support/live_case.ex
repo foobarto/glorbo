@@ -71,8 +71,7 @@ defmodule GlorboWeb.LiveCase do
         nil ->
           {:ok, pid} =
             ExUnit.Callbacks.start_supervised(
-              {Glorbo.Company.AuditLog,
-               [name: Glorbo.Company.AuditLog, base: base]}
+              {Glorbo.Company.AuditLog, [name: Glorbo.Company.AuditLog, base: base]}
             )
 
           pid
@@ -90,9 +89,6 @@ defmodule GlorboWeb.LiveCase do
 
     _ = audit_pid
 
-    {:ok,
-     conn: Phoenix.ConnTest.build_conn(),
-     base: seeded.base,
-     company: seeded.company}
+    {:ok, conn: Phoenix.ConnTest.build_conn(), base: seeded.base, company: seeded.company}
   end
 end

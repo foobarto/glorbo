@@ -10,6 +10,7 @@ defmodule GlorboWeb.CompanyLiveTest do
 
   test "renders 5-tab bar with Kanban default", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme")
+
     for tab <- ~w(Kanban Chat Approvals Audit Agents) do
       assert html =~ tab
     end

@@ -40,12 +40,18 @@ defmodule GlorboWeb.Components.BudgetRing do
 
     ~H"""
     <svg class="gl-budget-ring" viewBox="0 0 36 36" width={@size} height={@size}>
-      <circle cx="18" cy="18" r="16" stroke="var(--gl-surface-raised)"
-              stroke-width="3" fill="none" />
-      <circle :if={@cap} cx="18" cy="18" r="16"
-              stroke={@color} stroke-width="3" fill="none"
-              stroke-dasharray={@dasharray}
-              transform="rotate(-90 18 18)" />
+      <circle cx="18" cy="18" r="16" stroke="var(--gl-surface-raised)" stroke-width="3" fill="none" />
+      <circle
+        :if={@cap}
+        cx="18"
+        cy="18"
+        r="16"
+        stroke={@color}
+        stroke-width="3"
+        fill="none"
+        stroke-dasharray={@dasharray}
+        transform="rotate(-90 18 18)"
+      />
       <text x="18" y="20" text-anchor="middle" font-size="8" fill="var(--gl-fg)">
         {center_text(@used, @cap, @size, @over_cap)}
       </text>

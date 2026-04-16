@@ -43,8 +43,7 @@ defmodule Glorbo.CLI.Lifecycle.Down do
         :ok = Pidfile.rm(base)
         Audit.emit("down", "complete", %{reason: "stale_pidfile"})
 
-        {:down, 0,
-         "glorbo stopped (stale pidfile cleaned; no running process).\n"}
+        {:down, 0, "glorbo stopped (stale pidfile cleaned; no running process).\n"}
 
       :running ->
         pid = Pidfile.read!(base)
@@ -75,16 +74,14 @@ defmodule Glorbo.CLI.Lifecycle.Down do
               :ok = Pidfile.rm(base)
               Audit.emit("down", "complete", %{pid: pid, escalated: true})
 
-              {:down, 0,
-               "glorbo stopped (SIGKILL after 10s SIGTERM grace; pid=#{pid}).\n"}
+              {:down, 0, "glorbo stopped (SIGKILL after 10s SIGTERM grace; pid=#{pid}).\n"}
             else
               # pidfile contents changed mid-shutdown — treat as
               # already-stopped to avoid targeting an unrelated pid.
               :ok = Pidfile.rm(base)
               Audit.emit("down", "complete", %{pid: pid, escalated: false, pidfile_changed: true})
 
-              {:down, 0,
-               "glorbo stopped (pidfile changed during shutdown; not escalating).\n"}
+              {:down, 0, "glorbo stopped (pidfile changed during shutdown; not escalating).\n"}
             end
 
           _stopped_or_stale ->
