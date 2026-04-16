@@ -25,9 +25,9 @@ config :glorbo, GlorboWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
-      ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
-      ~r"lib/glorbo_web/router\.ex$"E,
-      ~r"lib/glorbo_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
+      ~r"lib/glorbo_web/router\.ex$",
+      ~r"lib/glorbo_web/(controllers|live|components)/.*\.(ex|heex)$"
     ]
   ]
 
