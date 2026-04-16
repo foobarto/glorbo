@@ -49,13 +49,40 @@ defmodule Glorbo.Init.Orchestrator do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
     opts_with_base = Keyword.put(opts, :base, base)
 
+    # WR-05: wrap the pre-pipeline bootstrap so an exception (e.g. EACCES on
+    # a non-writable $HOME) doesn't escape `run/1`. D-20 contracts
+    # continue-on-error, and callers expect the `{:error, summary}` tuple
+    # rather than a raw raise — which is what the pipeline promise is.
+    case bootstrap(base) do
+      :ok ->
+        run_pipeline(opts_with_base)
+
+      {:error, failure} ->
+        summary = %{
+          results: [failure],
+          exit_code: 1,
+          failures: [failure],
+          next_steps: []
+        }
+
+        {:error, summary}
+    end
+  end
+
+  defp bootstrap(base) do
     # Hierarchy FIRST so the audit directory exists before the first append.
     Hierarchy.ensure!(base)
 
     # W3: unconditional start_link; handle :already_started explicitly. No
     # Process.whereis/1 race.
     start_audit_log(base)
+    :ok
+  rescue
+    e ->
+      {:error, %{step: :hierarchy, status: :error, detail: Exception.message(e)}}
+  end
 
+  defp run_pipeline(opts_with_base) do
     steps = [
       {:pre_doctor, fn o -> step_pre_doctor(o) end},
       {:hierarchy, fn o -> step_hierarchy(o) end},
