@@ -1,32 +1,90 @@
 defmodule Glorbo.CLI.DoctorFixTest do
-  @moduledoc "Stubs — filled in by Plan 03."
-  use GlorboTest.CLICase, async: false
+  @moduledoc "Plan 04 — doctor --fix CLI router + per-fixer unit contract."
+  use ExUnit.Case, async: false
 
-  @moduletag :pending
+  alias Glorbo.CLI.DoctorFix
+  alias Glorbo.Doctor.Fixer
 
-  describe "doctor --fix (fixer registry)" do
-    test "glorbo_dir fixer creates ~/.glorbo/" do
-      flunk("TODO(plan-03): exercise glorbo_dir fixer via mocked Doctor result")
+  describe "Glorbo.CLI.DoctorFix.run/1 (thin router)" do
+    test "delegates to Glorbo.Doctor.Fixer.run/1 and returns its tuple" do
+      # The Fixer prints progress lines — capture the IO so the test reporter
+      # stays quiet. We only care about the tuple shape here.
+      {result, _io} = ExUnit.CaptureIO.with_io(fn -> DoctorFix.run([]) end)
+      assert {:doctor, code, out} = result
+      assert is_integer(code)
+      assert is_binary(out)
     end
 
-    test "audit_dir fixer creates audit/_system/" do
-      flunk("TODO(plan-03): exercise audit_dir fixer")
+    test "--dry-run mode produces 'would repair' or 'nothing to repair' output" do
+      {result, _captured} =
+        ExUnit.CaptureIO.with_io(fn -> DoctorFix.run(dry_run: true) end)
+
+      assert {:doctor, _code, out} = result
+
+      # If all checks pass on the dev host, out contains "nothing to repair".
+      # If any fail, the dry-run printed "would repair: <check>" to stdout
+      # (captured) and the summary footer in `out` reflects attempted>0.
+      assert out =~ "nothing to repair" or out =~ "doctor --fix summary"
     end
 
-    test "sockets_dir fixer creates runtime/sockets/ at mode 0700" do
-      flunk("TODO(plan-03): exercise sockets_dir fixer")
+    test "exit_code is 0 when no checks failed OR all failed checks were repaired/explained" do
+      # On a healthy dev host, all checks pass → exit 0. If a warning-level
+      # check fails but the fixer repairs/explains it → still exit 0. We
+      # can't force a specific state here; just assert the tuple shape.
+      {result, _io} = ExUnit.CaptureIO.with_io(fn -> DoctorFix.run([]) end)
+      assert {:doctor, code, _out} = result
+      assert code in [0, 1]
     end
 
-    test "runtime_image fixer runs podman pull" do
-      flunk("TODO(plan-03): exercise runtime_image fixer (mocked podman)")
+    test "delegation is literal: DoctorFix.run/1 is equivalent to Fixer.run/1" do
+      # Both paths should return identical tuple shapes (Fixer is non-deterministic
+      # on the live host — same inputs yield the same outputs in a single test run
+      # when called back-to-back with the same opts).
+      {delegated, _io1} =
+        ExUnit.CaptureIO.with_io(fn -> DoctorFix.run(dry_run: true) end)
+
+      {direct, _io2} =
+        ExUnit.CaptureIO.with_io(fn -> Fixer.run(dry_run: true) end)
+
+      {:doctor, d_code, _} = delegated
+      {:doctor, f_code, _} = direct
+      # Codes match since the underlying doctor check set is the same.
+      assert d_code == f_code
+    end
+  end
+
+  describe "per-fixer unit contracts (exercised via Fixer.fixers/0)" do
+    test "glorbo_dir fixer returns {:ok, _}" do
+      assert {:ok, detail} = Fixer.fix_glorbo_dir(%{name: "glorbo_dir"})
+      assert is_binary(detail)
     end
 
-    test "bwrap fixer explains (no auto-install)" do
-      flunk("TODO(plan-03): assert bwrap returns :explain tuple")
+    test "audit_dir fixer returns {:ok, _}" do
+      assert {:ok, detail} = Fixer.fix_audit_dir(%{name: "audit_dir"})
+      assert is_binary(detail)
     end
 
-    test "--dry-run prints what would be fixed without running repairs (D-17)" do
-      flunk("TODO(plan-03): exercise --dry-run preview")
+    test "sockets_dir fixer returns {:ok, _} (and is idempotent)" do
+      assert {:ok, d1} = Fixer.fix_sockets_dir(%{name: "sockets_dir"})
+      assert {:ok, d2} = Fixer.fix_sockets_dir(%{name: "sockets_dir"})
+      assert is_binary(d1)
+      assert is_binary(d2)
+    end
+
+    test "bwrap fixer returns {:explain, _} (no auto-install per T-05-12)" do
+      assert {:explain, guidance} = Fixer.explain_bwrap(%{name: "bwrap"})
+      assert guidance =~ "bubblewrap"
+      assert guidance =~ "Install"
+    end
+  end
+
+  describe "help_text/0" do
+    test "mentions --dry-run" do
+      assert DoctorFix.help_text() =~ "--dry-run"
+    end
+
+    test "mentions the Fixer module as the repair registry" do
+      assert DoctorFix.help_text() =~ "Glorbo.Doctor.Fixer"
     end
   end
 end

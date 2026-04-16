@@ -1,17 +1,16 @@
 defmodule Glorbo.CLI.DoctorFix do
   @moduledoc """
-  TODO(plan-03): Implement `doctor --fix` — routes failed Doctor checks
-  through `Glorbo.Doctor.Fixer` per D-16. Unlike the other CLI modules,
-  this one takes PRE-PARSED `OptionParser` opts (keyword list) — the
-  parent `doctor` dispatch branch already parses flags.
+  `glorbo doctor --fix` — thin router into `Glorbo.Doctor.Fixer.run/1`.
 
-  Wave-0 stub.
+  The parent `doctor` dispatch branch in `Glorbo.CLI` already parses
+  flags (`--fix`, `--dry-run`, `--json`). This module receives the
+  pre-parsed `OptionParser` opts (keyword list) and delegates to the
+  Fixer registry, which owns the orchestration, audit events, and
+  summary rendering.
   """
 
   @spec run(keyword()) :: Glorbo.CLI.result()
-  def run(_opts) do
-    {:doctor, 0, "doctor --fix: not implemented in Wave 0 (Plan 03 fills)\n"}
-  end
+  def run(opts), do: Glorbo.Doctor.Fixer.run(opts)
 
   @spec help_text() :: String.t()
   def help_text do
