@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Glorbo" width="520">
+</p>
+
 # Glorbo
 
 > *Finally, a grumbo-compatible agent orchestrator. The fleeb juice is included.*
