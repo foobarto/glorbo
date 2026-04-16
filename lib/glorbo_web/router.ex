@@ -28,9 +28,8 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/kanban", KanbanLive
     live "/companies/:company/agents/:agent", AgentLive
     live "/companies/:company/approvals", ApprovalQueueLive
-    # 04-03 adds: live "/companies/:company/channels/:channel", ChannelLive
-    #             live "/companies/:company/audit", AuditLive
-    #             live "/health", HealthLive (+ DashboardToken plug)
+    # Plan 04-03 Task 2: content-scope chat view.
+    live "/companies/:company/channels/:channel", ChannelLive
   end
 
   # Other scopes may use custom stacks.
