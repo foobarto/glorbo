@@ -31,6 +31,16 @@
       "sourceType": "github",
       "computedHash": "c42c3059154889e4f80818407c6634197eefe87dc752d6a0cad8cfc2391550bb"
     },
+    "gsd": {
+      "source": "ctsstc/get-shit-done-skills",
+      "sourceType": "github",
+      "computedHash": "d600a82e62d25a86ce0b5d114183650abf66ad842d112f63852c0dd9d7d90bcf"
+    },
+    "gsd-orchestrator": {
+      "source": "gsd-build/gsd-2",
+      "sourceType": "github",
+      "computedHash": "967549568b22e409b8924ff4ac32ba74364aeddd7ab95b60fee9f142a8333d90"
+    },
     "pdf": {
       "source": "anthropics/skills",
       "sourceType": "github",
