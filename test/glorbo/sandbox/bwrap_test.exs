@@ -1,0 +1,172 @@
+defmodule Glorbo.Sandbox.BwrapTest do
+  use ExUnit.Case, async: true
+
+  alias Glorbo.Sandbox.Bwrap
+
+  defp base_opts(overrides \\ %{}) do
+    Map.merge(
+      %{
+        agent_workspace: "/tmp/ws",
+        inbox_path: "/tmp/in",
+        outbox_path: "/tmp/out",
+        company_path: "/tmp/co",
+        permissions: [],
+        network_policy: :none,
+        cli_auth_binds: [],
+        cli_env: %{},
+        proxy_url: nil,
+        timeout_seconds: 30
+      },
+      overrides
+    )
+  end
+
+  # Helper: assert an argv slice appears in the argv list (in-order).
+  defp assert_subsequence(argv, slice) do
+    refute Enum.empty?(slice), "empty slice is meaningless"
+
+    found? =
+      argv
+      |> Enum.chunk_every(length(slice), 1, :discard)
+      |> Enum.any?(&(&1 == slice))
+
+    assert found?,
+           "expected argv to contain in-order slice #{inspect(slice)}\n" <>
+             "argv=#{inspect(argv)}"
+  end
+
+  describe "build_argv/1 — baseline flags (B1, D-08)" do
+    test "B1: minimal invocation emits every D-08 baseline flag + root FS + agent-owned + env" do
+      argv = Bwrap.build_argv(base_opts())
+
+      # Namespace flags (D-08)
+      assert "--die-with-parent" in argv
+      assert "--unshare-user-try" in argv
+      assert "--unshare-ipc" in argv
+      assert "--unshare-pid" in argv
+      assert "--unshare-uts" in argv
+      assert "--unshare-cgroup-try" in argv
+      assert "--new-session" in argv
+      assert_subsequence(argv, ["--cap-drop", "ALL"])
+
+      # Root FS (D-09)
+      assert_subsequence(argv, ["--ro-bind", "/usr", "/usr"])
+      assert_subsequence(argv, ["--symlink", "usr/bin", "/bin"])
+      assert_subsequence(argv, ["--symlink", "usr/lib", "/lib"])
+      assert_subsequence(argv, ["--symlink", "usr/lib64", "/lib64"])
+      assert_subsequence(argv, ["--symlink", "usr/sbin", "/sbin"])
+      assert_subsequence(argv, ["--ro-bind", "/etc", "/etc"])
+      assert_subsequence(argv, ["--proc", "/proc"])
+      assert_subsequence(argv, ["--dev", "/dev"])
+      assert_subsequence(argv, ["--tmpfs", "/tmp"])
+
+      # Agent-owned dirs
+      assert_subsequence(argv, ["--bind", "/tmp/ws", "/workspace"])
+      assert_subsequence(argv, ["--bind", "/tmp/out", "/outbox"])
+      assert_subsequence(argv, ["--ro-bind", "/tmp/in", "/inbox"])
+
+      # Working dir + env
+      assert_subsequence(argv, ["--chdir", "/workspace"])
+      assert_subsequence(argv, ["--setenv", "HOME", "/workspace"])
+    end
+  end
+
+  describe "build_argv/1 — network policy (B2, B3; D-15, D-17)" do
+    test "network: :none → --unshare-net present, no HTTP_PROXY env" do
+      argv = Bwrap.build_argv(base_opts(%{network_policy: :none}))
+      assert "--unshare-net" in argv
+      refute Enum.any?(argv, &(&1 == "HTTPS_PROXY"))
+      refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
+    end
+
+    test "B2: network: :api_only → --unshare-net ABSENT + HTTPS_PROXY + HTTP_PROXY env" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{network_policy: :api_only, proxy_url: "http://localhost:9999"})
+        )
+
+      refute "--unshare-net" in argv
+      assert_subsequence(argv, ["--setenv", "HTTPS_PROXY", "http://localhost:9999"])
+      assert_subsequence(argv, ["--setenv", "HTTP_PROXY", "http://localhost:9999"])
+    end
+
+    test "B3: network: :open → neither --unshare-net nor HTTP_PROXY" do
+      argv = Bwrap.build_argv(base_opts(%{network_policy: :open}))
+      refute "--unshare-net" in argv
+      refute Enum.any?(argv, &(&1 == "HTTPS_PROXY"))
+      refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
+    end
+  end
+
+  describe "build_argv/1 — permissions + auth binds + env (B4, B5, B6)" do
+    test "B4: permissions delegate to PermissionMapper in composition" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            permissions: [{"projects", "write", "a"}, {"projects", "read", "b"}]
+          })
+        )
+
+      assert_subsequence(argv, ["--bind", "/tmp/co/projects/a", "/projects/a"])
+      assert_subsequence(argv, ["--ro-bind", "/tmp/co/projects/b", "/projects/b"])
+    end
+
+    test "B5: cli_auth_binds emit --ro-bind entries" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            cli_auth_binds: [{"/home/user/.claude", "/host-claude"}]
+          })
+        )
+
+      assert_subsequence(argv, ["--ro-bind", "/home/user/.claude", "/host-claude"])
+    end
+
+    test "B6: cli_env entries emit --setenv flags" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            cli_env: %{"CLAUDE_CONFIG_DIR" => "/workspace/.glorbo-claude"}
+          })
+        )
+
+      assert_subsequence(argv, ["--setenv", "CLAUDE_CONFIG_DIR", "/workspace/.glorbo-claude"])
+    end
+  end
+
+  describe "build_argv/1 — anti-patterns (B7–B10; T-03-30)" do
+    test "B7: no `--ro-bind / /` full-root mount" do
+      argv = Bwrap.build_argv(base_opts())
+
+      refute argv
+             |> Enum.chunk_every(3, 1, :discard)
+             |> Enum.any?(&(&1 == ["--ro-bind", "/", "/"]))
+    end
+
+    test "B8: no `--privileged` flag" do
+      argv = Bwrap.build_argv(base_opts())
+      refute "--privileged" in argv
+    end
+
+    test "B9: no `--cap-add` flags (only drop)" do
+      argv = Bwrap.build_argv(base_opts())
+      refute "--cap-add" in argv
+    end
+
+    test "B10: `--unshare-user-try` used, never bare `--unshare-user`" do
+      argv = Bwrap.build_argv(base_opts())
+      assert "--unshare-user-try" in argv
+      refute "--unshare-user" in argv
+    end
+  end
+
+  describe "default_binary/0" do
+    test "returns a path string on hosts that have bwrap, or raises otherwise" do
+      if System.find_executable("bwrap") do
+        assert is_binary(Bwrap.default_binary())
+      else
+        assert_raise RuntimeError, ~r/bwrap not found/, fn -> Bwrap.default_binary() end
+      end
+    end
+  end
+end
