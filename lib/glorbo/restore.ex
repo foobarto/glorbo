@@ -19,6 +19,7 @@ defmodule Glorbo.Restore do
   Production callers leave both knobs unset (falsy), so the full chain
   runs.
   """
+  require Logger
   alias Glorbo.CLI.Audit
 
   @doc """
@@ -325,14 +326,38 @@ defmodule Glorbo.Restore do
 
   defp maybe_fixer(true), do: :ok
 
+  # WR-07: the post-extract doctor --fix run is best-effort (the archive
+  # is already on disk; the Director can re-run doctor manually). But
+  # silently collapsing every failure to :ok — including fixer bugs and
+  # exit-code-bearing results with non-zero codes — hides genuine
+  # problems. Emit a structured Logger.warning for each failure mode
+  # while keeping the :ok return contract so callers see "restore
+  # complete". The audit trail still records the fix attempt.
   defp maybe_fixer(false) do
     try do
-      _ = Glorbo.Doctor.Fixer.run([])
-      :ok
+      case Glorbo.Doctor.Fixer.run([]) do
+        {:doctor, 0, _body} ->
+          :ok
+
+        {:doctor, code, body} ->
+          Logger.warning("post-restore doctor --fix exited #{code}: #{body}")
+          :ok
+
+        other ->
+          Logger.warning("post-restore doctor --fix returned unexpected shape: #{inspect(other)}")
+          :ok
+      end
     rescue
-      _ -> :ok
+      e ->
+        Logger.warning(
+          "post-restore doctor --fix raised #{inspect(e.__struct__)}: #{Exception.message(e)}"
+        )
+
+        :ok
     catch
-      :exit, _ -> :ok
+      :exit, reason ->
+        Logger.warning("post-restore doctor --fix exited (EXIT): #{inspect(reason)}")
+        :ok
     end
   end
 
