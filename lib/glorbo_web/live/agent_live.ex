@@ -221,16 +221,14 @@ defmodule GlorboWeb.AgentLive do
   end
 
   defp load_used_usd(agent_slug) do
-    try do
-      case Glorbo.Budget.Ledger.fetch(agent_slug, current_year_month()) do
-        %{cost_usd_cents: c} -> c / 100.0
-        _ -> 0.0
-      end
-    rescue
+    case Glorbo.Budget.Ledger.fetch(agent_slug, current_year_month()) do
+      %{cost_usd_cents: c} -> c / 100.0
       _ -> 0.0
-    catch
-      _, _ -> 0.0
     end
+  rescue
+    _ -> 0.0
+  catch
+    _, _ -> 0.0
   end
 
   defp current_year_month do

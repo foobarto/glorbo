@@ -25,13 +25,13 @@ defmodule GlorboWeb.AuditLive do
   @impl true
   def mount(%{"company" => co}, _session, socket) do
     # WR-02: slug gate before any filesystem construction.
-    if not GlorboWeb.Slug.valid?(co) do
+    if GlorboWeb.Slug.valid?(co) do
+      mount_valid(co, socket)
+    else
       {:ok,
        socket
        |> put_flash(:error, "Invalid company identifier.")
        |> push_navigate(to: ~p"/companies")}
-    else
-      mount_valid(co, socket)
     end
   end
 

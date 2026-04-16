@@ -18,10 +18,7 @@ defmodule Glorbo.CLI.Migrate do
     {opts, _positional, _invalid} =
       OptionParser.parse(argv, strict: [help: :boolean])
 
-    cond do
-      opts[:help] -> {:migrate, 0, help_text()}
-      true -> do_migrate()
-    end
+    if opts[:help], do: {:migrate, 0, help_text()}, else: do_migrate()
   end
 
   defp do_migrate do

@@ -25,7 +25,7 @@ config :glorbo, GlorboWeb.Endpoint,
 # Configure Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [:request_id, :company, :agent, :channel, :task_path, :reason]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

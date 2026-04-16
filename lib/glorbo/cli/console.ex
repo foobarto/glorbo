@@ -32,10 +32,7 @@ defmodule Glorbo.CLI.Console do
     {parsed_opts, _positional, _invalid} =
       OptionParser.parse(argv, strict: [help: :boolean])
 
-    cond do
-      parsed_opts[:help] -> {:console, 0, help_text()}
-      true -> do_run(opts)
-    end
+    if parsed_opts[:help], do: {:console, 0, help_text()}, else: do_run(opts)
   end
 
   defp do_run(opts) do

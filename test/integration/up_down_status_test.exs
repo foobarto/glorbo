@@ -16,7 +16,9 @@ defmodule Glorbo.Integration.UpDownStatusTest do
     test "full lifecycle against a real burrito binary" do
       bin = Path.expand(@burrito_bin, File.cwd!())
 
-      unless File.exists?(bin) do
+      if File.exists?(bin) do
+        run_live(bin)
+      else
         IO.puts(
           :stderr,
           "skipping up_down_status integration — no burrito binary at #{bin} " <>
@@ -24,8 +26,6 @@ defmodule Glorbo.Integration.UpDownStatusTest do
         )
 
         :ok
-      else
-        run_live(bin)
       end
     end
   end

@@ -54,9 +54,8 @@ defmodule Glorbo.Restore do
          :ok <- traversal_guard(archive),
          :ok <- extract(archive, base),
          :ok <- maybe_migrate(repo, skip_migrate?),
-         :ok <- reindex(base),
-         :ok <- maybe_fixer(skip_fixer?) do
-      :ok
+         :ok <- reindex(base) do
+      maybe_fixer(skip_fixer?)
     end
   end
 
@@ -257,31 +256,22 @@ defmodule Glorbo.Restore do
   defp walk_all_entries(root) do
     case :file.list_dir(root) do
       {:ok, entries} ->
-        Enum.flat_map(entries, fn entry ->
-          path = Path.join(root, to_string(entry))
-
-          case :file.read_link_info(path) do
-            {:ok, info} ->
-              case info_type(info) do
-                :symlink ->
-                  [path]
-
-                :directory ->
-                  [path | walk_all_entries(path)]
-
-                _ ->
-                  [path]
-              end
-
-            {:error, _} ->
-              []
-          end
-        end)
+        Enum.flat_map(entries, &classify_entry(Path.join(root, to_string(&1))))
 
       {:error, _} ->
         []
     end
   end
+
+  defp classify_entry(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} -> classify_by_type(path, info_type(info))
+      {:error, _} -> []
+    end
+  end
+
+  defp classify_by_type(path, :directory), do: [path | walk_all_entries(path)]
+  defp classify_by_type(path, _other), do: [path]
 
   # Extract the :type field from a file_info record without requiring
   # the file.hrl include (brittle across OTP versions). The record shape
@@ -314,14 +304,12 @@ defmodule Glorbo.Restore do
   end
 
   defp reindex(base) do
-    try do
-      {:ok, _} = Glorbo.Filesystem.Reindex.run(base: base)
-      :ok
-    rescue
-      e -> {:error, {:reindex_failed, Exception.message(e)}}
-    catch
-      :exit, reason -> {:error, {:reindex_failed, inspect(reason)}}
-    end
+    {:ok, _} = Glorbo.Filesystem.Reindex.run(base: base)
+    :ok
+  rescue
+    e -> {:error, {:reindex_failed, Exception.message(e)}}
+  catch
+    :exit, reason -> {:error, {:reindex_failed, inspect(reason)}}
   end
 
   defp maybe_fixer(true), do: :ok
@@ -334,31 +322,29 @@ defmodule Glorbo.Restore do
   # while keeping the :ok return contract so callers see "restore
   # complete". The audit trail still records the fix attempt.
   defp maybe_fixer(false) do
-    try do
-      case Glorbo.Doctor.Fixer.run([]) do
-        {:doctor, 0, _body} ->
-          :ok
-
-        {:doctor, code, body} ->
-          Logger.warning("post-restore doctor --fix exited #{code}: #{body}")
-          :ok
-
-        other ->
-          Logger.warning("post-restore doctor --fix returned unexpected shape: #{inspect(other)}")
-          :ok
-      end
-    rescue
-      e ->
-        Logger.warning(
-          "post-restore doctor --fix raised #{inspect(e.__struct__)}: #{Exception.message(e)}"
-        )
-
+    case Glorbo.Doctor.Fixer.run([]) do
+      {:doctor, 0, _body} ->
         :ok
-    catch
-      :exit, reason ->
-        Logger.warning("post-restore doctor --fix exited (EXIT): #{inspect(reason)}")
+
+      {:doctor, code, body} ->
+        Logger.warning("post-restore doctor --fix exited #{code}: #{body}")
+        :ok
+
+      other ->
+        Logger.warning("post-restore doctor --fix returned unexpected shape: #{inspect(other)}")
         :ok
     end
+  rescue
+    e ->
+      Logger.warning(
+        "post-restore doctor --fix raised #{inspect(e.__struct__)}: #{Exception.message(e)}"
+      )
+
+      :ok
+  catch
+    :exit, reason ->
+      Logger.warning("post-restore doctor --fix exited (EXIT): #{inspect(reason)}")
+      :ok
   end
 
   defp format_cli_result(:ok, _archive) do

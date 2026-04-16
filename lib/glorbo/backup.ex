@@ -69,14 +69,12 @@ defmodule Glorbo.Backup do
         strict: [output: :string, force_live: :boolean, help: :boolean]
       )
 
-    cond do
-      opts[:help] ->
-        {:backup, 0, help_text()}
-
-      true ->
-        Audit.emit("backup", "start", %{output: opts[:output]})
-        result = run(Keyword.take(opts, [:output, :force_live]))
-        format_cli_result(result)
+    if opts[:help] do
+      {:backup, 0, help_text()}
+    else
+      Audit.emit("backup", "start", %{output: opts[:output]})
+      result = run(Keyword.take(opts, [:output, :force_live]))
+      format_cli_result(result)
     end
   end
 

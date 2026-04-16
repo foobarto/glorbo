@@ -29,10 +29,7 @@ defmodule Glorbo.CLI.Lifecycle.Up do
   def run(argv) do
     {opts, _positional, _invalid} = OptionParser.parse(argv, strict: @switches)
 
-    cond do
-      opts[:help] -> {:up, 0, help_text()}
-      true -> do_run()
-    end
+    if opts[:help], do: {:up, 0, help_text()}, else: do_run()
   end
 
   defp do_run do

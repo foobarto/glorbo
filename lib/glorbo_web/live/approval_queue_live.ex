@@ -27,13 +27,13 @@ defmodule GlorboWeb.ApprovalQueueLive do
   @impl true
   def mount(%{"company" => co}, _session, socket) do
     # WR-02: slug gate before any filesystem construction.
-    if not GlorboWeb.Slug.valid?(co) do
+    if GlorboWeb.Slug.valid?(co) do
+      mount_valid(co, socket)
+    else
       {:ok,
        socket
        |> put_flash(:error, "Invalid company identifier.")
        |> push_navigate(to: ~p"/companies")}
-    else
-      mount_valid(co, socket)
     end
   end
 
@@ -157,8 +157,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
           case File.ls(state_dir) do
             {:ok, files} ->
               files
-              |> Enum.filter(&String.starts_with?(&1, "awaiting-approval-"))
-              |> Enum.filter(&String.ends_with?(&1, ".md"))
+              |> Enum.filter(&(String.starts_with?(&1, "awaiting-approval-") and String.ends_with?(&1, ".md")))
               |> Enum.map(&build_sentinel(base, co, ag, &1))
               |> Enum.reject(&is_nil/1)
 

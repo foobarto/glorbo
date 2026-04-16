@@ -27,13 +27,13 @@ defmodule GlorboWeb.KanbanLive do
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
     # WR-02: slug gate before any filesystem construction.
-    if not GlorboWeb.Slug.valid?(slug) do
+    if GlorboWeb.Slug.valid?(slug) do
+      mount_valid(slug, socket)
+    else
       {:ok,
        socket
        |> put_flash(:error, "Invalid company identifier.")
        |> push_navigate(to: ~p"/companies")}
-    else
-      mount_valid(slug, socket)
     end
   end
 
@@ -120,29 +120,33 @@ defmodule GlorboWeb.KanbanLive do
 
     case File.ls(projects_dir) do
       {:ok, projects} ->
-        Enum.flat_map(projects, fn p ->
-          tasks_dir = Path.join([projects_dir, p, "tasks"])
-
-          case File.ls(tasks_dir) do
-            {:ok, files} ->
-              files
-              |> Enum.filter(&String.ends_with?(&1, ".md"))
-              |> Enum.flat_map(fn f ->
-                path = Path.join(tasks_dir, f)
-
-                case Glorbo.TaskDefinition.parse_file(path, base: base, company: company) do
-                  {:ok, task} -> [task]
-                  _ -> []
-                end
-              end)
-
-            _ ->
-              []
-          end
-        end)
+        Enum.flat_map(projects, &load_project_tasks(projects_dir, &1, base, company))
 
       _ ->
         []
+    end
+  end
+
+  defp load_project_tasks(projects_dir, project, base, company) do
+    tasks_dir = Path.join([projects_dir, project, "tasks"])
+
+    case File.ls(tasks_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.flat_map(&parse_task_file(tasks_dir, &1, base, company))
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_task_file(tasks_dir, filename, base, company) do
+    path = Path.join(tasks_dir, filename)
+
+    case Glorbo.TaskDefinition.parse_file(path, base: base, company: company) do
+      {:ok, task} -> [task]
+      _ -> []
     end
   end
 
