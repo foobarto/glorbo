@@ -30,6 +30,9 @@ defmodule Glorbo.Filesystem.Watcher do
 
   @debounce_ms 100
   @interesting_events [:created, :modified, :deleted, :removed]
+  # WR-07: cap the debounce map so a buggy/malicious actor writing N
+  # distinct paths can't unboundedly grow state.pending.
+  @max_pending 10_000
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -51,6 +54,9 @@ defmodule Glorbo.Filesystem.Watcher do
 
     {:ok, pid} = FileSystem.start_link(dirs: [company_dir], recursive: true)
     FileSystem.subscribe(pid)
+    # WR-15: monitor the inotify subprocess so we stop (not silently idle)
+    # when it dies — e.g. when fs.inotify.max_user_watches is exceeded.
+    fs_ref = Process.monitor(pid)
 
     {:ok,
      %{
@@ -58,6 +64,7 @@ defmodule Glorbo.Filesystem.Watcher do
        base: base,
        dir: company_dir,
        fs_pid: pid,
+       fs_ref: fs_ref,
        pending: %{},
        reindex_fun: Keyword.get(opts, :reindex_fun, &Reindex.mark_dirty/2)
      }}
@@ -65,17 +72,29 @@ defmodule Glorbo.Filesystem.Watcher do
 
   @impl GenServer
   def handle_info({:file_event, _pid, {path, events}}, state) do
-    if Enum.any?(events, &(&1 in @interesting_events)) do
-      # Cancel prior timer for the same path (coalesce bursts, D-32).
-      case Map.get(state.pending, path) do
-        nil -> :ok
-        ref -> Process.cancel_timer(ref)
-      end
+    cond do
+      not Enum.any?(events, &(&1 in @interesting_events)) ->
+        {:noreply, state}
 
-      ref = Process.send_after(self(), {:flush, path}, @debounce_ms)
-      {:noreply, put_in(state.pending[path], ref)}
-    else
-      {:noreply, state}
+      # WR-07: cap the pending map. If the cap is already reached AND this
+      # path isn't already tracked, drop the event with a warning rather
+      # than growing state unboundedly.
+      map_size(state.pending) >= @max_pending and not Map.has_key?(state.pending, path) ->
+        Logger.warning(
+          "[watcher/#{state.company}] pending map at cap (#{@max_pending}); dropping event for #{path}"
+        )
+
+        {:noreply, state}
+
+      true ->
+        # Cancel prior timer for the same path (coalesce bursts, D-32).
+        case Map.get(state.pending, path) do
+          nil -> :ok
+          ref -> Process.cancel_timer(ref)
+        end
+
+        ref = Process.send_after(self(), {:flush, path}, @debounce_ms)
+        {:noreply, put_in(state.pending[path], ref)}
     end
   end
 
@@ -87,6 +106,16 @@ defmodule Glorbo.Filesystem.Watcher do
   def handle_info({:file_event, _pid, :stop}, state) do
     Logger.warning("FileWatcher for #{state.company} received :stop")
     {:stop, :normal, state}
+  end
+
+  # WR-15: treat FileSystem subprocess DOWN as fatal — we'd otherwise sit
+  # happily while events never arrive (e.g. inotify watch-limit hit).
+  def handle_info({:DOWN, ref, :process, pid, reason}, %{fs_ref: ref, fs_pid: pid} = state) do
+    Logger.error(
+      "[watcher/#{state.company}] FileSystem process died: #{inspect(reason)}"
+    )
+
+    {:stop, {:filesystem_down, reason}, state}
   end
 
   def handle_info(_other, state), do: {:noreply, state}
