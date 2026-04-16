@@ -39,12 +39,48 @@ defmodule Glorbo.CLI.Lifecycle.Daemon do
   """
   @spec spawn_detached(Path.t(), [env_entry()]) :: {:ok, integer()} | {:error, term()}
   def spawn_detached(binary_path, env) when is_binary(binary_path) and is_list(env) do
-    case System.find_executable("setsid") do
-      nil ->
-        {:error, :setsid_not_found}
+    with :ok <- validate_binary(binary_path),
+         {:ok, setsid} <- find_setsid() do
+      do_spawn(setsid, binary_path, env)
+    end
+  end
 
-      setsid ->
-        do_spawn(setsid, binary_path, env)
+  # WR-05: Port.open/{:spawn_executable, setsid} hands argv[1] through to
+  # setsid's execve unchecked — a non-existent or non-executable binary
+  # exec-fails silently, but Port.info still returns the short-lived
+  # setsid pid which would then be recorded in the pidfile. Guard at
+  # entry so callers see {:error, :binary_not_found | :binary_not_executable}
+  # instead of a phantom pid.
+  defp validate_binary(path) do
+    cond do
+      not File.exists?(path) ->
+        {:error, :binary_not_found}
+
+      not executable?(path) ->
+        {:error, :binary_not_executable}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp executable?(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{mode: mode, type: :regular}} ->
+        # Any-user execute bit set. File.stat returns POSIX mode; mask
+        # against 0o111 (owner+group+other exec) to match the behaviour
+        # of stdlib `System.find_executable/1`.
+        Bitwise.band(mode, 0o111) != 0
+
+      _ ->
+        false
+    end
+  end
+
+  defp find_setsid do
+    case System.find_executable("setsid") do
+      nil -> {:error, :setsid_not_found}
+      setsid -> {:ok, setsid}
     end
   end
 
