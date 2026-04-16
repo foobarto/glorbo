@@ -93,7 +93,7 @@ defmodule GlorboWeb.ChannelLive do
     ~H"""
     <section class="gl-view gl-channel">
       <header class="gl-view__header">
-        <h1 class="gl-heading gl-heading--display">#{@channel}</h1>
+        <h1 class="gl-heading gl-heading--display">{"##{@channel}"}</h1>
       </header>
 
       <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--muted" role="alert">
@@ -101,7 +101,7 @@ defmodule GlorboWeb.ChannelLive do
       </div>
 
       <div :if={@messages == []} class="gl-empty">
-        <p>No messages in #{@channel} yet.</p>
+        <p>{"No messages in ##{@channel} yet."}</p>
       </div>
 
       <div :if={@messages != []} class="gl-channel__messages">
