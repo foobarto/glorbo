@@ -29,10 +29,10 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
 
   describe "HP1: inotify event → Agent.Server wake → Dispatch → Bwrap argv" do
     test "writing a task to agents/<slug>/inbox/ triggers wake + dispatch with expected bwrap argv" do
-      if not inotify_available?() do
-        IO.puts(:stderr, "skipping HP1 at runtime: inotifywait not installed")
-      else
+      if inotify_available?() do
         run_hp1_assertions()
+      else
+        IO.puts(:stderr, "skipping HP1 at runtime: inotifywait not installed")
       end
     end
   end

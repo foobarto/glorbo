@@ -83,7 +83,7 @@
           # Priority values are: `low, normal, high, higher`
           #
           {Credo.Check.Design.AliasUsage,
-           [priority: :low, if_nested_deeper_than: 2, if_called_more_often_than: 0]},
+           [priority: :low, if_nested_deeper_than: 3, if_called_more_often_than: 2]},
           {Credo.Check.Design.TagFIXME, []},
           # Phase 1 disables: stubs intentionally carry "TODO: Phase N" markers.
           {Credo.Check.Design.TagTODO, false},
@@ -129,7 +129,9 @@
           {Credo.Check.Refactor.MatchInCondition, []},
           {Credo.Check.Refactor.NegatedConditionsInUnless, []},
           {Credo.Check.Refactor.NegatedConditionsWithElse, []},
-          {Credo.Check.Refactor.Nesting, []},
+          # Phase 1 tune: max depth 3 matches common Elixir patterns
+          # (e.g. case-inside-Enum.reduce for inotify event routing).
+          {Credo.Check.Refactor.Nesting, [max_nesting: 3]},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},

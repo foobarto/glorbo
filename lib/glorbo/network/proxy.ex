@@ -167,9 +167,7 @@ defmodule Glorbo.Network.Proxy do
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{acceptor_ref: ref} = state) do
     if reason not in [:normal, :shutdown, {:shutdown, :closed}] do
-      Logger.warning(
-        "[network.proxy] acceptor died: #{inspect(reason)} — restarting acceptor"
-      )
+      Logger.warning("[network.proxy] acceptor died: #{inspect(reason)} — restarting acceptor")
     end
 
     new_ref = start_acceptor(state.listen_sock, state.allowlist, state.task_sup)

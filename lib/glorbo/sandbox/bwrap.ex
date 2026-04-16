@@ -198,7 +198,8 @@ defmodule Glorbo.Sandbox.Bwrap do
       "--symlink",
       "usr/sbin",
       "/sbin"
-    ] ++ etc_flags() ++
+    ] ++
+      etc_flags() ++
       [
         "--proc",
         "/proc",
