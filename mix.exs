@@ -49,6 +49,9 @@ defmodule Glorbo.MixProject do
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.1"},
       {:floki, ">= 0.37.0", only: :test},
+      # Phoenix LiveView 1.1's `Phoenix.LiveViewTest` requires `lazy_html`
+      # for DOM parsing in connected-mount tests (Plan 04-02 Wave 1).
+      {:lazy_html, ">= 0.1.0", only: :test},
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.6"},
       {:crontab, "~> 1.2"},

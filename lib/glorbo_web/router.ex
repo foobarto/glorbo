@@ -17,7 +17,20 @@ defmodule GlorboWeb.Router do
   scope "/", GlorboWeb do
     pipe_through :browser
 
-    get "/health", PageController, :health
+    # Plan 04-02 Task 1: dashboard entry + company-scope routes.
+    # /health-legacy keeps the Phase 1 health probe available; 04-03
+    # owns the new `/health` route for HealthLive.
+    get "/", PageController, :redirect_to_companies
+    get "/health-legacy", PageController, :health
+
+    live "/companies", OverviewLive
+    live "/companies/:company", CompanyLive
+    # 04-02 Task 2 adds: live "/companies/:company/kanban", KanbanLive
+    # 04-02 Task 3 adds: live "/companies/:company/agents/:agent", AgentLive
+    #                    live "/companies/:company/approvals", ApprovalQueueLive
+    # 04-03 adds: live "/companies/:company/channels/:channel", ChannelLive
+    #             live "/companies/:company/audit", AuditLive
+    #             live "/health", HealthLive (+ DashboardToken plug)
   end
 
   # Other scopes may use custom stacks.
