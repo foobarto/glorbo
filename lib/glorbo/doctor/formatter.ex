@@ -7,7 +7,16 @@ defmodule Glorbo.Doctor.Formatter do
 
   alias IO.ANSI
 
-  @version Mix.Project.config()[:version] || "0.1.0"
+  # WR-13: read version at runtime from the loaded :glorbo application spec
+  # so a release upgrade reports the new version instead of the compile-
+  # time constant baked into the binary.
+  @spec version() :: String.t()
+  defp version do
+    case Application.spec(:glorbo, :vsn) do
+      nil -> "0.1.0"
+      vsn -> to_string(vsn)
+    end
+  end
 
   @spec to_table([Glorbo.Doctor.check()]) :: String.t()
   def to_table(results) when is_list(results) do
@@ -25,7 +34,7 @@ defmodule Glorbo.Doctor.Formatter do
 
     Jason.encode!(
       %{
-        version: @version,
+        version: version(),
         checks: results,
         all_passed: all_passed,
         passed_count: passed,
