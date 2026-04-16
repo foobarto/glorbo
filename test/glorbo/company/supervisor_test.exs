@@ -34,7 +34,7 @@ defmodule Glorbo.Company.SupervisorTest do
   end
 
   describe "S1: 7-child base tree (6 Plan 03-05 + Approvals.Gate from GAP-5)" do
-    test "CompanySupervisor starts 7 children by default (+ Approvals.Gate)" do
+    test "CompanySupervisor starts 7 children by default (+ Approvals.Gate; no api-only agents → no Proxy)" do
       {sup_pid, _co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
       assert length(children) == 7
@@ -50,6 +50,24 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(modules, Glorbo.Company.Scheduler)
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
+      assert MapSet.member?(modules, Glorbo.Approvals.Gate)
+      # GAP-4: no api-only agent on disk → Network.Proxy is NOT started
+      refute MapSet.member?(modules, Glorbo.Network.Proxy)
+    end
+  end
+
+  describe "S1b: 8-child tree when an api-only agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 8 children when api_only?: true" do
+      {sup_pid, _co, _base} = start_company(api_only?: true)
+      children = Supervisor.which_children(sup_pid)
+      assert length(children) == 8
+
+      modules =
+        children
+        |> Enum.map(fn {_id, _pid, _type, [mod]} -> mod end)
+        |> MapSet.new()
+
+      assert MapSet.member?(modules, Glorbo.Network.Proxy)
       assert MapSet.member?(modules, Glorbo.Approvals.Gate)
     end
   end

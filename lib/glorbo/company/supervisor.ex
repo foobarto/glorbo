@@ -2,8 +2,8 @@ defmodule Glorbo.Company.Supervisor do
   @moduledoc """
   Per-company supervisor (AGT-01; D-44).
 
-  Owns a 7-child supervision tree (expanded from Phase 2's 2-child
-  shape by Plan 03-05 + the GAP-5 closure work):
+  Owns a 7- or 8-child supervision tree (expanded from Phase 2's 2-child
+  shape by Plan 03-05 + the GAP-closure work):
 
     1. `Glorbo.Company.AuditLog`       — append-only JSONL + SQLite mirror (Plan 2-01)
     2. `Glorbo.Filesystem.Watcher`     — inotify + PubSub broadcast (Plan 2-04 + 3-05)
@@ -12,6 +12,9 @@ defmodule Glorbo.Company.Supervisor do
     5. `Glorbo.Company.BudgetTracker`  — pre-dispatch USD gate (Plan 3-02)
     6. `Glorbo.Company.AgentSupervisor` — per-agent DynamicSupervisor (Plan 3-03)
     7. `Glorbo.Approvals.Gate`         — SEC-04 Director approval flow (GAP-5)
+    8. `Glorbo.Network.Proxy` (conditional) — HTTPS CONNECT allowlist for
+       api-only agents (GAP-4; started iff at least one agent.md declares
+       `network: api-only`).
 
   Strategy: `:one_for_one` — killing any single child restarts only that
   child. Kill this supervisor → only this company's children restart;
@@ -40,6 +43,8 @@ defmodule Glorbo.Company.Supervisor do
   """
   use Supervisor
 
+  alias Glorbo.Agent.Parser, as: AgentParser
+
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -65,14 +70,64 @@ defmodule Glorbo.Company.Supervisor do
        [name: child_name(company, :agent_sup), company: company, base: base]}
     ]
 
+    # GAP-4: start Glorbo.Network.Proxy when at least one agent declares
+    # network: :api_only. Scanned from agent.md files on disk so the
+    # decision tracks the filesystem source of truth (CLAUDE.md
+    # invariant). `api_only?: true|false` in opts overrides the scan
+    # for tests that want to assert a specific shape.
+    #
     # GAP-5: Approvals.Gate always starts — its PubSub subscription is
     # the entry point for Director approval flow (SEC-04).
-    children = append_gate(base_children, company, base)
+    children =
+      base_children
+      |> maybe_append_proxy(opts, company, base)
+      |> append_gate(company, base)
 
     Supervisor.init(children, strategy: :one_for_one)
   end
 
   defp child_name(company, role), do: String.to_atom("#{company}_#{role}")
+
+  # ---------------------------------------------------------------------------
+  # Conditional Network.Proxy (GAP-4)
+  # ---------------------------------------------------------------------------
+
+  defp maybe_append_proxy(children, opts, company, base) do
+    api_only? =
+      Keyword.get_lazy(opts, :api_only?, fn -> company_has_api_only_agent?(company, base) end)
+
+    if api_only? do
+      children ++
+        [
+          {Glorbo.Network.Proxy,
+           [name: child_name(company, :network_proxy), company: company, port: 0]}
+        ]
+    else
+      children
+    end
+  end
+
+  defp company_has_api_only_agent?(company, base) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.map(&Path.join([agents_dir, &1, "agent.md"]))
+        |> Enum.filter(&File.regular?/1)
+        |> Enum.any?(&agent_md_declares_api_only?/1)
+
+      _ ->
+        false
+    end
+  end
+
+  defp agent_md_declares_api_only?(agent_md_path) do
+    case AgentParser.parse_file(agent_md_path) do
+      {:ok, %{network: :api_only}} -> true
+      _ -> false
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Approvals.Gate (GAP-5)
