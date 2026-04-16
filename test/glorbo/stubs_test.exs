@@ -28,9 +28,12 @@ defmodule Glorbo.StubsTest do
 
   alias Glorbo.Company.Router
 
-  test "Glorbo.Company.Router.route/2 returns {:error, :not_implemented} placeholder" do
-    # Phase 1 stub — called without running pid; returns placeholder regardless.
-    assert Router.route(:anything, %{}) == {:error, :not_implemented}
+  test "Glorbo.Company.Router.route/2 is a live GenServer call (Phase 3 Plan 02 filled in)" do
+    # Phase 3 filled in the stub — assert the function is exported and no
+    # longer the :not_implemented placeholder. Behaviour is covered by
+    # test/glorbo/company/router_test.exs.
+    Code.ensure_loaded!(Router)
+    assert function_exported?(Router, :route, 2)
   end
 
   test "Glorbo.Company.AuditLog exposes only append/2 (append-only invariant from CLAUDE.md)" do
