@@ -54,15 +54,22 @@ defmodule Glorbo.CLI.Logs do
     if File.exists?(path) do
       lines = opts[:lines] || @default_lines
 
-      path
-      |> read_last_lines(lines)
-      |> Enum.map(&format_audit_line/1)
-      |> Enum.each(&IO.puts/1)
+      output =
+        path
+        |> read_last_lines(lines)
+        |> Enum.map_join("\n", &format_audit_line/1)
 
-      if opts[:follow], do: follow(path, :audit), else: {:logs, 0, ""}
+      output = if output == "", do: "", else: output <> "\n"
+
+      if opts[:follow] do
+        # --follow: emit backfill now, then stream further events live.
+        IO.write(output)
+        follow(path, :audit)
+      else
+        {:logs, 0, output}
+      end
     else
-      {:logs, 1,
-       "No audit log found at #{path}. Check company name.\n"}
+      {:logs, 1, "No audit log found at #{path}. Check company name.\n"}
     end
   end
 
@@ -77,14 +84,20 @@ defmodule Glorbo.CLI.Logs do
     if File.exists?(path) do
       lines = opts[:lines] || @default_lines
 
-      path
-      |> read_last_lines(lines)
-      |> Enum.each(&IO.write/1)
+      output =
+        path
+        |> read_last_lines(lines)
+        |> Enum.join("")
 
-      if opts[:follow], do: follow(path, :stdout), else: {:logs, 0, ""}
+      if opts[:follow] do
+        # --follow: emit backfill now, then stream further events live.
+        IO.write(output)
+        follow(path, :stdout)
+      else
+        {:logs, 0, output}
+      end
     else
-      {:logs, 1,
-       "No stdout log found at #{path}. Check company/agent names.\n"}
+      {:logs, 1, "No stdout log found at #{path}. Check company/agent names.\n"}
     end
   end
 

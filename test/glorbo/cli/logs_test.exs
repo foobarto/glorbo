@@ -10,8 +10,6 @@ defmodule Glorbo.CLI.LogsTest do
   """
   use GlorboTest.CLICase, async: false
 
-  import ExUnit.CaptureIO
-
   alias Glorbo.CLI.Logs
 
   setup %{glorbo_home: home} do
@@ -46,7 +44,7 @@ defmodule Glorbo.CLI.LogsTest do
 
   describe "logs <company> — audit JSONL" do
     test "backfills 50 lines by default (D-14)", %{company: co} do
-      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co]) end)
+      assert {:logs, 0, out} = Logs.run([co])
 
       lines =
         out
@@ -57,21 +55,21 @@ defmodule Glorbo.CLI.LogsTest do
     end
 
     test "--lines 10 respected", %{company: co} do
-      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "10"]) end)
+      assert {:logs, 0, out} = Logs.run([co, "--lines", "10"])
 
       lines = out |> String.split("\n", trim: true) |> length()
       assert lines == 10
     end
 
     test "--lines 0 produces empty output", %{company: co} do
-      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "0"]) end)
+      assert {:logs, 0, out} = Logs.run([co, "--lines", "0"])
 
       assert out == ""
     end
 
     test "pretty-prints audit line with ts / actor / action / target / detail",
          %{company: co} do
-      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "1"]) end)
+      assert {:logs, 0, out} = Logs.run([co, "--lines", "1"])
 
       # Backfills the MOST RECENT line (seq-100 since we appended 2..100).
       assert out =~ "test.event.100"
@@ -93,7 +91,7 @@ defmodule Glorbo.CLI.LogsTest do
       path = Path.join([home, "companies", co, "agents", ag, "stdout.log"])
       File.write!(path, Enum.map_join(1..20, "", fn i -> "line-#{i}\n" end))
 
-      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, ag]) end)
+      assert {:logs, 0, out} = Logs.run([co, ag])
 
       # All 20 lines should be present (< 50 default).
       for i <- 1..20 do
