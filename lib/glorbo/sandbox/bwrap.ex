@@ -1,6 +1,6 @@
 defmodule Glorbo.Sandbox.Bwrap do
   @moduledoc """
-  `bwrap(1)` argv composer + `MuonTrap.Daemon`-wrapped invocation layer
+  `bwrap(1)` argv composer + Port-wrapped invocation layer
   (D-08..D-13; SEC-02; SEC-03; T-03-30..T-03-32, T-03-37).
 
   This module owns two responsibilities:
@@ -8,8 +8,9 @@ defmodule Glorbo.Sandbox.Bwrap do
     1. `build_argv/1` — a PURE function that composes a bwrap argv list
        from an agent's invocation opts. Used by unit tests to assert flag
        composition without touching the filesystem or forking a process.
-    2. `start/2` — wraps the argv invocation in `MuonTrap.Daemon` so crash
-       cleanup is guaranteed by cgroups + `--unshare-pid` + `--die-with-parent`
+    2. `start/2` — invokes bwrap via `Port.open/2` using a thin `/bin/sh`
+       wrapper that redirects stdin from a prompt tempfile. Crash cleanup
+       is kernel-guaranteed by `--unshare-pid` + `--die-with-parent`
        (RESEARCH Pitfall 1's triple-layer cleanup).
 
   ## Baseline sandbox (D-08)
@@ -76,19 +77,22 @@ defmodule Glorbo.Sandbox.Bwrap do
     * `--unshare-pid` — when bwrap dies, every process in its pid
       namespace is reaped by the kernel (no re-parenting to host pid 1).
 
-  We invoke bwrap through `System.cmd/3` with `:input` so the prompt is
-  written to stdin and stdin is closed before bwrap starts consuming
-  stdout (WR-05: the prior `Port.open` path kept stdin open and caused
-  CLI tools to block until the 300s timeout — see CR-01). Timeout
-  enforcement is implemented via `Task.async` + `Task.yield/shutdown`;
-  `Task.shutdown(:brutal_kill)` closes the port, which sends SIGKILL to
-  bwrap, which kernel-terminates the pid namespace.
+  We invoke bwrap via `Port.open({:spawn_executable, "/bin/sh"}, ...)`
+  with a thin shell wrapper that reads the prompt from a tempfile
+  (`exec bwrap "$@" < $prompt_file`). This closes stdin on the CLI tool
+  side as soon as the file is fully consumed — every supported CLI
+  (claude --print, codex exec -, gemini -p) waits for stdin EOF before
+  processing the prompt (WR-05 / CR-01).
 
-  `MuonTrap.Daemon`'s cgroup-backed kill trap is **not** used here; it
-  would add a fourth layer but its `:stdin` API is incompatible with the
-  EOF-required CLI tools we dispatch (RESEARCH Pitfall 8). The
-  pid-namespace reap is kernel-guaranteed and suffices for our threat
-  model.
+  Elixir 1.19.5's `System.cmd/3` does NOT accept an `:input` option (that
+  option was never added upstream; the prior implementation raised
+  `ArgumentError` at runtime). The tempfile-redirection approach is
+  kernel-portable and adds no dependencies.
+
+  Timeout enforcement: `receive` with `after timeout_s * 1_000` arms a
+  one-shot guard. On timeout we send `SIGKILL` via `Port.close/1` which
+  tears down the port owner; the shell wrapper's child (bwrap) gets
+  `--die-with-parent` cleanup, which kernel-reaps the pid namespace.
   """
   require Logger
 
@@ -345,17 +349,20 @@ defmodule Glorbo.Sandbox.Bwrap do
           | {:error, term()}
 
   @doc """
-  Launch the sandboxed CLI invocation under `MuonTrap.Daemon`.
+  Launch the sandboxed CLI invocation via `Port.open/2` + `/bin/sh` wrapper.
 
-  Blocks until the CLI exits or the timeout elapses (signalled via SIGTERM
-  then SIGKILL per `MuonTrap.Daemon`'s `:delay_to_sigkill: 500` default).
-  Returns `{:ok, %{exit_status, stdout, usage_dir}}` on clean exit;
+  Blocks until the CLI exits or the timeout elapses. Returns
+  `{:ok, %{exit_status, stdout, usage_dir}}` on clean exit;
   `{:error, term()}` on start failure.
 
-  **`stdout` in the result:** best-effort — MuonTrap pipes stdout to the
-  configured `:log_output` device. For usage-telemetry parsing, callers
-  should rely on the CLI's session-dir telemetry (via `usage_dir`) rather
-  than stdout content.
+  The prompt is written to a tempfile, then `/bin/sh -c 'exec bwrap "$@" <
+  $prompt_file'` is spawned. The stdin redirection ensures bwrap's child
+  CLI sees a finite stream that EOFs after the prompt is fully consumed.
+
+  **`stdout` in the result:** stderr is merged into stdout via
+  `:stderr_to_stdout`. For usage-telemetry parsing, callers should rely
+  on the CLI's session-dir telemetry (via `usage_dir`) rather than stdout
+  content.
   """
   @spec start(invocation_opts(), run_opts()) :: start_result()
   def start(%{} = opts, run_opts) when is_list(run_opts) do
@@ -371,59 +378,123 @@ defmodule Glorbo.Sandbox.Bwrap do
     run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir)
   end
 
-  # Invoke bwrap, piping the prompt through stdin AND closing stdin when the
-  # prompt is fully written. CLI tools (claude --print, codex exec -, gemini
-  # -p) all wait for EOF on stdin before processing the prompt; Port.open
-  # with {:command, ""} sends a zero-length chunk but does NOT close the
-  # stdin-half, so those tools block indefinitely until our timeout fires
-  # (CR-01). `System.cmd/3` with :input closes stdin after writing the
-  # prompt — this matches what the CLI tools expect.
+  # Invoke bwrap via a `/bin/sh -c 'exec bwrap "$@" < prompt_file'` wrapper.
   #
-  # System.cmd has no built-in timeout, so we wrap it in a Task and rely on
-  # Task.yield + Task.shutdown for the timeout. Task.shutdown/:brutal_kill
-  # sends SIGKILL to the port's Elixir process which closes the port, which
-  # kernel-terminates bwrap; bwrap's --die-with-parent + --unshare-pid
-  # triple-cleanup then reaps the CLI tool and all its descendants.
+  # Why this shape:
+  #   * `Port.open` sends `Port.command/2` data to the child's stdin but
+  #     `Port.close/1` closes BOTH halves of the port simultaneously — there
+  #     is no clean way in pure Elixir/Erlang to signal EOF on the child's
+  #     stdin without also tearing down stdout.
+  #   * The CLI tools we dispatch (claude --print, codex exec -, gemini -p)
+  #     block until stdin EOFs (CR-01).
+  #   * Tempfile + shell redirection (`< $prompt_file`) gives us kernel-level
+  #     stdin EOF as soon as the file's end is reached, while keeping the
+  #     port's stdout channel open for us to drain.
+  #
+  # Cleanup guarantees:
+  #   * `--die-with-parent` in the bwrap baseline (D-08) causes bwrap to
+  #     self-terminate when its parent (the sh wrapper) dies.
+  #   * `--unshare-pid` makes bwrap pid1 of its own namespace; when bwrap
+  #     exits, the kernel reaps every descendant in the namespace.
+  #   * On timeout we close the port; the sh wrapper dies; bwrap follows.
+  #
+  # The prompt tempfile is deleted via `File.rm/1` in an after-clause so the
+  # cleanup runs on both normal exit and exception paths.
   defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir) do
-    task =
-      Task.async(fn ->
+    case write_prompt_tempfile(prompt) do
+      {:ok, prompt_file} ->
         try do
-          # :input writes the iodata to stdin and closes it — this is the
-          # stdin-EOF signal every supported CLI needs. stderr_to_stdout: true
-          # mirrors the prior port behaviour (stderr merged into stdout).
-          {output, status} =
-            System.cmd(bwrap_bin, argv,
-              input: prompt,
-              stderr_to_stdout: true,
-              parallelism: true
-            )
-
-          {:ok, output, status}
-        rescue
-          e -> {:error, Exception.message(e)}
-        catch
-          kind, reason -> {:error, {kind, reason}}
+          do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir)
+        after
+          _ = File.rm(prompt_file)
         end
-      end)
 
-    case Task.yield(task, timeout_s * 1_000) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {:ok, output, status}} ->
-        {:ok,
-         %{
-           exit_status: status,
-           stdout: output,
-           usage_dir: usage_dir
-         }}
+      {:error, reason} ->
+        {:error, {:prompt_tempfile_failed, reason}}
+    end
+  end
 
-      {:ok, {:error, reason}} ->
-        {:error, reason}
+  defp write_prompt_tempfile(prompt) when is_binary(prompt) do
+    # Use a unique per-invocation path under the system tmp dir. The
+    # filename contains no user input and cannot collide across parallel
+    # dispatches thanks to the monotonic unique_integer.
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "glorbo_bwrap_prompt_#{System.unique_integer([:positive, :monotonic])}"
+      )
 
-      {:exit, reason} ->
-        {:error, {:task_exit, reason}}
+    case File.write(path, prompt) do
+      :ok -> {:ok, path}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-      nil ->
+  defp do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir) do
+    sh_path = System.find_executable("sh") || "/bin/sh"
+
+    # The shell script:
+    #   exec "$1" "${@:3}" < "$2"
+    # - positional arg 1 = bwrap binary
+    # - positional arg 2 = prompt file
+    # - positional args 3+ = bwrap argv
+    # Using `exec` makes sh replace itself with bwrap (tighter parent/child
+    # relationship for --die-with-parent).
+    sh_script = ~s|exec "$1" "${@:3}" < "$2"|
+
+    port_args = [sh_script, "glorbo-bwrap-launcher", bwrap_bin, prompt_file | argv]
+
+    port_opts = [
+      :binary,
+      :exit_status,
+      :stderr_to_stdout,
+      :hide,
+      {:args, ["-c" | port_args]}
+    ]
+
+    port = Port.open({:spawn_executable, sh_path}, port_opts)
+
+    case drain_port(port, timeout_s, <<>>) do
+      {:ok, exit_status, output} ->
+        {:ok, %{exit_status: exit_status, stdout: output, usage_dir: usage_dir}}
+
+      {:error, :timeout} ->
         Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
+        safe_port_close(port)
+        {:error, :timeout}
+
+      {:error, reason} ->
+        safe_port_close(port)
+        {:error, reason}
+    end
+  end
+
+  # Receive-loop over the port: accumulate stdout/stderr data until the
+  # `{port, {:exit_status, status}}` message arrives OR the timeout fires.
+  defp drain_port(port, timeout_s, acc) do
+    deadline_ms = timeout_s * 1_000
+
+    receive do
+      {^port, {:data, chunk}} ->
+        drain_port(port, timeout_s, acc <> chunk)
+
+      {^port, {:exit_status, status}} ->
+        {:ok, status, acc}
+    after
+      deadline_ms ->
         {:error, :timeout}
     end
+  end
+
+  defp safe_port_close(port) do
+    try do
+      true = Port.close(port)
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+
+    :ok
   end
 end
