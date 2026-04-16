@@ -45,10 +45,20 @@ defmodule Glorbo.Runtime.UidAllocator do
   end
 
   defp find_user_subuid(lines, user) do
+    # WR-08: skip malformed lines instead of raising. A corrupt /etc/subuid
+    # (non-numeric base, truncated fields, stray whitespace) would otherwise
+    # crash the allocator at startup — degrade gracefully to
+    # :no_subuid_entry so the caller can fall back to a non-podman path.
     Enum.find_value(lines, {:error, :no_subuid_entry}, fn line ->
       case String.split(line, ":") do
-        [^user, base_str | _] -> {:ok, String.to_integer(base_str)}
-        _ -> nil
+        [^user, base_str | _] ->
+          case Integer.parse(base_str) do
+            {base, ""} when base > 0 -> {:ok, base}
+            _ -> nil
+          end
+
+        _ ->
+          nil
       end
     end)
   end
