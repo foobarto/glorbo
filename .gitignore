@@ -73,3 +73,8 @@ coverage/
 # Not Glorbo source code. Versions pinned in skills-lock.json; re-hydrate
 # via your skills installer.
 .agents/
+.agent/
+.claude/scheduled_tasks.lock
+
+# GSD per-session dotfiles
+.planning/.next-call-count
