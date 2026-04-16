@@ -123,7 +123,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Compilable Skeleton + CI Release Pipeline | 3/3 | Complete | 2026-04-15 |
 | 2. Filesystem Foundation + Container Runtime + Local LLM | 4/4 | Complete | 2026-04-16 |
 | 3. Agents, Routing, Kernel Permissions, Budgets | 5/5 | Complete | 2026-04-16 |
-| 4. LiveView Dashboard + Real-Time Channels | 0/TBD | Not started | - |
+| 4. LiveView Dashboard + Real-Time Channels | 3/3 | Complete    | 2026-04-16 |
 | 5. CLI Completeness + Backup/Restore Portability | 0/TBD | Not started | - |
 
 ---
