@@ -2,8 +2,8 @@ defmodule Glorbo.Company.Supervisor do
   @moduledoc """
   Per-company supervisor (AGT-01; D-44).
 
-  Owns the 6-child supervision tree (expanded from Phase 2's 2-child shape
-  by Plan 03-05):
+  Owns a 7-child supervision tree (expanded from Phase 2's 2-child
+  shape by Plan 03-05 + the GAP-5 closure work):
 
     1. `Glorbo.Company.AuditLog`       — append-only JSONL + SQLite mirror (Plan 2-01)
     2. `Glorbo.Filesystem.Watcher`     — inotify + PubSub broadcast (Plan 2-04 + 3-05)
@@ -11,12 +11,10 @@ defmodule Glorbo.Company.Supervisor do
     4. `Glorbo.Company.Scheduler`      — cron heartbeats (Plan 3-02)
     5. `Glorbo.Company.BudgetTracker`  — pre-dispatch USD gate (Plan 3-02)
     6. `Glorbo.Company.AgentSupervisor` — per-agent DynamicSupervisor (Plan 3-03)
-
-  Approvals.Gate lives as a DynamicSupervisor'd child of Router per D-44
-  collapse (shared PubSub subscription context; not a 7th sibling).
+    7. `Glorbo.Approvals.Gate`         — SEC-04 Director approval flow (GAP-5)
 
   Strategy: `:one_for_one` — killing any single child restarts only that
-  child. Kill this supervisor → only this company's 6 children restart;
+  child. Kill this supervisor → only this company's children restart;
   other companies + the dashboard are unaffected.
 
   ## Cross-child state recovery (D-45)
@@ -53,7 +51,7 @@ defmodule Glorbo.Company.Supervisor do
     company = Keyword.fetch!(opts, :company)
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
 
-    children = [
+    base_children = [
       {Glorbo.Company.AuditLog,
        [name: child_name(company, :audit_log), company: company, base: base]},
       {Glorbo.Filesystem.Watcher,
@@ -67,8 +65,24 @@ defmodule Glorbo.Company.Supervisor do
        [name: child_name(company, :agent_sup), company: company, base: base]}
     ]
 
+    # GAP-5: Approvals.Gate always starts — its PubSub subscription is
+    # the entry point for Director approval flow (SEC-04).
+    children = append_gate(base_children, company, base)
+
     Supervisor.init(children, strategy: :one_for_one)
   end
 
   defp child_name(company, role), do: String.to_atom("#{company}_#{role}")
+
+  # ---------------------------------------------------------------------------
+  # Approvals.Gate (GAP-5)
+  # ---------------------------------------------------------------------------
+
+  defp append_gate(children, company, base) do
+    children ++
+      [
+        {Glorbo.Approvals.Gate,
+         [name: child_name(company, :approvals_gate), company: company, base: base]}
+      ]
+  end
 end

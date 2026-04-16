@@ -33,11 +33,11 @@ defmodule Glorbo.Company.SupervisorTest do
     {sup_pid, company, base}
   end
 
-  describe "S1: 6-child tree" do
-    test "CompanySupervisor starts exactly 6 children (AuditLog + Watcher + Router + Scheduler + BudgetTracker + AgentSupervisor)" do
+  describe "S1: 7-child base tree (6 Plan 03-05 + Approvals.Gate from GAP-5)" do
+    test "CompanySupervisor starts 7 children by default (+ Approvals.Gate)" do
       {sup_pid, _co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 6
+      assert length(children) == 7
 
       modules =
         children
@@ -50,6 +50,7 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(modules, Glorbo.Company.Scheduler)
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
+      assert MapSet.member?(modules, Glorbo.Approvals.Gate)
     end
   end
 
