@@ -57,6 +57,11 @@ defmodule Glorbo.Application do
       # here via :via tuples during company boot.
       Glorbo.Agent.Registry,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
+      # Phase 4 Wave 0: per-agent-page stdout tail streamers. AgentLive
+      # spawns children on mount; crash in one streamer does not affect
+      # other streamers or the LiveView (LV uses Process.monitor/1 for
+      # cleanup — see GlorboWeb.StdoutStreamer moduledoc).
+      {DynamicSupervisor, name: GlorboWeb.StdoutStreamer.Supervisor, strategy: :one_for_one},
       GlorboWeb.Endpoint
     ]
 
