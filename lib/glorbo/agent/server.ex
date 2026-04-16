@@ -124,18 +124,35 @@ defmodule Glorbo.Agent.Server do
     company = Keyword.fetch!(opts, :company)
     task_sup = Keyword.fetch!(opts, :task_supervisor)
 
+    # GAP-3: subscribe to the company-wide inbox PubSub topic so inotify
+    # events on agents/<slug>/inbox/*.md trigger a wake when they target
+    # THIS agent. Each Agent.Server filters incoming events by its own
+    # slug (see handle_info below). `subscribe?: false` bypasses for
+    # tests that drive wake/2,3 directly.
+    if Keyword.get(opts, :subscribe?, true) do
+      pubsub = Keyword.get(opts, :pubsub, Glorbo.PubSub)
+
+      case Phoenix.PubSub.subscribe(pubsub, "company:#{company}:inbox") do
+        :ok -> :ok
+        # If PubSub isn't running (e.g. isolated tests without the app),
+        # fall through — wake/2,3 and direct sends still work.
+        {:error, _} -> :ok
+      end
+    end
+
     state = %{
       spec: spec,
       company: company,
       task_supervisor: task_sup,
       dispatch_fun: Keyword.get(opts, :dispatch_fun, &default_dispatch_fun/3),
-      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, fn _spec -> nil end),
+      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/1),
       dispatch_opts: Keyword.get(opts, :dispatch_opts, []),
       status: :idle,
       current_task: nil,
       current_task_ref: nil,
       pending_wake: nil,
-      last_exit_status: nil
+      last_exit_status: nil,
+      base: Keyword.get(opts, :base, Path.expand("~/.glorbo"))
     }
 
     {:ok, state}
@@ -191,6 +208,43 @@ defmodule Glorbo.Agent.Server do
         %{current_task_ref: ref} = state
       ) do
     finish(state, {:crashed, reason})
+  end
+
+  # GAP-3: PubSub inbox event → convert to :inbox wake for THIS agent.
+  # Each Agent.Server subscribes to the company-wide inbox topic; only
+  # events under `agents/<this-slug>/inbox/` advance to wake. Inbox
+  # payload parsing (which file → task map) lives in inbox_scan_fun, so
+  # the server stays lean and the lookup is dep-injectable.
+  def handle_info({:file_event, rel_path, events}, state) when is_binary(rel_path) do
+    if inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) do
+      # Enqueue a wake; the actual task selection happens inside the
+      # handler via resolve_task/3 → inbox_scan_fun. We route through the
+      # same :wake codepath to keep dedup / queueing uniform.
+      _ =
+        case state.status do
+          :idle ->
+            send(self(), {:internal_inbox_wake, rel_path})
+
+          :busy ->
+            send(self(), {:internal_inbox_wake, rel_path})
+        end
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:internal_inbox_wake, _rel_path}, state) do
+    if state.status == :idle do
+      case state.inbox_scan_fun.(state.spec) do
+        nil ->
+          {:noreply, state}
+
+        %{} = task ->
+          {:noreply, start_dispatch(state, task)}
+      end
+    else
+      {:noreply, %{state | pending_wake: {:inbox, DateTime.utc_now()}}}
+    end
   end
 
   def handle_info(_other, state), do: {:noreply, state}
@@ -266,5 +320,89 @@ defmodule Glorbo.Agent.Server do
 
   defp default_dispatch_fun(spec, task, opts) do
     Dispatch.execute(spec, task, opts)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Inbox PubSub helpers (GAP-3)
+  # ---------------------------------------------------------------------------
+
+  # Is the relative path scoped to THIS agent's inbox? Match the prefix
+  # `agents/<slug>/inbox/`. Doesn't match agents/<other>/inbox/ so each
+  # Agent.Server only wakes on its own events.
+  defp inbox_event_for_me?(rel_path, slug) do
+    String.starts_with?(rel_path, "agents/#{slug}/inbox/")
+  end
+
+  defp inbox_event_write?(events) when is_list(events),
+    do: Enum.any?(events, &(&1 in [:created, :modified]))
+
+  defp inbox_event_write?(_), do: false
+
+  # Default inbox scanner: pick the oldest unread .md file under
+  # agents/<slug>/inbox/ and return a task map. Returns nil when the
+  # inbox is empty. Directories walked lazily; never reads the whole
+  # inbox into memory. Called from resolve_task/3 when wake comes with
+  # no explicit task, AND from handle_info({:internal_inbox_wake, _}).
+  defp default_inbox_scan(%_{} = spec) do
+    base = Path.expand("~/.glorbo")
+    inbox_dir = Path.join([base, "companies", spec.company, "agents", spec.slug, "inbox"])
+
+    with true <- File.dir?(inbox_dir),
+         [oldest_path | _] <- list_inbox_md_files(inbox_dir) do
+      %{
+        task_id: Path.basename(oldest_path, ".md"),
+        task_path: Path.relative_to(oldest_path, Path.join([base, "companies", spec.company])),
+        prompt: read_or_empty(oldest_path),
+        trigger: :inbox
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  defp list_inbox_md_files(inbox_dir) do
+    # Walk top-level + one subdir deep (`from-<sender>/*.md`,
+    # `mentions/*.md`, `rejections/*.md`) — Router writes under these.
+    direct = md_files_in(inbox_dir)
+
+    sub_dirs_files =
+      inbox_dir
+      |> File.ls()
+      |> case do
+        {:ok, entries} -> entries
+        _ -> []
+      end
+      |> Enum.map(&Path.join(inbox_dir, &1))
+      |> Enum.filter(&File.dir?/1)
+      |> Enum.flat_map(&md_files_in/1)
+
+    (direct ++ sub_dirs_files)
+    |> Enum.sort_by(&file_mtime/1)
+  end
+
+  defp md_files_in(dir) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.map(&Path.join(dir, &1))
+        |> Enum.filter(fn p -> File.regular?(p) and String.ends_with?(p, ".md") end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp file_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, stat} -> stat.mtime
+      _ -> 0
+    end
+  end
+
+  defp read_or_empty(path) do
+    case File.read(path) do
+      {:ok, bytes} -> bytes
+      _ -> ""
+    end
   end
 end

@@ -53,11 +53,14 @@ defmodule Glorbo.Company.Router do
   use GenServer
   require Logger
 
+  alias Glorbo.Agent.Parser, as: AgentParser
   alias Glorbo.Company.AuditLog
+  alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.Security.ACLMapper
 
   @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
   @broadcast_unsupported {:error, {:invalid_message, :broadcast_unsupported}}
+  @outbox_rel_re ~r|\Aagents/(?<sender>[a-z][a-z0-9_-]{0,63})/outbox/(?<file>.+\.md)\z|
 
   @type outbox_msg :: %{
           required(:sender) => String.t(),
@@ -96,11 +99,27 @@ defmodule Glorbo.Company.Router do
 
   @impl GenServer
   def init(opts) do
+    company = Keyword.fetch!(opts, :company)
+
+    # GAP-3: Subscribe to the company's outbox PubSub topic so inotify
+    # events on agents/<slug>/outbox/*.md trigger do_route/2 via
+    # handle_info. `subscribe?: false` bypasses the subscribe for tests
+    # that drive the route/2 API directly.
+    if Keyword.get(opts, :subscribe?, true) do
+      pubsub = Keyword.get(opts, :pubsub, Glorbo.PubSub)
+      :ok = Phoenix.PubSub.subscribe(pubsub, "company:#{company}:outbox")
+    end
+
     state = %{
-      company: Keyword.fetch!(opts, :company),
+      company: company,
       base: Keyword.get(opts, :base, Path.expand("~/.glorbo")),
       audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
-      fs_fun: Keyword.get(opts, :fs_fun, default_fs_fun())
+      fs_fun: Keyword.get(opts, :fs_fun, default_fs_fun()),
+      pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
+      # Test hook: override the agent.md → permissions lookup. Production
+      # reads the sender's agent.md via Glorbo.Agent.Parser.parse_file/1.
+      agent_permissions_fun:
+        Keyword.get(opts, :agent_permissions_fun, &default_agent_permissions/2)
     }
 
     {:ok, state}
@@ -111,6 +130,20 @@ defmodule Glorbo.Company.Router do
     result = do_route(msg, state)
     {:reply, result, state}
   end
+
+  @impl GenServer
+  def handle_info({:file_event, rel_path, events}, state) do
+    # GAP-3: Accept PubSub file events from Glorbo.Filesystem.Watcher for
+    # the company's outbox topic. Only act on created/modified files —
+    # deletes are ignored (routing happens on appearance, not removal).
+    if events_include_write?(events) do
+      handle_outbox_event(rel_path, state)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info(_other, state), do: {:noreply, state}
 
   # ---------------------------------------------------------------------------
   # Routing pipeline
@@ -468,6 +501,120 @@ defmodule Glorbo.Company.Router do
     e ->
       Logger.error("router audit emit failed: #{Exception.message(e)}")
       :error
+  end
+
+  # ---------------------------------------------------------------------------
+  # Outbox PubSub event handling (GAP-3)
+  # ---------------------------------------------------------------------------
+
+  defp events_include_write?(events) when is_list(events),
+    do: Enum.any?(events, &(&1 in [:created, :modified]))
+
+  defp events_include_write?(_), do: false
+
+  defp handle_outbox_event(rel_path, state) do
+    case parse_outbox_rel(rel_path) do
+      {:ok, sender, file_name} ->
+        abs_path =
+          Path.join([
+            state.base,
+            "companies",
+            state.company,
+            "agents",
+            sender,
+            "outbox",
+            file_name
+          ])
+
+        read_and_route(abs_path, sender, state)
+
+      {:error, :not_outbox} ->
+        # Subscriber received a non-outbox event (shouldn't happen given the
+        # topic scope, but defence-in-depth against future fan-out).
+        :ok
+    end
+  rescue
+    e ->
+      Logger.error("[router/#{state.company}] outbox handler raised: #{Exception.message(e)}")
+      :ok
+  end
+
+  defp parse_outbox_rel(rel_path) when is_binary(rel_path) do
+    case Regex.named_captures(@outbox_rel_re, rel_path) do
+      %{"sender" => sender, "file" => file} -> {:ok, sender, file}
+      _ -> {:error, :not_outbox}
+    end
+  end
+
+  defp parse_outbox_rel(_), do: {:error, :not_outbox}
+
+  defp read_and_route(abs_path, sender, state) do
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, meta, body} <- Frontmatter.parse(content),
+         {:ok, to} <- extract_to(meta),
+         {:ok, perms} <- lookup_permissions(sender, state) do
+      msg = %{
+        sender: sender,
+        sender_permissions: perms,
+        to: to,
+        body: body,
+        raw_path: abs_path,
+        msg_id: derive_msg_id(abs_path, meta)
+      }
+
+      _ = do_route(msg, state)
+      :ok
+    else
+      {:error, reason} ->
+        Logger.debug(
+          "[router/#{state.company}] outbox event skipped path=#{abs_path} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp extract_to(%{} = meta) do
+    case Map.get(meta, "to") do
+      nil -> {:error, :missing_to}
+      to when is_binary(to) and to != "" -> {:ok, to}
+      _ -> {:error, :invalid_to}
+    end
+  end
+
+  defp extract_to(_), do: {:error, :invalid_frontmatter}
+
+  defp derive_msg_id(abs_path, meta) do
+    case Map.get(meta, "msg_id") do
+      id when is_binary(id) and id != "" -> id
+      _ -> Path.basename(abs_path, ".md")
+    end
+  end
+
+  defp lookup_permissions(sender, state) do
+    state.agent_permissions_fun.(sender, state)
+  end
+
+  # Production permission lookup — parse the sender's agent.md via
+  # Agent.Parser and return their declared permissions. Empty list on any
+  # parse / read error so a missing or malformed agent.md doesn't crash
+  # the Router; the downstream ACLMapper check will deny any action that
+  # requires a permission.
+  defp default_agent_permissions(sender, state) do
+    agent_md_path =
+      Path.join([
+        state.base,
+        "companies",
+        state.company,
+        "agents",
+        sender,
+        "agent.md"
+      ])
+
+    case AgentParser.parse_file(agent_md_path) do
+      {:ok, spec} -> {:ok, spec.permissions}
+      {:error, _} -> {:ok, []}
+    end
   end
 
   # ---------------------------------------------------------------------------
