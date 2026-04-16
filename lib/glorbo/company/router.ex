@@ -29,6 +29,23 @@ defmodule Glorbo.Company.Router do
   **No public `write_inbox/*`** — CLAUDE.md one-way-flow invariant. All
   inbox writes happen inside `route/2`'s pipeline, never from outside.
 
+  ## Scaling profile (WR-06)
+
+  Router is a single per-company GenServer handling every `route/2` call
+  synchronously. Inbox `mkdir_p!` + `write!` + channel `[:append, :sync]`
+  all run on the Router process, so route latency scales linearly with
+  queue depth: under burst load (e.g. 20 agents each emitting 10
+  outbox/s), every message waits behind the previous `fsync` on the
+  channel file.
+
+  This is a deliberate tradeoff for v0.0.1 single-director companies —
+  the synchronous single-writer design is what makes fsync-serialized
+  channel appends race-safe without per-file locks. If throughput
+  degrades under multi-agent workloads, split into per-resource-type
+  routers (ChannelRouter, AgentInboxRouter, ApprovalRouter) under a
+  DynamicSupervisor. Phase 3's VALIDATION.md benchmark should catch
+  that regression.
+
   **Dep-injected `fs_fun` map** — tests swap `write!`, `rename!`,
   `mkdir_p!`, `exists?`, `open_append!` for mocks. Production default is a
   map of `File` module functions.
