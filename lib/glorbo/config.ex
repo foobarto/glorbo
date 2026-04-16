@@ -123,8 +123,7 @@ defmodule Glorbo.Config do
     on the dashboard URL. Keep this file readable only by the Director.
     """
 
-    File.write!(path, body, [:sync])
-    File.chmod!(path, 0o600)
+    atomic_write_secret!(path, body)
   end
 
   defp generate_secret do
@@ -194,7 +193,19 @@ defmodule Glorbo.Config do
         String.replace(content, "---\n", "---\nerl_cookie: #{cookie}\n", global: false)
       end
 
-    File.write!(path, new_content, [:sync])
-    File.chmod!(path, 0o600)
+    atomic_write_secret!(path, new_content)
+  end
+
+  # WR-07: write-then-chmod leaves a window where the file is
+  # world-readable under the default umask (0644/0664), exposing
+  # secret_key_base and erl_cookie to any concurrent local user. Use
+  # the same pattern as Pidfile.write!/2: tmp-file write, chmod the
+  # tmp, then atomic rename into place. The rename preserves the
+  # tmp's mode, so the final path is 0600 from the moment it exists.
+  defp atomic_write_secret!(path, content) do
+    tmp = path <> ".tmp"
+    File.write!(tmp, content, [:sync])
+    File.chmod!(tmp, 0o600)
+    File.rename!(tmp, path)
   end
 end
