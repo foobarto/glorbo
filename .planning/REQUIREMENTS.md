@@ -60,9 +60,9 @@ Source of truth: `DESIGN.md` (authoritative architecture, 14 sections). This fil
 
 ### Dashboard & Real-Time (UI)
 
-- [ ] **UI-01**: Phoenix LiveView dashboard on `localhost:4000` — company overview, kanban board, agent detail with stdout streaming, chat, approval queue, audit log, system health
-- [ ] **UI-02**: Phoenix Channels + PubSub deliver sub-second real-time updates for agent chat and stdout streaming
-- [ ] **UI-03**: Append-only channel markdown files; Elixir is the sole writer; `@agent` mention wakes the agent
+- [x] **UI-01**: Phoenix LiveView dashboard on `localhost:4000` — company overview, kanban board, agent detail with stdout streaming, chat, approval queue, audit log, system health
+- [x] **UI-02**: Phoenix Channels + PubSub deliver sub-second real-time updates for agent chat and stdout streaming
+- [x] **UI-03**: Append-only channel markdown files; Elixir is the sole writer; `@agent` mention wakes the agent
 
 ### CLI Surface (CLI)
 
@@ -133,9 +133,9 @@ Deferred from v1 — tracked but not in current roadmap.
 | SEC-03 | Phase 3 | Pending |
 | SEC-04 | Phase 3 | Pending |
 | SEC-05 | Phase 3 | Pending |
-| UI-01 | Phase 4 | Pending |
-| UI-02 | Phase 4 | Pending |
-| UI-03 | Phase 4 | Pending |
+| UI-01 | Phase 4 | Complete |
+| UI-02 | Phase 4 | Complete |
+| UI-03 | Phase 4 | Complete |
 | CLI-01 | Phase 5 | Pending |
 | CLI-02 | Phase 2 | Pending |
 | CLI-03 | Phase 5 | Pending |

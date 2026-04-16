@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.2
 milestone_name: milestone
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-04-16T07:37:52.993Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-16T11:20:45.136Z"
 last_activity: 2026-04-16
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 14
-  percent: 100
+  total_plans: 16
+  completed_plans: 15
+  percent: 94
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-15)
 
 **Core value:** It's just a directory — agents, tasks, chat, permissions, goals, audit are markdown/JSONL on disk.
-**Current focus:** Phase 03 — agents-routing-kernel-permissions-budgets
+**Current focus:** Phase 4 — liveview-dashboard-real-time-channels
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Executing Phase 03
+Phase: 4 (liveview-dashboard-real-time-channels) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-04-16
 
 Progress: [██░░░░░░░░] 20%
@@ -56,6 +56,7 @@ Progress: [██░░░░░░░░] 20%
 | Phase 01 P01 | 9min | 2 tasks | 42 files |
 | Phase 01 P02 | 7min | 2 tasks | 6 files |
 | Phase 01 P03 | 35min | 3 tasks | 3 new + 3 modified files |
+| Phase 04 P01 | 10min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 01]: CI drops `mix assets.deploy` step — Plan 01 stripped the Phoenix asset pipeline. Phase 4 will reintroduce when LiveView dashboard lands.
 - [Phase 01]: Individual binary signatures published alongside SHA256SUMS.sig (each `glorbo-linux-{arch}.sig`) so end-users who only download one arch can verify directly without pulling the combined checksums manifest.
 - [Phase 01]: Burrito's Zig cross-compilation built aarch64 from x86_64 dev host successfully (over-delivered vs plan's x86_64-only local expectation). CI still uses native runners per D-10 for runtime fidelity.
+- [Phase 04]: Dual-broadcast channels/ topic (per-slug + rollup) preserves Phase 3 W5 test while enabling ChannelLive per-channel subscription
+- [Phase 04]: TaskDefinition.write/2 uses line-level substitution, not YAML round-trip — preserves comments/order/unknown keys on frontmatter mutation
+- [Phase 04]: StdoutStreamer init-open = EOF (no history replay per D-15) but lazy-open = start-of-file (bytes written during wait are first-apparition)
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-16T00:46:15.386Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-agents-routing-kernel-permissions-budgets/03-CONTEXT.md
+Last session: 2026-04-16T11:20:37.272Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None
