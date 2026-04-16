@@ -56,6 +56,12 @@ jobs:
           elixir-version: '1.18.4'
           otp-version: '28.0.2'
 
+      - name: Install bubblewrap (bwrap)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          bwrap --version
+
       - name: Cache mix deps + build
         uses: actions/cache@v4
         with:
