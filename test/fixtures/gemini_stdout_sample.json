@@ -1,0 +1,20 @@
+{
+  "response": "The capital of France is Paris.",
+  "stats": {
+    "models": {
+      "gemini-2.5-pro": {
+        "api": { "requests": 1, "errors": 0, "latency_ms": 824 },
+        "tokens": {
+          "prompt": 24939,
+          "candidates": 20,
+          "cached": 21263,
+          "thoughts": 154,
+          "tool": 0,
+          "total": 46376
+        }
+      }
+    },
+    "tools": {},
+    "files": {}
+  }
+}
