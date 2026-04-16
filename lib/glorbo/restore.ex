@@ -126,24 +126,57 @@ defmodule Glorbo.Restore do
     end
   end
 
+  # Default archive-bomb cap: 10 GiB of summed uncompressed entry bytes
+  # (WR-03). Overridable via opts for tests.
+  @default_max_uncompressed 10 * 1024 * 1024 * 1024
+
   defp traversal_guard(archive) do
-    case :erl_tar.table(String.to_charlist(archive), [:compressed]) do
-      {:ok, entries} ->
-        dangerous =
-          Enum.filter(entries, fn e ->
-            name = to_string(e)
-
-            String.starts_with?(name, "/") or
-              ".." in String.split(name, "/", trim: true)
-          end)
-
-        if dangerous == [],
-          do: :ok,
-          else: {:error, {:unsafe_archive, Enum.map(dangerous, &to_string/1)}}
-
-      {:error, reason} ->
-        {:error, {:table_failed, reason}}
+    with {:ok, names} <- tar_table_names(archive),
+         {:ok, headers} <- tar_table_verbose(archive),
+         :ok <- reject_path_traversal(names) do
+      reject_size_overflow(headers, @default_max_uncompressed)
     end
+  end
+
+  defp tar_table_names(archive) do
+    case :erl_tar.table(String.to_charlist(archive), [:compressed]) do
+      {:ok, entries} -> {:ok, Enum.map(entries, &to_string/1)}
+      {:error, reason} -> {:error, {:table_failed, reason}}
+    end
+  end
+
+  defp tar_table_verbose(archive) do
+    case :erl_tar.table(String.to_charlist(archive), [:verbose, :compressed]) do
+      {:ok, entries} -> {:ok, entries}
+      {:error, reason} -> {:error, {:table_failed, reason}}
+    end
+  end
+
+  defp reject_path_traversal(names) do
+    dangerous =
+      Enum.filter(names, fn name ->
+        String.starts_with?(name, "/") or
+          ".." in String.split(name, "/", trim: true)
+      end)
+
+    if dangerous == [], do: :ok, else: {:error, {:unsafe_archive, dangerous}}
+  end
+
+  # WR-03: sum uncompressed entry sizes and reject archives exceeding the
+  # cap. The verbose table surfaces sizes as the 3rd tuple element.
+  defp reject_size_overflow(headers, max_bytes) do
+    total =
+      Enum.reduce(headers, 0, fn
+        {_name, _type, size, _mtime, _mode, _uid, _gid}, acc when is_integer(size) ->
+          acc + size
+
+        _, acc ->
+          acc
+      end)
+
+    if total <= max_bytes,
+      do: :ok,
+      else: {:error, {:archive_too_large, total, max_bytes}}
   end
 
   defp extract(archive, base) do
@@ -153,10 +186,108 @@ defmodule Glorbo.Restore do
            String.to_charlist(archive),
            [:compressed, {:cwd, String.to_charlist(base)}]
          ) do
-      :ok -> :ok
-      {:error, reason} -> {:error, {:extract_failed, reason}}
+      :ok ->
+        # CR-01: :erl_tar.table does not surface symlink link-targets, so
+        # a malicious archive with a benign name but escaping linkname
+        # passes traversal_guard. Post-extract, walk the tree and reject
+        # any symlink whose resolved target escapes base. On rejection,
+        # wipe the partially-extracted base so no dangling symlinks remain.
+        case verify_no_escaping_symlinks(base) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            File.rm_rf!(base)
+            File.mkdir_p!(base)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, {:extract_failed, reason}}
     end
   end
+
+  defp verify_no_escaping_symlinks(base) do
+    base_abs = base |> Path.expand() |> Path.absname()
+
+    dangerous =
+      base
+      |> walk_all_entries()
+      |> Enum.flat_map(fn path ->
+        case :file.read_link(path) do
+          {:ok, target_charlist} ->
+            target = to_string(target_charlist)
+
+            # Resolve target relative to the symlink's directory, then
+            # check containment under base.
+            resolved =
+              if Path.type(target) == :absolute do
+                Path.expand(target)
+              else
+                Path.expand(target, Path.dirname(path))
+              end
+
+            resolved_abs = Path.absname(resolved)
+
+            if symlink_escapes?(resolved_abs, base_abs) do
+              [%{path: Path.relative_to(path, base), target: target}]
+            else
+              []
+            end
+
+          {:error, _} ->
+            []
+        end
+      end)
+
+    if dangerous == [],
+      do: :ok,
+      else: {:error, {:unsafe_archive_symlinks, dangerous}}
+  end
+
+  # True when the resolved symlink target is NOT inside base_abs.
+  defp symlink_escapes?(resolved_abs, base_abs) do
+    not (resolved_abs == base_abs or
+           String.starts_with?(resolved_abs, base_abs <> "/"))
+  end
+
+  # Depth-first walk yielding every path under base (files, dirs, symlinks).
+  # Uses :file.read_link_info to avoid following symlinks during traversal.
+  defp walk_all_entries(root) do
+    case :file.list_dir(root) do
+      {:ok, entries} ->
+        Enum.flat_map(entries, fn entry ->
+          path = Path.join(root, to_string(entry))
+
+          case :file.read_link_info(path) do
+            {:ok, info} ->
+              case info_type(info) do
+                :symlink ->
+                  [path]
+
+                :directory ->
+                  [path | walk_all_entries(path)]
+
+                _ ->
+                  [path]
+              end
+
+            {:error, _} ->
+              []
+          end
+        end)
+
+      {:error, _} ->
+        []
+    end
+  end
+
+  # Extract the :type field from a file_info record without requiring
+  # the file.hrl include (brittle across OTP versions). The record shape
+  # is {:file_info, size, type, ...} — type is element index 2 (0-based)
+  # but :file_info is a record so we use the 3rd tuple element (1-based
+  # after the tag).
+  defp info_type(info) when is_tuple(info), do: elem(info, 2)
 
   defp maybe_migrate(_repo, true), do: :ok
 
@@ -219,6 +350,16 @@ defmodule Glorbo.Restore do
   defp format_cli_result({:error, {:unsafe_archive, entries}}, _archive) do
     {:restore, 2,
      "⚠ archive contains unsafe entries (path traversal): #{inspect(entries)}. Refusing to extract.\n"}
+  end
+
+  defp format_cli_result({:error, {:unsafe_archive_symlinks, entries}}, _archive) do
+    {:restore, 2,
+     "⚠ archive contains symlinks that escape ~/.glorbo/: #{inspect(entries)}. Refusing to extract.\n"}
+  end
+
+  defp format_cli_result({:error, {:archive_too_large, total, cap}}, _archive) do
+    {:restore, 2,
+     "⚠ archive uncompressed size #{total} bytes exceeds cap #{cap} bytes (archive-bomb guard). Refusing to extract.\n"}
   end
 
   defp format_cli_result({:error, reason}, _archive) do
