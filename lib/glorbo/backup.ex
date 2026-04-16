@@ -51,6 +51,7 @@ defmodule Glorbo.Backup do
 
     with :ok <- ensure_down(base, force_live?),
          :ok <- maybe_checkpoint(base, repo, skip_checkpoint?),
+         :ok <- recheck_down(base, force_live?),
          :ok <- write_archive(base, output) do
       File.chmod!(output, 0o600)
       {:ok, output}
@@ -118,6 +119,20 @@ defmodule Glorbo.Backup do
     :ok
   end
 
+  # WR-04: re-check pidfile immediately before write_archive to close
+  # the TOCTOU window between ensure_down and archive creation. A new
+  # `glorbo up` between checkpoint and tar would otherwise capture a
+  # half-written state.
+  defp recheck_down(_base, true), do: :ok
+
+  defp recheck_down(base, false) do
+    case Pidfile.status(base) do
+      :stopped -> :ok
+      :stale -> :ok
+      :running -> {:error, :glorbo_started_during_backup}
+    end
+  end
+
   defp maybe_checkpoint(_base, _repo, true), do: :ok
 
   defp maybe_checkpoint(base, repo, false) do
@@ -177,6 +192,11 @@ defmodule Glorbo.Backup do
   defp format_cli_result({:error, :glorbo_running}) do
     {:backup, 2,
      "⚠ glorbo is running. Run `glorbo down` first, or pass --force-live.\n"}
+  end
+
+  defp format_cli_result({:error, :glorbo_started_during_backup}) do
+    {:backup, 2,
+     "⚠ glorbo started mid-backup (pidfile re-check). Aborted to avoid capturing a half-written state.\n"}
   end
 
   defp format_cli_result({:error, {:checkpoint_busy, msg}}) do
