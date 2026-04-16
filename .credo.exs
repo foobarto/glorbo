@@ -120,7 +120,10 @@
           #
           {Credo.Check.Refactor.Apply, []},
           {Credo.Check.Refactor.CondStatements, []},
-          {Credo.Check.Refactor.CyclomaticComplexity, []},
+          # Phase 1 tune: dispatch-table pattern (watcher classify/1,
+          # pubsub_topic_for/1, config coerce/2) legitimately pattern-matches
+          # across many variants; default 9 is too tight for this shape.
+          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 20]},
           {Credo.Check.Refactor.FilterCount, []},
           {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.FunctionArity, []},
