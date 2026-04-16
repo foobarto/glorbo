@@ -1,0 +1,66 @@
+/*
+ * Glorbo dashboard — design token scaffold.
+ *
+ * Phase 4 Wave 0 seeds the `--gl-*` CSS custom-property contract; Wave 1
+ * (04-03) layers component + layout styles on top. Every value below is
+ * locked by 04-UI-SPEC.md Verification Checklist — do not tweak without
+ * updating the spec first.
+ *
+ * Token families:
+ *   --gl-space-*   spacing scale (8-point grid)
+ *   --gl-font-*    typography sizes (exactly 4 roles)
+ *   --gl-bg,       surface palette (GitHub-dark base)
+ *   --gl-surface,
+ *   --gl-surface-raised,
+ *   --gl-border
+ *   --gl-fg*       text palette (AA contrast vs surfaces)
+ *   --gl-accent    reserved-use accent (selected nav, links, CTAs)
+ *   --gl-success,  semantic badge/dot colors (never on body copy)
+ *   --gl-warning,
+ *   --gl-danger
+ */
+:root {
+  /* Spacing (04-UI-SPEC §Spacing Scale) */
+  --gl-space-xs: 4px;
+  --gl-space-sm: 8px;
+  --gl-space-md: 16px;
+  --gl-space-lg: 24px;
+  --gl-space-xl: 32px;
+  --gl-space-2xl: 48px;
+
+  /* Font sizes (04-UI-SPEC §Typography — exactly 4) */
+  --gl-font-body: 14px;
+  --gl-font-label: 12px;
+  --gl-font-heading: 16px;
+  --gl-font-display: 20px;
+
+  /* Surfaces (GitHub-dark, 04-UI-SPEC §Color) */
+  --gl-bg: #0d1117;
+  --gl-surface: #161b22;
+  --gl-surface-raised: #21262d;
+  --gl-border: #30363d;
+
+  /* Text */
+  --gl-fg: #c9d1d9;
+  --gl-fg-muted: #8b949e;
+  --gl-fg-subtle: #6e7681;
+
+  /* Accent (reserved — 04-UI-SPEC §Color Accent reserved list) */
+  --gl-accent: #58a6ff;
+
+  /* Semantic */
+  --gl-success: #3fb950;
+  --gl-warning: #d29922;
+  --gl-danger: #f85149;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--gl-bg);
+  color: var(--gl-fg);
+  font-family: ui-monospace, Menlo, Consolas, "JetBrains Mono", monospace;
+  font-size: var(--gl-font-body);
+  line-height: 1.5;
+}

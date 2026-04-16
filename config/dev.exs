@@ -18,7 +18,13 @@ config :glorbo, GlorboWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "LM/PCkXewhGl950gpeEYlYSAVZCvrqcln498tI1BXfXxgUdT4Cw102BmUPOTF9LJ",
-  watchers: []
+  # Phase 4 Wave 0 — esbuild watcher keeps `priv/static/assets/` in sync
+  # with `assets/**` during development. `--sourcemap=inline --watch`
+  # emits inline source maps and stays resident under Phoenix's watcher
+  # supervision tree.
+  watchers: [
+    esbuild: {Esbuild, :install_and_run, [:glorbo, ~w(--sourcemap=inline --watch)]}
+  ]
 
 # Reload browser tabs when matching files change.
 config :glorbo, GlorboWeb.Endpoint,
@@ -27,7 +33,8 @@ config :glorbo, GlorboWeb.Endpoint,
     patterns: [
       ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
       ~r"lib/glorbo_web/router\.ex$",
-      ~r"lib/glorbo_web/(controllers|live|components)/.*\.(ex|heex)$"
+      ~r"lib/glorbo_web/(controllers|live|components)/.*\.(ex|heex)$",
+      ~r"assets/(js|css)/.*\.(js|css)$"
     ]
   ]
 

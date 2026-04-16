@@ -35,6 +35,20 @@ config :phoenix, :json_library, Jason
 import_config "llm_rates.exs"
 import_config "network_policy.exs"
 
+# Phase 4 Wave 0 — esbuild profile for the LiveView dashboard.
+# Bundles `assets/js/app.js` (imports `../css/app.css`) into
+# `priv/static/assets/{app.js,app.css}`. Target es2022 matches Phoenix
+# 1.8 defaults. `NODE_PATH` allows resolution of the phoenix +
+# phoenix_live_view JS packages that ship inside their Hex deps.
+config :esbuild,
+  version: "0.21.5",
+  glorbo: [
+    args:
+      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

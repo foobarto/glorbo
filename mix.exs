@@ -61,7 +61,18 @@ defmodule Glorbo.MixProject do
       {:yaml_front_matter, "~> 1.0"},
       {:yaml_elixir, "~> 2.9"},
       {:finch, "~> 0.21"},
-      {:muontrap, "~> 1.6"}
+      {:muontrap, "~> 1.6"},
+      # Phase 4 Wave 0 — LiveView dashboard dependencies.
+      # `esbuild` bundles `assets/js/app.js` + `assets/css/app.css` into
+      # `priv/static/assets/`. `runtime: Mix.env() == :dev` keeps the
+      # install-and-run code path out of the Burrito release (prod uses
+      # pre-built `priv/static/assets/` from `mix assets.deploy`).
+      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
+      # Markdown renderer for channel message bodies (UI-SPEC chat profile).
+      {:earmark, "~> 1.4"},
+      # Allowlist HTML sanitizer for Earmark output — Earmark has no
+      # built-in sanitization and explicitly defers to the caller.
+      {:html_sanitize_ex, "~> 1.5"}
     ]
   end
 
@@ -87,10 +98,16 @@ defmodule Glorbo.MixProject do
   # Aliases are shortcuts or tasks specific to the current project.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup"],
+      setup: ["deps.get", "ecto.setup", "assets.setup"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      # Phase 4 Wave 0 — asset pipeline reintroduction.
+      # esbuild Hex wrapper (no npm, no package.json) — auto-downloads
+      # per-platform binary into _build/ on first `assets.setup`.
+      "assets.setup": ["esbuild.install --if-missing"],
+      "assets.build": ["esbuild glorbo"],
+      "assets.deploy": ["esbuild glorbo --minify", "phx.digest"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end
