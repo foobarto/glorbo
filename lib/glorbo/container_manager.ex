@@ -34,10 +34,13 @@ defmodule Glorbo.ContainerManager do
   @doc """
   Ensure the named image is present locally. `podman pull`s it if not.
   Returns `:ok` or `{:error, term}`. Idempotent (D-19).
+
+  CR-06: accepts an explicit `server` so alternate registrations (e.g. named
+  test processes) can be reached. Defaults to the module-registered name.
   """
-  @spec ensure_image(String.t()) :: :ok | {:error, term()}
-  def ensure_image(image) do
-    GenServer.call(__MODULE__, {:ensure_image, image}, 60_000)
+  @spec ensure_image(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def ensure_image(server \\ __MODULE__, image) do
+    GenServer.call(server, {:ensure_image, image}, 60_000)
   end
 
   @doc """
@@ -52,20 +55,24 @@ defmodule Glorbo.ContainerManager do
 
   Returns `{:ok, id_or_name}` / `{:error, term}`.
   """
-  @spec start_container(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
-  def start_container(company, opts) do
-    GenServer.call(__MODULE__, {:start_container, company, opts}, 30_000)
+  @spec start_container(GenServer.server(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def start_container(server \\ __MODULE__, company, opts) do
+    GenServer.call(server, {:start_container, company, opts}, 30_000)
   end
 
-  @spec stop_container(String.t()) :: :ok | {:error, term()}
-  def stop_container(name) do
-    GenServer.call(__MODULE__, {:stop_container, name}, 15_000)
+  @spec stop_container(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def stop_container(server \\ __MODULE__, name) do
+    GenServer.call(server, {:stop_container, name}, 15_000)
   end
 
   # ------ GenServer callbacks ------
 
   @impl GenServer
-  def init(_opts), do: {:ok, %{}}
+  def init(opts) do
+    supervisor = Keyword.get(opts, :daemon_supervisor, Glorbo.Container.DaemonSupervisor)
+    {:ok, %{daemons: %{}, daemon_supervisor: supervisor}}
+  end
 
   @impl GenServer
   def handle_call({:ensure_image, image}, _from, state) do
@@ -92,6 +99,9 @@ defmodule Glorbo.ContainerManager do
 
     Socket.ensure_dir!(base, company)
     Socket.cleanup_stale(base, company, agent)
+    # CR-03: best-effort remove any stale Podman container with the target
+    # name so a SIGKILLed prior launch doesn't block the new one.
+    pre_clean_container(company, agent)
 
     argv =
       Invocation.build_argv(company, agent, mode,
@@ -99,11 +109,16 @@ defmodule Glorbo.ContainerManager do
         extra_volumes: extra_volumes
       )
 
-    reply = launch(mode, argv, company, agent)
+    {reply, state} = launch(mode, argv, company, agent, state)
     {:reply, reply, state}
   end
 
   def handle_call({:stop_container, name}, _from, state) do
+    # CR-04: if a Daemon was registered for this container, terminate it
+    # cleanly via the DynamicSupervisor so the linked podman process exits
+    # without propagating via ContainerManager's link.
+    state = stop_daemon(name, state)
+
     reply =
       case System.cmd(@podman, ["stop", name], stderr_to_stdout: true) do
         {_, 0} -> :ok
@@ -117,27 +132,77 @@ defmodule Glorbo.ContainerManager do
   def handle_cast(_msg, state), do: {:noreply, state}
 
   @impl GenServer
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    # CR-04: a tracked Daemon exited — forget the mapping so a subsequent
+    # start_container can register a fresh one without a stale entry.
+    daemons = for {n, {p, r}} <- state.daemons, p != pid, into: %{}, do: {n, {p, r}}
+    {:noreply, %{state | daemons: daemons}}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   # ------ internals ------
 
-  defp launch(:ephemeral, argv, _company, _agent) do
-    case System.cmd(@podman, argv, stderr_to_stdout: true) do
-      {output, 0} -> {:ok, String.trim(output)}
-      {output, code} -> {:error, {:run_failed, code, output}}
+  defp launch(:ephemeral, argv, _company, _agent, state) do
+    reply =
+      case System.cmd(@podman, argv, stderr_to_stdout: true) do
+        {output, 0} -> {:ok, String.trim(output)}
+        {output, code} -> {:error, {:run_failed, code, output}}
+      end
+
+    {reply, state}
+  end
+
+  defp launch(:persistent, argv, company, agent, state) do
+    # CR-04: start the Daemon under a DynamicSupervisor instead of linking
+    # directly to ContainerManager. A crashed podman no longer tears down
+    # ALL container management — it only affects this one agent's entry.
+    # We monitor (not link) the Daemon pid so :DOWN events clear our map.
+    name = "glorbo-#{company}-#{agent}"
+
+    spec = %{
+      id: name,
+      start:
+        {MuonTrap.Daemon, :start_link,
+         [@podman, argv, [log_output: :info, stderr_to_stdout: true]]},
+      restart: :transient,
+      shutdown: 5_000
+    }
+
+    case DynamicSupervisor.start_child(state.daemon_supervisor, spec) do
+      {:ok, pid} ->
+        ref = Process.monitor(pid)
+        daemons = Map.put(state.daemons, name, {pid, ref})
+        {{:ok, name}, %{state | daemons: daemons}}
+
+      {:error, {:already_started, pid}} ->
+        ref = Process.monitor(pid)
+        daemons = Map.put(state.daemons, name, {pid, ref})
+        {{:ok, name}, %{state | daemons: daemons}}
+
+      {:error, reason} ->
+        {{:error, {:daemon_failed, reason}}, state}
     end
   end
 
-  defp launch(:persistent, argv, company, agent) do
-    # Supervised by MuonTrap so a podman-daemon crash restarts only this
-    # agent (Pattern 5 in the research notes). The caller keeps an opaque
-    # handle — the container name — which stop_container/1 can target.
-    case MuonTrap.Daemon.start_link(@podman, argv,
-           log_output: :info,
-           stderr_to_stdout: true
-         ) do
-      {:ok, _pid} -> {:ok, "glorbo-#{company}-#{agent}"}
-      {:error, reason} -> {:error, {:daemon_failed, reason}}
+  defp stop_daemon(name, state) do
+    case Map.pop(state.daemons, name) do
+      {nil, daemons} ->
+        %{state | daemons: daemons}
+
+      {{pid, ref}, daemons} ->
+        Process.demonitor(ref, [:flush])
+        _ = DynamicSupervisor.terminate_child(state.daemon_supervisor, pid)
+        %{state | daemons: daemons}
     end
+  end
+
+  # CR-03: best-effort rm of a stale Podman container matching the target
+  # name. Ignores errors — if there's nothing to remove, `rm -f` exits
+  # non-zero and we proceed to launch normally.
+  defp pre_clean_container(company, agent) do
+    name = "glorbo-#{company}-#{agent}"
+    _ = System.cmd(@podman, ["rm", "-f", name], stderr_to_stdout: true)
+    :ok
   end
 end

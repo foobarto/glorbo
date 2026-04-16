@@ -47,6 +47,11 @@ defmodule Glorbo.Application do
       # domain sockets (Phase 2 Plan 03) and by Init downloads (Plan 02).
       {Finch, name: Glorbo.Finch},
       GlorboWeb.Telemetry,
+      # CR-04: DaemonSupervisor MUST start before ContainerManager so
+      # persistent-mode launches register Daemons out-of-band instead of
+      # linking them to ContainerManager (crash isolation invariant).
+      {DynamicSupervisor,
+       name: Glorbo.Container.DaemonSupervisor, strategy: :one_for_one},
       Glorbo.ContainerManager,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       GlorboWeb.Endpoint
