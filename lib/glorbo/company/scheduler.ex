@@ -148,7 +148,7 @@ defmodule Glorbo.Company.Scheduler do
 
   defp arm_timer(state, agent_slug, expr, reg_or_entry) do
     now = state.clock_fun.()
-    delay_ms = compute_delay_ms(expr, now)
+    delay_ms = compute_delay_ms(expr, now, agent_slug, reg_or_entry, state)
 
     timer_ref =
       state.send_after_fun.(self(), {:heartbeat, agent_slug}, max(0, delay_ms))
@@ -163,7 +163,7 @@ defmodule Glorbo.Company.Scheduler do
     %{state | agents: Map.put(state.agents, agent_slug, entry)}
   end
 
-  defp compute_delay_ms(expr, %DateTime{} = now) do
+  defp compute_delay_ms(expr, %DateTime{} = now, agent_slug, reg_or_entry, state) do
     naive = DateTime.to_naive(now)
 
     case CronScheduler.get_next_run_date(expr, naive) do
@@ -172,8 +172,23 @@ defmodule Glorbo.Company.Scheduler do
         DateTime.diff(next_dt, now, :millisecond)
 
       {:error, reason} ->
+        # WR-03: audit the parseable-but-unfireable cron (e.g. `0 0 30 2 *` —
+        # Feb 30th never fires). Without this, an operator sees only the
+        # application-log warning and their agent silently heartbeats every
+        # hour forever.
+        emit_audit(state, %{
+          action: "scheduler.cron_never_fires",
+          actor: "system",
+          company: state.company,
+          agent: agent_slug,
+          cron: Map.get(reg_or_entry, :cron),
+          reason: inspect(reason),
+          fallback_delay_ms: 3_600_000
+        })
+
         Logger.warning(
-          "scheduler: get_next_run_date failed (#{inspect(reason)}); defaulting to 1h delay"
+          "scheduler: get_next_run_date failed for #{agent_slug} " <>
+            "(#{inspect(reason)}); defaulting to 1h delay"
         )
 
         3_600_000
