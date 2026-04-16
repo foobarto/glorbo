@@ -156,19 +156,52 @@ defmodule Glorbo.CLI.Logs do
   end
 
   defp handle_modification(path, kind, last_size) do
-    new_size = File.stat!(path).size
+    # WR-03: guard both stat calls. Under inotify coalescing, a
+    # [:modified, :closed] pair arrives in one tick — the file may have
+    # rotated (month rollover) between the two calls. Treat :enoent as
+    # rotation and re-resolve the target path before looping.
+    case File.stat(path) do
+      {:ok, %File.Stat{size: new_size}} ->
+        if new_size > last_size do
+          new_bytes = read_incremental(path, last_size)
 
-    if new_size > last_size do
-      new_bytes = read_incremental(path, last_size)
+          if kind == :audit do
+            IO.write(format_audit_chunk(new_bytes))
+          else
+            IO.write(new_bytes)
+          end
+        end
 
-      if kind == :audit do
-        IO.write(format_audit_chunk(new_bytes))
-      else
-        IO.write(new_bytes)
-      end
+        case File.stat(path) do
+          {:ok, %File.Stat{size: final_size}} ->
+            listen_loop(path, kind, final_size)
+
+          {:error, :enoent} ->
+            handle_rotation(path, kind)
+
+          {:error, _} ->
+            listen_loop(path, kind, last_size)
+        end
+
+      {:error, :enoent} ->
+        handle_rotation(path, kind)
+
+      {:error, _} ->
+        listen_loop(path, kind, last_size)
+    end
+  end
+
+  # WR-03: shared helper — file vanished between stat calls, try to
+  # re-resolve (audit: recompute month bucket; stdout: same path, should
+  # only enoent on deletion).
+  defp handle_rotation(path, kind) do
+    new_path = resolve_audit_path_for_follow(path, kind)
+
+    if new_path != path do
+      IO.puts(:stderr, "log file rotated; resuming on #{new_path}")
     end
 
-    listen_loop(path, kind, File.stat!(path).size)
+    listen_loop(new_path, kind, 0)
   end
 
   # 1s-tick poll fallback. No exit condition in the loop — the caller
