@@ -44,6 +44,10 @@ defmodule GlorboWeb.Actions do
 
   @slug_re ~r/\A[a-z0-9-]+\z/
   @body_max_bytes 10_240
+  # WR-05: cap wake-agent reason to 500 bytes (UI client-side is 200
+  # chars; the channel payload is untrusted, so enforce a hard cap
+  # server-side too). Parallels @body_max_bytes for post_message/4.
+  @reason_max_bytes 500
 
   @type ok_or_err :: :ok | {:error, term()}
 
@@ -135,17 +139,19 @@ defmodule GlorboWeb.Actions do
     reason = reason || ""
 
     with :ok <- validate_slug(company),
-         :ok <- validate_slug(agent) do
-      dir = Path.join([base, "companies", company, "agents", agent, "state"])
-      File.mkdir_p!(dir)
+         :ok <- validate_slug(agent),
+         :ok <- validate_reason(reason),
+         dir = Path.join([base, "companies", company, "agents", agent, "state"]),
+         # WR-06: use non-bang mkdir_p so a permission/disk failure
+         # surfaces as {:error, reason} and doesn't crash the caller LV.
+         :ok <- File.mkdir_p(dir) do
       path = Path.join(dir, "wake-request.md")
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      escaped_reason = String.replace(reason, ~s("), ~s(\\"))
 
       body = """
       ---
       requested_at: "#{ts}"
-      reason: "#{escaped_reason}"
+      reason: #{yaml_scalar(reason)}
       ---
 
       Director wake request.
@@ -186,6 +192,38 @@ defmodule GlorboWeb.Actions do
   defp validate_body(b) when byte_size(b) > @body_max_bytes, do: {:error, :body_too_large}
   defp validate_body(b) when is_binary(b), do: :ok
   defp validate_body(_), do: {:error, :invalid_body}
+
+  # WR-05: cap reason size and require a binary. nil is coerced to ""
+  # by the caller, so all paths land here with a binary.
+  defp validate_reason(r) when is_binary(r) and byte_size(r) > @reason_max_bytes,
+    do: {:error, :reason_too_large}
+
+  defp validate_reason(r) when is_binary(r), do: :ok
+  defp validate_reason(_), do: {:error, :invalid_reason}
+
+  # WR-05: YAML scalar emitter matching Glorbo.TaskDefinition.yaml_scalar/1
+  # semantics — quotes when the value contains YAML-ambiguous chars or a
+  # reserved word, and escapes `\` / `"` / newlines / control chars so the
+  # resulting frontmatter is always parse-safe. Empty strings emit `""`.
+  defp yaml_scalar(""), do: ~s("")
+
+  defp yaml_scalar(v) when is_binary(v) do
+    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z|[\x00-\x1f]/ do
+      escaped =
+        v
+        |> String.replace("\\", "\\\\")
+        |> String.replace(~s("), ~s(\\"))
+        |> String.replace("\n", "\\n")
+        |> String.replace("\r", "\\r")
+        |> String.replace("\t", "\\t")
+        # Strip any remaining control chars to keep scalars single-line.
+        |> String.replace(~r/[\x00-\x1f]/, "")
+
+      ~s("#{escaped}")
+    else
+      v
+    end
+  end
 
   defp validate_task_path(p) when is_binary(p) do
     cond do
