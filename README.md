@@ -2,6 +2,18 @@
   <img src="assets/logo.png" alt="Glorbo" width="520">
 </p>
 
+<p align="center">
+  <a href="https://github.com/foobarto/glorbo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/foobarto/glorbo/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/foobarto/glorbo/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/foobarto/glorbo?include_prereleases&sort=semver"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
+  <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.18.4-6E4A7E?logo=elixir&logoColor=white"></a>
+  <a href="https://erlang.org"><img alt="OTP" src="https://img.shields.io/badge/otp-28.0-A90533?logo=erlang&logoColor=white"></a>
+  <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-linux%20x86__64%20%7C%20aarch64-lightgrey"></a>
+  <a href="SECURITY.md"><img alt="Security Policy" src="https://img.shields.io/badge/security-policy-informational"></a>
+  <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"></a>
+  <a href="https://github.com/foobarto/glorbo/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/foobarto/glorbo"></a>
+</p>
+
 # Glorbo
 
 > *Finally, a grumbo-compatible agent orchestrator. The fleeb juice is included.*
