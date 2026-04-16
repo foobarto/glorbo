@@ -1,49 +1,29 @@
 defmodule Glorbo.CLI.DispatchPhase5StubsTest do
   @moduledoc """
-  Phase-5 dispatch routing contract: every Phase-5 verb must be reachable
-  via `Glorbo.CLI.dispatch/1` and must return a tuple with the expected
-  verb atom. Plan 05-02 filled the lifecycle + logs verbs (output no
-  longer contains "not implemented in Wave 0" for those); Plan 05-03 will
-  fill migrate/backup/restore/console and update those rows.
+  Phase-5 dispatch routing contract. Plan 05-03 + 05-04 made
+  migrate/backup/restore/console live — their dispatch rows now assert
+  tuple shape only (no "not implemented in Wave 0" substring).
 
   This suite proves the dispatch switch stays wired regardless of which
-  verb modules are stubs vs live.
+  verb modules are stubs vs live. After Plans 05-03 + 05-04 merge, every
+  Phase-5 verb is live.
   """
   use ExUnit.Case, async: true
 
-  @dispatch_verbs [
-    # Live after Plan 05-02 (lifecycle + observability) — asserts
-    # routing only; verb-specific behaviour is covered by the per-verb
-    # *_test.exs files.
-    {"migrate", :migrate, :stub},
-    {"backup", :backup, :stub},
-    {"restore", :restore, :stub},
-    {"console", :console, :stub}
-  ]
-
-  for {argv, expected_verb, stub_or_live} <- @dispatch_verbs do
-    test "dispatch #{argv} routes to :#{expected_verb} (#{stub_or_live})" do
-      assert {unquote(expected_verb), code, out} = Glorbo.CLI.dispatch([unquote(argv)])
-      assert is_integer(code)
-      assert is_binary(out)
-
-      # Plan 05-03 stubs still contain the canonical Wave-0 marker.
-      if unquote(stub_or_live) == :stub do
-        assert String.contains?(out, "not implemented in Wave 0") or
-                 String.contains?(out, unquote(argv))
-      end
-    end
-  end
-
-  # Plan 05-02 lifecycle / logs verbs — dispatched but have live (non-stub)
-  # implementations. Only assert the dispatch routing.
+  # All Phase-5 verbs — Plans 03 + 04 brought the final 4 live. Each
+  # argv is picked to exercise routing without triggering side effects:
+  # --help returns a pure tuple with no filesystem/daemon interaction.
   @live_verbs [
-    {["up"], :up},
-    {["down"], :down},
-    {["status"], :status},
+    {["up", "--help"], :up},
+    {["down", "--help"], :down},
+    {["status", "--help"], :status},
     {["serve", "--help"], :serve},
-    {["run"], :run},
-    {["logs"], :logs}
+    {["run", "--help"], :run},
+    {["logs", "--help"], :logs},
+    {["migrate", "--help"], :migrate},
+    {["backup", "--help"], :backup},
+    {["restore", "--help"], :restore},
+    {["console", "--help"], :console}
   ]
 
   for {argv, expected_verb} <- @live_verbs do
@@ -51,6 +31,9 @@ defmodule Glorbo.CLI.DispatchPhase5StubsTest do
       assert {unquote(expected_verb), code, out} = Glorbo.CLI.dispatch(unquote(argv))
       assert is_integer(code)
       assert is_binary(out)
+
+      refute out =~ "not implemented in Wave 0",
+             "#{unquote(expected_verb)} still contains Wave-0 stub marker"
     end
   end
 

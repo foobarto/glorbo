@@ -1,14 +1,64 @@
 defmodule Glorbo.CLI.Migrate do
   @moduledoc """
-  TODO(plan-03): Implement `glorbo migrate` — thin wrapper over
-  `Ecto.Migrator.run(Glorbo.Repo, :up, all: true)` per D-18.
+  `glorbo migrate` — thin wrapper over `Ecto.Migrator.run(Glorbo.Repo,
+  priv/repo/migrations, :up, all: true)` per D-18.
 
-  Wave-0 stub.
+  Exits 0 on success (including 0-applied no-op case), 2 on exception.
+  `--help` prints the usage block. Every invocation emits
+  `cli.migrate.start` + `cli.migrate.complete` (or `cli.migrate.failed`)
+  audit events via `Glorbo.CLI.Audit`.
+
+  No `--rollback` in v0.0.2 — the Director hand-edits migration files
+  for advanced cases.
   """
+  alias Glorbo.CLI.Audit
 
   @spec run([String.t()]) :: Glorbo.CLI.result()
-  def run(_argv) do
-    {:migrate, 0, "migrate: not implemented in Wave 0 (Plan 03 fills)\n"}
+  def run(argv) do
+    {opts, _positional, _invalid} =
+      OptionParser.parse(argv, strict: [help: :boolean])
+
+    cond do
+      opts[:help] -> {:migrate, 0, help_text()}
+      true -> do_migrate()
+    end
+  end
+
+  defp do_migrate do
+    Audit.emit("migrate", "start", %{})
+
+    case migrations_path() do
+      {:error, msg} ->
+        Audit.emit("migrate", "failed", %{reason: msg})
+        {:migrate, 2, "Migrations dir not found: #{msg}\n"}
+
+      {:ok, path} ->
+        try do
+          applied = Ecto.Migrator.run(Glorbo.Repo, path, :up, all: true)
+          Audit.emit("migrate", "complete", %{count: length(applied)})
+          {:migrate, 0, "✓ migrations applied: #{length(applied)}\n"}
+        rescue
+          e ->
+            msg = Exception.message(e)
+            Audit.emit("migrate", "failed", %{reason: msg})
+            {:migrate, 2, "Migration failed: #{msg}\n"}
+        catch
+          :exit, reason ->
+            Audit.emit("migrate", "failed", %{reason: inspect(reason)})
+            {:migrate, 2, "Migration failed: #{inspect(reason)}\n"}
+        end
+    end
+  end
+
+  defp migrations_path do
+    case :code.priv_dir(:glorbo) do
+      {:error, reason} ->
+        {:error, "priv_dir lookup failed: #{inspect(reason)}"}
+
+      dir when is_list(dir) ->
+        path = Path.join(to_string(dir), "repo/migrations")
+        if File.dir?(path), do: {:ok, path}, else: {:error, path}
+    end
   end
 
   @spec help_text() :: String.t()
