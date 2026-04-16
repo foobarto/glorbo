@@ -30,7 +30,8 @@ defmodule Glorbo.Filesystem.Watcher do
     * `"company:<co>:inbox"`    for `agents/*/inbox/*` paths
     * `"company:<co>:outbox"`   for `agents/*/outbox/*` paths
     * `"company:<co>:projects"` for `projects/**/*.md` paths
-    * `"company:<co>:channels"` for `channels/*` paths
+    * `"company:<co>:channels"` for `channels/*` paths (roll-up kept for
+      Phase 3 compat + CompanyLive's channel-list surface)
 
   `audit/*` paths are NOT broadcast — the sole writer of audit files is
   `Glorbo.Company.AuditLog`, and broadcasting would risk self-feedback
@@ -41,6 +42,23 @@ defmodule Glorbo.Filesystem.Watcher do
   broken. Router subscribes to `company:<co>:outbox` (and other paths as
   needed); Gate subscribes to `company:<co>:projects`; Agent.Server wake
   hooks subscribe to `company:<co>:inbox`.
+
+  ## Phase 4 Wave 0 topic additions (Plan 04-01)
+
+  In addition to the Plan 03-05 topics above, the watcher now emits:
+
+    * `"company:<co>:agents:<slug>:stdout"` for `agents/<slug>/stdout.log`
+      (StdoutStreamer subscribers read this — but StdoutStreamer polls
+      the file directly since inotify carries no bytes; this topic is
+      primarily for downstream observers that want "a new line landed").
+    * `"company:<co>:agents:<slug>:wake"` for `agents/<slug>/state/wake-request.md`
+      (Agent.Server's 4th wake trigger — Director-initiated wake via
+      `GlorboWeb.Actions.wake_agent/3`).
+    * `"company:<co>:channels:<slug>"` per-channel topic for
+      `channels/<slug>.md` — ChannelLive subscribes to exactly one
+      channel-slug topic per mount. Emitted IN ADDITION TO the
+      generic `"company:<co>:channels"` roll-up (dual-broadcast is
+      cheap and preserves Phase 3's W5 test contract).
 
   Crash isolation (CLAUDE.md invariant): each company has exactly one
   Watcher process; a crash restarts only that watcher.
@@ -157,12 +175,32 @@ defmodule Glorbo.Filesystem.Watcher do
 
   defp classify(rel) do
     cond do
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") -> :inbox
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") -> :outbox
-      String.starts_with?(rel, "audit/") -> :audit
-      String.starts_with?(rel, "channels/") -> :channels
-      String.starts_with?(rel, "projects/") -> :projects
-      true -> :other
+      # Phase 4 Wave 0: stdout and wake-request classifications must come
+      # BEFORE the generic inbox/outbox checks because the same "agents/"
+      # prefix applies — `cond` matches top-down.
+      String.starts_with?(rel, "agents/") and String.ends_with?(rel, "/stdout.log") ->
+        :stdout
+
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/state/wake-request") ->
+        :wake
+
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") ->
+        :inbox
+
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") ->
+        :outbox
+
+      String.starts_with?(rel, "audit/") ->
+        :audit
+
+      String.starts_with?(rel, "channels/") ->
+        :channels
+
+      String.starts_with?(rel, "projects/") ->
+        :projects
+
+      true ->
+        :other
     end
   end
 
@@ -178,15 +216,28 @@ defmodule Glorbo.Filesystem.Watcher do
   defp inline_dispatch(:channels, company, _path, rel, _state),
     do: Logger.debug("[watcher/#{company}] channel event #{rel} (Phase 4 target)")
 
+  defp inline_dispatch(:stdout, company, _path, rel, _state),
+    do: Logger.debug("[watcher/#{company}] stdout event #{rel} (Phase 4 target)")
+
+  defp inline_dispatch(:wake, company, _path, rel, _state),
+    do: Logger.debug("[watcher/#{company}] wake-request event #{rel} (Phase 4 target)")
+
   defp inline_dispatch(:projects, company, path, _rel, state),
     do: state.reindex_fun.(company, path)
 
   defp inline_dispatch(:other, company, path, _rel, state),
     do: state.reindex_fun.(company, path)
 
+  # Broadcasts to one topic (single string) or multiple topics (list).
+  # Dual-broadcast is used for channels/ so the Phase 3 generic topic
+  # and the Phase 4 per-slug topic both fire from the same event.
   defp maybe_broadcast(nil, _company, _rel, _events, _state), do: :ok
 
-  defp maybe_broadcast(topic, company, rel, events, state) do
+  defp maybe_broadcast(topics, company, rel, events, state) when is_list(topics) do
+    Enum.each(topics, &maybe_broadcast(&1, company, rel, events, state))
+  end
+
+  defp maybe_broadcast(topic, company, rel, events, state) when is_binary(topic) do
     Phoenix.PubSub.broadcast(
       state.pubsub,
       "company:#{company}:#{topic}",
@@ -194,15 +245,51 @@ defmodule Glorbo.Filesystem.Watcher do
     )
   end
 
-  # Map a relative path to a PubSub topic suffix or `nil` for no-broadcast.
+  # Map a relative path to a PubSub topic suffix (string), a list of
+  # suffixes (dual-broadcast), or `nil` for no-broadcast.
   defp pubsub_topic_for(rel) do
     cond do
-      String.starts_with?(rel, "audit/") -> nil
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") -> "inbox"
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") -> "outbox"
-      String.starts_with?(rel, "projects/") -> "projects"
-      String.starts_with?(rel, "channels/") -> "channels"
-      true -> nil
+      String.starts_with?(rel, "audit/") ->
+        nil
+
+      # Phase 4 Wave 0: per-agent stdout topic. Path shape:
+      # `agents/<slug>/stdout.log`.
+      String.starts_with?(rel, "agents/") and String.ends_with?(rel, "/stdout.log") ->
+        case Path.split(rel) do
+          ["agents", slug, "stdout.log"] -> "agents:#{slug}:stdout"
+          _ -> nil
+        end
+
+      # Phase 4 Wave 0: Director-triggered wake-request. Path shape:
+      # `agents/<slug>/state/wake-request.md`.
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/state/wake-request") ->
+        case Path.split(rel) do
+          ["agents", slug, "state", _file] -> "agents:#{slug}:wake"
+          _ -> nil
+        end
+
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") ->
+        "inbox"
+
+      String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") ->
+        "outbox"
+
+      String.starts_with?(rel, "projects/") ->
+        "projects"
+
+      # Phase 4 Wave 0: dual-broadcast on channels/ — per-slug topic for
+      # ChannelLive (new) + generic `channels` topic preserved from
+      # Phase 3 (W5 regression safety). The per-slug string is first so
+      # subscribers are ordered deterministically but order is not
+      # contractually observable.
+      String.starts_with?(rel, "channels/") ->
+        case Path.split(rel) do
+          ["channels", file] -> ["channels:#{Path.basename(file, ".md")}", "channels"]
+          _ -> "channels"
+        end
+
+      true ->
+        nil
     end
   end
 end

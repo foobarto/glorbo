@@ -238,4 +238,64 @@ defmodule Glorbo.Filesystem.WatcherTest do
       assert String.starts_with?(rel, "channels/")
     end
   end
+
+  describe "Plan 04-01 PubSub extensions (P4-W0-1..P4-W0-5)" do
+    test "P4-W0-1: stdout.log write broadcasts on agents:<slug>:stdout" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:ceo:stdout")
+
+      stdout_path = Path.join([dir, "agents", "ceo", "stdout.log"])
+      write!(stdout_path, "hello\n")
+
+      assert_receive {:file_event, "agents/ceo/stdout.log", events}, 2_000
+      assert :created in events or :modified in events
+    end
+
+    test "P4-W0-2: state/wake-request.md broadcasts on agents:<slug>:wake" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:ceo:wake")
+
+      wake_path = Path.join([dir, "agents", "ceo", "state", "wake-request.md"])
+      write!(wake_path, "---\nrequested_at: \"2026-04-16T00:00:00Z\"\n---\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert rel == "agents/ceo/state/wake-request.md"
+    end
+
+    test "P4-W0-3: channels/<slug>.md broadcasts on channels:<slug> (per-slug topic)" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels:general")
+
+      chan_file = Path.join([dir, "channels", "general.md"])
+      write!(chan_file, "# general\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert rel == "channels/general.md"
+    end
+
+    test "P4-W0-4: dual-broadcast — channels/* event fires BOTH per-slug and rollup topics" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels")
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels:general")
+
+      chan_file = Path.join([dir, "channels", "general.md"])
+      write!(chan_file, "# general\n")
+
+      # Both subscribers receive the same event (this process subscribed
+      # to both topics, so we should get 2 messages).
+      assert_receive {:file_event, "channels/general.md", _}, 2_000
+      assert_receive {:file_event, "channels/general.md", _}, 2_000
+    end
+
+    test "P4-W0-5: stdout path does NOT fire on the rollup inbox/outbox topics" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:inbox")
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:outbox")
+
+      stdout_path = Path.join([dir, "agents", "ceo", "stdout.log"])
+      write!(stdout_path, "bootstrap\n")
+
+      refute_receive {:file_event, _, _}, 400
+    end
+  end
 end

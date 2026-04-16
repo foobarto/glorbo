@@ -152,6 +152,121 @@ defmodule Glorbo.TaskDefinition do
   def requires_approval?(%__MODULE__{}), do: false
 
   # ---------------------------------------------------------------------------
+  # Phase 4 Wave 0 (Plan 04-01) — atomic frontmatter mutation
+  # ---------------------------------------------------------------------------
+
+  # Narrow allowlist. Both atom and string forms accepted so callers may
+  # use either taxonomy (keep with Phase 2 convention of normalising).
+  @supported_keys [:status, :denial_reason, "status", "denial_reason"]
+
+  @doc """
+  Atomically rewrite frontmatter keys in `file_path`.
+
+  Only `:status` and `:denial_reason` are supported — any other key
+  returns `{:error, {:unsupported_key, key}}` without touching the file.
+  We deliberately do NOT claim to be a general-purpose YAML writer;
+  keeping the scope narrow lets us line-level-substitute instead of
+  round-tripping through the YAML serializer (which is lossy for
+  comments, ordering, and non-scalar types).
+
+  Atomicity: writes to `<path>.tmp` via `File.write(..., [:sync])`
+  then `File.rename/2` onto the final path — same-filesystem rename is
+  atomic on POSIX, so the Watcher sees exactly one `:modified` event
+  and never a partial file. On any error the tmp is cleaned up.
+
+  ## Examples
+
+      TaskDefinition.write("/tmp/t-01.md", %{status: "approved"})
+      #=> :ok
+
+      TaskDefinition.write("/tmp/t-01.md", %{foo: "bar"})
+      #=> {:error, {:unsupported_key, :foo}}
+
+      TaskDefinition.write("/tmp/no-fence.md", %{status: "done"})
+      #=> {:error, :no_frontmatter}
+  """
+  @spec write(Path.t(), map()) :: :ok | {:error, term()}
+  def write(file_path, updates) when is_binary(file_path) and is_map(updates) do
+    with :ok <- validate_keys(updates),
+         {:ok, content} <- File.read(file_path),
+         {:ok, new_content} <- substitute_frontmatter(content, updates) do
+      tmp = file_path <> ".tmp"
+
+      case File.write(tmp, new_content, [:sync]) do
+        :ok ->
+          case File.rename(tmp, file_path) do
+            :ok ->
+              :ok
+
+            {:error, _} = err ->
+              _ = File.rm(tmp)
+              err
+          end
+
+        {:error, _} = err ->
+          _ = File.rm(tmp)
+          err
+      end
+    end
+  end
+
+  defp validate_keys(updates) do
+    case Enum.find(Map.keys(updates), fn k -> k not in @supported_keys end) do
+      nil -> :ok
+      bad -> {:error, {:unsupported_key, bad}}
+    end
+  end
+
+  # Line-level substitution preserves order, comments, indentation,
+  # and unknown keys. Splits on exactly two `---\n` fences (opening +
+  # closing). The regex form captures the three parts in one pass.
+  defp substitute_frontmatter(content, updates) do
+    normalized_updates = Map.new(updates, fn {k, v} -> {to_string(k), v} end)
+
+    case String.split(content, ~r/\A---\n|\n---\n/, parts: 3) do
+      ["", fm, body] ->
+        new_fm =
+          fm
+          |> String.split("\n")
+          |> Enum.map_join("\n", fn line -> rewrite_line(line, normalized_updates) end)
+
+        {:ok, "---\n" <> new_fm <> "\n---\n" <> body}
+
+      _ ->
+        {:error, :no_frontmatter}
+    end
+  end
+
+  # Rewrites `<indent><key>: <value>` when `key` is in `updates`; leaves
+  # all other lines (comments, unknown keys, blanks) untouched.
+  defp rewrite_line(line, updates) do
+    case Regex.run(~r/\A(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)\z/, line) do
+      [_full, indent, key, _value] when is_map_key(updates, key) ->
+        "#{indent}#{key}: #{yaml_scalar(updates[key])}"
+
+      _ ->
+        line
+    end
+  end
+
+  # Quote scalars that could be YAML-ambiguous (spaces, reserved words,
+  # special punctuation). Unquoted simple identifiers fall through verbatim
+  # so `status: approved` stays `status: approved` rather than `status: "approved"`.
+  defp yaml_scalar(nil), do: "null"
+
+  defp yaml_scalar(v) when is_binary(v) do
+    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z/ do
+      escaped = String.replace(v, ~s("), ~s(\\"))
+      ~s("#{escaped}")
+    else
+      v
+    end
+  end
+
+  defp yaml_scalar(v) when is_integer(v) or is_float(v), do: to_string(v)
+  defp yaml_scalar(v), do: yaml_scalar(to_string(v))
+
+  # ---------------------------------------------------------------------------
   # Internals
   # ---------------------------------------------------------------------------
 
