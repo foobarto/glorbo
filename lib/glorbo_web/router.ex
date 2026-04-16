@@ -10,16 +10,22 @@ defmodule GlorboWeb.Router do
     plug :put_secure_browser_headers
   end
 
+  # Optional bearer-token gate for LAN exposure (D-06). Active only when
+  # `config.md dashboard_token:` is set — a no-op by default.
+  pipeline :dashboard do
+    plug GlorboWeb.Plugs.DashboardToken
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
 
   scope "/", GlorboWeb do
-    pipe_through :browser
+    pipe_through [:browser, :dashboard]
 
     # Plan 04-02 Task 1: dashboard entry + company-scope routes.
     # /health-legacy keeps the Phase 1 health probe available; 04-03
-    # owns the new `/health` route for HealthLive.
+    # mounts HealthLive at /health below.
     get "/", PageController, :redirect_to_companies
     get "/health-legacy", PageController, :health
 
@@ -30,6 +36,9 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/approvals", ApprovalQueueLive
     # Plan 04-03 Task 2: content-scope chat view.
     live "/companies/:company/channels/:channel", ChannelLive
+    # Plan 04-03 Task 3: audit viewer + system health.
+    live "/companies/:company/audit", AuditLive
+    live "/health", HealthLive
   end
 
   # Other scopes may use custom stacks.

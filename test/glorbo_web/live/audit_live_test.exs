@@ -1,0 +1,73 @@
+defmodule GlorboWeb.AuditLiveTest do
+  @moduledoc """
+  AuditLive unit tests (UI-01 — last view of 8 total).
+
+  Seeds the current-month audit JSONL with two events so the view
+  exercises both the default render and the actor-filter exclusion
+  path. Uses LiveCase's acme fixture base.
+  """
+  use GlorboWeb.LiveCase, async: false
+
+  setup %{base: base} do
+    ym = current_year_month()
+    path = Path.join([base, "companies", "acme", "audit", "#{ym}.jsonl"])
+    File.mkdir_p!(Path.dirname(path))
+
+    # Append a director-authored event on top of the system event seeded
+    # by the acme fixture. Two rows is enough to exercise the filter.
+    File.write!(
+      path,
+      [
+        Jason.encode!(%{
+          ts: "2026-04-16T10:00:00Z",
+          actor: "system",
+          action: "company.create",
+          target: "acme",
+          detail: %{}
+        }),
+        "\n",
+        Jason.encode!(%{
+          ts: "2026-04-16T11:00:00Z",
+          actor: "director",
+          action: "chat.post",
+          target: "channels/general.md",
+          detail: %{channel: "general"}
+        }),
+        "\n"
+      ],
+      [:append]
+    )
+
+    :ok
+  end
+
+  test "renders seeded audit events + header", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/audit")
+    assert html =~ "Audit log"
+    assert html =~ "company.create"
+    assert html =~ "chat.post"
+    assert html =~ "director"
+    assert html =~ "Filter by actor"
+    assert html =~ "Filter by action"
+  end
+
+  test "filter by actor excludes non-matching rows", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/audit")
+    html = render_change(view, "filter", %{"actor" => "zzz-nobody", "action" => ""})
+    refute html =~ "chat.post"
+    refute html =~ "company.create"
+    assert html =~ "No audit events"
+  end
+
+  test "filter by action narrows rendering", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/audit")
+    html = render_change(view, "filter", %{"actor" => "", "action" => "chat"})
+    assert html =~ "chat.post"
+    refute html =~ "company.create"
+  end
+
+  defp current_year_month do
+    d = Date.utc_today()
+    "#{d.year}-#{String.pad_leading(Integer.to_string(d.month), 2, "0")}"
+  end
+end
