@@ -75,6 +75,7 @@ coverage/
 .agents/
 .agent/
 .claude/scheduled_tasks.lock
+.claude/worktrees/
 
 # GSD per-session dotfiles
 .planning/.next-call-count
