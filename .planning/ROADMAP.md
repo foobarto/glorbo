@@ -25,7 +25,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] **Phase 02: filesystem foundation container runtime local llm** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
 - [x] **Phase 03: agents routing kernel permissions budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
 - [x] **Phase 04: liveview dashboard real time channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
-- [ ] **Phase 05: cli completeness backup restore portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
+- [x] **Phase 05: cli completeness backup restore portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host. (completed 2026-04-16)
 
 ## Phase Details
 
@@ -111,7 +111,11 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   2. `glorbo backup` produces a `tar.gz` containing `~/.glorbo/companies/`, `config.md`, and the audit log; `glorbo restore <archive>` extracts, runs `reindex`, and leaves the install in a usable state.
   3. End-to-end portability: on machine A run `glorbo down && glorbo backup`; `scp` the archive to machine B (fresh glorbo binary only); run `glorbo restore && glorbo doctor --fix && glorbo up`; a previously-running agent in a previously-existing company executes a task successfully on machine B.
   4. `glorbo console` opens an Elixir remote shell into the running release, `glorbo logs <company> [agent]` tails the correct log files, and `glorbo migrate` applies Ecto migrations in-place against an existing `glorbo.db`.
-**Plans**: TBD (1-2 plans)
+**Plans**: 4 plans (2 original + 2 gap-closure)
+- [x] 05-01-PLAN.md — Wave 0: CLI dispatch extension + module skeletons + test harness + pidfile + erl_cookie + vm.args (CLI-01, CLI-03 scaffolding)
+- [x] 05-02-PLAN.md — Wave 1: Lifecycle (up/down/status/serve/run) + scaffolding (new company/agent/project) + logs (CLI-01)
+- [ ] 05-03-PLAN.md — Wave 2 (gap-closure, parallel with 05-04): Backup + Restore + Portability integration tests (CLI-03)
+- [ ] 05-04-PLAN.md — Wave 2 (gap-closure, parallel with 05-03): Console + Migrate + Doctor.Fixer registry + doctor --fix (CLI-01 residual)
 
 ## Progress
 
@@ -124,7 +128,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Filesystem Foundation + Container Runtime + Local LLM | 4/4 | Complete | 2026-04-16 |
 | 3. Agents, Routing, Kernel Permissions, Budgets | 5/5 | Complete | 2026-04-16 |
 | 4. LiveView Dashboard + Real-Time Channels | 3/3 | Complete    | 2026-04-16 |
-| 5. CLI Completeness + Backup/Restore Portability | 0/TBD | Not started | - |
+| 5. CLI Completeness + Backup/Restore Portability | 2/4 (gap-closure pending) | Gap-closure in progress | - |
 
 ---
 *Roadmap created: 2026-04-15 — coarse granularity, 5 phases, 38/38 v1 requirements mapped.*
