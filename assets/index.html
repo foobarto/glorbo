@@ -556,8 +556,10 @@
     <h1>Your whole company<br>in a <em>folder</em></h1>
     <p class="hero-sub">
       AI agent orchestration that runs on one machine, stores everything as
-      markdown, and enforces permissions at the kernel level. No cloud. No SaaS.
-      No regrets.
+      markdown, spawns your CLI tools (Claude Code, Gemini, Codex) inside
+      <code style="font-family: var(--mono); color: var(--accent); background: var(--bg-card); padding: 1px 6px; border-radius: 2px; font-size: 14px;">bwrap</code>
+      sandboxes, and enforces permissions at the kernel level.
+      No cloud. No SaaS. No regrets.
     </p>
     <div class="hero-cta">
       <a href="#install" class="btn btn-primary">Get Started</a>
@@ -587,16 +589,21 @@
       </div>
       <div class="what-card">
         <span class="what-card-icon">📦</span>
-        <h3>Containerised Agents</h3>
-        <p>Python and AI SDKs live inside Podman containers. Zero Python on the
-        host. Each agent runs as a dedicated Linux user with kernel-enforced ACLs.</p>
+        <h3>Sandboxed CLI Agents</h3>
+        <p>Every agent wake is a fresh <code>bwrap</code> sandbox around Claude
+        Code, Gemini CLI, or Codex. Workspace mounted writable, everything else
+        invisible. <span style="color: var(--amber)">v0.0.2</span> adds
+        Podman-hosted Python agents for untrusted workloads.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">🧠</span>
-        <h3>Local-First LLMs</h3>
-        <p>Ollama and Hugging Face work out of the box — private, offline, free.
-        Run Llama, Qwen, Mistral, or Gemma locally. Cloud providers (Claude, Codex,
-        Gemini) available per agent when you need them. No API keys to get started.</p>
+        <h3>Use the CLIs You Already Have</h3>
+        <p>Each agent picks its provider: <code>claude-code</code>,
+        <code>gemini-cli</code>, or <code>codex</code>. Each tool uses its own
+        login — Glorbo never handles API keys.
+        <span style="color: var(--amber)">v0.0.2</span> adds direct-SDK
+        providers (Anthropic / OpenAI / Google / Ollama / Hugging Face) via
+        litellm.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">💬</span>
@@ -613,8 +620,10 @@
       <div class="what-card">
         <span class="what-card-icon">🔒</span>
         <h3>Kernel-Level Permissions</h3>
-        <p>Declared in markdown, enforced by POSIX ACLs. If an agent doesn't
-        have write permission, the filesystem literally won't let it. ls -la is your audit.</p>
+        <p>Declared in markdown, enforced by the kernel. Denied paths aren't
+        mounted inside the <code>bwrap</code> sandbox — the filesystem
+        literally can't see them. <span style="color: var(--amber)">v0.0.2</span>
+        adds POSIX ACLs inside containers for the Python runtime.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">💰</span>
@@ -625,8 +634,9 @@
       <div class="what-card">
         <span class="what-card-icon">🏢</span>
         <h3>Company Isolation</h3>
-        <p>Each company runs in its own container. Company A cannot see Company B's
-        files. Multiple companies, one machine, full separation.</p>
+        <p>Each company is its own sandbox root. Agents in Company A can't see
+        any path that leads to Company B — there is no such path.
+        Multiple companies, one machine, full separation.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">🔄</span>
@@ -642,7 +652,7 @@
 <section id="how">
   <div class="container">
     <div class="section-label">How It Works</div>
-    <h2>Elixir watches files.<br>Containers run Python.<br>The kernel says no.</h2>
+    <h2>Elixir watches files.<br>bwrap sandboxes the CLI.<br>The kernel says no.</h2>
     <p class="section-quote">
       The blamfs rub against the chumble. That's how messages get delivered. Don't overthink it.
     </p>
@@ -669,10 +679,13 @@
       <div class="step">
         <div class="step-num">03</div>
         <div>
-          <h3>Containers do the work</h3>
-          <p>Glorbo spins up a container, runs Python as the agent's Linux user,
-          calls the LLM, and writes results to the agent's <code>outbox/</code>
-          and <code>workspace/</code>. Stdout streams to the dashboard.</p>
+          <h3>Sandboxes do the work</h3>
+          <p>Glorbo spawns the configured CLI tool (<code>claude -p</code>,
+          <code>gemini</code>, or <code>codex</code>) inside a
+          <code>bwrap</code> sandbox with only the agent's workspace mounted
+          writable and network policy enforced at the kernel. Results land in
+          <code>outbox/</code> and <code>workspace/</code>. Stdout streams to
+          the dashboard.</p>
         </div>
       </div>
       <div class="step">
@@ -719,7 +732,7 @@
         │   │   ├── <span class="tr-file">agent.md</span>  <span class="tr-comment"># Identity, permissions, model config</span>
         │   │   ├── <span class="tr-dir">inbox/</span>    <span class="tr-comment"># Tasks and messages arrive here</span>
         │   │   ├── <span class="tr-dir">outbox/</span>   <span class="tr-comment"># Agent writes here, Glorbo routes</span>
-        │   │   └── <span class="tr-dir">workspace/</span><span class="tr-comment"># Mounted into the container</span>
+        │   │   └── <span class="tr-dir">workspace/</span><span class="tr-comment"># Mounted into the bwrap sandbox</span>
         │   └── <span class="tr-dir">engineer/</span>
         ├── <span class="tr-dir">channels/</span>
         │   ├── <span class="tr-file">general.md</span>    <span class="tr-comment"># Append-only chat logs</span>
@@ -758,23 +771,24 @@
 <span class="cmd-comment"># Set up everything</span>
 <span class="cmd-prompt">$ </span>glorbo init
 <span class="cmd-output">  ✓ Created ~/.glorbo/
-  ✓ Downloaded podman static binary
-  ✓ Downloaded ollama binary
-  ✓ Built glorbo-runtime container image
+  ✓ Verified bwrap + unprivileged userns
+  ✓ Staged podman + ollama (dormant, reserved for v0.0.2)
+  ✓ Staged glorbo-runtime image (dormant, reserved for v0.0.2)
   ✓ Ready. Run `glorbo doctor` to verify.</span>
 
 <span class="cmd-comment"># Create a company and hire some agents</span>
 <span class="cmd-prompt">$ </span>glorbo new company acme
-<span class="cmd-prompt">$ </span>glorbo new agent acme ceo
+<span class="cmd-prompt">$ </span>glorbo new agent acme ceo <span class="cmd-flag">--provider</span> claude-code
 <span class="cmd-prompt">$ </span>glorbo up acme
 <span class="cmd-output">  ● acme is running — dashboard at http://localhost:4000</span></pre>
       </div>
     </div>
 
     <p style="margin-top: 24px; color: var(--text-dim); font-size: 14px; font-family: var(--mono);">
-      Prerequisites: Linux (x86_64 or aarch64). That's it.
+      Prerequisites: Linux (x86_64 or aarch64) with <code>bwrap</code> and
+      unprivileged user namespaces. A CLI tool on PATH for each agent provider
+      you use (<code>claude</code>, <code>gemini</code>, or <code>codex</code>).
       No Python. No Erlang. No Node.js.
-      Podman and Ollama are downloaded automatically.
     </p>
   </div>
 </section>
@@ -785,7 +799,7 @@
     <div class="section-label">Stack</div>
     <h2>What's inside the Glorbo</h2>
     <p class="section-quote">
-      The grumbo is made of Elixir. The fleeb is Python. You do NOT mix them on the host.
+      The grumbo is made of Elixir. The hizzards are CLI tools, hermetically schleemed inside bwrap. You do NOT mix them on the host.
     </p>
 
     <div class="stack-grid">
@@ -802,20 +816,20 @@
         <span class="stack-desc">WebSocket agent chat and streaming</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">Python</span>
-        <span class="stack-desc">AI SDKs, in containers, never on the host</span>
+        <span class="stack-name">bwrap</span>
+        <span class="stack-desc">Per-invocation sandbox: mount + netns isolation</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">Ollama</span>
-        <span class="stack-desc">Local LLM inference, auto-downloaded</span>
+        <span class="stack-name">Claude Code</span>
+        <span class="stack-desc">Agent runtime (provider: claude-code)</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">Hugging Face</span>
-        <span class="stack-desc">Model hub, local transformer inference</span>
+        <span class="stack-name">Gemini CLI</span>
+        <span class="stack-desc">Agent runtime (provider: gemini-cli)</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">Podman</span>
-        <span class="stack-desc">Rootless, daemonless containers, auto-downloaded</span>
+        <span class="stack-name">Codex</span>
+        <span class="stack-desc">Agent runtime (provider: codex)</span>
       </div>
       <div class="stack-item">
         <span class="stack-name">SQLite</span>
@@ -826,8 +840,8 @@
         <span class="stack-desc">Source of truth for everything</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">POSIX ACLs</span>
-        <span class="stack-desc">Kernel-enforced permissions, not app-level</span>
+        <span class="stack-name">Podman + Python</span>
+        <span class="stack-desc" style="color: var(--amber);">v0.0.2 — containerised Python runtime with litellm, Ollama, Hugging Face, direct-SDK providers, and POSIX ACL enforcement</span>
       </div>
     </div>
   </div>
@@ -847,7 +861,7 @@
       <div class="port-card">
         <h3>Deploy</h3>
         <span class="port-cmd">curl + glorbo init</span>
-        <p>Download one binary. Run one command. Podman is fetched automatically. No package manager, no system service, no root.</p>
+        <p>Download one binary. Run one command. bwrap is usually already there; the CLI tool of your choice handles its own install. No system service, no root.</p>
       </div>
       <div class="port-card">
         <h3>Upgrade</h3>
@@ -857,7 +871,7 @@
       <div class="port-card">
         <h3>Move</h3>
         <span class="port-cmd">glorbo backup → glorbo restore</span>
-        <p>Archive the directory. Extract on a new machine. Rebuild the container image. You're live.</p>
+        <p>Archive the directory. <code>scp</code> to a new machine. <code>glorbo restore</code> + <code>glorbo doctor --fix</code> and you're live.</p>
       </div>
     </div>
   </div>
