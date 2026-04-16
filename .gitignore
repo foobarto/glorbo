@@ -68,3 +68,8 @@ vendor/
 *.log
 coverage/
 .cache/
+
+# External Claude Code skill plugins (symlinked from .claude/skills/).
+# Not Glorbo source code. Versions pinned in skills-lock.json; re-hydrate
+# via your skills installer.
+.agents/
