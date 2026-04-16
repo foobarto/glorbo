@@ -13,6 +13,15 @@
 ## (threat T-05-04). Distribution listener bound to an ephemeral port to
 ## avoid colliding with other local BEAM nodes.
 
--sname glorbo@127.0.0.1
+## WR-09: long-name distribution. -sname wants an UNQUALIFIED short
+## name and appends the host automatically; -sname glorbo@127.0.0.1
+## would either be rejected outright or produce a node named
+## glorbo@127.0.0.1@<hostname>. Console.help_text/0 shows
+## `iex --name console@127.0.0.1 --remsh glorbo@127.0.0.1`, which
+## requires -name here to match name-class (short vs long) with the
+## caller. Verify manually after rebuild with:
+##   glorbo up
+##   iex --name console@127.0.0.1 --cookie <cookie> --remsh glorbo@127.0.0.1
+-name glorbo@127.0.0.1
 -kernel inet_dist_listen_min 0
 -kernel inet_dist_listen_max 0
