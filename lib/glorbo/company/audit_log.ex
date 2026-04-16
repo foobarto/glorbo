@@ -82,8 +82,13 @@ defmodule Glorbo.Company.AuditLog do
   end
 
   defp entry_ts(entry) do
+    # CR-02: Normalise to UTC up-front so both the JSONL `ts` field and the
+    # month-bucket filename derive from the same timezone view. A caller that
+    # passes a non-UTC DateTime otherwise lands in the wrong monthly bucket
+    # on timezone boundaries.
     case entry[:ts] || entry["ts"] do
-      %DateTime{} = dt -> dt
+      %DateTime{time_zone: "Etc/UTC"} = dt -> dt
+      %DateTime{} = dt -> DateTime.shift_zone!(dt, "Etc/UTC")
       _ -> DateTime.utc_now()
     end
   end
