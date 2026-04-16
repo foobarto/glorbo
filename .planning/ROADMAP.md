@@ -56,10 +56,10 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   5. A company container launches with its own directory mounted (and no other company's directory visible), `--userns keep-id`, `--read-only` root FS, `network: none`, Python available only inside the container, and can be run ephemerally (default) or persistently.
   6. A trivial Ollama inference call executes inside the container on a host with no network connectivity (airplane mode) after `init` has completed.
 **Plans**: 4 plans
-- [ ] 02-01-PLAN.md — Filesystem hierarchy + append-only AuditLog + Ecto schemas + MD5 reindex (FS-01..05)
-- [ ] 02-02-PLAN.md — Podman + Ollama binary bootstrap + Doctor Phase-2 check set + severity exit codes (RT-01, LLM-01)
-- [ ] 02-03-PLAN.md — glorbo-runtime OCI image (Containerfile + FastAPI worker + ghcr.io multi-arch CI) + Elixir Container modules (RT-02..06, LLM-02)
-- [ ] 02-04-PLAN.md — FileWatcher + glorbo init orchestrator + example acme company + airplane-mode proof (FS-06, LLM-05, CLI-02)
+- [x] 02-01-PLAN.md — Filesystem hierarchy + append-only AuditLog + Ecto schemas + MD5 reindex (FS-01..05)
+- [x] 02-02-PLAN.md — Podman + Ollama binary bootstrap + Doctor Phase-2 check set + severity exit codes (RT-01, LLM-01)
+- [x] 02-03-PLAN.md — glorbo-runtime OCI image (Containerfile + FastAPI worker + ghcr.io multi-arch CI) + Elixir Container modules (RT-02..06, LLM-02)
+- [x] 02-04-PLAN.md — FileWatcher + glorbo init orchestrator + example acme company + airplane-mode proof (FS-06, LLM-05, CLI-02)
 
 ### Phase 3: Agents, Routing, Kernel Permissions, Budgets
 **Goal**: Markdown `agent.md` files become live, supervised, kernel-isolated workers that pick up tasks, collaborate via inbox/outbox and channels, respect per-agent permissions at both app and kernel layers, honour network policy and USD budgets, and escalate approval-gated work to the Director.
