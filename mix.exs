@@ -51,6 +51,7 @@ defmodule Glorbo.MixProject do
       {:floki, ">= 0.37.0", only: :test},
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.6"},
+      {:crontab, "~> 1.2"},
       {:dns_cluster, "~> 0.2"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.1"},
