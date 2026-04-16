@@ -1,28 +1,246 @@
 defmodule Glorbo.Doctor.Fixer do
   @moduledoc """
-  TODO(plan-03): Implement the `doctor --fix` fixer registry per D-16.
-  Each registered fixer handles one check name from `Glorbo.Doctor` and
-  returns `{:ok, detail} | {:error, reason} | {:explain, guidance}`.
+  Registry of repair functions keyed by Doctor check name (D-16).
 
-  Wave-0 skeleton — the registry is empty; Plan 03 populates it per
-  RESEARCH.md Pattern 5.
+  Each fixer takes the failing check map and returns one of three tagged
+  tuples:
+
+    * `{:ok, detail}`       — repair succeeded.
+    * `{:error, reason}`    — repair attempted but failed.
+    * `{:explain, msg}`     — no auto-repair possible (sudo or manual step
+      required); guidance is printed to the Director.
+
+  `run/1` iterates `Doctor.run_checks/0`, dispatches each failing check to
+  its registered fixer by check name, emits
+  `cli.doctor.fix.<check>.<ok|failed|explained>` audit events via
+  `Glorbo.CLI.Audit.emit/3`, and returns a `Glorbo.CLI.result()` tuple.
+
+  `run(dry_run: true)` prints what would be repaired without running
+  repairs (D-17).
+
+  The @fixers registry keys MUST match the check names produced by
+  `Glorbo.Doctor.run_checks/0` — otherwise the dispatch falls through to
+  the "no fixer registered" branch and the check is counted as skipped.
   """
 
-  # @fixers filled in Plan 03 per RESEARCH.md Pattern 5
-  # Expected shape (Plan 03):
-  #
-  #   @fixers %{
-  #     "glorbo_dir"     => &__MODULE__.fix_glorbo_dir/1,
-  #     "audit_dir"      => &__MODULE__.fix_audit_dir/1,
-  #     "sockets_dir"    => &__MODULE__.fix_sockets_dir/1,
-  #     "podman"         => &__MODULE__.fix_podman/1,
-  #     "ollama"         => &__MODULE__.fix_ollama/1,
-  #     "runtime_image"  => &__MODULE__.fix_runtime_image/1,
-  #     "bwrap"          => &__MODULE__.explain_bwrap/1
-  #   }
+  alias Glorbo.Doctor
+  alias Glorbo.CLI.Audit
+
+  @fixers %{
+    "glorbo_dir" => &__MODULE__.fix_glorbo_dir/1,
+    "audit_dir" => &__MODULE__.fix_audit_dir/1,
+    "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
+    "podman" => &__MODULE__.fix_podman/1,
+    "ollama" => &__MODULE__.fix_ollama/1,
+    "runtime_image" => &__MODULE__.fix_runtime_image/1,
+    "bwrap" => &__MODULE__.explain_bwrap/1
+  }
+
+  @doc "Public accessor for the fixer registry (tests introspect this)."
+  @spec fixers() :: %{String.t() => (map() -> term())}
+  def fixers, do: @fixers
 
   @spec run(keyword()) :: Glorbo.CLI.result()
-  def run(_opts) do
-    {:doctor, 0, "doctor --fix: not implemented in Wave 0 (Plan 03 fills)\n"}
+  def run(opts \\ []) do
+    dry_run? = Keyword.get(opts, :dry_run, false)
+    failing = Doctor.run_checks() |> Enum.reject(& &1.pass)
+
+    if failing == [] do
+      {:doctor, 0, "✓ all checks pass — nothing to repair.\n"}
+    else
+      acc = %{
+        attempted: 0,
+        repaired: 0,
+        failed: 0,
+        explained: 0,
+        skipped: 0,
+        lines: []
+      }
+
+      summary =
+        Enum.reduce(failing, acc, fn check, acc ->
+          handle_check(check, dry_run?, acc)
+        end)
+
+      exit_code = if summary.failed > 0, do: 1, else: 0
+      {:doctor, exit_code, format_summary(summary)}
+    end
   end
+
+  defp handle_check(check, true = _dry_run, acc) do
+    case Map.fetch(@fixers, check.name) do
+      {:ok, _fixer} ->
+        line = "would repair: #{check.name}"
+        IO.puts(line)
+        %{acc | attempted: acc.attempted + 1, lines: [line | acc.lines]}
+
+      :error ->
+        line = "no fixer registered for: #{check.name}"
+        IO.puts(line)
+        %{acc | skipped: acc.skipped + 1, lines: [line | acc.lines]}
+    end
+  end
+
+  defp handle_check(check, false = _dry_run, acc) do
+    case Map.fetch(@fixers, check.name) do
+      {:ok, fixer} ->
+        run_fixer(fixer, check, acc)
+
+      :error ->
+        line = "no fixer registered for: #{check.name}"
+        IO.puts(line)
+        %{acc | skipped: acc.skipped + 1, lines: [line | acc.lines]}
+    end
+  end
+
+  defp run_fixer(fixer, check, acc) do
+    case safe_apply(fixer, check) do
+      {:ok, msg} ->
+        line = "✓ #{check.name}: #{msg}"
+        IO.puts(line)
+        Audit.emit("doctor", "fix.#{check.name}.ok", %{detail: msg})
+
+        %{
+          acc
+          | attempted: acc.attempted + 1,
+            repaired: acc.repaired + 1,
+            lines: [line | acc.lines]
+        }
+
+      {:error, reason} ->
+        line = "✗ #{check.name}: #{inspect(reason)}"
+        IO.puts(line)
+        Audit.emit("doctor", "fix.#{check.name}.failed", %{reason: inspect(reason)})
+
+        %{
+          acc
+          | attempted: acc.attempted + 1,
+            failed: acc.failed + 1,
+            lines: [line | acc.lines]
+        }
+
+      {:explain, guidance} ->
+        IO.puts("ℹ  #{check.name}:")
+        IO.puts(guidance)
+        Audit.emit("doctor", "fix.#{check.name}.explained", %{guidance: guidance})
+        line = "ℹ #{check.name}: (guidance printed)"
+
+        %{
+          acc
+          | attempted: acc.attempted + 1,
+            explained: acc.explained + 1,
+            lines: [line | acc.lines]
+        }
+    end
+  end
+
+  defp safe_apply(fixer, check) do
+    fixer.(check)
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  defp format_summary(%{
+         attempted: a,
+         repaired: r,
+         failed: f,
+         explained: e,
+         lines: lines
+       }) do
+    body = lines |> Enum.reverse() |> Enum.join("\n")
+
+    footer =
+      "\n\ndoctor --fix summary: attempted=#{a} repaired=#{r} failed=#{f} explained=#{e}\n"
+
+    body <> footer
+  end
+
+  # ---------- Individual fixers ----------
+
+  @doc false
+  def fix_glorbo_dir(_check) do
+    path = Path.expand("~/.glorbo")
+
+    case File.mkdir_p(path) do
+      :ok -> {:ok, "created #{path}"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  def fix_audit_dir(_check) do
+    path = Path.expand("~/.glorbo/audit/_system")
+
+    case File.mkdir_p(path) do
+      :ok -> {:ok, "created #{path}"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  def fix_sockets_dir(_check) do
+    path = Path.expand("~/.glorbo/runtime/sockets")
+
+    with :ok <- File.mkdir_p(path),
+         :ok <- File.chmod(path, 0o700) do
+      {:ok, "created #{path} (mode 0700)"}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  def fix_podman(_check), do: normalise_tuple(Glorbo.Init.BinaryBootstrap.ensure_podman([]))
+
+  @doc false
+  def fix_ollama(_check), do: normalise_tuple(Glorbo.Init.BinaryBootstrap.ensure_ollama([]))
+
+  @doc false
+  def fix_runtime_image(_check), do: normalise_map(Glorbo.Init.ImagePull.run([]))
+
+  @doc false
+  def explain_bwrap(_check) do
+    {:explain,
+     """
+     bwrap is required for sandboxed agent execution. Install via your package manager:
+
+       fedora:  sudo dnf install bubblewrap
+       debian:  sudo apt install bubblewrap
+       arch:    sudo pacman -S bubblewrap
+
+     Then re-run `glorbo doctor`.
+     """}
+  end
+
+  # BinaryBootstrap returns tuple-shaped results. Normalise to the fixer
+  # contract ({:ok, _} | {:error, _} | {:explain, _}).
+  #
+  #   {:ok, :system, path}      — binary already on PATH (no-op repair)
+  #   {:ok, :downloaded, path}  — downloaded into ~/.glorbo/bin/
+  #   {:ok, :skipped, reason}   — offline fallback (warn, continue)
+  #   {:error, reason}          — genuine failure
+  defp normalise_tuple({:ok, :system, path}), do: {:ok, "already present at #{path}"}
+  defp normalise_tuple({:ok, :downloaded, path}), do: {:ok, "downloaded to #{path}"}
+
+  defp normalise_tuple({:ok, :skipped, reason}),
+    do: {:ok, "skipped: #{detail_to_string(reason)}"}
+
+  defp normalise_tuple({:ok, detail}), do: {:ok, detail_to_string(detail)}
+  defp normalise_tuple({:error, reason}), do: {:error, reason}
+  defp normalise_tuple(other), do: {:error, {:unexpected, other}}
+
+  # ImagePull.run/1 returns a map shaped `%{status: :ok|:skipped|:error,
+  # detail: binary()}`. Normalise to the fixer contract.
+  defp normalise_map(%{status: :ok, detail: detail}), do: {:ok, detail_to_string(detail)}
+
+  defp normalise_map(%{status: :skipped, detail: detail}),
+    do: {:ok, "skipped: #{detail_to_string(detail)}"}
+
+  defp normalise_map(%{status: :error, detail: detail}),
+    do: {:error, detail_to_string(detail)}
+
+  defp normalise_map(other), do: {:error, {:unexpected, other}}
+
+  defp detail_to_string(d) when is_binary(d), do: d
+  defp detail_to_string(other), do: inspect(other)
 end
