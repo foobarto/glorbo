@@ -55,7 +55,20 @@ defmodule Glorbo.Sandbox.BwrapTest do
       assert_subsequence(argv, ["--symlink", "usr/lib", "/lib"])
       assert_subsequence(argv, ["--symlink", "usr/lib64", "/lib64"])
       assert_subsequence(argv, ["--symlink", "usr/sbin", "/sbin"])
-      assert_subsequence(argv, ["--ro-bind", "/etc", "/etc"])
+      # /etc is minimally mounted (WR-04): tmpfs baseline + selective binds of
+      # only files the CLI tools need (TLS trust, DNS, user-group lookup).
+      # /etc/shadow, /etc/sudoers, /etc/ssh/*, /etc/cron.* must NOT appear.
+      assert_subsequence(argv, ["--tmpfs", "/etc"])
+      assert_subsequence(argv, ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])
+      assert_subsequence(argv, ["--ro-bind", "/etc/hosts", "/etc/hosts"])
+      assert_subsequence(argv, ["--ro-bind", "/etc/passwd", "/etc/passwd"])
+      assert_subsequence(argv, ["--ro-bind", "/etc/group", "/etc/group"])
+
+      # No full /etc bind — leaking shadow/sudoers/ssh would be a regression.
+      refute argv
+             |> Enum.chunk_every(3, 1, :discard)
+             |> Enum.any?(&(&1 == ["--ro-bind", "/etc", "/etc"]))
+
       assert_subsequence(argv, ["--proc", "/proc"])
       assert_subsequence(argv, ["--dev", "/dev"])
       assert_subsequence(argv, ["--tmpfs", "/tmp"])

@@ -28,7 +28,12 @@ defmodule Glorbo.Sandbox.Bwrap do
     * `--ro-bind /usr /usr` — real directory, no symlink.
     * `--symlink usr/bin /bin`, `usr/lib /lib`, `usr/lib64 /lib64`,
       `usr/sbin /sbin` — Fedora/Bazzite merged-/usr layout (RESEARCH Pattern 1).
-    * `--ro-bind /etc /etc` — host resolv.conf + PKI.
+    * `/etc` — minimal selective mounts (`resolv.conf`, `hosts`, `passwd`,
+      `group`, `nsswitch.conf`, `ssl/`, `pki/`, `ca-certificates/`) on top of
+      a `--tmpfs /etc` baseline. Prevents leaking `/etc/shadow`, `/etc/sudoers`,
+      `/etc/ssh/*`, `/etc/cron.*`, or any application configs into the sandbox
+      (WR-04). Uses `--ro-bind-try` for distro-variant paths that may not
+      exist on every host.
     * `--proc /proc`, `--dev /dev`, `--tmpfs /tmp`.
 
   Agent-owned:
@@ -176,16 +181,56 @@ defmodule Glorbo.Sandbox.Bwrap do
       "/lib64",
       "--symlink",
       "usr/sbin",
-      "/sbin",
-      "--ro-bind",
-      "/etc",
-      "/etc",
-      "--proc",
-      "/proc",
-      "--dev",
-      "/dev",
+      "/sbin"
+    ] ++ etc_flags() ++
+      [
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp"
+      ]
+  end
+
+  # WR-04: replace `--ro-bind /etc /etc` (which leaks /etc/shadow, /etc/sudoers,
+  # /etc/ssh/*, /etc/cron.*, and every installed app config) with a tmpfs
+  # baseline + selective mounts of only the files the CLI tools actually need
+  # (TLS trust, DNS, user-group lookup). `--ro-bind-try` is used for paths
+  # that are distro-variant (Fedora ships /etc/pki, Debian uses
+  # /etc/ca-certificates) and silently skips when missing — no crash on a
+  # host that only has one of the two.
+  defp etc_flags do
+    [
       "--tmpfs",
-      "/tmp"
+      "/etc",
+      "--ro-bind",
+      "/etc/resolv.conf",
+      "/etc/resolv.conf",
+      "--ro-bind",
+      "/etc/hosts",
+      "/etc/hosts",
+      "--ro-bind",
+      "/etc/nsswitch.conf",
+      "/etc/nsswitch.conf",
+      "--ro-bind",
+      "/etc/passwd",
+      "/etc/passwd",
+      "--ro-bind",
+      "/etc/group",
+      "/etc/group",
+      "--ro-bind-try",
+      "/etc/ssl",
+      "/etc/ssl",
+      "--ro-bind-try",
+      "/etc/pki",
+      "/etc/pki",
+      "--ro-bind-try",
+      "/etc/ca-certificates",
+      "/etc/ca-certificates",
+      "--ro-bind-try",
+      "/etc/ca-certificates.conf",
+      "/etc/ca-certificates.conf"
     ]
   end
 
