@@ -56,12 +56,39 @@ defmodule GlorboWeb.LiveCase do
     original = Application.get_env(:glorbo, :glorbo_base)
     Application.put_env(:glorbo, :glorbo_base, base)
 
+    # Start a per-test `Glorbo.Company.AuditLog` registered under the
+    # global module name so Director write-actions (post_message,
+    # set_approval, wake_agent) can be invoked from LiveViews without
+    # the caller threading an `:audit` override. Each test gets an
+    # isolated base dir, so JSONL writes stay scoped to the tmp root.
+    # Tests that boot a per-company supervision tree themselves (via
+    # `:integration` + `:inotify` tags) start their own AuditLog and
+    # therefore don't use this fallback — this one is only for unit
+    # LV tests that call Actions.* without spinning up the full
+    # Glorbo.Company.Supervisor tree.
+    audit_pid =
+      case Process.whereis(Glorbo.Company.AuditLog) do
+        nil ->
+          {:ok, pid} =
+            ExUnit.Callbacks.start_supervised(
+              {Glorbo.Company.AuditLog,
+               [name: Glorbo.Company.AuditLog, base: base]}
+            )
+
+          pid
+
+        existing ->
+          existing
+      end
+
     ExUnit.Callbacks.on_exit(fn ->
       case original do
         nil -> Application.delete_env(:glorbo, :glorbo_base)
         val -> Application.put_env(:glorbo, :glorbo_base, val)
       end
     end)
+
+    _ = audit_pid
 
     {:ok,
      conn: Phoenix.ConnTest.build_conn(),

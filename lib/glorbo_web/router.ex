@@ -26,8 +26,8 @@ defmodule GlorboWeb.Router do
     live "/companies", OverviewLive
     live "/companies/:company", CompanyLive
     live "/companies/:company/kanban", KanbanLive
-    # 04-02 Task 3 adds: live "/companies/:company/agents/:agent", AgentLive
-    #                    live "/companies/:company/approvals", ApprovalQueueLive
+    live "/companies/:company/agents/:agent", AgentLive
+    live "/companies/:company/approvals", ApprovalQueueLive
     # 04-03 adds: live "/companies/:company/channels/:channel", ChannelLive
     #             live "/companies/:company/audit", AuditLive
     #             live "/health", HealthLive (+ DashboardToken plug)
