@@ -27,7 +27,6 @@ defmodule Glorbo.CLI.Console do
   @remote_node "glorbo@127.0.0.1"
   @console_node "console@127.0.0.1"
 
-  @spec run([String.t()]) :: Glorbo.CLI.result()
   @spec run([String.t()], keyword()) :: Glorbo.CLI.result()
   def run(argv, opts \\ []) do
     {parsed_opts, _positional, _invalid} =
