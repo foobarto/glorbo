@@ -55,7 +55,8 @@ defmodule Glorbo.Network.Proxy do
           name: GenServer.name(),
           company: String.t(),
           port: non_neg_integer(),
-          allowlist_fun: (String.t() -> [String.t()])
+          allowlist_fun: (String.t() -> [String.t()]),
+          task_supervisor: GenServer.name() | pid()
         ]
 
   # ---------------------------------------------------------------------------
@@ -104,12 +105,24 @@ defmodule Glorbo.Network.Proxy do
         ip: {127, 0, 0, 1}
       ])
 
-    {:ok, task_sup} = Task.Supervisor.start_link()
+    # Prefer a supervisor-wired sibling Task.Supervisor. When none is
+    # injected, start one we own ourselves so the Proxy remains usable
+    # standalone (test paths + early-integration callers). Owned task_sups
+    # are unlinked (so the Proxy's own terminate doesn't receive their
+    # shutdown EXIT) and explicitly stopped in terminate/2 to avoid leaking
+    # tunnel tasks.
+    {task_sup, owns_task_sup?} =
+      case Keyword.get(opts, :task_supervisor) do
+        nil ->
+          {:ok, ts} = Task.Supervisor.start_link()
+          true = Process.unlink(ts)
+          {ts, true}
 
-    _acceptor =
-      Task.Supervisor.async_nolink(task_sup, fn ->
-        accept_loop(listen_sock, allowlist, task_sup)
-      end)
+        ts ->
+          {ts, false}
+      end
+
+    acceptor_ref = start_acceptor(listen_sock, allowlist, task_sup)
 
     {:ok, bound_port} = :inet.port(listen_sock)
 
@@ -119,6 +132,8 @@ defmodule Glorbo.Network.Proxy do
        allowlist: allowlist,
        listen_sock: listen_sock,
        task_sup: task_sup,
+       owns_task_sup?: owns_task_sup?,
+       acceptor_ref: acceptor_ref,
        port: bound_port
      }}
   end
@@ -129,14 +144,62 @@ defmodule Glorbo.Network.Proxy do
   @impl true
   def terminate(_reason, state) do
     _ = safe_close(state.listen_sock)
+
+    # When we spawned the Task.Supervisor ourselves, stop it explicitly so
+    # any in-flight tunnel tasks are torn down (and their sockets closed)
+    # instead of being abandoned as orphans.
+    if state.owns_task_sup? and is_pid(state.task_sup) and Process.alive?(state.task_sup) do
+      _ =
+        try do
+          Supervisor.stop(state.task_sup, :shutdown, 1_000)
+        catch
+          :exit, _ -> :ok
+        end
+    end
+
     :ok
   end
 
-  # Ignore the acceptor Task's :DOWN — we keep the socket open until stop.
+  # Acceptor died: re-arm it so the proxy keeps serving new connections.
+  # This is the observable failure mode flagged by CR-02; without re-arming,
+  # a tunnel-task crash that cascaded through the Task.Supervisor silently
+  # stopped new-connection handling with no indication to the operator.
   @impl true
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{acceptor_ref: ref} = state) do
+    if reason not in [:normal, :shutdown, {:shutdown, :closed}] do
+      Logger.warning(
+        "[network.proxy] acceptor died: #{inspect(reason)} — restarting acceptor"
+      )
+    end
+
+    new_ref = start_acceptor(state.listen_sock, state.allowlist, state.task_sup)
+    {:noreply, %{state | acceptor_ref: new_ref}}
+  end
+
+  # Tunnel-task :DOWN — log abnormal exits so proxy failures are observable.
+  def handle_info({:DOWN, _ref, :process, _pid, reason}, state) do
+    if reason not in [:normal, :shutdown] do
+      Logger.debug("[network.proxy] tunnel task exited: #{inspect(reason)}")
+    end
+
+    {:noreply, state}
+  end
+
+  # Task result messages from async_nolink — discard.
   def handle_info({ref, _result}, state) when is_reference(ref), do: {:noreply, state}
   def handle_info(_other, state), do: {:noreply, state}
+
+  # Spawn the acceptor task under the Task.Supervisor using async_nolink so a
+  # crash reaches us as a :DOWN (instead of an EXIT that would kill the
+  # GenServer). Returns the ref we monitor for re-arming.
+  defp start_acceptor(listen_sock, allowlist, task_sup) do
+    task =
+      Task.Supervisor.async_nolink(task_sup, fn ->
+        accept_loop(listen_sock, allowlist, task_sup)
+      end)
+
+    task.ref
+  end
 
   # ---------------------------------------------------------------------------
   # Acceptor loop
@@ -145,7 +208,15 @@ defmodule Glorbo.Network.Proxy do
   defp accept_loop(listen_sock, allowlist, task_sup) do
     case :gen_tcp.accept(listen_sock) do
       {:ok, client_sock} ->
-        Task.Supervisor.start_child(task_sup, fn -> handle_connection(client_sock, allowlist) end)
+        # async_nolink — a crash in handle_connection reaches the Proxy as a
+        # :DOWN (logged + discarded). start_child used to link the failure to
+        # the Task.Supervisor itself (see CR-02), which could cascade to the
+        # acceptor and silently kill new-connection handling.
+        _task =
+          Task.Supervisor.async_nolink(task_sup, fn ->
+            handle_connection(client_sock, allowlist)
+          end)
+
         accept_loop(listen_sock, allowlist, task_sup)
 
       {:error, :closed} ->
