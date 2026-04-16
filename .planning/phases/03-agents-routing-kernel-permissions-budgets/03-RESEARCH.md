@@ -679,29 +679,33 @@ Stable event keys for `audit/YYYY-MM.jsonl`, additive to Phase 2's set:
 
 **If this table is empty:** Not applicable — 8 assumptions identified. All are testable in Wave 0 spike tasks.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **D-02's `100000 + 100*company_ordinal` formula vs real `/etc/subuid` base.**
    - What we know: host has `foobarto:524288:65536`; UIDs below 524288 are NOT in subordinate range on this host.
    - What's unclear: whether D-02 meant "literal 100000" or "base-relative 100000"; D-01 says "stable across restarts" which is true either way, but portability across hosts matters.
    - Recommendation: Wave 0 spike task that reads `/etc/subuid`, treats "100000" in D-02 as an offset into the subordinate range, and documents the actual starting UID as computed. Raise with user if interpretation differs.
+   - **RESOLVED:** Plan 01 locked_decisions — UidAllocator reads /etc/subuid for Director; uid_base = subuid_base + 100*ordinal. D-02's literal "100000" reinterpreted as a relative offset into the host's subordinate-UID range.
 
 2. **Is `--cap-add NET_ADMIN` on `api-only` containers acceptable, or does it violate RT-04/no-`--cap-add` too severely?**
    - What we know: RT-04 says no cap-add in the default (none) path; invocation.ex has a NEGATIVE test for no cap-add.
    - What's unclear: CONTEXT.md D-11 mentions "fallback to in-container `iptables`/`nftables`" which implies accepting NET_ADMIN for that policy; but no explicit user sign-off.
    - Recommendation: plan splits network-policy argv into three build paths; negative test asserts no cap-add for `none` and `open`; positive test asserts cap-add is NARROWLY applied only for `api-only`. Flag at plan-review time for explicit user approval.
+   - **RESOLVED:** Plan 01 locked_decisions — --cap-add NET_ADMIN narrowly scoped to api-only mode ONLY; negative tests in invocation_test.exs assert absence for none and open. Plan 05 locked_decisions documents the deviation from RT-04 baseline.
 
 3. **User proxy (tinyproxy on UDS) vs nftables CIDR for `api-only` — decide now or defer?**
    - What we know: LLM providers rotate IPs; hostname-based filter is sturdier.
    - What's unclear: whether the Director's test harness + CI rig can run a proxy daemon.
    - Recommendation: Phase 3 ships nftables-based CIDR allow-list (simpler, fewer moving parts); document "upgrade to tinyproxy if allow-list drift becomes operational overhead" as a Phase 3.1/v1.1 follow-up.
 
+   - **RESOLVED:** Plan 01 locked_decisions — nftables + pre-resolved CIDR allow-list ships in Phase 3; tinyproxy/UDS deferred to v1.1 and tracked in DEFERRED.md.
 4. **Does `Agent.Server` dequeue the `pending_wakes` in FIFO or priority order (approval > mention > heartbeat > inbox)?**
    - What we know: D-20 says dedupe via GenServer serialisation.
    - What's unclear: if a Director approval arrives while the agent is running a routine heartbeat, does approval jump the queue?
    - Recommendation: FIFO in v1.0; user-observable reordering is surprising. If approval latency becomes a UX issue, add a priority enum in Phase 4 with dashboard.
 
 5. **Container-lifetime: per-agent ephemeral vs per-company persistent — does Phase 3 mix?**
+   - **RESOLVED:** Plan 03 locked_decisions — FIFO wake queue for v1.0. Priority reordering deferred to Phase 4 (dashboard UI would make priority visible to Director).
    - What we know: D-23 says "ephemeral by default, persistent when `agent.md` declares `lifecycle: persistent`."
    - What's unclear: if two agents in the same company have different lifecycles, do they share a container or run in separate containers?
    - Recommendation: one container per PER-AGENT lifecycle — simpler bookkeeping; matches "company isolation" invariant at a finer grain. Add to plan's key-decisions.
@@ -709,6 +713,7 @@ Stable event keys for `audit/YYYY-MM.jsonl`, additive to Phase 2's set:
 ## Validation Architecture
 
 ### Test Framework
+   - **RESOLVED:** Plan 03 locked_decisions — per-agent container lifetime; agents with different lifecycle values in the same company run in separate containers. No mixed-lifecycle sharing.
 
 | Property | Value |
 |----------|-------|
