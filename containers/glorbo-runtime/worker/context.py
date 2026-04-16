@@ -41,13 +41,17 @@ def _split_frontmatter(text: str) -> Tuple[dict, str]:
     """Split a ``---\\n<yaml>\\n---\\n<body>`` markdown file.
 
     Uses ``yaml.safe_load`` exclusively (T-2-26).
+
+    WR-01: normalise CRLF up-front so Windows-authored files don't silently
+    drop their frontmatter on the ``startswith("---\\n")`` check.
     """
-    if text.startswith("---\n"):
-        parts = text.split("---\n", 2)
+    normalized = text.replace("\r\n", "\n")
+    if normalized.startswith("---\n"):
+        parts = normalized.split("---\n", 2)
         if len(parts) == 3:
             _, fm, body = parts
             return yaml.safe_load(fm) or {}, body
-    return {}, text
+    return {}, normalized
 
 
 def _find_agent_md(task_path: Path):

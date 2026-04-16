@@ -31,15 +31,22 @@ defmodule Glorbo.Filesystem.Frontmatter do
   """
   @spec parse(binary()) :: {:ok, map(), binary()} | {:error, term()}
   def parse(content) when is_binary(content) do
+    # WR-02: normalise CRLF so Windows-authored files match the strict
+    # `---\n` fence used by both this parser and the Python worker's
+    # `_split_frontmatter`. Previously `String.starts_with?(content, "---")`
+    # was lenient about what came after the dashes, diverging from the
+    # worker's stricter check.
+    normalized = String.replace(content, "\r\n", "\n")
+
     cond do
-      byte_size(content) > @max_content_bytes ->
+      byte_size(normalized) > @max_content_bytes ->
         {:error, :too_large}
 
-      not String.starts_with?(content, "---") ->
-        {:ok, %{}, content}
+      not String.starts_with?(normalized, "---\n") ->
+        {:ok, %{}, normalized}
 
       true ->
-        do_parse(content)
+        do_parse(normalized)
     end
   rescue
     e -> {:error, Exception.message(e)}
