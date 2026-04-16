@@ -38,6 +38,31 @@ defmodule Glorbo.Application do
     BurritoArgs.argv()
   end
 
+  @doc """
+  Public entrypoint used by `glorbo serve` + `glorbo run` (Plan 05-02).
+
+  Delegates to the private `start_supervision_tree/0` the Burrito / test
+  boot paths already exercise. Tolerates a supervisor that's already
+  started (Phoenix `ConnCase`, LiveView tests, or an earlier `serve` in
+  the same BEAM) by returning `{:ok, :already_started, pid}` — callers
+  that just need to know the tree is up (both CLI verbs) can pattern-match
+  on `{:ok, _}`.
+  """
+  @spec start_supervision_tree_for_serve() ::
+          {:ok, pid()} | {:ok, :already_started, pid()} | {:error, term()}
+  def start_supervision_tree_for_serve do
+    case start_supervision_tree() do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error, {:already_started, pid}} ->
+        {:ok, :already_started, pid}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   defp start_supervision_tree do
     children = [
       Glorbo.Repo,

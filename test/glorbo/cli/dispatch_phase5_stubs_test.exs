@@ -1,33 +1,56 @@
 defmodule Glorbo.CLI.DispatchPhase5StubsTest do
   @moduledoc """
-  Plan 05-01 Task 2 contract: every Phase-5 verb must be reachable via
-  `Glorbo.CLI.dispatch/1` and must return a tuple with the expected
-  verb atom + Wave-0 stub output. Plans 02 and 03 can edit individual
-  verb modules without touching `dispatch/1`; this suite proves the
-  switch stays wired.
+  Phase-5 dispatch routing contract: every Phase-5 verb must be reachable
+  via `Glorbo.CLI.dispatch/1` and must return a tuple with the expected
+  verb atom. Plan 05-02 filled the lifecycle + logs verbs (output no
+  longer contains "not implemented in Wave 0" for those); Plan 05-03 will
+  fill migrate/backup/restore/console and update those rows.
+
+  This suite proves the dispatch switch stays wired regardless of which
+  verb modules are stubs vs live.
   """
   use ExUnit.Case, async: true
 
-  @stub_verbs [
-    {"up", :up},
-    {"down", :down},
-    {"status", :status},
-    {"serve", :serve},
-    {"run", :run},
-    {"logs", :logs},
-    {"migrate", :migrate},
-    {"backup", :backup},
-    {"restore", :restore},
-    {"console", :console}
+  @dispatch_verbs [
+    # Live after Plan 05-02 (lifecycle + observability) — asserts
+    # routing only; verb-specific behaviour is covered by the per-verb
+    # *_test.exs files.
+    {"migrate", :migrate, :stub},
+    {"backup", :backup, :stub},
+    {"restore", :restore, :stub},
+    {"console", :console, :stub}
   ]
 
-  for {argv, expected_verb} <- @stub_verbs do
-    test "dispatch #{argv} returns Wave-0 stub tuple" do
+  for {argv, expected_verb, stub_or_live} <- @dispatch_verbs do
+    test "dispatch #{argv} routes to :#{expected_verb} (#{stub_or_live})" do
       assert {unquote(expected_verb), code, out} = Glorbo.CLI.dispatch([unquote(argv)])
       assert is_integer(code)
+      assert is_binary(out)
 
-      assert String.contains?(out, "not implemented in Wave 0") or
-               String.contains?(out, unquote(argv))
+      # Plan 05-03 stubs still contain the canonical Wave-0 marker.
+      if unquote(stub_or_live) == :stub do
+        assert String.contains?(out, "not implemented in Wave 0") or
+                 String.contains?(out, unquote(argv))
+      end
+    end
+  end
+
+  # Plan 05-02 lifecycle / logs verbs — dispatched but have live (non-stub)
+  # implementations. Only assert the dispatch routing.
+  @live_verbs [
+    {["up"], :up},
+    {["down"], :down},
+    {["status"], :status},
+    {["serve", "--help"], :serve},
+    {["run"], :run},
+    {["logs"], :logs}
+  ]
+
+  for {argv, expected_verb} <- @live_verbs do
+    test "dispatch #{inspect(argv)} routes to :#{expected_verb} (live)" do
+      assert {unquote(expected_verb), code, out} = Glorbo.CLI.dispatch(unquote(argv))
+      assert is_integer(code)
+      assert is_binary(out)
     end
   end
 
