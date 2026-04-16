@@ -269,24 +269,51 @@ defmodule Glorbo.Approvals.Gate do
   # ---------------------------------------------------------------------------
 
   defp handle_projects_event(rel_path, state) do
-    abs_path = Path.join([state.base, "companies", state.company, rel_path])
+    # WR-01 defense-in-depth: reject any rel_path with `..` traversal segments
+    # before hitting the filesystem. `Path.join/1` does not normalise `..`
+    # segments and `File.read/1` resolves them through the kernel — an
+    # untrusted PubSub publisher could otherwise escape the company dir (e.g.
+    # `projects/../../../etc/passwd.md`).
+    if unsafe_rel_path?(rel_path) do
+      audit(state, %{
+        action: "approval.rejected_traversal",
+        actor: "system",
+        task_path: rel_path,
+        company: state.company
+      })
 
-    case TaskDefinition.parse_file(abs_path, base: state.base, company: state.company) do
-      {:ok, td} ->
-        resolve_status(td, state)
+      :ok
+    else
+      abs_path = Path.join([state.base, "companies", state.company, rel_path])
 
-      {:error, reason} ->
-        audit(state, %{
-          action: "approval.parse_error",
-          actor: "system",
-          task_path: rel_path,
-          error: inspect(reason),
-          company: state.company
-        })
+      case TaskDefinition.parse_file(abs_path, base: state.base, company: state.company) do
+        {:ok, td} ->
+          resolve_status(td, state)
 
-        :ok
+        {:error, reason} ->
+          audit(state, %{
+            action: "approval.parse_error",
+            actor: "system",
+            task_path: rel_path,
+            error: inspect(reason),
+            company: state.company
+          })
+
+          :ok
+      end
     end
   end
+
+  # Reject any path that either contains `..` as a full segment or starts with
+  # `/` (absolute). `String.contains?(rel_path, "..")` would false-positive on
+  # files like `foo..bar.md`; splitting on `/` and checking each segment is
+  # exact.
+  defp unsafe_rel_path?(rel_path) when is_binary(rel_path) do
+    String.starts_with?(rel_path, "/") or
+      rel_path |> Path.split() |> Enum.any?(fn seg -> seg == ".." end)
+  end
+
+  defp unsafe_rel_path?(_), do: true
 
   defp resolve_status(%TaskDefinition{status: "approved"} = td, state) do
     case find_awaiting_row(state, td.task_path) do
