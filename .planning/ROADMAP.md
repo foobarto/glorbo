@@ -82,10 +82,10 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
   - Offline inference via bundled Ollama — LLM-05 moves to the container runtime phase since CLI tools require their providers' cloud endpoints (an `ollama` CLI provider could be added as a follow-on, but is not in Phase 3)
 **Plans**: 5 plans (Wave 0 foundations + Wave 1 parallel brain/body/gate + Wave 2 integration)
 - [x] 03-01-PLAN.md — Wave 0 foundations: schemas, ACLMapper (dormant, reserved for container runtime), UidAllocator (dormant), worker skills/usage extensions, AUDIT_EVENTS.md. Executed before pivot; most artifacts reusable as-is.
-- [ ] 03-02-PLAN.md — Wave 1: Router + Scheduler + BudgetTracker + Budget.Ledger + llm_rates config + network_policy allowlist (AGT-02 cron/mention, AGT-03, AGT-05 Router block, SEC-01, SEC-05)
-- [ ] 03-03-PLAN.md — Wave 1: Agent.Parser + AgentSpec + Skills.Resolver + CLI.Adapter + 3 adapters (ClaudeCode/GeminiCli/Codex) + Dispatch + Agent.Server + AgentSupervisor + Registry (AGT-01 topology, AGT-02 triggers, AGT-04 skills, LLM-03, LLM-04)
-- [ ] 03-04-PLAN.md — Wave 1: TaskDefinition parser + Approvals.Gate GenServer with PubSub subscription + sentinel lifecycle + denial-to-history move (SEC-04)
-- [ ] 03-05-PLAN.md — Wave 2 (checkpoint): Sandbox.Bwrap + PermissionMapper + Network.Proxy (HTTPS CONNECT allowlist) + Company.Supervisor 2→6 + Watcher PubSub extension + Application Registry + Doctor bwrap check + 8 integration tests + human-verify checkpoint (AGT-01 e2e, AGT-05 e2e, SEC-02 kernel, SEC-03 kernel, full phase integration)
+- [x] 03-02-PLAN.md — Wave 1: Router + Scheduler + BudgetTracker + Budget.Ledger + llm_rates config + network_policy allowlist (AGT-02 cron/mention, AGT-03, AGT-05 Router block, SEC-01, SEC-05)
+- [x] 03-03-PLAN.md — Wave 1: Agent.Parser + AgentSpec + Skills.Resolver + CLI.Adapter + 3 adapters (ClaudeCode/GeminiCli/Codex) + Dispatch + Agent.Server + AgentSupervisor + Registry (AGT-01 topology, AGT-02 triggers, AGT-04 skills, LLM-03, LLM-04)
+- [x] 03-04-PLAN.md — Wave 1: TaskDefinition parser + Approvals.Gate GenServer with PubSub subscription + sentinel lifecycle + denial-to-history move (SEC-04)
+- [x] 03-05-PLAN.md — Wave 2 (checkpoint): Sandbox.Bwrap + PermissionMapper + Network.Proxy (HTTPS CONNECT allowlist) + Company.Supervisor 2→6 + Watcher PubSub extension + Application Registry + Doctor bwrap check + 8 integration tests + human-verify checkpoint (AGT-01 e2e, AGT-05 e2e, SEC-02 kernel, SEC-03 kernel, full phase integration)
 
 ### Phase 4: LiveView Dashboard + Real-Time Channels
 **Goal**: A Director opens `http://localhost:4000` and sees the filesystem come alive — every company, agent, task, chat message, approval request, audit event, and live stdout stream, updating in sub-second real time via inotify → PubSub → LiveView.
