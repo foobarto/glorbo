@@ -91,7 +91,10 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 **Goal**: A Director opens `http://localhost:4000` and sees the filesystem come alive — every company, agent, task, chat message, approval request, audit event, and live stdout stream, updating in sub-second real time via inotify → PubSub → LiveView.
 **Depends on**: Phase 3
 **Requirements**: UI-01, UI-02, UI-03
-**Plans**: TBD (1-2 plans)
+**Plans**: 3 plans
+- [ ] 04-01-PLAN.md — Wave 0 foundation: esbuild asset pipeline + CSS token scaffold + Watcher PubSub extension (stdout/wake/per-channel topics) + `Glorbo.TaskDefinition.write/2` atomic frontmatter rewrite + `GlorboWeb.StdoutStreamer` + `DynamicSupervisor` + `GlorboWeb.Actions` (post_message / set_approval / wake_agent) + `Glorbo.Config` (secret_key_base + dashboard_token) + test fixtures + `GlorboWeb.LiveCase` (UI-01, UI-02, UI-03)
+- [ ] 04-02-PLAN.md — Wave 1 parallel: company-scope LiveViews (OverviewLive, CompanyLive, KanbanLive, AgentLive w/ stdout + wake, ApprovalQueueLive) + 7 components (Icon, CompanyCard, AgentCard, TaskCard, ApprovalCard, BudgetRing, StdoutTail) + kanban real-time test + approval end-to-end integration test (UI-01, UI-02, UI-03)
+- [ ] 04-03-PLAN.md — Wave 1 parallel: content-scope LiveViews (ChannelLive, AuditLive, HealthLive) + global chrome (Sidebar, TabBar, HealthDot, app layout shell) + full `app.css` component fill (~500 LOC) + earmark+html_sanitize_ex markdown pipeline + `DashboardToken` plug + error templates (UI-01, UI-02, UI-03)
 **Success Criteria** (what must be TRUE):
   1. `glorbo serve` starts Phoenix on `localhost:4000` and renders all seven views from DESIGN.md §9: company overview, kanban board, agent detail with live stdout tail, chat, approval queue, audit log viewer, and system health (container status, Elixir process tree, resource usage).
   2. When a file changes on disk under `~/.glorbo/companies/`, the dashboard updates in under one second without polling — verified by writing a new task markdown file and observing the kanban column repaint.
