@@ -26,6 +26,10 @@ defmodule Glorbo.Init.Versions do
 
   @podman_version "v5.8.1"
   @ollama_version "v0.20.7"
+  # Plan 03-05: bwrap is a host dependency for Phase 3 CLI-agent isolation.
+  # Minimum 0.8 because the --die-with-parent + --unshare-pid combo + the
+  # --symlink flag we rely on for merged-/usr distros are stable from 0.8.
+  @bwrap_version "0.8"
 
   # Real canonical hashes — computed 2026-04-15 from upstream release artifacts.
   # Verify upstream: `curl -fsSL <url> | sha256sum`.
@@ -43,6 +47,10 @@ defmodule Glorbo.Init.Versions do
 
   @spec ollama_version() :: String.t()
   def ollama_version, do: @ollama_version
+
+  @doc "Minimum bubblewrap version required for the CLI-agent sandbox (Plan 03-05)."
+  @spec bwrap_version() :: String.t()
+  def bwrap_version, do: @bwrap_version
 
   @spec podman_url(:amd64 | :arm64) :: String.t()
   def podman_url(arch) when arch in [:amd64, :arm64] do

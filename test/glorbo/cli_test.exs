@@ -55,8 +55,8 @@ defmodule Glorbo.CLITest do
     assert verb == :doctor
     decoded = Jason.decode!(output)
     assert decoded["version"] == "0.1.0"
-    # Phase 2: 5 Phase-1 + 8 Phase-2 = 13 checks.
-    assert length(decoded["checks"]) == 13
+    # Phase 3 (Plan 03-05): 5 Phase-1 + 8 Phase-2 + 2 Phase-3 = 15 checks.
+    assert length(decoded["checks"]) == 15
     assert Map.has_key?(decoded, "exit_code")
     assert Map.has_key?(decoded, "all_passed")
     # Additive severity field on every check (D-44).

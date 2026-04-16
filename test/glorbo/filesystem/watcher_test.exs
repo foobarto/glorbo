@@ -144,13 +144,17 @@ defmodule Glorbo.Filesystem.WatcherTest do
     end
   end
 
-  describe "Company.Supervisor boot (Test 10, B5)" do
-    test "Test 10: Company.Supervisor starts cleanly with exactly AuditLog + Watcher" do
+  describe "Company.Supervisor boot (Test 10, B5; extended by Plan 03-05)" do
+    test "Test 10: Company.Supervisor now starts 6-child tree (Plan 03-05 extension)" do
       base = TmpGlorboHome.setup()
       company = "sup_#{System.unique_integer([:positive])}"
       File.mkdir_p!(Path.join([base, "companies", company]))
 
       sup_name = :"company_sup_#{System.unique_integer([:positive])}"
+
+      # Plan 03-05 wires Agent.Registry into Application; start it manually
+      # for this test when not running under the full app.
+      _ = Registry.start_link(keys: :unique, name: Glorbo.Agent.Registry)
 
       {:ok, sup_pid} =
         Glorbo.Company.Supervisor.start_link(name: sup_name, company: company, base: base)
@@ -158,7 +162,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       on_exit(fn -> if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid) end)
 
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 2
+      assert length(children) == 6
 
       modules =
         children
@@ -167,10 +171,68 @@ defmodule Glorbo.Filesystem.WatcherTest do
 
       assert MapSet.member?(modules, Glorbo.Company.AuditLog)
       assert MapSet.member?(modules, Glorbo.Filesystem.Watcher)
+      assert MapSet.member?(modules, Glorbo.Company.Router)
+      assert MapSet.member?(modules, Glorbo.Company.Scheduler)
+      assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
+      assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
+    end
+  end
 
-      refute MapSet.member?(modules, Glorbo.Company.Router)
-      refute MapSet.member?(modules, Glorbo.Company.Scheduler)
-      refute MapSet.member?(modules, Glorbo.Company.BudgetTracker)
+  describe "Plan 03-05 PubSub broadcast (W1-W6)" do
+    test "W1: inbox file event broadcasts on company:<co>:inbox" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:inbox")
+
+      inbox_file = Path.join([dir, "agents", "engineer", "inbox", "task1.md"])
+      write!(inbox_file, "---\nid: 1\n---\n")
+
+      assert_receive {:file_event, rel, events}, 2_000
+      assert String.starts_with?(rel, "agents/engineer/inbox/")
+      assert :created in events or :modified in events
+    end
+
+    test "W2: outbox file event broadcasts on company:<co>:outbox" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:outbox")
+
+      outbox_file = Path.join([dir, "agents", "engineer", "outbox", "reply1.md"])
+      write!(outbox_file, "---\nto: agent:ceo\n---\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert String.starts_with?(rel, "agents/engineer/outbox/")
+    end
+
+    test "W3: projects file event broadcasts on company:<co>:projects" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+
+      project_file = Path.join([dir, "projects", "foo", "tasks", "t-01.md"])
+      write!(project_file, "---\nstatus: pending-approval\n---\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert String.starts_with?(rel, "projects/")
+    end
+
+    test "W4: audit file event does NOT broadcast (feedback-loop suppression)" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
+
+      audit_file = Path.join([dir, "audit", "2026-04.jsonl"])
+      write!(audit_file, ~s({"ts":"2026-04-16T00:00:00Z"}\n))
+
+      # Explicit refute — no broadcast on audit/ per Plan 03-05 locked decision.
+      refute_receive {:file_event, _, _}, 400
+    end
+
+    test "W5: channels file event broadcasts on company:<co>:channels" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels")
+
+      chan_file = Path.join([dir, "channels", "general.md"])
+      write!(chan_file, "# general\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert String.starts_with?(rel, "channels/")
     end
   end
 end

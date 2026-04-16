@@ -61,7 +61,10 @@ defmodule Glorbo.Doctor do
       run(:runtime_exec, :warning, fn -> check_runtime_exec(deps) end),
       run(:audit_dir, :blocker, fn -> check_audit_dir(deps) end),
       run(:sockets_dir, :warning, fn -> check_sockets_dir(deps) end),
-      run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end)
+      run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end),
+      # Phase 3 additions (Plan 03-05; D-44 additive-only)
+      run(:bwrap, :blocker, fn -> check_bwrap(deps) end),
+      run(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
     ]
   end
 
@@ -407,6 +410,54 @@ defmodule Glorbo.Doctor do
       tar_has_zstd? -> {:ok, "tar --zstd supported", required}
       which.("zstd") != nil -> {:ok, "zstd binary present", required}
       true -> {:fail, "neither tar --zstd nor zstd binary available", required}
+    end
+  end
+
+  # ------ Phase 3 checks (Plan 03-05) ------
+
+  @spec check_bwrap(keyword()) :: {:ok | :fail, String.t(), String.t()}
+  defp check_bwrap(deps) do
+    which = Keyword.get(deps, :which_fun, &System.find_executable/1)
+    required = "bubblewrap ≥ #{Versions.bwrap_version()}"
+
+    case which.("bwrap") do
+      nil ->
+        {:fail, "bwrap not found in PATH (install `bubblewrap` package)", required}
+
+      path ->
+        cmd = Keyword.get(deps, :cmd_fun, &default_cmd3/3)
+
+        case invoke_cmd(cmd, path, ["--version"], stderr_to_stdout: true) do
+          {output, 0} -> {:ok, String.trim(output), required}
+          {output, code} -> {:fail, "bwrap --version exit #{code}: #{output}", required}
+        end
+    end
+  end
+
+  @spec check_user_namespaces(keyword()) :: {:ok | :fail, String.t(), String.t()}
+  defp check_user_namespaces(deps) do
+    read_fun = Keyword.get(deps, :read_fun, &File.read/1)
+    required = "kernel user namespaces enabled (user.max_user_namespaces > 0)"
+
+    case read_fun.("/proc/sys/user/max_user_namespaces") do
+      {:ok, content} ->
+        trimmed = String.trim(content)
+
+        case Integer.parse(trimmed) do
+          {n, _} when n > 0 ->
+            {:ok, "max_user_namespaces=#{n}", required}
+
+          {0, _} ->
+            {:fail,
+             "userns disabled (max_user_namespaces=0); bwrap --unshare-user-try will fall back insecurely",
+             required}
+
+          :error ->
+            {:fail, "unparseable max_user_namespaces: #{trimmed}", required}
+        end
+
+      {:error, reason} ->
+        {:fail, "cannot read /proc/sys/user/max_user_namespaces: #{inspect(reason)}", required}
     end
   end
 

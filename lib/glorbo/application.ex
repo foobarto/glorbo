@@ -52,6 +52,10 @@ defmodule Glorbo.Application do
       # linking them to ContainerManager (crash isolation invariant).
       {DynamicSupervisor, name: Glorbo.Container.DaemonSupervisor, strategy: :one_for_one},
       Glorbo.ContainerManager,
+      # Plan 03-05: Agent.Registry MUST start before CompanySupervisor — the
+      # per-agent sub-supervisors register their Server/Task.Supervisor pids
+      # here via :via tuples during company boot.
+      Glorbo.Agent.Registry,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       GlorboWeb.Endpoint
     ]

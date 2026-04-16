@@ -179,8 +179,8 @@ defmodule Glorbo.DoctorTest do
         )
 
       results = Doctor.run_checks(deps)
-      # Phase 2 (D-44): 5 Phase-1 checks + 8 Phase-2 additions = 13
-      assert length(results) == 13
+      # D-44 additive-only: 5 Phase-1 + 8 Phase-2 + 2 Phase-3 = 15
+      assert length(results) == 15
 
       Enum.each(results, fn r ->
         assert Map.has_key?(r, :name)
@@ -199,6 +199,7 @@ defmodule Glorbo.DoctorTest do
                ["linux_kernel", "uidmap", "disk_space", "glorbo_dir", "erts_version"]
 
       # Phase-2 additions appended after, order matches D-43.
+      # Phase-3 (Plan 03-05) appends bwrap + user_namespaces at the tail.
       assert Enum.drop(names, 5) ==
                [
                  "podman",
@@ -208,7 +209,9 @@ defmodule Glorbo.DoctorTest do
                  "runtime_exec",
                  "audit_dir",
                  "sockets_dir",
-                 "tar_zstd"
+                 "tar_zstd",
+                 "bwrap",
+                 "user_namespaces"
                ]
     end
   end
@@ -665,7 +668,8 @@ defmodule Glorbo.DoctorTest do
       results = Doctor.run_checks(deps)
       decoded = results |> Formatter.to_json() |> Jason.decode!()
 
-      assert length(decoded["checks"]) == 13
+      # D-44 additive-only: 5 Phase-1 + 8 Phase-2 + 2 Phase-3 = 15
+      assert length(decoded["checks"]) == 15
       # Top-level envelope keys all still present
       for k <- ["version", "checks", "all_passed", "passed_count", "total_count", "exit_code"] do
         assert Map.has_key?(decoded, k), "envelope key #{k} missing"
@@ -686,9 +690,11 @@ defmodule Glorbo.DoctorTest do
       deps = all_pass_deps("28")
       results = Doctor.run_checks(deps)
       decoded = results |> Formatter.to_json() |> Jason.decode!()
-      # Phase 2 checks will fail in this fixture (no podman / no ollama / no
-      # daemon reachable), but all blockers pass — so exit_code should be 2.
-      assert decoded["exit_code"] == 2
+      # Phase 2 warning checks fail under the `/bin/true` fixture (no real
+      # podman/ollama/etc). Phase 3 adds bwrap as a :blocker — the fixture's
+      # `/bin/true --version` returns exit 1, which trips the blocker path.
+      # So exit_code is 1 (at-least-one-blocker-failed) post-Plan-03-05.
+      assert decoded["exit_code"] == 1
     end
   end
 
