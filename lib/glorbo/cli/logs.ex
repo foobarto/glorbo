@@ -117,10 +117,16 @@ defmodule Glorbo.CLI.Logs do
   defp inotify_available?, do: System.find_executable("inotifywait") != nil
 
   defp follow_inotify(path, kind) do
-    {:ok, watcher} = FileSystem.start_link(dirs: [Path.dirname(path)])
+    # WR-02: the file_system library emits absolute paths in its events
+    # regardless of whether the caller subscribed with relative ones. If
+    # GLORBO_HOME is relative (e.g., `./.glorbo` in dev), `path` would be
+    # relative and the `^path` pattern match in `listen_loop/3` would
+    # never fire. Normalize up front.
+    abs_path = Path.expand(path)
+    {:ok, watcher} = FileSystem.start_link(dirs: [Path.dirname(abs_path)])
     FileSystem.subscribe(watcher)
-    initial_size = File.stat!(path).size
-    listen_loop(path, kind, initial_size)
+    initial_size = File.stat!(abs_path).size
+    listen_loop(abs_path, kind, initial_size)
   end
 
   defp listen_loop(path, kind, last_size) do
