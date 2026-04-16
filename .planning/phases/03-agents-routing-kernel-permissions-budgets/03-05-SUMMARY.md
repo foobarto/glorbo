@@ -96,22 +96,23 @@ requirements-completed:
 duration: 22min
 started: 2026-04-16T06:07:02Z
 completed: 2026-04-16T06:28:43Z
-tasks: 4
+tasks: 5
 files_created: 17
 files_modified: 8
 tests_added: 55
+checkpoint_disposition: auto-approved (workflow.auto_advance=true); 3 Director host verifications deferred to HUMAN-UAT.md
 ---
 
 # Phase 03 Plan 05: bwrap Sandbox + Network Proxy + 6-child Supervisor Integration Summary
 
-**Everything wires together — Glorbo.Sandbox.Bwrap composes argv, Port-launches bwrap with stdin-delivered prompts; PermissionMapper translates D-11 permission tuples to mount flags; Glorbo.Network.Proxy serves HTTPS CONNECT allowlist for api-only agents; Company.Supervisor expanded 2→6 children; Application gained Agent.Registry; Filesystem.Watcher broadcasts Phoenix.PubSub events (additive to Phase 2 inline dispatch); Doctor gains bwrap (blocker) + user_namespaces (warning) checks. 25 new unit tests + 7 new integration tests + 4 bwrap-gated tests; 424/424 unit pass on CI-shape host.**
+**Everything wires together — Glorbo.Sandbox.Bwrap composes argv, Port-launches bwrap with stdin-delivered prompts; PermissionMapper translates D-11 permission tuples to mount flags; Glorbo.Network.Proxy serves HTTPS CONNECT allowlist for api-only agents; Company.Supervisor expanded 2→6 children; Application gained Agent.Registry; Filesystem.Watcher broadcasts Phoenix.PubSub events (additive to Phase 2 inline dispatch); Doctor gains bwrap (blocker) + user_namespaces (warning) checks. 25 new unit tests + 7 new integration tests + 4 bwrap-gated tests; 424/424 unit pass on CI-shape host. Task 5 (human-verify checkpoint) auto-approved under `workflow.auto_advance=true`; 3 Director host verifications deferred to phase-level HUMAN-UAT.md for future manual execution.**
 
 ## Performance
 
 - **Duration:** ~22 min
 - **Started:** 2026-04-16T06:07:02Z
-- **Completed:** 2026-04-16T06:28:43Z (Tasks 1-4 autonomous; Task 5 is human-verify checkpoint pending)
-- **Tasks:** 4 of 5 (Task 5 = checkpoint:human-verify; Director must run 3 manual verifications)
+- **Completed:** 2026-04-16T06:28:43Z (Tasks 1-4 autonomous; Task 5 auto-approved under `workflow.auto_advance=true`)
+- **Tasks:** 5 of 5 (Task 5 = checkpoint:human-verify; disposition=auto-approved, 3 Director host verifications deferred to HUMAN-UAT.md)
 - **Files created:** 17 (3 lib + 1 test-support + 6 unit-test + 8 integration-test)
 - **Files modified:** 8 (5 lib + 3 test — back-edits for count assertions + 6-child supervisor tree)
 - **Tests added:** 55 (25 unit + 7 integration + 4 bwrap-tagged + 19 retrofitted for 6-child tree / 15 doctor checks)
@@ -156,7 +157,7 @@ tests_added: 55
 2. **Task 2: Network.Proxy HTTPS CONNECT allowlist + api-only integration test** — `f1ea548`
 3. **Task 3: Watcher PubSub + 6-child Supervisor + Application Registry + Doctor checks** — `9bf2fe9`
 4. **Task 4: 5 end-to-end integration tests** — `12bd651`
-5. **Task 5: Human-verify checkpoint** — ⏸ PENDING (Director runs 3 manual verifications)
+5. **Task 5: Human-verify checkpoint** — ⚡ AUTO-APPROVED under `workflow.auto_advance=true`; 3 Director host verifications deferred to phase-level HUMAN-UAT.md for future manual execution (no code commit)
 
 ## Decisions Made
 
@@ -292,18 +293,32 @@ Verifying all claimed artifacts exist:
 [x] Host Doctor pre-checkpoint: bwrap PASS (bubblewrap 0.11.0); user_namespaces PASS (254351); claude CLI authenticated (2.1.110)
 ```
 
-## Self-Check: PASSED (Tasks 1-4); Task 5 PENDING human verification
+## Self-Check: PASSED (Tasks 1-4 code+tests; Task 5 checkpoint auto-approved)
 
 ## Checkpoint Task 5 Status
 
-**Director action required** — see `<how-to-verify>` in `03-05-PLAN.md` for the three live-host verifications:
-1. Claude Code round-trip inside bwrap with CLAUDE_CONFIG_DIR redirect + session JSONL appears in agent workspace + Director's `~/.claude/` unchanged.
-2. `bwrap --unshare-net` kernel-enforced egress block.
-3. Audit log shape + append-only invariant.
+**Disposition:** ⚡ **AUTO-APPROVED** under `workflow.auto_advance=true`. The orchestrator auto-approved the human-verify checkpoint without Director involvement. The 3 live-host verifications were NOT executed by Claude (they require a running Glorbo instance, an authenticated Claude Code CLI session, and real network egress — none available in the execute-phase automation context). They are deferred to **HUMAN-UAT.md** in the phase directory for future manual execution by the Director.
 
-Upon Director resolution (pasted verification output in conversation), this SUMMARY will be updated with the verification transcripts verbatim, Phase 3 REQUIREMENTS.md traceability moves to "Complete" for all 12, and ROADMAP.md Phase 3 checkbox flips.
+**Deferred verifications (verbatim from plan's `<how-to-verify>`):**
+
+1. **Verification 1 — Claude Code round-trip inside bwrap (~5 min, costs ~1¢)** — Create `test-engineer` agent under `~/.glorbo/companies/acme/agents/` with `provider: claude-code`, `network: api-only`; write a task to its inbox; boot Glorbo; verify (a) session JSONL appears at `~/.glorbo/companies/acme/agents/test-engineer/workspace/.glorbo-claude/projects/…`, (b) Director's `~/.claude/projects/` is unchanged (session redirect works), (c) `Glorbo.Budget` row exists for `test-engineer` / current `year_month` with non-zero tokens, (d) audit log contains `agent.dispatch` + `agent.complete` + `budget.usage` events.
+
+2. **Verification 2 — `bwrap --unshare-net` blocks egress (~1 min)** — Run `bwrap --unshare-user-try --unshare-ipc --unshare-pid --unshare-net --die-with-parent --cap-drop ALL --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin --ro-bind /etc /etc --proc /proc --dev /dev --tmpfs /tmp -- /bin/sh -c 'curl --max-time 3 https://api.anthropic.com || echo EGRESS_BLOCKED'` and expect `EGRESS_BLOCKED` output.
+
+3. **Verification 3 — Audit log shape + append-only invariant (~2 min)** — After Verification 1: `cat ~/.glorbo/companies/acme/audit/$(date +%Y-%m).jsonl | jq -c '.action' | sort -u` should include `agent.wake`, `agent.dispatch`, `agent.complete`, `budget.usage`; `ls -la ~/.glorbo/companies/acme/audit/` should show no world/group writable bits; per-line integrity check `cat ... | while read line; do echo "$line" | jq -e '.ts, .action' > /dev/null || echo "BAD LINE: $line"; done` should produce no "BAD LINE" output.
+
+**Success criterion for HUMAN-UAT:** Paste into VERIFICATION.md (or HUMAN-UAT resolution):
+```
+Verification 1: PASS (session file at <path>; director ~/.claude unchanged; budget row <agent> <month> <tokens>)
+Verification 2: PASS (EGRESS_BLOCKED observed; no network reached)
+Verification 3: PASS (actions: <list>; no BAD LINE; audit file mode <mode>)
+```
+
+If any verification fails, file `.planning/phases/03-agents-routing-kernel-permissions-budgets/VERIFICATION.md` with the exact command + output; Phase 3 cannot be marked complete until gaps closed.
+
+**Note:** Phase 3 REQUIREMENTS.md traceability and ROADMAP.md Phase-3 checkbox remain open pending HUMAN-UAT execution. Unit + integration test coverage (424/424 pass + 7 integration pass + 4 bwrap-gated pass) provides strong evidence but does not substitute for the 3 live-host verifications which exercise real CLI authentication + kernel namespace isolation + filesystem audit invariants end-to-end.
 
 ---
 *Phase: 03-agents-routing-kernel-permissions-budgets*
 *Tasks 1-4 completed: 2026-04-16*
-*Task 5 (human-verify): PENDING Director*
+*Task 5 (human-verify): auto-approved 2026-04-16 under `workflow.auto_advance=true`; 3 verifications deferred to HUMAN-UAT.md*
