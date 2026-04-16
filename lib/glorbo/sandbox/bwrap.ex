@@ -293,7 +293,32 @@ defmodule Glorbo.Sandbox.Bwrap do
     proxy_env = proxy_env_for(opts)
 
     (Map.to_list(cli_env) ++ proxy_env)
-    |> Enum.flat_map(fn {k, v} -> ["--setenv", k, v] end)
+    |> Enum.flat_map(fn {k, v} ->
+      unless safe_env?(k, v) do
+        raise ArgumentError,
+              "unsafe env var (control chars / reserved bytes): #{inspect({k, v})}"
+      end
+
+      ["--setenv", k, v]
+    end)
+  end
+
+  # WR-07: refuse env vars whose keys or values contain execve-hostile bytes.
+  # `\0` truncates silently in execve; `\n` and `\r` would persist through to
+  # any future shell consumer of the var (e.g. `echo "$HTTPS_PROXY"`); `=` in
+  # a key is ambiguous under bwrap's --setenv parsing. Keys must also match
+  # POSIX env-var name shape (no leading digit, alphanum + underscore only)
+  # so a future adapter cannot feed in something like `PATH\tinjected`.
+  defp safe_env?(k, v) when is_binary(k) and is_binary(v) do
+    valid_key?(k) and not String.contains?(v, ["\0", "\n", "\r"])
+  end
+
+  defp safe_env?(_, _), do: false
+
+  defp valid_key?(""), do: false
+
+  defp valid_key?(k) do
+    Regex.match?(~r/\A[A-Za-z_][A-Za-z0-9_]*\z/, k)
   end
 
   defp proxy_env_for(%{network_policy: :api_only, proxy_url: url}) when is_binary(url) do
