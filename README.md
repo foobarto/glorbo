@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Glorbo" width="520">
+  <img src="assets/logo.png" alt="Glorbo" width="560">
 </p>
 
 <p align="center">
