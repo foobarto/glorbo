@@ -53,12 +53,17 @@ defmodule Glorbo.Company.AuditLog do
 
   @impl GenServer
   def handle_call({:append, entry}, _from, state) do
+    # WR-10: normalise atom/string keys to a single string-keyed map so the
+    # "atom wins over string" behaviour (surprising when both are present)
+    # disappears and every helper below reads one key taxonomy.
+    entry = normalize_entry(entry)
+
     ts = entry_ts(entry)
     ts_iso = DateTime.to_iso8601(ts)
     company = entry_company(entry)
-    actor = to_string(entry[:actor] || entry["actor"] || "system")
-    action = to_string(entry[:action] || entry["action"] || "unknown")
-    target = entry[:target] || entry["target"]
+    actor = to_string(entry["actor"] || "system")
+    action = to_string(entry["action"] || "unknown")
+    target = entry["target"]
     detail_map = drop_known_keys(entry)
 
     record = %{
@@ -81,12 +86,17 @@ defmodule Glorbo.Company.AuditLog do
     {:reply, :ok, state}
   end
 
+  # WR-10: stringify all keys so downstream lookups read one taxonomy only.
+  defp normalize_entry(entry) do
+    for {k, v} <- entry, into: %{}, do: {to_string(k), v}
+  end
+
   defp entry_ts(entry) do
     # CR-02: Normalise to UTC up-front so both the JSONL `ts` field and the
     # month-bucket filename derive from the same timezone view. A caller that
     # passes a non-UTC DateTime otherwise lands in the wrong monthly bucket
     # on timezone boundaries.
-    case entry[:ts] || entry["ts"] do
+    case entry["ts"] do
       %DateTime{time_zone: "Etc/UTC"} = dt -> dt
       %DateTime{} = dt -> DateTime.shift_zone!(dt, "Etc/UTC")
       _ -> DateTime.utc_now()
@@ -94,14 +104,12 @@ defmodule Glorbo.Company.AuditLog do
   end
 
   defp entry_company(entry) do
-    raw = entry[:company] || entry["company"] || "_system"
+    raw = entry["company"] || "_system"
     to_string(raw)
   end
 
   defp drop_known_keys(entry) do
-    entry
-    |> Map.drop([:ts, :company, :actor, :action, :target])
-    |> Map.drop(["ts", "company", "actor", "action", "target"])
+    Map.drop(entry, ["ts", "company", "actor", "action", "target"])
   end
 
   defp mirror_to_sqlite(company, actor, action, target, detail_map, ts) do
