@@ -27,6 +27,9 @@ Event keys are additive to Phase 2's set (which defined `init.*`, `reindex.*`, `
 | `agents.create_blocked` | sender_agent | Router | `from: string, attempted_target: string` |
 | `scheduler.invalid_cron` | system | Scheduler | `agent: string, cron: string, reason: string` |
 | `provider.unavailable` | system | Dispatch | `agent: string, provider: string` |
+| `approval.spurious` | director | Gate | `agent: string, task_path: string, status: string` (status was `approved`/`denied` but no sentinel existed — e.g. Director pre-approved) |
+| `approval.parse_error` | system | Gate | `task_path: string, error: string` (task.md couldn't be parsed; kept as warning, not blocker) |
+| `approval.rename_failed` | system | Gate | `task_path: string, target: string, error: string` (denial flow's File.rename failed) |
 
 ## Conventions
 

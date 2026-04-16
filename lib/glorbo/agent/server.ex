@@ -156,6 +156,16 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
+  def handle_call(:status, _from, state) do
+    {:reply,
+     %{
+       state: state.status,
+       current_task: state.current_task,
+       pending_wake: state.pending_wake,
+       last_exit_status: state.last_exit_status
+     }, state}
+  end
+
   defp handle_wake_idle(state, trigger, task) do
     case resolve_task(state, trigger, task) do
       nil ->
@@ -166,16 +176,6 @@ defmodule Glorbo.Agent.Server do
       resolved ->
         {:reply, :ok, start_dispatch(state, resolved)}
     end
-  end
-
-  def handle_call(:status, _from, state) do
-    {:reply,
-     %{
-       state: state.status,
-       current_task: state.current_task,
-       pending_wake: state.pending_wake,
-       last_exit_status: state.last_exit_status
-     }, state}
   end
 
   # Dispatch Task completed normally — demonitor + update state + pop pending

@@ -40,7 +40,7 @@ defmodule Glorbo.TaskDefinition do
       file_path outside the specified company's directory (e.g. pointing
       at another company's task or a Glorbo-internal file). Strict prefix
       match is cheap and prevents action-at-a-distance bugs.
-    * No `String.to_atom/1` on user input. `status`, `title`, `assigned_to`,
+    * No atom coercion on user input. `status`, `title`, `assigned_to`,
       `denial_reason` are kept as raw strings; `requires_approval` is
       pattern-matched against a fixed allowlist.
     * Phase 2's safe-loader contract (10 MB cap, yamerl safe mode) is
