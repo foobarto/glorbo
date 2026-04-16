@@ -136,9 +136,10 @@ defmodule Glorbo.Init.Orchestrator do
       podman_fun = Keyword.get(opts, :ensure_podman_fun, &BinaryBootstrap.ensure_podman/1)
       ollama_fun = Keyword.get(opts, :ensure_ollama_fun, &BinaryBootstrap.ensure_ollama/1)
 
-      pr = podman_fun.(opts)
-      or_ = ollama_fun.(opts)
-      combine([pr, or_])
+      # IN-11: domain-named variables are easier to scan than `or_`.
+      podman_result = podman_fun.(opts)
+      ollama_result = ollama_fun.(opts)
+      combine([podman_result, ollama_result])
     end
   end
 
@@ -191,11 +192,17 @@ defmodule Glorbo.Init.Orchestrator do
 
       Enum.any?(results, &match?({:error, _}, &1)) ->
         errors = Enum.filter(results, &match?({:error, _}, &1))
+        # WR-09: preserve successfully-downloaded entries in the error detail
+        # so operators can see e.g. "podman installed, ollama failed" rather
+        # than a blanket "had errors" that hides the partial success.
+        downloaded = Enum.filter(results, &match?({:ok, :downloaded, _}, &1))
 
         %{
           status: :error,
           errors: errors,
-          detail: "binary bootstrap had errors: #{inspect(errors)}"
+          downloaded: downloaded,
+          detail:
+            "binary bootstrap had errors: #{inspect(errors)}; downloaded: #{inspect(downloaded)}"
         }
 
       true ->
