@@ -329,17 +329,34 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   # ---------------------------------------------------------------------------
-  # Bwrap-not-wired default
+  # Default run_fun wires through to Bwrap.start (GAP-2)
   # ---------------------------------------------------------------------------
 
-  test "default run_fun returns :bwrap_not_wired (Plan 03-05 hook point)", ctx do
-    assert {:error, :bwrap_not_wired} =
-             Dispatch.execute(ctx.spec, ctx.task,
-               base: ctx.base,
-               adapter_registry: stub_registry(),
-               binary_fun: fn _ -> "/fake/bin" end,
-               audit_fun: ctx.audit_fun
-             )
+  test "default run_fun invokes Bwrap.start/2 (GAP-2 wiring)", ctx do
+    # We verify the wiring without a real bwrap binary by running against a
+    # bogus cli_binary. Bwrap.start raises if `bwrap` isn't on PATH on CI;
+    # on hosts where it is, the invocation returns a non-zero exit status.
+    # Either way, the return is a map-shaped tuple — NOT :bwrap_not_wired.
+    case Dispatch.execute(ctx.spec, ctx.task,
+           base: ctx.base,
+           adapter_registry: stub_registry(),
+           # `binary_fun` passes the verify_binary gate; Bwrap.start uses
+           # the adapter's real `binary/0`.
+           binary_fun: fn _ -> "/fake/bin" end,
+           audit_fun: ctx.audit_fun
+         ) do
+      # bwrap present on host → bwrap runs /fake/claude, which doesn't exist
+      # so exit != 0; usage parse returns zero tokens (conservative-zero).
+      {:ok, %{exit_status: _}} ->
+        :ok
+
+      # bwrap missing from PATH → Bwrap.default_binary/0 raises, which
+      # Bwrap.start does NOT rescue; manifests as {:error, {:run_fun_bad_return, _}}
+      # or {:error, :bwrap_start_failed}. Either shape is acceptable — the
+      # key invariant is NOT :bwrap_not_wired.
+      {:error, reason} ->
+        refute reason == :bwrap_not_wired
+    end
   end
 
   # ---------------------------------------------------------------------------

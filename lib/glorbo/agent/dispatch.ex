@@ -35,8 +35,15 @@ defmodule Glorbo.Agent.Dispatch do
     * `:record_usage_fun` — `(spec, task, usage -> :ok)`
     * `:adapter_registry` — `%{provider_string => Adapter module}`
       (default is the three v0.0.1 adapters)
-    * `:run_fun` — `(argv, env, spec -> {:ok, result_map} | {:error, reason})`
-      default returns `{:error, :bwrap_not_wired}` (Plan 03-05 overrides)
+    * `:run_fun` — `(argv, env, spec, ctx -> {:ok, result_map} | {:error,
+      reason})`. `ctx` is a map containing resolved dispatch context
+      (`prompt, workspace, run_dir, usage_dir, company_path, inbox_path,
+      outbox_path, permissions, network_policy, cli_auth_binds, proxy_url,
+      timeout_seconds`). Default is
+      `&Glorbo.Sandbox.Bwrap.start/2`-based wiring that composes
+      `invocation_opts` + `run_opts` from spec + ctx. Legacy 3-arity
+      run_funs (returning a 3-arg function) are still supported for
+      backward compatibility with existing test callers.
     * `:audit_fun` — `(company, entry -> any)`
     * `:fs_fun` — map of filesystem ops (`mkdir_p!`, `write!`, `rm_rf!`)
     * `:clock_fun` — `(-> integer)` monotonic time for duration; default
@@ -56,6 +63,7 @@ defmodule Glorbo.Agent.Dispatch do
   alias Glorbo.CLI.Adapter.Codex
   alias Glorbo.CLI.Adapter.GeminiCli
   alias Glorbo.Company.AuditLog
+  alias Glorbo.Sandbox.Bwrap
   alias Glorbo.Skills.Resolver
 
   @prompt_max_bytes 5 * 1024 * 1024
@@ -106,9 +114,10 @@ defmodule Glorbo.Agent.Dispatch do
          :ok <- write_prompt(run_dir, task.prompt, opts),
          argv <- adapter.args(spec, prompt_path(run_dir), []),
          env <- adapter.env(spec, workspace),
+         ctx <- build_run_ctx(spec, task, adapter, workspace, run_dir, opts),
          :ok <- emit_dispatch_audit(spec, task, opts),
          start <- clock(opts),
-         {:ok, run_result} <- invoke_run_fun(argv, env, spec, opts),
+         {:ok, run_result} <- invoke_run_fun(argv, env, spec, ctx, opts),
          duration_ms <- compute_duration(start, opts),
          {:ok, usage} <- parse_usage_for(adapter, spec, workspace, run_result, opts),
          :ok <- record_usage(spec, task, usage, opts),
@@ -207,14 +216,89 @@ defmodule Glorbo.Agent.Dispatch do
     :ok
   end
 
-  defp invoke_run_fun(argv, env, spec, opts) do
-    fun = Keyword.get(opts, :run_fun, fn _argv, _env, _spec -> {:error, :bwrap_not_wired} end)
+  defp invoke_run_fun(argv, env, spec, ctx, opts) do
+    fun = Keyword.get(opts, :run_fun, &default_bwrap_run_fun/4)
+    result = call_run_fun(fun, argv, env, spec, ctx)
 
-    case fun.(argv, env, spec) do
-      {:ok, result} when is_map(result) -> {:ok, result}
+    case result do
+      {:ok, r} when is_map(r) -> {:ok, r}
       {:error, _} = err -> err
       other -> {:error, {:run_fun_bad_return, other}}
     end
+  end
+
+  # Dispatch the run_fun honouring both the 4-arity (new, ctx-aware) and
+  # 3-arity (legacy) signatures. Test callers in this codebase still pass
+  # 3-arg funs; production Agent.Server wires the 4-arg
+  # default_bwrap_run_fun/4.
+  defp call_run_fun(fun, argv, env, spec, ctx) when is_function(fun, 4),
+    do: fun.(argv, env, spec, ctx)
+
+  defp call_run_fun(fun, argv, env, spec, _ctx) when is_function(fun, 3),
+    do: fun.(argv, env, spec)
+
+  # Build the run context fed to the run_fun. Everything the default
+  # Bwrap wiring needs to assemble an invocation — resolved from spec,
+  # task, adapter, and pre-computed workspace/run_dir.
+  defp build_run_ctx(spec, task, adapter, workspace, run_dir, opts) do
+    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    company_path = Path.join([base, "companies", spec.company])
+    agent_dir = Path.join([company_path, "agents", spec.slug])
+
+    usage_dir =
+      case adapter.usage_path(spec, workspace) do
+        {:jsonl_dir, dir} -> dir
+        {:jsonl_file, path} -> Path.dirname(path)
+        :stdout -> nil
+      end
+
+    %{
+      prompt: task.prompt,
+      workspace: workspace,
+      run_dir: run_dir,
+      usage_dir: usage_dir,
+      company_path: company_path,
+      inbox_path: Path.join(agent_dir, "inbox"),
+      outbox_path: Path.join(agent_dir, "outbox"),
+      permissions: spec.permissions,
+      network_policy: spec.network,
+      cli_auth_binds: Keyword.get(opts, :cli_auth_binds, []),
+      proxy_url: Keyword.get(opts, :proxy_url),
+      timeout_seconds: spec.timeout_seconds,
+      adapter: adapter
+    }
+  end
+
+  # Default run_fun: compose Bwrap invocation_opts + run_opts from ctx/spec,
+  # call Glorbo.Sandbox.Bwrap.start/2, normalise the return shape.
+  @doc false
+  def default_bwrap_run_fun(_argv, env, spec, ctx) do
+    adapter = ctx.adapter
+
+    invocation_opts = %{
+      agent_workspace: ctx.workspace,
+      inbox_path: ctx.inbox_path,
+      outbox_path: ctx.outbox_path,
+      company_path: ctx.company_path,
+      permissions: ctx.permissions,
+      network_policy: ctx.network_policy,
+      cli_auth_binds: ctx.cli_auth_binds,
+      cli_env: env,
+      proxy_url: ctx.proxy_url,
+      timeout_seconds: ctx.timeout_seconds
+    }
+
+    cli_binary = adapter.binary()
+    prompt_path_in_run_dir = prompt_path(ctx.run_dir)
+
+    run_opts = [
+      cli_binary: cli_binary,
+      cli_args: adapter.args(spec, prompt_path_in_run_dir, []),
+      prompt: ctx.prompt,
+      usage_dir: ctx.usage_dir
+    ]
+
+    Bwrap.start(invocation_opts, run_opts)
   end
 
   defp compute_duration(start, opts) do
