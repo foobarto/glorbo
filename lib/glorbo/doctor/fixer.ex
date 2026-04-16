@@ -138,6 +138,8 @@ defmodule Glorbo.Doctor.Fixer do
     fixer.(check)
   rescue
     e -> {:error, Exception.message(e)}
+  catch
+    :exit, reason -> {:error, {:exited, inspect(reason)}}
   end
 
   defp format_summary(%{
