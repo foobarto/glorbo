@@ -15,9 +15,31 @@ defmodule GlorboWeb.ErrorHTML do
   #
   # embed_templates "error_html/*"
 
-  # The default is to render a plain text page based on
-  # the template name. For example, "404.html" becomes
-  # "Not Found".
+  # 04-UI-SPEC §Error states — specific copy for the 404 / 500 pages
+  # that ship the dashboard. Other templates fall back to the default
+  # `status_message_from_template` plain-text render.
+  def render("404.html", assigns) do
+    ~H"""
+    <section class="gl-view">
+      <h1 class="gl-heading gl-heading--display">Not found.</h1>
+      <p class="gl-muted">
+        Check <code>~/.glorbo/companies/</code> or run <code>glorbo reindex</code>.
+      </p>
+    </section>
+    """
+  end
+
+  def render("500.html", assigns) do
+    ~H"""
+    <section class="gl-view">
+      <h1 class="gl-heading gl-heading--display">Something broke.</h1>
+      <p class="gl-muted">
+        Check <code>~/.glorbo/logs/</code> and report at github.com/foobarto/glorbo.
+      </p>
+    </section>
+    """
+  end
+
   def render(template, _assigns) do
     Phoenix.Controller.status_message_from_template(template)
   end

@@ -1,59 +1,42 @@
 /*
- * Glorbo dashboard — design token scaffold.
- *
- * Phase 4 Wave 0 seeds the `--gl-*` CSS custom-property contract; Wave 1
- * (04-03) layers component + layout styles on top. Every value below is
- * locked by 04-UI-SPEC.md Verification Checklist — do not tweak without
- * updating the spec first.
- *
- * Token families:
- *   --gl-space-*   spacing scale (8-point grid)
- *   --gl-font-*    typography sizes (exactly 4 roles)
- *   --gl-bg,       surface palette (GitHub-dark base)
- *   --gl-surface,
- *   --gl-surface-raised,
- *   --gl-border
- *   --gl-fg*       text palette (AA contrast vs surfaces)
- *   --gl-accent    reserved-use accent (selected nav, links, CTAs)
- *   --gl-success,  semantic badge/dot colors (never on body copy)
- *   --gl-warning,
- *   --gl-danger
+ * Glorbo dashboard — Phase 4 Plan 03 CSS fill.
+ * Implements every `.gl-*` selector referenced by Plans 02 and 03.
+ * Tokens verbatim from 04-UI-SPEC.md Verification Checklist.
  */
 :root {
-  /* Spacing (04-UI-SPEC §Spacing Scale) */
+  /* Spacing (8-point grid) */
   --gl-space-xs: 4px;
   --gl-space-sm: 8px;
   --gl-space-md: 16px;
   --gl-space-lg: 24px;
   --gl-space-xl: 32px;
   --gl-space-2xl: 48px;
-
-  /* Font sizes (04-UI-SPEC §Typography — exactly 4) */
+  /* Typography (exactly 4 roles) */
   --gl-font-body: 14px;
   --gl-font-label: 12px;
   --gl-font-heading: 16px;
   --gl-font-display: 20px;
-
-  /* Surfaces (GitHub-dark, 04-UI-SPEC §Color) */
+  /* Surfaces — GitHub-dark */
   --gl-bg: #0d1117;
   --gl-surface: #161b22;
   --gl-surface-raised: #21262d;
   --gl-border: #30363d;
-
   /* Text */
   --gl-fg: #c9d1d9;
   --gl-fg-muted: #8b949e;
   --gl-fg-subtle: #6e7681;
-
-  /* Accent (reserved — 04-UI-SPEC §Color Accent reserved list) */
+  /* Accent (reserved use) */
   --gl-accent: #58a6ff;
-
   /* Semantic */
   --gl-success: #3fb950;
   --gl-warning: #d29922;
   --gl-danger: #f85149;
 }
 
+/* ========== Reset + base ========== */
+*,
+*::before,
+*::after { box-sizing: border-box; }
 html,
 body {
   margin: 0;
@@ -63,4 +46,412 @@ body {
   font-family: ui-monospace, Menlo, Consolas, "JetBrains Mono", monospace;
   font-size: var(--gl-font-body);
   line-height: 1.5;
+}
+a { color: inherit; text-decoration: none; }
+code {
+  background: var(--gl-surface-raised);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+pre { font-family: inherit; margin: 0; }
+button { font-family: inherit; font-size: inherit; }
+*:focus-visible {
+  outline: 2px solid var(--gl-accent);
+  outline-offset: 2px;
+}
+
+/* ========== App shell (D-09) ========== */
+.gl-app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 1fr;
+  height: 100vh;
+}
+.gl-main {
+  background: var(--gl-bg);
+  padding: var(--gl-space-lg) var(--gl-space-xl);
+  overflow-y: auto;
+}
+
+/* ========== Sidebar ========== */
+.gl-sidebar {
+  background: var(--gl-surface);
+  border-right: 1px solid var(--gl-border);
+  display: flex;
+  flex-direction: column;
+  padding: var(--gl-space-md) 0;
+}
+.gl-sidebar__header {
+  padding: 0 var(--gl-space-md) var(--gl-space-md);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+}
+.gl-sidebar nav { display: flex; flex-direction: column; }
+.gl-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-xs);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  color: var(--gl-fg);
+  border-left: 2px solid transparent;
+  transition: background-color 200ms ease;
+}
+.gl-sidebar__item:hover { background: var(--gl-surface-raised); }
+.gl-sidebar__item--active {
+  border-left-color: var(--gl-accent);
+  color: var(--gl-accent);
+}
+.gl-sidebar__health-strip {
+  margin-top: auto;
+  padding: var(--gl-space-md);
+  border-top: 1px solid var(--gl-border);
+  color: var(--gl-fg-muted);
+  font-size: var(--gl-font-label);
+}
+.gl-sidebar__health-strip a {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-xs);
+}
+
+/* ========== Typography helpers ========== */
+.gl-heading { margin: 0 0 var(--gl-space-sm); font-weight: 600; }
+.gl-heading--display {
+  font-size: var(--gl-font-display);
+  line-height: 1.2;
+  margin-bottom: var(--gl-space-md);
+}
+.gl-heading--heading {
+  font-size: var(--gl-font-heading);
+  line-height: 1.3;
+}
+.gl-muted { color: var(--gl-fg-muted); }
+.gl-subtle { color: var(--gl-fg-subtle); }
+.gl-tabular { font-variant-numeric: tabular-nums; }
+
+/* ========== View wrapper ========== */
+.gl-view { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-view__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border);
+  padding-bottom: var(--gl-space-sm);
+  margin-bottom: var(--gl-space-lg);
+}
+.gl-empty {
+  padding: var(--gl-space-2xl) 0;
+  text-align: center;
+  color: var(--gl-fg-muted);
+}
+
+/* ========== Tabs ========== */
+.gl-tabs {
+  display: flex;
+  gap: var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border);
+  margin-bottom: var(--gl-space-lg);
+}
+.gl-tab {
+  padding: var(--gl-space-sm) 0;
+  color: var(--gl-fg-muted);
+  border-bottom: 2px solid transparent;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+.gl-tab:hover { color: var(--gl-fg); }
+.gl-tab--active {
+  color: var(--gl-accent);
+  border-bottom-color: var(--gl-accent);
+}
+
+/* ========== Cards ========== */
+.gl-company-card,
+.gl-agent-card,
+.gl-task-card,
+.gl-approval-card,
+.gl-audit-entry,
+.gl-channel-message {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  border-radius: 6px;
+  padding: var(--gl-space-md);
+  color: inherit;
+  display: block;
+  transition: background-color 200ms ease;
+}
+.gl-company-card:hover,
+.gl-agent-card:hover,
+.gl-task-card:hover,
+.gl-approval-card:hover { background: var(--gl-surface-raised); }
+.gl-company-card__header,
+.gl-agent-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-xs);
+  margin-bottom: var(--gl-space-sm);
+}
+.gl-company-card__name,
+.gl-agent-card__name { font-weight: 600; }
+.gl-company-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gl-space-xs);
+  color: var(--gl-fg-muted);
+  font-size: var(--gl-font-label);
+}
+.gl-agent-stub {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gl-space-xs);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  border-radius: 6px;
+  transition: background-color 200ms ease;
+}
+.gl-agent-stub:hover { background: var(--gl-surface-raised); }
+
+/* ========== Grids ========== */
+.gl-grid { display: grid; gap: var(--gl-space-lg); }
+.gl-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.gl-grid--agents {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* ========== Kanban ========== */
+.gl-kanban { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-kanban__banner {
+  background: var(--gl-surface);
+  color: var(--gl-fg-muted);
+  font-size: var(--gl-font-label);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-radius: 6px;
+}
+.gl-kanban__board {
+  display: flex;
+  gap: var(--gl-space-xl);
+  overflow-x: auto;
+  padding-bottom: var(--gl-space-md);
+}
+.gl-kanban__column {
+  min-width: 280px;
+  max-width: 360px;
+  flex: 1;
+  background: var(--gl-surface);
+  border-radius: 6px;
+  padding: var(--gl-space-md);
+}
+.gl-kanban__column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--gl-space-sm);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+}
+.gl-kanban__count {
+  color: var(--gl-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.gl-kanban__empty {
+  color: var(--gl-fg-subtle);
+  padding: var(--gl-space-md) 0;
+  text-align: center;
+}
+.gl-task-card { margin-bottom: var(--gl-space-sm); }
+.gl-task-card__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--gl-space-xs);
+  font-weight: 600;
+}
+.gl-task-card__lightning { color: var(--gl-warning); }
+.gl-task-card__meta {
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+  margin-top: var(--gl-space-xs);
+}
+
+/* ========== Agent detail ========== */
+.gl-agent__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-md);
+  margin-bottom: var(--gl-space-lg);
+}
+.gl-agent__section { margin-bottom: var(--gl-space-lg); }
+.gl-agent__stdout { margin-top: var(--gl-space-lg); }
+.gl-stdout-tail {
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--gl-bg);
+  border: 1px solid var(--gl-border);
+  border-radius: 6px;
+  padding: var(--gl-space-sm);
+  padding-left: 44px;
+  font-family: inherit;
+  font-size: var(--gl-font-body);
+  line-height: 1.5;
+}
+.gl-stdout-tail__line { word-break: break-all; white-space: pre-wrap; }
+.gl-wake-form {
+  display: flex;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  margin-top: var(--gl-space-sm);
+}
+.gl-perms-list { list-style: none; padding: 0; margin: 0; }
+.gl-perms-list li { padding: var(--gl-space-xs) 0; font-size: var(--gl-font-label); }
+.gl-badge {
+  background: var(--gl-surface-raised);
+  padding: 2px var(--gl-space-xs);
+  border-radius: 3px;
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+}
+
+/* ========== Budget ring ========== */
+.gl-budget-ring { display: inline-block; line-height: 0; }
+.gl-budget-ring__bg { stroke: var(--gl-surface-raised); }
+.gl-budget-ring__fg--success { stroke: var(--gl-success); }
+.gl-budget-ring__fg--warning { stroke: var(--gl-warning); }
+.gl-budget-ring__fg--danger { stroke: var(--gl-danger); }
+.gl-budget-ring__label { fill: var(--gl-fg); font-size: 8px; font-family: inherit; }
+
+/* ========== Buttons ========== */
+.gl-btn {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  color: var(--gl-fg);
+  border-radius: 6px;
+  transition: background-color 200ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gl-space-xs);
+}
+.gl-btn:hover { background: var(--gl-surface-raised); }
+.gl-btn--primary { color: var(--gl-accent); }
+.gl-btn--approve { color: var(--gl-accent); }
+.gl-btn--deny { color: var(--gl-danger); }
+.gl-btn:disabled { color: var(--gl-fg-subtle); cursor: not-allowed; }
+
+/* ========== Form inputs ========== */
+.gl-input {
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border);
+  padding: var(--gl-space-sm);
+  color: inherit;
+  border-radius: 6px;
+  width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+}
+.gl-input::placeholder { color: var(--gl-fg-muted); }
+
+/* ========== Dots ========== */
+.gl-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: var(--gl-space-xs);
+  background: var(--gl-fg-muted);
+  vertical-align: middle;
+}
+.gl-dot--healthy { background: var(--gl-success); }
+.gl-dot--warning { background: var(--gl-warning); }
+.gl-dot--crashed,
+.gl-dot--error { background: var(--gl-danger); }
+.gl-dot--idle { background: var(--gl-fg-muted); }
+
+/* ========== Banners ========== */
+.gl-banner {
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-radius: 6px;
+  margin-bottom: var(--gl-space-md);
+}
+.gl-banner--muted {
+  background: var(--gl-surface);
+  color: var(--gl-fg-muted);
+  font-size: var(--gl-font-label);
+}
+
+/* ========== Chat / ChannelLive ========== */
+.gl-channel { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-channel__messages { display: flex; flex-direction: column; gap: var(--gl-space-sm); }
+.gl-channel-message { margin-bottom: 0; }
+.gl-channel-message__meta {
+  display: flex;
+  gap: var(--gl-space-xs);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+  margin-bottom: var(--gl-space-xs);
+}
+.gl-channel-message__body p { margin: 0 0 var(--gl-space-xs); }
+.gl-channel-message__body p:last-child { margin-bottom: 0; }
+.gl-mention { color: var(--gl-accent); font-weight: 600; }
+.gl-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+  margin-top: var(--gl-space-md);
+}
+.gl-compose textarea { min-height: 80px; resize: vertical; }
+.gl-compose__actions { display: flex; justify-content: flex-end; }
+
+/* ========== Audit ========== */
+.gl-audit { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-audit-entry { margin-bottom: var(--gl-space-sm); font-size: var(--gl-font-label); cursor: pointer; }
+.gl-audit-entry--expanded { background: var(--gl-surface-raised); }
+.gl-audit-entry__row { display: flex; gap: var(--gl-space-md); align-items: center; }
+.gl-audit-entry__payload {
+  margin: var(--gl-space-sm) 0 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  color: var(--gl-fg-muted);
+}
+.gl-audit__load-older { align-self: flex-start; }
+.gl-audit__beginning {
+  text-align: center;
+  padding: var(--gl-space-md);
+  color: var(--gl-fg-muted);
+}
+
+/* ========== Health ========== */
+.gl-health { display: flex; flex-direction: column; gap: var(--gl-space-lg); }
+.gl-health__section { margin-bottom: var(--gl-space-xl); }
+.gl-health__tree ul { list-style: none; padding-left: var(--gl-space-md); margin: 0; }
+.gl-health__tree li { padding: var(--gl-space-xs) 0; }
+.gl-health__check-row {
+  display: flex;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  padding: var(--gl-space-xs) 0;
+}
+
+/* ========== LiveView lifecycle states ========== */
+.phx-disconnected .gl-disconnect-banner { display: block; }
+.gl-disconnect-banner {
+  display: none;
+  background: var(--gl-warning);
+  color: var(--gl-bg);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* ========== Icon ========== */
+.gl-icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+
+/* ========== Reduced-motion ========== */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
 }
