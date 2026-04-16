@@ -77,5 +77,5 @@ coverage/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 
-# GSD per-session dotfiles
-.planning/.next-call-count
+# GSD per-session dotfiles (archive after GSD was disabled 2026-04-16)
+.planning.archive/.next-call-count

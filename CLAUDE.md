@@ -4,9 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Glorbo is **pre-implementation**. The repo currently contains only design artifacts (`DESIGN.md`, `README.md`) and planning infrastructure (`.planning/`). No Elixir or Python source exists yet. The first milestone will establish the Phoenix/SQLite skeleton and `mix glorbo.doctor` CLI. Until that lands, there are no build, lint, or test commands. Do not invent them.
+Glorbo shipped **v0.0.2** (Milestone 01 — CLI-agent runtime): Phoenix/LiveView dashboard, SQLite-backed Ecto, `glorbo` CLI (`up`/`down`/`doctor`/`init`/backup/restore), and Burrito single-binary release. Source lives under `lib/` (`glorbo`, `glorbo_web`). Python runtime inside Podman is **not** yet wired for v0.0.2 — container-runtime restoration is slated for the next milestone.
 
-`DESIGN.md` is the authoritative architectural spec; `README.md` is the user-facing pitch. When they disagree, `DESIGN.md` wins.
+`DESIGN.md` is the authoritative architectural spec; `README.md` is the user-facing pitch. When they disagree, `DESIGN.md` wins. `CHANGELOG.md` tracks what has actually shipped.
+
+## Common commands
+
+- **Setup:** `mix setup` (fetches deps, creates/migrates dev DB, installs esbuild).
+- **Run dev server:** `mix phx.server` → `http://localhost:4000`. (Live-reload needs host `inotify-tools`; optional.)
+- **Tests:** `mix test` (alias creates/migrates test DB first).
+- **Format + lint gate:** `mix precommit` — compiles with `--warnings-as-errors`, prunes unused deps, formats, runs tests. Run this before committing non-trivial changes.
+- **Credo (strict):** `mix credo --strict` — zero findings is the ship bar (see commit history).
+- **Assets:** `mix assets.build` / `mix assets.deploy` (esbuild via Hex wrapper, no npm).
+- **Release:** `mix release` (Burrito-wrapped single binary in `burrito_out/`).
+
+Elixir/OTP pinned in `.tool-versions`: Elixir 1.18.4 / OTP 28.0.
 
 ## Architecture — load-bearing invariants
 
@@ -26,9 +38,16 @@ The full architecture is in `DESIGN.md`. These are the constraints that span mul
 - **Agent runtime:** Python 3.12+ inside Podman, with `ollama`, `huggingface_hub`, `anthropic`, `openai`, `google-genai`, `litellm`.
 - **LLMs:** local-first (Ollama auto-downloaded by `glorbo init`) with cloud providers (Anthropic/OpenAI/Google) configured per-agent in `agent.md`.
 
-## Planning workflow (GSD v1)
+## Planning archive
 
-This repo uses GSD v1 planning — artifacts live under `.planning/` (committed). Project-level context is in `.planning/PROJECT.md`. Before starting non-trivial implementation, consult `.planning/PROJECT.md` and any phase-specific docs under `.planning/`. Use `/gsd-*` slash commands for planning, execution, and review rather than improvising.
+This project previously used GSD v1 planning. Those artifacts are frozen at `.planning.archive/` (see `.planning.archive/ARCHIVE.md`). They may contain useful historical context — design rationale for v0.0.1 / v0.0.2 phases, milestone audit findings, requirement traces — but they are **stale by default** and not part of the active workflow.
+
+**Rules for Claude Code on the archive:**
+
+1. Do **not** read `.planning.archive/` proactively. Default assumption: it's irrelevant to the current task.
+2. Only dip into it if the current task genuinely needs historical context that isn't in `DESIGN.md`, `README.md`, `CHANGELOG.md`, or the source.
+3. If you do use `.planning.archive/` content to shape a recommendation, decision, or plan, **explicitly tell the user** which file(s) you relied on and flag that the content may be outdated. Don't silently absorb archive material into current-state answers.
+4. Do not run `/gsd-*` commands — GSD is disabled at the Claude Code level. If planning rigor is needed, use lightweight alternatives (superpowers brainstorming, manual PLAN.md, etc.).
 
 ## Repo layout notes
 
