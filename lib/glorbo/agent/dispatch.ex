@@ -271,13 +271,28 @@ defmodule Glorbo.Agent.Dispatch do
   defp fill_model(usage, _spec), do: usage
 
   defp latest_jsonl(dir) do
+    # WR-09: use File.stat/1 (non-bang) and skip entries whose stat fails —
+    # CLI tools rotate session files concurrently, so a file listed by
+    # File.ls/1 can disappear before we stat it. File.stat! would raise
+    # File.Error, escape the caller's `with` via unwind, and cause
+    # conservative_zero recovery to be skipped → lost usage record →
+    # budget undercount.
     case File.ls(dir) do
       {:ok, entries} ->
         entries
         |> Enum.filter(&String.ends_with?(&1, ".jsonl"))
         |> Enum.map(&Path.join(dir, &1))
-        |> Enum.sort_by(&File.stat!(&1).mtime, :desc)
-        |> List.first()
+        |> Enum.flat_map(fn path ->
+          case File.stat(path) do
+            {:ok, stat} -> [{path, stat.mtime}]
+            {:error, _} -> []
+          end
+        end)
+        |> Enum.sort_by(fn {_path, mtime} -> mtime end, :desc)
+        |> case do
+          [] -> nil
+          [{path, _mtime} | _] -> path
+        end
 
       _ ->
         nil
