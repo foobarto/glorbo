@@ -156,24 +156,46 @@ defmodule Glorbo.Config do
   MUST NEVER emit it to logs or audit (threat T-05-02).
   """
   @spec erl_cookie(Path.t()) :: {:ok, String.t()} | {:error, :config_parse}
-  def erl_cookie(base \\ Path.expand("~/.glorbo")) do
+  def erl_cookie(base \\ Path.expand("~/.glorbo")), do: erl_cookie(base, _retried? = false)
+
+  # WR-08: classic TOCTOU — the previous implementation did
+  # `unless File.exists?(path), do: write_default!(path)` followed by
+  # File.read(path). A concurrent `glorbo init --force` that removed the
+  # file in that window landed us in the `:enoent` branch and fell out
+  # to {:error, :config_parse}. Handle :enoent explicitly by writing
+  # defaults and recursing once (guarded by retried? to prevent loops on
+  # unrelated failures).
+  defp erl_cookie(base, retried?) do
     path = Path.join(base, "config.md")
-    unless File.exists?(path), do: write_default!(path)
 
-    with {:ok, content} <- File.read(path),
-         {:ok, meta, body} <- Frontmatter.parse(content) do
-      case meta["erl_cookie"] do
-        c when is_binary(c) and byte_size(c) >= 16 ->
-          {:ok, c}
+    case File.read(path) do
+      {:ok, content} ->
+        case Frontmatter.parse(content) do
+          {:ok, meta, body} -> handle_cookie(path, content, meta, body)
+          _ -> {:error, :config_parse}
+        end
 
-        _ ->
-          cookie = generate_cookie()
-          write_cookie!(path, content, meta, body, cookie)
-          {:ok, cookie}
-      end
-    else
-      _ -> {:error, :config_parse}
+      {:error, :enoent} when not retried? ->
+        write_default!(path)
+        erl_cookie(base, true)
+
+      {:error, _} ->
+        {:error, :config_parse}
     end
+  end
+
+  defp handle_cookie(path, content, meta, body) do
+    case meta["erl_cookie"] do
+      c when is_binary(c) and byte_size(c) >= 16 ->
+        {:ok, c}
+
+      _ ->
+        cookie = generate_cookie()
+        write_cookie!(path, content, meta, body, cookie)
+        {:ok, cookie}
+    end
+  rescue
+    _ -> {:error, :config_parse}
   end
 
   # Line-level rewrite so we preserve other frontmatter keys, comments
