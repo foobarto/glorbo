@@ -1,24 +1,130 @@
 defmodule Glorbo.CLI.LogsTest do
-  @moduledoc "Stubs — filled in by Plan 02."
+  @moduledoc """
+  Plan 05-02 Task 3 — `Glorbo.CLI.Logs`.
+
+  Seeds an acme company with 100 audit JSONL lines spanning the current
+  month and an agent stdout.log, then exercises the backfill + routing
+  logic. `--follow` mode is intentionally not exercised here (it blocks
+  forever; run it under `:integration` manually via a test harness that
+  sends `:file_event, :stop`).
+  """
   use GlorboTest.CLICase, async: false
 
-  @moduletag :pending
+  import ExUnit.CaptureIO
 
-  describe "logs <company>" do
-    test "backfills 50 lines by default (D-14)" do
-      flunk("TODO(plan-02): implement audit-log backfill")
+  alias Glorbo.CLI.Logs
+
+  setup %{glorbo_home: home} do
+    company = "acme"
+    agent = "ceo"
+
+    # Seed the portability fixture (minimal company + agent + 1 audit
+    # entry + empty stdout.log).
+    Glorbo.Test.PortabilityFixtures.write_minimal_company(home, company, agent)
+
+    # Append 99 more audit lines so backfill assertions are deterministic.
+    month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
+    audit_path = Path.join([home, "companies", company, "audit", "#{month}.jsonl"])
+
+    Enum.each(2..100, fn i ->
+      now = DateTime.utc_now() |> DateTime.to_iso8601()
+
+      line =
+        Jason.encode!(%{
+          ts: now,
+          actor: "system",
+          action: "test.event.#{i}",
+          target: "seq-#{i}",
+          detail: %{seq: i}
+        }) <> "\n"
+
+      File.write!(audit_path, line, [:append])
+    end)
+
+    {:ok, home: home, company: company, agent: agent}
+  end
+
+  describe "logs <company> — audit JSONL" do
+    test "backfills 50 lines by default (D-14)", %{company: co} do
+      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co]) end)
+
+      lines =
+        out
+        |> String.split("\n", trim: true)
+        |> length()
+
+      assert lines == 50, "expected 50 lines, got #{lines}"
     end
 
-    test "--lines 10 respected" do
-      flunk("TODO(plan-02): implement --lines N")
+    test "--lines 10 respected", %{company: co} do
+      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "10"]) end)
+
+      lines = out |> String.split("\n", trim: true) |> length()
+      assert lines == 10
     end
 
-    test "<company> <agent> routes to agents/<ag>/stdout.log (D-15)" do
-      flunk("TODO(plan-02): implement agent stdout routing")
+    test "--lines 0 produces empty output", %{company: co} do
+      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "0"]) end)
+
+      assert out == ""
     end
 
-    test "--follow tails forever (inotify + poll fallback)" do
-      flunk("TODO(plan-02): implement --follow mode")
+    test "pretty-prints audit line with ts / actor / action / target / detail",
+         %{company: co} do
+      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, "--lines", "1"]) end)
+
+      # Backfills the MOST RECENT line (seq-100 since we appended 2..100).
+      assert out =~ "test.event.100"
+      assert out =~ "seq-100"
+      assert out =~ "system"
+    end
+
+    test "missing company returns exit 1 with actionable message" do
+      assert {:logs, 1, msg} = Logs.run(["bogus"])
+      assert msg =~ "No audit log found"
+      assert msg =~ "bogus"
+    end
+  end
+
+  describe "logs <company> <agent> — raw stdout" do
+    test "routes to agents/<ag>/stdout.log and emits raw content",
+         %{home: home, company: co, agent: ag} do
+      # Write 20 lines into stdout.log.
+      path = Path.join([home, "companies", co, "agents", ag, "stdout.log"])
+      File.write!(path, Enum.map_join(1..20, "", fn i -> "line-#{i}\n" end))
+
+      out = capture_io(fn -> assert {:logs, 0, ""} = Logs.run([co, ag]) end)
+
+      # All 20 lines should be present (< 50 default).
+      for i <- 1..20 do
+        assert out =~ "line-#{i}"
+      end
+    end
+
+    test "missing agent stdout.log returns exit 1", %{company: co} do
+      assert {:logs, 1, msg} = Logs.run([co, "nonexistent-agent"])
+      assert msg =~ "No stdout log found"
+      assert msg =~ "nonexistent-agent"
+    end
+  end
+
+  describe "argv / help" do
+    test "empty args returns usage" do
+      assert {:logs, 1, msg} = Logs.run([])
+      assert msg =~ "Usage: glorbo logs"
+    end
+
+    test "--help returns help text" do
+      assert {:logs, 0, out} = Logs.run(["--help"])
+      assert out =~ "glorbo logs"
+      assert out =~ "USAGE"
+      assert out =~ "--lines"
+      assert out =~ "--follow"
+    end
+
+    test "three-positional argv returns usage" do
+      assert {:logs, 1, msg} = Logs.run(["a", "b", "c"])
+      assert msg =~ "Usage: glorbo logs"
     end
   end
 end
