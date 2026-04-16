@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from worker.context import load_task_context
 from worker.dispatch import run_task
+from worker.usage import write_usage_report
 
 router = APIRouter()
 
@@ -38,6 +39,10 @@ class RunRequest(BaseModel):
     skills: List[str] = []
     timeout_seconds: Optional[int] = 300
     request_id: str
+    # Phase 3 additions (additive — preserves Phase 2 D-36 stability invariant)
+    skills_resolved: List[str] = []  # D-34: full markdown bodies for injection
+    agent_slug: str  # Required: identifies the agent for usage report path
+    outbox_root: str = "/company"  # Bind-mount root; tests override
 
 
 class RunResponse(BaseModel):
@@ -65,7 +70,7 @@ async def run(req: RunRequest) -> RunResponse:
         return RunResponse(ok=False, error="duplicate request_id")
 
     try:
-        ctx = load_task_context(req.task_path, req.skills)
+        ctx = load_task_context(req.task_path, req.skills, req.skills_resolved)
     except FileNotFoundError as exc:
         return RunResponse(ok=False, error=str(exc))
 
@@ -78,6 +83,22 @@ async def run(req: RunRequest) -> RunResponse:
         # CR-05: shield the task from wait_for's own cancel on timeout so
         # /cancel can distinguish "timed out" from "cancelled by caller".
         result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        # D-24: write usage report AFTER success only (not on failure paths)
+        try:
+            _response_obj = result.pop("_response_obj", None)
+            if _response_obj is not None:
+                task_id = req.task_path.rsplit("/", 1)[-1].removesuffix(".md")
+                write_usage_report(
+                    outbox_root=req.outbox_root,
+                    agent_slug=req.agent_slug,
+                    request_id=req.request_id,
+                    task_id=task_id,
+                    provider=req.provider,
+                    model=req.model,
+                    response=_response_obj,
+                )
+        except Exception:  # noqa: BLE001 — usage write failure must not fail the run
+            pass
         return RunResponse(ok=True, result=result)
     except asyncio.TimeoutError:
         task.cancel()

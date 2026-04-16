@@ -8,12 +8,12 @@ Always uses ``yaml.safe_load`` (T-2-26 mitigation). Never ``yaml.load``.
 """
 import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import yaml
 
 
-def load_task_context(task_path: str, skills: List[str]) -> dict:
+def load_task_context(task_path: str, skills: List[str], skills_resolved: Optional[List[str]] = None) -> dict:
     task_p = Path(task_path)
     if not task_p.exists():
         raise FileNotFoundError(f"task file not found: {task_path}")
@@ -29,6 +29,13 @@ def load_task_context(task_path: str, skills: List[str]) -> dict:
     system = agent_prompt
     if skill_blocks:
         system = (system + "\n\n" if system else "") + "\n\n".join(skill_blocks)
+
+    # D-34: inject skills_resolved (full markdown bodies from Elixir) into
+    # system prompt. Only add the header when non-empty (Test 4).
+    resolved = skills_resolved or []
+    if resolved:
+        skills_section = "You have access to the following skills:\n\n" + "\n\n---\n\n".join(resolved)
+        system = (system + "\n\n" if system else "") + skills_section
 
     messages = [
         {"role": "system", "content": system},

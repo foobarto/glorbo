@@ -101,7 +101,9 @@ defmodule Glorbo.Integration.AirplaneModeTest do
         skills: [],
         timeout_seconds: 30,
         request_id: "airplane-ping-1",
-        ollama_host: "unix:///tmp/ollama.sock"
+        ollama_host: "unix:///tmp/ollama.sock",
+        agent_slug: "ceo",
+        outbox_root: "/company"
       })
 
     assert resp["ok"] == true,

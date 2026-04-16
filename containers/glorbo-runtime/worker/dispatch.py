@@ -64,4 +64,7 @@ async def run_task(
         "completion": response["choices"][0]["message"]["content"],
         "usage": response.get("usage", {}),
         "model": response.get("model", model_str),
+        # Internal-use: routes.py pops this before serializing RunResponse.
+        # litellm.completion_cost needs the original response object.
+        "_response_obj": response,
     }

@@ -92,7 +92,7 @@ defmodule Glorbo.Filesystem.HierarchyTest do
       # agents
       assert column_set("agents") ==
                MapSet.new(
-                 ~w(id company_id name role provider model file_path inserted_at updated_at)
+                 ~w(id company_id name role provider model file_path permissions_hash inserted_at updated_at)
                )
 
       # audit_events

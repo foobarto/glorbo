@@ -68,6 +68,7 @@ def test_run_endpoint_404_on_missing_task(client: TestClient):
             "model": "llama3.2:1b",
             "request_id": "test-1",
             "skills": [],
+            "agent_slug": "ceo",
         },
     )
     assert resp.status_code == 200
