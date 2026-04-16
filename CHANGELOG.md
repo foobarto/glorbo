@@ -10,23 +10,113 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Milestone 01 — v0.0.1 CLI-agent runtime (in progress)
+_Next milestone to be scoped via `/gsd-new-milestone`. Likely focus: container
+runtime restoration (Python + Podman + POSIX ACLs), Gate→Agent.Server wake
+forward, `api-only` netns + nftables egress hardening._
 
-#### Phase 4 — LiveView Dashboard + Real-Time Channels (in progress)
+---
 
-- Phoenix LiveView on `:4000` with company overview, kanban board,
-  agent detail with live `stdout.log` streaming, chat, approval
-  queue, audit viewer, and system health, powered by Phoenix
-  Channels + PubSub wired to inotify events.
+## [0.0.2] — 2026-04-16
 
-### Planned
+Closes Milestone 01 (CLI-agent runtime) by shipping the dashboard and full CLI
+surface on top of the v0.0.1 Phases 1-3 foundation. 5 phases / 20 plans / 219
+commits / 621 tests green / 38-of-38 v0.0.2 requirements covered. See
+`.planning/milestones/v0.0.2-ROADMAP.md` and `.planning/v0.0.2-MILESTONE-AUDIT.md`.
 
-#### Phase 5 — CLI Completeness + Backup/Restore Portability
+### Phase 5 — CLI Completeness + Backup/Restore Portability
 
-- Full CLI surface: `new`, `logs`, `console`, `migrate`, `backup`,
-  `restore`, `doctor --fix`.
-- Verified end-to-end portability: `backup` → `scp` → `restore` +
-  `doctor --fix` reproduces a functional install on a fresh host.
+#### Added
+
+- Lifecycle verbs: `glorbo up` (detached daemon via `setsid`), `down`
+  (SIGTERM → 10s grace → SIGKILL escalation), `status` (pidfile state
+  machine: running/stale/missing), `serve` (foreground-blocking
+  supervision tree start), and `run` (one-shot `reindex`-like scripts).
+- Pidfile with atomicity invariants: `tmp + chmod 0600 + rename` write,
+  fsync on close, mode-bit enforcement, TOCTOU re-check against the
+  daemon pid at every lifecycle verb boundary.
+- Scaffolding verbs: `new company <slug>`, `new agent <company>/<slug>`,
+  `new project <company>/<slug>`. Slug regex guards against path
+  traversal; default frontmatter matches DESIGN.md §5.
+- `logs <company> [agent] [--follow]` with inotify-backed live tail;
+  audit-log or `stdout.log` selection; rotation-aware (handles
+  `YYYY-MM.jsonl` rollover without raising).
+- `backup [--output <path>]`: WAL-checkpoint via
+  `PRAGMA wal_checkpoint(TRUNCATE)` before archiving; `tar.gz` over
+  `~/.glorbo/companies/`, `config.md`, and audit log; pidfile
+  TOCTOU re-check between checkpoint and `:erl_tar.create`; chmod
+  0600 on output; archive-bomb cap at 10 GiB uncompressed sum.
+- `restore <archive> [--force]`: pre-extract traversal guard rejects
+  entries starting with `/` or containing `..`; archive-size cap
+  enforced from verbose tar table; post-extract symlink-target walk
+  via `:file.read_link/1` rejects any symlink escaping the restore
+  base (CR-01); post-extract chain `migrate → reindex → doctor --fix`
+  (D-22); `:non_empty_base` guard bypassed only with `--force`.
+- `console`: `iex --name console@127.0.0.1 --cookie <cookie> --remsh
+  glorbo@127.0.0.1` against the running daemon; pidfile-gated
+  (exit 3 if daemon not running); cookie read from
+  `~/.glorbo/state/.erl_cookie` (mode 0600, atomic write).
+- `migrate`: `Ecto.Migrator.run(Glorbo.Repo, _, :up, all: true)` with
+  `rescue` for migration errors and `catch :exit` for Ecto exit signals
+  (lock-contention / connection-pool failures surface as exit 2).
+- `doctor --fix`: severity-weighted exit code (0 / 1 / 2), registry of
+  7 fixers (`ollama_daemon`, `runtime_image`, `podman_missing`,
+  `podman_socket`, `sqlite_wal`, `pidfile_stale`, `audit_dir_mode`),
+  check→fix→recheck pattern; only counts `repaired` if recheck passes;
+  missing-fixer for blocker checks returns non-zero.
+- End-to-end portability test (`test/integration/portability_test.exs`):
+  two-root A→archive→B extract + migrate + reindex + fixer roundtrip
+  with hermetic hosts.
+- Distribution release uses long-name node (`-name glorbo@127.0.0.1`)
+  in `rel/vm.args.eex` to support `console` remsh (short-name rejected
+  by BEAM when qualified with host).
+
+#### Security
+
+- **CR-01** — symlink-target path-traversal bypass: archives with benign
+  entry names but escaping `linkname` no longer extract successfully;
+  post-extract walker wipes partially-extracted base if any symlink
+  resolves outside `~/.glorbo/`.
+- **WR-03** — archive-bomb DoS vector closed: restore refuses archives
+  whose uncompressed entry sizes sum above the 10 GiB cap.
+- **WR-04** — backup pidfile TOCTOU closed: daemon-restart between
+  `ensure_down` and `write_archive` now aborts the backup.
+- **WR-07** — `Restore.maybe_fixer` no longer swallows doctor-fix
+  errors silently; failures surface via `Logger.warning/1` with
+  structured reason while preserving the `:ok` contract.
+- `Config.write_default!` and `Config.erl_cookie` use
+  tmp-write → chmod 0600 → atomic rename (closes write-then-chmod
+  race that exposed the cookie at umask-default mode).
+
+### Phase 4 — LiveView Dashboard + Real-Time Channels
+
+#### Added
+
+- Phoenix LiveView on `:4000` with 8 views: company overview, kanban
+  board, agent detail with live `stdout.log` streaming, chat, approval
+  queue, audit viewer, system health, and settings.
+- Phoenix Channels + PubSub wired end-to-end to `file_system` (inotify)
+  events — `~/.glorbo/companies/` mutations repaint the dashboard in
+  under one second with no polling.
+- Append-only channel markdown files with Elixir as the sole writer;
+  browser POSTs route through the Channel controller which validates
+  and appends; frontmatter `status:` transitions are frontmatter-first
+  (file is truth).
+- `@agent-name` mention posted to a channel wakes the named agent via
+  the Router; approval-queue one-click approve/reject updates the task
+  file's `status:` frontmatter and fires the wake.
+- `GlorboWeb.Layouts.app` default layout wired for all LiveViews.
+
+### Tests / Infrastructure
+
+- 621/621 unit tests green. 52 integration tests excluded-by-default
+  (require live host deps: `inotify-tools`, Podman, Ollama, real
+  network, real `setsid`).
+- `mix compile --warnings-as-errors` clean.
+- Code review (standard depth) produced 1 Critical + 15 Warnings + 12
+  Info across two rounds; all Critical + Warning findings closed
+  (see `.planning/phases/05-cli-completeness-backup-restore-portability/05-REVIEW-FIX.md`).
+- Milestone audit: 38/38 requirements covered, no integration gaps.
+  10 human-verify items tracked as pre-release checklist (non-blocking).
 
 ---
 
@@ -174,5 +264,6 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/foobarto/glorbo/releases/tag/v0.0.2
 [0.0.1]: https://github.com/foobarto/glorbo/releases/tag/v0.0.1

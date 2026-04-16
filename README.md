@@ -67,19 +67,23 @@ Back up with `tar`. Version-control with `git`. Move to another machine with
 
 ## Milestone Scope
 
-**v0.0.1 — CLI-agent runtime (current).** Agents are wrapped invocations of
-CLI tools you already have installed: **Claude Code**, **Gemini CLI**, and
-**Codex**. Every wake spawns a fresh `bwrap(1)` sandbox with only the agent's
+**v0.0.2 — CLI-agent runtime, dashboard, full CLI surface (current,
+shipped 2026-04-16).** Agents are wrapped invocations of CLI tools you
+already have installed: **Claude Code**, **Gemini CLI**, and **Codex**.
+Every wake spawns a fresh `bwrap(1)` sandbox with only the agent's
 workspace mounted, no network (unless explicitly granted), and all
-capabilities dropped. Zero Python on the host; Glorbo itself is a single
+capabilities dropped. The Phoenix LiveView dashboard runs on `:4000`;
+the full CLI surface (`up`/`down`/`status`/`serve`/`run`/`new`/`logs`/
+`backup`/`restore`/`console`/`migrate`/`doctor --fix`) is wired and
+verified end-to-end. Zero Python on the host; Glorbo itself is a single
 Elixir binary.
 
-**v0.0.2 — Podman + Python runtime (deferred).** Moves agents into per-agent
-Linux users inside a Podman-managed Company container, with `litellm`
-dispatching to any provider (local Ollama, Anthropic, OpenAI, Google) and
-POSIX ACLs as the second enforcement layer. The container design is
-preserved in `DESIGN.md` and dormant in the codebase; restoration guide at
-`.planning/deferred/container-runtime-v0.0.2/`.
+**Next milestone — Podman + Python runtime (re-scoped).** Moves agents
+into per-agent Linux users inside a Podman-managed Company container,
+with `litellm` dispatching to any provider (local Ollama, Anthropic,
+OpenAI, Google) and POSIX ACLs as the second enforcement layer. The
+container design is preserved in `DESIGN.md` and dormant in the codebase;
+restoration guide at `.planning/deferred/container-runtime-v0.0.2/`.
 
 ## Features
 
@@ -88,7 +92,7 @@ and audit logs are all markdown and JSONL files on disk. SQLite exists only as
 a rebuildable index for dashboard queries. Delete it anytime; `glorbo reindex`
 brings it back in seconds.
 
-**Kernel-sandboxed agents (v0.0.1)** — Every agent wake is a fresh `bwrap`
+**Kernel-sandboxed agents** — Every agent wake is a fresh `bwrap`
 sandbox: `--unshare-user-try --unshare-ipc --unshare-pid --unshare-net
 --die-with-parent --cap-drop ALL`. The workspace is `--bind`-mounted writable;
 nothing else is visible. Network isolation is kernel-enforced, not
@@ -102,22 +106,23 @@ session state stays on the host. No new API keys to manage.
 auto-downloaded by `glorbo init`. Cloud providers (Anthropic, OpenAI, Google)
 configurable per agent via `litellm`.
 
-**Real-time dashboard (Phase 4)** — Phoenix LiveView provides company overview,
-kanban board, agent monitoring with stdout streaming, chat, approval queue, and
-budget tracking. No JavaScript framework. No build step.
+**Real-time dashboard (v0.0.2)** — Phoenix LiveView at `http://127.0.0.1:4000`
+provides company overview, kanban board, agent monitoring with stdout streaming,
+chat, approval queue, audit viewer, and system health. Inotify events repaint
+the UI in under a second with no polling. No JavaScript framework. No build step.
 
 **Agent chat** — Talk to your agents. Agents talk to each other. Channels are
 append-only markdown files underneath. Phoenix Channels handles real-time
 delivery.
 
 **Company isolation** — Each company's data lives in its own directory under
-`~/.glorbo/companies/`. In v0.0.1 the bwrap sandbox bind-mounts only the
-active company; in v0.0.2 each company runs in its own Podman container with
-no cross-mount.
+`~/.glorbo/companies/`. Today the bwrap sandbox bind-mounts only the
+active company; the next milestone moves each company into its own Podman
+container with no cross-mount.
 
 **Permission model** — Declared in markdown frontmatter, enforced at two
 layers by design: the Elixir Router (application) and the kernel (bwrap
-mounts in v0.0.1, POSIX ACLs in v0.0.2). An agent without
+mounts today, POSIX ACLs in the next milestone). An agent without
 `projects:write:foo` literally cannot write there.
 
 **Budget governance** — Per-agent monthly budgets with alerts and hard stops.
@@ -132,6 +137,9 @@ companies are unaffected. That's just what the BEAM does.
 
 **Portable** — Deploy by copying a binary. Upgrade by replacing it. Move by
 tarring the directory. The BEAM VM is bundled in the release via Burrito.
+`glorbo backup` → `scp` → `glorbo restore` + `glorbo doctor --fix` reproduces
+a functional install on a fresh host (verified end-to-end by
+`test/integration/portability_test.exs`).
 
 ## Quick Start
 
@@ -181,7 +189,7 @@ Edit `~/.glorbo/companies/acme/agents/ceo/agent.md`:
 ---
 name: CEO
 role: Chief Executive Officer
-provider: claude-code            # v0.0.1: claude-code | gemini | codex
+provider: claude-code            # claude-code | gemini | codex
 model: claude-opus-4-6           # Provider-specific
 budget:
   monthly_usd: 100.00
@@ -202,34 +210,37 @@ Your mission: {{ company.mission }}
 ### Start
 
 ```bash
-glorbo up acme    # Phase 4+ — dashboard not yet shipping a `up` verb
+glorbo up              # Detached daemon — dashboard at http://127.0.0.1:4000
+glorbo status          # Check daemon pid + uptime
+glorbo logs acme ceo --follow
+glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 ```
-
-See **CLI Reference** below for what's actually wired in v0.0.1 today.
 
 ## CLI Reference
 
-Commands wired in v0.0.1:
+All 17 verbs from `DESIGN.md` §10 are wired in v0.0.2:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
                                   Bootstrap ~/.glorbo/ and verify deps
-glorbo doctor [--json] [--fix]    Verify host prerequisites
-glorbo help                       Print usage
-```
-
-Planned in subsequent phases (shape stable in `DESIGN.md` §10):
-
-```
-glorbo up [company]               Start orchestration for a company
-glorbo down [company]             Stop orchestration
-glorbo status                     Show companies, agents, active tasks
-glorbo serve                      Dashboard + orchestration (foreground)
-glorbo logs <company> [agent]     Tail an agent's stdout.log
+glorbo up                         Start detached daemon (dashboard + supervision)
+glorbo down                       Graceful shutdown via SIGTERM → SIGKILL
+glorbo status                     Pidfile state + uptime
+glorbo serve                      Foreground-blocking supervision (for systemd)
+glorbo run <script>               One-shot script execution
+glorbo new company <slug>         Scaffold a new company directory
+glorbo new agent <co>/<slug>      Scaffold a new agent.md with defaults
+glorbo new project <co>/<slug>    Scaffold a new project
+glorbo logs <co> [agent] [--follow]
+                                  Tail audit log or agent stdout (inotify-backed)
+glorbo doctor [--json] [--fix]    Verify host prerequisites; 7 auto-fixers
 glorbo reindex                    Rebuild SQLite index from filesystem
-glorbo backup                     Tar up ~/.glorbo/
-glorbo restore <archive>          Extract and reindex
-glorbo console                    Elixir remote console
+glorbo migrate                    Run pending Ecto migrations
+glorbo backup [--output <path>]   tar.gz of ~/.glorbo/ with WAL checkpoint
+glorbo restore <archive> [--force]
+                                  Extract + migrate + reindex + doctor --fix
+glorbo console                    iex --remsh into the running daemon
+glorbo help                       Print usage
 ```
 
 ## How It Works
@@ -251,7 +262,7 @@ other's files directly — the Elixir Router mediates every transfer.
 section. Glorbo is the only writer (atomic, permission-checked). The
 dashboard renders them as real-time chat.
 
-### Execution (v0.0.1)
+### Execution
 
 1. An event triggers an agent (new inbox item, heartbeat, channel mention).
 2. Glorbo composes a bwrap argv for the agent's declared permissions,
@@ -265,7 +276,7 @@ dashboard renders them as real-time chat.
    agent's budget.
 6. The sandbox exits.
 
-### Sandboxing (v0.0.1)
+### Sandboxing
 
 Every agent wake is a short-lived `bwrap` process:
 
@@ -304,21 +315,21 @@ permissions:
   - budget:read:self
 ```
 
-In v0.0.1 the kernel layer is the bwrap argv: denied paths aren't
-bind-mounted. In v0.0.2 a second POSIX-ACL layer will enforce inside the
-Company container.
+Today the kernel layer is the bwrap argv: denied paths aren't
+bind-mounted. A second POSIX-ACL layer will enforce inside the
+Company container in the next milestone.
 
 ## Tech Stack
 
 | Component      | Technology                  | Why                                             |
 |----------------|-----------------------------|-------------------------------------------------|
 | Orchestration  | Elixir/OTP                  | Supervision trees, fault tolerance, concurrency |
-| Dashboard      | Phoenix LiveView (Phase 4)  | Real-time UI, no JS framework                   |
+| Dashboard      | Phoenix LiveView            | Real-time UI, no JS framework                   |
 | Agent Chat     | Phoenix Channels            | WebSocket pub/sub, built-in                     |
-| Agent Runtime  | `bwrap(1)` + CLI tools      | **v0.0.1** — no Python needed                   |
-| Agent Runtime  | Python in Podman (deferred) | **v0.0.2** — `litellm`, POSIX ACLs              |
-| Local LLM      | Ollama (deferred)           | **v0.0.2** — private, offline, zero API cost    |
-| Cloud LLM      | Claude, Codex, Gemini       | Via their official CLIs in v0.0.1               |
+| Agent Runtime  | `bwrap(1)` + CLI tools      | **v0.0.2** — no Python needed                   |
+| Agent Runtime  | Python in Podman (deferred) | **Next milestone** — `litellm`, POSIX ACLs     |
+| Local LLM      | Ollama (deferred)           | **Next milestone** — private, offline           |
+| Cloud LLM      | Claude, Codex, Gemini       | Via their official CLIs in v0.0.2               |
 | Filesystem     | `inotify` + file_system     | Event-driven watcher                            |
 | Database       | SQLite (via `ecto_sqlite3`) | Single file, zero setup, disposable             |
 | Config/Data    | Markdown + YAML frontmatter | Human-readable, git-friendly, greppable         |
@@ -332,19 +343,22 @@ this README disagree, `DESIGN.md` wins.
 
 ## Project Status
 
-Pre-1.0 (currently **v0.0.1**). Milestone 01 (CLI-agent runtime) is in
-active development:
+Pre-1.0 (currently **v0.0.2**, shipped 2026-04-16). Milestone 01
+(CLI-agent runtime) is complete:
 
 - Phase 01 — Compilable skeleton + CI + signed releases ✓
 - Phase 02 — Filesystem foundation, doctor, `glorbo init` ✓
 - Phase 03 — Agents, router, kernel permissions, budgets ✓
-- Phase 04 — LiveView dashboard (in progress)
-- Phase 05 — Approvals, scheduler, backup/restore (planned)
+- Phase 04 — LiveView dashboard + Channels + PubSub ✓
+- Phase 05 — CLI completeness + backup/restore + portability ✓
+
+Tests: 621/621 green · `mix compile --warnings-as-errors` clean ·
+38/38 v0.0.2 requirements covered (see `.planning/v0.0.2-MILESTONE-AUDIT.md`).
 
 See the [issues](https://github.com/foobarto/glorbo/issues) and
-`.planning/phases/` for current work and known limitations. Planning
-artifacts (`PLAN.md`, `RESEARCH.md`, `VERIFICATION.md`) are committed on
-`main` — feel free to read ahead.
+`.planning/phases/` for the journey. Planning artifacts (`PLAN.md`,
+`RESEARCH.md`, `VERIFICATION.md`) are committed on `main` — feel free
+to read ahead.
 
 ## Contributing
 
@@ -354,7 +368,7 @@ submitting a pull request.
 Security reports: see [SECURITY.md](SECURITY.md). Please don't file
 sandbox-escape findings as public issues.
 
-The project is Elixir through and through in v0.0.1. Familiarity with OTP
+The project is Elixir through and through in v0.0.2. Familiarity with OTP
 supervision trees and Phoenix LiveView is helpful but not required — the
 codebase is intentionally straightforward.
 
