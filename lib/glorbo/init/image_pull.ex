@@ -20,10 +20,25 @@ defmodule Glorbo.Init.ImagePull do
 
   @spec run(keyword()) :: step_result()
   def run(opts \\ []) do
-    if Keyword.get(opts, :skip_pull, false) do
-      %{status: :skipped, detail: "--skip-pull"}
-    else
-      do_pull(opts)
+    # WR-08: enforce pairing — swapping out `ensure_image_fun` for a fake
+    # without also providing an `image_cached_fun` would silently hit real
+    # podman during a "hermetic" test. Require both or neither.
+    cond do
+      Keyword.has_key?(opts, :ensure_image_fun) and
+          not Keyword.has_key?(opts, :image_cached_fun) ->
+        raise ArgumentError,
+              "ensure_image_fun: must be paired with image_cached_fun: for hermetic tests"
+
+      Keyword.has_key?(opts, :image_cached_fun) and
+          not Keyword.has_key?(opts, :ensure_image_fun) ->
+        raise ArgumentError,
+              "image_cached_fun: must be paired with ensure_image_fun: for hermetic tests"
+
+      Keyword.get(opts, :skip_pull, false) ->
+        %{status: :skipped, detail: "--skip-pull"}
+
+      true ->
+        do_pull(opts)
     end
   end
 
