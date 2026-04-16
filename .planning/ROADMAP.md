@@ -22,8 +22,8 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 ## Phases
 
 - [x] **Phase 1: Compilable Skeleton + CI Release Pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
-- [ ] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
-- [ ] **Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
+- [x] **Phase 2: Filesystem Foundation + Container Runtime + Local LLM** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
+- [x] **Phase 3: CLI Agent Runtime + bwrap Isolation + Routing + Budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
 - [ ] **Phase 4: LiveView Dashboard + Real-Time Channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
 - [ ] **Phase 5: CLI Completeness + Backup/Restore Portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
 
@@ -118,8 +118,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Compilable Skeleton + CI Release Pipeline | 3/3 | Complete | 2026-04-15 |
-| 2. Filesystem Foundation + Container Runtime + Local LLM | 0/4 | Planned | - |
-| 3. Agents, Routing, Kernel Permissions, Budgets | 0/TBD | Not started | - |
+| 2. Filesystem Foundation + Container Runtime + Local LLM | 4/4 | Complete | 2026-04-16 |
+| 3. Agents, Routing, Kernel Permissions, Budgets | 5/5 | Complete | 2026-04-16 |
 | 4. LiveView Dashboard + Real-Time Channels | 0/TBD | Not started | - |
 | 5. CLI Completeness + Backup/Restore Portability | 0/TBD | Not started | - |
 
