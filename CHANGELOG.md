@@ -10,18 +10,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-_Next milestone to be scoped via `/gsd-new-milestone`. Likely focus: container
-runtime restoration (Python + Podman + POSIX ACLs), Gate→Agent.Server wake
-forward, `api-only` netns + nftables egress hardening._
+_GSD workflow retired 2026-04-17; design decisions now captured as
+GEPs under `docs/geps/`. The originally planned Podman container-
+runtime restoration has been dropped entirely (see GEP-5 D6);
+agents remain CLI-tool subprocesses under bwrap permanently. Next
+milestone's likely focus: provider registry + auto-detect (GEP-8),
+`api-only` netns + nftables egress hardening, and possibly the
+agent-template scaffolding (GEP-10)._
 
 ---
 
 ## [0.0.2] — 2026-04-16
 
+> **Note on references below:** this entry was written while the
+> `.planning/` GSD workspace was still live. Those paths were
+> deleted 2026-04-17 (design records moved to GEPs under
+> `docs/geps/`, everything else lives in git history). Path
+> references below are left in place as they appeared at release
+> time; `git log --all --diff-filter=D -- <path>` will find the
+> deleted file if you need to read it.
+
 Closes Milestone 01 (CLI-agent runtime) by shipping the dashboard and full CLI
 surface on top of the v0.0.1 Phases 1-3 foundation. 5 phases / 20 plans / 219
-commits / 621 tests green / 38-of-38 v0.0.2 requirements covered. See
-`.planning/milestones/v0.0.2-ROADMAP.md` and `.planning/v0.0.2-MILESTONE-AUDIT.md`.
+commits / 621 tests green / 38-of-38 v0.0.2 requirements covered.
 
 ### Phase 5 — CLI Completeness + Backup/Restore Portability
 

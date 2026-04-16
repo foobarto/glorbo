@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Glorbo shipped **v0.0.2** (Milestone 01 — CLI-agent runtime): Phoenix/LiveView dashboard, SQLite-backed Ecto, `glorbo` CLI (`up`/`down`/`doctor`/`init`/backup/restore), and Burrito single-binary release. Source lives under `lib/` (`glorbo`, `glorbo_web`). Python runtime inside Podman is **not** yet wired for v0.0.2 — container-runtime restoration is slated for the next milestone.
+Glorbo shipped **v0.0.2** (Milestone 01 — CLI-agent runtime): Phoenix/LiveView dashboard, SQLite-backed Ecto, `glorbo` CLI (`up`/`down`/`doctor`/`init`/backup/restore), and Burrito single-binary release. Source lives under `lib/` (`glorbo`, `glorbo_web`). Agents are CLI-tool subprocesses (`claude`, `gemini`, `codex`) run under `bwrap`; no Python runtime and no container runtime — see GEP-5 D6 for the Podman-dropped decision.
 
 `DESIGN.md` is the authoritative architectural spec; `README.md` is the user-facing pitch. When they disagree, `DESIGN.md` wins. `CHANGELOG.md` tracks what has actually shipped.
 
@@ -24,30 +24,43 @@ Elixir/OTP pinned in `.tool-versions`: Elixir 1.18.4 / OTP 28.0.
 
 The full architecture is in `DESIGN.md`. These are the constraints that span multiple files and are easy to violate:
 
-- **The kernel is the policy engine.** Permissions declared in `agent.md` frontmatter (resource:action:scope) must be enforced at *two* layers: the Elixir Router (application) and POSIX ACLs inside the company container (kernel). Application-only checks are a design bug — if an agent lacks `projects:write:foo`, the filesystem must physically reject the write.
-- **Filesystem is the source of truth.** `~/.glorbo/companies/` is user data and is never modified by upgrades. `~/.glorbo/glorbo.db` (SQLite) is **derived data**: `glorbo reindex` must be able to fully reconstruct it from the filesystem. Never store anything in SQLite that isn't rebuildable from markdown/JSONL on disk.
+- **The kernel is the policy engine.** Permissions declared in `agent.md` frontmatter (resource:action:scope) must be enforced at *two* layers: the Elixir Router (application) and the Linux kernel via `bwrap` mount namespaces. Application-only checks are a design bug — if an agent lacks `projects:write:foo`, the filesystem must physically reject the write. Detail: **GEP-5**.
+- **Filesystem is the source of truth.** `~/.glorbo/companies/` is user data and is never modified by upgrades. `~/.glorbo/glorbo.db` (SQLite) is **derived data**: `glorbo reindex` must be able to fully reconstruct it from the filesystem. Never store anything in SQLite that isn't rebuildable from markdown/JSONL on disk. Detail: **GEP-3**, **GEP-7**.
 - **One-way inbox/outbox flow.** `agents/<name>/inbox/` is write-only for Elixir, read-only for the agent. `agents/<name>/outbox/` is write-only for the agent, read-only for Elixir. Agents never touch each other's directories directly — Elixir's Router mediates every transfer.
 - **Audit log is append-only.** `audit/YYYY-MM.jsonl` entries are never modified or deleted. Ever.
-- **Python never runs on the host.** All Python lives inside the `glorbo-runtime` OCI image, executed via `podman run` as per-agent Linux users. Adding Python dependencies to the host is off-spec.
-- **Company isolation is absolute.** Each company runs in its own Podman container with only its own directory mounted. There is no cross-company access mechanism at any layer.
+- **No Python anywhere.** The pre-pivot plan to host a Python agent runtime inside Podman was dropped (GEP-5 D6). Glorbo wraps existing CLI tools; there is no Python on the host and none in any container. Adding Python deps to the Elixir side is off-spec.
+- **Company isolation is absolute.** Each company's agents see only that company's directory through bwrap mount namespaces. There is no cross-company access mechanism at any layer.
 - **Crash isolation follows the OTP supervision tree.** Agent crash → only that agent restarts. Company crash → only that company's agents restart. Dashboard and other companies are unaffected. Preserve this when wiring new supervisors.
 
-## Tech stack (planned)
+## Tech stack
 
-- **Orchestration/dashboard:** Elixir/OTP + Phoenix LiveView + Phoenix Channels, Ecto with `ecto_sqlite3`, `file_system` (inotify) for filesystem watching, `mix release` with bundled ERTS for single-binary distribution.
-- **Agent runtime:** Python 3.12+ inside Podman, with `ollama`, `huggingface_hub`, `anthropic`, `openai`, `google-genai`, `litellm`.
-- **LLMs:** local-first (Ollama auto-downloaded by `glorbo init`) with cloud providers (Anthropic/OpenAI/Google) configured per-agent in `agent.md`.
+- **Orchestration/dashboard:** Elixir/OTP + Phoenix LiveView + Phoenix Channels, Ecto with `ecto_sqlite3`, `file_system` (inotify) for filesystem watching, `mix release` (Burrito-wrapped) for single-binary distribution.
+- **Agent runtime:** existing CLI tools (`claude`, `gemini`, `codex`, etc.) invoked as `bwrap`-sandboxed subprocesses. Each CLI handles its own auth, model routing, tool-use, and telemetry. See GEP-4.
+- **LLMs:** configured per-agent in `agent.md` via a `provider:` field referencing a CLI adapter. Auth lives in each CLI's own home dir (`~/.claude/`, `~/.gemini/`, `~/.codex/`), bind-mounted read-only into the sandbox.
 
-## Planning archive
+## Design decisions — GEPs
 
-This project previously used GSD v1 planning. Those artifacts are frozen at `.planning.archive/` (see `.planning.archive/ARCHIVE.md`). They may contain useful historical context — design rationale for v0.0.1 / v0.0.2 phases, milestone audit findings, requirement traces — but they are **stale by default** and not part of the active workflow.
+Non-trivial design changes to Glorbo are captured as **GEPs (Glorbo Enhancement Proposals)** in `docs/geps/`. See `docs/geps/0001-gep-purpose-and-guidelines.md` for the full process and `docs/geps/README.md` for the index.
 
-**Rules for Claude Code on the archive:**
+**When to propose a new GEP:**
 
-1. Do **not** read `.planning.archive/` proactively. Default assumption: it's irrelevant to the current task.
-2. Only dip into it if the current task genuinely needs historical context that isn't in `DESIGN.md`, `README.md`, `CHANGELOG.md`, or the source.
-3. If you do use `.planning.archive/` content to shape a recommendation, decision, or plan, **explicitly tell the user** which file(s) you relied on and flag that the content may be outdated. Don't silently absorb archive material into current-state answers.
-4. Do not run `/gsd-*` commands — GSD is disabled at the Claude Code level. If planning rigor is needed, use lightweight alternatives (superpowers brainstorming, manual PLAN.md, etc.).
+- The user is **planning** a significant change — a new feature, a non-trivial refactor, a shift in architecture, a new public contract (CLI flag, config schema, on-disk layout, API surface), or anything that touches a load-bearing invariant documented in an existing GEP or `DESIGN.md`.
+- The user has **already worked on** a significant change ad-hoc (without a prior GEP) and the decisions behind it are worth preserving. Retrofit as an Informational GEP capturing what shipped and why.
+- The change reverses or materially extends an earlier decision.
+
+**When NOT to propose a GEP:**
+
+- Bug fixes, dependency bumps, refactors contained to one module that don't change behaviour, doc tweaks, performance work without API changes.
+
+**How:** invoke the `glorbo-new-gep` skill. It walks the user through a Q&A covering scope, design, alternatives, and the decision log. The skill produces a well-formed GEP file in `docs/geps/`, updates the README index, and maintains bidirectional links with referenced GEPs.
+
+Proactively suggest creating a GEP when the user describes work that meets the "when to propose" criteria — don't wait to be asked. If they decline, respect that; if they agree, start the skill.
+
+## Historical planning artifacts
+
+This project previously used GSD v1 planning under `.planning/`. As of 2026-04-17 the tree was archived and then deleted — the decisions it recorded are now captured in the GEPs above, and anything else that mattered lives in git history. If you ever genuinely need v0.0.1/v0.0.2 phase plans, `git log --all` + checking out a pre-2026-04-17 commit is the route. Don't create a parallel doc tree for historical reference; see GEP-11's "archaeology is best served with git" aphorism.
+
+Do not run `/gsd-*` commands — GSD is disabled at the Claude Code level.
 
 ## Repo layout notes
 

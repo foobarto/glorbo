@@ -57,7 +57,77 @@ align on approach. This is especially important for:
   `CLAUDE.md`).
 - New external dependencies.
 
-### 2. Branch + PR flow
+### 2. Significant design changes — write a GEP
+
+Non-trivial design changes are captured as **Glorbo Enhancement
+Proposals (GEPs)** in [`docs/geps/`](./docs/geps/). A GEP is a
+numbered, append-only design record with a required decision log —
+the "why" that outlives any one PR. See
+[`docs/geps/0001-gep-purpose-and-guidelines.md`](./docs/geps/0001-gep-purpose-and-guidelines.md)
+for the full process, and
+[`docs/geps/README.md`](./docs/geps/README.md) for the index.
+
+**Write a GEP if** your change:
+
+- Introduces a new public contract — CLI flag, config schema, on-disk
+  layout, API surface, `agent.md` field.
+- Touches a load-bearing invariant documented in `DESIGN.md` or an
+  existing GEP.
+- Reverses, supersedes, or materially extends a prior decision.
+- Spans multiple modules or milestones and benefits from a shared
+  reference.
+
+**Skip the GEP for:**
+
+- Bug fixes, dependency bumps, doc tweaks.
+- Refactors contained to one module with no behaviour change.
+- Performance work that doesn't change APIs.
+
+**Outside contributors are not required to write GEPs.** A good PR
+with a clear description is welcome regardless. Maintainers will
+retrofit a GEP post-merge if the change warrants one. If you'd like to
+collaborate on a GEP, open a Draft PR with the GEP file — we'll
+iterate on it together before accepting.
+
+**Working on a change and realising it needs a GEP?** Mention it in
+your PR; the maintainer can either help you add one or retrofit it
+after merge as an Informational GEP capturing what shipped.
+
+**Proposing a GEP without a code change.** You're welcome to propose
+a design, challenge an accepted GEP, or retrofit historical context
+without any implementation. To avoid wasted effort on both sides:
+
+1. **Open a GitHub issue first.** One or two paragraphs describing
+   the idea. Label it `gep-proposal`.
+2. **Wait for a maintainer triage response:**
+   - **"Go ahead as Draft"** — open a GEP PR at `status: Draft`.
+     You've worked through the design space enough to defend
+     concrete choices. A maintainer flips it to `Accepted` (or
+     `Rejected`) after review.
+   - **"Go ahead as Placeholder"** — open a GEP PR at
+     `status: Placeholder`. The idea is worth capturing and
+     numbering, but the design space is still open. A Placeholder
+     has a problem statement, goals, open questions, and a few
+     settled decisions — the rest is explicitly flagged as
+     "to be worked out." Lower review bar to merge; you (or
+     someone else) promotes it to Draft later when the open
+     questions are resolved. See GEP-1 §"Placeholders."
+   - **"Not needed"** — the change is too small for a GEP or
+     already covered elsewhere. The issue stays open for discussion
+     and may evolve into something else.
+   - **"Out of scope"** — the proposal doesn't fit Glorbo's
+     direction. Closed with context so others can see the reasoning.
+3. **Rejected GEPs stay in the repo** with `status: Rejected` and a
+   brief history entry. This is deliberate — it documents "we
+   considered this, here's why we passed" and saves everyone from
+   re-litigating the same idea.
+
+This triage step prevents two failure modes: contributors writing
+full GEPs that get rejected on scope (wasted time), and maintainers
+drowning in speculative proposals (wasted attention). A two-paragraph
+issue is cheap for both sides.
+
+### 3. Branch + PR flow
 
 - Fork the repo (or branch directly if you have write access).
 - Branch naming: `feat/<short>`, `fix/<short>`, `docs/<short>`, etc.
@@ -65,7 +135,7 @@ align on approach. This is especially important for:
   issue while working, file it separately rather than folding it in.
 - Rebase on `main` before opening the PR; avoid merge commits.
 
-### 3. Commit messages
+### 4. Commit messages
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
 
@@ -84,7 +154,7 @@ Examples from `git log`:
 - `fix(sandbox/bwrap): replace bash-only ${@:3} with POSIX shift`
 - `docs(03): mark human UAT self-verified (2/3 passed, 1 deferred)`
 
-### 4. Quality gates
+### 5. Quality gates
 
 Every PR must pass the following on CI before it can merge. You should
 run them locally first:
@@ -99,7 +169,7 @@ mix format --check-formatted       # formatter clean
 CI also builds a Burrito release binary and smoke-tests it (`glorbo
 doctor --json`). Breaking the doctor's JSON contract is a blocker.
 
-### 5. Tests
+### 6. Tests
 
 - New features need tests. Bug fixes should include a regression test
   that fails before the fix and passes after.
@@ -123,9 +193,12 @@ explicit justification and sign-off in the PR description.
   Agents read inbox, write outbox. No shortcut.
 - **Audit log is append-only.** `audit/YYYY-MM.jsonl` is never
   modified or deleted.
-- **Python runs in containers only.** Never on the host.
-- **Company isolation is absolute.** One Podman container per company,
-  only that company's directory mounted.
+- **No Python anywhere.** Agents are CLI-tool subprocesses under
+  bwrap. The pre-pivot plan to run Python inside Podman has been
+  dropped (GEP-5 D6).
+- **Company isolation is absolute.** Each agent's bwrap sandbox
+  bind-mounts only the active company's directory; sibling
+  companies are simply not in the mount list.
 - **Crash isolation follows the OTP supervision tree.** Agent crash
   → only that agent restarts, never the whole dashboard.
 
@@ -143,15 +216,10 @@ explicit justification and sign-off in the PR description.
 
 ## Planning workflow
 
-The `.planning/` directory contains GSD v1 planning artifacts
-(`PLAN.md`, `RESEARCH.md`, `VERIFICATION.md` per phase). These are
-committed on `main`. If you're proposing a significant feature, look
-at an existing phase (e.g. `.planning/phases/03-.../`) to see the
-shape — then open an issue to discuss whether a new phase is
-warranted.
-
-For smaller contributions, skip the planning overhead — just open an
-issue and a PR.
+Significant design changes go through the GEP process described in §2
+above. For smaller contributions, skip it — open an issue, open a PR,
+be clear about scope. Maintainers retrofit a GEP post-merge if the
+change warrants one.
 
 ## Review checklist
 

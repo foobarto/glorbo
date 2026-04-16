@@ -65,26 +65,6 @@ sandboxes, and an Elixir process that keeps the office running.
 Back up with `tar`. Version-control with `git`. Move to another machine with
 `scp`. Debug with `cat`.
 
-## Milestone Scope
-
-**v0.0.2 — CLI-agent runtime, dashboard, full CLI surface (current,
-shipped 2026-04-16).** Agents are wrapped invocations of CLI tools you
-already have installed: **Claude Code**, **Gemini CLI**, and **Codex**.
-Every wake spawns a fresh `bwrap(1)` sandbox with only the agent's
-workspace mounted, no network (unless explicitly granted), and all
-capabilities dropped. The Phoenix LiveView dashboard runs on `:4000`;
-the full CLI surface (`up`/`down`/`status`/`serve`/`run`/`new`/`logs`/
-`backup`/`restore`/`console`/`migrate`/`doctor --fix`) is wired and
-verified end-to-end. Zero Python on the host; Glorbo itself is a single
-Elixir binary.
-
-**Next milestone — Podman + Python runtime (re-scoped).** Moves agents
-into per-agent Linux users inside a Podman-managed Company container,
-with `litellm` dispatching to any provider (local Ollama, Anthropic,
-OpenAI, Google) and POSIX ACLs as the second enforcement layer. The
-container design is preserved in `DESIGN.md` and dormant in the codebase;
-restoration guide at `.planning/deferred/container-runtime-v0.0.2/`.
-
 ## Features
 
 **Filesystem-first architecture** — Agents, tasks, chat, permissions, goals,
@@ -102,9 +82,10 @@ policy-enforced.
 already on your machine. Credentials are `--ro-bind`ed into the sandbox;
 session state stays on the host. No new API keys to manage.
 
-**Local-first LLMs (v0.0.2)** — In the v0.0.2 container runtime, Ollama is
-auto-downloaded by `glorbo init`. Cloud providers (Anthropic, OpenAI, Google)
-configurable per agent via `litellm`.
+**Local-first LLMs** — Agents use whichever CLI is installed on your
+host (`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
+`hermes`, `pi`). Add a local model by installing its CLI; Glorbo detects
+it via `glorbo doctor`. No bundled runtime, no SDK layer.
 
 **Real-time dashboard (v0.0.2)** — Phoenix LiveView at `http://127.0.0.1:4000`
 provides company overview, kanban board, agent monitoring with stdout streaming,
@@ -116,14 +97,13 @@ append-only markdown files underneath. Phoenix Channels handles real-time
 delivery.
 
 **Company isolation** — Each company's data lives in its own directory under
-`~/.glorbo/companies/`. Today the bwrap sandbox bind-mounts only the
-active company; the next milestone moves each company into its own Podman
-container with no cross-mount.
+`~/.glorbo/companies/`. The bwrap sandbox bind-mounts only the active
+company's directory; sibling companies are simply not in the mount list.
 
 **Permission model** — Declared in markdown frontmatter, enforced at two
-layers by design: the Elixir Router (application) and the kernel (bwrap
-mounts today, POSIX ACLs in the next milestone). An agent without
-`projects:write:foo` literally cannot write there.
+layers by design: the Elixir Router (application) and the Linux kernel
+via `bwrap` mount namespaces. An agent without `projects:write:foo`
+literally cannot write there.
 
 **Budget governance** — Per-agent monthly budgets with alerts and hard stops.
 No runaway API bills at 3 AM.
@@ -178,8 +158,8 @@ glorbo doctor
 ```
 
 Reports on the full dependency chain: kernel version, `uidmap`, disk space,
-`~/.glorbo/` layout, ERTS, bwrap, user namespaces, and (in v0.0.2) Podman,
-Ollama, the runtime container image, and tar-zstd.
+`~/.glorbo/` layout, ERTS, bwrap, user namespaces, installed CLI tools
+(Claude Code, Gemini CLI, Codex, etc.), and tar-zstd.
 
 ### Hire an Agent
 
@@ -315,9 +295,9 @@ permissions:
   - budget:read:self
 ```
 
-Today the kernel layer is the bwrap argv: denied paths aren't
-bind-mounted. A second POSIX-ACL layer will enforce inside the
-Company container in the next milestone.
+The kernel layer is the bwrap argv: denied paths aren't bind-mounted.
+The application layer (Elixir Router) validates cross-directory
+transfers as belt-and-braces above the kernel.
 
 ## Tech Stack
 
@@ -326,20 +306,25 @@ Company container in the next milestone.
 | Orchestration  | Elixir/OTP                  | Supervision trees, fault tolerance, concurrency |
 | Dashboard      | Phoenix LiveView            | Real-time UI, no JS framework                   |
 | Agent Chat     | Phoenix Channels            | WebSocket pub/sub, built-in                     |
-| Agent Runtime  | `bwrap(1)` + CLI tools      | **v0.0.2** — no Python needed                   |
-| Agent Runtime  | Python in Podman (deferred) | **Next milestone** — `litellm`, POSIX ACLs     |
-| Local LLM      | Ollama (deferred)           | **Next milestone** — private, offline           |
-| Cloud LLM      | Claude, Codex, Gemini       | Via their official CLIs in v0.0.2               |
+| Agent Runtime  | `bwrap(1)` + CLI tools      | One binary per CLI install; no Python, no SDKs  |
+| LLMs           | Whatever CLI you install    | `claude`, `gemini`, `codex`, `opencode`, etc.   |
 | Filesystem     | `inotify` + file_system     | Event-driven watcher                            |
 | Database       | SQLite (via `ecto_sqlite3`) | Single file, zero setup, disposable             |
 | Config/Data    | Markdown + YAML frontmatter | Human-readable, git-friendly, greppable         |
 | Audit          | JSONL files                 | Append-only, never modified                     |
 | Binary         | Burrito + bundled ERTS      | Single binary, no Erlang dependency             |
 
-## Design Document
+## Design Documents
 
-For the full architecture, see [DESIGN.md](DESIGN.md). When `DESIGN.md` and
-this README disagree, `DESIGN.md` wins.
+For the full living architecture, see [DESIGN.md](DESIGN.md). When
+`DESIGN.md` and this README disagree, `DESIGN.md` wins.
+
+For the *why* behind major design decisions, see the **Glorbo
+Enhancement Proposals** under [`docs/geps/`](docs/geps/) — numbered,
+append-only design records. [GEP-1](docs/geps/0001-gep-purpose-and-guidelines.md)
+explains the process; [GEP-2](docs/geps/0002-architecture-overview.md)
+is the architectural overview. The [Zen of Glorbo](docs/geps/0011-zen-of-glorbo.md)
+captures the project's design philosophy in one page.
 
 ## Project Status
 
@@ -353,12 +338,10 @@ Pre-1.0 (currently **v0.0.2**, shipped 2026-04-16). Milestone 01
 - Phase 05 — CLI completeness + backup/restore + portability ✓
 
 Tests: 621/621 green · `mix compile --warnings-as-errors` clean ·
-38/38 v0.0.2 requirements covered (see `.planning/v0.0.2-MILESTONE-AUDIT.md`).
+38/38 v0.0.2 requirements covered.
 
-See the [issues](https://github.com/foobarto/glorbo/issues) and
-`.planning/phases/` for the journey. Planning artifacts (`PLAN.md`,
-`RESEARCH.md`, `VERIFICATION.md`) are committed on `main` — feel free
-to read ahead.
+Active design work lives in `docs/geps/`. Historical phase plans
+are in `git log` for anyone who needs the archaeology.
 
 ## Contributing
 

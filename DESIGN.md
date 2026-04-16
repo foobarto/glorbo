@@ -5,8 +5,31 @@
 Glorbo is a self-hosted, filesystem-first agent orchestration platform built on
 Elixir/Phoenix. It models companies as real organisations — with org charts,
 goals, budgets, governance, and communication — and runs AI agents as employees
-inside kernel-sandboxed processes (`bwrap` in v0.0.1, Linux containers in
-v0.0.2). Everything is markdown. Everything is a file.
+inside kernel-sandboxed (`bwrap`) processes. Everything is markdown. Everything
+is a file.
+
+> **Reading notes.** This document is the living architectural reference.
+> For the *why* behind major decisions, see the corresponding
+> **Glorbo Enhancement Proposals** in `docs/geps/`:
+>
+> - **GEP-2** — architectural overview (the big picture).
+> - **GEP-3** — filesystem as source of truth.
+> - **GEP-4** — CLI-tool agents (no Python, no custom LLM client).
+> - **GEP-5** — bwrap sandboxing (**Podman tier was planned and
+>   dropped — see GEP-5 D6**; historical Podman/Python content below
+>   is kept for context only).
+> - **GEP-6** — Phoenix LiveView + Channels dashboard.
+> - **GEP-7** — SQLite as derived data.
+> - **GEP-8** — provider registry + CLI auto-detect (in-flight).
+> - **GEP-9** — protocol-level integration (MCP, ACP) for future
+>   bidirectional needs.
+>
+> **Important:** sections below that describe a Python agent runtime
+> inside Podman (the original pre-pivot plan) are preserved as
+> historical context, but they are **not active roadmap**. The
+> authoritative runtime story is: agents are CLI-tool subprocesses
+> under `bwrap`. No Python. No container runtime. See GEP-4 and
+> GEP-5.
 
 ---
 
@@ -40,16 +63,16 @@ ability to chat with agents in real time, a proper LiveView dashboard, and
 rock-solid stability through OTP.  It replaces Node.js and embedded Postgres
 with Elixir and the filesystem.
 
-> **Milestone scope — v0.0.1 ships CLI-first agents.** In v0.0.1, agents are
-> sandboxed CLI tools (Claude Code, Gemini CLI, Codex) wrapped in `bwrap`
-> (bubblewrap) mount- and network-namespace isolation. The Python-in-Podman
-> agent runtime with `litellm` dispatch and POSIX ACL enforcement — originally
-> the whole §4.2 / §4.4 / §7.2 story — is **deferred to v0.0.2**. The container
-> design is preserved in this document and dormant in the codebase; the
-> restoration guide lives at `.planning/deferred/container-runtime-v0.0.2/`.
-> Where a section still describes the container path verbatim, a "**v0.0.2**"
-> marker flags the block. "Python never runs on the host" is even stronger in
-> v0.0.1 — Glorbo needs no Python at all.
+> **Milestone scope — agents are CLI-first, permanently.** Agents are
+> sandboxed CLI tools (Claude Code, Gemini CLI, Codex, and OSS
+> alternatives) wrapped in `bwrap` (bubblewrap) mount- and
+> network-namespace isolation. The Python-in-Podman agent runtime with
+> `litellm` dispatch and POSIX ACL enforcement — originally the whole
+> §4.2 / §4.4 / §7.2 story — was **deferred** in v0.0.2 and then
+> **dropped entirely** in 2026-04-17 (see GEP-5 D6). Sections below
+> that still describe the container path are preserved as historical
+> context; they are not active roadmap. "Python never runs on the
+> host" is now load-bearing everywhere: Glorbo needs no Python at all.
 
 ---
 
