@@ -20,6 +20,8 @@ defmodule GlorboWeb.OverviewLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    # OverviewLive takes no slug params — no WR-02 guard needed; kept
+    # as a no-op for symmetry with the other LVs.
     if connected?(socket), do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "companies")
 
     {:ok,

@@ -29,6 +29,26 @@ defmodule GlorboWeb.ChannelLive do
 
   @impl true
   def mount(%{"company" => co, "channel" => ch}, _session, socket) do
+    # WR-02: slug gate before any filesystem construction.
+    cond do
+      not GlorboWeb.Slug.valid?(co) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Invalid company identifier.")
+         |> push_navigate(to: ~p"/companies")}
+
+      not GlorboWeb.Slug.valid?(ch) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Invalid channel identifier.")
+         |> push_navigate(to: ~p"/companies/#{co}")}
+
+      true ->
+        mount_valid(co, ch, socket)
+    end
+  end
+
+  defp mount_valid(co, ch, socket) do
     base = base_dir()
     path = channel_path(base, co, ch)
 

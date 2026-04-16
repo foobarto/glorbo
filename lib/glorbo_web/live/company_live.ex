@@ -18,6 +18,18 @@ defmodule GlorboWeb.CompanyLive do
 
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
+    # WR-02: slug gate before any filesystem construction.
+    if not GlorboWeb.Slug.valid?(slug) do
+      {:ok,
+       socket
+       |> put_flash(:error, "Invalid company identifier.")
+       |> push_navigate(to: ~p"/companies")}
+    else
+      mount_valid(slug, socket)
+    end
+  end
+
+  defp mount_valid(slug, socket) do
     base = base_dir()
     co_path = Path.join([base, "companies", slug])
 

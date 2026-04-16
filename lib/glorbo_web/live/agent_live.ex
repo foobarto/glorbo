@@ -26,6 +26,26 @@ defmodule GlorboWeb.AgentLive do
 
   @impl true
   def mount(%{"company" => co, "agent" => ag}, _session, socket) do
+    # WR-02: slug gate before any filesystem construction.
+    cond do
+      not GlorboWeb.Slug.valid?(co) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Invalid company identifier.")
+         |> push_navigate(to: ~p"/companies")}
+
+      not GlorboWeb.Slug.valid?(ag) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Invalid agent identifier.")
+         |> push_navigate(to: ~p"/companies/#{co}")}
+
+      true ->
+        mount_valid(co, ag, socket)
+    end
+  end
+
+  defp mount_valid(co, ag, socket) do
     base = base_dir()
     ag_dir = Path.join([base, "companies", co, "agents", ag])
 
