@@ -151,13 +151,40 @@ defmodule GlorboWeb.AuditLive do
 
       <AuditEntry.audit_entry
         :for={{entry, idx} <- Enum.with_index(@filtered)}
-        id={"audit-#{idx}"}
+        id={entry_id(entry, idx)}
         entry={entry}
-        expanded={MapSet.member?(@expanded, "audit-#{idx}")}
+        expanded={MapSet.member?(@expanded, entry_id(entry, idx))}
       />
     </section>
     """
   end
+
+  # WR-03: Key expansion state on a stable hash of the entry's unique
+  # fields (timestamp + actor + action + target) rather than the
+  # render-order index. Audit entries are append-only, so the tuple is
+  # effectively unique within a monthly log. Polls and filter changes
+  # no longer drift the expansion state onto neighboring rows.
+  defp entry_id(entry, fallback_idx) when is_map(entry) do
+    ts = to_string(entry["ts"] || "")
+    actor = to_string(entry["actor"] || "")
+    action = to_string(entry["action"] || "")
+    target = to_string(entry["target"] || "")
+
+    case {ts, actor, action} do
+      {"", "", ""} ->
+        "audit-#{fallback_idx}"
+
+      _ ->
+        hash =
+          :crypto.hash(:sha256, ts <> "\0" <> actor <> "\0" <> action <> "\0" <> target)
+          |> Base.url_encode64(padding: false)
+          |> binary_part(0, 16)
+
+        "audit-#{hash}"
+    end
+  end
+
+  defp entry_id(_entry, fallback_idx), do: "audit-#{fallback_idx}"
 
   # ---------------------------------------------------------------------------
   # Data loaders
