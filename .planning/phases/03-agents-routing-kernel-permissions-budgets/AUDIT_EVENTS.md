@@ -26,6 +26,7 @@ Event keys are additive to Phase 2's set (which defined `init.*`, `reindex.*`, `
 | `network.policy_applied` | system | Container startup | `company: string, agent: string, policy: string, allow_list_hash: string` |
 | `agents.create_blocked` | sender_agent | Router | `from: string, attempted_target: string` |
 | `scheduler.invalid_cron` | system | Scheduler | `agent: string, cron: string, reason: string` |
+| `provider.unavailable` | system | Dispatch | `agent: string, provider: string` |
 
 ## Conventions
 

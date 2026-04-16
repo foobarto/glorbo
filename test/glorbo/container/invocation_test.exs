@@ -101,7 +101,9 @@ defmodule Glorbo.Container.InvocationTest do
 
     test "extra_volumes default is empty and does not alter original argv shape" do
       argv_no = Invocation.build_argv("acme", "ceo", :persistent, base: @base)
-      argv_empty = Invocation.build_argv("acme", "ceo", :persistent, base: @base, extra_volumes: [])
+
+      argv_empty =
+        Invocation.build_argv("acme", "ceo", :persistent, base: @base, extra_volumes: [])
 
       assert argv_no == argv_empty
     end
