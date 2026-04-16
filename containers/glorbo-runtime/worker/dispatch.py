@@ -16,6 +16,23 @@ from typing import Optional
 import litellm
 
 
+# WR-11: litellm provider-string prefixes we must NOT re-prefix. Anything
+# else with a slash (e.g. Ollama's "hf.co/user/model" HuggingFace-hosted
+# tags) still needs the `{provider}/` prefix so litellm routes correctly.
+_KNOWN_PROVIDER_PREFIXES = (
+    "openrouter/",
+    "together_ai/",
+    "bedrock/",
+    "anthropic/",
+    "openai/",
+    "ollama/",
+    "gemini/",
+    "vertex_ai/",
+    "groq/",
+    "mistral/",
+)
+
+
 async def run_task(
     ctx: dict,
     provider: str,
@@ -24,8 +41,11 @@ async def run_task(
     timeout_seconds: int,
 ) -> dict:
     # litellm provider-string convention: "{provider}/{model}" unless the
-    # caller already supplied a slashed form (e.g. "openrouter/anthropic/...").
-    model_str = f"{provider}/{model}" if "/" not in model else model
+    # caller already supplied a known-provider-slashed form.
+    if any(model.startswith(p) for p in _KNOWN_PROVIDER_PREFIXES):
+        model_str = model
+    else:
+        model_str = f"{provider}/{model}"
     kwargs = {
         "model": model_str,
         "messages": ctx["messages"],
