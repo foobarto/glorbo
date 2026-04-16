@@ -24,7 +24,7 @@ absolute; OTP supervision preserves crash isolation; audit is append-only.
 - [x] **Phase 01: compilable skeleton ci release pipeline** - Phoenix/OTP skeleton with SQLite WAL, `mix glorbo.doctor`, and CI producing signed x86_64 + aarch64 single-binary releases.
 - [x] **Phase 02: filesystem foundation container runtime local llm** - `glorbo init` bootstraps Podman and Ollama, builds `glorbo-runtime` image, materialises `~/.glorbo/` hierarchy, audit log appends, and `reindex` rebuilds SQLite from disk.
 - [x] **Phase 03: agents routing kernel permissions budgets** - Per-company supervision trees with inotify-driven inbox/outbox, CLI agents (Claude Code, Gemini CLI, Codex) dispatched through `bwrap` sandboxes with filesystem + network namespace isolation, per-agent budgets, skills injection, and Director approval gates.
-- [ ] **Phase 04: liveview dashboard real time channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
+- [x] **Phase 04: liveview dashboard real time channels** - Phoenix LiveView on `:4000` with company overview, kanban, agent detail (live stdout), chat, approval queue, audit viewer, and system health, powered by Channels + PubSub wired to inotify.
 - [ ] **Phase 05: cli completeness backup restore portability** - Full CLI surface (`new`, `logs`, `console`, `migrate`, `backup`, `restore`, `doctor --fix`) with verified end-to-end portability: `backup` → `scp` → `restore` + `doctor --fix` reproduces a functional install on a fresh host.
 
 ## Phase Details
