@@ -145,7 +145,7 @@ defmodule Glorbo.Agent.Server do
       company: company,
       task_supervisor: task_sup,
       dispatch_fun: Keyword.get(opts, :dispatch_fun, &default_dispatch_fun/3),
-      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/1),
+      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/2),
       dispatch_opts: Keyword.get(opts, :dispatch_opts, []),
       status: :idle,
       current_task: nil,
@@ -231,7 +231,7 @@ defmodule Glorbo.Agent.Server do
   def handle_info(_other, state), do: {:noreply, state}
 
   defp handle_inbox_wake(%{status: :idle} = state) do
-    case state.inbox_scan_fun.(state.spec) do
+    case call_inbox_scan(state) do
       nil -> {:noreply, state}
       %{} = task -> {:noreply, start_dispatch(state, task)}
     end
@@ -303,7 +303,20 @@ defmodule Glorbo.Agent.Server do
   defp resolve_task(_state, _trigger, %{} = explicit_task), do: explicit_task
 
   defp resolve_task(state, _trigger, nil) do
-    state.inbox_scan_fun.(state.spec)
+    call_inbox_scan(state)
+  end
+
+  # Call the inbox-scan fun compatibly with both the historical 1-arity
+  # `(spec)` signature (common in existing tests) and the new 2-arity
+  # `(spec, base)` signature — state.base replaces the prior
+  # hardcoded `Path.expand("~/.glorbo")` call inside default_inbox_scan
+  # (TODO.md High #3).
+  defp call_inbox_scan(%{inbox_scan_fun: fun, spec: spec, base: base}) do
+    case :erlang.fun_info(fun, :arity) do
+      {:arity, 1} -> fun.(spec)
+      {:arity, 2} -> fun.(spec, base)
+      _ -> fun.(spec)
+    end
   end
 
   defp dispatch_result_to_exit_status({:ok, %{exit_status: s}}), do: s
@@ -336,8 +349,7 @@ defmodule Glorbo.Agent.Server do
   # inbox is empty. Directories walked lazily; never reads the whole
   # inbox into memory. Called from resolve_task/3 (explicit wake/3) and
   # from handle_inbox_wake/1 (PubSub :file_event path).
-  defp default_inbox_scan(%_{} = spec) do
-    base = Path.expand("~/.glorbo")
+  defp default_inbox_scan(%_{} = spec, base) when is_binary(base) do
     inbox_dir = Path.join([base, "companies", spec.company, "agents", spec.slug, "inbox"])
 
     with true <- File.dir?(inbox_dir),

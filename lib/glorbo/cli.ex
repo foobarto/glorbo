@@ -141,7 +141,7 @@ defmodule Glorbo.CLI do
   @spec help_text() :: String.t()
   def help_text do
     """
-    Glorbo 0.1.0 — filesystem-first agent orchestration
+    Glorbo 0.0.3 — filesystem-first agent orchestration
 
     USAGE
       glorbo <command> [args]

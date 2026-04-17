@@ -103,12 +103,23 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   # agents:create:* → empty (categorically denied; AGT-05)
   defp permission_to_flags({"agents", "create", _scope}, _co), do: []
 
-  # agents:list:* → empty + warning (D-12 staging-tmpfs deferred to v0.0.2)
+  # agents:list:* → empty + warning. The staging-tmpfs implementation
+  # that would materialise an agent roster inside the sandbox is
+  # deferred. Until it lands, this permission is a no-op at the
+  # kernel layer — the agent can't `ls /agents/` — so the Router
+  # remains the only path for inter-agent discovery (via
+  # `agents:message:<slug>`).
+  #
+  # The warning fires every wake, which is noisy but unavoidable
+  # until the Director takes action. Emitting a structured event
+  # instead of a free-form log would be the right surface, but
+  # requires plumbing a company-context audit seam through this
+  # module — deferred as part of the next Router/audit refactor.
+  # (TODO.md High #9.)
   defp permission_to_flags({"agents", "list", _scope}, _co) do
     Logger.warning(
-      "permission_mapper: agents:list is not implemented in v0.0.1 — returning empty argv. " <>
-        "Use agents:message:<target> for inter-agent communication. " <>
-        "Tracked as v0.0.2 follow-up (D-12 staging-tmpfs)."
+      "permission_mapper: agents:list has no kernel-layer effect yet — " <>
+        "use agents:message:<target> for inter-agent communication."
     )
 
     []

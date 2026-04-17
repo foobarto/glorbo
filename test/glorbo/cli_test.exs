@@ -54,7 +54,7 @@ defmodule Glorbo.CLITest do
     {verb, _code, output} = CLI.dispatch(["doctor", "--json"])
     assert verb == :doctor
     decoded = Jason.decode!(output)
-    assert decoded["version"] == "0.1.0"
+    assert decoded["version"] == "0.0.3"
     # GEP-5 D6 pruned podman/ollama/runtime_image/runtime_exec:
     # 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10 checks.
     assert length(decoded["checks"]) == 10

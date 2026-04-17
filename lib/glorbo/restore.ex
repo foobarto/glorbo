@@ -332,12 +332,16 @@ defmodule Glorbo.Restore do
   end
 
   defp reindex(base) do
+    # Reindex.run/1 is typed `{:ok, result()}` only. If it ever starts
+    # returning {:error, _} the compiler will flag this clause; for
+    # now we surface exceptions + exits via rescue/catch below.
     {:ok, _} = Glorbo.Filesystem.Reindex.run(base: base)
     :ok
   rescue
     e -> {:error, {:reindex_failed, Exception.message(e)}}
   catch
     :exit, reason -> {:error, {:reindex_failed, inspect(reason)}}
+    kind, reason -> {:error, {:reindex_failed, {kind, inspect(reason)}}}
   end
 
   defp maybe_fixer(true), do: :ok
