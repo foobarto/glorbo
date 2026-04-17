@@ -1,11 +1,13 @@
-# Script for populating the database. You can run it as:
+# Intentionally empty.
 #
-#     mix run priv/repo/seeds.exs
+# Glorbo's domain data lives on the filesystem under ~/.glorbo/companies/,
+# not in the SQLite index. The index is rebuildable by `glorbo reindex`
+# (GEP-7 — SQLite as derived data), so there's nothing meaningful to
+# seed directly into the DB.
 #
-# Inside the script, you can read and write to any of your
-# repositories directly:
+# The `glorbo init --example` CLI bootstraps a sample company on disk;
+# that's the moral equivalent of seeds for this project.
 #
-#     Glorbo.Repo.insert!(%Glorbo.SomeSchema{})
-#
-# We recommend using the bang functions (`insert!`, `update!`
-# and so on) as they will fail if something goes wrong.
+# Kept as a no-op instead of deleted because `mix ecto.setup` (in
+# mix.exs aliases) references `run priv/repo/seeds.exs` — removing the
+# file would break the alias.

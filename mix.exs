@@ -67,6 +67,10 @@ defmodule Glorbo.MixProject do
       # ~/.glorbo/providers.toml). Pure-Elixir, Apache-2.0.
       {:toml, "~> 0.7"},
       {:finch, "~> 0.21"},
+      # Finch/Mint's TLS certificate verification relies on castore (marked
+      # optional by mint). Declaring it here guarantees cert validation
+      # works in prod (TODO.md audit Low #2).
+      {:castore, ">= 0.0.0"},
       {:muontrap, "~> 1.6"},
       # Phase 4 Wave 0 — LiveView dashboard dependencies.
       # `esbuild` bundles `assets/js/app.js` + `assets/css/app.css` into

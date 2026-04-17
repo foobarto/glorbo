@@ -238,6 +238,5 @@ defmodule GlorboWeb.AgentLive do
   defp format_perm({r, a, s}), do: "#{r}:#{a}:#{s}"
   defp format_perm(other), do: inspect(other)
 
-  defp base_dir,
-    do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+  defp base_dir, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

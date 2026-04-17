@@ -144,6 +144,5 @@ defmodule GlorboWeb.OverviewLive do
     end
   end
 
-  defp base_dir,
-    do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+  defp base_dir, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

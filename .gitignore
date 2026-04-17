@@ -76,3 +76,14 @@ coverage/
 .agent/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# ElixirLS workspace (language-server cache, per-project).
+.elixir_ls/
+
+# direnv (per-project envrc).
+.envrc
+
+# Local release/backup artifacts — produced by `mix release`, `glorbo backup`,
+# and the cosign signing step. None of these belong in the repo.
+*.tar.gz
+*.sig
