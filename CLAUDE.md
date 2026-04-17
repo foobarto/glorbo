@@ -8,6 +8,20 @@ Glorbo shipped **v0.0.2** (Milestone 01 — CLI-agent runtime): Phoenix/LiveView
 
 `DESIGN.md` is the authoritative architectural spec; `README.md` is the user-facing pitch. When they disagree, `DESIGN.md` wins. `CHANGELOG.md` tracks what has actually shipped.
 
+## Coding discipline
+
+Four principles, adapted from Karpathy's coding guidelines. These override the "move fast" impulse.
+
+1. **Think before coding.** Don't assume, don't hide confusion, surface tradeoffs. When a request has multiple plausible interpretations, state them and pick one *visibly* — don't silently choose. For non-trivial work, sketch the plan (one paragraph, maybe a bullet list of steps) before opening a file. If a requirement is ambiguous and the ambiguity is load-bearing, ask.
+
+2. **Simplicity first.** Minimum code that solves the problem. No speculative abstractions, no unrequested configurability, no defensive error-handling for scenarios that can't happen. Three similar lines is cheaper than a premature abstraction. When adding a helper, ask: "does the *current* problem need this, or am I building for a hypothetical?"
+
+3. **Surgical changes.** Touch only what you must. Preserve existing style in the files you're editing — don't rename vars, reformat neighbouring lines, or "improve" unrelated sections while passing through. When your change orphans an import or a function, remove *those*; leave pre-existing dead code untouched unless the user asks for cleanup. Mockup-alignment sessions and refactoring sprints are the exceptions — they're declared wide-scope up front.
+
+4. **Goal-driven execution.** Define success concretely before implementing. "Fix the bug" → "write a test that reproduces it, make the test pass." "Match the mockup" → "screenshot the view, diff against the reference, list the deltas, close them." Loop until the test passes / the diff is closed, not until you *feel* done. This project's browser-verification loop (agent-browser screenshots against `~/Pobrane/abc.zip`) is this principle applied to UI.
+
+Success looks like fewer churned lines, no collateral rewrites, and clarifying questions ahead of implementation rather than reverted commits after it.
+
 ## Common commands
 
 - **Setup:** `mix setup` (fetches deps, creates/migrates dev DB, installs esbuild).
