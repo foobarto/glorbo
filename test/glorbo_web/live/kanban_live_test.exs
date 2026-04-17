@@ -75,4 +75,63 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Deploy landing page"
     assert html =~ "Requires Director approval"
   end
+
+  test "new_task button opens inline form", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    html = render_click(view, "new_task")
+    assert html =~ ~s(id="new-task-project")
+    assert html =~ ~s(id="new-task-title")
+  end
+
+  test "new_task_create writes a new task markdown", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "new_task")
+
+    render_submit(view, "new_task_create", %{
+      "project" => "website",
+      "title" => "Probe from tests"
+    })
+
+    # Should exist at projects/website/tasks/t-XX.md with our title.
+    tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
+    files = File.ls!(tasks_dir) |> Enum.filter(&String.ends_with?(&1, ".md"))
+
+    matched =
+      Enum.any?(files, fn f ->
+        path = Path.join(tasks_dir, f)
+
+        case File.read(path) do
+          {:ok, content} -> content =~ "Probe from tests" and content =~ "status: todo"
+          _ -> false
+        end
+      end)
+
+    assert matched, "new task file was not written with the expected frontmatter"
+  end
+
+  test "new_task_create rejects an empty title", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "new_task")
+
+    html =
+      render_submit(view, "new_task_create", %{
+        "project" => "website",
+        "title" => "   "
+      })
+
+    assert html =~ "Title can&#39;t be empty" or html =~ "Title can't be empty"
+  end
+
+  test "new_task_create rejects an unknown project", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "new_task")
+
+    html =
+      render_submit(view, "new_task_create", %{
+        "project" => "nonexistent",
+        "title" => "Whatever"
+      })
+
+    assert html =~ "Pick a project"
+  end
 end

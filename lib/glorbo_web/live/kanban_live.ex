@@ -56,7 +56,9 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:sidebar_active, :kanban)
        |> assign(:company_slug, slug)
        |> assign(:current_company, slug)
-       |> assign(:columns, group_by_column(tasks))}
+       |> assign(:columns, group_by_column(tasks))
+       |> assign(:new_task_open?, false)
+       |> assign(:new_task_projects, list_projects(base, slug))}
     else
       {:ok,
        socket
@@ -80,12 +82,42 @@ defmodule GlorboWeb.KanbanLive do
 
   @impl true
   def handle_event("new_task", _params, socket) do
-    {:noreply,
-     put_flash(
-       socket,
-       :info,
-       "New-task UI ships in a later milestone. Drop a file in projects/<name>/tasks/ for now."
-     )}
+    {:noreply, assign(socket, :new_task_open?, true)}
+  end
+
+  def handle_event("new_task_cancel", _params, socket) do
+    {:noreply, assign(socket, :new_task_open?, false)}
+  end
+
+  def handle_event(
+        "new_task_create",
+        %{"project" => project, "title" => title},
+        socket
+      ) do
+    base = base_dir()
+    company = socket.assigns.company_slug
+
+    with :ok <- validate_project(project, socket.assigns.new_task_projects),
+         :ok <- validate_title(title),
+         {:ok, task_id} <- next_task_id(base, company, project),
+         :ok <- write_new_task(base, company, project, task_id, title) do
+      tasks = load_tasks(base, company)
+
+      {:noreply,
+       socket
+       |> assign(:columns, group_by_column(tasks))
+       |> assign(:new_task_open?, false)
+       |> put_flash(:info, "Created #{task_id} in #{project}.")}
+    else
+      {:error, :invalid_project} ->
+        {:noreply, put_flash(socket, :error, "Pick a project.")}
+
+      {:error, :invalid_title} ->
+        {:noreply, put_flash(socket, :error, "Title can't be empty.")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Could not create task.")}
+    end
   end
 
   def handle_event("kanban:move", %{"task_path" => task_path, "to" => to}, socket) do
@@ -113,6 +145,44 @@ defmodule GlorboWeb.KanbanLive do
         Drag a card to move between lanes. Status writes back to the task's <code>status:</code>
         frontmatter.
       </p>
+
+      <form
+        :if={@new_task_open?}
+        phx-submit="new_task_create"
+        class="gl-new-task-form"
+        aria-label="Create new task"
+      >
+        <label class="gl-sr-only" for="new-task-project">Project</label>
+        <select
+          id="new-task-project"
+          name="project"
+          class="gl-input"
+          required
+          disabled={@new_task_projects == []}
+        >
+          <option :if={@new_task_projects == []} value="">(no projects)</option>
+          <option :for={p <- @new_task_projects} value={p}>{p}</option>
+        </select>
+        <label class="gl-sr-only" for="new-task-title">Title</label>
+        <input
+          id="new-task-title"
+          type="text"
+          name="title"
+          class="gl-input"
+          placeholder="Task title…"
+          required
+          maxlength="200"
+          autofocus
+        />
+        <button type="submit" class="gl-btn gl-btn--primary">Create</button>
+        <button
+          type="button"
+          class="gl-btn"
+          phx-click="new_task_cancel"
+        >
+          Cancel
+        </button>
+      </form>
 
       <div class="gl-kanban__board">
         <section
@@ -148,6 +218,84 @@ defmodule GlorboWeb.KanbanLive do
       {:in_progress, "in progress", i},
       {:done, "done", d}
     ]
+  end
+
+  defp list_projects(base, company) do
+    projects_dir = Path.join([base, "companies", company, "projects"])
+
+    case File.ls(projects_dir) do
+      {:ok, slugs} ->
+        slugs
+        |> Enum.sort()
+        |> Enum.filter(&File.dir?(Path.join(projects_dir, &1)))
+
+      _ ->
+        []
+    end
+  end
+
+  defp validate_project(project, allowed) do
+    if is_binary(project) and project != "" and project in allowed do
+      :ok
+    else
+      {:error, :invalid_project}
+    end
+  end
+
+  defp validate_title(title) when is_binary(title) do
+    trimmed = String.trim(title)
+
+    if trimmed != "" and byte_size(trimmed) <= 200,
+      do: :ok,
+      else: {:error, :invalid_title}
+  end
+
+  defp validate_title(_), do: {:error, :invalid_title}
+
+  defp next_task_id(base, company, project) do
+    tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    max_n =
+      case File.ls(tasks_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.map(&Regex.run(~r/\At-(\d+)\.md\z/, &1))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.map(fn [_, n] -> String.to_integer(n) end)
+          |> Enum.max(fn -> 0 end)
+
+        _ ->
+          0
+      end
+
+    {:ok, "t-" <> String.pad_leading(Integer.to_string(max_n + 1), 2, "0")}
+  end
+
+  defp write_new_task(base, company, project, task_id, title) do
+    trimmed = String.trim(title)
+    escaped = trimmed |> String.replace("\\", "\\\\") |> String.replace(~s("), ~s(\\"))
+
+    body = """
+    ---
+    title: "#{escaped}"
+    status: todo
+    ---
+
+    #{trimmed}
+    """
+
+    path = Path.join([base, "companies", company, "projects", project, "tasks", "#{task_id}.md"])
+    tmp = path <> ".tmp"
+
+    with :ok <- File.write(tmp, body, [:sync]),
+         :ok <- File.rename(tmp, path) do
+      :ok
+    else
+      err ->
+        _ = File.rm(tmp)
+        err
+    end
   end
 
   defp column_key_to_status(:todo), do: "todo"

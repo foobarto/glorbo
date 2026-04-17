@@ -1169,6 +1169,17 @@ button { font-family: inherit; font-size: inherit; }
   overflow-x: auto;
   padding-bottom: var(--gl-space-md);
 }
+.gl-new-task-form {
+  display: grid;
+  grid-template-columns: 180px 1fr auto auto;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 2px;
+  padding: var(--gl-space-sm);
+  margin-bottom: var(--gl-space-sm);
+}
 .gl-kanban__column {
   min-width: 280px;
   max-width: 360px;
