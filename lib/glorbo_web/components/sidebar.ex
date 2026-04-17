@@ -96,10 +96,6 @@ defmodule GlorboWeb.Components.Sidebar do
     end
   end
 
-  defp health_status(%{blocker: b}) when b > 0, do: "crashed"
-  defp health_status(%{warning: w}) when w > 0, do: "warning"
-  defp health_status(_), do: "healthy"
-
   # Atom variant for HealthDot (which takes an atom); closed-set map
   # avoids `String.to_existing_atom/1` with its test-env gotchas.
   defp health_status_atom(%{blocker: b}) when b > 0, do: :crashed

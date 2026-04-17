@@ -16,21 +16,51 @@
   --gl-font-label: 12px;
   --gl-font-heading: 16px;
   --gl-font-display: 20px;
-  /* Surfaces — GitHub-dark */
-  --gl-bg: #0d1117;
-  --gl-surface: #161b22;
-  --gl-surface-raised: #21262d;
-  --gl-border: #30363d;
+  /* Surfaces — terminal-TUI palette (oklch phosphor accents).
+     These are the load-bearing tokens now; the GitHub-Dark tokens
+     below remain aliased for backwards compat, but nothing new
+     should reference them. Mockup: `abc.zip/styles.css:6-55`. */
+  --gl-bg: #0a0d0f;
+  --gl-surface: #0f1316;
+  --gl-surface-raised: #151a1e;
+  --gl-surface-hover: #1c2227;
+  --gl-surface-selected: #242b31;
+  --gl-border: #232a30;
+  --gl-border-strong: #313a42;
+  --gl-border-faint: #1a2026;
   /* Text */
-  --gl-fg: #c9d1d9;
-  --gl-fg-muted: #8b949e;
-  --gl-fg-subtle: #6e7681;
-  /* Accent (reserved use) */
-  --gl-accent: #58a6ff;
-  /* Semantic */
-  --gl-success: #3fb950;
-  --gl-warning: #d29922;
-  --gl-danger: #f85149;
+  --gl-fg: #e6ecef;
+  --gl-fg-muted: #b6c1c7;
+  --gl-fg-subtle: #7e8b93;
+  --gl-fg-faint: #525d64;
+  --gl-fg-ghost: #3a434a;
+  /* Phosphor accents (oklch — perceptually uniform). The mockup's
+     kernel-green primary is 0.82 lightness / 0.15 chroma / 145° hue. */
+  --gl-accent: oklch(0.82 0.15 145);
+  --gl-accent-dim: oklch(0.62 0.12 145);
+  --gl-accent-bg: oklch(0.32 0.08 145 / 0.18);
+  --gl-amber: oklch(0.82 0.14 75);
+  --gl-amber-dim: oklch(0.62 0.12 75);
+  --gl-amber-bg: oklch(0.32 0.08 75 / 0.18);
+  --gl-rose: oklch(0.72 0.16 25);
+  --gl-rose-dim: oklch(0.55 0.13 25);
+  --gl-rose-bg: oklch(0.32 0.08 25 / 0.20);
+  --gl-cyan: oklch(0.82 0.10 210);
+  --gl-violet: oklch(0.75 0.13 295);
+  /* Semantic aliases — success/warning/danger map to phosphor/amber/
+     rose so existing call sites keep working with the new palette. */
+  --gl-success: var(--gl-accent);
+  --gl-warning: var(--gl-amber);
+  --gl-danger: var(--gl-rose);
+  /* Fonts — IBM Plex Mono for UI, JetBrains Mono fallback, then system.
+     No external CDN load; browsers that have either installed use them,
+     everything else falls back to the OS monospace. */
+  --gl-ff-ui:
+    "IBM Plex Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+  --gl-ff-mono:
+    "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
 }
 
 /* ========== Reset + base ========== */
@@ -43,9 +73,10 @@ body {
   padding: 0;
   background: var(--gl-bg);
   color: var(--gl-fg);
-  font-family: ui-monospace, Menlo, Consolas, "JetBrains Mono", monospace;
+  font-family: var(--gl-ff-ui);
   font-size: var(--gl-font-body);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
 code {
