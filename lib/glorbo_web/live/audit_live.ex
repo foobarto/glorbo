@@ -4,9 +4,14 @@ defmodule GlorboWeb.AuditLive do
 
   Reads the current-month `audit/YYYY-MM.jsonl` from the company
   directory and renders the last 500 entries (tail). The file is
-  append-only and Phase 3 deliberately excludes it from the Watcher
-  PubSub topics, so this LV polls via `Process.send_after(self(),
-  :poll, 1_000)` to pick up new entries (04-RESEARCH line 155).
+  append-only.
+
+  Updates stream in via PubSub — `Glorbo.Company.AuditLog` broadcasts
+  `{:audit_append, record}` on `company:<co>:audit` after every
+  successful append. The Watcher deliberately ignores `audit/*`
+  events (would loop with AuditLog-writing subscribers), so this
+  channel is the only one. A 15s low-rate poll remains as a safety
+  net for out-of-band file edits.
 
   Filter inputs (`actor`, `action`) operate client-side on the
   loaded tail. A `Load 500 older` button prepends the previous
@@ -19,7 +24,9 @@ defmodule GlorboWeb.AuditLive do
   use GlorboWeb, :live_view
   alias GlorboWeb.Components.AuditEntry
 
-  @poll_ms 1_000
+  # Out-of-band safety-net poll. PubSub `{:audit_append, record}` drives
+  # realtime updates; this poll catches manual edits or recovery scenarios.
+  @poll_ms 15_000
   @page 500
 
   @impl true
@@ -40,7 +47,10 @@ defmodule GlorboWeb.AuditLive do
     ym = current_year_month()
     path = audit_path(base, co, ym)
 
-    if connected?(socket), do: Process.send_after(self(), :poll, @poll_ms)
+    if connected?(socket) do
+      Process.send_after(self(), :poll, @poll_ms)
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
+    end
 
     {entries, offset, total} = load_tail(path, @page)
 
@@ -75,7 +85,41 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:beginning, offset == 0)}
   end
 
+  # AuditLog broadcast — append realtime without re-reading the file.
+  def handle_info({:audit_append, record}, socket) when is_map(record) do
+    # Records from AuditLog use atom keys; the file-read path produces
+    # string keys. Normalise to strings so entry_id + filter helpers
+    # stay uniform.
+    entry = stringify_keys(record)
+
+    new_entries = append_capped(socket.assigns.entries, entry, @page)
+    new_total = socket.assigns.total_lines + 1
+
+    {:noreply,
+     socket
+     |> assign(:entries, new_entries)
+     |> assign(:total_lines, new_total)}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), stringify_keys(v)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(other), do: other
+
+  # Cap the in-memory tail at @page entries — matches load_tail's
+  # bound so realtime appends don't grow unboundedly during long
+  # LiveView sessions.
+  defp append_capped(entries, new_entry, cap) do
+    appended = entries ++ [new_entry]
+
+    if length(appended) > cap,
+      do: Enum.take(appended, -cap),
+      else: appended
+  end
 
   @impl true
   def handle_event("filter", params, socket) do

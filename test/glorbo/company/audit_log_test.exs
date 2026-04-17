@@ -178,5 +178,39 @@ defmodule Glorbo.Company.AuditLogTest do
       )
       """)
     end
+
+    # Test 8 — PubSub broadcast after a successful append (realtime UI).
+    test "Test 8: append broadcasts {:audit_append, record} on company:<co>:audit",
+         %{name: name} do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:acme:audit")
+
+      :ok =
+        AuditLog.append(name, %{
+          company: "acme",
+          actor: "director",
+          action: "task.create",
+          target: "projects/website/tasks/website-07.md"
+        })
+
+      assert_receive {:audit_append, record}, 500
+      assert record.action == "task.create"
+      assert record.actor == "director"
+      assert record.target == "projects/website/tasks/website-07.md"
+      assert is_binary(record.ts)
+    end
+
+    # Test 9 — _system audit does not broadcast (avoid noisy global topic).
+    test "Test 9: :_system audit does not broadcast", %{name: name} do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:_system:audit")
+
+      :ok =
+        AuditLog.append(name, %{
+          company: "_system",
+          actor: "cli",
+          action: "cli.up.start"
+        })
+
+      refute_receive {:audit_append, _}, 200
+    end
   end
 end

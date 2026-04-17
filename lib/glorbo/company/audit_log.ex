@@ -83,7 +83,24 @@ defmodule Glorbo.Company.AuditLog do
     # Mirror to SQLite — derived; failure logged but does not roll back JSONL.
     mirror_to_sqlite(company, actor, action, target, detail_map, ts)
 
+    # Broadcast post-write so UI subscribers can stream in realtime.
+    # Safe because this module is the sole writer of audit files
+    # (D-24), so there's no echo-loop risk. Watcher deliberately
+    # skips audit/* — this is the only channel.
+    broadcast_append(company, record)
+
     {:reply, :ok, state}
+  end
+
+  defp broadcast_append("_system", _record), do: :ok
+
+  defp broadcast_append(company, record) when is_binary(company) do
+    _ =
+      Phoenix.PubSub.broadcast(Glorbo.PubSub, "company:#{company}:audit", {:audit_append, record})
+
+    :ok
+  rescue
+    _ -> :ok
   end
 
   # WR-10: stringify all keys so downstream lookups read one taxonomy only.
