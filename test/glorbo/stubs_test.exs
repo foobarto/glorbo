@@ -8,7 +8,7 @@ defmodule Glorbo.StubsTest do
   """
 
   @modules [
-    Glorbo.Company.FileWatcher,
+    Glorbo.Filesystem.Watcher,
     Glorbo.Company.Router,
     Glorbo.Company.Scheduler,
     Glorbo.Company.BudgetTracker,
