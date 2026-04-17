@@ -231,7 +231,7 @@ defmodule Glorbo.Network.Proxy do
   # ---------------------------------------------------------------------------
 
   defp handle_connection(client_sock, allowlist, task_sup) do
-    case read_request_head(client_sock, <<>>, 4096) do
+    case read_request_head(client_sock, <<>>) do
       {:ok, head} ->
         dispatch_request(head, client_sock, allowlist, task_sup)
 
@@ -241,13 +241,17 @@ defmodule Glorbo.Network.Proxy do
     end
   end
 
-  # Read until "\r\n\r\n" or cap.
-  defp read_request_head(_sock, acc, _remaining) when byte_size(acc) >= 16_384 do
+  # Read until "\r\n\r\n" or the 16KB cap. The guard is on cumulative
+  # `acc` size and fires on every recursive call (not just the first) —
+  # a slow-drip chunking attack can only append until the running total
+  # exceeds the cap, at which point the next recursion rejects. Bounded
+  # at 16KB regardless of chunk size.
+  defp read_request_head(_sock, acc) when byte_size(acc) >= 16_384 do
     Logger.debug("[network.proxy] request head > 16KB — rejecting")
     {:error, :too_large}
   end
 
-  defp read_request_head(sock, acc, remaining) do
+  defp read_request_head(sock, acc) do
     case :gen_tcp.recv(sock, 0, 5_000) do
       {:ok, chunk} ->
         new_acc = acc <> chunk
@@ -255,7 +259,7 @@ defmodule Glorbo.Network.Proxy do
         if String.contains?(new_acc, "\r\n\r\n") do
           {:ok, new_acc}
         else
-          read_request_head(sock, new_acc, remaining)
+          read_request_head(sock, new_acc)
         end
 
       {:error, reason} ->
