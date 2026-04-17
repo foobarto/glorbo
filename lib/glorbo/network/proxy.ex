@@ -212,7 +212,7 @@ defmodule Glorbo.Network.Proxy do
         # acceptor and silently kill new-connection handling.
         _task =
           Task.Supervisor.async_nolink(task_sup, fn ->
-            handle_connection(client_sock, allowlist)
+            handle_connection(client_sock, allowlist, task_sup)
           end)
 
         accept_loop(listen_sock, allowlist, task_sup)
@@ -230,10 +230,10 @@ defmodule Glorbo.Network.Proxy do
   # Connection handler
   # ---------------------------------------------------------------------------
 
-  defp handle_connection(client_sock, allowlist) do
+  defp handle_connection(client_sock, allowlist, task_sup) do
     case read_request_head(client_sock, <<>>, 4096) do
       {:ok, head} ->
-        dispatch_request(head, client_sock, allowlist)
+        dispatch_request(head, client_sock, allowlist, task_sup)
 
       {:error, reason} ->
         Logger.debug("[network.proxy] read_request_head failed: #{inspect(reason)}")
@@ -263,12 +263,12 @@ defmodule Glorbo.Network.Proxy do
     end
   end
 
-  defp dispatch_request(head, client_sock, allowlist) do
+  defp dispatch_request(head, client_sock, allowlist, task_sup) do
     [first_line | _rest] = String.split(head, "\r\n", parts: 2)
 
     case parse_connect_line(first_line) do
       {:ok, host, port} ->
-        evaluate_and_tunnel(host, port, client_sock, allowlist)
+        evaluate_and_tunnel(host, port, client_sock, allowlist, task_sup)
 
       {:error, :not_connect} ->
         write_response(client_sock, "HTTP/1.1 405 Method Not Allowed\r\n\r\n")
@@ -293,7 +293,7 @@ defmodule Glorbo.Network.Proxy do
 
   defp parse_connect_line(_), do: {:error, :not_connect}
 
-  defp evaluate_and_tunnel(host, port, client_sock, allowlist) do
+  defp evaluate_and_tunnel(host, port, client_sock, allowlist, task_sup) do
     cond do
       port != 443 ->
         Logger.info("[network.proxy] reject non-443 CONNECT host=#{host} port=#{port}")
@@ -306,11 +306,11 @@ defmodule Glorbo.Network.Proxy do
         safe_close(client_sock)
 
       true ->
-        open_and_splice(host, port, client_sock)
+        open_and_splice(host, port, client_sock, task_sup)
     end
   end
 
-  defp open_and_splice(host, port, client_sock) do
+  defp open_and_splice(host, port, client_sock, task_sup) do
     case :gen_tcp.connect(
            String.to_charlist(host),
            port,
@@ -319,7 +319,7 @@ defmodule Glorbo.Network.Proxy do
          ) do
       {:ok, upstream_sock} ->
         write_response(client_sock, "HTTP/1.1 200 Connection Established\r\n\r\n")
-        relay_bytes(client_sock, upstream_sock)
+        relay_bytes(client_sock, upstream_sock, task_sup)
 
       {:error, reason} ->
         Logger.info("[network.proxy] upstream connect failed host=#{host}: #{inspect(reason)}")
@@ -328,28 +328,31 @@ defmodule Glorbo.Network.Proxy do
     end
   end
 
-  # Bidirectional byte relay via two tasks; first :closed or error tears both down.
-  defp relay_bytes(client_sock, upstream_sock) do
+  # Bidirectional byte relay via two supervised tasks. Using async_nolink
+  # (TODO.md Critical #3) so a pipe-task crash doesn't :EXIT-kill its
+  # parent handler and leak the remaining socket. On timeout or either
+  # side completing, we Task.shutdown both — :brutal_kill guarantees the
+  # :gen_tcp owners are gone before we close, preventing leaked FDs
+  # under concurrent-recv races.
+  defp relay_bytes(client_sock, upstream_sock, task_sup) do
     caller = self()
 
     t1 =
-      Task.async(fn ->
+      Task.Supervisor.async_nolink(task_sup, fn ->
         pipe(client_sock, upstream_sock)
         send(caller, {:pipe_done, :cu})
       end)
 
     t2 =
-      Task.async(fn ->
+      Task.Supervisor.async_nolink(task_sup, fn ->
         pipe(upstream_sock, client_sock)
         send(caller, {:pipe_done, :uc})
       end)
 
     receive do
-      {:pipe_done, _} ->
-        :ok
+      {:pipe_done, _} -> :ok
     after
-      600_000 ->
-        :ok
+      600_000 -> :ok
     end
 
     _ = Task.shutdown(t1, :brutal_kill)
