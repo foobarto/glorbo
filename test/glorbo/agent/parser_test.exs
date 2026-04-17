@@ -388,6 +388,32 @@ defmodule Glorbo.Agent.ParserTest do
 
       assert {:error, {:invalid_slug, "UPPER"}} = Parser.parse_file(path)
     end
+
+    test "P17: FontAwesome icon normalises to `fa-<name>`", ctx do
+      for {raw, expected} <- [
+            {"fa-rocket", "fa-rocket"},
+            {"rocket", "fa-rocket"},
+            {"FA-User-Tie", "fa-user-tie"},
+            {"fa-arrow-up-right-from-square", "fa-arrow-up-right-from-square"},
+            # Invalid — rejected, icon: nil (not an error).
+            {"<script>", nil},
+            {"fa-rocket; rm -rf /", nil},
+            {"", nil}
+          ] do
+        path =
+          write_agent(ctx, "eng-#{:erlang.phash2(raw)}", ~s"""
+          ---
+          role: x
+          provider: claude-code
+          model: claude-opus-4-6
+          icon: "#{raw}"
+          ---
+          """)
+
+        assert {:ok, spec} = Parser.parse_file(path)
+        assert spec.icon == expected, "for input #{inspect(raw)}"
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------

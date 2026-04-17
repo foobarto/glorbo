@@ -925,6 +925,13 @@ button { font-family: inherit; font-size: inherit; }
   flex: 0 0 16px;
 }
 .gl-sidebar__glyph--dim { color: var(--gl-fg-faint); }
+.gl-sidebar__icon {
+  width: 16px;
+  text-align: center;
+  color: var(--gl-fg-subtle);
+  flex: 0 0 16px;
+  font-size: 12px;
+}
 .gl-sidebar__label { flex: 1; }
 .gl-sidebar__meta {
   margin-left: auto;

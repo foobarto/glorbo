@@ -124,6 +124,7 @@ defmodule Glorbo.Agent.Parser do
          timeout_seconds: timeout,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
          reports_to: parse_reports_to(meta["reports_to"]),
+         icon: parse_icon(meta["icon"]),
          file_path: file_path
        }}
     end
@@ -137,6 +138,23 @@ defmodule Glorbo.Agent.Parser do
   # time (org chart), where unknown slugs simply become leaf nodes.
   defp parse_reports_to(slug) when is_binary(slug) and byte_size(slug) > 0, do: slug
   defp parse_reports_to(_), do: nil
+
+  # FontAwesome icon, allowlisted to `fa-[a-z0-9-]+` to prevent class
+  # injection via frontmatter. Accepts either the raw modifier
+  # (`rocket` → `fa-rocket`) or the already-prefixed form. Returns the
+  # normalised `fa-<name>` string or nil.
+  @fa_icon_regex ~r/\A[a-z][a-z0-9-]{0,63}\z/
+
+  defp parse_icon(nil), do: nil
+  defp parse_icon(""), do: nil
+
+  defp parse_icon(raw) when is_binary(raw) do
+    name = raw |> String.trim() |> String.downcase() |> String.replace_leading("fa-", "")
+
+    if Regex.match?(@fa_icon_regex, name), do: "fa-#{name}", else: nil
+  end
+
+  defp parse_icon(_), do: nil
 
   # ---------------------------------------------------------------------------
   # Internals

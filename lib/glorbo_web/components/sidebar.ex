@@ -87,7 +87,7 @@ defmodule GlorboWeb.Components.Sidebar do
       <.project_row
         :for={{p, i} <- Enum.with_index(@projects)}
         company={@focus}
-        slug={p}
+        project={p}
         prefix={tree_prefix(i, length(@projects))}
       />
 
@@ -121,6 +121,11 @@ defmodule GlorboWeb.Components.Sidebar do
       >
         <span class="gl-pill__dot"></span>
       </span>
+      <i
+        :if={@agent.icon}
+        class={["gl-sidebar__icon", "fa-solid", @agent.icon]}
+        aria-hidden="true"
+      />
       <span class="gl-sidebar__label">{@agent.slug}</span>
       <span class="gl-sidebar__meta">{short_provider(@agent.provider)}</span>
     </.link>
@@ -128,18 +133,29 @@ defmodule GlorboWeb.Components.Sidebar do
   end
 
   attr :company, :string, required: true
-  attr :slug, :string, required: true
+  attr :project, :map, required: true
   attr :prefix, :string, required: true
 
   defp project_row(assigns) do
     ~H"""
     <.link
-      navigate={~p"/companies/#{@company}/kanban?project=#{@slug}"}
+      navigate={~p"/companies/#{@company}/kanban?project=#{@project.slug}"}
       class="gl-sidebar__nav-item gl-sidebar__nav-item--tree"
     >
       <span class="gl-sidebar__tree-line" aria-hidden="true">{@prefix}</span>
-      <span class="gl-sidebar__glyph gl-sidebar__glyph--dim" aria-hidden="true">▸</span>
-      <span class="gl-sidebar__label">{@slug}</span>
+      <i
+        :if={@project.icon}
+        class={["gl-sidebar__icon", "fa-solid", @project.icon]}
+        aria-hidden="true"
+      />
+      <span
+        :if={is_nil(@project.icon)}
+        class="gl-sidebar__glyph gl-sidebar__glyph--dim"
+        aria-hidden="true"
+      >
+        ▸
+      </span>
+      <span class="gl-sidebar__label">{@project.slug}</span>
     </.link>
     """
   end
@@ -198,21 +214,47 @@ defmodule GlorboWeb.Components.Sidebar do
 
   defp agent_row(agents_dir, slug) do
     md = Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, slug))
-
-    provider =
-      case File.read(md) do
-        {:ok, content} ->
-          case Regex.run(~r/^provider:\s*([^\s\n]+)/m, content) do
-            [_, p] -> String.trim(p, "\"")
-            _ -> nil
-          end
-
-        _ ->
-          nil
-      end
+    {provider, icon} = scan_agent_md(md)
 
     company = infer_company_from_path(agents_dir)
-    %{slug: slug, status: live_status(company, slug), provider: provider}
+
+    %{
+      slug: slug,
+      status: live_status(company, slug),
+      provider: provider,
+      icon: icon
+    }
+  end
+
+  # Light-weight agent.md skim — pulls `provider:` + `icon:` without
+  # a full YAML parse (sidebar renders on every company page load; a
+  # full parse per agent per render is overkill). The regexes accept
+  # optional quoting.
+  defp scan_agent_md(path) do
+    case File.read(path) do
+      {:ok, content} -> {scan_provider(content), scan_icon(content)}
+      _ -> {nil, nil}
+    end
+  end
+
+  defp scan_provider(content) do
+    case Regex.run(~r/^provider:\s*([^\s\n]+)/m, content) do
+      [_, p] -> String.trim(p, "\"")
+      _ -> nil
+    end
+  end
+
+  @fa_icon_regex ~r/\A[a-z][a-z0-9-]{0,63}\z/
+
+  defp scan_icon(content) do
+    case Regex.run(~r/^icon:\s*"?([^"\n]+?)"?\s*$/m, content) do
+      [_, raw] ->
+        name = raw |> String.trim() |> String.downcase() |> String.replace_leading("fa-", "")
+        if Regex.match?(@fa_icon_regex, name), do: "fa-#{name}", else: nil
+
+      _ ->
+        nil
+    end
   end
 
   # agents_dir shape: `<base>/companies/<co>/agents` — extract the slug.
@@ -265,9 +307,23 @@ defmodule GlorboWeb.Components.Sidebar do
         slugs
         |> Enum.sort()
         |> Enum.filter(&File.dir?(Path.join(projects_dir, &1)))
+        |> Enum.map(fn slug ->
+          %{slug: slug, icon: project_icon(projects_dir, slug)}
+        end)
 
       _ ->
         []
+    end
+  end
+
+  # Skim project.md for an `icon:` field if present. Cheap — one File.read
+  # per project, frontmatter regex. Same allowlist as agent icons.
+  defp project_icon(projects_dir, slug) do
+    path = Path.join([projects_dir, slug, "project.md"])
+
+    case File.read(path) do
+      {:ok, content} -> scan_icon(content)
+      _ -> nil
     end
   end
 

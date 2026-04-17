@@ -31,6 +31,7 @@ defmodule Glorbo.Agent.Spec do
           timeout_seconds: pos_integer(),
           allow_untracked_budget: boolean(),
           reports_to: String.t() | nil,
+          icon: String.t() | nil,
           file_path: String.t()
         }
 
@@ -60,6 +61,7 @@ defmodule Glorbo.Agent.Spec do
     :timeout_seconds,
     :file_path,
     allow_untracked_budget: false,
-    reports_to: nil
+    reports_to: nil,
+    icon: nil
   ]
 end
