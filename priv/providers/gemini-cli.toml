@@ -1,0 +1,35 @@
+# Gemini CLI — bundled default provider (GEP-8).
+#
+# Verified against `gemini --help` with `--output-format json` on
+# 2026-04-16. `--approval-mode yolo` auto-approves tool actions since
+# the bwrap sandbox is the real containment layer.
+
+name   = "gemini-cli"
+binary = "gemini"
+
+args = [
+  "-m", "{model}",
+  "--output-format", "json",
+  "--approval-mode", "yolo",
+]
+prompt_mode = "stdin"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# Gemini emits usage stats inline on stdout as a JSON blob when
+# `--output-format json` is set. No rollout file to tail.
+usage_parser = "gemini_stdout"
+usage_path   = { kind = "stdout" }
+
+# Gemini CLI uses ~/.gemini/ unconditionally for OAuth and session
+# state; no CLAUDE_CONFIG_DIR-style override exists as of the installed
+# version. Sandbox bind-mounts ~/.gemini/ read-only; session writes
+# land there (slight session bleed, accepted until Gemini exposes an
+# env var).
+[env]

@@ -1,0 +1,39 @@
+# Claude Code CLI — bundled default provider (GEP-8).
+#
+# Verified against Claude Code 2.1.110 on 2026-04-16. Session JSONL
+# shape matches the live probe from pre-pivot research.
+
+name   = "claude-code"
+binary = "claude"
+
+args = [
+  "--print",
+  "--model", "{model}",
+  "--output-format", "text",
+]
+prompt_mode = "stdin"
+
+# Reply contract (GEP-8 §7.4). Agent writes final prose to $GLORBO_REPLY_PATH.
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+# Version probing (opted-in by default for built-ins — GEP-8 D13).
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# Usage parsing — session JSONL under the agent's CLAUDE_CONFIG_DIR.
+usage_parser = "claude_jsonl"
+usage_path   = { kind = "jsonl_latest_in_dir", path = "{workspace}/.glorbo-claude/projects/{encoded_workspace}" }
+
+# Redirect session writes into the agent workspace. Auth still lives in
+# ~/.claude/ (bind-mounted read-only by Sandbox.Bwrap).
+[env]
+CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
+
+# Claude encodes the workspace path into a single directory name by
+# replacing every `/` with `-`. See PathTransforms.slash_to_dash/1.
+[path_transforms.encoded_workspace]
+from      = "{workspace}"
+transform = "slash_to_dash"

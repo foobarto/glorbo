@@ -1,0 +1,35 @@
+# Codex CLI — bundled default provider (GEP-8).
+#
+# Verified against `codex exec --help` on 2026-04-16.
+
+name   = "codex"
+binary = "codex"
+
+# Trailing `-` tells codex to read the prompt from stdin.
+# `--skip-git-repo-check` disables the "must be in a git repo"
+# behaviour since agent workspaces are plain directories.
+args = [
+  "exec",
+  "--json",
+  "--model", "{model}",
+  "--skip-git-repo-check",
+  "-",
+]
+prompt_mode = "stdin_dash"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# Rollout JSONL under CODEX_HOME/sessions/. Parser reads the newest
+# `rollout-*.jsonl` in the sessions tree at post-run time and extracts
+# the LAST `token_count` event (cumulative totals, not deltas).
+usage_parser = "codex_jsonl"
+usage_path   = { kind = "jsonl_latest_in_dir", path = "{workspace}/.glorbo-codex/sessions" }
+
+[env]
+CODEX_HOME = "{workspace}/.glorbo-codex"
