@@ -336,6 +336,11 @@ defmodule Glorbo.Doctor do
             {:fail, "unparseable max_user_namespaces: #{trimmed}", required}
         end
 
+      {:error, :enoent} ->
+        {:fail,
+         "/proc/sys/user/max_user_namespaces not present — running inside a container without proc mounted? bwrap sandboxing will not work here",
+         required}
+
       {:error, reason} ->
         {:fail, "cannot read /proc/sys/user/max_user_namespaces: #{inspect(reason)}", required}
     end
