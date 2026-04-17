@@ -47,6 +47,7 @@ defmodule GlorboWeb.AuditLive do
     {:ok,
      socket
      |> assign(:page_title, "Audit — #{co} — Glorbo")
+     |> assign(:sidebar_active, :audit)
      |> assign(:current_company, co)
      |> assign(:company_slug, co)
      |> assign(:year_month, ym)

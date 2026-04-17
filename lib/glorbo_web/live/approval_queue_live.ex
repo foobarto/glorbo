@@ -48,7 +48,9 @@ defmodule GlorboWeb.ApprovalQueueLive do
     {:ok,
      socket
      |> assign(:page_title, "Approvals — #{co} — Glorbo")
+     |> assign(:sidebar_active, :approvals)
      |> assign(:company_slug, co)
+     |> assign(:current_company, co)
      |> assign(:base, base)
      |> assign(:sentinels, sentinels)
      |> assign(:selected_index, initial_selection(sentinels))}

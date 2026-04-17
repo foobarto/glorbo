@@ -53,7 +53,9 @@ defmodule GlorboWeb.KanbanLive do
       {:ok,
        socket
        |> assign(:page_title, "Kanban — #{slug} — Glorbo")
+       |> assign(:sidebar_active, :kanban)
        |> assign(:company_slug, slug)
+       |> assign(:current_company, slug)
        |> assign(:columns, group_by_column(tasks))}
     else
       {:ok,

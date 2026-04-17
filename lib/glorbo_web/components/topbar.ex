@@ -38,20 +38,23 @@ defmodule GlorboWeb.Components.Topbar do
 
     ~H"""
     <header class="gl-topbar" role="banner">
-      <span class="gl-topbar__brand" aria-label="Glorbo">GLORBO</span>
+      <span class="gl-topbar__brand" aria-label="Glorbo">
+        <span class="gl-topbar__brand-glyph" aria-hidden="true">▚</span> GLORBO
+      </span>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
 
       <span class="gl-topbar__path">~/.glorbo/companies/</span>
-      <select
-        :if={@companies != []}
-        class="gl-topbar__picker"
-        aria-label="Switch company"
-        onchange="window.location = '/companies/' + this.value"
-      >
-        <option :for={slug <- @companies} value={slug} selected={slug == @current_company}>
-          {slug}
-        </option>
-      </select>
+      <label :if={@companies != []} class="gl-topbar__picker">
+        <select
+          class="gl-topbar__picker-select"
+          aria-label="Switch company"
+          onchange="window.location = '/companies/' + this.value"
+        >
+          <option :for={slug <- @companies} value={slug} selected={slug == @current_company}>
+            {slug}
+          </option>
+        </select>
+      </label>
       <span :if={@companies == []} class="gl-topbar__picker" aria-disabled="true">
         (no companies)
       </span>

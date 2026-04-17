@@ -27,6 +27,7 @@ defmodule GlorboWeb.OverviewLive do
     {:ok,
      socket
      |> assign(:page_title, "Companies — Glorbo")
+     |> assign(:sidebar_active, :overview)
      |> assign(:companies, load_companies())}
   end
 

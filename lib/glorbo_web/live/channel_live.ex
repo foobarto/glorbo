@@ -61,6 +61,7 @@ defmodule GlorboWeb.ChannelLive do
       {:ok,
        socket
        |> assign(:page_title, "#{ch} — #{co} — Glorbo")
+       |> assign(:sidebar_active, :chat)
        |> assign(:current_company, co)
        |> assign(:company_slug, co)
        |> assign(:channel, ch)

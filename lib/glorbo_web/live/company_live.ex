@@ -61,6 +61,7 @@ defmodule GlorboWeb.CompanyLive do
       {:ok,
        socket
        |> assign(:page_title, "#{data.company_name} — Glorbo")
+       |> assign(:sidebar_active, :overview)
        |> assign(:current_company, slug)
        |> assign(:company_slug, slug)
        |> assign(:company_name, data.company_name)

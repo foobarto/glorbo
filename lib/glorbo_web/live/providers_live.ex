@@ -28,6 +28,7 @@ defmodule GlorboWeb.ProvidersLive do
     {:ok,
      socket
      |> assign(:page_title, "Providers — Glorbo")
+     |> assign(:sidebar_active, :providers)
      |> assign(:probing, false)
      |> assign_providers()}
   end
