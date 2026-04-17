@@ -48,10 +48,8 @@ defmodule Glorbo.Init.ExampleCompany do
     permissions:
       - projects:read:*
       - tasks:create:*
-      - agents:list
       - chat:write:general
       - chat:read:*
-      - budget:read:self
     ---
     ## System Prompt
 

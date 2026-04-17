@@ -32,9 +32,9 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert content =~ "model: claude-sonnet-4-5"
       assert content =~ "network: api-only"
       # Default permissions: read-only project + chat access so a fresh
-       # agent can immediately see what's on disk (updated 2026-04-18).
-       assert content =~ "projects:read:*"
-       assert content =~ "chat:read:*"
+      # agent can immediately see what's on disk (updated 2026-04-18).
+      assert content =~ "projects:read:*"
+      assert content =~ "chat:read:*"
       assert content =~ "monthly_usd: 10.0"
       assert content =~ "skills: []"
       assert content =~ "heartbeat: null"

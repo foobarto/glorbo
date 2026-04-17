@@ -132,10 +132,19 @@ defmodule Glorbo.Agent.Server do
     if Keyword.get(opts, :subscribe?, true) do
       pubsub = Keyword.get(opts, :pubsub, Glorbo.PubSub)
 
+      # Inbox events: `company:<co>:inbox` — filtered to this slug in
+      # handle_info/2.
       case Phoenix.PubSub.subscribe(pubsub, "company:#{company}:inbox") do
         :ok -> :ok
-        # If PubSub isn't running (e.g. isolated tests without the app),
-        # fall through — wake/2,3 and direct sends still work.
+        {:error, _} -> :ok
+      end
+
+      # Director wake-requests: `company:<co>:agents:<slug>:wake` —
+      # per-agent topic, no extra slug filter needed. Without this the
+      # whole wake-now button path (wake-request.md → inotify →
+      # PubSub → AgentServer) never reaches dispatch.
+      case Phoenix.PubSub.subscribe(pubsub, "company:#{company}:agents:#{spec.slug}:wake") do
+        :ok -> :ok
         {:error, _} -> :ok
       end
     end
@@ -221,14 +230,74 @@ defmodule Glorbo.Agent.Server do
   # (D-26 FIFO inbox semantics). Using `rel_path` as a hint would violate
   # ordering when multiple files land between handler ticks.
   def handle_info({:file_event, rel_path, events}, state) when is_binary(rel_path) do
-    if inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) do
-      handle_inbox_wake(state)
-    else
-      {:noreply, state}
+    cond do
+      wake_request_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
+        handle_director_wake(state)
+
+      inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
+        handle_inbox_wake(state)
+
+      true ->
+        {:noreply, state}
     end
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  # agents/<slug>/state/wake-request.md — matches the shape emitted by
+  # Glorbo.Filesystem.Watcher's :wake classification.
+  defp wake_request_for_me?(rel_path, slug) do
+    case Path.split(rel_path) do
+      ["agents", ^slug, "state", filename] ->
+        String.starts_with?(filename, "wake-request") and String.ends_with?(filename, ".md")
+
+      _ ->
+        false
+    end
+  end
+
+  defp handle_director_wake(%{status: :idle} = state) do
+    # Director wakes without a task — same as an inbox wake, we scan the
+    # inbox for the oldest unread item (if any) and dispatch. If nothing's
+    # in the inbox, we still dispatch with a synthetic "director_request"
+    # task whose prompt comes from wake-request.md's body.
+    case call_inbox_scan(state) do
+      nil -> {:noreply, start_dispatch(state, director_wake_task(state))}
+      %{} = task -> {:noreply, start_dispatch(state, task)}
+    end
+  end
+
+  defp handle_director_wake(%{status: :busy} = state) do
+    {:noreply, %{state | pending_wake: {:director_request, DateTime.utc_now()}}}
+  end
+
+  # Build a minimal task for a director wake when the inbox is empty.
+  # Reads the wake-request.md body (if present) as the prompt; falls back
+  # to a generic prompt if the file's already gone.
+  defp director_wake_task(state) do
+    path =
+      Path.join([
+        state.base,
+        "companies",
+        state.company,
+        "agents",
+        state.spec.slug,
+        "state",
+        "wake-request.md"
+      ])
+
+    prompt =
+      case File.read(path) do
+        {:ok, content} -> content
+        _ -> "Director wake — no task specified."
+      end
+
+    %{
+      task_id: "director-wake-#{System.unique_integer([:positive])}",
+      prompt: prompt,
+      task_path: nil
+    }
+  end
 
   defp handle_inbox_wake(%{status: :idle} = state) do
     case call_inbox_scan(state) do
