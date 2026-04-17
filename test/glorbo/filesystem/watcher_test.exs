@@ -68,6 +68,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
   # subscription is cleaned up via the subscriber-DOWN monitor.
   defp wait_until_armed!(watcher_pid, company_dir) do
     %{fs_pid: fs_pid} = :sys.get_state(watcher_pid)
+
     sentinel =
       Path.join([company_dir, "audit", ".arm_probe_#{System.unique_integer([:positive])}"])
 
