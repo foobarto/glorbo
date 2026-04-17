@@ -89,8 +89,6 @@ defmodule GlorboWeb.CompanyLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-overview">
-      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={nil} />
-
       <header class="gl-view__header gl-overview__header">
         <div>
           <h1 class="gl-heading gl-heading--display">

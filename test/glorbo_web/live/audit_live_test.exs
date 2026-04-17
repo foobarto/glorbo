@@ -70,11 +70,11 @@ defmodule GlorboWeb.AuditLiveTest do
     refute html =~ "company.create"
   end
 
-  test "renders the CompanyTabs strip with :audit active", %{conn: conn} do
+  test "sidebar marks Audit log nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/audit")
 
     assert html =~
-             ~r|<a[^>]*href="/companies/acme/audit"[^>]*class="[^"]*gl-tab gl-tab--active|
+             ~r|<a[^>]*href="/companies/acme/audit"[^>]*gl-sidebar__nav-item--active|
   end
 
   # TODO.md P1 — AuditEntry must be keyboard-operable.

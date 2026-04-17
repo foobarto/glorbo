@@ -12,14 +12,15 @@ defmodule GlorboWeb.CompanyLiveTest do
   """
   use GlorboWeb.LiveCase, async: false
 
-  test "renders 4-tab bar (Kanban/Chat/Approvals/Audit)", %{conn: conn} do
+  test "sidebar exposes COMPANY navigation", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme")
 
-    for tab <- ~w(Kanban Chat Approvals Audit) do
-      assert html =~ tab
+    # CompanyTabs removed — sidebar owns navigation now.
+    for label <- ~w(Overview Kanban Channels Approvals Providers) do
+      assert html =~ ">#{label}<"
     end
 
-    # The agent grid lives below the tab bar; no "Agents" tab anymore.
+    assert html =~ "Audit log"
     refute html =~ ~s(<span class="gl-tab")
   end
 

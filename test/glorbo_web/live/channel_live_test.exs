@@ -38,11 +38,11 @@ defmodule GlorboWeb.ChannelLiveTest do
              live(conn, "/companies/acme/channels/ghost")
   end
 
-  test "renders the CompanyTabs strip with :chat active", %{conn: conn} do
+  test "sidebar marks Channels nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
 
     assert html =~
-             ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*class="[^"]*gl-tab gl-tab--active|
+             ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*gl-sidebar__nav-item--active|
   end
 
   # TODO.md P1 — timestamps render as <time> elements with a machine-

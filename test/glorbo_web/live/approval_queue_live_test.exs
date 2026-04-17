@@ -35,11 +35,11 @@ defmodule GlorboWeb.ApprovalQueueLiveTest do
     assert html =~ "Deny"
   end
 
-  test "renders the CompanyTabs strip with :approvals active", %{conn: conn} do
+  test "sidebar marks Approvals nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/approvals")
 
     assert html =~
-             ~r|<a[^>]*href="/companies/acme/approvals"[^>]*class="[^"]*gl-tab gl-tab--active|
+             ~r|<a[^>]*href="/companies/acme/approvals"[^>]*gl-sidebar__nav-item--active|
   end
 
   test "empty state when no sentinels", %{conn: conn, base: base} do

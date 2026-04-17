@@ -123,7 +123,6 @@ defmodule GlorboWeb.ChannelLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-channel">
-      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={:chat} />
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">{"##{@channel}"}</h1>
       </header>

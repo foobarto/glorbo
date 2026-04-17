@@ -949,14 +949,18 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-subtle);
   font-size: 10px;
 }
-.gl-sidebar__tree-row {
-  display: flex;
+.gl-sidebar__nav-item--tree {
+  padding-left: 14px;
+  min-height: 22px;
+  white-space: nowrap;
 }
-.gl-sidebar__tree-row > .gl-sidebar__nav-item { flex: 1; }
+.gl-sidebar__nav-item--tree > span { align-self: center; }
 .gl-sidebar__tree-line {
   color: var(--gl-fg-faint);
   user-select: none;
-  white-space: pre;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  line-height: 1;
 }
 .gl-sidebar__dot {
   width: 6px;

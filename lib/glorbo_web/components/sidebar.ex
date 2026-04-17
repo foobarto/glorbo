@@ -71,34 +71,21 @@ defmodule GlorboWeb.Components.Sidebar do
 
       <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">AGENTS</div>
       <div :if={@agents == []} class="gl-sidebar__empty">(none)</div>
-      <div :for={{a, i} <- Enum.with_index(@agents)} class="gl-sidebar__tree-row">
-        <.link
-          navigate={~p"/companies/#{@current_company}/agents/#{a.slug}"}
-          class="gl-sidebar__nav-item gl-sidebar__nav-item--tree"
-        >
-          <span class="gl-sidebar__tree-line" aria-hidden="true">
-            {tree_prefix(i, length(@agents))}
-          </span>
-          <span class={["gl-sidebar__dot", "gl-sidebar__dot--#{a.status}"]} aria-hidden="true"></span>
-          <span class="gl-sidebar__label">{a.slug}</span>
-          <span class="gl-sidebar__meta">{short_provider(a.provider)}</span>
-        </.link>
-      </div>
+      <.agent_row
+        :for={{a, i} <- Enum.with_index(@agents)}
+        company={@current_company}
+        agent={a}
+        prefix={tree_prefix(i, length(@agents))}
+      />
 
       <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">PROJECTS</div>
       <div :if={@projects == []} class="gl-sidebar__empty">(none)</div>
-      <div :for={{p, i} <- Enum.with_index(@projects)} class="gl-sidebar__tree-row">
-        <.link
-          navigate={~p"/companies/#{@current_company}/kanban"}
-          class="gl-sidebar__nav-item gl-sidebar__nav-item--tree"
-        >
-          <span class="gl-sidebar__tree-line" aria-hidden="true">
-            {tree_prefix(i, length(@projects))}
-          </span>
-          <span class="gl-sidebar__glyph gl-sidebar__glyph--dim" aria-hidden="true">▸</span>
-          <span class="gl-sidebar__label">{p}</span>
-        </.link>
-      </div>
+      <.project_row
+        :for={{p, i} <- Enum.with_index(@projects)}
+        company={@current_company}
+        slug={p}
+        prefix={tree_prefix(i, length(@projects))}
+      />
 
       <div class="gl-sidebar__footer">
         <GlorboWeb.Components.HealthDot.health_dot
@@ -110,6 +97,44 @@ defmodule GlorboWeb.Components.Sidebar do
         </.link>
       </div>
     </aside>
+    """
+  end
+
+  attr :company, :string, required: true
+  attr :agent, :map, required: true
+  attr :prefix, :string, required: true
+
+  defp agent_row(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/companies/#{@company}/agents/#{@agent.slug}"}
+      class="gl-sidebar__nav-item gl-sidebar__nav-item--tree"
+    >
+      <span class="gl-sidebar__tree-line" aria-hidden="true">{@prefix}</span>
+      <span
+        class={["gl-sidebar__dot", "gl-sidebar__dot--#{@agent.status}"]}
+        aria-hidden="true"
+      />
+      <span class="gl-sidebar__label">{@agent.slug}</span>
+      <span class="gl-sidebar__meta">{short_provider(@agent.provider)}</span>
+    </.link>
+    """
+  end
+
+  attr :company, :string, required: true
+  attr :slug, :string, required: true
+  attr :prefix, :string, required: true
+
+  defp project_row(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/companies/#{@company}/kanban"}
+      class="gl-sidebar__nav-item gl-sidebar__nav-item--tree"
+    >
+      <span class="gl-sidebar__tree-line" aria-hidden="true">{@prefix}</span>
+      <span class="gl-sidebar__glyph gl-sidebar__glyph--dim" aria-hidden="true">▸</span>
+      <span class="gl-sidebar__label">{@slug}</span>
+    </.link>
     """
   end
 

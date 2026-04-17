@@ -173,8 +173,6 @@ defmodule GlorboWeb.AgentLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-agent-detail">
-      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={nil} />
-
       <header class="gl-view__header gl-agent-detail__header">
         <div>
           <h1 class="gl-heading gl-heading--display">

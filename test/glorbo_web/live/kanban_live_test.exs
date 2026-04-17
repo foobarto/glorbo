@@ -61,11 +61,12 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert render(view) =~ "Could not move task"
   end
 
-  test "renders the CompanyTabs strip with :kanban active", %{conn: conn} do
+  test "sidebar marks Kanban nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
-    # Active Kanban tab (regression for TODO.md P0 #5 — tab active state).
+    # CompanyTabs strip removed (sidebar owns navigation); assert the
+    # sidebar Kanban link carries the active modifier instead.
     assert html =~
-             ~r|<a[^>]*href="/companies/acme/kanban"[^>]*class="[^"]*gl-tab gl-tab--active|
+             ~r|<a[^>]*href="/companies/acme/kanban"[^>]*gl-sidebar__nav-item--active|
   end
 
   test "seeded t-01 task with requires_approval: director shows lightning icon",
