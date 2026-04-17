@@ -167,6 +167,100 @@ glorbo init
 `glorbo init` creates the directory hierarchy, verifies prerequisites via
 `glorbo doctor`, and optionally scaffolds an example company.
 
+### Local development
+
+Build, run, and iterate on the code without touching the shipped binary.
+
+**Prerequisites (dev-only, on top of the runtime ones above):**
+
+- Elixir 1.18.4 / OTP 28.0.2 — pinned in `.tool-versions`; the recommended
+  way to get them is [mise](https://mise.jdx.dev):
+  ```bash
+  mise install   # reads .tool-versions, installs both
+  mise activate bash  # or zsh; add to your shell rc
+  ```
+- A C toolchain for native NIFs (`build-essential` / `base-devel` /
+  equivalent).
+- `inotify-tools` on the host — the LiveView watcher needs it for
+  sub-second UI refresh.
+
+No Node.js, no npm. Esbuild is shipped as a Hex package and runs
+through `mix assets.build`.
+
+**Clone + bootstrap:**
+
+```bash
+git clone https://github.com/foobarto/glorbo && cd glorbo
+mix setup   # fetches deps, creates/migrates dev DB, installs esbuild
+```
+
+**Run the dev server:**
+
+```bash
+mix phx.server
+# Dashboard at http://localhost:4000, live-reloaded on file change.
+```
+
+Dev-mode data lives in `~/.glorbo/`; the dashboard reads the same
+filesystem as the installed binary. Scaffold a test company with
+`mix run -e 'Glorbo.Init.run([])'` or — easier — invoke the CLI
+subcommands directly from iex:
+
+```bash
+iex -S mix phx.server
+# iex> Glorbo.CLI.dispatch(["new", "company", "acme"])
+```
+
+**Test + lint gates:**
+
+```bash
+mix test                 # full suite; creates/migrates test DB first
+mix credo --strict       # zero-findings bar; CI fails on exit code 8
+mix format --check-formatted
+mix precommit            # compile --warnings-as-errors + format + test
+```
+
+Run `mix precommit` before pushing non-trivial changes — CI runs the
+same gates and refuses red.
+
+**Build a release:**
+
+```bash
+mix release              # Burrito-wrapped single binary → burrito_out/
+```
+
+The release binary embeds the BEAM runtime and is the same shape the
+GitHub release ships.
+
+**Project layout at a glance:**
+
+| Path                        | What                                                    |
+| --------------------------- | ------------------------------------------------------- |
+| `lib/glorbo/`               | Kernel, CLI, agent runtime, filesystem, budget, doctor  |
+| `lib/glorbo_web/`           | Phoenix endpoint, router, LiveViews, components         |
+| `priv/providers/*.toml`     | Bundled CLI-provider manifests (GEP-8)                  |
+| `assets/css/` + `assets/js/` | Dashboard styles + the small JS bundle (hooks + shortcuts) |
+| `docs/geps/`                | Design decision records — start with GEP-1              |
+| `test/`                     | ExUnit suite, integration tests tagged `:integration`   |
+| `CLAUDE.md`                 | Codebase invariants + common commands (load-bearing)    |
+
+**Agent-runtime dev loop:**
+
+Agent dispatch needs `bwrap` and the provider CLI installed on the
+host. From inside `iex -S mix phx.server`:
+
+```elixir
+# Poke the provider registry
+Glorbo.CLI.Registry.list()
+
+# Wake an agent (writes state/wake-request.md, the supervisor picks up)
+GlorboWeb.Actions.wake_agent("acme", "ceo", "dev smoke test")
+```
+
+Stdout streams into the `/companies/acme/agents/ceo` LiveView. Every
+invocation appends to `audit/YYYY-MM.jsonl` — check that file if you
+don't see what you expect in the dashboard.
+
 ### Verify
 
 ```bash
@@ -353,15 +447,27 @@ runtime):
 - Phase 04 — LiveView dashboard + Channels + PubSub ✓
 - Phase 05 — CLI completeness + backup/restore + portability ✓
 
-**v0.0.3** is in progress on the `worktree-gep-8-provider-registry` branch:
+**v0.0.3** is in progress on `main`:
 
 - **GEP-8 — provider registry + CLI auto-detect** ✓
-- **GEP-12 — no user-input atoms** ✓ (rolled into v0.0.3)
+- **GEP-12 — no user-input atoms** ✓
 - Reply-file contract (breaking change — existing agents need an
   updated system prompt; `glorbo new agent` scaffolds this
   automatically)
-- 5 Critical + 15 Important + 15 Minor code-quality findings closed
-- Tests: 680/680 green · `mix credo --strict` clean ·
+- **Dashboard UX overhaul** (M-series) ✓ — mockup-aligned shell
+  (260px tri-section sidebar, topbar with `▚ GLORBO` + company
+  picker, terminal-TUI phosphor tokens), company overview rewrite
+  with stat cards + agent roster + org chart, agent-detail
+  three-column layout, Kanban drag-and-drop, chat channel switcher
+  + DM thread enumeration, approvals prompt-diff + `j/k/y/n`
+  keyboard, audit unified free-text search, providers card grid +
+  TOML snippet, global `g o/h/p` shortcuts, TWEAKS drawer with
+  localStorage persistence, `+ new company/agent/task` entry
+  points.
+- Dashboard hardening ✓ — auto-start company supervisors at app
+  boot (fixes AuditLog-not-registered crash on every Director
+  write-action).
+- Tests: 759/759 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
 Pending: `api-only` netns + nftables egress hardening, and GEP-10
