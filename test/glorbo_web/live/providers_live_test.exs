@@ -41,6 +41,21 @@ defmodule GlorboWeb.ProvidersLiveTest do
       html = view |> element("button", "Refresh") |> render_click()
       assert html =~ "claude-code"
     end
+
+    # M4.5 — card grid + TOML snippet.
+    test "renders a card grid, not a table", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/providers")
+      assert html =~ "gl-providers__grid"
+      assert html =~ "gl-provider-card"
+      refute html =~ "gl-providers__table"
+    end
+
+    test "each card exposes a collapsible TOML snippet", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/providers")
+      assert html =~ "show toml"
+      # The details element + pre block is rendered.
+      assert html =~ ~s(<details class="gl-provider-card__toml">)
+    end
   end
 
   describe "version probing" do

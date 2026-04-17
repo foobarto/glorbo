@@ -68,33 +68,35 @@ defmodule GlorboWeb.ProvidersLive do
         {@counts.routable} routable · {@counts.untracked} untracked · {@counts.missing} not installed
       </section>
 
-      <table class="gl-table gl-providers__table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Path</th>
-            <th>Version</th>
-            <th>Parser</th>
-            <th>Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            :for={p <- @providers}
-            class={"gl-providers__row gl-providers__row--" <> status_class(p)}
-          >
-            <td class="gl-tabular">{p.name}</td>
-            <td>
-              <span class={["gl-badge", "gl-badge--" <> status_class(p)]}>{status_label(p)}</span>
-            </td>
-            <td class="gl-tabular gl-subtle">{p.resolved_path || "—"}</td>
-            <td class="gl-tabular">{version_display(p)}</td>
-            <td class="gl-tabular">{p.usage_parser}</td>
-            <td class="gl-tabular gl-muted">{p.source}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div :if={@providers != []} class="gl-providers__grid">
+        <article
+          :for={p <- @providers}
+          class={"gl-provider-card gl-provider-card--" <> status_class(p)}
+        >
+          <header class="gl-provider-card__header">
+            <span class="gl-provider-card__name">{p.name}</span>
+            <span class={["gl-badge", "gl-badge--" <> status_class(p)]}>
+              {status_label(p)}
+            </span>
+          </header>
+          <dl class="gl-kv gl-provider-card__kv">
+            <dt>binary</dt>
+            <dd class="gl-tabular">{p.binary}</dd>
+            <dt>path</dt>
+            <dd class="gl-tabular gl-muted">{p.resolved_path || "—"}</dd>
+            <dt>version</dt>
+            <dd class="gl-tabular">{version_display(p)}</dd>
+            <dt>parser</dt>
+            <dd class="gl-tabular">{p.usage_parser}</dd>
+            <dt>source</dt>
+            <dd class="gl-tabular gl-muted">{p.source}</dd>
+          </dl>
+          <details class="gl-provider-card__toml">
+            <summary class="gl-muted">show toml</summary>
+            <pre class="gl-diff"><code>{read_toml(p)}</code></pre>
+          </details>
+        </article>
+      </div>
 
       <p :if={@providers == []} class="gl-subtle">
         No providers declared. Ship built-ins via <code>priv/providers/*.toml</code>
@@ -163,4 +165,13 @@ defmodule GlorboWeb.ProvidersLive do
   defp version_display(%Provider{version: nil, probe_error: :regex_miss}), do: "(no match)"
   defp version_display(%Provider{version: nil, probe_error: err}), do: "(#{inspect(err)})"
   defp version_display(%Provider{version: v}), do: v
+
+  defp read_toml(%Provider{source_file: path}) when is_binary(path) do
+    case File.read(path) do
+      {:ok, text} -> text
+      _ -> "# (could not read #{path})"
+    end
+  end
+
+  defp read_toml(_), do: "# (no source file)"
 end

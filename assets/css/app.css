@@ -1440,6 +1440,36 @@ button { font-family: inherit; font-size: inherit; }
 /* ========== Icon ========== */
 .gl-icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 
+/* ========== Providers grid ========== */
+.gl-providers { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-providers__summary { font-size: var(--gl-font-label); }
+.gl-providers__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--gl-space-md);
+}
+.gl-provider-card {
+  background: var(--gl-surface);
+  border-radius: 6px;
+  padding: var(--gl-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+}
+.gl-provider-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--gl-space-sm);
+}
+.gl-provider-card__name {
+  font-family: var(--gl-ff-mono);
+  font-weight: 600;
+}
+.gl-provider-card__kv dt { color: var(--gl-fg-muted); }
+.gl-provider-card__toml summary { cursor: pointer; }
+.gl-provider-card--missing { opacity: 0.6; }
+
 /* ========== Reduced-motion ========== */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
