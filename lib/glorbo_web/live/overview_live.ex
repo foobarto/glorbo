@@ -87,13 +87,13 @@ defmodule GlorboWeb.OverviewLive do
     if File.dir?(path), do: do_load_company(base, slug, path), else: nil
   end
 
-  defp do_load_company(_base, slug, path) do
+  defp do_load_company(base, slug, path) do
     %{
       slug: slug,
       name: company_name(path, slug),
       agent_count: agent_count(path),
-      in_progress_count: 0,
-      spend_usd: 0.0,
+      in_progress_count: in_progress_count(base, slug, path),
+      spend_usd: spend_usd(path),
       alert_count: alert_count(path),
       health: :healthy
     }
@@ -122,6 +122,78 @@ defmodule GlorboWeb.OverviewLive do
       _ ->
         0
     end
+  end
+
+  # Count tasks under any project with frontmatter `status: in-progress`
+  # (KanbanLive.group_by_column uses exactly the same classification).
+  # Walks projects/*/tasks/*.md; returns 0 on any filesystem hiccup.
+  defp in_progress_count(base, company_slug, company_path) do
+    projects_dir = Path.join(company_path, "projects")
+
+    case File.ls(projects_dir) do
+      {:ok, projects} ->
+        Enum.reduce(projects, 0, fn project, acc ->
+          acc + count_in_progress_in_project(projects_dir, project, base, company_slug)
+        end)
+
+      _ ->
+        0
+    end
+  end
+
+  defp count_in_progress_in_project(projects_dir, project, base, company) do
+    tasks_dir = Path.join([projects_dir, project, "tasks"])
+
+    case File.ls(tasks_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.count(fn filename ->
+          path = Path.join(tasks_dir, filename)
+
+          case Glorbo.TaskDefinition.parse_file(path, base: base, company: company) do
+            {:ok, %{status: "in-progress"}} -> true
+            _ -> false
+          end
+        end)
+
+      _ ->
+        0
+    end
+  end
+
+  # Sum each agent's current-month ledger row into USD. Tolerant of
+  # missing SQLite / missing row / crashed ledger — mirrors
+  # AgentLive.load_used_usd/1 (agent_live.ex:222-231).
+  defp spend_usd(company_path) do
+    agents_dir = Path.join(company_path, "agents")
+    ym = current_year_month()
+
+    case File.ls(agents_dir) do
+      {:ok, slugs} ->
+        slugs
+        |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+        |> Enum.reduce(0.0, fn slug, acc -> acc + agent_spend_usd(slug, ym) end)
+
+      _ ->
+        0.0
+    end
+  end
+
+  defp agent_spend_usd(agent_slug, year_month) do
+    case Glorbo.Budget.Ledger.fetch(agent_slug, year_month) do
+      %{cost_usd_cents: c} when is_integer(c) -> c / 100.0
+      _ -> 0.0
+    end
+  rescue
+    _ -> 0.0
+  catch
+    _, _ -> 0.0
+  end
+
+  defp current_year_month do
+    now = DateTime.utc_now()
+    "#{now.year}-#{String.pad_leading(Integer.to_string(now.month), 2, "0")}"
   end
 
   # Sum of `agents/*/alerts/*.md` files (budget alerts from Phase 3).
