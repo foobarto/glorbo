@@ -998,6 +998,56 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent-card:hover,
 .gl-task-card:hover,
 .gl-approval-card:hover { background: var(--gl-surface-raised); }
+.gl-approvals__split {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  gap: var(--gl-space-lg);
+  align-items: start;
+}
+.gl-approvals__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+}
+.gl-approvals__row {
+  cursor: pointer;
+  border-radius: 4px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.gl-approvals__row:focus-visible,
+.gl-approvals__row--selected {
+  outline-color: var(--gl-accent);
+}
+.gl-approvals__diff {
+  background: var(--gl-surface);
+  border-radius: 6px;
+  padding: var(--gl-space-md);
+  min-height: 200px;
+  position: sticky;
+  top: 8px;
+}
+.gl-diff {
+  margin: 0;
+  padding: var(--gl-space-sm);
+  background: var(--gl-bg);
+  color: var(--gl-fg);
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 4px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.gl-kbdhint { font-size: var(--gl-font-label); }
+.gl-kbdhint kbd {
+  font-family: var(--gl-ff-mono);
+  font-size: inherit;
+  background: var(--gl-surface-raised);
+  padding: 0 4px;
+  border-radius: 2px;
+}
 .gl-company-card__header,
 .gl-agent-card__header {
   display: flex;

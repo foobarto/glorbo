@@ -43,18 +43,28 @@ defmodule GlorboWeb.ApprovalQueueLive do
     if connected?(socket),
       do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
 
+    sentinels = load_sentinels(base, co)
+
     {:ok,
      socket
      |> assign(:page_title, "Approvals — #{co} — Glorbo")
      |> assign(:company_slug, co)
      |> assign(:base, base)
-     |> assign(:sentinels, load_sentinels(base, co))}
+     |> assign(:sentinels, sentinels)
+     |> assign(:selected_index, initial_selection(sentinels))}
   end
+
+  defp initial_selection([]), do: nil
+  defp initial_selection(_), do: 0
 
   @impl true
   def handle_info({:file_event, _rel, _events}, socket) do
+    sentinels = load_sentinels(socket.assigns.base, socket.assigns.company_slug)
+
     {:noreply,
-     assign(socket, :sentinels, load_sentinels(socket.assigns.base, socket.assigns.company_slug))}
+     socket
+     |> assign(:sentinels, sentinels)
+     |> assign(:selected_index, clamp_selection(socket.assigns.selected_index, sentinels))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -85,6 +95,30 @@ defmodule GlorboWeb.ApprovalQueueLive do
         )
 
         {:noreply, put_flash(socket, :error, "Could not record approval.")}
+    end
+  end
+
+  def handle_event("select", %{"index" => i}, socket) do
+    idx = parse_index(i, socket.assigns.sentinels)
+    {:noreply, assign(socket, :selected_index, idx)}
+  end
+
+  def handle_event("keydown", %{"key" => key}, socket) do
+    case key do
+      k when k in ["j", "ArrowDown"] ->
+        {:noreply, assign(socket, :selected_index, step(socket.assigns, 1))}
+
+      k when k in ["k", "ArrowUp"] ->
+        {:noreply, assign(socket, :selected_index, step(socket.assigns, -1))}
+
+      "y" ->
+        keyboard_action(socket, "approve")
+
+      "n" ->
+        keyboard_action(socket, "deny")
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -119,7 +153,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <section class="gl-view gl-approvals">
+    <section class="gl-view gl-approvals" phx-window-keydown="keydown">
       <GlorboWeb.Components.CompanyTabs.company_tabs
         slug={@company_slug}
         active={:approvals}
@@ -128,6 +162,9 @@ defmodule GlorboWeb.ApprovalQueueLive do
         <h1 class="gl-heading gl-heading--display">
           Approvals <span class="gl-muted">({length(@sentinels)} pending)</span>
         </h1>
+        <p :if={@sentinels != []} class="gl-muted gl-kbdhint">
+          <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>y</kbd> approve · <kbd>n</kbd> deny
+        </p>
       </header>
 
       <div :if={@sentinels == []} class="gl-empty">
@@ -137,8 +174,24 @@ defmodule GlorboWeb.ApprovalQueueLive do
         </p>
       </div>
 
-      <div :if={@sentinels != []} class="gl-approvals__list">
-        <ApprovalCard.approval_card :for={s <- @sentinels} sentinel={s} />
+      <div :if={@sentinels != []} class="gl-approvals__split">
+        <div class="gl-approvals__list">
+          <div
+            :for={{s, idx} <- Enum.with_index(@sentinels)}
+            phx-click="select"
+            phx-value-index={idx}
+            class={approval_row_class(idx, @selected_index)}
+            role="button"
+            tabindex="0"
+          >
+            <ApprovalCard.approval_card sentinel={s} />
+          </div>
+        </div>
+
+        <aside class="gl-approvals__diff" aria-label="Task prompt">
+          <h2 class="gl-panel__header">/prompt</h2>
+          <pre class="gl-diff"><code>{selected_body(@sentinels, @selected_index)}</code></pre>
+        </aside>
       </div>
     </section>
     """
@@ -199,7 +252,8 @@ defmodule GlorboWeb.ApprovalQueueLive do
               task_path: task_path,
               title: task.title || task_id,
               requesting_agent: agent,
-              requested_at: sentinel_mtime_iso(sentinel_path)
+              requested_at: sentinel_mtime_iso(sentinel_path),
+              prompt_body: task.prompt_body || ""
             }
 
           _ ->
@@ -233,6 +287,52 @@ defmodule GlorboWeb.ApprovalQueueLive do
     end
   end
 
+  defp approval_row_class(idx, idx), do: "gl-approvals__row gl-approvals__row--selected"
+  defp approval_row_class(_, _), do: "gl-approvals__row"
+
+  defp selected_body(sentinels, idx)
+       when is_integer(idx) and idx >= 0 and idx < length(sentinels) do
+    case Enum.at(sentinels, idx) do
+      %{prompt_body: body} when is_binary(body) and body != "" -> body
+      _ -> "(no prompt body)"
+    end
+  end
+
+  defp selected_body(_, _), do: "(select a row to preview)"
+
   defp base_dir,
     do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+
+  defp clamp_selection(_, []), do: nil
+  defp clamp_selection(nil, _), do: 0
+  defp clamp_selection(idx, sentinels), do: min(idx, length(sentinels) - 1)
+
+  defp parse_index(i, sentinels) do
+    case Integer.parse(to_string(i)) do
+      {n, _} when n >= 0 -> clamp_selection(n, sentinels)
+      _ -> 0
+    end
+  end
+
+  defp step(%{sentinels: []}, _), do: nil
+
+  defp step(%{sentinels: sentinels, selected_index: nil}, _),
+    do: if(sentinels == [], do: nil, else: 0)
+
+  defp step(%{sentinels: sentinels, selected_index: idx}, delta) do
+    max_idx = length(sentinels) - 1
+    idx |> Kernel.+(delta) |> max(0) |> min(max_idx)
+  end
+
+  defp keyboard_action(socket, event) do
+    sentinels = socket.assigns.sentinels
+    idx = socket.assigns.selected_index
+
+    if is_integer(idx) and idx >= 0 and idx < length(sentinels) do
+      sentinel = Enum.at(sentinels, idx)
+      handle_event(event, %{"task_path" => sentinel.task_path}, socket)
+    else
+      {:noreply, socket}
+    end
+  end
 end

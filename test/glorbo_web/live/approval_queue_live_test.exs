@@ -47,4 +47,39 @@ defmodule GlorboWeb.ApprovalQueueLiveTest do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/approvals")
     assert html =~ "No approvals pending"
   end
+
+  # M4.3 — prompt diff panel + keyboard nav.
+  test "renders prompt diff panel showing selected task body", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/approvals")
+    assert html =~ "gl-approvals__diff"
+    # The seeded t-01 fixture has "Ship it." as its prompt body.
+    assert html =~ "Ship it."
+    # Keyboard hint surface.
+    assert html =~ "approve"
+    assert html =~ "deny"
+  end
+
+  test "y key approves the selected row", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/approvals")
+
+    render_hook(view, "keydown", %{"key" => "y"})
+
+    # The task file's frontmatter status flips to `approved`. Sentinel
+    # cleanup is Gate's responsibility (Phase 3) — not set_approval's.
+    task =
+      File.read!(
+        Path.join([base, "companies", "acme", "projects", "website", "tasks", "t-01.md"])
+      )
+
+    assert task =~ ~r/status:\s*approved/
+  end
+
+  test "j/k move selection without crashing", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/approvals")
+
+    render_hook(view, "keydown", %{"key" => "j"})
+    render_hook(view, "keydown", %{"key" => "k"})
+
+    assert render(view) =~ "gl-approvals__split"
+  end
 end
