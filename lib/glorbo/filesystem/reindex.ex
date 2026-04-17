@@ -187,6 +187,12 @@ defmodule Glorbo.Filesystem.Reindex do
     # memory. Frontmatter.parse/1 has its own cap but only after the full
     # read. Streaming the MD5 for under-cap files keeps memory bounded.
     case File.stat(path) do
+      {:ok, %File.Stat{type: type}} when type != :regular ->
+        # Watcher fires on directory creation too (e.g. workspace/.glorbo-run/
+        # scaffolding). Reindex is a markdown indexer — anything that isn't
+        # a regular file is a no-op, not a crash.
+        {:skip, {:not_regular_file, type}}
+
       {:ok, %File.Stat{size: size}} when size > @max_file_bytes ->
         {:skip, :too_large}
 

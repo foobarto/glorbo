@@ -350,7 +350,7 @@ defmodule Glorbo.Agent.Dispatch do
   # ---------------------------------------------------------------------------
 
   defp emit_dispatch_audit(spec, task, provider, opts) do
-    audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
+    audit = audit_fun(opts)
 
     entry = %{
       action: "agent.dispatch",
@@ -371,7 +371,7 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp emit_complete_audit(spec, task, result, duration_ms, opts) do
-    audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
+    audit = audit_fun(opts)
 
     entry = %{
       action: "agent.complete",
@@ -390,8 +390,35 @@ defmodule Glorbo.Agent.Dispatch do
       :ok
   end
 
+  # Default audit_fun for production wires the per-company AuditLog via
+  # its Registry via-tuple. AuditLog.append(server, entry) expects `server`
+  # to be a valid GenServer.name — a company slug isn't, so we translate.
+  # Tests continue to pass their own `:audit_fun` unchanged.
+  defp audit_fun(opts) do
+    Keyword.get(opts, :audit_fun, &default_audit_fun/2)
+  end
+
+  defp default_audit_fun(company, entry) when is_binary(company) do
+    server =
+      case resolve_audit_server(company) do
+        {:ok, via} -> via
+        :not_found -> AuditLog
+      end
+
+    AuditLog.append(server, Map.put(entry, :company, company))
+  end
+
+  defp resolve_audit_server(company) do
+    key = {:company_child, company, :audit_log}
+
+    case Elixir.Registry.lookup(Glorbo.Agent.Registry, key) do
+      [{_pid, _}] -> {:ok, {:via, Elixir.Registry, {Glorbo.Agent.Registry, key}}}
+      _ -> :not_found
+    end
+  end
+
   defp emit_unavailable_audit(spec, provider, opts) do
-    audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
+    audit = audit_fun(opts)
 
     entry = %{
       action: "provider.unavailable",
