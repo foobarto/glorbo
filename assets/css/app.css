@@ -484,6 +484,7 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   gap: 4px;
   margin-left: auto;
+  flex-wrap: wrap;
 }
 .gl-agent-detail__tab {
   padding: 2px 8px;
@@ -495,6 +496,7 @@ button { font-family: inherit; font-size: inherit; }
   cursor: pointer;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 .gl-agent-detail__tab:hover { background: var(--gl-surface-hover); color: var(--gl-fg); }
 .gl-agent-detail__tab--active {
