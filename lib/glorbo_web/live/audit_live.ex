@@ -126,16 +126,20 @@ defmodule GlorboWeb.AuditLive do
         </h1>
       </header>
 
-      <form phx-change="filter" class="gl-compose">
+      <form phx-change="filter" class="gl-compose" role="search" aria-label="Audit filters">
+        <label for="audit-filter-actor" class="gl-sr-only">Filter by actor</label>
         <input
           type="text"
+          id="audit-filter-actor"
           name="actor"
           value={@actor_filter}
           class="gl-input"
           placeholder="Filter by actor…"
         />
+        <label for="audit-filter-action" class="gl-sr-only">Filter by action</label>
         <input
           type="text"
+          id="audit-filter-action"
           name="action"
           value={@action_filter}
           class="gl-input"

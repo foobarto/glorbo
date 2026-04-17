@@ -58,6 +58,29 @@ defmodule GlorboWeb.AuditLiveTest do
              ~r|<a[^>]*href="/companies/acme/audit"[^>]*class="[^"]*gl-tab gl-tab--active|
   end
 
+  # TODO.md P1 — AuditEntry must be keyboard-operable.
+  test "audit entries render as keyboard-focusable role=button", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/audit")
+
+    assert html =~ ~s(role="button")
+    assert html =~ ~s(tabindex="0")
+    assert html =~ ~s(phx-keydown="toggle")
+    # aria-expanded reflects default (all entries collapsed on mount)
+    assert html =~ ~s(aria-expanded="false")
+  end
+
+  # TODO.md P1 — filter inputs have labels (screen readers).
+  test "filter inputs have associated labels", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/audit")
+
+    assert html =~ ~s(for="audit-filter-actor")
+    assert html =~ ~s(for="audit-filter-action")
+    assert html =~ ~s(id="audit-filter-actor")
+    assert html =~ ~s(id="audit-filter-action")
+    # The labels themselves (sr-only class hides them visually).
+    assert html =~ ~s(class="gl-sr-only")
+  end
+
   test "filter by actor excludes non-matching rows", %{conn: conn} do
     {:ok, view, _} = live(conn, "/companies/acme/audit")
     html = render_change(view, "filter", %{"actor" => "zzz-nobody", "action" => ""})
