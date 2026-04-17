@@ -12,16 +12,21 @@ defmodule GlorboWeb.Components.Sidebar do
 
     * `:current_company` — slug string or nil; when matched, the row
       gets `gl-sidebar__item--active`.
-    * `:health` — map with `:crashed` and `:alerts` integer counts;
-      drives the health-strip dot color and copy.
+
+  The health-strip badge is derived from `Glorbo.Doctor.run_checks/0`
+  internally — the previous `:health` attr was never populated by any
+  LiveView and made the badge lie ("all systems operational") regardless
+  of actual Doctor state (TODO2.md §3).
   """
   use Phoenix.Component
 
   attr :current_company, :string, default: nil
-  attr :health, :map, default: %{alerts: 0, crashed: 0}
 
   def sidebar(assigns) do
-    assigns = assign(assigns, :companies, list_companies())
+    assigns =
+      assigns
+      |> assign(:companies, list_companies())
+      |> assign(:health, compute_health())
 
     ~H"""
     <aside class="gl-sidebar">
@@ -49,6 +54,29 @@ defmodule GlorboWeb.Components.Sidebar do
     """
   end
 
+  # Roll up Doctor check results into `%{blocker: N, warning: N}` so the
+  # footer badge reflects real host state. Wrapped in try/rescue/catch
+  # so the component never crashes a layout render on Doctor hiccups.
+  defp compute_health do
+    checks = Glorbo.Doctor.run_checks()
+
+    blocker =
+      Enum.count(checks, fn c ->
+        not c.pass and Map.get(c, :severity, :blocker) == :blocker
+      end)
+
+    warning =
+      Enum.count(checks, fn c ->
+        not c.pass and Map.get(c, :severity, :blocker) == :warning
+      end)
+
+    %{blocker: blocker, warning: warning}
+  rescue
+    _ -> %{blocker: 0, warning: 0}
+  catch
+    _, _ -> %{blocker: 0, warning: 0}
+  end
+
   defp list_companies do
     base = Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
     dir = Path.join(base, "companies")
@@ -65,11 +93,14 @@ defmodule GlorboWeb.Components.Sidebar do
     end
   end
 
-  defp health_status(%{crashed: c}) when c > 0, do: "crashed"
-  defp health_status(%{alerts: a}) when a > 0, do: "warning"
+  defp health_status(%{blocker: b}) when b > 0, do: "crashed"
+  defp health_status(%{warning: w}) when w > 0, do: "warning"
   defp health_status(_), do: "healthy"
 
-  defp health_label(%{crashed: c}) when c > 0, do: "#{c} crashed"
-  defp health_label(%{alerts: a}) when a > 0, do: "#{a} alert(s)"
+  defp health_label(%{blocker: b}) when b > 0, do: "#{b} blocker check#{s(b)} failing"
+  defp health_label(%{warning: w}) when w > 0, do: "#{w} warning#{s(w)}"
   defp health_label(_), do: "all systems operational"
+
+  defp s(1), do: ""
+  defp s(_), do: "s"
 end

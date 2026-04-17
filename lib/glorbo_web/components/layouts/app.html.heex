@@ -1,8 +1,5 @@
 <div class="gl-app-shell">
-  <GlorboWeb.Components.Sidebar.sidebar
-    current_company={assigns[:current_company]}
-    health={assigns[:sidebar_health] || %{alerts: 0, crashed: 0}}
-  />
+  <GlorboWeb.Components.Sidebar.sidebar current_company={assigns[:current_company]} />
   <main class="gl-main">
     <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--muted" role="alert">
       {Phoenix.Flash.get(@flash, :error)}
