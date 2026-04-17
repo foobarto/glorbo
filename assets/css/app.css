@@ -460,6 +460,296 @@ button { font-family: inherit; font-size: inherit; }
 .gl-orgchart__state--idle { color: var(--gl-fg-subtle); }
 .gl-org-empty { padding: var(--gl-space-md); }
 
+/* ========== Agent detail (M3) ========== */
+.gl-agent-detail { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-agent-detail__header { justify-content: space-between; align-items: flex-start; }
+.gl-agent-detail__grid {
+  display: grid;
+  grid-template-columns: 280px 1fr 320px;
+  gap: var(--gl-space-md);
+}
+.gl-agent-detail__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-md);
+  min-width: 0;
+}
+.gl-agent-detail__col--center .gl-agent-detail__center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+/* Tab bar inside the center panel header */
+.gl-agent-detail__tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.gl-agent-detail__tab {
+  padding: 2px 8px;
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  color: var(--gl-fg-muted);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gl-agent-detail__tab:hover { background: var(--gl-surface-hover); color: var(--gl-fg); }
+.gl-agent-detail__tab--active {
+  color: var(--gl-accent);
+  border-color: var(--gl-accent-dim);
+  background: var(--gl-accent-bg);
+}
+
+/* Identity panel */
+.gl-agent-identity__avatar {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  font-family: var(--gl-ff-mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--gl-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--gl-space-sm);
+}
+.gl-agent-identity__dot {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--gl-bg);
+  background: var(--gl-fg-faint);
+}
+.gl-agent-identity__dot--alive { background: var(--gl-accent); box-shadow: 0 0 6px var(--gl-accent); }
+.gl-agent-identity__dot--warn { background: var(--gl-amber); }
+.gl-agent-identity__dot--stop { background: var(--gl-rose); }
+.gl-agent-identity__name { font-size: var(--gl-font-body); color: var(--gl-fg); }
+.gl-agent-identity__reports { font-size: 11px; margin-top: 2px; }
+
+/* Workspace filetree */
+.gl-filetree {
+  padding: var(--gl-space-sm) 0;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg);
+}
+.gl-filetree__node {
+  padding: 2px var(--gl-space-md);
+  line-height: 1.6;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.gl-filetree__prefix { color: var(--gl-fg-ghost); }
+.gl-filetree__dir { color: var(--gl-accent-dim); }
+.gl-filetree__file { color: var(--gl-fg); }
+.gl-filetree__node--mount { color: var(--gl-accent-dim); }
+.gl-filetree__node--hidden {
+  color: var(--gl-fg-ghost);
+  text-decoration: line-through;
+}
+.gl-filetree__section {
+  padding: 10px var(--gl-space-md) 4px;
+  color: var(--gl-fg-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gl-mount-tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  border: 1px solid var(--gl-border-strong);
+  background: var(--gl-surface-raised);
+  margin-left: auto;
+  text-transform: lowercase;
+  letter-spacing: 0;
+}
+.gl-mount-tag--rw { color: var(--gl-accent); border-color: var(--gl-accent-dim); }
+.gl-mount-tag--ro { color: var(--gl-fg-subtle); }
+
+/* Stdout wrap */
+.gl-stdout-wrap { overflow: auto; flex: 1; }
+
+/* Sandbox pane */
+.gl-sandbox { overflow: auto; max-height: 500px; }
+.gl-sandbox__hint { font-size: 11px; margin: 0 0 var(--gl-space-sm); }
+.gl-sandbox__argv {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg);
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.gl-sandbox__line { display: block; }
+.gl-sandbox__line--hl {
+  background: var(--gl-accent-bg);
+  border-left: 2px solid var(--gl-accent);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+.gl-sandbox__section {
+  display: block;
+  color: var(--gl-fg-faint);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-top: 10px;
+}
+.gl-sandbox__cmd { color: var(--gl-accent); }
+.gl-sandbox__flag { color: var(--gl-cyan); }
+.gl-sandbox__arg { color: var(--gl-fg); }
+.gl-sandbox__comment { color: var(--gl-fg-faint); }
+
+/* Inbox/outbox tab */
+.gl-io-section { margin-bottom: var(--gl-space-md); }
+.gl-io-section__label {
+  color: var(--gl-fg-subtle);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--gl-space-sm);
+  font-family: var(--gl-ff-mono);
+}
+.gl-io-card {
+  background: var(--gl-surface-raised);
+  padding: var(--gl-space-md);
+  border: 1px solid var(--gl-border);
+  border-radius: 2px;
+}
+.gl-io-card__meta { font-size: 10px; }
+.gl-io-card__title { color: var(--gl-fg); margin: 4px 0; }
+.gl-io-card__body { color: var(--gl-fg-muted); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+
+/* Config DL (right column) */
+.gl-kv {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 6px var(--gl-space-sm);
+  margin: 0;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+}
+.gl-kv dt {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.gl-kv dd { margin: 0; color: var(--gl-fg); word-break: break-word; }
+.gl-accent { color: var(--gl-accent); }
+
+/* Budget meter */
+.gl-budget-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: var(--gl-space-sm);
+}
+.gl-budget-figure__used {
+  font-family: var(--gl-ff-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--gl-fg);
+}
+.gl-meter {
+  position: relative;
+  height: 8px;
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border);
+  overflow: hidden;
+}
+.gl-meter__fill {
+  height: 100%;
+  background: var(--gl-accent-dim);
+}
+.gl-meter--amber .gl-meter__fill { background: var(--gl-amber); }
+.gl-meter--rose .gl-meter__fill { background: var(--gl-rose); }
+.gl-meter__threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--gl-fg-subtle);
+}
+.gl-budget-sub { font-size: 11px; margin-top: 6px; }
+.gl-budget-untracked { font-size: 12px; line-height: 1.5; margin: 0; }
+
+/* Permissions list */
+.gl-perms { list-style: none; margin: 0; padding: 0; }
+.gl-perm {
+  padding: 6px var(--gl-space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  border-bottom: 1px solid var(--gl-border-faint);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.gl-perm:hover,
+.gl-perm--hl {
+  background: var(--gl-accent-bg);
+}
+.gl-perm__token {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg);
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  gap: 0;
+  white-space: nowrap;
+}
+.gl-perm__token > * { white-space: pre; }
+.gl-perm__action { color: var(--gl-accent); }
+.gl-perm__scope { color: var(--gl-cyan); }
+.gl-perm__tag {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--gl-border-strong);
+}
+.gl-perm__tag--mount { color: var(--gl-accent); border-color: var(--gl-accent-dim); }
+.gl-perm__tag--router { color: var(--gl-violet); border-color: var(--gl-border-strong); }
+.gl-perm--empty { padding: var(--gl-space-md); cursor: default; }
+
+/* Inline wake form in header */
+.gl-wake-inline {
+  display: flex;
+  gap: var(--gl-space-xs);
+  align-items: center;
+}
+.gl-wake-inline__reason {
+  padding: 3px var(--gl-space-sm);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border-strong);
+  color: var(--gl-fg);
+  width: 140px;
+}
+.gl-wake-inline__btn {
+  padding: 3px var(--gl-space-sm);
+}
+.gl-btn--danger {
+  color: var(--gl-rose);
+  border-color: var(--gl-rose-dim);
+}
+
 .gl-overview__bottom {
   display: grid;
   grid-template-columns: 1fr 420px;

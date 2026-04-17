@@ -9,12 +9,24 @@ defmodule GlorboWeb.AgentLiveTest do
   """
   use GlorboWeb.LiveCase, async: false
 
-  test "renders agent header + stdout pane + wake CTA", %{conn: conn} do
+  test "renders agent header + stdout tab + wake CTA", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
-    assert html =~ "Ceo" or html =~ "CEO"
+    assert html =~ "Ceo" or html =~ "CEO" or html =~ "ceo"
     assert html =~ "claude-code"
-    assert html =~ "Stdout"
-    assert html =~ "Wake agent"
+    # Stdout tab button in the center panel
+    assert html =~ "stdout"
+    # Inline wake form in the action row
+    assert html =~ "wake now"
+  end
+
+  test "renders three-column layout (identity, center tabs, config)",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+    assert html =~ "gl-agent-detail__grid"
+    assert html =~ "gl-agent-identity"
+    assert html =~ "sandbox argv"
+    assert html =~ "inbox/outbox"
+    assert html =~ "config"
   end
 
   test "unknown agent redirects to company view", %{conn: conn} do
