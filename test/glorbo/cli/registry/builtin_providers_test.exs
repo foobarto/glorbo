@@ -24,11 +24,20 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     {:ok, providers: Map.new(providers, &{&1.name, &1})}
   end
 
-  test "all three built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 3
-    assert Map.has_key?(p, "claude-code")
-    assert Map.has_key?(p, "codex")
-    assert Map.has_key?(p, "gemini-cli")
+  test "all six built-in providers load without error", %{providers: p} do
+    assert map_size(p) == 6
+
+    for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
+      assert Map.has_key?(p, name), "missing built-in provider: #{name}"
+    end
+  end
+
+  test "untracked providers bind to parsers.none", %{providers: p} do
+    for name <- ~w(hermes opencode pi) do
+      prov = p[name]
+      assert prov.usage_parser == "none", "#{name} must be untracked"
+      assert prov.usage_path == nil
+    end
   end
 
   test "claude-code binds to claude_jsonl parser + slash_to_dash transform", %{providers: p} do

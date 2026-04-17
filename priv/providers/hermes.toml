@@ -1,0 +1,27 @@
+# Hermes CLI — untracked-by-default provider (GEP-8).
+#
+# hermes is a local LLM router / CLI wrapper. No documented token
+# telemetry surface; budget tracking is unavailable. Agents opting
+# into hermes must set allow_untracked_budget: true in agent.md.
+
+name   = "hermes"
+binary = "hermes"
+
+args = [
+  "chat",
+  "--model", "{model}",
+  "--non-interactive",
+]
+prompt_mode = "stdin"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+usage_parser = "none"
+
+[env]

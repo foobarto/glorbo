@@ -1,0 +1,28 @@
+# opencode CLI — untracked-by-default provider (GEP-8).
+#
+# opencode is an open-source Claude Code alternative. Invocation
+# shape below is a starting point; no telemetry parser is bound —
+# agents opting into opencode must set allow_untracked_budget: true
+# in agent.md. Follow-up work can ship an opencode_jsonl parser if
+# its session format stabilises.
+
+name   = "opencode"
+binary = "opencode"
+
+args = [
+  "--print",
+  "--model", "{model}",
+]
+prompt_mode = "stdin"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+usage_parser = "none"
+
+[env]

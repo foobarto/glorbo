@@ -1,0 +1,24 @@
+# pi CLI — untracked-by-default provider (GEP-8).
+#
+# pi is a local LLM agent runner. No usage telemetry surface; agents
+# opting into pi must set allow_untracked_budget: true in agent.md.
+
+name   = "pi"
+binary = "pi"
+
+args = [
+  "--model", "{model}",
+]
+prompt_mode = "stdin"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+usage_parser = "none"
+
+[env]
