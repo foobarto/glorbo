@@ -1169,6 +1169,51 @@ button { font-family: inherit; font-size: inherit; }
   overflow-x: auto;
   padding-bottom: var(--gl-space-md);
 }
+.gl-task-detail {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 560px;
+  max-width: min(90vw, 880px);
+  max-height: 80vh;
+  overflow: auto;
+}
+.gl-task-detail__frontmatter,
+.gl-task-detail__body {
+  margin: 0;
+  padding: var(--gl-space-md);
+  background: var(--gl-bg);
+}
+.gl-task-detail__frontmatter code,
+.gl-task-detail__body code {
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--gl-fg);
+}
+.gl-task-detail__frontmatter {
+  border-bottom: 1px solid var(--gl-border);
+  color: var(--gl-accent);
+}
+.gl-task-detail__path {
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  margin: 0;
+  border-top: 1px solid var(--gl-border);
+  font-size: var(--gl-font-label);
+}
+.gl-panel__spacer { flex: 1; }
+
 .gl-new-task-form {
   display: grid;
   grid-template-columns: 180px 1fr auto auto;

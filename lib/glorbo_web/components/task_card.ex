@@ -21,6 +21,10 @@ defmodule GlorboWeb.Components.TaskCard do
       data-status={@task.status}
       data-task-path={@task.task_path}
       phx-hook="KanbanCard"
+      phx-click="open_task"
+      phx-value-path={@task.task_path}
+      role="button"
+      tabindex="0"
     >
       <header class="gl-task-card__title">
         {@task.title || @task.task_id}

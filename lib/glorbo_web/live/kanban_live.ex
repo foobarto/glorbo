@@ -58,7 +58,8 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:current_company, slug)
        |> assign(:columns, group_by_column(tasks))
        |> assign(:new_task_open?, false)
-       |> assign(:new_task_projects, list_projects(base, slug))}
+       |> assign(:new_task_projects, list_projects(base, slug))
+       |> assign(:open_task, nil)}
     else
       {:ok,
        socket
@@ -81,6 +82,35 @@ defmodule GlorboWeb.KanbanLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("open_task", %{"path" => path}, socket) do
+    case resolve_task_path(path, socket.assigns.company_slug) do
+      {:ok, abs} ->
+        case File.read(abs) do
+          {:ok, content} ->
+            {fm, body} = split_frontmatter(content)
+
+            detail = %{
+              task_path: path,
+              task_id: task_id_from_path(path),
+              frontmatter: fm,
+              body: String.trim(body)
+            }
+
+            {:noreply, assign(socket, :open_task, detail)}
+
+          _ ->
+            {:noreply, put_flash(socket, :error, "Could not read task.")}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Invalid task path.")}
+    end
+  end
+
+  def handle_event("close_task", _params, socket) do
+    {:noreply, assign(socket, :open_task, nil)}
+  end
+
   def handle_event("new_task", _params, socket) do
     {:noreply, assign(socket, :new_task_open?, true)}
   end
@@ -204,6 +234,35 @@ defmodule GlorboWeb.KanbanLive do
           />
         </section>
       </div>
+
+      <div
+        :if={@open_task}
+        class="gl-task-detail"
+        phx-click-away="close_task"
+        phx-window-keydown="close_task"
+        phx-key="Escape"
+      >
+        <header class="gl-panel__header">
+          <span class="gl-muted">task/</span>
+          <span class="gl-panel__title">{@open_task.task_id}</span>
+          <span class="gl-panel__spacer"></span>
+          <button
+            type="button"
+            class="gl-btn gl-btn--sm"
+            phx-click="close_task"
+            aria-label="Close"
+          >
+            close
+          </button>
+        </header>
+        <pre class="gl-task-detail__frontmatter"><code>{@open_task.frontmatter}</code></pre>
+        <div :if={@open_task.body != ""} class="gl-task-detail__body">
+          <pre><code>{@open_task.body}</code></pre>
+        </div>
+        <p class="gl-muted gl-task-detail__path">
+          ~/.glorbo/companies/{@company_slug}/{@open_task.task_path}
+        </p>
+      </div>
     </section>
     """
   end
@@ -211,6 +270,19 @@ defmodule GlorboWeb.KanbanLive do
   # ---------------------------------------------------------------------------
   # Data helpers
   # ---------------------------------------------------------------------------
+
+  defp task_id_from_path(path) when is_binary(path) do
+    path |> Path.basename() |> Path.rootname()
+  end
+
+  defp split_frontmatter("---\n" <> rest) do
+    case String.split(rest, "\n---\n", parts: 2) do
+      [fm, body] -> {String.trim(fm), body}
+      _ -> {"", "---\n" <> rest}
+    end
+  end
+
+  defp split_frontmatter(content), do: {"", content}
 
   defp columns(%{todo: t, in_progress: i, done: d}) do
     [

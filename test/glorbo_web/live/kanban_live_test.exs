@@ -122,6 +122,36 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Title can&#39;t be empty" or html =~ "Title can't be empty"
   end
 
+  test "clicking a task opens the detail panel with frontmatter + body", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    html =
+      render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+
+    assert html =~ "gl-task-detail"
+    # Frontmatter field + body from the seeded t-01.md fixture.
+    assert html =~ "Deploy landing page"
+    assert html =~ "Ship it."
+  end
+
+  test "close_task clears the detail panel", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+    html = render_click(view, "close_task")
+
+    refute html =~ "gl-task-detail"
+  end
+
+  test "open_task rejects a traversal path", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    html = render_click(view, "open_task", %{"path" => "../../etc/passwd"})
+
+    assert html =~ "Invalid task path"
+    refute html =~ "gl-task-detail"
+  end
+
   test "new_task_create rejects an unknown project", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "new_task")
