@@ -23,6 +23,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
   """
 
   alias Glorbo.CLI.Audit
+  alias Glorbo.CLI.Scaffold.SystemPrompt
 
   @slug_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
   @switches [role: :string, provider: :string, help: :boolean]
@@ -102,7 +103,10 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     ---
 
     # #{String.upcase(agent)}
+
     Scaffolded by `glorbo new agent #{company}/#{agent}`.
+
+    #{SystemPrompt.reply_contract()}
     """)
 
     Audit.emit("new_agent", "complete", %{

@@ -28,31 +28,37 @@ defmodule Glorbo.Init.ExampleCompany do
   start over — it is just a directory.
   """
 
-  @ceo_agent_md ~s"""
-  ---
-  name: ceo
-  role: Chief Executive Officer
-  reports_to: director
-  provider: claude-code
-  model: claude-sonnet-4-5
-  budget:
-    monthly_usd: 0.00
-    alert_at_pct: 80
-  heartbeat: "*/30 * * * *"
-  network: none
-  skills: []
-  permissions:
-    - projects:read:*
-    - tasks:create:*
-    - agents:list
-    - chat:write:general
-    - chat:read:*
-    - budget:read:self
-  ---
-  ## System Prompt
+  alias Glorbo.CLI.Scaffold.SystemPrompt
 
-  You are the CEO of acme. Your mission: ship small useful things.
-  """
+  defp ceo_agent_md do
+    """
+    ---
+    name: ceo
+    role: Chief Executive Officer
+    reports_to: director
+    provider: claude-code
+    model: claude-sonnet-4-5
+    budget:
+      monthly_usd: 0.00
+      alert_at_pct: 80
+    heartbeat: "*/30 * * * *"
+    network: none
+    skills: []
+    permissions:
+      - projects:read:*
+      - tasks:create:*
+      - agents:list
+      - chat:write:general
+      - chat:read:*
+      - budget:read:self
+    ---
+    ## System Prompt
+
+    You are the CEO of acme. Your mission: ship small useful things.
+
+    #{SystemPrompt.reply_contract()}
+    """
+  end
 
   @general_channel_md ~s"""
   # general
@@ -96,7 +102,7 @@ defmodule Glorbo.Init.ExampleCompany do
       end
 
       File.write!(sentinel, @company_md)
-      File.write!(Path.join(company_dir, "agents/ceo/agent.md"), @ceo_agent_md)
+      File.write!(Path.join(company_dir, "agents/ceo/agent.md"), ceo_agent_md())
       File.write!(Path.join(company_dir, "channels/general.md"), @general_channel_md)
       File.write!(Path.join(company_dir, "goals/q3-2026.md"), @goal_md)
       File.touch!(Path.join(company_dir, "agents/ceo/stdout.log"))
