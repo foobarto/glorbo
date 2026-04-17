@@ -3,21 +3,23 @@ defmodule Glorbo.Company.Scheduler do
   Per-company cron-driven heartbeat scheduler (AGT-02).
 
   For each registered agent, parses the `heartbeat:` cron expression from
-  `agent.md`, computes the next run-time against the dep-injected clock, and
+  `AGENT.md`, computes the next run-time against the dep-injected clock, and
   arms a `Process.send_after/3` one-shot timer. When the timer fires we
-  invoke the agent's `dispatch_fun.(:heartbeat)` callback, emit an
-  `agent.wake` audit event, and re-arm from the CURRENT wall-clock —
-  **never** by incrementing the prior armed-time (Pitfall 3 — send_after
-  delays drift under long VM pauses; wall-clock recompute self-heals).
+  consult `HEARTBEAT.md` (GEP-14) — present → dispatch the agent and emit
+  `agent.wake` (trigger=heartbeat); missing/blank/oversize → emit
+  `agent.heartbeat_skipped` and skip dispatch. Re-arm from the CURRENT
+  wall-clock regardless — **never** by incrementing the prior armed-time
+  (Pitfall 3 — send_after delays drift under long VM pauses; wall-clock
+  recompute self-heals).
 
   **Stateless across restarts (D-45):** on crash, state is lost but the
-  source of truth is each agent's `agent.md`; callers re-register agents
+  source of truth is each agent's `AGENT.md`; callers re-register agents
   from their own supervisors.
 
-  **Dep-injection:** `clock_fun` and `send_after_fun` are keyword opts for
-  tests — a mock clock returns a fixed `DateTime` and a mock
-  `send_after_fun` captures the `(dest, msg, delay)` triple in the test's
-  mailbox without actually arming a BEAM timer.
+  **Dep-injection:** `clock_fun`, `send_after_fun`, `audit_fun`, and
+  `heartbeat_file_fun` are keyword opts for tests — mocks return fixed
+  values and capture the `(dest, msg, delay)` triple in the test's
+  mailbox without actually arming a BEAM timer or touching the disk.
   """
   use GenServer
   require Logger
@@ -62,14 +64,25 @@ defmodule Glorbo.Company.Scheduler do
   # GenServer callbacks
   # ---------------------------------------------------------------------------
 
+  # GEP-14: cap for HEARTBEAT.md content. Reasonable default — longer
+  # than a cron expression, short enough that oversize = user error.
+  @heartbeat_max_bytes 10 * 1024
+
   @impl GenServer
   def init(opts) do
     state = %{
       company: Keyword.fetch!(opts, :company),
+      base: Keyword.get(opts, :base, Path.expand("~/.glorbo")),
       agents: %{},
       clock_fun: Keyword.get(opts, :clock_fun, &DateTime.utc_now/0),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after/3),
-      audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2)
+      audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
+      heartbeat_file_fun:
+        Keyword.get(
+          opts,
+          :heartbeat_file_fun,
+          &Glorbo.Company.Scheduler.default_heartbeat_lookup/3
+        )
     }
 
     {:ok, state}
@@ -109,17 +122,34 @@ defmodule Glorbo.Company.Scheduler do
   def handle_info({:heartbeat, agent_slug}, state) do
     case Map.fetch(state.agents, agent_slug) do
       {:ok, %{dispatch_fun: dispatch_fun, expr: expr} = entry} ->
-        safe_dispatch(dispatch_fun, agent_slug)
+        # GEP-14: HEARTBEAT.md is the agent-authored cron-wake contract.
+        # Missing/blank/oversize → skip dispatch (no-op wakes hide
+        # "this agent has nothing to do" in the audit log; an explicit
+        # skip event makes that state visible).
+        case heartbeat_status(state, agent_slug) do
+          :ok ->
+            safe_dispatch(dispatch_fun, agent_slug)
 
-        emit_audit(state, %{
-          action: "agent.wake",
-          actor: "system",
-          company: state.company,
-          agent: agent_slug,
-          trigger: "heartbeat"
-        })
+            emit_audit(state, %{
+              action: "agent.wake",
+              actor: "system",
+              company: state.company,
+              agent: agent_slug,
+              trigger: "heartbeat"
+            })
 
-        # Pitfall 3: recompute next-run from current wall-clock
+          {:skip, reason} ->
+            emit_audit(state, %{
+              action: "agent.heartbeat_skipped",
+              actor: "system",
+              company: state.company,
+              agent: agent_slug,
+              reason: reason
+            })
+        end
+
+        # Pitfall 3: recompute next-run from current wall-clock, regardless
+        # of whether dispatch ran — a skipped heartbeat still re-arms.
         state = arm_timer(state, agent_slug, expr, entry)
         {:noreply, state}
 
@@ -214,5 +244,58 @@ defmodule Glorbo.Company.Scheduler do
     e ->
       Logger.error("scheduler audit emit failed: #{Exception.message(e)}")
       :error
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-14 — HEARTBEAT.md contract
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  # Default resolver: `<base>/companies/<co>/agents/<slug>/HEARTBEAT.md`.
+  # Returns `{:ok, binary} | {:error, atom}`.
+  @spec default_heartbeat_lookup(Path.t(), String.t(), String.t()) ::
+          {:ok, binary()} | {:error, atom()}
+  def default_heartbeat_lookup(base, company, agent_slug) do
+    path =
+      Path.join([
+        base,
+        "companies",
+        company,
+        "agents",
+        agent_slug,
+        "HEARTBEAT.md"
+      ])
+
+    case File.stat(path) do
+      {:ok, %File.Stat{size: size}} when size > @heartbeat_max_bytes ->
+        {:error, :file_too_large}
+
+      {:ok, _stat} ->
+        File.read(path)
+
+      {:error, :enoent} ->
+        {:error, :no_heartbeat_file}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp heartbeat_status(state, agent_slug) do
+    case state.heartbeat_file_fun.(state.base, state.company, agent_slug) do
+      {:ok, content} ->
+        if String.trim(content) == "",
+          do: {:skip, "no_heartbeat_file"},
+          else: :ok
+
+      {:error, :no_heartbeat_file} ->
+        {:skip, "no_heartbeat_file"}
+
+      {:error, :file_too_large} ->
+        {:skip, "file_too_large"}
+
+      {:error, reason} ->
+        {:skip, "read_error:#{inspect(reason)}"}
+    end
   end
 end

@@ -2,13 +2,21 @@
 gep: 0014
 title: Agent heartbeat semantics and HEARTBEAT.md
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-17
+updated: 2026-04-17
 history:
   - date: 2026-04-17
     status: Draft
     note: Initial draft — HEARTBEAT.md contract + scheduler reuse.
+  - date: 2026-04-17
+    status: Implemented
+    note: >-
+      Scheduler reads HEARTBEAT.md on wake; missing/blank/oversize
+      → `agent.heartbeat_skipped`; present → existing `agent.wake`
+      path. Scaffolders drop a default stub. Sandbox bind-mount
+      (open question #1) deferred to the CLI-adapter wiring phase.
 ---
 
 # GEP-14: Agent heartbeat semantics and HEARTBEAT.md

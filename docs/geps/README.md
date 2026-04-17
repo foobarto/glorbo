@@ -37,7 +37,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0011 | [The Zen of Glorbo](./0011-zen-of-glorbo.md)                                             | Informational | Accepted    |
 | 0012 | [No User-Input Atoms — Registry Over Process Names](./0012-no-user-input-atoms.md)       | Standards     | Draft       |
 | 0013 | [Project-prefixed Task IDs](./0013-project-prefixed-task-ids.md)                         | Standards     | Implemented |
-| 0014 | [Agent Heartbeat Semantics and HEARTBEAT.md](./0014-agent-heartbeat-semantics.md)        | Standards     | Draft       |
+| 0014 | [Agent Heartbeat Semantics and HEARTBEAT.md](./0014-agent-heartbeat-semantics.md)        | Standards     | Implemented |
 | 0015 | [ALLCAPS Convention for Agent-facing Markdown](./0015-allcaps-agent-md-convention.md)    | Informational | Accepted    |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->

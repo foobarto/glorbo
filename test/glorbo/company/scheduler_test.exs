@@ -128,10 +128,15 @@ defmodule Glorbo.Company.SchedulerTest do
       end
     end
 
+    # GEP-14: stub HEARTBEAT.md lookup — present for this test so the
+    # heartbeat dispatches instead of being skipped.
+    heartbeat_file_fun = fn _base, _co, _slug -> {:ok, "Check inbox\n"} end
+
     {name, pid} =
       start_sched!(
         clock_fun: clock_fun,
-        send_after_fun: capturing_send_after_fun(test_pid)
+        send_after_fun: capturing_send_after_fun(test_pid),
+        heartbeat_file_fun: heartbeat_file_fun
       )
 
     :ok =
@@ -220,6 +225,124 @@ defmodule Glorbo.Company.SchedulerTest do
   # ---------------------------------------------------------------------------
   # S7 — stateless-across-restarts
   # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # GEP-14 S8 — missing HEARTBEAT.md → skip (no wake, audit event emitted)
+  # ---------------------------------------------------------------------------
+
+  test "S8: missing HEARTBEAT.md emits agent.heartbeat_skipped; no dispatch" do
+    test_pid = self()
+    dispatch_fun = fn _ -> send(test_pid, :should_not_dispatch) end
+
+    heartbeat_file_fun = fn _base, _co, _slug -> {:error, :no_heartbeat_file} end
+
+    {name, pid} =
+      start_sched!(
+        clock_fun: fn -> ~U[2026-04-16 12:00:00Z] end,
+        send_after_fun: capturing_send_after_fun(test_pid),
+        heartbeat_file_fun: heartbeat_file_fun
+      )
+
+    :ok =
+      Scheduler.register(name, "engineer", %{
+        cron: "*/30 * * * *",
+        dispatch_fun: dispatch_fun
+      })
+
+    assert_receive {:send_after, _, _, _}, 500
+
+    send(pid, {:heartbeat, "engineer"})
+
+    assert_receive {:audit, %{action: "agent.heartbeat_skipped"} = entry}, 500
+    reason = entry[:reason] || entry["reason"]
+    assert reason == "no_heartbeat_file"
+
+    # Dispatch must NOT have run.
+    refute_receive :should_not_dispatch, 200
+
+    # Re-arm still fires — a skipped heartbeat should not stop the cron.
+    assert_receive {:send_after, _, {:heartbeat, "engineer"}, _}, 500
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-14 S9 — whitespace-only HEARTBEAT.md → skip
+  # ---------------------------------------------------------------------------
+
+  test "S9: blank HEARTBEAT.md is treated as skip" do
+    test_pid = self()
+    dispatch_fun = fn _ -> send(test_pid, :should_not_dispatch) end
+
+    heartbeat_file_fun = fn _base, _co, _slug -> {:ok, "   \n\n"} end
+
+    {name, pid} =
+      start_sched!(
+        clock_fun: fn -> ~U[2026-04-16 12:00:00Z] end,
+        send_after_fun: capturing_send_after_fun(test_pid),
+        heartbeat_file_fun: heartbeat_file_fun
+      )
+
+    :ok =
+      Scheduler.register(name, "engineer", %{
+        cron: "*/30 * * * *",
+        dispatch_fun: dispatch_fun
+      })
+
+    assert_receive {:send_after, _, _, _}, 500
+    send(pid, {:heartbeat, "engineer"})
+
+    assert_receive {:audit, %{action: "agent.heartbeat_skipped"}}, 500
+    refute_receive :should_not_dispatch, 200
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-14 S10 — oversize HEARTBEAT.md → skip with reason
+  # ---------------------------------------------------------------------------
+
+  test "S10: oversize HEARTBEAT.md emits skip with file_too_large reason" do
+    test_pid = self()
+    heartbeat_file_fun = fn _base, _co, _slug -> {:error, :file_too_large} end
+
+    {name, pid} =
+      start_sched!(
+        clock_fun: fn -> ~U[2026-04-16 12:00:00Z] end,
+        send_after_fun: capturing_send_after_fun(test_pid),
+        heartbeat_file_fun: heartbeat_file_fun
+      )
+
+    :ok =
+      Scheduler.register(name, "engineer", %{
+        cron: "*/30 * * * *",
+        dispatch_fun: fn _ -> :ok end
+      })
+
+    assert_receive {:send_after, _, _, _}, 500
+    send(pid, {:heartbeat, "engineer"})
+
+    assert_receive {:audit, %{action: "agent.heartbeat_skipped"} = entry}, 500
+    reason = entry[:reason] || entry["reason"]
+    assert reason == "file_too_large"
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-14 S11 — default resolver reads the real file from disk
+  # ---------------------------------------------------------------------------
+
+  test "S11: default_heartbeat_lookup/3 reads HEARTBEAT.md off disk" do
+    base = Path.join(System.tmp_dir!(), "glorbo_sched_#{System.unique_integer([:positive])}")
+    agent_dir = Path.join([base, "companies", "acme", "agents", "engineer"])
+    File.mkdir_p!(agent_dir)
+    File.write!(Path.join(agent_dir, "HEARTBEAT.md"), "Check inbox.\n")
+
+    try do
+      assert {:ok, "Check inbox.\n"} =
+               Scheduler.default_heartbeat_lookup(base, "acme", "engineer")
+
+      assert {:error, :no_heartbeat_file} =
+               Scheduler.default_heartbeat_lookup(base, "acme", "ghost-agent")
+    after
+      File.rm_rf!(base)
+    end
+  end
 
   test "S7: state is empty after restart (D-45 stateless invariant)" do
     {name1, pid1} = start_sched!(clock_fun: fn -> ~U[2026-04-16 12:00:00Z] end)
