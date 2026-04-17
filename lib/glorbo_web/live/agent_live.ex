@@ -28,7 +28,7 @@ defmodule GlorboWeb.AgentLive do
 
   ## Actions
 
-  Header action row: edit agent.md (disabled), send message
+  Header action row: edit AGENT.md (disabled), send message
   (disabled), stop (disabled pending M3.5 server-side sentinel),
   wake now (wired via `GlorboWeb.Actions.wake_agent/3`).
   """
@@ -180,12 +180,12 @@ defmodule GlorboWeb.AgentLive do
             <StatusPill.status_pill status={@detail.pill_status} label={@detail.pill_label} />
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">~/.glorbo/companies/{@company_slug}/agents/</span>{@agent_slug}<span class="gl-muted">/agent.md</span>
+            <span class="gl-muted">~/.glorbo/companies/{@company_slug}/agents/</span>{@agent_slug}<span class="gl-muted">/AGENT.md</span>
           </p>
         </div>
         <div class="gl-overview__actions">
-          <button type="button" class="gl-btn" disabled title="Pending P3 agent.md editor">
-            ✎ edit agent.md
+          <button type="button" class="gl-btn" disabled title="Pending P3 AGENT.md editor">
+            ✎ edit AGENT.md
           </button>
           <button type="button" class="gl-btn" disabled title="Pending P3 messaging UI">
             ✉ send message
@@ -353,7 +353,7 @@ defmodule GlorboWeb.AgentLive do
           <section class="gl-panel">
             <header class="gl-panel__header">
               <span>config</span>
-              <span class="gl-panel__hint">agent.md</span>
+              <span class="gl-panel__hint">AGENT.md</span>
             </header>
             <div class="gl-panel__body">
               <dl class="gl-kv">
@@ -401,7 +401,7 @@ defmodule GlorboWeb.AgentLive do
                 Provider <span class="gl-accent">{@detail.provider}</span>
                 has <code>usage_parser = "none"</code>. Agent opted in via
                 <code>allow_untracked_budget: true</code>
-                in agent.md.
+                in AGENT.md.
               </p>
             </div>
           </section>

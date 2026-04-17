@@ -87,3 +87,4 @@ coverage/
 # and the cosign signing step. None of these belong in the repo.
 *.tar.gz
 *.sig
+.claude/launch.json

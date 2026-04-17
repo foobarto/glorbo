@@ -337,7 +337,7 @@ defmodule GlorboWeb.CompanyLive do
      put_flash(
        socket,
        :info,
-       "New-agent UI ships in a later milestone. For now: mkdir agents/<slug>/ and drop an agent.md."
+       "New-agent UI ships in a later milestone. For now: mkdir agents/<slug>/ and drop an AGENT.md."
      )}
   end
 
