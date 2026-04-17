@@ -2,19 +2,22 @@ defmodule Glorbo.Company.Supervisor do
   @moduledoc """
   Per-company supervisor (AGT-01; D-44).
 
-  Owns a 7- or 8-child supervision tree (expanded from Phase 2's 2-child
-  shape by Plan 03-05 + the GAP-closure work):
+  Owns an 8- or 9-child supervision tree:
 
     1. `Glorbo.Company.AuditLog`       — append-only JSONL + SQLite mirror (Plan 2-01)
     2. `Glorbo.Filesystem.Watcher`     — inotify + PubSub broadcast (Plan 2-04 + 3-05)
     3. `Glorbo.Company.Router`         — permission-checked outbox routing (Plan 3-02)
-    4. `Glorbo.Company.Scheduler`      — cron heartbeats (Plan 3-02)
+    4. `Glorbo.Company.Scheduler`      — cron heartbeats (Plan 3-02; GEP-14)
     5. `Glorbo.Company.BudgetTracker`  — pre-dispatch USD gate (Plan 3-02)
     6. `Glorbo.Company.AgentSupervisor` — per-agent DynamicSupervisor (Plan 3-03)
     7. `Glorbo.Approvals.Gate`         — SEC-04 Director approval flow (GAP-5)
     8. `Glorbo.Network.Proxy` (conditional) — HTTPS CONNECT allowlist for
-       api-only agents (GAP-4; started iff at least one agent.md declares
+       api-only agents (GAP-4; started iff at least one AGENT.md declares
        `network: api-only`).
+    9. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
+       `AgentSupervisor.start_agent/2` and `Scheduler.register/3` for
+       every on-disk agent; last so every dep is alive by the time it
+       runs (gated by `config :glorbo, :auto_boot_agents`).
 
   Strategy: `:one_for_one` — killing any single child restarts only that
   child. Kill this supervisor → only this company's children restart;
@@ -108,6 +111,7 @@ defmodule Glorbo.Company.Supervisor do
       base_children
       |> maybe_append_proxy(opts, company, base)
       |> append_gate(company, base)
+      |> append_agent_boot(company, base)
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -173,5 +177,16 @@ defmodule Glorbo.Company.Supervisor do
         {Glorbo.Approvals.Gate,
          [name: via(company, :approvals_gate), company: company, base: base]}
       ]
+  end
+
+  # ---------------------------------------------------------------------------
+  # AgentBoot — one-shot enumerator that calls AgentSupervisor.start_agent
+  # and Scheduler.register for each on-disk agent. Last in the children
+  # list so every dependency (AgentSupervisor, Scheduler, AuditLog) is
+  # alive by the time it runs.
+  # ---------------------------------------------------------------------------
+
+  defp append_agent_boot(children, company, base) do
+    children ++ [{Glorbo.Company.AgentBoot, [company: company, base: base]}]
   end
 end

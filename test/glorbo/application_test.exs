@@ -37,10 +37,10 @@ defmodule Glorbo.ApplicationTest do
 
   @tag :inotify
   test "a company supervisor can be started under Glorbo.CompanySupervisor" do
-    # Current (post-Plan-03-05 + GAP-5) child shape: AuditLog, Watcher,
-    # Router, Scheduler, BudgetTracker, AgentSupervisor, Approvals.Gate =
-    # 7 children. Network.Proxy only joins when an api-only agent is on
-    # disk (GAP-4); smoke_test has none → 7, not 8.
+    # Current child shape: AuditLog, Watcher, Router, Scheduler,
+    # BudgetTracker, AgentSupervisor, Approvals.Gate, AgentBoot = 8
+    # children. Network.Proxy only joins when an api-only agent is on
+    # disk (GAP-4); smoke_test has none → 8, not 9.
     base = Path.join(System.tmp_dir!(), "glorbo_app_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join([base, "companies", "smoke_test"]))
     on_exit(fn -> File.rm_rf!(base) end)
@@ -52,7 +52,7 @@ defmodule Glorbo.ApplicationTest do
     assert {:ok, pid} = DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec)
 
     children = Supervisor.which_children(pid)
-    assert length(children) == 7
+    assert length(children) == 8
 
     ids =
       children
@@ -66,7 +66,8 @@ defmodule Glorbo.ApplicationTest do
           Glorbo.Company.Scheduler,
           Glorbo.Company.BudgetTracker,
           Glorbo.Company.AgentSupervisor,
-          Glorbo.Approvals.Gate
+          Glorbo.Approvals.Gate,
+          Glorbo.Company.AgentBoot
         ] do
       assert MapSet.member?(ids, expected), "missing child #{inspect(expected)}"
     end

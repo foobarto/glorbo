@@ -2,8 +2,11 @@ import Config
 
 # Do not auto-start companies on app boot under ExUnit — each test
 # manages its own per-test tmp root + fixtures; auto-boot would fight
-# the isolation.
+# the isolation. Same reasoning applies to per-company agent boot —
+# tests that spin up a CompanySupervisor via fixtures don't expect
+# every on-disk agent to start as well.
 config :glorbo, auto_start_companies: false
+config :glorbo, auto_boot_agents: false
 
 # Configure your database
 #

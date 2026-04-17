@@ -222,8 +222,8 @@ defmodule Glorbo.Filesystem.WatcherTest do
     end
   end
 
-  describe "Company.Supervisor boot (Test 10; extended by Plan 03-05 + GAP-4/5)" do
-    test "Test 10: Company.Supervisor starts 7 children by default (6 Plan 03-05 + Gate from GAP-5)" do
+  describe "Company.Supervisor boot (Test 10; extended by Plan 03-05 + GAP-4/5 + AgentBoot)" do
+    test "Test 10: Company.Supervisor starts 8 children by default (6 Plan 03-05 + Gate + AgentBoot)" do
       base = TmpGlorboHome.setup()
       company = "sup_#{System.unique_integer([:positive])}"
       File.mkdir_p!(Path.join([base, "companies", company]))
@@ -248,7 +248,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       end)
 
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 7
+      assert length(children) == 8
 
       modules =
         children
@@ -262,6 +262,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
       assert MapSet.member?(modules, Glorbo.Approvals.Gate)
+      assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
       # GAP-4: no api-only agent on disk → Network.Proxy NOT started
       refute MapSet.member?(modules, Glorbo.Network.Proxy)
     end
