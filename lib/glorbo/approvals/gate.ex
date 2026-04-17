@@ -118,18 +118,10 @@ defmodule Glorbo.Approvals.Gate do
     GenServer.call(server, {:request_approval, req})
   end
 
-  @doc """
-  Test-facing shortcut that bypasses PubSub — synthesises the same
-  `handle_info({:file_event, rel_path, [:modified]})` path. Useful for
-  Plan 03-05's integration tests before the Watcher broadcast is wired.
-  """
-  @spec resolve_approval(GenServer.server(), String.t(), String.t()) :: :ok
-  def resolve_approval(server, task_path, _status) do
-    send(server, {:file_event, task_path, [:modified]})
-    # Round-trip to flush the cast
-    _ = :sys.get_state(server)
-    :ok
-  end
+  # `resolve_approval/3` moved to `Glorbo.Test.GateHelpers` — it was a
+  # test-only shortcut that used `:sys.get_state/1` on the production API
+  # surface. Tests now call `Glorbo.Test.GateHelpers.resolve_approval/3`
+  # directly.
 
   # ---------------------------------------------------------------------------
   # GenServer callbacks

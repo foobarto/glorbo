@@ -5,7 +5,7 @@ defmodule Glorbo.Approvals.GateTest do
   alias Glorbo.Repo
   alias Glorbo.TaskDefinition
   alias Glorbo.TasksApprovalState
-  alias Glorbo.Test.TmpGlorboHome
+  alias Glorbo.Test.{GateHelpers, TmpGlorboHome}
 
   @company "acme"
 
@@ -419,7 +419,7 @@ defmodule Glorbo.Approvals.GateTest do
     body
     """)
 
-    assert :ok == Gate.resolve_approval(pid, "projects/foo/tasks/t-11.md", "approved")
+    assert :ok == GateHelpers.resolve_approval(pid, "projects/foo/tasks/t-11.md", "approved")
 
     assert_receive {:wake, "engineer", :director_approval, _}, 500
     assert_audit_within(:action, "approval.granted", 300)
