@@ -210,44 +210,37 @@ defmodule Glorbo.Agent.Server do
     finish(state, {:crashed, reason})
   end
 
-  # GAP-3: PubSub inbox event → convert to :inbox wake for THIS agent.
+  # GAP-3: PubSub inbox event → :inbox wake for THIS agent.
   # Each Agent.Server subscribes to the company-wide inbox topic; only
   # events under `agents/<this-slug>/inbox/` advance to wake. Inbox
   # payload parsing (which file → task map) lives in inbox_scan_fun, so
   # the server stays lean and the lookup is dep-injectable.
+  #
+  # `rel_path` is intentionally discarded here — the scanner returns the
+  # OLDEST unread .md file, not whichever one happened to fire the event
+  # (D-26 FIFO inbox semantics). Using `rel_path` as a hint would violate
+  # ordering when multiple files land between handler ticks.
   def handle_info({:file_event, rel_path, events}, state) when is_binary(rel_path) do
     if inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) do
-      # Enqueue a wake; the actual task selection happens inside the
-      # handler via resolve_task/3 → inbox_scan_fun. We route through the
-      # same :wake codepath to keep dedup / queueing uniform.
-      _ =
-        case state.status do
-          :idle ->
-            send(self(), {:internal_inbox_wake, rel_path})
-
-          :busy ->
-            send(self(), {:internal_inbox_wake, rel_path})
-        end
-    end
-
-    {:noreply, state}
-  end
-
-  def handle_info({:internal_inbox_wake, _rel_path}, state) do
-    if state.status == :idle do
-      case state.inbox_scan_fun.(state.spec) do
-        nil ->
-          {:noreply, state}
-
-        %{} = task ->
-          {:noreply, start_dispatch(state, task)}
-      end
+      handle_inbox_wake(state)
     else
-      {:noreply, %{state | pending_wake: {:inbox, DateTime.utc_now()}}}
+      {:noreply, state}
     end
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  defp handle_inbox_wake(%{status: :idle} = state) do
+    case state.inbox_scan_fun.(state.spec) do
+      nil -> {:noreply, state}
+      %{} = task -> {:noreply, start_dispatch(state, task)}
+    end
+  end
+
+  defp handle_inbox_wake(%{status: :busy} = state) do
+    # Busy: queue a pending wake (most-recent-wins; at most one slot).
+    {:noreply, %{state | pending_wake: {:inbox, DateTime.utc_now()}}}
+  end
 
   # ---------------------------------------------------------------------------
   # Dispatch lifecycle
@@ -341,8 +334,8 @@ defmodule Glorbo.Agent.Server do
   # Default inbox scanner: pick the oldest unread .md file under
   # agents/<slug>/inbox/ and return a task map. Returns nil when the
   # inbox is empty. Directories walked lazily; never reads the whole
-  # inbox into memory. Called from resolve_task/3 when wake comes with
-  # no explicit task, AND from handle_info({:internal_inbox_wake, _}).
+  # inbox into memory. Called from resolve_task/3 (explicit wake/3) and
+  # from handle_inbox_wake/1 (PubSub :file_event path).
   defp default_inbox_scan(%_{} = spec) do
     base = Path.expand("~/.glorbo")
     inbox_dir = Path.join([base, "companies", spec.company, "agents", spec.slug, "inbox"])
