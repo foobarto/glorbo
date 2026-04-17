@@ -382,6 +382,57 @@ button { font-family: inherit; font-size: inherit; }
   font-size: var(--gl-font-label);
 }
 
+/* Severity-differentiated flash banners (TODO.md P1: distinguish
+   error vs info with color + leading glyph, not just text). */
+.gl-banner--info {
+  background: var(--gl-surface);
+  color: var(--gl-fg);
+  border-left: 3px solid var(--gl-success);
+  font-size: var(--gl-font-label);
+}
+.gl-banner--error {
+  background: var(--gl-surface);
+  color: var(--gl-fg);
+  border-left: 3px solid var(--gl-danger);
+  font-size: var(--gl-font-label);
+}
+.gl-banner__glyph {
+  margin-right: var(--gl-space-xs);
+  font-weight: 600;
+}
+.gl-banner--info .gl-banner__glyph { color: var(--gl-success); }
+.gl-banner--error .gl-banner__glyph { color: var(--gl-danger); }
+
+/* ========== Accessibility utilities ========== */
+
+/* Screen-reader-only label that stays off-screen for sighted users. */
+.gl-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip-to-content link — hidden until focused (first tab stop). */
+.gl-skip-link {
+  position: absolute;
+  top: -9999px;
+  left: 8px;
+  background: var(--gl-accent);
+  color: var(--gl-bg);
+  padding: var(--gl-space-xs) var(--gl-space-md);
+  border-radius: 4px;
+  z-index: 1000;
+  text-decoration: none;
+  font-weight: 600;
+}
+.gl-skip-link:focus { top: 8px; outline: 2px solid var(--gl-accent); }
+
 /* ========== Chat / ChannelLive ========== */
 .gl-channel { display: flex; flex-direction: column; gap: var(--gl-space-md); }
 .gl-channel__messages { display: flex; flex-direction: column; gap: var(--gl-space-sm); }
@@ -408,6 +459,11 @@ button { font-family: inherit; font-size: inherit; }
 /* ========== Audit ========== */
 .gl-audit { display: flex; flex-direction: column; gap: var(--gl-space-md); }
 .gl-audit-entry { margin-bottom: var(--gl-space-sm); font-size: var(--gl-font-label); cursor: pointer; }
+.gl-audit-entry:focus-visible {
+  outline: 2px solid var(--gl-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .gl-audit-entry--expanded { background: var(--gl-surface-raised); }
 .gl-audit-entry__row { display: flex; gap: var(--gl-space-md); align-items: center; }
 .gl-audit-entry__payload {
