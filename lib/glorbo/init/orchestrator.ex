@@ -1,24 +1,24 @@
 defmodule Glorbo.Init.Orchestrator do
   @moduledoc """
-  7-step init pipeline (D-21). Continue-on-error (D-20). One audit event
-  per step (D-24). Severity-weighted final exit code (0/1/2) per D-45.
+  5-step init pipeline. Continue-on-error. One audit event per step.
+  Severity-weighted final exit code (0/1/2).
 
   Steps, in order:
 
     1. `:pre_doctor`       — `Glorbo.Doctor.run_checks/0`
     2. `:hierarchy`        — `Glorbo.Filesystem.Hierarchy.ensure!/1`
-    3. `:binary_bootstrap` — `BinaryBootstrap.ensure_podman/1` + `ensure_ollama/1`
-    4. `:image_pull`       — `ImagePull.run/1`
-    5. `:example_company`  — `ExampleCompany.scaffold!/1` (unless `--no-example`)
-    6. `:reindex`          — `Reindex.run/1`
-    7. `:post_doctor`      — `Glorbo.Doctor.run_checks/0` (exit-code source)
+    3. `:example_company`  — `ExampleCompany.scaffold!/1` (unless `--no-example`)
+    4. `:reindex`          — `Reindex.run/1`
+    5. `:post_doctor`      — `Glorbo.Doctor.run_checks/0` (exit-code source)
 
-  W3: AuditLog is started unconditionally at pipeline entry; the
+  AuditLog is started unconditionally at pipeline entry; the
   `{:error, {:already_started, _pid}}` reply on rerun is handled
   explicitly. No `Process.whereis/1` race.
 
-  W4: `combine/1` uses `match?/2` — no broken `== {:ok, :system, :_}`
-  pattern, no `elem_match` helper.
+  The original pipeline had `:binary_bootstrap` + `:image_pull` steps
+  for podman/ollama/glorbo-runtime provisioning; those were dropped
+  when the Podman tier was removed (GEP-5 D6). Agents use whichever
+  CLI is installed on the host.
   """
 
   require Logger
@@ -83,12 +83,9 @@ defmodule Glorbo.Init.Orchestrator do
   end
 
   defp run_pipeline(opts_with_base) do
-    # TODO(GEP-5 D6 cleanup, commit 2): prune :binary_bootstrap fully;
-    # :image_pull is already gone with the Podman runtime.
     steps = [
       {:pre_doctor, fn o -> step_pre_doctor(o) end},
       {:hierarchy, fn o -> step_hierarchy(o) end},
-      {:binary_bootstrap, fn o -> step_binary_bootstrap(o) end},
       {:example_company, fn o -> step_example_company(o) end},
       {:reindex, fn o -> step_reindex(o) end},
       {:post_doctor, fn o -> step_post_doctor(o) end}
@@ -130,13 +127,6 @@ defmodule Glorbo.Init.Orchestrator do
     %{status: :ok, detail: "~/.glorbo/ materialised"}
   end
 
-  defp step_binary_bootstrap(_opts) do
-    # TODO(GEP-5 D6 cleanup, commit 2): remove this step entirely.
-    # Podman + Ollama bootstrap was for the dropped Python-in-Podman
-    # runtime; agents are CLI-tool subprocesses under bwrap now.
-    %{status: :skipped, detail: "no binary bootstrap — agents use host CLIs (GEP-4)"}
-  end
-
   defp step_example_company(opts) do
     if Keyword.get(opts, :example, true) do
       case ExampleCompany.scaffold!(opts) do
@@ -174,33 +164,6 @@ defmodule Glorbo.Init.Orchestrator do
       nil -> Doctor.run_checks()
       fun when is_function(fun, 0) -> fun.()
       fun when is_function(fun, 1) -> fun.(opts)
-    end
-  end
-
-  # W4: uses match?/2 — no broken :_ literal, no elem_match helper.
-  @doc false
-  def combine(results) do
-    cond do
-      Enum.all?(results, &match?({:ok, :system, _}, &1)) ->
-        %{status: :ok, mode: :no_op, detail: "all binaries already present (system)"}
-
-      Enum.any?(results, &match?({:error, _}, &1)) ->
-        errors = Enum.filter(results, &match?({:error, _}, &1))
-        # WR-09: preserve successfully-downloaded entries in the error detail
-        # so operators can see e.g. "podman installed, ollama failed" rather
-        # than a blanket "had errors" that hides the partial success.
-        downloaded = Enum.filter(results, &match?({:ok, :downloaded, _}, &1))
-
-        %{
-          status: :error,
-          errors: errors,
-          downloaded: downloaded,
-          detail:
-            "binary bootstrap had errors: #{inspect(errors)}; downloaded: #{inspect(downloaded)}"
-        }
-
-      true ->
-        %{status: :ok, mode: :mixed, detail: "bootstrapped (mixed system/downloaded)"}
     end
   end
 
@@ -269,15 +232,13 @@ defmodule Glorbo.Init.Orchestrator do
     }
   end
 
-  # Q-A2: the Ollama-UDS hint for offline LLM inference. The actual Director
-  # that uses the UDS is Phase 3; Plan 04 surfaces the recipe here as a
-  # "next steps" block in the init post-run summary.
   defp build_next_steps(_results) do
     [
-      "To run offline LLM inference after init:",
-      "  1. mkdir -p /tmp && OLLAMA_HOST=unix:///tmp/ollama.sock ollama serve &",
-      "  2. ollama pull llama3.2:1b",
-      "  3. See EXAMPLE_COMPANY_README.md for the airplane-mode ritual."
+      "Next steps:",
+      "  1. Install a supported CLI tool (claude, gemini, codex, or an OSS alternative).",
+      "  2. Authenticate it (each CLI handles its own login).",
+      "  3. `glorbo doctor` to verify. `glorbo up` to start.",
+      "  4. Scaffold a company: `glorbo new company <name>`."
     ]
   end
 end

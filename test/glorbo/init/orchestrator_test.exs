@@ -31,8 +31,7 @@ defmodule Glorbo.Init.OrchestratorTest do
     {:ok, base: base}
   end
 
-  # Canonical dep-injection set — doctor returns all-pass, binaries are
-  # already-present, image pull is a no-op success.
+  # Canonical dep-injection set — doctor returns all-pass.
   defp ok_deps do
     [
       doctor_fun: fn ->
@@ -40,18 +39,14 @@ defmodule Glorbo.Init.OrchestratorTest do
           %{name: "linux_kernel", pass: true, detail: "ok", required: "ok", severity: :blocker},
           %{name: "glorbo_dir", pass: true, detail: "ok", required: "ok", severity: :blocker}
         ]
-      end,
-      ensure_podman_fun: fn _o -> {:ok, :system, "/usr/bin/podman"} end,
-      ensure_ollama_fun: fn _o -> {:ok, :system, "/usr/bin/ollama"} end,
-      ensure_image_fun: fn _image -> :ok end,
-      image_cached_fun: fn _ -> true end
+      end
     ]
   end
 
   defp opts(base, extra \\ []), do: Keyword.merge([base: base], ok_deps()) |> Keyword.merge(extra)
 
-  describe "run/1 — 7-step pipeline" do
-    test "Test 7: executes 7 steps in D-21 order", %{base: base} do
+  describe "run/1 — 5-step pipeline" do
+    test "Test 7: executes 5 steps in order", %{base: base} do
       {status, summary} = Orchestrator.run(opts(base))
       assert status in [:ok, :error]
 
@@ -60,14 +55,13 @@ defmodule Glorbo.Init.OrchestratorTest do
       assert step_names == [
                :pre_doctor,
                :hierarchy,
-               :binary_bootstrap,
                :example_company,
                :reindex,
                :post_doctor
              ]
     end
 
-    test "Test 8: each step appends one audit event → 6 JSONL lines", %{base: base} do
+    test "Test 8: each step appends one audit event → 5 JSONL lines", %{base: base} do
       Orchestrator.run(opts(base))
 
       files = Path.wildcard(Path.join([base, "audit", "_system", "*.jsonl"]))
@@ -79,7 +73,7 @@ defmodule Glorbo.Init.OrchestratorTest do
         |> File.read!()
         |> String.split("\n", trim: true)
 
-      assert length(lines) == 6
+      assert length(lines) == 5
 
       # Every entry should have action "init.step.*"
       for line <- lines do
@@ -89,24 +83,11 @@ defmodule Glorbo.Init.OrchestratorTest do
       end
     end
 
-    test "Test 9: continue-on-error — one failing step does not abort pipeline", %{base: base} do
-      # TODO(GEP-5 D6 cleanup, commit 2): restore a real fault-injection test
-      # once step_binary_bootstrap is pruned. Today it always returns :skipped,
-      # so a failure-in-the-middle scenario needs a different step to target.
+    test "Test 9: continue-on-error — all 5 steps ran and produced a post_doctor result",
+         %{base: base} do
       {_status, summary} = Orchestrator.run(opts(base))
-      assert length(summary.results) == 6
+      assert length(summary.results) == 5
       assert Enum.find(summary.results, &(&1.step == :post_doctor))
-    end
-
-    test "Test 10: :skip-pull still accepted (no-op now that image_pull is gone)", %{base: base} do
-      {_status, summary} = Orchestrator.run(opts(base, skip_pull: true))
-
-      # binary_bootstrap is stubbed to always skip post-GEP-5 D6.
-      bootstrap = Enum.find(summary.results, &(&1.step == :binary_bootstrap))
-      assert bootstrap.status == :skipped
-
-      # No image_pull step remains.
-      refute Enum.find(summary.results, &(&1.step == :image_pull))
     end
 
     test "Test 11: example: false skips example_company", %{base: base} do
@@ -135,10 +116,10 @@ defmodule Glorbo.Init.OrchestratorTest do
                 severity: :blocker
               },
               %{
-                name: "ollama_daemon",
+                name: "sockets_dir",
                 pass: false,
-                detail: "daemon not reachable",
-                required: "reachable",
+                detail: "not writable",
+                required: "writable",
                 severity: :warning
               }
             ]
@@ -197,31 +178,6 @@ defmodule Glorbo.Init.OrchestratorTest do
       refute src =~ "ensure_audit_log_started"
       assert src =~ ":already_started"
       assert src =~ "AuditLog.start_link"
-    end
-  end
-
-  describe "W4: combine/1 correctness" do
-    test "Test 15: all :system → :no_op; with :error → :error; mixed → :mixed" do
-      # All system — no bootstrap work needed.
-      assert %{status: :ok, mode: :no_op} =
-               Orchestrator.combine([
-                 {:ok, :system, "/usr/bin/podman"},
-                 {:ok, :system, "/usr/bin/ollama"}
-               ])
-
-      # One error present.
-      assert %{status: :error, errors: [_ | _]} =
-               Orchestrator.combine([
-                 {:ok, :system, "/usr/bin/podman"},
-                 {:error, :boom}
-               ])
-
-      # Mixed system + downloaded.
-      assert %{status: :ok, mode: :mixed} =
-               Orchestrator.combine([
-                 {:ok, :system, "/usr/bin/podman"},
-                 {:ok, :downloaded, "/home/dev/.glorbo/bin/ollama"}
-               ])
     end
   end
 end

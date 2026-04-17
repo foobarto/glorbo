@@ -94,7 +94,7 @@ defmodule Glorbo.Backup do
     INCLUDES
       companies/, config.md, audit/, glorbo.db
     EXCLUDES
-      bin/, models/, containers/, runtime/, run/ (re-downloadable/derived)
+      bin/, runtime/, run/ (re-downloadable/derived)
     """
   end
 

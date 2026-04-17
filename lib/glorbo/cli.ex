@@ -39,8 +39,8 @@ defmodule Glorbo.CLI do
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
-  # D-23: init flags. No `--repair` (D-46) — repair lives under `doctor --fix`.
-  @init_switches [force: :boolean, skip_pull: :boolean, example: :boolean]
+  # init flags. No `--repair` — repair lives under `doctor --fix`.
+  @init_switches [force: :boolean, example: :boolean]
 
   # D-46 + Plan 05-01: `--fix` now routes to `Glorbo.CLI.DoctorFix.run/1`
   # (Wave-0 stub returning a "not implemented in Wave 0 (Plan 03 fills)"
@@ -131,7 +131,7 @@ defmodule Glorbo.CLI do
       glorbo <command> [args]
 
     COMMANDS
-      init [--force] [--skip-pull] [--example|--no-example]
+      init [--force] [--example|--no-example]
                                Bootstrap a fresh Glorbo install
       up                       Start glorbo in background (writes ~/.glorbo/run/glorbo.pid)
       down                     Stop the running glorbo daemon

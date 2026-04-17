@@ -179,8 +179,9 @@ defmodule Glorbo.DoctorTest do
         )
 
       results = Doctor.run_checks(deps)
-      # D-44 additive-only: 5 Phase-1 + 8 Phase-2 + 2 Phase-3 = 15
-      assert length(results) == 15
+      # GEP-5 D6: 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10
+      # (podman/ollama/ollama_daemon/runtime_image/runtime_exec dropped)
+      assert length(results) == 10
 
       Enum.each(results, fn r ->
         assert Map.has_key?(r, :name)
@@ -194,19 +195,13 @@ defmodule Glorbo.DoctorTest do
       end)
 
       names = Enum.map(results, & &1.name)
-      # D-44: Phase-1 names preserved verbatim in original order at head.
+      # Phase-1 names preserved verbatim in original order at head.
       assert Enum.take(names, 5) ==
                ["linux_kernel", "uidmap", "disk_space", "glorbo_dir", "erts_version"]
 
-      # Phase-2 additions appended after, order matches D-43.
-      # Phase-3 (Plan 03-05) appends bwrap + user_namespaces at the tail.
+      # Remaining Phase-2 checks + Phase-3 additions after GEP-5 D6 pruning.
       assert Enum.drop(names, 5) ==
                [
-                 "podman",
-                 "ollama",
-                 "ollama_daemon",
-                 "runtime_image",
-                 "runtime_exec",
                  "audit_dir",
                  "sockets_dir",
                  "tar_zstd",
@@ -304,11 +299,6 @@ defmodule Glorbo.DoctorTest do
       # Warnings
       for name <- [
             "disk_space",
-            "podman",
-            "ollama",
-            "ollama_daemon",
-            "runtime_image",
-            "runtime_exec",
             "sockets_dir",
             "tar_zstd"
           ] do
@@ -352,194 +342,6 @@ defmodule Glorbo.DoctorTest do
       ]
 
       assert Doctor.exit_code(results) == 1
-    end
-  end
-
-  describe "Phase 2: check_podman" do
-    test "pass when podman is in PATH and --version exits 0" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, args ->
-            cond do
-              cmd == "uname" ->
-                {"6.17.0\n", 0}
-
-              cmd == "df" ->
-                {"Avail\n2147483648\n", 0}
-
-              String.ends_with?(cmd, "podman") and args == ["--version"] ->
-                {"podman version 5.8.1\n", 0}
-
-              true ->
-                {"", 1}
-            end
-          end,
-          which_fun: fn
-            "podman" -> "/usr/bin/podman"
-            _ -> "/bin/true"
-          end,
-          otp_release_fun: fn -> "28" end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "podman"))
-      assert check.pass
-      assert check.detail =~ "5.8.1"
-    end
-
-    test "fail with \"not found\" when podman absent" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, _args ->
-            case cmd do
-              "uname" -> {"6.17.0\n", 0}
-              "df" -> {"Avail\n2147483648\n", 0}
-              _ -> {"", 1}
-            end
-          end,
-          which_fun: fn
-            "podman" -> nil
-            _ -> "/bin/true"
-          end,
-          otp_release_fun: fn -> "28" end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "podman"))
-      refute check.pass
-      assert check.severity == :warning
-      assert check.detail =~ "not found"
-    end
-  end
-
-  describe "Phase 2: check_ollama (PATH + ~/.glorbo/bin/ollama)" do
-    test "fail when ollama binary is absent from PATH and ~/.glorbo/bin/" do
-      tmp =
-        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
-
-      on_exit(fn -> File.rm_rf!(tmp) end)
-      File.mkdir_p!(tmp)
-
-      deps =
-        TestHelpers.deps(
-          home_fun: fn -> tmp end,
-          cmd_fun: fn cmd, _args ->
-            case cmd do
-              "uname" -> {"6.17.0\n", 0}
-              "df" -> {"Avail\n2147483648\n", 0}
-              _ -> {"", 1}
-            end
-          end,
-          which_fun: fn
-            "newuidmap" -> "/bin/newuidmap"
-            "newgidmap" -> "/bin/newgidmap"
-            "ollama" -> nil
-            _ -> "/bin/true"
-          end,
-          otp_release_fun: fn -> "28" end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama"))
-      refute check.pass
-      assert check.detail =~ "binary not found"
-    end
-  end
-
-  describe "Phase 2: check_ollama_daemon (HTTP injection)" do
-    test "pass on HTTP 200 from http_fun" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, _args ->
-            case cmd do
-              "uname" -> {"6.17.0\n", 0}
-              "df" -> {"Avail\n2147483648\n", 0}
-              _ -> {"", 1}
-            end
-          end,
-          which_fun: fn _ -> "/bin/true" end,
-          otp_release_fun: fn -> "28" end,
-          http_fun: fn -> {:ok, 200, ~s({"version":"0.20.7"})} end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama_daemon"))
-      assert check.pass
-      assert check.detail =~ "daemon responding"
-    end
-
-    test "fail on connection error from http_fun" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, _args ->
-            case cmd do
-              "uname" -> {"6.17.0\n", 0}
-              "df" -> {"Avail\n2147483648\n", 0}
-              _ -> {"", 1}
-            end
-          end,
-          which_fun: fn _ -> "/bin/true" end,
-          otp_release_fun: fn -> "28" end,
-          http_fun: fn -> {:error, :econnrefused} end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "ollama_daemon"))
-      refute check.pass
-      assert check.detail =~ "not reachable"
-    end
-  end
-
-  describe "Phase 2: check_runtime_image / check_runtime_exec" do
-    test "both fail (warning) when podman is not in PATH" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, _args ->
-            case cmd do
-              "uname" -> {"6.17.0\n", 0}
-              "df" -> {"Avail\n2147483648\n", 0}
-              _ -> {"", 1}
-            end
-          end,
-          which_fun: fn
-            "podman" -> nil
-            _ -> "/bin/true"
-          end,
-          otp_release_fun: fn -> "28" end
-        )
-
-      results = Doctor.run_checks(deps)
-      img = Enum.find(results, &(&1.name == "runtime_image"))
-      exec = Enum.find(results, &(&1.name == "runtime_exec"))
-      refute img.pass
-      assert img.severity == :warning
-      refute exec.pass
-      assert exec.severity == :warning
-    end
-
-    test "runtime_image fails (warning) when `podman image exists` returns non-zero" do
-      deps =
-        TestHelpers.deps(
-          cmd_fun: fn cmd, args ->
-            cond do
-              cmd == "uname" ->
-                {"6.17.0\n", 0}
-
-              cmd == "df" ->
-                {"Avail\n2147483648\n", 0}
-
-              String.ends_with?(cmd, "podman") and Enum.take(args, 2) == ["image", "exists"] ->
-                {"", 1}
-
-              true ->
-                {"", 1}
-            end
-          end,
-          which_fun: fn
-            "podman" -> "/usr/bin/podman"
-            _ -> "/bin/true"
-          end,
-          otp_release_fun: fn -> "28" end
-        )
-
-      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "runtime_image"))
-      refute check.pass
-      assert check.detail =~ "not present"
     end
   end
 
@@ -668,8 +470,8 @@ defmodule Glorbo.DoctorTest do
       results = Doctor.run_checks(deps)
       decoded = results |> Formatter.to_json() |> Jason.decode!()
 
-      # D-44 additive-only: 5 Phase-1 + 8 Phase-2 + 2 Phase-3 = 15
-      assert length(decoded["checks"]) == 15
+      # GEP-5 D6: 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10
+      assert length(decoded["checks"]) == 10
       # Top-level envelope keys all still present
       for k <- ["version", "checks", "all_passed", "passed_count", "total_count", "exit_code"] do
         assert Map.has_key?(decoded, k), "envelope key #{k} missing"

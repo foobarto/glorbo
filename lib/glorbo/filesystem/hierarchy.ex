@@ -15,12 +15,9 @@ defmodule Glorbo.Filesystem.Hierarchy do
   # Directories created unconditionally (mkdir -p). Order-independent.
   @dirs ~w(
     bin
-    models
-    containers/glorbo-runtime
-    containers/cache
     companies
     runtime/sockets
-    logs/containers
+    logs
     run
   )
 

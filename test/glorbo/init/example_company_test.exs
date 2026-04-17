@@ -40,7 +40,7 @@ defmodule Glorbo.Init.ExampleCompanyTest do
       assert company_md =~ "name: acme"
       assert company_md =~ "mission:"
       assert ceo_md =~ "name: ceo"
-      assert ceo_md =~ "provider: ollama"
+      assert ceo_md =~ "provider: claude-code"
       assert ceo_md =~ "network: none"
       assert ceo_md =~ "model:"
     end

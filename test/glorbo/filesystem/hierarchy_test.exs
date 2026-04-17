@@ -6,12 +6,10 @@ defmodule Glorbo.Filesystem.HierarchyTest do
 
   @expected_dirs ~w(
     bin
-    models
-    containers/glorbo-runtime
-    containers/cache
     companies
     runtime/sockets
-    logs/containers
+    logs
+    run
   )
 
   describe "ensure!/1 (Tests 1–4)" do

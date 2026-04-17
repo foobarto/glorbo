@@ -17,14 +17,14 @@ defmodule Glorbo.DoctorPhase3Test do
     Keyword.merge(defaults, overrides)
   end
 
-  describe "D1: run_checks has ≥ 15 entries" do
-    test "Phase 3 additions bring the count from 13 to 15" do
+  describe "D1: run_checks count (post-GEP-5 D6 pruning)" do
+    test "GEP-5 D6 removed 4 podman/ollama checks; count is 10" do
       checks = Doctor.run_checks(phase3_deps())
       names = Enum.map(checks, & &1.name) |> MapSet.new()
 
       assert "bwrap" in names
       assert "user_namespaces" in names
-      assert length(checks) >= 15
+      assert length(checks) == 10
     end
   end
 
@@ -109,9 +109,7 @@ defmodule Glorbo.DoctorPhase3Test do
       assert "glorbo_dir" in names
       assert "erts_version" in names
 
-      # Phase 2
-      assert "podman" in names
-      assert "ollama" in names
+      # Phase 2 (podman/ollama/runtime_image/runtime_exec removed per GEP-5 D6)
       assert "audit_dir" in names
       assert "sockets_dir" in names
       assert "tar_zstd" in names

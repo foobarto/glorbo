@@ -5,7 +5,7 @@ defmodule GlorboWeb.HealthLive do
   Polls three data sources every 3 s (D-14 — no PubSub, timer only):
 
     * `Glorbo.Doctor.run_checks/0` — host prerequisites (kernel,
-      podman, ollama, bwrap, uidmap, user_namespaces, …). Each check
+      bwrap, uidmap, user_namespaces, …). Each check
       is `%{name, pass, detail, required, severity}` with severity
       `:blocker | :warning`. Mapped to a `.gl-dot--healthy|warning|crashed`
       class.

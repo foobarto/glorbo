@@ -5,8 +5,9 @@ defmodule Glorbo.Init.ExampleCompany do
   Creates the full DESIGN.md §3 tree for a single company with:
 
     * `company.md` with `name: acme` and a short mission
-    * `agents/ceo/agent.md` with `provider: ollama`, `network: none`
-      (v1 safe default), default model `llama3.2:1b`
+    * `agents/ceo/agent.md` with `provider: claude-code`,
+      `network: none` (v1 safe default), default model
+      `claude-sonnet-4-5`
     * `channels/general.md` (default company-wide channel)
     * `goals/q3-2026.md` (simple active goal)
     * Empty `agents/ceo/{inbox,outbox,workspace,history}` dirs
@@ -32,8 +33,8 @@ defmodule Glorbo.Init.ExampleCompany do
   name: ceo
   role: Chief Executive Officer
   reports_to: director
-  provider: ollama
-  model: llama3.2:1b
+  provider: claude-code
+  model: claude-sonnet-4-5
   budget:
     monthly_usd: 0.00
     alert_at_pct: 80
