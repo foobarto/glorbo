@@ -91,7 +91,7 @@ defmodule Glorbo.Agent.Dispatch do
          :ok <- write_prompt(run_dir, task.prompt, opts),
          :ok <- emit_dispatch_audit(spec, task, provider, opts),
          start <- clock(opts),
-         ctx <- build_ctx(spec, task, workspace, run_dir),
+         ctx <- build_ctx(spec, task, workspace, run_dir, provider),
          {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
          duration_ms <- compute_duration(start, opts),
          usage <- finalize_usage(dispatcher_result, spec),
@@ -215,7 +215,7 @@ defmodule Glorbo.Agent.Dispatch do
     :ok
   end
 
-  defp build_ctx(spec, task, workspace, run_dir) do
+  defp build_ctx(spec, task, workspace, run_dir, provider) do
     %{
       task_id: task.task_id,
       model: spec.model,
@@ -237,10 +237,34 @@ defmodule Glorbo.Agent.Dispatch do
         company_path: Path.dirname(Path.dirname(Path.dirname(workspace))),
         permissions: spec.permissions,
         network_policy: spec.network,
-        timeout_seconds: spec.timeout_seconds
+        timeout_seconds: spec.timeout_seconds,
+        cli_auth_binds: resolve_auth_binds(provider)
       }
     }
   end
+
+  # GEP-8 auth_binds → bwrap's `{host, sandbox}` tuple list.
+  #
+  # - Expands `~` / `$HOME` in host paths so the TOML can use
+  #   `~/.claude`.
+  # - Filters out binds whose host path doesn't exist on this box,
+  #   because `--ro-bind`ing a non-existent path crashes bwrap. A dev
+  #   without claude-code installed shouldn't have `claude` dispatches
+  #   fail for a missing `~/.claude/`; the CLI itself will fail the
+  #   invocation anyway with a clearer error.
+  # - Drops the `:mode` — bwrap takes rw vs ro as separate flags; our
+  #   current sandbox helper only supports ro. An `:rw` entry in the
+  #   TOML is reserved for future use and is silently treated as ro
+  #   today (auth dirs should never be rw-mounted).
+  defp resolve_auth_binds(%{auth_binds: binds}) when is_list(binds) do
+    binds
+    |> Enum.map(fn %{host: host, sandbox: sandbox} ->
+      {Path.expand(host), sandbox}
+    end)
+    |> Enum.filter(fn {host, _sandbox} -> File.exists?(host) end)
+  end
+
+  defp resolve_auth_binds(_), do: []
 
   defp dispatcher_opts(opts) do
     taken = Keyword.take(opts, [:run_fun, :fs_fun, :now_fun, :rand_fun])

@@ -33,3 +33,10 @@ usage_path   = { kind = "stdout" }
 # land there (slight session bleed, accepted until Gemini exposes an
 # env var).
 [env]
+
+# Auth bind (GEP-8). Gemini insists on $HOME/.gemini so we mount the
+# Director's ~/.gemini at the sandbox-visible equivalent.
+[[auth_binds]]
+host    = "~/.gemini"
+sandbox = "/workspace/.gemini"
+mode    = "ro"

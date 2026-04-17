@@ -40,6 +40,12 @@ defmodule Glorbo.CLI.Registry.Provider do
           transform: String.t()
         }
 
+  @type auth_bind :: %{
+          required(:host) => String.t(),
+          required(:sandbox) => String.t(),
+          required(:mode) => :ro | :rw
+        }
+
   @type t :: %__MODULE__{
           name: String.t(),
           binary: String.t(),
@@ -55,6 +61,7 @@ defmodule Glorbo.CLI.Registry.Provider do
           usage_parser: String.t(),
           usage_path: usage_path_spec() | nil,
           path_transforms: [path_transform()],
+          auth_binds: [auth_bind()],
           source: source(),
           source_file: String.t(),
           installed?: boolean(),
@@ -93,6 +100,7 @@ defmodule Glorbo.CLI.Registry.Provider do
     allow_version_probe: false,
     usage_parser: "none",
     path_transforms: [],
+    auth_binds: [],
     installed?: false
   ]
 

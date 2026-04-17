@@ -33,3 +33,10 @@ usage_path   = { kind = "jsonl_latest_in_dir", path = "{workspace}/.glorbo-codex
 
 [env]
 CODEX_HOME = "{workspace}/.glorbo-codex"
+
+# Auth bind (GEP-8). Mount the Director's ~/.codex/ read-only so codex
+# finds its credentials. Skipped by Dispatch if the host path is absent.
+[[auth_binds]]
+host    = "~/.codex"
+sandbox = "/workspace/.glorbo-codex"
+mode    = "ro"

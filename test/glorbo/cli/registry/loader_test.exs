@@ -85,6 +85,71 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                p.path_transforms
     end
 
+    test "parses auth_binds array-of-tables", %{builtin_dir: dir} do
+      write!(dir, "with-auth.toml", """
+      name   = "with-auth"
+      binary = "claude"
+      args   = ["--print"]
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{timestamp}.md"
+
+      [[auth_binds]]
+      host    = "~/.claude"
+      sandbox = "/workspace/.glorbo-claude"
+      mode    = "ro"
+
+      [[auth_binds]]
+      host    = "~/.anthropic"
+      sandbox = "/workspace/.anthropic"
+      """)
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert [
+               %{host: "~/.claude", sandbox: "/workspace/.glorbo-claude", mode: :ro},
+               %{host: "~/.anthropic", sandbox: "/workspace/.anthropic", mode: :ro}
+             ] = p.auth_binds
+    end
+
+    test "auth_binds rejects unknown mode", %{builtin_dir: dir} do
+      write!(dir, "bad-mode.toml", """
+      name   = "bad-mode"
+      binary = "claude"
+      args   = ["--print"]
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{timestamp}.md"
+
+      [[auth_binds]]
+      host    = "~/.claude"
+      sandbox = "/workspace/.glorbo-claude"
+      mode    = "exec"
+      """)
+
+      assert {:error, {:invalid_auth_binds, _, msg}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert msg =~ "mode"
+    end
+
+    test "auth_binds rejects entry missing host or sandbox", %{builtin_dir: dir} do
+      write!(dir, "missing-field.toml", """
+      name   = "missing-field"
+      binary = "claude"
+      args   = ["--print"]
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{timestamp}.md"
+
+      [[auth_binds]]
+      host = "~/.claude"
+      """)
+
+      assert {:error, {:invalid_auth_binds, _, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
     test "user-file providers come through with source: :user", %{user_file: path} do
       File.write!(path, """
       [[providers]]

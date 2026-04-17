@@ -37,3 +37,12 @@ CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
 [path_transforms.encoded_workspace]
 from      = "{workspace}"
 transform = "slash_to_dash"
+
+# Auth bind (GEP-8 auth_binds). Mount the Director's `~/.claude/`
+# read-only at the same path the TOML sets `CLAUDE_CONFIG_DIR` to, so
+# claude-code finds its credentials. Dispatch skips this bind when the
+# host path doesn't exist (dev boxes without claude installed).
+[[auth_binds]]
+host    = "~/.claude"
+sandbox = "/workspace/.glorbo-claude"
+mode    = "ro"

@@ -164,7 +164,8 @@ defmodule Glorbo.CLI.Registry.Loader do
          {:ok, version_regex} <- parse_version_regex(raw, path),
          {:ok, usage_parser} <- parse_usage_parser(raw, path),
          {:ok, usage_path} <- parse_usage_path(raw, path),
-         {:ok, path_transforms} <- parse_path_transforms(raw, path) do
+         {:ok, path_transforms} <- parse_path_transforms(raw, path),
+         {:ok, auth_binds} <- parse_auth_binds(raw, path) do
       provider = %Provider{
         name: raw["name"],
         binary: raw["binary"],
@@ -180,6 +181,7 @@ defmodule Glorbo.CLI.Registry.Loader do
         usage_parser: usage_parser,
         usage_path: usage_path,
         path_transforms: path_transforms,
+        auth_binds: auth_binds,
         source: source,
         source_file: path
       }
@@ -313,6 +315,56 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp parse_path_transforms(_raw, _path), do: {:ok, []}
 
+  # GEP-8 auth_binds (TOML):
+  #
+  #     [[auth_binds]]
+  #     host = "~/.claude"
+  #     sandbox = "/workspace/.glorbo-claude"
+  #     mode = "ro"
+  #
+  # Each entry declares a read-only or read-write bind-mount of a host
+  # directory into the bwrap sandbox. Dispatch reads these, expands
+  # `~`/`$HOME`, filters to entries whose host path exists, and passes
+  # them through to `Glorbo.Sandbox.Bwrap.start/2` via `cli_auth_binds`.
+  defp parse_auth_binds(%{"auth_binds" => list}, path) when is_list(list) do
+    Enum.reduce_while(list, {:ok, []}, fn entry, {:ok, acc} ->
+      case build_auth_bind(entry, path) do
+        {:ok, bind} -> {:cont, {:ok, [bind | acc]}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+    |> case do
+      {:ok, list} -> {:ok, Enum.reverse(list)}
+      other -> other
+    end
+  end
+
+  defp parse_auth_binds(%{"auth_binds" => _}, path) do
+    {:error, {:invalid_auth_binds, path, "must be an array of tables"}}
+  end
+
+  defp parse_auth_binds(_raw, _path), do: {:ok, []}
+
+  defp build_auth_bind(%{"host" => host, "sandbox" => sandbox} = entry, path)
+       when is_binary(host) and is_binary(sandbox) do
+    # Closed mapping — never String.to_atom on user input (GEP-12 / T-03-15).
+    case Map.get(entry, "mode", "ro") do
+      "ro" ->
+        {:ok, %{host: host, sandbox: sandbox, mode: :ro}}
+
+      "rw" ->
+        {:ok, %{host: host, sandbox: sandbox, mode: :rw}}
+
+      other ->
+        {:error,
+         {:invalid_auth_binds, path, "unknown mode #{inspect(other)} (use \"ro\" or \"rw\")"}}
+    end
+  end
+
+  defp build_auth_bind(_entry, path) do
+    {:error, {:invalid_auth_binds, path, "each entry needs host + sandbox fields"}}
+  end
+
   defp build_transform(name, %{"from" => from, "transform" => transform}, path)
        when is_binary(name) and is_binary(from) and is_binary(transform) do
     if PathTransforms.known?(transform) do
@@ -403,6 +455,9 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   def format_error({:unknown_path_transform, path, transform}),
     do: "providers config error: #{path} unknown path_transform #{inspect(transform)}"
+
+  def format_error({:invalid_auth_binds, path, detail}),
+    do: "providers config error: #{path} auth_binds: #{detail}"
 
   def format_error({:invalid_shape, path, detail}),
     do: "providers config error: #{path} #{detail}"

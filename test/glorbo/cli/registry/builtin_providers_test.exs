@@ -48,6 +48,19 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     assert [%{name: "encoded_workspace", transform: "slash_to_dash"}] = claude.path_transforms
   end
 
+  test "bundled providers with auth needs declare auth_binds", %{providers: p} do
+    claude = p["claude-code"]
+
+    assert [%{host: "~/.claude", sandbox: "/workspace/.glorbo-claude", mode: :ro}] =
+             claude.auth_binds
+
+    codex = p["codex"]
+    assert [%{host: "~/.codex", mode: :ro}] = codex.auth_binds
+
+    gemini = p["gemini-cli"]
+    assert [%{host: "~/.gemini", mode: :ro}] = gemini.auth_binds
+  end
+
   test "codex reads rollouts from sessions dir with codex_jsonl parser", %{providers: p} do
     codex = p["codex"]
     assert codex.binary == "codex"
