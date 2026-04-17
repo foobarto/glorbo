@@ -277,4 +277,120 @@ defmodule Glorbo.TaskDefinitionTest do
     td = %TaskDefinition{requires_approval: nil}
     assert TaskDefinition.requires_approval?(td) == false
   end
+
+  # GEP-13 T17 — project-prefixed task IDs parse unchanged (shape-agnostic)
+  test "T17: parses `<project>-NN.md` filenames (GEP-13)", ctx do
+    content = """
+    ---
+    title: Prefixed
+    status: pending
+    ---
+    body
+    """
+
+    path = write_task(ctx, "foo-42.md", content)
+
+    assert {:ok, %TaskDefinition{task_id: "foo-42", project: "foo"}} =
+             TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+  end
+
+  # GEP-13 T19 — canonicalize_ref resolves prefixed ids directly
+  test "T19: canonicalize_ref resolves `<project>-NN` shape directly", ctx do
+    content = """
+    ---
+    title: direct
+    ---
+    body
+    """
+
+    write_task(ctx, "foo-05.md", content)
+
+    assert {:ok, "projects/foo/tasks/foo-05.md"} =
+             TaskDefinition.canonicalize_ref("foo-05",
+               base: ctx.base,
+               company: ctx.company
+             )
+  end
+
+  # GEP-13 T20 — canonicalize_ref resolves legacy `t-NN` by scanning projects
+  test "T20: canonicalize_ref resolves legacy t-NN across projects", ctx do
+    content = """
+    ---
+    title: legacy
+    ---
+    body
+    """
+
+    write_task(ctx, "t-99.md", content)
+
+    assert {:ok, "projects/foo/tasks/t-99.md"} =
+             TaskDefinition.canonicalize_ref("t-99",
+               base: ctx.base,
+               company: ctx.company
+             )
+  end
+
+  # GEP-13 T21 — canonicalize_ref returns :ambiguous when two projects share id
+  test "T21: canonicalize_ref returns :ambiguous when t-NN exists in two projects",
+       ctx do
+    content = """
+    ---
+    title: dup
+    ---
+    body
+    """
+
+    # One under projects/foo, one under projects/bar.
+    write_task(ctx, "t-33.md", content)
+
+    bar_dir = Path.join([ctx.base, "companies", ctx.company, "projects", "bar", "tasks"])
+    File.mkdir_p!(bar_dir)
+    File.write!(Path.join(bar_dir, "t-33.md"), content)
+
+    assert {:error, :ambiguous} =
+             TaskDefinition.canonicalize_ref("t-33",
+               base: ctx.base,
+               company: ctx.company
+             )
+  end
+
+  # GEP-13 T22 — canonicalize_ref accepts full relative path
+  test "T22: canonicalize_ref passes through a full relative task_path", ctx do
+    content = """
+    ---
+    title: already-canonical
+    ---
+    body
+    """
+
+    write_task(ctx, "t-77.md", content)
+
+    assert {:ok, "projects/foo/tasks/t-77.md"} =
+             TaskDefinition.canonicalize_ref("projects/foo/tasks/t-77.md",
+               base: ctx.base,
+               company: ctx.company
+             )
+  end
+
+  # GEP-13 T18 — hyphenated project slugs split on trailing `-digits`
+  test "T18: project slug with hyphens keeps the slug; number is the trailing digits",
+       ctx do
+    # The tasks_dir fixture lives under `projects/foo/tasks/`. To test a
+    # hyphenated slug we need a sibling project directory.
+    dir = Path.join([ctx.base, "companies", ctx.company, "projects", "web-redesign", "tasks"])
+    File.mkdir_p!(dir)
+
+    content = """
+    ---
+    title: Hyphen slug
+    ---
+    body
+    """
+
+    path = Path.join(dir, "web-redesign-07.md")
+    File.write!(path, content)
+
+    assert {:ok, %TaskDefinition{task_id: "web-redesign-07", project: "web-redesign"}} =
+             TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+  end
 end

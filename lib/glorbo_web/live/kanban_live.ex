@@ -518,15 +518,23 @@ defmodule GlorboWeb.KanbanLive do
 
   defp validate_title(_), do: {:error, :invalid_title}
 
+  # GEP-13: task filenames are `<project-slug>-<NN>.md`. Legacy `t-NN.md`
+  # files are still counted when picking the next number so a mixed
+  # directory (during the soft-migration window) doesn't collide.
   defp next_task_id(base, company, project) do
     tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
     File.mkdir_p!(tasks_dir)
+
+    legacy_re = ~r/\At-(\d+)\.md\z/
+    prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
 
     max_n =
       case File.ls(tasks_dir) do
         {:ok, files} ->
           files
-          |> Enum.map(&Regex.run(~r/\At-(\d+)\.md\z/, &1))
+          |> Enum.map(fn f ->
+            Regex.run(prefixed_re, f) || Regex.run(legacy_re, f)
+          end)
           |> Enum.reject(&is_nil/1)
           |> Enum.map(fn [_, n] -> String.to_integer(n) end)
           |> Enum.max(fn -> 0 end)
@@ -535,7 +543,14 @@ defmodule GlorboWeb.KanbanLive do
           0
       end
 
-    {:ok, "t-" <> String.pad_leading(Integer.to_string(max_n + 1), 2, "0")}
+    next = max_n + 1
+
+    n_str =
+      if next <= 99,
+        do: String.pad_leading(Integer.to_string(next), 2, "0"),
+        else: Integer.to_string(next)
+
+    {:ok, "#{project}-#{n_str}"}
   end
 
   defp write_new_task(base, company, project, task_id, title) do

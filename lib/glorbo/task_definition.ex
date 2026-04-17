@@ -475,4 +475,98 @@ defmodule Glorbo.TaskDefinition do
   end
 
   defp derive_project(_), do: nil
+
+  # ---------------------------------------------------------------------------
+  # GEP-13 — cross-shape reference resolution
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Resolve a task reference (either legacy `t-NN` or the GEP-13
+  `<project>-NN` shape) to the current on-disk relative path.
+
+  Accepts:
+
+    * `"t-01"` — scans every project under the company looking for
+      `projects/*/tasks/t-01.md`. If exactly one project has that
+      filename, returns `{:ok, "projects/<proj>/tasks/t-01.md"}`.
+      Multiple matches → `{:error, :ambiguous}`.
+    * `"<project>-NN"` — direct shape; `{:ok, path}` if the file
+      exists, `{:error, :not_found}` otherwise.
+    * A full `projects/<proj>/tasks/<id>.md` path — returned as-is
+      after existence check (pass-through for callers that already
+      have the canonical form).
+
+  Callers that already have a `task_path` should use it directly; this
+  helper is for audit-UI code that needs to follow an ambiguous `t-NN`
+  reference from historical events to the file as it lives today.
+
+  ## Options
+
+    * `:base` (required) — absolute path to the Glorbo root.
+    * `:company` (required) — company slug.
+  """
+  @spec canonicalize_ref(String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, :not_found | :ambiguous}
+  def canonicalize_ref(ref, opts) when is_binary(ref) and is_list(opts) do
+    base = Keyword.fetch!(opts, :base)
+    company = Keyword.fetch!(opts, :company)
+    company_dir = Path.join([base, "companies", company])
+
+    cond do
+      String.starts_with?(ref, "projects/") and String.ends_with?(ref, ".md") ->
+        if File.exists?(Path.join(company_dir, ref)),
+          do: {:ok, ref},
+          else: {:error, :not_found}
+
+      ref =~ ~r/\A[a-z0-9][a-z0-9-]*-\d+\z/ ->
+        # Try the GEP-13 shape first: derive project from the ref itself.
+        project = split_project(ref)
+        rel = "projects/#{project}/tasks/#{ref}.md"
+
+        if File.exists?(Path.join(company_dir, rel)) do
+          {:ok, rel}
+        else
+          # Not where the prefix says — could be a legacy `t-NN` that
+          # happens to match the shape, or the file just doesn't exist.
+          # Fall back to a cross-project scan.
+          scan_projects_for(company_dir, "#{ref}.md")
+        end
+
+      true ->
+        # Arbitrary bare id — scan every project.
+        scan_projects_for(company_dir, "#{ref}.md")
+    end
+  end
+
+  # Split a `<slug>-<digits>` ref at the *last* hyphen-digit boundary so
+  # hyphenated project slugs (`web-redesign-07`) resolve to the slug
+  # `web-redesign`, not `web`.
+  defp split_project(ref) do
+    case Regex.run(~r/\A(.+)-\d+\z/, ref) do
+      [_, project] -> project
+      _ -> ref
+    end
+  end
+
+  defp scan_projects_for(company_dir, filename) do
+    projects_dir = Path.join(company_dir, "projects")
+
+    case File.ls(projects_dir) do
+      {:ok, slugs} ->
+        matches =
+          for slug <- slugs,
+              File.dir?(Path.join(projects_dir, slug)),
+              File.exists?(Path.join([projects_dir, slug, "tasks", filename])),
+              do: "projects/#{slug}/tasks/#{filename}"
+
+        case matches do
+          [path] -> {:ok, path}
+          [] -> {:error, :not_found}
+          _ -> {:error, :ambiguous}
+        end
+
+      _ ->
+        {:error, :not_found}
+    end
+  end
 end

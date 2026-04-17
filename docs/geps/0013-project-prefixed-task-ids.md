@@ -2,13 +2,20 @@
 gep: 0013
 title: Project-prefixed task IDs
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-17
+updated: 2026-04-17
 history:
   - date: 2026-04-17
     status: Draft
     note: Initial draft — problem + two naming-scheme candidates.
+  - date: 2026-04-17
+    status: Implemented
+    note: >-
+      KanbanLive.next_task_id/3 now emits `<project>-NN`, accepts both
+      shapes on read, TaskDefinition.canonicalize_ref/2 ships,
+      `mix glorbo.migrate_tasks[ --dry-run]` lands for opt-in cleanup.
 ---
 
 # GEP-13: Project-prefixed task IDs

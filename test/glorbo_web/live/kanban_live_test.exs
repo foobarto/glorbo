@@ -114,12 +114,12 @@ defmodule GlorboWeb.KanbanLiveTest do
       "title" => "Probe from tests"
     })
 
-    # Should exist at projects/website/tasks/t-XX.md with our title.
+    # GEP-13: new tasks are `<project>-NN.md`, not `t-NN.md`.
     tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
     files = File.ls!(tasks_dir) |> Enum.filter(&String.ends_with?(&1, ".md"))
 
-    matched =
-      Enum.any?(files, fn f ->
+    new_file =
+      Enum.find(files, fn f ->
         path = Path.join(tasks_dir, f)
 
         case File.read(path) do
@@ -128,7 +128,8 @@ defmodule GlorboWeb.KanbanLiveTest do
         end
       end)
 
-    assert matched, "new task file was not written with the expected frontmatter"
+    assert new_file, "new task file was not written with the expected frontmatter"
+    assert new_file =~ ~r/\Awebsite-\d+\.md\z/, "expected website-NN.md, got #{inspect(new_file)}"
   end
 
   test "new_task_create rejects an empty title", %{conn: conn} do
