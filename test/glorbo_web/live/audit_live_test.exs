@@ -51,6 +51,13 @@ defmodule GlorboWeb.AuditLiveTest do
     assert html =~ "Filter by action"
   end
 
+  test "renders the CompanyTabs strip with :audit active", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/audit")
+
+    assert html =~
+             ~r|<a[^>]*href="/companies/acme/audit"[^>]*class="[^"]*gl-tab gl-tab--active|
+  end
+
   test "filter by actor excludes non-matching rows", %{conn: conn} do
     {:ok, view, _} = live(conn, "/companies/acme/audit")
     html = render_change(view, "filter", %{"actor" => "zzz-nobody", "action" => ""})

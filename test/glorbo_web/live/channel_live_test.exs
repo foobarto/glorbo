@@ -38,6 +38,13 @@ defmodule GlorboWeb.ChannelLiveTest do
              live(conn, "/companies/acme/channels/ghost")
   end
 
+  test "renders the CompanyTabs strip with :chat active", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+    assert html =~
+             ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*class="[^"]*gl-tab gl-tab--active|
+  end
+
   test "post event appends to channel file via Elixir", %{
     conn: conn,
     channel_path: path

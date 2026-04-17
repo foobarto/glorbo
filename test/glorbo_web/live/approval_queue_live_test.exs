@@ -35,6 +35,13 @@ defmodule GlorboWeb.ApprovalQueueLiveTest do
     assert html =~ "Deny"
   end
 
+  test "renders the CompanyTabs strip with :approvals active", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/approvals")
+
+    assert html =~
+             ~r|<a[^>]*href="/companies/acme/approvals"[^>]*class="[^"]*gl-tab gl-tab--active|
+  end
+
   test "empty state when no sentinels", %{conn: conn, base: base} do
     File.rm_rf!(Path.join([base, "companies", "acme", "agents", "ceo", "state"]))
     {:ok, _view, html} = live(conn, ~p"/companies/acme/approvals")

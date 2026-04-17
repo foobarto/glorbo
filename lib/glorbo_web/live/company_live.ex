@@ -77,37 +77,7 @@ defmodule GlorboWeb.CompanyLive do
         <h1 class="gl-heading gl-heading--display">{@company_name}</h1>
       </header>
 
-      <nav class="gl-tabs" role="tablist">
-        <.link
-          navigate={"/companies/#{@company_slug}/kanban"}
-          class="gl-tab gl-tab--active"
-          role="tab"
-        >
-          Kanban
-        </.link>
-        <.link
-          navigate={"/companies/#{@company_slug}/channels/general"}
-          class="gl-tab"
-          role="tab"
-        >
-          Chat
-        </.link>
-        <.link
-          navigate={"/companies/#{@company_slug}/approvals"}
-          class="gl-tab"
-          role="tab"
-        >
-          Approvals
-        </.link>
-        <.link
-          navigate={"/companies/#{@company_slug}/audit"}
-          class="gl-tab"
-          role="tab"
-        >
-          Audit
-        </.link>
-        <span class="gl-tab" role="tab">Agents</span>
-      </nav>
+      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={nil} />
 
       <div :if={@agents == []} class="gl-empty">
         <p>No agents in this company.</p>

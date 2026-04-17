@@ -17,6 +17,13 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Read-only view"
   end
 
+  test "renders the CompanyTabs strip with :kanban active", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
+    # Active Kanban tab (regression for TODO.md P0 #5 — tab active state).
+    assert html =~
+             ~r|<a[^>]*href="/companies/acme/kanban"[^>]*class="[^"]*gl-tab gl-tab--active|
+  end
+
   test "seeded t-01 task with requires_approval: director shows lightning icon",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")

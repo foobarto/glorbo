@@ -119,6 +119,7 @@ defmodule GlorboWeb.AuditLive do
 
     ~H"""
     <section class="gl-view gl-audit">
+      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={:audit} />
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">
           Audit log <span class="gl-muted">{@year_month}</span>

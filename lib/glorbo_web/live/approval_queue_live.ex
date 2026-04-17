@@ -120,6 +120,10 @@ defmodule GlorboWeb.ApprovalQueueLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-approvals">
+      <GlorboWeb.Components.CompanyTabs.company_tabs
+        slug={@company_slug}
+        active={:approvals}
+      />
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">
           Approvals <span class="gl-muted">({length(@sentinels)} pending)</span>

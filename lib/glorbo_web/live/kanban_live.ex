@@ -77,6 +77,7 @@ defmodule GlorboWeb.KanbanLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-kanban">
+      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={:kanban} />
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">Kanban — {@company_slug}</h1>
       </header>
