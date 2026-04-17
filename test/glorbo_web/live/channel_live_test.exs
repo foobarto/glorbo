@@ -45,6 +45,18 @@ defmodule GlorboWeb.ChannelLiveTest do
              ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*class="[^"]*gl-tab gl-tab--active|
   end
 
+  # TODO.md P1 — timestamps render as <time> elements with a machine-
+  # readable datetime attribute, not raw ISO strings in the visible text.
+  test "message timestamps render as <time> elements with datetime attr", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+    # Structural: at least one <time> element with ISO datetime.
+    assert html =~ ~s(<time)
+    assert html =~ ~s(datetime="2026-04-16T10:00:00Z")
+    # The tooltip title preserves the original ISO for operator spot-check.
+    assert html =~ ~s(title="2026-04-16T10:00:00Z")
+  end
+
   test "post event appends to channel file via Elixir", %{
     conn: conn,
     channel_path: path

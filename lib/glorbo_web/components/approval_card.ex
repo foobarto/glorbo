@@ -16,6 +16,8 @@ defmodule GlorboWeb.Components.ApprovalCard do
   """
   use Phoenix.Component
 
+  alias GlorboWeb.TimeFormat
+
   attr :sentinel, :map, required: true
 
   def approval_card(assigns) do
@@ -23,7 +25,13 @@ defmodule GlorboWeb.Components.ApprovalCard do
     <article class="gl-approval-card">
       <header class="gl-approval-card__title">{@sentinel.title}</header>
       <div class="gl-approval-card__meta gl-muted">
-        {@sentinel.requesting_agent} · {@sentinel.requested_at}
+        {@sentinel.requesting_agent} ·
+        <time
+          datetime={TimeFormat.iso(@sentinel.requested_at)}
+          title={TimeFormat.iso(@sentinel.requested_at)}
+        >
+          {TimeFormat.relative(@sentinel.requested_at)}
+        </time>
       </div>
       <div class="gl-approval-card__actions">
         <button
