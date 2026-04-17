@@ -247,10 +247,45 @@ defmodule Glorbo.Agent.Dispatch do
         permissions: spec.permissions,
         network_policy: spec.network,
         timeout_seconds: spec.timeout_seconds,
-        cli_auth_binds: resolve_auth_binds(provider)
+        cli_auth_binds: resolve_auth_binds(provider) ++ cli_binary_binds(provider)
       }
     }
   end
+
+  # Auto-detect the directory containing the provider's CLI binary and
+  # bind it read-only into the sandbox at the same path. This handles
+  # flatpak/nix/user-local installs where the binary lives outside
+  # `/usr/bin` — without this, bwrap exits with
+  # `execvp <path>: No such file or directory` because the baseline
+  # sandbox only mounts `/usr` and friends.
+  #
+  # We bind both the symlink's parent AND (when applicable) the symlink
+  # *target's* enclosing directory, since bwrap's `--ro-bind` preserves
+  # the symlink but the real file still has to exist for the kernel to
+  # resolve it. Same-dir host+sandbox so `$PATH` resolution inside the
+  # sandbox matches the outside view.
+  defp cli_binary_binds(%{resolved_path: path}) when is_binary(path) do
+    symlink_parent = Path.dirname(path) |> Path.expand()
+
+    target_parent =
+      case File.read_link(path) do
+        {:ok, target} ->
+          # Resolve relative symlinks against the symlink's own dir.
+          abs_target = Path.expand(target, Path.dirname(path))
+          Path.dirname(abs_target)
+
+        _ ->
+          nil
+      end
+
+    [symlink_parent, target_parent]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.filter(&File.exists?/1)
+    |> Enum.map(fn dir -> {dir, dir} end)
+  end
+
+  defp cli_binary_binds(_), do: []
 
   # GEP-8 auth_binds → bwrap's `{host, sandbox}` tuple list.
   #
@@ -291,7 +326,15 @@ defmodule Glorbo.Agent.Dispatch do
   # carries the CLI binary + cli_args + prompt + usage_dir; `env` is the
   # per-invocation env the CLI expects (GLORBO_REPLY_PATH et al).
   defp default_run_fun(_args, env, bwrap_opts, run_opts_map) when is_map(run_opts_map) do
-    invocation_opts = Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
+    # Env values target the CLI running INSIDE bwrap, where the host
+    # workspace is mounted at `/workspace`. Dispatcher template-expands
+    # env vars with the host path (correct for the host side — Dispatcher
+    # uses them for reply_path bookkeeping), but inside the sandbox the
+    # host path doesn't exist. Rewrite it here at the bwrap boundary.
+    host_workspace = Map.fetch!(bwrap_opts, :agent_workspace)
+    sandbox_env = rewrite_env_to_sandbox(env, host_workspace)
+
+    invocation_opts = Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, sandbox_env))
 
     run_opts = [
       cli_binary: Map.fetch!(run_opts_map, :cli_binary),
@@ -302,6 +345,16 @@ defmodule Glorbo.Agent.Dispatch do
 
     Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
   end
+
+  defp rewrite_env_to_sandbox(env, host_workspace) when is_map(env) do
+    Map.new(env, fn {k, v} -> {k, rewrite_env_value(v, host_workspace)} end)
+  end
+
+  defp rewrite_env_value(value, host) when is_binary(value) and is_binary(host) do
+    String.replace(value, host, "/workspace")
+  end
+
+  defp rewrite_env_value(value, _host), do: value
 
   defp merge_cli_env(bwrap_opts, dispatcher_env) do
     base = Map.get(bwrap_opts, :cli_env, %{})
