@@ -46,7 +46,10 @@ defmodule GlorboWeb.Components.Sidebar do
       </nav>
       <div class="gl-sidebar__health-strip">
         <a href="/health">
-          <span class={["gl-dot", "gl-dot--" <> health_status(@health)]} />
+          <GlorboWeb.Components.HealthDot.health_dot
+            status={health_status_atom(@health)}
+            label={"Doctor summary: #{health_label(@health)}"}
+          />
           {health_label(@health)}
         </a>
       </div>
@@ -96,6 +99,12 @@ defmodule GlorboWeb.Components.Sidebar do
   defp health_status(%{blocker: b}) when b > 0, do: "crashed"
   defp health_status(%{warning: w}) when w > 0, do: "warning"
   defp health_status(_), do: "healthy"
+
+  # Atom variant for HealthDot (which takes an atom); closed-set map
+  # avoids `String.to_existing_atom/1` with its test-env gotchas.
+  defp health_status_atom(%{blocker: b}) when b > 0, do: :crashed
+  defp health_status_atom(%{warning: w}) when w > 0, do: :warning
+  defp health_status_atom(_), do: :healthy
 
   defp health_label(%{blocker: b}) when b > 0, do: "#{b} blocker check#{s(b)} failing"
   defp health_label(%{warning: w}) when w > 0, do: "#{w} warning#{s(w)}"

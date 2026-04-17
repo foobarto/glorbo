@@ -60,7 +60,10 @@ defmodule GlorboWeb.HealthLive do
           pass {@checks.pass} · warn {@checks.warn} · fail {@checks.fail}
         </div>
         <div :for={c <- @checks.rows} class="gl-health__check-row">
-          <span class={["gl-dot", "gl-dot--" <> severity_to_dot(c)]} />
+          <GlorboWeb.Components.HealthDot.health_dot
+            status={check_status(c)}
+            label={"#{c.name}: #{if c.pass, do: "pass", else: c.detail}"}
+          />
           <span class="gl-tabular">{c.name}</span>
           <span class="gl-muted">{c.detail}</span>
         </div>
@@ -70,7 +73,10 @@ defmodule GlorboWeb.HealthLive do
         <h2 class="gl-heading gl-heading--heading">Supervisors</h2>
         <ul :if={@supervisors != []} class="gl-health__tree">
           <li :for={s <- @supervisors}>
-            <span class={["gl-dot", "gl-dot--" <> Atom.to_string(s.status)]} />
+            <GlorboWeb.Components.HealthDot.health_dot
+              status={s.status}
+              label={"Company #{s.name}: #{s.status}, #{s.child_count} children"}
+            />
             <span>{s.name}</span>
             <span class="gl-muted">— {s.child_count} children</span>
           </li>
@@ -81,7 +87,10 @@ defmodule GlorboWeb.HealthLive do
       <section class="gl-health__section">
         <h2 class="gl-heading gl-heading--heading">CLI tools</h2>
         <div :for={t <- @cli_tools} class="gl-health__check-row">
-          <span class={["gl-dot", "gl-dot--" <> if(t.present, do: "healthy", else: "crashed")]} />
+          <GlorboWeb.Components.HealthDot.health_dot
+            status={if t.present, do: :healthy, else: :crashed}
+            label={"CLI tool #{t.name}: #{t.detail}"}
+          />
           <span>{t.name}: {t.detail}</span>
         </div>
       </section>
@@ -118,11 +127,10 @@ defmodule GlorboWeb.HealthLive do
     %{rows: rows, pass: pass, warn: warn, fail: fail_blocker}
   end
 
-  defp severity_to_dot(%{pass: true}), do: "healthy"
-
-  defp severity_to_dot(%{severity: :warning}), do: "warning"
-  defp severity_to_dot(%{severity: :blocker}), do: "crashed"
-  defp severity_to_dot(_), do: "idle"
+  defp check_status(%{pass: true}), do: :healthy
+  defp check_status(%{severity: :warning}), do: :warning
+  defp check_status(%{severity: :blocker}), do: :crashed
+  defp check_status(_), do: :idle
 
   # Enumerate running companies by slug via Glorbo.Agent.Registry rather
   # than PIDs — `{:company_child, slug, :audit_log}` is registered by

@@ -23,7 +23,10 @@ defmodule GlorboWeb.Components.CompanyCard do
       <header class="gl-company-card__header">
         <GlorboWeb.CoreComponents.icon name="folder" />
         <span class="gl-company-card__name">{@company.name}</span>
-        <span class={"gl-dot gl-dot--" <> Atom.to_string(@company.health)}></span>
+        <GlorboWeb.Components.HealthDot.health_dot
+          status={@company.health}
+          label={"Company #{@company.name} status: #{@company.health}"}
+        />
       </header>
       <div class="gl-company-card__stats">
         <div>{@company.agent_count} {agent_label(@company.agent_count)}</div>
