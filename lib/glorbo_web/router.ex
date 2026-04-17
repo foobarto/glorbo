@@ -36,6 +36,9 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/approvals", ApprovalQueueLive
     # Plan 04-03 Task 2: content-scope chat view.
     live "/companies/:company/channels/:channel", ChannelLive
+    # Director ↔ agent DM: delegates to ChannelLive with a reserved
+    # `dm-director--<agent>` channel name; auto-creates the file.
+    get "/companies/:company/dms/:agent", PageController, :redirect_to_dm
     # Plan 04-03 Task 3: audit viewer + system health.
     live "/companies/:company/audit", AuditLive
     live "/health", HealthLive

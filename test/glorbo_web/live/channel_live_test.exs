@@ -94,8 +94,43 @@ defmodule GlorboWeb.ChannelLiveTest do
              ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*gl-channel-list__link--active|
   end
 
-  test "dm rail shows 'No DM threads yet' when outbox is empty", %{conn: conn} do
+  test "dm rail lists every agent as a director↔agent thread", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
-    assert html =~ "No DM threads yet"
+    # The seeded fixture has one agent `ceo`; the rail should link to it.
+    assert html =~ ~s(href="/companies/acme/dms/ceo")
+    assert html =~ "director ↔ ceo"
+  end
+
+  test "dm channel URL auto-creates + redirects to ChannelLive", %{conn: conn, base: base} do
+    {:error, {:redirect, %{to: dest}}} = live(conn, "/companies/acme/dms/ceo")
+    assert dest == "/companies/acme/channels/dm-director--ceo"
+
+    # ensure_dm_channel/3 side-effect: the file was seeded.
+    dm_path =
+      Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+
+    assert File.exists?(dm_path)
+  end
+
+  test "public channel list hides dm-director--* entries", %{conn: conn, base: base} do
+    # Seed a real DM file so list_channels would pick it up if it weren't filtered.
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"]),
+      "# DM\n"
+    )
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+    refute html =~ "#dm-director--ceo"
+  end
+
+  test "DM channel heading renders 'DM · director ↔ <agent>'", %{conn: conn, base: base} do
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"]),
+      "# DM\n"
+    )
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/dm-director--ceo")
+    assert html =~ "DM · director ↔ ceo"
+    assert html =~ "Message ceo as Director"
   end
 end

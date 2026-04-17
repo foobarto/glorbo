@@ -1509,6 +1509,7 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-accent);
   background: color-mix(in oklch, var(--gl-surface) 75%, var(--gl-accent) 25%);
 }
+.gl-channel-list__link--faded { color: var(--gl-fg-subtle); }
 .gl-channel__main {
   display: flex;
   flex-direction: column;
