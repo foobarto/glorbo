@@ -8,6 +8,10 @@ import Config
 config :glorbo, auto_start_companies: false
 config :glorbo, auto_boot_agents: false
 
+# Keep `~/.glorbo/run/glorbo.pid` untouched by `mix test` runs; the pidfile
+# is for real `phx.server` / `glorbo up` sessions.
+config :glorbo, write_pidfile_on_boot: false
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

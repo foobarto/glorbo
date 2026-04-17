@@ -1,6 +1,7 @@
 defmodule Glorbo.Application do
   @moduledoc false
   use Application
+  require Logger
 
   alias Burrito.Util.Args, as: BurritoArgs
 
@@ -64,6 +65,12 @@ defmodule Glorbo.Application do
   end
 
   defp start_supervision_tree do
+    # Write the BEAM pid to `<base>/run/glorbo.pid` so operators + the
+    # `glorbo status` / `glorbo down` / `mix glorbo.kill` verbs can find
+    # this process without pgrep-golf. Gated under test env so ExUnit
+    # doesn't churn `~/.glorbo/run/glorbo.pid` on every mix test run.
+    maybe_write_pidfile()
+
     children = [
       Glorbo.Repo,
       {DNSCluster, query: Application.get_env(:glorbo, :dns_cluster_query) || :ignore},
@@ -95,6 +102,19 @@ defmodule Glorbo.Application do
 
     opts = [strategy: :one_for_one, name: Glorbo.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp maybe_write_pidfile do
+    if Application.get_env(:glorbo, :write_pidfile_on_boot, true) do
+      try do
+        pid = System.pid() |> String.to_integer()
+        Glorbo.CLI.Lifecycle.Pidfile.write!(pid)
+      rescue
+        # Best-effort: if the base dir isn't writable, log and continue.
+        # The server still boots; status/kill tooling just won't find us.
+        e -> Logger.warning("pidfile write failed: #{Exception.message(e)}")
+      end
+    end
   end
 
   # Release-binary CLI path. The BEAM requires start/2 to return `{:ok, pid}`;
