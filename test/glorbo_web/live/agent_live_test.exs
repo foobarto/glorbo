@@ -45,4 +45,31 @@ defmodule GlorboWeb.AgentLiveTest do
     content = File.read!(wake_path)
     assert content =~ "reason:"
   end
+
+  test "history tab lists audit activity filtered to this agent",
+       %{conn: conn, base: base} do
+    # Seed a mix of audit entries so we can check the filter. Write
+    # current-month file — AgentLive reads YYYY-MM.jsonl.
+    month =
+      DateTime.utc_now()
+      |> Calendar.strftime("%Y-%m")
+
+    audit_path = Path.join([base, "companies", "acme", "audit", "#{month}.jsonl"])
+    File.mkdir_p!(Path.dirname(audit_path))
+
+    File.write!(audit_path, """
+    {"ts":"2026-04-18T10:00:00Z","actor":"ceo","action":"agent.dispatch","target":null,"detail":{"provider":"claude-code","model":"claude-sonnet-4-5","agent":"ceo"}}
+    {"ts":"2026-04-18T10:00:01Z","actor":"system","action":"agent.heartbeat_skipped","target":"agents/engineer","detail":{"reason":"no_heartbeat_file"}}
+    {"ts":"2026-04-18T10:00:02Z","actor":"director","action":"agent.wake_request","target":"agents/ceo","detail":{"reason":""}}
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+    html = render_click(view, "tab", %{"tab" => "history"})
+
+    # Both ceo-related rows present (dispatch + wake_request), the
+    # engineer-scoped heartbeat_skipped filtered out.
+    assert html =~ "agent.dispatch"
+    assert html =~ "agent.wake_request"
+    refute html =~ "agent.heartbeat_skipped"
+  end
 end

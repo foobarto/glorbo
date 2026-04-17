@@ -1365,6 +1365,27 @@ button { font-family: inherit; font-size: inherit; }
 .gl-stdout-tail:has(#stdout-tail > .gl-stdout-tail__line) .gl-stdout-tail__empty {
   display: none;
 }
+
+.gl-agent-history {
+  padding: var(--gl-space-sm);
+  max-height: 400px;
+  overflow-y: auto;
+}
+.gl-agent-history__list { list-style: none; padding: 0; margin: 0; }
+.gl-agent-history__row {
+  display: grid;
+  grid-template-columns: 80px 180px 1fr;
+  gap: var(--gl-space-sm);
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: var(--gl-font-body);
+}
+.gl-agent-history__ts { font-variant-numeric: tabular-nums; }
+.gl-agent-history__action.gl-action--wake { color: var(--gl-accent); }
+.gl-agent-history__action.gl-action--budget { color: var(--gl-amber); }
+.gl-agent-history__action.gl-action--approval { color: var(--gl-cyan); }
+.gl-agent-history__action.gl-action--default { color: var(--gl-fg); }
+.gl-agent-history__row--skipped .gl-agent-history__action { opacity: 0.6; }
 .gl-wake-form {
   display: flex;
   gap: var(--gl-space-sm);

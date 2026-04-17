@@ -64,6 +64,8 @@ defmodule GlorboWeb.AgentLive do
     if File.dir?(ag_dir) do
       detail = load_agent_detail(base, co, ag)
 
+      history = load_history(base, co, ag)
+
       socket =
         socket
         |> assign(:page_title, "#{detail.name} — #{co} — Glorbo")
@@ -74,12 +76,14 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:tab, :stdout)
         |> assign(:hovered_perm, nil)
         |> assign(:streamer_pid, nil)
+        |> assign(:history, history)
         |> stream(:stdout, [], limit: -1000)
 
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:stdout")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:wake")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:budget")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
 
         case GlorboWeb.StdoutStreamer.start(co, ag, base: base) do
           {:ok, pid} ->
@@ -105,6 +109,17 @@ defmodule GlorboWeb.AgentLive do
     {:noreply, stream_insert(socket, :stdout, %{id: id, body: body}, at: -1, limit: -1000)}
   end
 
+  # Realtime history: append audit records that concern this agent.
+  def handle_info({:audit_append, record}, socket) when is_map(record) do
+    if audit_for_this_agent?(record, socket.assigns.agent_slug) do
+      row = to_history_row(stringify_keys(record))
+      new_history = Enum.take([row | socket.assigns.history], 200)
+      {:noreply, assign(socket, :history, new_history)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:file_event, _rel, _events}, socket), do: {:noreply, socket}
 
   def handle_info(
@@ -128,7 +143,7 @@ defmodule GlorboWeb.AgentLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_event("tab", %{"tab" => tab}, socket) when tab in ~w(stdout sandbox inbox) do
+  def handle_event("tab", %{"tab" => tab}, socket) when tab in ~w(stdout sandbox inbox history) do
     {:noreply, assign(socket, :tab, String.to_existing_atom(tab))}
   end
 
@@ -305,6 +320,14 @@ defmodule GlorboWeb.AgentLive do
                 >
                   inbox/outbox
                 </button>
+                <button
+                  type="button"
+                  class={["gl-agent-detail__tab", @tab == :history && "gl-agent-detail__tab--active"]}
+                  phx-click="tab"
+                  phx-value-tab="history"
+                >
+                  history
+                </button>
               </div>
             </header>
 
@@ -344,6 +367,27 @@ defmodule GlorboWeb.AgentLive do
                 </div>
                 <div :if={not @detail.outbox.latest} class="gl-muted">No pending outbox.</div>
               </div>
+            </div>
+
+            <div :if={@tab == :history} class="gl-panel__body gl-agent-history">
+              <div :if={@history == []} class="gl-muted">
+                No activity yet. Heartbeat ticks, director wakes, and dispatch
+                events will appear here.
+              </div>
+              <ul :if={@history != []} class="gl-agent-history__list">
+                <li
+                  :for={row <- @history}
+                  class={["gl-agent-history__row", "gl-agent-history__row--" <> row.kind]}
+                >
+                  <span class="gl-agent-history__ts gl-muted">{row.ts_short}</span>
+                  <span class={["gl-agent-history__action", "gl-action--" <> row.class]}>
+                    {row.action}
+                  </span>
+                  <span :if={row.detail} class="gl-agent-history__detail gl-muted">
+                    {row.detail}
+                  </span>
+                </li>
+              </ul>
             </div>
           </section>
         </div>
@@ -782,4 +826,140 @@ defmodule GlorboWeb.AgentLive do
   defp dp0(_), do: "0"
 
   defp base_dir, do: Glorbo.Filesystem.Hierarchy.default_root()
+
+  # ---------------------------------------------------------------------------
+  # History panel (GEP-14-adjacent — shows heartbeat + dispatch + wake activity)
+  # ---------------------------------------------------------------------------
+
+  @history_cap 200
+
+  defp load_history(base, co, ag) do
+    path =
+      Path.join([
+        base,
+        "companies",
+        co,
+        "audit",
+        "#{current_year_month()}.jsonl"
+      ])
+
+    case File.read(path) do
+      {:ok, content} ->
+        content
+        |> String.split("\n", trim: true)
+        # Reverse first so the reduce picks up the newest rows and caps at
+        # @history_cap without having to walk the whole file.
+        |> Enum.reverse()
+        |> Enum.reduce_while([], &collect_history_row(&1, &2, ag))
+        # Reverse back: newest first (matches realtime-append semantics).
+        |> Enum.reverse()
+
+      _ ->
+        []
+    end
+  end
+
+  defp collect_history_row(_line, acc, _ag) when length(acc) >= @history_cap do
+    {:halt, acc}
+  end
+
+  defp collect_history_row(line, acc, ag) do
+    with {:ok, entry} <- Jason.decode(line),
+         true <- audit_for_this_agent?(entry, ag) do
+      {:cont, [to_history_row(entry) | acc]}
+    else
+      _ -> {:cont, acc}
+    end
+  end
+
+  # An audit record concerns this agent if any of: actor == slug, target
+  # starts with `agents/<slug>`, or detail has {agent: slug}.
+  defp audit_for_this_agent?(entry, slug) when is_map(entry) and is_binary(slug) do
+    e = stringify_keys(entry)
+
+    actor = to_string(e["actor"] || "")
+    target = to_string(e["target"] || "")
+    detail_agent = get_in(e, ["detail", "agent"]) |> to_string()
+
+    actor == slug or
+      String.starts_with?(target, "agents/#{slug}") or
+      detail_agent == slug
+  end
+
+  defp audit_for_this_agent?(_entry, _slug), do: false
+
+  defp to_history_row(entry) do
+    action = to_string(entry["action"] || "")
+
+    %{
+      ts_short: short_ts(entry["ts"]),
+      action: action,
+      class: action_class(action),
+      kind: kind_for(action),
+      detail: history_detail(entry)
+    }
+  end
+
+  defp short_ts(ts) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} ->
+        naive = DateTime.to_naive(dt)
+
+        "#{naive.hour |> pad2()}:#{naive.minute |> pad2()}:#{naive.second |> pad2()}"
+
+      _ ->
+        ts
+    end
+  end
+
+  defp short_ts(_), do: ""
+
+  defp pad2(n), do: n |> Integer.to_string() |> String.pad_leading(2, "0")
+
+  # Map audit actions to the same CSS classes AuditEntry uses.
+  defp action_class("agent.wake" <> _), do: "wake"
+  defp action_class("agent.dispatch" <> _), do: "wake"
+  defp action_class("agent.complete" <> _), do: "wake"
+  defp action_class("agent.heartbeat_skipped"), do: "wake"
+  defp action_class("agent.wake_request"), do: "wake"
+  defp action_class("budget" <> _), do: "budget"
+  defp action_class("approval" <> _), do: "approval"
+  defp action_class(_), do: "default"
+
+  defp kind_for("agent.heartbeat_skipped"), do: "skipped"
+  defp kind_for("agent.complete"), do: "complete"
+  defp kind_for("agent.dispatch"), do: "dispatch"
+  defp kind_for("agent.wake" <> _), do: "wake"
+  defp kind_for(_), do: "default"
+
+  defp history_detail(entry) do
+    # Prefer a targeted one-line summary based on the action.
+    case {entry["action"], entry["detail"]} do
+      {"agent.wake", d} when is_map(d) ->
+        "trigger: #{d["trigger"] || "?"}"
+
+      {"agent.heartbeat_skipped", d} when is_map(d) ->
+        "reason: #{d["reason"] || "?"}"
+
+      {"agent.dispatch", d} when is_map(d) ->
+        "provider: #{d["provider"] || "?"} · model: #{d["model"] || "?"}"
+
+      {"agent.complete", d} when is_map(d) ->
+        "exit #{d["exit_status"] || "?"} · #{d["duration_ms"] || "?"}ms"
+
+      {"agent.wake_request", d} when is_map(d) ->
+        reason = d["reason"] || ""
+        if reason == "", do: "director wake", else: "director: #{reason}"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), stringify_keys(v)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(other), do: other
 end
