@@ -1357,6 +1357,14 @@ button { font-family: inherit; font-size: inherit; }
   line-height: 1.5;
 }
 .gl-stdout-tail__line { word-break: break-all; white-space: pre-wrap; }
+.gl-stdout-tail__empty {
+  padding: var(--gl-space-sm) 0;
+  font-style: italic;
+}
+/* Hide the empty hint as soon as a stream line lands. */
+.gl-stdout-tail:has(#stdout-tail > .gl-stdout-tail__line) .gl-stdout-tail__empty {
+  display: none;
+}
 .gl-wake-form {
   display: flex;
   gap: var(--gl-space-sm);

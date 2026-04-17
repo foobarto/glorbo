@@ -24,6 +24,7 @@ defmodule GlorboWeb.Components.Topbar do
   out fails the bar just hides the value rather than crashing.
   """
   use Phoenix.Component
+  use GlorboWeb, :verified_routes
 
   attr :current_company, :string, default: nil
   attr :tweaks_open?, :boolean, default: false
@@ -38,12 +39,14 @@ defmodule GlorboWeb.Components.Topbar do
 
     ~H"""
     <header class="gl-topbar" role="banner">
-      <span class="gl-topbar__brand" aria-label="Glorbo">
+      <.link navigate={~p"/companies"} class="gl-topbar__brand" aria-label="Go to companies list">
         <span class="gl-topbar__brand-glyph" aria-hidden="true">▚</span> GLORBO
-      </span>
+      </.link>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
 
-      <span class="gl-topbar__path">~/.glorbo/companies/</span>
+      <.link navigate={~p"/companies"} class="gl-topbar__path" title="All companies">
+        ~/.glorbo/companies/
+      </.link>
       <label :if={@companies != []} class="gl-topbar__picker">
         <select
           class="gl-topbar__picker-select"

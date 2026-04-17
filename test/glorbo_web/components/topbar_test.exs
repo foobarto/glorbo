@@ -21,10 +21,11 @@ defmodule GlorboWeb.Components.TopbarTest do
   end
 
   describe "topbar/1" do
-    test "renders the brand" do
+    test "renders the brand as a link to /companies" do
       html = render_topbar([])
       assert html =~ "GLORBO"
-      assert html =~ ~s(aria-label="Glorbo")
+      assert html =~ ~s(href="/companies")
+      assert html =~ ~s(aria-label="Go to companies list")
     end
 
     test "renders keyboard hints" do

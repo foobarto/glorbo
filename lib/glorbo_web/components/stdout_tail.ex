@@ -18,15 +18,24 @@ defmodule GlorboWeb.Components.StdoutTail do
   attr :stream, :any, required: true
   attr :paused, :boolean, default: false
 
+  attr :empty_hint, :string,
+    default:
+      "No output yet. This agent hasn't been invoked — click \"wake now\" above, or wait for the next heartbeat tick."
+
   def stdout_tail(assigns) do
     ~H"""
-    <div class="gl-stdout-tail" id="stdout-tail" phx-update="stream">
-      <div
-        :for={{dom_id, line} <- @stream}
-        id={dom_id}
-        class="gl-stdout-tail__line"
-      >
-        {line.body}
+    <div class="gl-stdout-tail" id="stdout-tail-wrap">
+      <div id="stdout-tail" phx-update="stream">
+        <div
+          :for={{dom_id, line} <- @stream}
+          id={dom_id}
+          class="gl-stdout-tail__line"
+        >
+          {line.body}
+        </div>
+      </div>
+      <div class="gl-stdout-tail__empty gl-muted" id="stdout-tail-empty">
+        {@empty_hint}
       </div>
     </div>
     """

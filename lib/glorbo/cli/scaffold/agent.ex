@@ -96,7 +96,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     model: claude-sonnet-4-5
     network: api-only
     heartbeat: null
-    permissions: []
+    permissions:
+      - projects:read:*
+      - chat:read:*
     budget:
       monthly_usd: 10.00
     skills: []
