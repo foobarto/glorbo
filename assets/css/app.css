@@ -1057,7 +1057,19 @@ button { font-family: inherit; font-size: inherit; }
   background: var(--gl-surface);
   border-radius: 6px;
   padding: var(--gl-space-md);
+  transition: outline-color 120ms ease;
+  outline: 1px dashed transparent;
+  outline-offset: -4px;
 }
+.gl-kanban__column--over {
+  outline-color: var(--gl-accent);
+  background: color-mix(in oklch, var(--gl-surface) 90%, var(--gl-accent) 10%);
+}
+.gl-task-card--dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+.gl-task-card { cursor: grab; }
 .gl-kanban__column-header {
   display: flex;
   justify-content: space-between;

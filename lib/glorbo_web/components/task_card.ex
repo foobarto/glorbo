@@ -15,7 +15,13 @@ defmodule GlorboWeb.Components.TaskCard do
 
   def task_card(assigns) do
     ~H"""
-    <article class="gl-task-card" data-status={@task.status}>
+    <article
+      id={"gl-task-" <> @task.task_id <> "-" <> String.replace(@task.task_path, "/", "-")}
+      class="gl-task-card"
+      data-status={@task.status}
+      data-task-path={@task.task_path}
+      phx-hook="KanbanCard"
+    >
       <header class="gl-task-card__title">
         {@task.title || @task.task_id}
         <GlorboWeb.CoreComponents.icon

@@ -14,7 +14,51 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "todo"
     assert html =~ "in progress"
     assert html =~ "done"
-    assert html =~ "Read-only view"
+    # M4.1: columns are now drop targets with the KanbanLane hook
+    assert html =~ ~s|phx-hook="KanbanLane"|
+    assert html =~ ~s|data-status="in-progress"|
+  end
+
+  test "kanban:move writes new status to the task frontmatter",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    # Find a seeded task's relative path by scanning the fixture tree.
+    task_path =
+      [base, "companies", "acme", "projects"]
+      |> Path.join()
+      |> File.ls!()
+      |> Enum.flat_map(fn project ->
+        dir = Path.join([base, "companies", "acme", "projects", project, "tasks"])
+
+        case File.ls(dir) do
+          {:ok, files} ->
+            Enum.map(files, &Path.join(["projects", project, "tasks", &1]))
+
+          _ ->
+            []
+        end
+      end)
+      |> List.first()
+
+    assert task_path, "no seeded tasks available in fixture"
+
+    render_hook(view, "kanban:move", %{"task_path" => task_path, "to" => "done"})
+
+    abs = Path.join([base, "companies", "acme", task_path])
+    content = File.read!(abs)
+    assert content =~ ~r/status:\s*done/
+  end
+
+  test "kanban:move rejects a traversal path", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    render_hook(view, "kanban:move", %{
+      "task_path" => "../../other/tasks/evil.md",
+      "to" => "done"
+    })
+
+    assert render(view) =~ "Could not move task"
   end
 
   test "renders the CompanyTabs strip with :kanban active", %{conn: conn} do

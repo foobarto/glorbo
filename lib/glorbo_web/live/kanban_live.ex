@@ -15,8 +15,11 @@ defmodule GlorboWeb.KanbanLive do
   though subscribing to a company-scoped topic already enforces the
   boundary).
 
-  Read-only in v0.0.1 — the Director edits task files with their own
-  editor (D-23). A muted banner communicates this.
+  v0.0.3 adds drag-and-drop between lanes (M4.1): a `"kanban:move"`
+  event carries `task_path` + target column name; the handler validates
+  the status, rewrites frontmatter via `Glorbo.TaskDefinition.write/2`,
+  and lets inotify re-fire the view. Writes still go through the
+  filesystem — no in-memory mutations (CLAUDE.md: SQLite is derived).
   """
   use GlorboWeb, :live_view
 
@@ -74,6 +77,19 @@ defmodule GlorboWeb.KanbanLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("kanban:move", %{"task_path" => task_path, "to" => to}, socket) do
+    with {:ok, status} <- column_to_status(to),
+         {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
+         :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: status}) do
+      base = base_dir()
+      tasks = load_tasks(base, socket.assigns.company_slug)
+      {:noreply, assign(socket, :columns, group_by_column(tasks))}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not move task.")}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-kanban">
@@ -83,11 +99,18 @@ defmodule GlorboWeb.KanbanLive do
       </header>
 
       <p class="gl-banner gl-banner--muted">
-        Read-only view. Edit task files with your editor to change status.
+        Drag a card to move between lanes. Status writes back to the task's <code>status:</code>
+        frontmatter.
       </p>
 
       <div class="gl-kanban__board">
-        <section :for={{_key, label, tasks} <- columns(@columns)} class="gl-kanban__column">
+        <section
+          :for={{key, label, tasks} <- columns(@columns)}
+          id={"gl-kanban-col-" <> Atom.to_string(key)}
+          class="gl-kanban__column"
+          data-status={column_key_to_status(key)}
+          phx-hook="KanbanLane"
+        >
           <header class="gl-kanban__column-header">
             <span class="gl-muted">{label}</span>
             <span class="gl-muted gl-tabular">{length(tasks)}</span>
@@ -115,6 +138,25 @@ defmodule GlorboWeb.KanbanLive do
       {:done, "done", d}
     ]
   end
+
+  defp column_key_to_status(:todo), do: "todo"
+  defp column_key_to_status(:in_progress), do: "in-progress"
+  defp column_key_to_status(:done), do: "done"
+
+  defp column_to_status("todo"), do: {:ok, "todo"}
+  defp column_to_status("in-progress"), do: {:ok, "in-progress"}
+  defp column_to_status("done"), do: {:ok, "done"}
+  defp column_to_status(_), do: :error
+
+  defp resolve_task_path(rel, company) when is_binary(rel) do
+    if String.starts_with?(rel, "projects/") and not String.contains?(rel, "..") do
+      {:ok, Path.join([base_dir(), "companies", company, rel])}
+    else
+      :error
+    end
+  end
+
+  defp resolve_task_path(_, _), do: :error
 
   defp load_tasks(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])
