@@ -48,15 +48,13 @@ defmodule GlorboWeb.KanbanLive do
       if connected?(socket),
         do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:projects")
 
-      tasks = load_tasks(base, slug)
-
       {:ok,
        socket
-       |> assign(:page_title, "Kanban — #{slug} — Glorbo")
        |> assign(:sidebar_active, :kanban)
        |> assign(:company_slug, slug)
        |> assign(:current_company, slug)
-       |> assign(:columns, group_by_column(tasks))
+       |> assign(:project_filter, nil)
+       |> assign(:columns, group_by_column([]))
        |> assign(:new_task_open?, false)
        |> assign(:new_task_projects, list_projects(base, slug))
        |> assign(:open_task, nil)}
@@ -69,10 +67,47 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   @impl true
+  def handle_params(params, _uri, socket) do
+    base = base_dir()
+    slug = socket.assigns.company_slug
+    projects = socket.assigns.new_task_projects
+
+    filter =
+      case Map.get(params, "project") do
+        p when is_binary(p) and p != "" ->
+          if p in projects, do: p, else: nil
+
+        _ ->
+          nil
+      end
+
+    tasks =
+      base
+      |> load_tasks(slug)
+      |> apply_project_filter(filter)
+
+    title =
+      if filter,
+        do: "Kanban · #{filter} — #{slug} — Glorbo",
+        else: "Kanban — #{slug} — Glorbo"
+
+    {:noreply,
+     socket
+     |> assign(:page_title, title)
+     |> assign(:project_filter, filter)
+     |> assign(:columns, group_by_column(tasks))}
+  end
+
+  @impl true
   def handle_info({:file_event, rel_path, _events}, socket) do
     if Regex.match?(@task_path_re, rel_path) do
       base = base_dir()
-      tasks = load_tasks(base, socket.assigns.company_slug)
+
+      tasks =
+        base
+        |> load_tasks(socket.assigns.company_slug)
+        |> apply_project_filter(socket.assigns.project_filter)
+
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
     else
       {:noreply, socket}
@@ -131,7 +166,10 @@ defmodule GlorboWeb.KanbanLive do
          :ok <- validate_title(title),
          {:ok, task_id} <- next_task_id(base, company, project),
          :ok <- write_new_task(base, company, project, task_id, title) do
-      tasks = load_tasks(base, company)
+      tasks =
+        base
+        |> load_tasks(company)
+        |> apply_project_filter(socket.assigns.project_filter)
 
       {:noreply,
        socket
@@ -155,7 +193,12 @@ defmodule GlorboWeb.KanbanLive do
          {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
          :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: status}) do
       base = base_dir()
-      tasks = load_tasks(base, socket.assigns.company_slug)
+
+      tasks =
+        base
+        |> load_tasks(socket.assigns.company_slug)
+        |> apply_project_filter(socket.assigns.project_filter)
+
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
     else
       _ -> {:noreply, put_flash(socket, :error, "Could not move task.")}
@@ -167,8 +210,22 @@ defmodule GlorboWeb.KanbanLive do
     ~H"""
     <section class="gl-view gl-kanban">
       <header class="gl-view__header gl-view__header--split">
-        <h1 class="gl-heading gl-heading--display">Kanban — {@company_slug}</h1>
-        <button type="button" class="gl-btn" phx-click="new_task">+ new task</button>
+        <h1 class="gl-heading gl-heading--display">
+          Kanban — {@company_slug}<span
+            :if={@project_filter}
+            class="gl-muted"
+          >· {@project_filter}</span>
+        </h1>
+        <div class="gl-kanban__actions">
+          <.link
+            :if={@project_filter}
+            navigate={~p"/companies/#{@company_slug}/kanban"}
+            class="gl-btn gl-btn--sm"
+          >
+            × all projects
+          </.link>
+          <button type="button" class="gl-btn" phx-click="new_task">+ new task</button>
+        </div>
       </header>
 
       <p class="gl-banner gl-banner--muted">
@@ -283,6 +340,12 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   defp split_frontmatter(content), do: {"", content}
+
+  defp apply_project_filter(tasks, nil), do: tasks
+
+  defp apply_project_filter(tasks, project) when is_binary(project) do
+    Enum.filter(tasks, fn t -> t.project == project end)
+  end
 
   defp columns(%{todo: t, in_progress: i, done: d}) do
     [

@@ -16,7 +16,9 @@ defmodule GlorboWeb.CompanyLiveTest do
     {:ok, _view, html} = live(conn, ~p"/companies/acme")
 
     # CompanyTabs removed — sidebar owns navigation now.
-    for label <- ~w(Overview Kanban Channels Approvals Providers) do
+    # Kanban is reached via the PROJECTS rail (per-project scope) instead
+    # of a top-level nav entry.
+    for label <- ~w(Overview Channels Approvals Providers) do
       assert html =~ ">#{label}<"
     end
 

@@ -61,12 +61,33 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert render(view) =~ "Could not move task"
   end
 
-  test "sidebar marks Kanban nav item active", %{conn: conn} do
+  test "sidebar exposes PROJECTS rail with project-scoped kanban links", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
-    # CompanyTabs strip removed (sidebar owns navigation); assert the
-    # sidebar Kanban link carries the active modifier instead.
-    assert html =~
-             ~r|<a[^>]*href="/companies/acme/kanban"[^>]*gl-sidebar__nav-item--active|
+    # The "Kanban" nav item was removed from the sidebar; project rows
+    # under /PROJECTS now route to a project-scoped kanban board.
+    assert html =~ ~r|href="/companies/acme/kanban\?project=website"|
+    refute html =~ ~r|<a[^>]*>\s*<span[^>]*>▤</span>\s*<span[^>]*>Kanban</span>|
+  end
+
+  test "?project=<slug> filters the board to that project's tasks",
+       %{conn: conn, base: base} do
+    # Seed a task in a second project so the filter has something to hide.
+    other_dir = Path.join([base, "companies", "acme", "projects", "other", "tasks"])
+    File.mkdir_p!(other_dir)
+
+    File.write!(Path.join(other_dir, "t-99.md"), """
+    ---
+    title: "Other project task"
+    status: todo
+    ---
+
+    body
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?project=website")
+    assert html =~ "Deploy landing page"
+    refute html =~ "Other project task"
+    assert html =~ "× all projects"
   end
 
   test "seeded t-01 task with requires_approval: director renders the approval tag + modifier",

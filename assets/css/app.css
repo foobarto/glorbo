@@ -1262,6 +1262,8 @@ button { font-family: inherit; font-size: inherit; }
   padding: var(--gl-space-md) 0;
   text-align: center;
 }
+.gl-kanban__actions { display: flex; gap: var(--gl-space-sm); align-items: center; }
+
 /* ========== Kanban task card (mockup views/kanban.jsx) ========== */
 .gl-task-card {
   background: var(--gl-surface-raised);
