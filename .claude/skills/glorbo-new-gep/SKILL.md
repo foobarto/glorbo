@@ -188,7 +188,28 @@ Once the Q&A is complete:
 
 ### Phase 5 — Self-review before handing back
 
-Check the new GEP for:
+**Run `mix gep.validate`** (defined in `lib/mix/tasks/gep.validate.ex`)
+via Bash. It checks every mechanical concern in parallel:
+
+- Required frontmatter fields + enum values (`type`, `status`).
+- Filename number matching the `gep:` field.
+- `status` ↔ `history` consistency (latest history entry's status
+  must equal the top-level `status`).
+- Bidirectional links (`supersedes` ↔ `superseded-by`, `requires` ↔
+  `extended-by`).
+- Cross-reference resolution (every GEP number referenced in
+  `requires` / `supersedes` / `extended-by` / `see-also` must exist).
+- README index ↔ file sync (every GEP file has a README row; every
+  README row points at a real file; status matches).
+- Required body sections for Standards Draft GEPs (Problem, Design,
+  Decision log, etc.).
+
+The task prints a green `✓` list on success and exits 0; on failure
+it prints per-GEP error lines and exits 1. Treat a non-zero exit as
+blocking — fix reported issues before handoff.
+
+Then read through the new GEP for the things the validator can't
+check:
 
 - **Placeholders and TBD.** Replace or delete every one.
 - **Internal consistency.** Does the design match the problem?
@@ -198,19 +219,20 @@ Check the new GEP for:
 - **Decision log honesty.** Does each "Why" answer the question, or
   does it just restate the "Decided"? If the latter, the reasoning
   isn't captured — push the user for it.
-- **Frontmatter completeness.** All required fields filled. Numbers
-  used in `requires` / `supersedes` / etc. correspond to real GEPs.
-- **Bidirectional links.** If this GEP references another, does the
-  other GEP's frontmatter need updating? If so, do it now.
 
 Fix inline. No need to ask the user for permission to clean up
 mechanical issues — just fix and note them in the handoff.
+
+If `mix gep.validate` fails, fix the reported issue and re-run
+until it's green. Don't hand off a GEP that doesn't validate.
 
 ### Phase 6 — Handoff
 
 Tell the user:
 
 - Path to the new GEP.
+- Outcome of `mix gep.validate` (the green summary is fine as-is;
+  if there were failures you had to fix, briefly mention them).
 - What other GEPs' frontmatter was updated (if any).
 - That the status is `Draft` — they need to review and approve before
   flipping to `Accepted`.
@@ -257,3 +279,6 @@ typically reviewed before landing.
 - **Template:** `docs/geps/0000-template.md`
 - **Index:** `docs/geps/README.md`
 - **Architectural baseline:** `docs/geps/0002-architecture-overview.md`
+- **Validator:** `mix gep.validate` — runs structural + link checks
+  (`lib/mix/tasks/gep.validate.ex`, implemented by `Gep.Validator` in
+  `lib/gep/validator.ex`).
