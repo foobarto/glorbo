@@ -243,7 +243,36 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp dispatcher_opts(opts) do
-    Keyword.take(opts, [:run_fun, :fs_fun, :now_fun, :rand_fun])
+    taken = Keyword.take(opts, [:run_fun, :fs_fun, :now_fun, :rand_fun])
+    # In production, wire the Dispatcher's `run_fun` seam through to
+    # `Glorbo.Sandbox.Bwrap.start/2`. Tests that want to stub the
+    # subprocess still pass their own `:run_fun` which wins via
+    # Keyword.put_new/3. Without this bridge, every agent invocation
+    # errors at `:no_run_fun_configured`.
+    Keyword.put_new(taken, :run_fun, &default_run_fun/4)
+  end
+
+  # Adapts the Dispatcher's 4-arity run_fun contract
+  #   (args, env, bwrap_opts, run_opts_map)
+  # to Bwrap.start/2's (invocation_opts, run_opts) shape. `run_opts_map`
+  # carries the CLI binary + cli_args + prompt + usage_dir; `env` is the
+  # per-invocation env the CLI expects (GLORBO_REPLY_PATH et al).
+  defp default_run_fun(_args, env, bwrap_opts, run_opts_map) when is_map(run_opts_map) do
+    invocation_opts = Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
+
+    run_opts = [
+      cli_binary: Map.fetch!(run_opts_map, :cli_binary),
+      cli_args: Map.get(run_opts_map, :cli_args, []),
+      prompt: Map.get(run_opts_map, :prompt, ""),
+      usage_dir: Map.get(run_opts_map, :usage_dir)
+    ]
+
+    Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
+  end
+
+  defp merge_cli_env(bwrap_opts, dispatcher_env) do
+    base = Map.get(bwrap_opts, :cli_env, %{})
+    Map.merge(base, dispatcher_env || %{})
   end
 
   defp compute_duration(start, opts) do
