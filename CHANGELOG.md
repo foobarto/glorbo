@@ -10,13 +10,62 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-_GSD workflow retired 2026-04-17; design decisions now captured as
-GEPs under `docs/geps/`. The originally planned Podman container-
-runtime restoration has been dropped entirely (see GEP-5 D6);
-agents remain CLI-tool subprocesses under bwrap permanently. Next
-milestone's likely focus: provider registry + auto-detect (GEP-8),
-`api-only` netns + nftables egress hardening, and possibly the
-agent-template scaffolding (GEP-10)._
+_First items of v0.0.3 have landed on the `worktree-gep-8-provider-registry`
+branch; not yet tagged. Pending milestone items: `api-only` netns +
+nftables egress hardening, agent-template scaffolding (GEP-10)._
+
+### Added
+
+- **GEP-8 Provider Registry + CLI Auto-Detect** — config-driven CLI
+  provider system. `priv/providers/*.toml` + optional
+  `~/.glorbo/providers.toml` declare invocation shape, env overrides,
+  reply contract, and usage-parser bindings. Six built-in providers:
+  three tracked (`claude-code`, `codex`, `gemini-cli`) and three
+  untracked (`hermes`, `opencode`, `pi`). New `/providers` LiveView
+  dashboard. Detection runs on boot (PATH scan only); version probes
+  run on explicit refresh and respect per-entry `allow_version_probe`
+  opt-in for user-declared providers.
+- `agent.md` gains `allow_untracked_budget: true` frontmatter opt-in
+  for routing through `usage_parser = "none"` providers. Dispatch
+  refuses otherwise.
+
+### Changed (Breaking)
+
+- **Reply-file contract** (GEP-8 D1). Agents must now write their
+  final reply to `$GLORBO_REPLY_PATH` — an absolute path exported to
+  the CLI's env. On exit, an empty or missing reply file is an
+  invocation failure. Existing agent system prompts must be updated
+  to include a "write final answer to `$GLORBO_REPLY_PATH`" directive
+  or their replies will surface as `:reply_file_empty` / `:reply_file_missing`.
+- `Glorbo.Agent.Dispatch.execute/3` dep-inject keys changed:
+  `:adapter_registry` + `:binary_fun` → `:provider_fun`. The
+  `:run_fun` signature is now 4-arity
+  `(args, env, bwrap_opts, run_opts_map)`.
+- `Glorbo.CLI.Adapter` behaviour and its three implementations
+  (`ClaudeCode`, `Codex`, `GeminiCli`) removed. Their parsing logic
+  moved to `Glorbo.CLI.Parsers.{ClaudeJsonl, CodexJsonl, GeminiStdout}`.
+
+### Fixed
+
+- 5 Critical + 15 Important + 15 Minor code-quality findings from a
+  2026-04-17 review. Notable: `Network.Proxy` pipe tasks now use
+  `Task.Supervisor.async_nolink` (socket-cleanup ordering);
+  `BudgetTracker.init` rehydrates `alerts_fired` from filesystem on
+  crash (no duplicate alert files); `Company.Router` captures a
+  single `DateTime.utc_now/0` per routing (filename + frontmatter
+  now consistent); `Restore.extract` preserves pre-existing user
+  data on symlink-escape rejection with `--force`;
+  `Sandbox.Bwrap.drain_port` caps accumulated stdout at 16 MiB;
+  `Ledger.record/1` (non-raising variant) added for callers that
+  need error taxonomy.
+
+### Meta
+
+- GSD workflow retired 2026-04-17; design decisions now captured as
+  GEPs under `docs/geps/`. The originally planned Podman
+  container-runtime restoration has been dropped entirely (see
+  GEP-5 D6); agents remain CLI-tool subprocesses under bwrap
+  permanently.
 
 ---
 

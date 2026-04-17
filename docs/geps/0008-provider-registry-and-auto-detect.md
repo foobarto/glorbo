@@ -2,10 +2,11 @@
 gep: 8
 title: Provider Registry + CLI Auto-Detect
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-17
 updated: 2026-04-17
+implemented-in: v0.0.3
 requires: [2, 4]
 see-also: [3, 5]
 history:
@@ -14,7 +15,10 @@ history:
     note: Initial draft — originally lived at docs/specs/2026-04-17-provider-registry-and-auto-detect.md; migrated into the GEP process with the same content. Targets v0.0.3.
   - date: 2026-04-17
     status: Accepted
-    note: §11 open questions resolved (D12–D17). Module-layout paths in §5 corrected to match the actual `lib/glorbo/cli/` tree. Reply-file contract confirmed as a hard flip — breaking change for existing agents; migration requires system-prompt updates. Implementation starts immediately, targeting v0.0.3.
+    note: §11 open questions resolved (D12–D17). Module-layout paths in §5 corrected to match the actual `lib/glorbo/cli/` tree. Reply-file contract confirmed as a hard flip — breaking change for existing agents; migration requires system-prompt updates.
+  - date: 2026-04-17
+    status: Implemented
+    note: Ships in v0.0.3. Registry, Loader, Detection, Dispatcher, Parsers, PathTransforms, `/providers` LiveView, and six built-in provider TOMLs (claude-code, codex, gemini-cli, hermes, opencode, pi) all landed. 680 tests green; mix credo --strict clean.
 ---
 
 # GEP-8: Provider Registry + CLI Auto-Detect
