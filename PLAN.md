@@ -18,7 +18,7 @@ invariants in `DESIGN.md` / `CLAUDE.md`.
 | **M2**    | Company overview rewrite (stats + roster + orgchart + audit) | ✅ shipped      |
 | **M3**    | Agent detail rewrite (3-column: identity / tabs / config) | ✅ shipped      |
 | **M4**    | Kanban drag-drop, Chat switcher+DMs, Approvals diff, Audit search, Providers grid | ✅ shipped      |
-| **M5**    | Keyboard shortcuts (`g` prefix), Tweaks persistence, vocab toggle, new-X entry points | 🟡 in progress |
+| **M5**    | Keyboard shortcuts (`g` prefix), Tweaks drawer, new-X entry points | ✅ shipped      |
 
 ## Prior P0/P1/P2/P3 tracks (completed ahead of M-series)
 
@@ -191,26 +191,37 @@ snippet from `priv/providers/*.toml` (GEP-8).
 
 ---
 
-## M5 — polish & shortcuts (⏳ pending)
+## M5 — polish & shortcuts (shipped)
 
-### M5.1 — keyboard shortcuts (`g` prefix)
-`g o` → overview, `g h` → health, `g a` → providers, etc. Implemented via
-a single `phx-window-keydown` at layout level dispatching to a small
-router module.
+### M5.1 — keyboard shortcuts (`g` prefix) ✅
+Pure client-side JS in `assets/js/app.js`: two-key `g <x>` sequences
+map `o`→/companies, `h`→/health, `p`→/providers. 1s timeout resets the
+prefix; no-op when typing in inputs. Topbar kbd strip updated.
 
-### M5.2 — Tweaks persistence
-The TWEAKS button in topbar opens a panel (dense / loose, vocab toggle,
-colour). Settings persist in `cookie` via `Plug.Conn.put_resp_cookie`
-with a small signed session.
+### M5.2 — TWEAKS drawer ✅
+TWEAKS button in topbar now opens a drawer with density (comfortable
+vs dense) and vocab (default vs crew) selectors. Settings persist in
+`localStorage` under key `glorbo.tweaks.v1` and apply via
+`data-density` / `data-vocab` attributes on `<html>` that CSS reads.
 
-### M5.3 — vocab toggle
-Alternate labels (eg "agents" ↔ "crew", "companies" ↔ "orgs") keyed off
-cookie. Pure render-time lookup in `GlorboWeb.Vocab`.
+Scope-traded: cookie-based session persistence dropped in favour of
+localStorage — zero server round-trip, zero new plug infrastructure,
+and the settings never need to be readable server-side.
 
-### M5.4 — "+ new agent / task / company" entry points
-P3 features (each one is its own future sprint — shipping only the entry
-points here with a "coming soon" flash on submit so the information
-architecture is correct).
+### M5.3 — vocab toggle (deferred)
+The drawer persists a `data-vocab` attribute but string translation is
+not wired. Doing it right needs either a `GlorboWeb.Vocab` module
+(re-renders on every switch, needs cookie round-trip) or CSS-only
+alt-labels (duplicates strings in markup and loses copy editability).
+Neither is worth it for a cosmetic tweak in the first mockup pass —
+parking until there's a real reason to flip it.
+
+### M5.4 — "+ new agent / task / company" entry points ✅
+Entry points now present on OverviewLive (+ new company), CompanyLive
+(+ new agent, reindex, backup), and KanbanLive (+ new task). Each
+click flashes a CLI-fallback hint pointing at the filesystem workflow
+that already works. Actual creation UIs are P3 and each gets its own
+GEP.
 
 ---
 
