@@ -540,7 +540,7 @@
 
 <!-- Nav -->
 <nav>
-  <a href="#" class="nav-logo">glorbo<span> v0.1</span></a>
+  <a href="#" class="nav-logo">glorbo<span> v0.0.3</span></a>
   <div class="nav-links">
     <a href="#features">Features</a>
     <a href="#how">How It Works</a>
@@ -590,20 +590,17 @@
       <div class="what-card">
         <span class="what-card-icon">📦</span>
         <h3>Sandboxed CLI Agents</h3>
-        <p>Every agent wake is a fresh <code>bwrap</code> sandbox around Claude
-        Code, Gemini CLI, or Codex. Workspace mounted writable, everything else
-        invisible. <span style="color: var(--amber)">v0.0.2</span> adds
-        Podman-hosted Python agents for untrusted workloads.</p>
+        <p>Every agent wake is a fresh <code>bwrap</code> sandbox around the CLI
+        of your choice. Workspace mounted writable, everything else invisible.
+        No standing container, no long-lived namespace, no privileged daemon.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">🧠</span>
         <h3>Use the CLIs You Already Have</h3>
         <p>Each agent picks its provider: <code>claude-code</code>,
-        <code>gemini-cli</code>, or <code>codex</code>. Each tool uses its own
-        login — Glorbo never handles API keys.
-        <span style="color: var(--amber)">v0.0.2</span> adds direct-SDK
-        providers (Anthropic / OpenAI / Google / Ollama / Hugging Face) via
-        litellm.</p>
+        <code>gemini-cli</code>, <code>codex</code>, <code>hermes</code>,
+        <code>opencode</code>, or <code>pi</code>. Each tool uses its own
+        login — Glorbo never handles API keys. Add your own via one TOML file.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">💬</span>
@@ -615,15 +612,16 @@
         <span class="what-card-icon">📊</span>
         <h3>Live Dashboard</h3>
         <p>Phoenix LiveView provides company overview, kanban board, agent
-        stdout streaming, chat, approval queue, and budget tracking. No JS framework.</p>
+        stdout streaming, chat, approval queue, audit log, system health,
+        and provider registry. No JS framework. No build step.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">🔒</span>
         <h3>Kernel-Level Permissions</h3>
         <p>Declared in markdown, enforced by the kernel. Denied paths aren't
         mounted inside the <code>bwrap</code> sandbox — the filesystem
-        literally can't see them. <span style="color: var(--amber)">v0.0.2</span>
-        adds POSIX ACLs inside containers for the Python runtime.</p>
+        literally can't see them. <code>network: none</code> is
+        <code>--unshare-net</code>: physical egress shutoff.</p>
       </div>
       <div class="what-card">
         <span class="what-card-icon">💰</span>
@@ -643,6 +641,23 @@
         <h3>OTP Supervision</h3>
         <p>Agent crashes? Only that agent restarts. Company crashes?
         Only that company restarts. Dashboard stays up. That's just what the BEAM does.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">🧩</span>
+        <h3>Config-Driven Providers</h3>
+        <p>Every CLI tool is a TOML entry declaring invocation shape, env
+        overrides, and usage parser. Drop your own into
+        <code>~/.glorbo/providers.toml</code> and see it in the
+        <code>/providers</code> dashboard panel. Zero Elixir code to add
+        a new model.</p>
+      </div>
+      <div class="what-card">
+        <span class="what-card-icon">📨</span>
+        <h3>Reply-File Contract</h3>
+        <p>Each invocation writes its final answer to
+        <code>$GLORBO_REPLY_PATH</code>. No stdout-parsing ambiguity, no
+        lost output, no "did it work?" doubt. Missing / empty / oversize =
+        structured failure in the audit log.</p>
       </div>
     </div>
   </div>
@@ -772,15 +787,15 @@
 <span class="cmd-prompt">$ </span>glorbo init
 <span class="cmd-output">  ✓ Created ~/.glorbo/
   ✓ Verified bwrap + unprivileged userns
-  ✓ Staged podman + ollama (dormant, reserved for v0.0.2)
-  ✓ Staged glorbo-runtime image (dormant, reserved for v0.0.2)
+  ✓ Scaffolded example company (acme) with CEO agent
+  ✓ Provider registry loaded — 3 routable, 3 untracked
   ✓ Ready. Run `glorbo doctor` to verify.</span>
 
 <span class="cmd-comment"># Create a company and hire some agents</span>
 <span class="cmd-prompt">$ </span>glorbo new company acme
-<span class="cmd-prompt">$ </span>glorbo new agent acme ceo <span class="cmd-flag">--provider</span> claude-code
-<span class="cmd-prompt">$ </span>glorbo up acme
-<span class="cmd-output">  ● acme is running — dashboard at http://localhost:4000</span></pre>
+<span class="cmd-prompt">$ </span>glorbo new agent acme/ceo <span class="cmd-flag">--provider</span> claude-code
+<span class="cmd-prompt">$ </span>glorbo up
+<span class="cmd-output">  ● glorbo is running — dashboard at http://localhost:4000</span></pre>
       </div>
     </div>
 
@@ -840,8 +855,12 @@
         <span class="stack-desc">Source of truth for everything</span>
       </div>
       <div class="stack-item">
-        <span class="stack-name">Podman + Python</span>
-        <span class="stack-desc" style="color: var(--amber);">v0.0.2 — containerised Python runtime with litellm, Ollama, Hugging Face, direct-SDK providers, and POSIX ACL enforcement</span>
+        <span class="stack-name">TOML Provider Registry</span>
+        <span class="stack-desc">GEP-8 — each CLI tool is a drop-in config file; add your own model in one file</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-name">Burrito</span>
+        <span class="stack-desc">Bundles the BEAM VM into the single-binary release — no Erlang install needed</span>
       </div>
     </div>
   </div>
@@ -885,13 +904,13 @@
       <a href="https://github.com/foobarto/glorbo">GitHub</a>
       <a href="https://github.com/foobarto/glorbo/blob/main/DESIGN.md">Design Doc</a>
       <a href="https://github.com/foobarto/glorbo/issues">Issues</a>
-      <a href="https://github.com/foobarto/glorbo/blob/main/LICENSE">MIT License</a>
+      <a href="https://github.com/foobarto/glorbo/blob/main/LICENSE">Apache 2.0 License</a>
     </div>
     <p class="footer-quote">
       "Look, we're not trying to build a whole Plumbus here. It's a Glorbo. Stay focused."
     </p>
     <p class="footer-license">
-      © 2026 foobarto — Open source under MIT
+      © 2026 foobarto — Open source under Apache 2.0
     </p>
   </div>
 </footer>
