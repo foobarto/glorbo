@@ -170,7 +170,24 @@ defmodule Glorbo.TaskDefinition do
 
   # Narrow allowlist. Both atom and string forms accepted so callers may
   # use either taxonomy (keep with Phase 2 convention of normalising).
-  @supported_keys [:status, :denial_reason, "status", "denial_reason"]
+  #
+  # Editor-facing keys (`title`, `assigned_to`, `priority`) live alongside
+  # the original status-machine keys (`status`, `denial_reason`). The
+  # frontmatter rewriter still only touches lines that ALREADY exist in
+  # the file — a caller that wants to add a brand-new key should handle
+  # that upstream (see KanbanLive's `ensure_frontmatter_line/3`).
+  @supported_keys [
+    :status,
+    :denial_reason,
+    :title,
+    :assigned_to,
+    :priority,
+    "status",
+    "denial_reason",
+    "title",
+    "assigned_to",
+    "priority"
+  ]
 
   @doc """
   Atomically rewrite frontmatter keys in `file_path`.
@@ -203,23 +220,105 @@ defmodule Glorbo.TaskDefinition do
     with :ok <- validate_keys(updates),
          {:ok, content} <- File.read(file_path),
          {:ok, new_content} <- substitute_frontmatter(content, updates) do
-      tmp = file_path <> ".tmp"
+      atomic_write(file_path, new_content)
+    end
+  end
 
-      case File.write(tmp, new_content, [:sync]) do
-        :ok ->
-          case File.rename(tmp, file_path) do
-            :ok ->
-              :ok
+  @doc """
+  Atomically replace the task's body (everything after the frontmatter
+  fence). Frontmatter is preserved verbatim — only the prose section
+  changes. Used by the Director-facing editor in KanbanLive.
+  """
+  @spec write_body(Path.t(), String.t()) :: :ok | {:error, term()}
+  def write_body(file_path, body) when is_binary(file_path) and is_binary(body) do
+    with {:ok, content} <- File.read(file_path),
+         {:ok, new_content} <- substitute_body(content, body) do
+      atomic_write(file_path, new_content)
+    end
+  end
 
-            {:error, _} = err ->
-              _ = File.rm(tmp)
-              err
-          end
+  @doc """
+  Wholesale replace the frontmatter map. Unlike `write/2`'s line-level
+  rewriter (which only touches existing keys), this one serialises the
+  whole map as the new frontmatter — so it can add `priority:` or
+  `assigned_to:` to a task file that didn't declare them originally.
 
-        {:error, _} = err ->
-          _ = File.rm(tmp)
-          err
-      end
+  Only the editor-allowlisted keys (`title`, `status`, `assigned_to`,
+  `priority`, `requires_approval`) are emitted; any other keys in the
+  input map are dropped. Keys whose value is `nil` or `""` are omitted
+  entirely so the file doesn't carry empty `key:` lines.
+  """
+  @spec write_frontmatter(Path.t(), map()) :: :ok | {:error, term()}
+  def write_frontmatter(file_path, updates) when is_binary(file_path) and is_map(updates) do
+    with {:ok, content} <- File.read(file_path),
+         {:ok, new_content} <- replace_frontmatter(content, updates) do
+      atomic_write(file_path, new_content)
+    end
+  end
+
+  @editor_keys ~w(title status assigned_to priority requires_approval)
+
+  defp replace_frontmatter(content, updates) do
+    case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
+      ["", _old_fm, body] ->
+        fm_lines =
+          @editor_keys
+          |> Enum.map(fn k -> {k, lookup_key(updates, k)} end)
+          |> Enum.reject(fn {_, v} -> v in [nil, ""] end)
+          |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{yaml_scalar(v)}" end)
+
+        {:ok, "---\n" <> fm_lines <> "\n---\n" <> body}
+
+      _ ->
+        {:error, :no_frontmatter}
+    end
+  end
+
+  defp atomic_write(file_path, new_content) do
+    tmp = file_path <> ".tmp"
+
+    case File.write(tmp, new_content, [:sync]) do
+      :ok ->
+        case File.rename(tmp, file_path) do
+          :ok ->
+            :ok
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        _ = File.rm(tmp)
+        err
+    end
+  end
+
+  defp lookup_key(map, key) when is_binary(key) do
+    case Map.fetch(map, key) do
+      {:ok, v} ->
+        v
+
+      :error ->
+        case key do
+          "title" -> Map.get(map, :title)
+          "status" -> Map.get(map, :status)
+          "assigned_to" -> Map.get(map, :assigned_to)
+          "priority" -> Map.get(map, :priority)
+          "requires_approval" -> Map.get(map, :requires_approval)
+          _ -> nil
+        end
+    end
+  end
+
+  defp substitute_body(content, new_body) do
+    case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
+      ["", fm, _body] ->
+        trimmed = String.trim_trailing(new_body) <> "\n"
+        {:ok, "---\n" <> fm <> "\n---\n\n" <> trimmed}
+
+      _ ->
+        {:error, :no_frontmatter}
     end
   end
 

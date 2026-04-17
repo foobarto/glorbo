@@ -120,21 +120,27 @@ defmodule GlorboWeb.KanbanLive do
   def handle_event("open_task", %{"path" => path}, socket) do
     case resolve_task_path(path, socket.assigns.company_slug) do
       {:ok, abs} ->
-        case File.read(abs) do
-          {:ok, content} ->
-            {fm, body} = split_frontmatter(content)
-
+        case Glorbo.TaskDefinition.parse_file(abs,
+               base: base_dir(),
+               company: socket.assigns.company_slug
+             ) do
+          {:ok, task} ->
             detail = %{
               task_path: path,
-              task_id: task_id_from_path(path),
-              frontmatter: fm,
-              body: String.trim(body)
+              task_id: task.task_id,
+              title: task.title || "",
+              status: task.status || "todo",
+              assigned_to: task.assigned_to || "",
+              priority: if(task.priority, do: Atom.to_string(task.priority), else: ""),
+              requires_approval:
+                if(task.requires_approval == :director, do: "director", else: ""),
+              body: String.trim(task.prompt_body || "")
             }
 
             {:noreply, assign(socket, :open_task, detail)}
 
           _ ->
-            {:noreply, put_flash(socket, :error, "Could not read task.")}
+            {:noreply, put_flash(socket, :error, "Could not parse task.")}
         end
 
       _ ->
@@ -144,6 +150,43 @@ defmodule GlorboWeb.KanbanLive do
 
   def handle_event("close_task", _params, socket) do
     {:noreply, assign(socket, :open_task, nil)}
+  end
+
+  def handle_event("save_task", params, socket) do
+    task = socket.assigns.open_task
+
+    case resolve_task_path(task.task_path, socket.assigns.company_slug) do
+      {:ok, abs} ->
+        fm = %{
+          "title" => Map.get(params, "title", "") |> String.trim(),
+          "status" => Map.get(params, "status", task.status),
+          "assigned_to" => Map.get(params, "assigned_to", "") |> String.trim(),
+          "priority" => Map.get(params, "priority", ""),
+          "requires_approval" => Map.get(params, "requires_approval", "")
+        }
+
+        body = Map.get(params, "body", "") |> String.trim()
+
+        with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
+             :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
+          # Reload everything — filter-aware refresh.
+          tasks =
+            base_dir()
+            |> load_tasks(socket.assigns.company_slug)
+            |> apply_project_filter(socket.assigns.project_filter)
+
+          {:noreply,
+           socket
+           |> assign(:columns, group_by_column(tasks))
+           |> assign(:open_task, nil)
+           |> put_flash(:info, "Saved #{task.task_id}.")}
+        else
+          _ -> {:noreply, put_flash(socket, :error, "Could not save task.")}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Invalid task path.")}
+    end
   end
 
   def handle_event("new_task", _params, socket) do
@@ -292,12 +335,12 @@ defmodule GlorboWeb.KanbanLive do
         </section>
       </div>
 
-      <div
+      <form
         :if={@open_task}
-        class="gl-task-detail"
-        phx-click-away="close_task"
+        phx-submit="save_task"
         phx-window-keydown="close_task"
         phx-key="Escape"
+        class="gl-task-detail"
       >
         <header class="gl-panel__header">
           <span class="gl-muted">task/</span>
@@ -312,14 +355,68 @@ defmodule GlorboWeb.KanbanLive do
             close
           </button>
         </header>
-        <pre class="gl-task-detail__frontmatter"><code>{@open_task.frontmatter}</code></pre>
-        <div :if={@open_task.body != ""} class="gl-task-detail__body">
-          <pre><code>{@open_task.body}</code></pre>
+
+        <div class="gl-task-detail__fields">
+          <label class="gl-task-detail__field">
+            <span class="gl-muted">title</span>
+            <input type="text" name="title" value={@open_task.title} class="gl-input" required />
+          </label>
+
+          <label class="gl-task-detail__field">
+            <span class="gl-muted">status</span>
+            <select name="status" class="gl-input">
+              <option value="todo" selected={@open_task.status == "todo"}>todo</option>
+              <option value="in-progress" selected={@open_task.status == "in-progress"}>
+                in-progress
+              </option>
+              <option value="done" selected={@open_task.status == "done"}>done</option>
+              <option value="pending" selected={@open_task.status == "pending"}>pending</option>
+              <option value="approved" selected={@open_task.status == "approved"}>approved</option>
+              <option value="denied" selected={@open_task.status == "denied"}>denied</option>
+            </select>
+          </label>
+
+          <label class="gl-task-detail__field">
+            <span class="gl-muted">assigned_to</span>
+            <input type="text" name="assigned_to" value={@open_task.assigned_to} class="gl-input" />
+          </label>
+
+          <label class="gl-task-detail__field">
+            <span class="gl-muted">priority</span>
+            <select name="priority" class="gl-input">
+              <option value="" selected={@open_task.priority == ""}>—</option>
+              <option value="low" selected={@open_task.priority == "low"}>low</option>
+              <option value="medium" selected={@open_task.priority == "medium"}>medium</option>
+              <option value="high" selected={@open_task.priority == "high"}>high</option>
+            </select>
+          </label>
+
+          <label class="gl-task-detail__field gl-task-detail__field--check">
+            <input
+              type="checkbox"
+              name="requires_approval"
+              value="director"
+              checked={@open_task.requires_approval == "director"}
+            />
+            <span>requires Director approval</span>
+          </label>
+
+          <label class="gl-task-detail__field gl-task-detail__field--body">
+            <span class="gl-muted">body</span>
+            <textarea name="body" rows="8" class="gl-input">{@open_task.body}</textarea>
+          </label>
         </div>
-        <p class="gl-muted gl-task-detail__path">
-          ~/.glorbo/companies/{@company_slug}/{@open_task.task_path}
-        </p>
-      </div>
+
+        <footer class="gl-task-detail__footer">
+          <span class="gl-muted gl-task-detail__path">
+            ~/.glorbo/companies/{@company_slug}/{@open_task.task_path}
+          </span>
+          <div class="gl-task-detail__actions">
+            <button type="button" class="gl-btn" phx-click="close_task">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">save</button>
+          </div>
+        </footer>
+      </form>
     </section>
     """
   end
@@ -327,19 +424,6 @@ defmodule GlorboWeb.KanbanLive do
   # ---------------------------------------------------------------------------
   # Data helpers
   # ---------------------------------------------------------------------------
-
-  defp task_id_from_path(path) when is_binary(path) do
-    path |> Path.basename() |> Path.rootname()
-  end
-
-  defp split_frontmatter("---\n" <> rest) do
-    case String.split(rest, "\n---\n", parts: 2) do
-      [fm, body] -> {String.trim(fm), body}
-      _ -> {"", "---\n" <> rest}
-    end
-  end
-
-  defp split_frontmatter(content), do: {"", content}
 
   defp apply_project_filter(tasks, nil), do: tasks
 

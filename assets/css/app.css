@@ -1168,29 +1168,56 @@ button { font-family: inherit; font-size: inherit; }
   max-height: 80vh;
   overflow: auto;
 }
-.gl-task-detail__frontmatter,
-.gl-task-detail__body {
-  margin: 0;
+.gl-task-detail__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
   padding: var(--gl-space-md);
   background: var(--gl-bg);
 }
-.gl-task-detail__frontmatter code,
-.gl-task-detail__body code {
+.gl-task-detail__field {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--gl-space-sm);
+  align-items: center;
   font-family: var(--gl-ff-mono);
-  font-size: var(--gl-font-label);
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--gl-fg);
+  font-size: 12px;
 }
-.gl-task-detail__frontmatter {
-  border-bottom: 1px solid var(--gl-border);
-  color: var(--gl-accent);
+.gl-task-detail__field--body {
+  align-items: start;
+}
+.gl-task-detail__field--body textarea {
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  resize: vertical;
+  min-height: 120px;
+}
+.gl-task-detail__field--check {
+  grid-template-columns: 110px 1fr;
+}
+.gl-task-detail__field--check input[type="checkbox"] {
+  justify-self: start;
+}
+.gl-task-detail__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-top: 1px solid var(--gl-border);
 }
 .gl-task-detail__path {
-  padding: var(--gl-space-sm) var(--gl-space-md);
+  flex: 1;
   margin: 0;
-  border-top: 1px solid var(--gl-border);
-  font-size: var(--gl-font-label);
+  font-size: 11px;
+  font-family: var(--gl-ff-mono);
+  color: var(--gl-fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gl-task-detail__actions {
+  display: flex;
+  gap: var(--gl-space-xs);
 }
 .gl-panel__spacer { flex: 1; }
 

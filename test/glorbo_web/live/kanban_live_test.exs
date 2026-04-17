@@ -144,16 +144,44 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Title can&#39;t be empty" or html =~ "Title can't be empty"
   end
 
-  test "clicking a task opens the detail panel with frontmatter + body", %{conn: conn} do
+  test "clicking a task opens the editable detail form", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 
     html =
       render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
 
     assert html =~ "gl-task-detail"
-    # Frontmatter field + body from the seeded t-01.md fixture.
+    # Editable form fields — not read-only pre blocks.
+    assert html =~ ~s(name="title")
+    assert html =~ ~s(name="status")
+    assert html =~ ~s(name="body")
+    # Prefilled from the seeded t-01.md fixture.
     assert html =~ "Deploy landing page"
     assert html =~ "Ship it."
+  end
+
+  test "save_task rewrites title + body + priority on disk", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+
+    render_submit(view, "save_task", %{
+      "title" => "Deploy landing page v2",
+      "status" => "in-progress",
+      "assigned_to" => "ceo",
+      "priority" => "high",
+      "requires_approval" => "director",
+      "body" => "Updated body content."
+    })
+
+    path = Path.join([base, "companies", "acme", "projects", "website", "tasks", "t-01.md"])
+    content = File.read!(path)
+
+    assert content =~ ~s(title: "Deploy landing page v2")
+    assert content =~ "status: in-progress"
+    assert content =~ "priority: high"
+    assert content =~ "Updated body content."
+    # Old body is gone.
+    refute content =~ "Ship it."
   end
 
   test "close_task clears the detail panel", %{conn: conn} do

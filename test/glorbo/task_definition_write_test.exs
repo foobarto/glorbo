@@ -94,8 +94,10 @@ defmodule Glorbo.TaskDefinitionWriteTest do
 
       seed_task(path, original)
 
-      assert {:error, {:unsupported_key, :title}} =
-               TaskDefinition.write(path, %{title: "New title"})
+      # `title`, `status`, `assigned_to`, `priority`, `denial_reason` are
+      # the current editor-allowlisted keys. Anything else must bounce.
+      assert {:error, {:unsupported_key, :bogus}} =
+               TaskDefinition.write(path, %{bogus: "nope"})
 
       # File is byte-identical to the seed.
       assert File.read!(path) == original
