@@ -55,9 +55,13 @@ defmodule Glorbo.CLI do
   def dispatch(["help"]), do: {:help, 0, help_text()}
 
   # `glorbo help <verb>` — verb-specific usage text (D-05, like `git help`).
-  def dispatch(["help", verb | _]) do
+  # Empty verb falls back to global help so `glorbo help ""` doesn't
+  # produce a nonsense "Unknown verb: " message (TODO.md Important #12).
+  def dispatch(["help", verb | _]) when is_binary(verb) and verb != "" do
     {:help, 0, verb_help_text(verb)}
   end
+
+  def dispatch(["help", _empty | _]), do: {:help, 0, help_text()}
 
   def dispatch(["init" | rest]) do
     {opts, _argv, _invalid} = OptionParser.parse(rest, strict: @init_switches)

@@ -127,10 +127,54 @@ defmodule Glorbo.Company.BudgetTracker do
       audit_fun: audit_fun,
       fs_fun: fs_fun,
       caps_cache: %{},
-      alerts_fired: MapSet.new()
+      alerts_fired: rehydrate_alerts_fired(company, base)
     }
 
     {:ok, state}
+  end
+
+  # Rehydrate `alerts_fired` by scanning `<base>/companies/<c>/alerts/*.md`
+  # and parsing each file's frontmatter for agent + month. Without this,
+  # a tracker restart would re-fire alerts that had already been emitted
+  # in the current month, writing duplicate alert files
+  # (TODO.md Important #7).
+  defp rehydrate_alerts_fired(company, base) do
+    alerts_dir = Path.join([base, "companies", company, "alerts"])
+
+    case File.ls(alerts_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&String.ends_with?(&1, "-budget.md"))
+        |> Enum.reduce(MapSet.new(), fn name, acc ->
+          path = Path.join(alerts_dir, name)
+
+          case parse_alert_key(path) do
+            {:ok, key} -> MapSet.put(acc, key)
+            _ -> acc
+          end
+        end)
+
+      _ ->
+        MapSet.new()
+    end
+  end
+
+  defp parse_alert_key(path) do
+    with {:ok, contents} <- File.read(path),
+         [_, frontmatter, _] <- String.split(contents, "---", parts: 3),
+         agent when is_binary(agent) <- extract_yaml_field(frontmatter, "agent"),
+         month when is_binary(month) <- extract_yaml_field(frontmatter, "month") do
+      {:ok, {agent, month}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp extract_yaml_field(frontmatter, key) do
+    case Regex.run(~r/^#{key}:\s*"?([^"\n]+)"?\s*$/m, frontmatter) do
+      [_full, value] -> String.trim(value)
+      _ -> nil
+    end
   end
 
   @impl GenServer

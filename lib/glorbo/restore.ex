@@ -180,6 +180,10 @@ defmodule Glorbo.Restore do
   end
 
   defp extract(archive, base) do
+    # Snapshot pre-extract contents so we can distinguish an escape-
+    # rejection on a fresh base (safe to wipe) from one layered over
+    # existing user data (must NOT wipe — TODO.md Important #6).
+    preexisting = existing_entries(base)
     File.mkdir_p!(base)
 
     case :erl_tar.extract(
@@ -191,19 +195,43 @@ defmodule Glorbo.Restore do
         # a malicious archive with a benign name but escaping linkname
         # passes traversal_guard. Post-extract, walk the tree and reject
         # any symlink whose resolved target escapes base. On rejection,
-        # wipe the partially-extracted base so no dangling symlinks remain.
+        # remove ONLY the extracted contents; preserve anything that
+        # was there pre-extract (the --force case).
         case verify_no_escaping_symlinks(base) do
           :ok ->
             :ok
 
           {:error, reason} ->
-            File.rm_rf!(base)
-            File.mkdir_p!(base)
+            clean_up_extract(base, preexisting)
             {:error, reason}
         end
 
       {:error, reason} ->
         {:error, {:extract_failed, reason}}
+    end
+  end
+
+  # Top-level listing captured before extract begins.
+  defp existing_entries(base) do
+    case File.ls(base) do
+      {:ok, entries} -> MapSet.new(entries)
+      _ -> MapSet.new()
+    end
+  end
+
+  # Remove entries that appeared during this extract; leave pre-existing
+  # user data alone. On an empty base, this is equivalent to wiping base.
+  defp clean_up_extract(base, preexisting) do
+    case File.ls(base) do
+      {:ok, current} ->
+        Enum.each(current, fn name ->
+          unless MapSet.member?(preexisting, name) do
+            File.rm_rf!(Path.join(base, name))
+          end
+        end)
+
+      _ ->
+        :ok
     end
   end
 

@@ -307,9 +307,16 @@ defmodule Glorbo.Filesystem.Reindex do
   defp cleanup_vanished(seen_files) do
     seen = MapSet.new(seen_files)
 
-    vanished =
-      Repo.all(from r in ReindexState, select: r.file_path)
-      |> Enum.reject(&MapSet.member?(seen, &1))
+    # Stream file_paths from the ReindexState table so we don't hold
+    # every row in memory for databases with millions of entries. Must
+    # run inside a transaction (Ecto requirement for Repo.stream/2).
+    # (TODO.md Important #10)
+    {:ok, vanished} =
+      Repo.transaction(fn ->
+        Repo.stream(from(r in ReindexState, select: r.file_path))
+        |> Stream.reject(&MapSet.member?(seen, &1))
+        |> Enum.to_list()
+      end)
 
     # WR-03: batch the three deletes with a single `where ... in ^list` each
     # instead of 3N queries. Company's `on_delete: :delete_all` FK means the

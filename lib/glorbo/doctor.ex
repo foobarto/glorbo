@@ -115,19 +115,26 @@ defmodule Glorbo.Doctor do
   @spec check_linux_kernel(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_linux_kernel(deps) do
     cmd = Keyword.get(deps, :cmd_fun, &System.cmd/2)
-    {output, 0} = cmd.("uname", ["-r"])
-    version = String.trim(output)
 
-    case parse_kernel(version) do
-      {:ok, {major, minor}} ->
-        {min_major, min_minor} = @minimum_kernel
-        pass = major > min_major or (major == min_major and minor >= min_minor)
-        tag = if pass, do: :ok, else: :fail
-        {tag, version, "≥ #{min_major}.#{min_minor}"}
+    with {output, 0} <- cmd.("uname", ["-r"]),
+         version <- String.trim(output),
+         {:ok, {major, minor}} <- parse_kernel(version) do
+      {min_major, min_minor} = @minimum_kernel
+      pass = major > min_major or (major == min_major and minor >= min_minor)
+      tag = if pass, do: :ok, else: :fail
+      {tag, version, "≥ #{min_major}.#{min_minor}"}
+    else
+      {_output, _code} ->
+        {:fail, "uname failed", "≥ #{elem(@minimum_kernel, 0)}.#{elem(@minimum_kernel, 1)}"}
 
-      :error ->
-        {:fail, "unparseable kernel version: #{version}", "≥ 5.13"}
+      _ ->
+        {:fail, "unknown kernel version",
+         "≥ #{elem(@minimum_kernel, 0)}.#{elem(@minimum_kernel, 1)}"}
     end
+  rescue
+    _ ->
+      {:fail, "uname not available",
+       "≥ #{elem(@minimum_kernel, 0)}.#{elem(@minimum_kernel, 1)}"}
   end
 
   defp parse_kernel(v) do
@@ -160,19 +167,25 @@ defmodule Glorbo.Doctor do
     cmd = Keyword.get(deps, :cmd_fun, &System.cmd/2)
     home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
     home = home_fun.()
-    {output, 0} = cmd.("df", ["-B1", "--output=avail", home])
 
-    bytes =
-      output
-      |> String.split("\n")
-      |> Enum.at(1, "0")
-      |> String.trim()
-      |> parse_bytes()
+    case cmd.("df", ["-B1", "--output=avail", home]) do
+      {output, 0} ->
+        bytes =
+          output
+          |> String.split("\n")
+          |> Enum.at(1, "0")
+          |> String.trim()
+          |> parse_bytes()
 
-    pass = bytes >= @minimum_disk_bytes
-    tag = if pass, do: :ok, else: :fail
+        pass = bytes >= @minimum_disk_bytes
+        tag = if pass, do: :ok, else: :fail
+        {tag, "#{format_gb(bytes)} GB available in #{home}", "≥ 1 GB"}
 
-    {tag, "#{format_gb(bytes)} GB available in #{home}", "≥ 1 GB"}
+      {_output, _code} ->
+        {:fail, "df failed for #{home}", "≥ 1 GB"}
+    end
+  rescue
+    _ -> {:fail, "df not available", "≥ 1 GB"}
   end
 
   defp parse_bytes(s) do

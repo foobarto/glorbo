@@ -244,7 +244,12 @@ defmodule Glorbo.Company.Router do
 
   # Agent-inbox routing: write-once file under inbox/from-<sender>/<ts>-<msg_id>.md.
   defp perform_routing({:agent, target_slug}, msg, state) do
-    ts = DateTime.utc_now() |> DateTime.to_unix(:millisecond)
+    # Capture `now` once to keep the filename millisecond-ts and the
+    # frontmatter ISO8601 `delivered_at` consistent. Separate
+    # DateTime.utc_now() calls can straddle a clock adjustment or NTP
+    # slew (TODO.md Important #8).
+    now = DateTime.utc_now()
+    ts = DateTime.to_unix(now, :millisecond)
 
     dir =
       Path.join([
@@ -264,7 +269,7 @@ defmodule Glorbo.Company.Router do
     ---
     from: "#{msg.sender}"
     msg_id: "#{msg.msg_id}"
-    delivered_at: "#{DateTime.utc_now() |> DateTime.to_iso8601()}"
+    delivered_at: "#{DateTime.to_iso8601(now)}"
     ---
 
     """
