@@ -53,6 +53,7 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:path, path)
      |> assign(:actor_filter, "")
      |> assign(:action_filter, "")
+     |> assign(:q, "")
      |> assign(:offset, offset)
      |> assign(:total_lines, total)
      |> assign(:beginning, offset == 0)
@@ -80,7 +81,8 @@ defmodule GlorboWeb.AuditLive do
     {:noreply,
      socket
      |> assign(:actor_filter, Map.get(params, "actor", ""))
-     |> assign(:action_filter, Map.get(params, "action", ""))}
+     |> assign(:action_filter, Map.get(params, "action", ""))
+     |> assign(:q, Map.get(params, "q", ""))}
   end
 
   def handle_event("toggle", %{"id" => id}, socket) do
@@ -114,7 +116,9 @@ defmodule GlorboWeb.AuditLive do
 
   @impl true
   def render(assigns) do
-    filtered = filter_entries(assigns.entries, assigns.actor_filter, assigns.action_filter)
+    filtered =
+      filter_entries(assigns.entries, assigns.actor_filter, assigns.action_filter, assigns.q)
+
     assigns = assign(assigns, :filtered, filtered)
 
     ~H"""
@@ -126,7 +130,16 @@ defmodule GlorboWeb.AuditLive do
         </h1>
       </header>
 
-      <form phx-change="filter" class="gl-compose" role="search" aria-label="Audit filters">
+      <form phx-change="filter" class="gl-audit__filters" role="search" aria-label="Audit filters">
+        <label for="audit-q" class="gl-sr-only">Search</label>
+        <input
+          type="search"
+          id="audit-q"
+          name="q"
+          value={@q}
+          class="gl-input gl-audit__q"
+          placeholder="Search actor · action · target · detail…"
+        />
         <label for="audit-filter-actor" class="gl-sr-only">Filter by actor</label>
         <input
           type="text"
@@ -134,7 +147,7 @@ defmodule GlorboWeb.AuditLive do
           name="actor"
           value={@actor_filter}
           class="gl-input"
-          placeholder="Filter by actor…"
+          placeholder="actor"
         />
         <label for="audit-filter-action" class="gl-sr-only">Filter by action</label>
         <input
@@ -143,7 +156,7 @@ defmodule GlorboWeb.AuditLive do
           name="action"
           value={@action_filter}
           class="gl-input"
-          placeholder="Filter by action…"
+          placeholder="action"
         />
       </form>
 
@@ -239,11 +252,13 @@ defmodule GlorboWeb.AuditLive do
     end
   end
 
-  defp filter_entries(entries, "", ""), do: entries
+  defp filter_entries(entries, "", "", ""), do: entries
 
-  defp filter_entries(entries, actor_f, action_f) do
+  defp filter_entries(entries, actor_f, action_f, q) do
+    needle = String.downcase(q)
+
     Enum.filter(entries, fn e ->
-      actor_match?(e, actor_f) and action_match?(e, action_f)
+      actor_match?(e, actor_f) and action_match?(e, action_f) and q_match?(e, needle)
     end)
   end
 
@@ -252,6 +267,27 @@ defmodule GlorboWeb.AuditLive do
 
   defp action_match?(_e, ""), do: true
   defp action_match?(e, f), do: String.contains?(to_string(e["action"] || ""), f)
+
+  defp q_match?(_e, ""), do: true
+
+  defp q_match?(e, needle) when is_binary(needle) do
+    haystack =
+      [
+        to_string(e["actor"] || ""),
+        to_string(e["action"] || ""),
+        to_string(e["target"] || ""),
+        detail_haystack(e["detail"])
+      ]
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    String.contains?(haystack, needle)
+  end
+
+  defp detail_haystack(nil), do: ""
+  defp detail_haystack(d) when is_binary(d), do: d
+  defp detail_haystack(d) when is_map(d) or is_list(d), do: Jason.encode!(d)
+  defp detail_haystack(d), do: to_string(d)
 
   defp base_dir,
     do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))

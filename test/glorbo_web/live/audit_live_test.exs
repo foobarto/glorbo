@@ -49,6 +49,25 @@ defmodule GlorboWeb.AuditLiveTest do
     assert html =~ "director"
     assert html =~ "Filter by actor"
     assert html =~ "Filter by action"
+    # M4.4 — unified free-text search input
+    assert html =~ ~s(id="audit-q")
+    assert html =~ "Search actor"
+  end
+
+  test "unified q input filters across all fields including detail", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/audit")
+
+    # `general` lives only in the `detail` object of the chat.post row.
+    html = render_change(view, "filter", %{"actor" => "", "action" => "", "q" => "general"})
+    assert html =~ "chat.post"
+    refute html =~ "company.create"
+  end
+
+  test "q input is case-insensitive", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/audit")
+    html = render_change(view, "filter", %{"actor" => "", "action" => "", "q" => "DIRECTOR"})
+    assert html =~ "chat.post"
+    refute html =~ "company.create"
   end
 
   test "renders the CompanyTabs strip with :audit active", %{conn: conn} do
