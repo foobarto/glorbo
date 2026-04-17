@@ -64,6 +64,29 @@ defmodule Glorbo.CLITest do
     assert Enum.all?(decoded["checks"], &Map.has_key?(&1, "severity"))
   end
 
+  test "dispatch([\"reindex\"]) runs Reindex.run/1 and returns :reindex" do
+    # Empty tmp home → no companies/ dir → Reindex short-circuits with
+    # {:ok, %{indexed: 0, skipped: 0, deleted: 0}} without touching Repo.
+    base =
+      Path.join(System.tmp_dir!(), "glorbo_cli_reindex_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(base)
+    on_exit(fn -> File.rm_rf!(base) end)
+
+    prior = System.get_env("GLORBO_HOME")
+    System.put_env("GLORBO_HOME", base)
+
+    on_exit(fn ->
+      if prior, do: System.put_env("GLORBO_HOME", prior), else: System.delete_env("GLORBO_HOME")
+    end)
+
+    {verb, code, output} = CLI.dispatch(["reindex"])
+    assert verb == :reindex
+    assert code == 0
+    assert output =~ "glorbo reindex"
+    assert output =~ "indexed=0"
+  end
+
   test "dispatch([\"bogus\"]) returns :unknown with exit_code 1 and help text" do
     {verb, code, output} = CLI.dispatch(["bogus"])
     assert verb == :unknown

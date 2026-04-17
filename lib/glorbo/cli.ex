@@ -36,6 +36,7 @@ defmodule Glorbo.CLI do
           | :backup
           | :restore
           | :console
+          | :reindex
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -115,6 +116,17 @@ defmodule Glorbo.CLI do
   def dispatch(["backup" | rest]), do: Backup.run_cli(rest)
   def dispatch(["restore" | rest]), do: Restore.run_cli(rest)
   def dispatch(["console" | rest]), do: Console.run(rest)
+
+  def dispatch(["reindex" | _rest]) do
+    # Documented in help_text + DESIGN.md §10 but previously missing from
+    # dispatch/1 — produced a spurious "Unknown command: reindex" for users
+    # following the docs. Reindex.run/1 is a pure operation (no daemon
+    # required) so the CLI verb runs it directly.
+    base = System.get_env("GLORBO_HOME") || Path.expand("~/.glorbo")
+    {:ok, %{indexed: i, skipped: s, deleted: d}} = Glorbo.Filesystem.Reindex.run(base: base)
+    output = "glorbo reindex — indexed=#{i} skipped=#{s} deleted=#{d}\n"
+    {:reindex, 0, output}
+  end
 
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
