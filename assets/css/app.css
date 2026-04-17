@@ -307,6 +307,78 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-pill--info .gl-pill__dot { background: var(--gl-cyan); }
 
+/* ========== Spark (mockup: overview.jsx sparkline) ==========
+
+   Inline-flex strip of narrow bars (~30 samples). Bars align to the
+   bottom; the container provides the height. Opacity and height both
+   scale with the value so the strip reads as a terminal-TUI "bar
+   chart" without resembling a real chart.
+*/
+.gl-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 28px;
+  width: 100%;
+}
+.gl-spark__bar {
+  flex: 1;
+  min-height: 1px;
+  min-width: 2px;
+  border-radius: 1px;
+}
+
+/* ========== Stat card (mockup: overview.jsx stat cards) ========== */
+.gl-stat-card {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  padding: var(--gl-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-xs);
+  border-radius: 2px;
+}
+.gl-stat-card__label {
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.gl-stat-card__value {
+  font-family: var(--gl-ff-mono);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--gl-fg);
+  line-height: 1.1;
+}
+.gl-stat-card__unit {
+  font-size: 16px;
+  color: var(--gl-fg-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.gl-stat-card__sub {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg-muted);
+}
+.gl-stat-card__spark {
+  margin-top: var(--gl-space-xs);
+}
+.gl-stat-card--accent {
+  border-top: 2px solid var(--gl-accent);
+}
+.gl-stat-card--amber {
+  border-top: 2px solid var(--gl-amber);
+}
+.gl-stat-card--rose {
+  border-top: 2px solid var(--gl-rose);
+}
+.gl-stat-card--accent .gl-stat-card__value { color: var(--gl-accent); }
+.gl-stat-card--amber .gl-stat-card__value { color: var(--gl-amber); }
+.gl-stat-card--rose .gl-stat-card__value { color: var(--gl-rose); }
+
 /* ========== Sidebar ========== */
 .gl-sidebar {
   background: var(--gl-surface);
