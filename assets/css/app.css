@@ -1034,8 +1034,7 @@ button { font-family: inherit; font-size: inherit; }
 .gl-company-card,
 .gl-agent-card,
 .gl-task-card,
-.gl-approval-card,
-.gl-audit-entry {
+.gl-approval-card {
   background: var(--gl-surface);
   border: 1px solid var(--gl-border);
   border-radius: 6px;
@@ -1642,19 +1641,57 @@ button { font-family: inherit; font-size: inherit; }
   align-items: center;
 }
 .gl-audit__q { font-family: var(--gl-ff-mono); }
-.gl-audit-entry { margin-bottom: var(--gl-space-sm); font-size: var(--gl-font-label); cursor: pointer; }
-.gl-audit-entry:focus-visible {
-  outline: 2px solid var(--gl-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
+
+/* Mockup-aligned audit log table (abc.zip views/audit.jsx) */
+.gl-audit__filters {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-radius: 2px;
 }
-.gl-audit-entry--expanded { background: var(--gl-surface-raised); }
-.gl-audit-entry__row { display: flex; gap: var(--gl-space-md); align-items: center; }
-.gl-audit-entry__payload {
-  margin: var(--gl-space-sm) 0 0;
-  white-space: pre-wrap;
-  font-family: inherit;
+.gl-audit-row {
+  display: grid;
+  grid-template-columns: 170px 110px 160px minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border-faint);
+  align-items: center;
+  cursor: pointer;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+}
+.gl-audit-row:hover { background: var(--gl-surface-raised); }
+.gl-audit-row--open { background: var(--gl-surface-raised); }
+.gl-audit-row:focus-visible {
+  outline: 2px solid var(--gl-accent);
+  outline-offset: -2px;
+}
+.gl-audit-row__ts { color: var(--gl-fg-subtle); font-variant-numeric: tabular-nums; }
+.gl-audit-row__actor { color: var(--gl-accent-dim); }
+.gl-audit-row__actor--system { color: var(--gl-fg-muted); }
+.gl-audit-row__action { color: var(--gl-warning); }
+.gl-audit-row__action--budget { color: var(--gl-danger); }
+.gl-audit-row__action--message { color: var(--gl-cyan); }
+.gl-audit-row__action--approval { color: var(--gl-accent); }
+.gl-audit-row__action--wake { color: var(--gl-violet); }
+.gl-audit-row__target {
+  color: var(--gl-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gl-audit-row__target-main { color: var(--gl-fg); }
+.gl-audit-row__payload {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  padding: 10px;
+  background: var(--gl-bg);
   color: var(--gl-fg-muted);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  border: 1px solid var(--gl-border-faint);
+  border-radius: 2px;
 }
 .gl-audit__load-older { align-self: flex-start; }
 .gl-audit__beginning {
