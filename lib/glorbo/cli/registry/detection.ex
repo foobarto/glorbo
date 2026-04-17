@@ -50,18 +50,16 @@ defmodule Glorbo.CLI.Registry.Detection do
   end
 
   defp detect_one(%Provider{binary: binary} = p, find_fun, stat_fun) do
-    cond do
-      absolute?(binary) ->
-        case stat_fun.(binary) do
-          {:ok, _} -> %{p | installed?: true, resolved_path: binary}
-          {:error, _} -> %{p | installed?: false, resolved_path: nil}
-        end
-
-      true ->
-        case find_fun.(binary) do
-          nil -> %{p | installed?: false, resolved_path: nil}
-          path -> %{p | installed?: true, resolved_path: path}
-        end
+    if absolute?(binary) do
+      case stat_fun.(binary) do
+        {:ok, _} -> %{p | installed?: true, resolved_path: binary}
+        {:error, _} -> %{p | installed?: false, resolved_path: nil}
+      end
+    else
+      case find_fun.(binary) do
+        nil -> %{p | installed?: false, resolved_path: nil}
+        path -> %{p | installed?: true, resolved_path: path}
+      end
     end
   end
 

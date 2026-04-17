@@ -13,6 +13,7 @@ defmodule Glorbo.CLI.RegistryTest do
   end
 
   defp unique_name(prefix) do
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
     :"#{prefix}_#{System.unique_integer([:positive])}"
   end
 

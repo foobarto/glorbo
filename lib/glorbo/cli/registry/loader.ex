@@ -55,9 +55,8 @@ defmodule Glorbo.CLI.Registry.Loader do
     user_file = Keyword.get(opts, :user_file, default_user_file())
 
     with {:ok, builtins} <- load_dir(builtin_dir, :builtin),
-         {:ok, users} <- load_user_file(user_file),
-         {:ok, providers} <- check_duplicates(builtins ++ users) do
-      {:ok, providers}
+         {:ok, users} <- load_user_file(user_file) do
+      check_duplicates(builtins ++ users)
     end
   end
 
@@ -97,9 +96,8 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp load_file(path, source) do
     with {:ok, raw} <- File.read(path) |> wrap_read(path),
-         {:ok, parsed} <- parse_toml(raw, path),
-         {:ok, provider} <- build_provider(parsed, path, source) do
-      {:ok, provider}
+         {:ok, parsed} <- parse_toml(raw, path) do
+      build_provider(parsed, path, source)
     end
   end
 
@@ -122,9 +120,8 @@ defmodule Glorbo.CLI.Registry.Loader do
   defp load_user_file(path) do
     case File.read(path) do
       {:ok, raw} ->
-        with {:ok, parsed} <- parse_toml(raw, path),
-             {:ok, providers} <- extract_user_providers(parsed, path) do
-          {:ok, providers}
+        with {:ok, parsed} <- parse_toml(raw, path) do
+          extract_user_providers(parsed, path)
         end
 
       {:error, :enoent} ->
@@ -200,14 +197,21 @@ defmodule Glorbo.CLI.Registry.Loader do
     end
   end
 
+  # GEP-12 compliance: map TOML strings to atoms via a closed set, never
+  # String.to_atom on user input.
+  @prompt_mode_map %{
+    "stdin" => :stdin,
+    "stdin_dash" => :stdin_dash,
+    "argv" => :argv,
+    "tmpfile_argv" => :tmpfile_argv
+  }
+
   defp parse_prompt_mode(raw, path) do
     value = Map.get(raw, "prompt_mode", "stdin")
-    atom_value = String.to_atom(value)
 
-    if atom_value in Provider.prompt_modes() do
-      {:ok, atom_value}
-    else
-      {:error, {:invalid_prompt_mode, path, value}}
+    case Map.fetch(@prompt_mode_map, value) do
+      {:ok, mode} -> {:ok, mode}
+      :error -> {:error, {:invalid_prompt_mode, path, value}}
     end
   end
 

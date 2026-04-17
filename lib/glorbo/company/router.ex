@@ -302,10 +302,10 @@ defmodule Glorbo.Company.Router do
   defp valid_slug?(_), do: false
 
   defp try_write_mention(mentioned, channel, msg, state) do
-    if not valid_slug?(mentioned) do
-      :ok
-    else
+    if valid_slug?(mentioned) do
       do_write_mention(mentioned, channel, msg, state)
+    else
+      :ok
     end
   end
 
