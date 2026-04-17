@@ -58,13 +58,18 @@ defmodule GlorboWeb.Components.Topbar do
 
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
       <span class="gl-topbar__version">
-        v{@app_version}<span :if={@bwrap_version != ""}> · bwrap {@bwrap_version}</span><span :if={@kernel_version != ""}> · kernel {@kernel_version}</span>
+        v{@app_version}
+        <span :if={@bwrap_version != ""}>· bwrap {@bwrap_version}</span>
+        <span :if={@kernel_version != ""}>· kernel {@kernel_version}</span>
       </span>
 
       <span class="gl-topbar__spacer"></span>
 
       <span class="gl-topbar__kbd" aria-hidden="true">
-        <kbd>g</kbd><kbd>o</kbd> overview · <kbd>g</kbd><kbd>k</kbd> kanban · <kbd>g</kbd><kbd>c</kbd> chat
+        <kbd>g</kbd><kbd>o</kbd>
+        overview · <kbd>g</kbd><kbd>k</kbd>
+        kanban · <kbd>g</kbd><kbd>c</kbd>
+        chat
       </span>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
       <%!-- TWEAKS toggle wire-up lands in M5 alongside the Tweaks drawer

@@ -212,6 +212,101 @@ button { font-family: inherit; font-size: inherit; }
 .gl-statusbar__spacer { flex: 1; }
 @keyframes gl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+/* ========== Panel primitives (mockup TUI style) ==========
+
+   `.gl-panel`          — bordered card surface.
+   `.gl-panel__header`  — lowercase/slash uppercase label strip with
+                          optional right-aligned hint. `<span>foo/</span>
+                          <span class="gl-panel__title">bar</span>`.
+   `.gl-panel__body`    — padded container, or `--flush` to absorb
+                          tables and filetrees at the edges.
+*/
+.gl-panel {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  border-radius: 2px;
+}
+.gl-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border);
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gl-panel__title { color: var(--gl-fg-muted); }
+.gl-panel__hint {
+  margin-left: auto;
+  color: var(--gl-fg-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.gl-panel__body { padding: var(--gl-space-md); }
+.gl-panel__body--flush { padding: 0; }
+
+/* ========== StatusPill (mockup: shell.jsx StatusPill) ==========
+
+   Uniform status badge — dot + label. Four semantic states map to
+   the phosphor/amber/rose/subtle tokens. The dot is 6px, inline-flex,
+   and the pill uses 10px mono-label text with letter-spacing so it
+   reads TUI-flavored next to panel headers.
+*/
+.gl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--gl-border-strong);
+  color: var(--gl-fg-muted);
+  background: var(--gl-surface);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.gl-pill__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gl-fg-faint);
+}
+.gl-pill--alive {
+  color: var(--gl-accent);
+  border-color: var(--gl-accent-dim);
+  background: var(--gl-accent-bg);
+}
+.gl-pill--alive .gl-pill__dot { background: var(--gl-accent); }
+.gl-pill--idle {
+  color: var(--gl-fg-muted);
+  border-color: var(--gl-border-strong);
+}
+.gl-pill--idle .gl-pill__dot { background: var(--gl-fg-faint); }
+.gl-pill--warn {
+  color: var(--gl-amber);
+  border-color: var(--gl-amber-dim);
+  background: var(--gl-amber-bg);
+}
+.gl-pill--warn .gl-pill__dot { background: var(--gl-amber); }
+.gl-pill--stop {
+  color: var(--gl-rose);
+  border-color: var(--gl-rose-dim);
+  background: var(--gl-rose-bg);
+}
+.gl-pill--stop .gl-pill__dot { background: var(--gl-rose); }
+.gl-pill--info {
+  color: var(--gl-cyan);
+  border-color: var(--gl-border-strong);
+  background: var(--gl-surface-raised);
+}
+.gl-pill--info .gl-pill__dot { background: var(--gl-cyan); }
+
 /* ========== Sidebar ========== */
 .gl-sidebar {
   background: var(--gl-surface);
