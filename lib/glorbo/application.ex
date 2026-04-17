@@ -74,6 +74,10 @@ defmodule Glorbo.Application do
       # per-agent sub-supervisors register their Server/Task.Supervisor pids
       # here via :via tuples during company boot.
       Glorbo.Agent.Registry,
+      # GEP-8: CLI provider registry. MUST start before CompanySupervisor
+      # so Agent.Server can resolve its provider at agent-boot time.
+      # Load-validation failure is a hard crash by design (GEP-8 D9).
+      Glorbo.CLI.Registry,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       # Phase 4 Wave 0: per-agent-page stdout tail streamers. AgentLive
       # spawns children on mount; crash in one streamer does not affect
