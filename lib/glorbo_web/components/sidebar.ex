@@ -211,7 +211,47 @@ defmodule GlorboWeb.Components.Sidebar do
           nil
       end
 
-    %{slug: slug, status: :idle, provider: provider}
+    company = infer_company_from_path(agents_dir)
+    %{slug: slug, status: live_status(company, slug), provider: provider}
+  end
+
+  # agents_dir shape: `<base>/companies/<co>/agents` — extract the slug.
+  defp infer_company_from_path(agents_dir) do
+    case agents_dir |> Path.split() |> Enum.reverse() do
+      ["agents", co | _] -> co
+      _ -> nil
+    end
+  end
+
+  # Derive the sidebar pill from the live AgentServer state, falling
+  # back to `:idle` when the server isn't registered (agent not booted).
+  # Gray (`:idle`) → not running / idle; green (`:alive`) → dispatching;
+  # red (`:stop`) → last invocation exited non-zero. Bumped to :idle on
+  # any lookup failure so a cold test environment doesn't render :stop
+  # for every agent on every page.
+  defp live_status(nil, _slug), do: :idle
+
+  defp live_status(company, slug) do
+    key = {:agent_server, company, slug}
+
+    case Registry.lookup(Glorbo.Agent.Registry, key) do
+      [{pid, _}] when is_pid(pid) ->
+        try do
+          case Glorbo.Agent.Server.status({:via, Registry, {Glorbo.Agent.Registry, key}}) do
+            %{state: :busy} -> :alive
+            %{last_exit_status: s} when is_integer(s) and s != 0 -> :stop
+            %{state: :idle} -> :idle
+            _ -> :idle
+          end
+        rescue
+          _ -> :idle
+        catch
+          :exit, _ -> :idle
+        end
+
+      _ ->
+        :idle
+    end
   end
 
   defp list_projects(nil), do: []
