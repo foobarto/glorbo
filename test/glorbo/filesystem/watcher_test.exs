@@ -18,6 +18,19 @@ defmodule Glorbo.Filesystem.WatcherTest do
     company = "co_#{System.unique_integer([:positive])}"
     company_dir = Path.join([base, "companies", company])
     File.mkdir_p!(company_dir)
+    # Pre-create every subdir the tests touch. Without these, the
+    # intermediate `File.mkdir_p!` calls in `write!` emit inotify :create
+    # events on bare directories that classify as :other and fire a
+    # bogus reindex into the test mailbox. audit/ specifically is
+    # required by wait_until_armed!'s arm probe (events under audit/
+    # classify as :audit — no reindex, no PubSub).
+    for sub <- ~w(
+          audit channels projects
+          agents/ceo/inbox agents/ceo/outbox agents/ceo/state
+          agents/engineer/inbox agents/engineer/outbox agents/engineer/state
+        ) do
+      File.mkdir_p!(Path.join(company_dir, sub))
+    end
 
     test_pid = self()
 
@@ -37,7 +50,71 @@ defmodule Glorbo.Filesystem.WatcherTest do
 
     {:ok, pid} = Watcher.start_link(opts)
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    wait_until_armed!(pid, company_dir)
     {pid, company, company_dir, base}
+  end
+
+  # inotifywait's watch is armed asynchronously after FileSystem.start_link/1
+  # returns. Writes that land before the first inotify event is delivered
+  # are dropped (the watch simply wasn't attached yet). On Fedora + brew
+  # inotify-tools 4.x this window is ~hundreds of ms and flakes every
+  # watcher test.
+  #
+  # Fix: run a disposable Task that subscribes to the Watcher's raw fs_pid
+  # and touches a sentinel under `audit/` until it sees the event echoed
+  # back. `audit/` is classified as :audit by the Watcher — no
+  # reindex_fun + no PubSub broadcast — so the probe never leaks into the
+  # test process's mailbox. When the Task exits, its FileSystem
+  # subscription is cleaned up via the subscriber-DOWN monitor.
+  defp wait_until_armed!(watcher_pid, company_dir) do
+    %{fs_pid: fs_pid} = :sys.get_state(watcher_pid)
+    sentinel =
+      Path.join([company_dir, "audit", ".arm_probe_#{System.unique_integer([:positive])}"])
+
+    parent = self()
+    ref = make_ref()
+
+    {pid, mon} =
+      spawn_monitor(fn ->
+        :ok = FileSystem.subscribe(fs_pid)
+        deadline = System.monotonic_time(:millisecond) + 5_000
+        send(parent, {ref, arm_loop(fs_pid, sentinel, deadline)})
+      end)
+
+    try do
+      receive do
+        {^ref, :ok} ->
+          :ok
+
+        {^ref, :timeout} ->
+          flunk("FileSystem watch never armed after 5s — inotify init wedged")
+
+        {:DOWN, ^mon, :process, ^pid, reason} when reason != :normal ->
+          flunk("arm probe crashed: #{inspect(reason)}")
+      after
+        6_000 ->
+          Process.exit(pid, :kill)
+          flunk("FileSystem watch never armed after 6s — arm probe stuck")
+      end
+    after
+      File.rm(sentinel)
+      Process.demonitor(mon, [:flush])
+    end
+  end
+
+  defp arm_loop(fs_pid, sentinel, deadline) do
+    File.write!(sentinel, "probe")
+
+    receive do
+      {:file_event, ^fs_pid, {_path, _events}} -> :ok
+    after
+      100 ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          :timeout
+        else
+          arm_loop(fs_pid, sentinel, deadline)
+        end
+    end
   end
 
   defp write!(path, content) do
@@ -159,7 +236,15 @@ defmodule Glorbo.Filesystem.WatcherTest do
       {:ok, sup_pid} =
         Glorbo.Company.Supervisor.start_link(name: sup_name, company: company, base: base)
 
-      on_exit(fn -> if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid) end)
+      on_exit(fn ->
+        if Process.alive?(sup_pid) do
+          try do
+            Supervisor.stop(sup_pid, :shutdown)
+          catch
+            :exit, _ -> :ok
+          end
+        end
+      end)
 
       children = Supervisor.which_children(sup_pid)
       assert length(children) == 7

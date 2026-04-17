@@ -179,7 +179,32 @@ defmodule Glorbo.Company.AgentSupervisorTest do
     assert :ok = AgentSupervisor.stop_agent(ctx.sup, "acme", "victim", ctx.registry)
 
     refute Process.alive?(subtree)
-    assert [] = Registry.lookup(ctx.registry, {:agent_server, "acme", "victim"})
+    # Registry cleanup is driven by DOWN monitors and happens async after
+    # the subtree dies. Poll briefly rather than racing.
+    assert_eventually(fn ->
+      Registry.lookup(ctx.registry, {:agent_server, "acme", "victim"}) == []
+    end)
+  end
+
+  defp assert_eventually(fun, deadline_ms \\ 500) do
+    t0 = System.monotonic_time(:millisecond)
+
+    do_assert_eventually =
+      fn loop ->
+        cond do
+          fun.() ->
+            :ok
+
+          System.monotonic_time(:millisecond) - t0 > deadline_ms ->
+            flunk("condition did not hold within #{deadline_ms}ms")
+
+          true ->
+            Process.sleep(10)
+            loop.(loop)
+        end
+      end
+
+    do_assert_eventually.(do_assert_eventually)
   end
 
   test "AS8b: stop_agent on unknown slug returns {:error, :not_found}", ctx do

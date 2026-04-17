@@ -29,7 +29,21 @@ defmodule Glorbo.Company.SupervisorTest do
         )
       )
 
-    on_exit(fn -> if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid) end)
+    on_exit(fn ->
+      # `Supervisor.stop/1` passes `:normal` through to `GenServer.stop`,
+      # which raises if the supervisor exits with a different reason
+      # (children that terminate with `:shutdown` propagate up). Either
+      # outcome — clean normal exit or shutdown cascade — is fine for
+      # test teardown; swallow the exit.
+      if Process.alive?(sup_pid) do
+        try do
+          Supervisor.stop(sup_pid, :shutdown)
+        catch
+          :exit, _ -> :ok
+        end
+      end
+    end)
+
     {sup_pid, company, base}
   end
 

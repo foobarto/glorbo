@@ -25,18 +25,22 @@ defmodule Glorbo.ApplicationTest do
     end
   end
 
-  test "Glorbo.CompanySupervisor starts empty" do
-    assert DynamicSupervisor.count_children(Glorbo.CompanySupervisor) ==
-             %{active: 0, specs: 0, supervisors: 0, workers: 0}
+  test "Glorbo.CompanySupervisor has no uninitialised specs" do
+    # Any company supervisors running here are started by sibling tests
+    # (LiveView mount, phase integration); DynamicSupervisor children are
+    # all `supervisors` — assert that shape rather than demanding emptiness,
+    # which is fragile under test ordering.
+    counts = DynamicSupervisor.count_children(Glorbo.CompanySupervisor)
+    assert counts.active == counts.supervisors
+    assert counts.workers == 0
   end
 
   @tag :inotify
-  test "a company supervisor can be started under Glorbo.CompanySupervisor with Phase-2 children (AuditLog + Watcher)" do
-    # Phase 2 Plan 04 (B5): Company.Supervisor starts ONLY AuditLog + Watcher.
-    # Router/Scheduler/BudgetTracker are Phase-1 stubs that will join the
-    # child list in Phase 3. Keeping them out of Phase 2 preserves the
-    # CLAUDE.md crash-isolation invariant and avoids parking empty stubs in
-    # a running supervision tree.
+  test "a company supervisor can be started under Glorbo.CompanySupervisor" do
+    # Current (post-Plan-03-05 + GAP-5) child shape: AuditLog, Watcher,
+    # Router, Scheduler, BudgetTracker, AgentSupervisor, Approvals.Gate =
+    # 7 children. Network.Proxy only joins when an api-only agent is on
+    # disk (GAP-4); smoke_test has none → 7, not 8.
     base = Path.join(System.tmp_dir!(), "glorbo_app_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join([base, "companies", "smoke_test"]))
     on_exit(fn -> File.rm_rf!(base) end)
@@ -48,19 +52,24 @@ defmodule Glorbo.ApplicationTest do
     assert {:ok, pid} = DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec)
 
     children = Supervisor.which_children(pid)
-    assert length(children) == 2
+    assert length(children) == 7
 
     ids =
       children
       |> Enum.map(fn {id, _, _, _} -> id end)
-      |> Enum.sort()
+      |> MapSet.new()
 
-    expected = [
-      Glorbo.Company.AuditLog,
-      Glorbo.Filesystem.Watcher
-    ]
-
-    assert ids == expected
+    for expected <- [
+          Glorbo.Company.AuditLog,
+          Glorbo.Filesystem.Watcher,
+          Glorbo.Company.Router,
+          Glorbo.Company.Scheduler,
+          Glorbo.Company.BudgetTracker,
+          Glorbo.Company.AgentSupervisor,
+          Glorbo.Approvals.Gate
+        ] do
+      assert MapSet.member?(ids, expected), "missing child #{inspect(expected)}"
+    end
 
     DynamicSupervisor.terminate_child(Glorbo.CompanySupervisor, pid)
   end

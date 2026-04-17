@@ -22,6 +22,7 @@ defmodule GlorboTest.CLICase do
   using do
     quote do
       alias Glorbo.Test.TmpGlorboHome
+      import GlorboTest.CLICase, only: [fake_daemon_binary!: 1]
     end
   end
 
@@ -38,5 +39,22 @@ defmodule GlorboTest.CLICase do
     end)
 
     {:ok, glorbo_home: home}
+  end
+
+  @doc """
+  Write a long-lived, argv-tolerant shell script to `<home>/fake_glorbo.sh`
+  and return its path. Used by Up/Down tests as a `GLORBO_BINARY_PATH` stand-in.
+
+  The prior `/bin/sleep` fixture flaked on Fedora coreutils (which rejects
+  `sleep serve` with an error and exits instantly, before
+  `Port.info(port, :os_pid)` in `Daemon.spawn_detached/2` could read the pid).
+  A shell script that ignores its args and sleeps is stable across distros.
+  """
+  @spec fake_daemon_binary!(Path.t()) :: Path.t()
+  def fake_daemon_binary!(home) do
+    path = Path.join(home, "fake_glorbo.sh")
+    File.write!(path, "#!/bin/sh\nsleep 60\n")
+    File.chmod!(path, 0o755)
+    path
   end
 end

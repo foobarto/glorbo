@@ -3,10 +3,12 @@ defmodule Glorbo.CLI.UpTest do
   Plan 05-02 Task 1 — `Glorbo.CLI.Lifecycle.Up`.
 
   Exercises the tuple shape + pidfile side-effects without fully
-  re-execing a Burrito binary. We set `GLORBO_BINARY_PATH=/bin/sleep`
-  so the daemon spawns a real short-lived child (`/bin/sleep serve`
-  — sleep gracefully ignores the unknown arg and exits quickly) whose
-  OS pid we can assert + clean up.
+  re-execing a Burrito binary. We point `GLORBO_BINARY_PATH` at a
+  long-lived shell script (`fake_daemon_binary!/1` from `CLICase`) so
+  the daemon spawns a real child whose OS pid we can assert + clean up.
+  The prior `/bin/sleep` fixture flaked on Fedora coreutils: it rejected
+  the `serve` argv entry with an error and exited before
+  `Port.info(port, :os_pid)` could read the child pid.
   """
   use GlorboTest.CLICase, async: false
 
@@ -44,9 +46,7 @@ defmodule Glorbo.CLI.UpTest do
 
   describe "up" do
     test "writes pidfile + returns :up tuple on fresh start", %{home: home, tracker: t} do
-      # Use /bin/sleep as a stand-in for the Burrito binary. sleep exits
-      # on SIGTERM so on_exit cleanup is reliable.
-      System.put_env("GLORBO_BINARY_PATH", "/bin/sleep")
+      System.put_env("GLORBO_BINARY_PATH", fake_daemon_binary!(home))
       on_exit(fn -> System.delete_env("GLORBO_BINARY_PATH") end)
 
       assert {:up, 0, out} = Up.run([])
@@ -82,7 +82,7 @@ defmodule Glorbo.CLI.UpTest do
       Pidfile.write!(99_999_999, home)
       assert Pidfile.status(home) == :stale
 
-      System.put_env("GLORBO_BINARY_PATH", "/bin/sleep")
+      System.put_env("GLORBO_BINARY_PATH", fake_daemon_binary!(home))
       on_exit(fn -> System.delete_env("GLORBO_BINARY_PATH") end)
 
       assert {:up, 0, _out} = Up.run([])
