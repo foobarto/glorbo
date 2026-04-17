@@ -124,15 +124,23 @@ defmodule GlorboWeb.HealthLive do
   defp severity_to_dot(%{severity: :blocker}), do: "crashed"
   defp severity_to_dot(_), do: "idle"
 
+  # Enumerate running companies by slug via Glorbo.Agent.Registry rather
+  # than PIDs — `{:company_child, slug, :audit_log}` is registered by
+  # every running Glorbo.Company.Supervisor (see company/supervisor.ex:88).
+  # TODO2.md § P0 called out the old `inspect(pid)` surface as operator-
+  # hostile.
   defp list_supervisors do
-    case Process.whereis(Glorbo.CompanySupervisor) do
+    case Process.whereis(Glorbo.Agent.Registry) do
       nil ->
         []
 
       _pid ->
-        Glorbo.CompanySupervisor
-        |> Supervisor.which_children()
-        |> Enum.map(&summarize_child/1)
+        Glorbo.Agent.Registry
+        |> Registry.select([
+          {{{:company_child, :"$1", :audit_log}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}
+        ])
+        |> Enum.sort_by(&elem(&1, 0))
+        |> Enum.map(&summarize_company/1)
     end
   rescue
     _ -> []
@@ -140,17 +148,18 @@ defmodule GlorboWeb.HealthLive do
     _, _ -> []
   end
 
-  defp summarize_child({_id, pid, _type, _mods}) do
-    children =
-      try do
-        if is_pid(pid), do: Supervisor.which_children(pid), else: []
-      rescue
-        _ -> []
-      catch
-        _, _ -> []
-      end
+  defp summarize_company({slug, audit_log_pid}) when is_binary(slug) and is_pid(audit_log_pid) do
+    # Count sibling registered roles for this company. Stable upper bound
+    # on role count; we don't need to find the supervisor itself.
+    child_count =
+      Registry.select(Glorbo.Agent.Registry, [
+        {{{:company_child, slug, :"$1"}, :_, :_}, [], [:"$1"]}
+      ])
+      |> length()
 
-    %{name: inspect(pid), status: :healthy, child_count: length(children)}
+    %{name: slug, status: :healthy, child_count: child_count}
+  rescue
+    _ -> %{name: slug, status: :healthy, child_count: 0}
   end
 
   defp detect_tools do
