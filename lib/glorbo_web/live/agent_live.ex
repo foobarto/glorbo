@@ -148,6 +148,7 @@ defmodule GlorboWeb.AgentLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-agent">
+      <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={nil} />
       <header class="gl-agent__header">
         <h1 class="gl-heading gl-heading--display">{@agent.name}</h1>
         <span class="gl-muted">{@agent.role}</span>
@@ -155,16 +156,8 @@ defmodule GlorboWeb.AgentLive do
         <BudgetRing.budget_ring used={@agent.used} cap={@agent.cap} size={96} />
       </header>
 
-      <section class="gl-agent__current">
-        <h2 class="gl-heading gl-heading--heading">Current task</h2>
-        <p class="gl-muted">No active task. Waiting for next wake.</p>
-      </section>
-
-      <section class="gl-agent__wake">
-        <h2 class="gl-heading gl-heading--heading">
-          Recent wakes <span class="gl-muted">(last 20)</span>
-        </h2>
-        <p class="gl-muted">No wakes logged this session.</p>
+      <section class="gl-agent__actions">
+        <h2 class="gl-heading gl-heading--heading">Actions</h2>
         <form phx-submit="wake" class="gl-wake-form">
           <label>
             Wake reason (optional):
