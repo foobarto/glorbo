@@ -110,32 +110,28 @@ defmodule GlorboWeb.Components.Topbar do
   end
 
   defp bwrap_version do
-    try do
-      case System.cmd("bwrap", ["--version"], stderr_to_stdout: true) do
-        {output, 0} ->
-          output
-          |> String.split("\n", parts: 2)
-          |> List.first()
-          |> to_string()
-          |> String.replace("bwrap ", "")
-          |> String.trim()
+    case System.cmd("bwrap", ["--version"], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.split("\n", parts: 2)
+        |> List.first()
+        |> to_string()
+        |> String.replace("bwrap ", "")
+        |> String.trim()
 
-        _ ->
-          ""
-      end
-    rescue
-      _ -> ""
+      _ ->
+        ""
     end
+  rescue
+    _ -> ""
   end
 
   defp kernel_version do
-    try do
-      case System.cmd("uname", ["-r"], stderr_to_stdout: true) do
-        {output, 0} -> String.trim(output)
-        _ -> ""
-      end
-    rescue
+    case System.cmd("uname", ["-r"], stderr_to_stdout: true) do
+      {output, 0} -> String.trim(output)
       _ -> ""
     end
+  rescue
+    _ -> ""
   end
 end
