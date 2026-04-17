@@ -145,10 +145,21 @@ defmodule Glorbo.Company.Supervisor do
     end
   end
 
+  # Fast-path: skim frontmatter for `network: api-only` via a substring
+  # scan. Only full-parse if the skim says yes — avoids O(agents) YAML
+  # parses on every company boot for the common case where no agent is
+  # api-only (TODO.md Important #1).
   defp agent_md_declares_api_only?(agent_md_path) do
-    case AgentParser.parse_file(agent_md_path) do
-      {:ok, %{network: :api_only}} -> true
-      _ -> false
+    case File.read(agent_md_path) do
+      {:ok, content} ->
+        if String.contains?(content, "api-only") or String.contains?(content, "api_only") do
+          match?({:ok, %{network: :api_only}}, AgentParser.parse_file(agent_md_path))
+        else
+          false
+        end
+
+      _ ->
+        false
     end
   end
 

@@ -263,14 +263,26 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp finalize_usage(%{usage: usage}, _spec), do: usage
 
+  # Budget-ledger recording is load-bearing for "you always know what
+  # each agent cost" — swallowing failures silently would let budget
+  # overages accumulate undetected. Surface the error to the caller; the
+  # dispatch pipeline's `with` chain converts it into
+  # {:error, {:record_usage_failed, reason}} (TODO.md Important #4).
   defp record_usage(spec, task, usage, opts) do
     fun = Keyword.get(opts, :record_usage_fun, fn _spec, _task, _usage -> :ok end)
-    fun.(spec, task, usage)
-    :ok
-  rescue
-    e ->
-      Logger.warning("dispatch.record_usage failed: #{Exception.message(e)}")
-      :ok
+
+    try do
+      case fun.(spec, task, usage) do
+        :ok -> :ok
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, {:record_usage_failed, reason}}
+        other -> {:error, {:record_usage_bad_return, other}}
+      end
+    rescue
+      e ->
+        Logger.warning("dispatch.record_usage raised: #{Exception.message(e)}")
+        {:error, {:record_usage_raised, Exception.message(e)}}
+    end
   end
 
   # ---------------------------------------------------------------------------

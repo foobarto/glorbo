@@ -91,8 +91,6 @@ defmodule Glorbo.Config do
        host: host,
        port: port
      }}
-  rescue
-    _ -> {:error, :config_parse}
   end
 
   defp parse_port(str) do

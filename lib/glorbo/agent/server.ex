@@ -392,10 +392,27 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
+  # Cap inbox-file reads at the prompt size limit. A pathologically large
+  # inbox file would block the Agent.Server mailbox during
+  # default_inbox_scan → read_or_empty on its way to dispatch — which
+  # would then reject the prompt as :prompt_too_large anyway. Short-circuit
+  # here so the GenServer doesn't spend milliseconds reading multi-GB
+  # junk (TODO.md Important #2).
+  @inbox_read_cap 5 * 1024 * 1024
+
   defp read_or_empty(path) do
-    case File.read(path) do
-      {:ok, bytes} -> bytes
-      _ -> ""
+    case File.stat(path) do
+      {:ok, %{size: size}} when size > @inbox_read_cap ->
+        ""
+
+      {:ok, _} ->
+        case File.read(path) do
+          {:ok, bytes} -> bytes
+          _ -> ""
+        end
+
+      _ ->
+        ""
     end
   end
 end
