@@ -40,11 +40,22 @@ defmodule GlorboWeb.OverviewLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("new_company", _params, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "New-company UI ships in a later milestone. For now: mkdir ~/.glorbo/companies/<slug>."
+     )}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <section class="gl-view">
-      <header class="gl-view__header">
+      <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">Companies</h1>
+        <button type="button" class="gl-btn" phx-click="new_company">+ new company</button>
       </header>
 
       <div :if={@companies == []} class="gl-empty">

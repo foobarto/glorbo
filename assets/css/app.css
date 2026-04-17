@@ -946,6 +946,7 @@ button { font-family: inherit; font-size: inherit; }
 
 /* ========== View wrapper ========== */
 .gl-view { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-view__header--split { justify-content: space-between; }
 .gl-view__header {
   display: flex;
   align-items: baseline;

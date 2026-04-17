@@ -77,6 +77,15 @@ defmodule GlorboWeb.KanbanLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("new_task", _params, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "New-task UI ships in a later milestone. Drop a file in projects/<name>/tasks/ for now."
+     )}
+  end
+
   def handle_event("kanban:move", %{"task_path" => task_path, "to" => to}, socket) do
     with {:ok, status} <- column_to_status(to),
          {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
@@ -94,8 +103,9 @@ defmodule GlorboWeb.KanbanLive do
     ~H"""
     <section class="gl-view gl-kanban">
       <GlorboWeb.Components.CompanyTabs.company_tabs slug={@company_slug} active={:kanban} />
-      <header class="gl-view__header">
+      <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">Kanban — {@company_slug}</h1>
+        <button type="button" class="gl-btn" phx-click="new_task">+ new task</button>
       </header>
 
       <p class="gl-banner gl-banner--muted">

@@ -103,11 +103,11 @@ defmodule GlorboWeb.CompanyLive do
           </p>
         </div>
         <div class="gl-overview__actions">
-          <span class="gl-btn gl-btn--disabled" title="Pending M5 wire-up">↻ reindex</span>
-          <span class="gl-btn gl-btn--disabled" title="Pending M5 wire-up">⇩ backup</span>
-          <span class="gl-btn gl-btn--primary gl-btn--disabled" title="Pending P3 new-agent UI">
+          <button type="button" class="gl-btn" phx-click="reindex">↻ reindex</button>
+          <button type="button" class="gl-btn" phx-click="backup">⇩ backup</button>
+          <button type="button" class="gl-btn gl-btn--primary" phx-click="new_agent">
             + new agent
-          </span>
+          </button>
         </div>
       </header>
 
@@ -323,6 +323,23 @@ defmodule GlorboWeb.CompanyLive do
   def handle_event("open_agent", %{"slug" => slug}, socket) do
     company = socket.assigns.company_slug
     {:noreply, push_navigate(socket, to: ~p"/companies/#{company}/agents/#{slug}")}
+  end
+
+  def handle_event("reindex", _params, socket) do
+    {:noreply, put_flash(socket, :info, "reindex: run `glorbo reindex` from the CLI for now.")}
+  end
+
+  def handle_event("backup", _params, socket) do
+    {:noreply, put_flash(socket, :info, "backup: run `glorbo backup` from the CLI for now.")}
+  end
+
+  def handle_event("new_agent", _params, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "New-agent UI ships in a later milestone. For now: mkdir agents/<slug>/ and drop an agent.md."
+     )}
   end
 
   # ---------------------------------------------------------------------------
