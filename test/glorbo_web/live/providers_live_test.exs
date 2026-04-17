@@ -28,17 +28,17 @@ defmodule GlorboWeb.ProvidersLiveTest do
       assert html =~ "no budget track"
     end
 
-    test "summary counts match provider count", %{conn: conn} do
+    test "summary pills render counts for all three status buckets", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/providers")
-      # Total across all three buckets = 6 built-ins (may fluctuate in CI
-      # based on host PATH). We just assert the summary line is present.
-      assert html =~ ~r/\d+ routable · \d+ untracked · \d+ not installed/
+
+      assert html =~ ~r/\d+ routable/
+      assert html =~ ~r/\d+ untracked/
+      assert html =~ ~r/\d+ not installed/
     end
 
-    test "Refresh button re-reads the snapshot", %{conn: conn} do
+    test "refresh PATH button re-reads the snapshot", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/providers")
-      # Click refresh; should not crash and should still render.
-      html = view |> element("button", "Refresh") |> render_click()
+      html = view |> element("button", "↻ refresh PATH") |> render_click()
       assert html =~ "claude-code"
     end
 
@@ -55,18 +55,20 @@ defmodule GlorboWeb.ProvidersLiveTest do
       assert html =~ "show toml"
       # The details element + pre block is rendered.
       assert html =~ ~s(<details class="gl-provider-card__toml">)
+      # Source tag (builtin/user) is surfaced on each card.
+      assert html =~ ~s(class="gl-provider-card__source gl-tag")
     end
   end
 
   describe "version probing" do
     @tag :capture_log
-    test "Probe versions button triggers Registry.refresh_with_version_probe/0",
+    test "probe all button triggers Registry.refresh_with_version_probe/0",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, "/providers")
       # We don't assert the probe succeeds (claude/gemini/codex may or may not
       # be installed on CI); we just ensure the event handler doesn't crash.
-      html = view |> element("button", "Probe versions") |> render_click()
-      assert html =~ "Providers"
+      html = view |> element("button", "⌕ probe all") |> render_click()
+      assert html =~ "registry"
     end
   end
 

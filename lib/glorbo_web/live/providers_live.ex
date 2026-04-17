@@ -55,18 +55,36 @@ defmodule GlorboWeb.ProvidersLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-providers">
-      <header class="gl-view__header">
-        <h1 class="gl-heading gl-heading--display">Providers</h1>
-        <div class="gl-toolbar">
-          <button type="button" class="gl-btn" phx-click="refresh">Refresh</button>
-          <button type="button" class="gl-btn" phx-click="probe" disabled={@probing}>
-            {if @probing, do: "Probing...", else: "Probe versions"}
+      <header class="gl-view__header gl-view__header--split">
+        <div>
+          <h1 class="gl-heading gl-heading--display">
+            <span class="gl-muted">providers /</span> registry
+          </h1>
+          <p class="gl-overview__path">
+            <span class="gl-muted">priv/providers/*.toml · </span>~/.glorbo/providers.toml
+          </p>
+          <p class="gl-overview__quote">
+            // Config-driven, not code-driven. Add a TOML file, get a new provider.
+          </p>
+        </div>
+        <div class="gl-providers__actions">
+          <button type="button" class="gl-btn" phx-click="refresh">↻ refresh PATH</button>
+          <button type="button" class="gl-btn gl-btn--primary" phx-click="probe" disabled={@probing}>
+            {if @probing, do: "⟳ probing…", else: "⌕ probe all"}
           </button>
         </div>
       </header>
 
-      <section class="gl-providers__summary gl-muted">
-        {@counts.routable} routable · {@counts.untracked} untracked · {@counts.missing} not installed
+      <section class="gl-providers__summary">
+        <span class="gl-pill gl-pill--alive">
+          <span class="gl-pill__dot"></span>{@counts.routable} routable
+        </span>
+        <span class="gl-pill gl-pill--info">
+          <span class="gl-pill__dot"></span>{@counts.untracked} untracked
+        </span>
+        <span class="gl-pill gl-pill--stop">
+          <span class="gl-pill__dot"></span>{@counts.missing} not installed
+        </span>
       </section>
 
       <div :if={@providers != []} class="gl-providers__grid">
@@ -76,30 +94,39 @@ defmodule GlorboWeb.ProvidersLive do
         >
           <header class="gl-provider-card__header">
             <span class="gl-provider-card__name">{p.name}</span>
-            <span class={["gl-badge", "gl-badge--" <> status_class(p)]}>
-              {status_label(p)}
+            <span class="gl-provider-card__source gl-tag">{p.source}</span>
+            <span class={["gl-pill", "gl-pill--" <> pill_class(p)]}>
+              <span class="gl-pill__dot"></span>{status_label(p)}
             </span>
           </header>
           <dl class="gl-kv gl-provider-card__kv">
             <dt>binary</dt>
             <dd class="gl-tabular">{p.binary}</dd>
             <dt>path</dt>
-            <dd class="gl-tabular gl-muted">{p.resolved_path || "—"}</dd>
+            <dd class={[
+              "gl-tabular",
+              if(p.resolved_path, do: "gl-accent-text", else: "gl-danger-text")
+            ]}>
+              {p.resolved_path || "(not found on PATH)"}
+            </dd>
             <dt>version</dt>
             <dd class="gl-tabular">{version_display(p)}</dd>
             <dt>parser</dt>
-            <dd class="gl-tabular">{p.usage_parser}</dd>
-            <dt>source</dt>
-            <dd class="gl-tabular gl-muted">{p.source}</dd>
+            <dd class="gl-tabular">
+              <span :if={p.usage_parser == "none"} class="gl-muted">
+                none · untracked budget
+              </span>
+              <span :if={p.usage_parser != "none"} class="gl-cyan-text">{p.usage_parser}</span>
+            </dd>
           </dl>
           <details class="gl-provider-card__toml">
-            <summary class="gl-muted">show toml</summary>
-            <pre class="gl-diff"><code>{read_toml(p)}</code></pre>
+            <summary class="gl-muted">▸ show toml</summary>
+            <pre class="gl-provider-card__toml-pre"><code>{read_toml(p)}</code></pre>
           </details>
         </article>
       </div>
 
-      <p :if={@providers == []} class="gl-subtle">
+      <p :if={@providers == []} class="gl-muted">
         No providers declared. Ship built-ins via <code>priv/providers/*.toml</code>
         or drop user-declared entries at <code>~/.glorbo/providers.toml</code>.
       </p>
@@ -146,6 +173,14 @@ defmodule GlorboWeb.ProvidersLive do
       :routable -> "routable"
       :installed_untracked -> "untracked"
       :not_installed -> "missing"
+    end
+  end
+
+  defp pill_class(p) do
+    case Provider.status(p) do
+      :routable -> "alive"
+      :installed_untracked -> "info"
+      :not_installed -> "stop"
     end
   end
 
