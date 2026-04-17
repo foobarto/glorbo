@@ -75,4 +75,27 @@ defmodule GlorboWeb.ChannelLiveTest do
     html = render_submit(view, "post", %{"body" => "   "})
     assert html =~ "Message is empty"
   end
+
+  # M4.2 — left rail lists all channels with the current one marked active.
+  test "renders channel switcher rail with active link", %{conn: conn, base: base} do
+    # Seed an extra channel so the switcher has something to iterate.
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "engineering.md"]),
+      "# engineering\n"
+    )
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+    assert html =~ "gl-channel__rail"
+    assert html =~ "#general"
+    assert html =~ "#engineering"
+    # Active class on the current channel's link.
+    assert html =~
+             ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*gl-channel-list__link--active|
+  end
+
+  test "dm rail shows 'No DM threads yet' when outbox is empty", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+    assert html =~ "No DM threads yet"
+  end
 end

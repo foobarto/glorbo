@@ -66,6 +66,8 @@ defmodule GlorboWeb.ChannelLive do
        |> assign(:channel, ch)
        |> assign(:base, base)
        |> assign(:compose_body, "")
+       |> assign(:channels, list_channels(base, co))
+       |> assign(:dm_threads, list_dm_threads(base, co))
        |> assign(:messages, load_messages(path, co))}
     else
       {:ok,
@@ -129,25 +131,53 @@ defmodule GlorboWeb.ChannelLive do
         {Phoenix.Flash.get(@flash, :error)}
       </div>
 
-      <div :if={@messages == []} class="gl-empty">
-        <p>{"No messages in ##{@channel} yet."}</p>
-      </div>
+      <div class="gl-channel__layout">
+        <aside class="gl-channel__rail" aria-label="Channels">
+          <h2 class="gl-panel__header">/channels</h2>
+          <ul class="gl-channel-list">
+            <li :for={c <- @channels}>
+              <.link
+                navigate={~p"/companies/#{@company_slug}/channels/#{c}"}
+                class={channel_link_class(c, @channel)}
+              >
+                {"#" <> c}
+              </.link>
+            </li>
+          </ul>
+          <h2 class="gl-panel__header">/dms</h2>
+          <ul :if={@dm_threads != []} class="gl-channel-list">
+            <li :for={d <- @dm_threads} class="gl-channel-list__item">
+              <span class="gl-muted">{d.a} ↔ {d.b}</span>
+              <span class="gl-muted gl-tabular">{d.count}</span>
+            </li>
+          </ul>
+          <p :if={@dm_threads == []} class="gl-muted gl-empty__hint">
+            No DM threads yet.
+          </p>
+        </aside>
 
-      <div :if={@messages != []} class="gl-channel__messages">
-        <ChannelMessage.channel_message :for={m <- @messages} message={m} />
-      </div>
+        <div class="gl-channel__main">
+          <div :if={@messages == []} class="gl-empty">
+            <p>{"No messages in ##{@channel} yet."}</p>
+          </div>
 
-      <form phx-submit="post" class="gl-compose">
-        <textarea
-          name="body"
-          maxlength="10240"
-          class="gl-input"
-          placeholder={"Message ##{@channel} as Director…"}
-        >{@compose_body}</textarea>
-        <div class="gl-compose__actions">
-          <button type="submit" class="gl-btn gl-btn--primary">Send</button>
+          <div :if={@messages != []} class="gl-channel__messages">
+            <ChannelMessage.channel_message :for={m <- @messages} message={m} />
+          </div>
+
+          <form phx-submit="post" class="gl-compose">
+            <textarea
+              name="body"
+              maxlength="10240"
+              class="gl-input"
+              placeholder={"Message ##{@channel} as Director…"}
+            >{@compose_body}</textarea>
+            <div class="gl-compose__actions">
+              <button type="submit" class="gl-btn gl-btn--primary">Send</button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
     </section>
     """
   end
@@ -158,6 +188,69 @@ defmodule GlorboWeb.ChannelLive do
 
   defp channel_path(base, company, channel),
     do: Path.join([base, "companies", company, "channels", "#{channel}.md"])
+
+  defp channel_link_class(candidate, current) when candidate == current,
+    do: "gl-channel-list__link gl-channel-list__link--active"
+
+  defp channel_link_class(_, _), do: "gl-channel-list__link"
+
+  defp list_channels(base, company) do
+    dir = Path.join([base, "companies", company, "channels"])
+
+    case File.ls(dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.map(&Path.rootname/1)
+        |> Enum.sort()
+
+      _ ->
+        []
+    end
+  end
+
+  defp list_dm_threads(base, company) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, agents} ->
+        agents
+        |> Enum.flat_map(&dm_files_for_agent(agents_dir, &1))
+        |> Enum.map(&canonical_pair/1)
+        |> Enum.reduce(%{}, fn pair, acc -> Map.update(acc, pair, 1, &(&1 + 1)) end)
+        |> Enum.map(fn {{a, b}, count} -> %{a: a, b: b, count: count} end)
+        |> Enum.sort_by(& &1.a)
+
+      _ ->
+        []
+    end
+  end
+
+  defp dm_files_for_agent(agents_dir, sender) do
+    outbox = Path.join([agents_dir, sender, "outbox"])
+
+    case File.ls(outbox) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.flat_map(&parse_dm_filename(&1, sender))
+
+      _ ->
+        []
+    end
+  end
+
+  # Filename convention: `<ts>-<recipient>.md`. Anything that doesn't
+  # match is treated as non-DM traffic and skipped.
+  defp parse_dm_filename(filename, sender) do
+    case Regex.run(~r/^[^-]+-(.+)\.md$/, filename) do
+      [_, recipient] -> [{sender, recipient}]
+      _ -> []
+    end
+  end
+
+  defp canonical_pair({a, b}) when a <= b, do: {a, b}
+  defp canonical_pair({a, b}), do: {b, a}
 
   defp load_messages(path, company) do
     case File.read(path) do
