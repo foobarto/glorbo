@@ -39,6 +39,8 @@ defmodule GlorboWeb.Router do
     # Plan 04-03 Task 3: audit viewer + system health.
     live "/companies/:company/audit", AuditLive
     live "/health", HealthLive
+    # GEP-8 — provider registry dashboard.
+    live "/providers", ProvidersLive
   end
 
   # Other scopes may use custom stacks.
