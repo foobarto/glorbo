@@ -42,13 +42,18 @@ defmodule GlorboWeb.Components.Sidebar do
   ]
 
   def sidebar(assigns) do
-    company = assigns.current_company
+    # Focus a company: the one in the URL if any, else the first on disk.
+    # This keeps the sidebar functional on /providers, /health, and
+    # /companies (the cross-company landing) — navigating from there
+    # into a sub-view takes you into that company.
+    focus = assigns.current_company || first_company()
 
     assigns =
       assigns
       |> assign(:nav, @nav)
-      |> assign(:agents, list_agents(company))
-      |> assign(:projects, list_projects(company))
+      |> assign(:focus, focus)
+      |> assign(:agents, list_agents(focus))
+      |> assign(:projects, list_projects(focus))
 
     ~H"""
     <aside class="gl-sidebar">
@@ -56,11 +61,11 @@ defmodule GlorboWeb.Components.Sidebar do
       <nav>
         <.link
           :for={{id, glyph, label, scope} <- @nav}
-          navigate={nav_href(id, @current_company)}
+          navigate={nav_href(id, @focus)}
           class={[
             "gl-sidebar__nav-item",
             @active == id && "gl-sidebar__nav-item--active",
-            scope == :company && is_nil(@current_company) && "gl-sidebar__nav-item--disabled"
+            scope == :company && is_nil(@focus) && "gl-sidebar__nav-item--disabled"
           ]}
           aria-current={@active == id && "page"}
         >
@@ -73,7 +78,7 @@ defmodule GlorboWeb.Components.Sidebar do
       <div :if={@agents == []} class="gl-sidebar__empty">(none)</div>
       <.agent_row
         :for={{a, i} <- Enum.with_index(@agents)}
-        company={@current_company}
+        company={@focus}
         agent={a}
         prefix={tree_prefix(i, length(@agents))}
       />
@@ -82,7 +87,7 @@ defmodule GlorboWeb.Components.Sidebar do
       <div :if={@projects == []} class="gl-sidebar__empty">(none)</div>
       <.project_row
         :for={{p, i} <- Enum.with_index(@projects)}
-        company={@current_company}
+        company={@focus}
         slug={p}
         prefix={tree_prefix(i, length(@projects))}
       />
@@ -138,8 +143,9 @@ defmodule GlorboWeb.Components.Sidebar do
     """
   end
 
-  defp nav_href(:overview, _), do: ~p"/companies"
   defp nav_href(:providers, _), do: ~p"/providers"
+  defp nav_href(:overview, nil), do: ~p"/companies"
+  defp nav_href(:overview, slug), do: ~p"/companies/#{slug}"
   defp nav_href(_, nil), do: "#"
   defp nav_href(:kanban, slug), do: ~p"/companies/#{slug}/kanban"
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
@@ -156,6 +162,21 @@ defmodule GlorboWeb.Components.Sidebar do
   end
 
   defp short_provider(_), do: ""
+
+  defp first_company do
+    base = Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    dir = Path.join(base, "companies")
+
+    case File.ls(dir) do
+      {:ok, slugs} ->
+        slugs
+        |> Enum.sort()
+        |> Enum.find(&File.dir?(Path.join(dir, &1)))
+
+      _ ->
+        nil
+    end
+  end
 
   defp list_agents(nil), do: []
 
