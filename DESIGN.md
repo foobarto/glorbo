@@ -8,28 +8,31 @@ goals, budgets, governance, and communication — and runs AI agents as employee
 inside kernel-sandboxed (`bwrap`) processes. Everything is markdown. Everything
 is a file.
 
-> **Reading notes.** This document is the living architectural reference.
-> For the *why* behind major decisions, see the corresponding
-> **Glorbo Enhancement Proposals** in `docs/geps/`:
+> **Reading notes.** This document is the living architectural reference
+> — it describes the *intended* state of Glorbo, not necessarily the
+> state of the code at any given moment. When the two diverge, this is
+> where you read what we're aiming at. For the *why* behind major
+> decisions, see the corresponding **Glorbo Enhancement Proposals** in
+> `docs/geps/`:
 >
 > - **GEP-2** — architectural overview (the big picture).
 > - **GEP-3** — filesystem as source of truth.
 > - **GEP-4** — CLI-tool agents (no Python, no custom LLM client).
-> - **GEP-5** — bwrap sandboxing (Podman tier was planned and dropped,
->   see GEP-5 D6).
+> - **GEP-5** — bwrap sandboxing (the Podman tier once planned for
+>   v0.0.2 was **dropped entirely** in GEP-5 D6 — bwrap is the only
+>   isolation layer, permanently).
 > - **GEP-6** — Phoenix LiveView + Channels dashboard.
 > - **GEP-7** — SQLite as derived data.
-> - **GEP-8** — provider registry + CLI auto-detect (implemented in
->   v0.0.3).
+> - **GEP-8** — provider registry + CLI auto-detect.
 > - **GEP-9** — protocol-level integration (MCP, ACP) for future
->   bidirectional needs (draft).
-> - **GEP-10** — agent/skill templates (placeholder).
+>   bidirectional needs.
+> - **GEP-10** — agent/skill templates (forward-looking).
 > - **GEP-11** — the Zen of Glorbo.
-> - **GEP-12** — no user-input atoms (implemented).
+> - **GEP-12** — no user-input atoms.
 >
-> The authoritative runtime story is: agents are CLI-tool subprocesses
-> under `bwrap`. No Python. No container runtime. See GEP-4 and
-> GEP-5.
+> **Runtime story:** agents are CLI-tool subprocesses under `bwrap`.
+> No Python on the host. No container runtime. No Ollama binary
+> bundled. See GEP-4 and GEP-5.
 
 ---
 
@@ -41,35 +44,36 @@ is a file.
 copying a binary.  Back up with `tar`.  Move between machines with `scp`.
 Version-control your company with `git`.
 
-**The kernel is the policy engine.**  Permissions are not enforced by application
-code; they are enforced by the kernel. bwrap mount namespaces mean denied paths
-aren't mounted and allowed paths are `--ro-bind` or `--bind`. An agent that lacks
-`projects:write:foo` literally cannot write to that directory. `ls -la` is your
-audit tool.
+**The kernel is the policy engine.** Permissions are not enforced by
+application code; they are enforced by the kernel via bwrap mount
+namespaces — denied paths aren't mounted, allowed paths are `--ro-bind`
+or `--bind`. An agent that lacks `projects:write:foo` literally cannot
+write to that directory. `ls -la` is your audit tool.
 
 **Markdown is the source of truth.**  Agent definitions, goals, tasks,
 permissions, chat — all human-readable markdown with YAML frontmatter.  SQLite
 exists only as a derived, rebuildable index for fast dashboard queries.
 
-**Stability over features.** Elixir/OTP supervision trees mean a crashing agent
-restarts automatically. Sandbox isolation (bwrap) means a misbehaving agent
-cannot damage the host or other companies. There is no message broker, no
-object store, no cache layer. The fewer moving parts, the fewer things break.
+**Stability over features.** Elixir/OTP supervision trees mean a crashing
+agent restarts automatically. Sandbox isolation (bwrap) means a
+misbehaving agent cannot damage the host or other companies. There is
+no message broker, no object store, no cache layer. The fewer moving
+parts, the fewer things break.
 
 **Paperclip with taste.**  Glorbo adds what Paperclip deliberately omitted: the
 ability to chat with agents in real time, a proper LiveView dashboard, and
 rock-solid stability through OTP.  It replaces Node.js and embedded Postgres
 with Elixir and the filesystem.
 
-> **Milestone scope — agents are CLI-first, permanently.** Agents are
+> **Runtime scope — agents are CLI-first, permanently.** Agents are
 > sandboxed CLI tools (Claude Code, Gemini CLI, Codex, and OSS
 > alternatives — see GEP-8's provider registry) wrapped in `bwrap`
 > (bubblewrap) mount- and network-namespace isolation. "No Python
 > anywhere" is load-bearing: Glorbo needs no Python on the host, and
 > there is no container runtime under which Python (or anything else)
-> is launched. The pre-pivot Python-in-Podman runtime with `litellm`
-> dispatch and POSIX ACL enforcement was dropped entirely in 2026-04-17
-> (GEP-5 D6).
+> is launched. The pre-pivot Python-in-Podman agent runtime with
+> `litellm` dispatch and POSIX ACL enforcement was dropped entirely in
+> 2026-04-17 (GEP-5 D6).
 
 ---
 
@@ -91,25 +95,25 @@ who owns `~/.glorbo/` and runs the Glorbo binary.
 ### 2.2  Company
 
 A Company is an isolated unit of work with its own mission, agents,
-projects, and budget. Each Company gets its own supervisor tree,
-file-watcher, router, budget tracker, and approval gate (see §4.1).
-Isolation between companies is enforced at wake-time: each agent's
-`bwrap` sandbox bind-mounts only its own company's directory, so
-sibling companies are unreachable from any path inside the sandbox.
-Multiple Companies can run simultaneously on the same host.
+projects, and budget. Each Company has its own OTP supervision tree
+(file-watcher, router, scheduler, budget tracker, approval gate); each
+agent wake inside a Company is a fresh `bwrap` sandbox bind-mounting
+only that Company's directory. Multiple Companies can run
+simultaneously on the same host, fully isolated from each other.
 
 ### 2.3  Agent
 
-An Agent is a defined role within a Company. It has an identity (name, role,
-backstory), permissions, a budget, and a provider/model configuration. Agents
-are defined in markdown. An agent materialises at wake-time as a short-lived
-`bwrap` sandbox wrapping a CLI tool invocation — Claude Code, Gemini CLI,
-Codex, or any provider declared in the registry (GEP-8). There is no
-long-lived agent process between wakes.
+An Agent is a defined role within a Company. It has an identity (name,
+role, backstory), permissions, a budget, and a provider/model
+configuration. Agents are defined in markdown. An agent materialises at
+wake-time as a short-lived `bwrap` sandbox wrapping a CLI tool
+invocation — Claude Code, Gemini CLI, Codex, or any provider declared
+in the registry (GEP-8). There is no long-lived agent process between
+wakes.
 
-Agents do not run continuously. They wake on events: a new task in their inbox,
-a scheduled heartbeat, a message in a channel they watch, or a direct request
-from the Director.
+Agents do not run continuously. They wake on events: a new task in
+their inbox, a scheduled heartbeat, a message in a channel they watch,
+or a direct request from the Director.
 
 ### 2.4  Project
 
@@ -144,16 +148,17 @@ prompt instructions.
 ```
 ~/.glorbo/
 ├── glorbo                          # Elixir release binary (self-contained BEAM)
-├── config.md                       # Global settings and defaults (no secrets)
+├── config.md                       # Global settings (host, port, dashboard token)
 ├── providers.toml                  # (optional) user-declared CLI providers (GEP-8)
 ├── glorbo.db                       # SQLite index (rebuildable, disposable)
+│
+├── state/
+│   ├── .erl_cookie                 # Release cookie (mode 0600) for `glorbo console`
+│   └── glorbo.pid                  # Daemon pidfile (mode 0600)
+│
 ├── audit/
 │   └── _system/
 │       └── 2026-04.jsonl           # System-level audit events (init, backup, …)
-│
-├── state/
-│   ├── .erl_cookie                 # Release cookie (mode 0600)
-│   └── glorbo.pid                  # Daemon pidfile (mode 0600)
 │
 ├── companies/
 │   └── acme/
@@ -165,7 +170,7 @@ prompt instructions.
 │       │   │   ├── inbox/          # Incoming tasks and messages (Elixir writes)
 │       │   │   ├── outbox/         # Agent writes here; Elixir routes
 │       │   │   ├── workspace/      # Bind-mounted into sandbox; agent works here
-│       │   │   ├── stdout.log      # Sandboxed CLI stdout stream (tailed by UI)
+│       │   │   ├── stdout.log      # Sandboxed CLI stdout (tailed by UI)
 │       │   │   └── history/        # Consolidated old inbox/outbox
 │       │   │
 │       │   └── engineer/
@@ -206,10 +211,11 @@ prompt instructions.
     └── glorbo.log                  # Elixir application log
 ```
 
-The pre-pivot tree had `bin/`, `models/`, `containers/` directories for
-static Podman + Ollama + the `glorbo-runtime` Python image — all dropped
-in GEP-5 D6. Agents are CLI-tool subprocesses, not containers, and no
-Python runs anywhere on the host.
+The pre-pivot tree had additional `bin/`, `models/`, `containers/`
+directories (static Podman + Ollama + the `glorbo-runtime` Python
+image). Those were dropped with the container tier in GEP-5 D6 — agents
+run directly as `bwrap`-sandboxed CLI subprocesses and Glorbo doesn't
+bundle a model host.
 
 ### Key Invariants
 
@@ -233,23 +239,23 @@ Python runs anywhere on the host.
 
 The core process.  Runs on the host (not in a container).
 
-| Concern              | Solution                                                |
-|----------------------|---------------------------------------------------------|
-| Orchestration        | OTP GenServers, one per agent lifecycle                 |
-| Scheduling           | `crontab`-driven per-company `Scheduler` for heartbeats |
-| File watching        | `file_system` hex package (inotify)                     |
-| Dashboard            | Phoenix LiveView + Channels                             |
-| Database             | Ecto + `ecto_sqlite3` (WAL mode)                        |
-| Provider registry    | `Glorbo.CLI.Registry` Agent (GEP-8)                     |
-| Agent sandbox        | `bwrap` argv build + `Port.open` per invocation         |
-| Release packaging    | `mix release` + Burrito (single binary, bundled ERTS)   |
+| Concern              | Solution                                                   |
+|----------------------|------------------------------------------------------------|
+| Orchestration        | OTP GenServers, one per agent lifecycle                    |
+| Scheduling           | Per-company `Scheduler` GenServer + `crontab` for heartbeats |
+| File watching        | `file_system` hex package (inotify)                        |
+| Dashboard            | Phoenix LiveView                                           |
+| Agent chat / streaming | Phoenix Channels + PubSub                                |
+| Database             | Ecto + `ecto_sqlite3` (WAL mode)                           |
+| Provider registry    | `Glorbo.CLI.Registry` Agent (GEP-8)                        |
+| Agent sandbox        | `bwrap` argv build + `Port.open` per invocation            |
+| Release packaging    | `mix release` + Burrito (single binary, bundled ERTS)      |
 
-**Supervision tree (actual, v0.0.3):**
+**Supervision tree (sketch):**
 
 ```
 Glorbo.Application
 ├── Glorbo.Repo                          # SQLite / Ecto (WAL mode)
-├── DNSCluster
 ├── Phoenix.PubSub (Glorbo.PubSub)
 ├── Finch (Glorbo.Finch)
 ├── GlorboWeb.Telemetry
@@ -262,11 +268,10 @@ Glorbo.Application
 │       ├── Glorbo.Company.Scheduler     # Heartbeats, cron triggers
 │       ├── Glorbo.Company.BudgetTracker # Token/cost accounting
 │       ├── Glorbo.Approvals.Gate        # Approval-queue gate
-│       ├── Glorbo.Network.Proxy         # Per-company hostname-allowlist proxy
-│       │                                # (started only if any agent has
-│       │                                #  network: api-only)
+│       ├── Glorbo.Network.Proxy         # Hostname-allowlist HTTPS proxy
+│       │                                # (only if any agent has network: api-only)
 │       ├── Task.Supervisor              # Per-agent dispatch tasks
-│       └── Glorbo.Agent.Server (ceo)    # One per agent; idle between wakes
+│       └── Glorbo.Agent.Server (ceo)    # One per agent; idle between wakes;
 │                                        # wakes → bwrap+CLI invocation via
 │                                        # Glorbo.CLI.Dispatcher
 ├── GlorboWeb.StdoutStreamer.Supervisor  # LV stdout tail streamers
@@ -280,28 +285,27 @@ unaffected.
 ### 4.2  CLI Agents — The Hands
 
 Python never runs on the host. Glorbo spawns existing terminal AI tools
-(Claude Code, Gemini CLI, Codex, and any registered provider — see GEP-8)
-as short-lived sandboxed processes and lets each tool handle its own model
-access, auth, and tool-use loop.
+(Claude Code, Gemini CLI, Codex, and any provider registered via GEP-8)
+as short-lived sandboxed processes and lets each tool handle its own
+model access, auth, and tool-use loop.
 
 For each agent wake, Elixir:
 
 1. Materialises skills and the task prompt into the agent's workspace
    (`.glorbo-skills/`, `.glorbo-run/<task-id>/task-prompt.md`).
-2. Resolves the agent's `provider:` name through `Glorbo.CLI.Registry`
-   (GEP-8) to a `Provider` struct: binary path, argv template, env
-   overrides, reply-path template, and an optional usage-parser binding.
+2. Resolves the agent's `provider:` through `Glorbo.CLI.Registry` to a
+   `Provider` struct: binary path, argv template, env overrides,
+   reply-path template, and an optional usage-parser binding.
 3. Builds a `bwrap` argv from the agent's `permissions:` and `network:`
    declarations (see §4.4).
 4. Calls `Glorbo.CLI.Dispatcher.invoke/3`, which expands the provider's
-   argv/env templates, sets `$GLORBO_REPLY_PATH` to a unique
-   per-invocation file path, spawns `bwrap <sandbox-args> <cli-tool> …`
-   via `Port.open`, pipes the task prompt on stdin, tails stdout to
+   argv/env templates, sets `$GLORBO_REPLY_PATH` to a unique per-
+   invocation file path, spawns `bwrap <sandbox-args> <cli-tool> …` via
+   `Port.open`, pipes the task prompt on stdin, tails stdout to
    `agents/<name>/stdout.log`.
-5. On exit, Glorbo reads the reply file at `$GLORBO_REPLY_PATH`. Empty
-   or missing reply = invocation failure (see §4.2.1). The bound
-   usage-parser extracts token/cost telemetry; the Router moves outbox
-   files; per-invocation scratch is cleaned up.
+5. On exit, reads the reply file at `$GLORBO_REPLY_PATH` (see §4.2.1),
+   runs the bound usage-parser for token/cost telemetry, moves outbox
+   files through the Router, and cleans up per-invocation scratch.
 
 The CLI tool is trusted; Glorbo doesn't ship its own LLM client. Each
 tool manages its own credentials (Claude Code's login,
@@ -309,7 +313,7 @@ tool manages its own credentials (Claude Code's login,
 those secrets — the company directory sees no API keys. Complex
 orchestration logic lives in Elixir; the CLI tool's job is: receive a
 prompt on stdin, do the work inside its sandbox view of the workspace,
-write the final reply to `$GLORBO_REPLY_PATH`, exit.
+write its final answer to `$GLORBO_REPLY_PATH`, exit.
 
 #### 4.2.1  Reply-file contract (GEP-8 D1)
 
@@ -324,9 +328,8 @@ deliberately strict:
   as the agent's answer in the dashboard and audit log.
 
 The scaffolder injects this contract into every new `agent.md` system
-prompt (`Glorbo.CLI.Scaffold.SystemPrompt.reply_contract/0`) so new
-agents aren't born broken. Existing agents upgrading from pre-GEP-8
-must edit their system prompts to add the instruction.
+prompt so new agents aren't born broken. Agents upgrading from
+pre-GEP-8 must edit their system prompts to add the instruction.
 
 ### 4.3  LLM Providers
 
@@ -353,20 +356,23 @@ loads both at boot, PATH-detects each binary, and caches the snapshot.
 The `/providers` LiveView surfaces the current state; `glorbo doctor
 --probe` triggers version probes.
 
-**Shipped providers (v0.0.3):**
+**Shipped providers:**
 
-| `provider:`    | Binary    | Auth source                                 | Usage tracked? |
-|----------------|-----------|---------------------------------------------|----------------|
-| `claude-code`  | `claude`  | Claude Code's own login (`~/.claude/`)      | Yes (JSONL)    |
-| `codex`        | `codex`   | Codex CLI's own auth (`~/.codex/`)          | Yes (JSONL)    |
-| `gemini-cli`   | `gemini`  | `GEMINI_API_KEY` or `gcloud` ADC            | Yes (stdout)   |
-| `hermes`       | `hermes`  | Whatever hermes is configured against       | No             |
-| `opencode`     | `opencode`| Whatever opencode is configured against     | No             |
-| `pi`           | `pi`      | Local (typically offline)                   | No             |
+| `provider:`    | Binary     | Auth source                             | Usage tracked? |
+|----------------|------------|-----------------------------------------|----------------|
+| `claude-code`  | `claude`   | Claude Code's own login (`~/.claude/`)  | Yes (JSONL)    |
+| `codex`        | `codex`    | Codex CLI's own auth (`~/.codex/`)      | Yes (JSONL)    |
+| `gemini-cli`   | `gemini`   | `GEMINI_API_KEY` or `gcloud` ADC        | Yes (stdout)   |
+| `hermes`       | `hermes`   | Whatever hermes is configured against   | No             |
+| `opencode`     | `opencode` | Whatever opencode is configured against | No             |
+| `pi`           | `pi`       | Local (typically offline)               | No             |
 
 Untracked providers require the agent to opt in via
 `allow_untracked_budget: true` in its `agent.md` — dispatch refuses
-otherwise (GEP-8 D15).
+otherwise (GEP-8 D15). Local-first offline operation is supported out
+of the box through `pi` and whatever other local-only CLIs the Director
+installs; adding a new local provider is a TOML file, not an Elixir
+module.
 
 Glorbo never handles API keys directly. Each CLI tool's credentials
 stay in the user's home directory and are bind-mounted read-only into
@@ -377,18 +383,16 @@ settings (bind address, dashboard token) — not provider credentials.
 ### 4.4  bwrap — The Kernel Guard
 
 [`bwrap`](https://github.com/containers/bubblewrap) (bubblewrap) is the
-kernel-layer isolator for every agent invocation. Every CLI-tool
-invocation runs inside a fresh bwrap process tree that dies with its
-parent. The sandbox is built from the agent's `permissions:` and
-`network:` declarations — no standing container, no long-lived
-namespace, no privileged daemon.
+kernel-layer isolator. Every CLI-tool invocation runs inside a fresh
+bwrap process tree that dies with its parent. The sandbox is built
+from the agent's `permissions:` and `network:` declarations — no
+standing container, no long-lived namespace, no privileged daemon.
 
 > **Historical note — Podman tier dropped.** An earlier plan had Podman
 > containers as a second isolation tier for a Python agent runtime.
 > That tier was dropped entirely in GEP-5 D6 (2026-04-17) along with
 > the Python runtime itself. bwrap is the only isolation layer, and
-> it's permanent. The §4.4.2 Podman subsection below has been removed;
-> see `git log` for the pre-pivot content.
+> it's permanent.
 
 **Base sandbox flags (every invocation):**
 
@@ -417,15 +421,24 @@ namespace, no privileged daemon.
 
 - `network: none` (default) — `--unshare-net`: no network namespace access,
   kernel-enforced.
-- `network: api-only` — shared netns + `HTTP_PROXY`/`HTTPS_PROXY` pointed at a
-  Glorbo-managed HTTPS CONNECT allowlist proxy. Advisory for v0.0.1 (a
-  determined agent could ignore the env vars); a netns + nftables hardening
-  iteration is planned.
+- `network: api-only` — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
+  pointed at a Glorbo-managed HTTPS CONNECT allowlist proxy. Currently
+  advisory (a determined agent could ignore the env vars); a dedicated
+  netns + `nftables` hardening iteration is planned to make the
+  allowlist kernel-enforced.
 - `network: open` — host netns inherited (no `--unshare-net`). Explicit opt-in.
 
-Sibling agents and other companies are **not mounted** — company isolation is
-therefore absolute by construction: there is no path inside the sandbox that
-could reach another company's data.
+Sibling agents and other companies are **not mounted** — company
+isolation is therefore absolute by construction: there is no path
+inside the sandbox that could reach another company's data.
+
+**Planned hardening:** `network: api-only` currently inherits the host
+netns plus a `HTTPS_PROXY` env var pointing at the per-company
+hostname-allowlist proxy. This is advisory — a determined agent could
+ignore the env vars. A future iteration will move `api-only` agents
+into a dedicated netns with `nftables` rules forcing all egress
+through the proxy, making the allowlist kernel-enforced like `none`
+already is.
 
 ### 4.5  SQLite — The Index
 
@@ -506,7 +519,7 @@ echo "Done — here's the summary..." > "$GLORBO_REPLY_PATH"
 ```
 
 Glorbo reads this file on your exit. Missing or empty = invocation
-failure.
+failure. (GEP-8 §4.2.1.)
 
 {{ skills }}
 ```
@@ -541,19 +554,19 @@ The bwrap + CLI pipeline (GEP-4, GEP-8):
    `{invocation_id}`, and named path transforms. It prepares
    `$GLORBO_REPLY_PATH` as a unique per-invocation file path under
    `agents/<name>/.glorbo/outbox/`.
-5. **Elixir** builds a `bwrap` argv from `permissions:` + `network:` (see
-   §4.4, §7.2) and spawns `bwrap <sandbox-args> <cli-tool> …` via
+5. **Elixir** builds a `bwrap` argv from `permissions:` + `network:`
+   (see §4.4, §7.2) and spawns `bwrap <sandbox-args> <cli-tool> …` via
    `Port.open`, with the task prompt piped on stdin, the agent's
    workspace as `cwd`, and stdout tailed to `agents/<name>/stdout.log`.
 6. **The CLI tool** runs inside the sandbox, reads `.glorbo-skills/` on
    demand, does its tool-use loop, writes results into the workspace,
    and writes its final reply to `$GLORBO_REPLY_PATH`.
-7. **The CLI tool** exits. The Dispatcher reads
-   `$GLORBO_REPLY_PATH` (enforcing size cap and non-emptiness),
-   invokes the provider's bound usage-parser, records the result in
-   the budget ledger, removes `.glorbo-run/` + `.glorbo-skills/`,
-   reads the outbox, routes messages, emits `agent.complete` to the
-   audit log, and updates the SQLite index.
+7. **The CLI tool** exits. The Dispatcher reads `$GLORBO_REPLY_PATH`
+   (enforcing size cap and non-emptiness; see §4.2.1), invokes the
+   provider's bound usage-parser, records the result in the budget
+   ledger, removes `.glorbo-run/` + `.glorbo-skills/`, reads the
+   outbox, routes messages, emits `agent.complete` to the audit log,
+   and updates the SQLite index.
 
 ### 5.4  Sleeping
 
@@ -706,11 +719,11 @@ kernel says no.
 
 ### 7.3  Company Isolation
 
-Agents in Company A are spawned inside a `bwrap` sandbox whose mount set
-contains only subpaths of Company A's directory; Company B's directory
-is never mounted and therefore not reachable from any path inside the
-sandbox. There is no mechanism — at any layer — for an agent in
-Company A to access Company B's data.
+Agents in Company A are spawned inside a `bwrap` sandbox whose mount
+set contains only subpaths of Company A's directory; Company B's
+directory is never mounted and therefore not reachable from any path
+inside the sandbox. There is no mechanism — at any layer — for an
+agent in Company A to access Company B's data.
 
 ---
 
@@ -750,9 +763,8 @@ re-fire alerts it's already emitted.
 Agents routing through an untracked provider
 (`usage_parser = "none"`) must opt in via `allow_untracked_budget:
 true` in their `agent.md` (GEP-8 D15). The tracker records zeros for
-these invocations; the cap check still runs against the logged zero
-but of course never triggers `:alert`/`:stop`. Making the opt-in
-visible in `agent.md` means the Director can grep for it.
+these invocations; making the opt-in visible in `agent.md` means the
+Director can grep for it.
 
 ### 8.2  Approval Gates
 
@@ -807,8 +819,8 @@ Director only.
   to any channel, DM any agent.
 - **Approval queue:** Pending approval requests with one-click approve/reject.
 - **Audit log:** Searchable, filterable event history.
-- **System health:** Host prerequisite checks, Elixir process tree,
-  disk/kernel state.
+- **System health:** Host prerequisite checks, resource usage, Elixir
+  process tree.
 - **Providers:** Provider registry status (GEP-8). Every declared
   provider with routable / untracked / not-installed badge, resolved
   PATH, version (after probe), parser binding, and `source`
@@ -827,10 +839,10 @@ inotify trigger PubSub broadcasts.  The dashboard updates without polling.
 
 ```
 glorbo init [--force]           # First-time setup: create ~/.glorbo/,
-     [--no-example]             # verify deps via `glorbo doctor`,
+     [--no-example]              # verify deps via `glorbo doctor`,
                                 # optionally scaffold example company (acme).
 
-glorbo up                       # Start the detached daemon (dashboard +
+glorbo up                       # Start detached daemon (dashboard +
                                 # supervision tree). Idempotent via pidfile.
 glorbo down                     # Graceful SIGTERM → 10s grace → SIGKILL.
 glorbo status                   # Pidfile state + uptime.
@@ -845,8 +857,7 @@ glorbo new project <co>/<slug>  # Scaffold a new project.
 glorbo reindex                  # Rebuild SQLite from filesystem.
 glorbo migrate                  # Run pending Ecto migrations.
 glorbo doctor [--json] [--fix]  # Host prerequisite checks + auto-fixers.
-glorbo doctor --probe           # (Planned) Trigger version probes on
-                                # the provider registry.
+glorbo doctor --probe           # Version-probe the provider registry.
 
 glorbo logs <co> [agent]        # Tail audit log or agent stdout
   [--follow]                    # (inotify-backed live tail).
@@ -859,9 +870,6 @@ glorbo restore <archive>        # Extract + migrate + reindex + doctor --fix.
 
 glorbo help [<verb>]            # Usage text.
 ```
-
-All verbs are wired as of v0.0.2 except `glorbo doctor --probe`, which
-landed with GEP-8 in v0.0.3.
 
 ---
 
@@ -891,7 +899,7 @@ glorbo init
    host/port (`127.0.0.1:4000`).
 4. Bootstraps `state/.erl_cookie` (mode 0600) for `glorbo console` remsh.
 5. (Unless `--no-example`) Scaffolds the `acme` example company with a
-   CEO agent.
+   CEO agent including the reply-contract system prompt.
 6. Rebuilds the SQLite index from disk (`glorbo reindex`).
 7. Runs a post-doctor pass to confirm everything is green.
 
@@ -900,16 +908,22 @@ glorbo init
 | Dependency       | Required | Provided by                     | Purpose                          |
 |------------------|----------|---------------------------------|----------------------------------|
 | Linux kernel ≥ 5.13 | Yes   | your distro                     | user namespaces, bwrap           |
-| `bubblewrap`     | Yes      | distro package (`apt`/`dnf`/…)   | kernel-level agent sandboxing    |
+| `bubblewrap`     | Yes      | distro package (`apt`/`dnf`/…)  | kernel-level agent sandboxing    |
 | `uidmap`         | Yes      | `uidmap` or `shadow` package    | `newuidmap`/`newgidmap` helpers  |
 | `inotify-tools`  | Yes      | distro package                  | filesystem watcher               |
-| One or more CLIs | Yes      | install separately              | `claude`, `gemini`, `codex`, …  |
-| BEAM VM          | Bundled  | Burrito release                 | no Erlang install needed          |
+| One or more CLIs | Yes      | install separately              | `claude`, `gemini`, `codex`, …   |
+| BEAM VM          | Bundled  | Burrito release                 | no Erlang install needed         |
 
-There is **no** `glorbo-runtime` container image, no bundled Python, no
-bundled Podman or Ollama — those were part of a pre-pivot plan dropped
-in GEP-5 D6. Providers are whatever CLI tools the user has installed;
-Glorbo wraps them under `bwrap`.
+Agents can use local models via CLIs that wrap them (e.g. `pi`,
+`opencode` against a local backend) or cloud providers like Anthropic
+(Claude), OpenAI (Codex), and Google (Gemini). All of these are
+configured per agent in `agent.md` and resolve through the provider
+registry (GEP-8). Local providers are the default-friendly choice;
+cloud providers are opt-in.
+
+Python is **not** a host dependency. There is no container runtime.
+Glorbo bundles neither Podman nor Ollama — those were part of a
+pre-pivot plan dropped in GEP-5 D6.
 
 ### Upgrade
 
@@ -933,7 +947,7 @@ glorbo backup    # creates ~/.glorbo/backups/glorbo-backup-20260415.tar.gz
 
 # Target machine (install glorbo binary first)
 glorbo restore glorbo-backup-20260415.tar.gz
-glorbo doctor --fix    # Repairs missing dirs, mode bits, state files
+glorbo doctor --fix    # Rebuilds container image on new machine
 glorbo up
 ```
 
@@ -950,9 +964,10 @@ glorbo up
   --cap-drop ALL` and no setuid helpers.
 - **Network isolation:** Agents default to `network: none` —
   `--unshare-net` is a kernel netns shutdown; egress is physically
-  blocked. They must be explicitly granted network access.
+  blocked. `api-only` and `open` must be explicitly opted into.
 - **Read-only mounts:** bwrap binds everything but the agent's own
-  workspace and outbox as `--ro-bind`.
+  workspace and outbox as `--ro-bind`. Sibling agents and other
+  companies are not mounted at all.
 - **API keys:** Each CLI tool owns its own credentials in the user's
   home directory (`~/.claude/`, `~/.codex/`, `~/.config/gcloud/`, …).
   Glorbo never handles keys, never copies them into the company
