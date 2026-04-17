@@ -2,15 +2,19 @@
 gep: 8
 title: Provider Registry + CLI Auto-Detect
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-17
+updated: 2026-04-17
 requires: [2, 4]
 see-also: [3, 5]
 history:
   - date: 2026-04-17
     status: Draft
     note: Initial draft — originally lived at docs/specs/2026-04-17-provider-registry-and-auto-detect.md; migrated into the GEP process with the same content. Targets v0.0.3.
+  - date: 2026-04-17
+    status: Accepted
+    note: §11 open questions resolved (D12–D17). Module-layout paths in §5 corrected to match the actual `lib/glorbo/cli/` tree. Reply-file contract confirmed as a hard flip — breaking change for existing agents; migration requires system-prompt updates. Implementation starts immediately, targeting v0.0.3.
 ---
 
 # GEP-8: Provider Registry + CLI Auto-Detect
@@ -63,15 +67,18 @@ lib/glorbo/cli/
 │   ├── loader.ex               NEW — TOML load + validation
 │   └── provider.ex             NEW — struct
 ├── parsers/
-│   ├── claude_jsonl.ex         EXTRACTED from adapter/claude_code.ex
-│   ├── gemini_stdout.ex        EXTRACTED from adapter/gemini_cli.ex
-│   ├── codex_jsonl.ex          EXTRACTED from adapter/codex.ex
+│   ├── claude_jsonl.ex         EXTRACTED from cli/claude_code.ex
+│   ├── gemini_stdout.ex        EXTRACTED from cli/gemini_cli.ex
+│   ├── codex_jsonl.ex          EXTRACTED from cli/codex.ex
 │   └── none.ex                 NEW — no-op parser
 ├── path_transforms.ex          NEW — named transforms (slash_to_dash)
-└── adapter/                    DELETED — logic split between Dispatcher + config + parsers
+├── adapter.ex                  DELETED — behaviour replaced by Registry + Dispatcher
+├── claude_code.ex              DELETED — logic split between TOML config + Parsers.ClaudeJsonl
+├── codex.ex                    DELETED — logic split between TOML config + Parsers.CodexJsonl
+└── gemini_cli.ex               DELETED — logic split between TOML config + Parsers.GeminiStdout
 ```
 
-The `Glorbo.CLI.Adapter` behaviour in `lib/glorbo/cli/adapter.ex` goes away along with the adapter modules. `Glorbo.Agent.Dispatch` stops resolving adapter modules by name and instead resolves provider entries from the Registry.
+The existing adapter files sit directly under `lib/glorbo/cli/` (not under an `adapter/` subdir). The `Glorbo.CLI.Adapter` behaviour in `lib/glorbo/cli/adapter.ex` goes away along with the three adapter modules. `Glorbo.Agent.Dispatch` stops resolving adapter modules by name and instead resolves provider entries from the Registry.
 
 ## 6. TOML schema
 
@@ -101,10 +108,12 @@ CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
 # Absence or emptiness of the file on exit = invocation failure.
 reply_dir               = "{workspace}/.glorbo/outbox"
 reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576          # 1 MiB default (D12)
 
 # Version detection.
-version_flag  = "--version"                  # "" disables probing
-version_regex = '(\d+\.\d+\.\d+)'
+version_flag         = "--version"           # "" disables probing
+version_regex        = '(\d+\.\d+\.\d+)'
+allow_version_probe  = true                  # User entries default false (D13)
 
 # Usage parsing (optional).
 usage_parser = "claude_jsonl"                # "none" for no budget tracking
@@ -123,6 +132,9 @@ encoded_workspace = { from = "{workspace}", transform = "slash_to_dash" }
 - `prompt_mode` not in the enumerated set → error.
 - `usage_parser` references an unknown module → error.
 - `path_transforms[*].transform` references an unknown named transform → error.
+- `reply_max_bytes` not a positive integer → error. Defaults to `1_048_576` (1 MiB) if unset (D12).
+- `allow_version_probe` defaults to `true` for built-in providers, `false` for user entries (D13). When `false`, detection performs PATH resolution only — the `System.cmd/3` probe is skipped. Explicit `allow_version_probe = true` in a user entry opts in.
+- `source: :builtin | :user` is computed by the Loader (not a TOML field), based on which directory the entry came from (D17).
 
 ### Invocation-time env vars
 
@@ -241,6 +253,8 @@ Dashboard colour scheme:
 | Binary missing at invocation   | Dispatch, `provider.unavailable` event | `provider "<name>" declared but binary "<path>" not found`       |
 | Reply file missing             | Invocation failure             | `no reply at $GLORBO_REPLY_PATH (agent did not produce required output)` |
 | Reply file empty               | Invocation failure             | `empty reply at $GLORBO_REPLY_PATH`                                      |
+| Reply file exceeds size cap    | Invocation failure             | `reply exceeded N bytes at $GLORBO_REPLY_PATH (cap: M bytes)` (D12)       |
+| Dispatch to untracked provider without opt-in | Dispatch refusal | `agent "<slug>" lacks allow_untracked_budget; cannot route to "<provider>" (usage_parser: none)` (D15) |
 | Version probe timeout          | Snapshot entry, dashboard      | `probe timed out after 3s` (non-fatal; provider still shown)             |
 | Version probe non-zero exit    | Snapshot entry, dashboard      | `probe exited with code N` (non-fatal)                                   |
 | Usage parse error              | Audit event `usage.parse_error`| Logged, invocation still succeeds; tokens recorded as zero               |
@@ -261,16 +275,23 @@ Because the three existing adapters get replaced, the refactor and the auto-dete
 10. Extend `glorbo doctor` to print the provider table.
 11. Update `agent.md` docs to reference `GLORBO_REPLY_PATH` contract.
 
-Existing agents that route through `provider: claude-code | gemini-cli | codex` keep working without changes — same names, same behaviour, different plumbing under the hood.
+**Breaking change — reply-file contract (D1).** Existing agents that relied on stdout capture for their reply no longer work as-is. The three built-in providers (`claude-code`, `gemini-cli`, `codex`) all ship with the reply-file contract. Agent system prompts must be updated to instruct the CLI to write its final reply to `$GLORBO_REPLY_PATH`. Glorbo's default `new agent` scaffolding (GEP-10) includes this instruction. Users upgrading from v0.0.2 must edit their existing `agent.md` files before their agents will produce non-empty replies. A note is added to the v0.0.3 CHANGELOG under "Breaking changes."
+
+Separately, the provider *name* surface is unchanged — `provider: claude-code | gemini-cli | codex` in `agent.md` still resolves correctly; only the reply-transport changes.
 
 ## 11. Open questions
 
-1. **Where exactly do the dashboard entry points land?** Candidates: a section on the existing `/health` LiveView, a new `/providers` LiveView. Defer to UI phase.
-2. **Does `agent.md` need a new opt-in field** for "allow this agent to use providers with `usage_parser = "none"`"? Budget tracking is core to the product; opting out should be explicit per agent.
-3. **Reply file size cap?** Unbounded is asking for a runaway agent to fill disk. A hard limit (say 1MB default, configurable per provider in TOML) seems prudent.
-4. **What happens when the user edits `~/.glorbo/providers.toml` while Glorbo is running?** Today: no effect until Refresh or restart. file_system watcher could auto-refresh. Defer.
-5. **Should custom providers be exposed to the dashboard differently** from shipped defaults? Visually distinguishing user-declared entries may be helpful (`source: "builtin" | "user"` field in the card). Ship the field; UI can decide.
-6. **Version-probe privacy concern** — running `claude --version` is harmless, but running `<arbitrary-user-binary> --version` on user-declared entries executes untrusted code in the host environment. Consider limiting probes to binaries that pass a sanity check (under `~/.local/bin`, `/usr/bin`, `/opt/*`, etc.) or require explicit opt-in per user entry.
+All six open questions below were resolved on 2026-04-17 as part of the
+Draft→Accepted transition. Resolutions recorded as D12–D17 in the decision
+log. Kept verbatim here for historical context; the binding answers live
+in §13.
+
+1. **Where exactly do the dashboard entry points land?** → **Resolved (D16):** new `/providers` LiveView.
+2. **Does `agent.md` need a new opt-in field** for "allow this agent to use providers with `usage_parser = "none"`"? → **Resolved (D15):** yes, `allow_untracked_budget: true`.
+3. **Reply file size cap?** → **Resolved (D12):** 1 MiB default, overridable via TOML `reply_max_bytes`.
+4. **What happens when the user edits `~/.glorbo/providers.toml` while Glorbo is running?** → **Deferred (D14):** no effect until explicit Refresh or restart.
+5. **Should custom providers be exposed to the dashboard differently** from shipped defaults? → **Resolved (D17):** yes, `source: :builtin | :user` on the Provider struct.
+6. **Version-probe privacy concern** → **Resolved (D13):** user entries must opt in via `allow_version_probe = true`.
 
 ## 12. Test strategy
 
@@ -350,6 +371,42 @@ Each entry: **decision** / **alternatives considered** / **why this choice**.
 - **Decided:** do the registry + Dispatcher refactor first; auto-detect is a natural consequence.
 - **Alternatives:** add auto-detect on top of the existing three-adapter shape, refactor later.
 - **Why:** auto-detect as originally scoped was mostly plumbing around a tiered-status concept that got invalidated by the config-driven insight. Shipping auto-detect on the current shape would mean writing code that gets rewritten in the next phase. The refactor is larger but eliminates duplicate work; auto-detect falls out of it for ~80% free.
+
+### D12. Reply file size cap defaults to 1 MiB, overridable per provider
+
+- **Decided:** `reply_max_bytes = 1_048_576` is the default. Providers may override in TOML. Exceeding the cap on exit is an invocation failure with reason `:reply_too_large`. The cap is checked via `File.stat/1` before reading the file (cheap) and is recorded in the audit `agent.complete` failure event.
+- **Alternatives:** unbounded (current stdout behaviour has no cap either); a single global cap in config; streaming read with mid-stream abort.
+- **Why:** unbounded is a disk-fill DoS waiting to happen once agents start writing files (stdout capture was naturally bounded by OS pipe buffers plus CLI process memory; files have no such limit). 1 MiB is generous — a 1 MiB markdown reply is ~250k English words — and the audit-log overhead of recording caps-exceeded events gives the Director visibility. Per-provider override covers the edge case of providers that legitimately return long outputs (e.g. full-page HTML rendering).
+
+### D13. Version probes on user-declared providers require explicit opt-in
+
+- **Decided:** built-in providers have `allow_version_probe = true` by default. User-declared providers in `~/.glorbo/providers.toml` default to `false`; running a version probe requires explicit `allow_version_probe = true` per entry.
+- **Alternatives:** always probe (current spec draft); probe only binaries under a trusted-path allowlist (`/usr/bin`, `~/.local/bin`, `/opt/*`); never probe user entries.
+- **Why:** running `claude --version` is a known-safe operation. Running `<arbitrary-user-binary> --version` on every boot-time refresh and every dashboard click is not — a malicious or buggy third-party CLI could do anything when invoked with `--version`. Trusted-path allowlists are fragile (users install tools everywhere). The least-surprise policy is: user entries opt in by saying so. Detection still shows the provider as installed? based on PATH presence; only the version string is gated. This matches how `nix`, `guix`, and most package managers treat user-contributed entries (opt-in execution of arbitrary scripts).
+
+### D14. `~/.glorbo/providers.toml` hot-reload deferred
+
+- **Decided:** edits to `providers.toml` require explicit refresh (dashboard button, `glorbo doctor --probe`, or restart) to take effect.
+- **Alternatives:** `file_system` watcher auto-reloads on every write (we already use inotify for the rest of the dashboard); TTL-based reload.
+- **Why:** auto-reload introduces a moving-target experience (user is mid-edit, registry flickers between valid/invalid states) and runs validation on every save — noisy, confusing error surface. Explicit refresh is cheap (sub-second) and keeps the "registry is a known snapshot" mental model intact. Can be revisited if users complain; the cost of deferring is one extra click.
+
+### D15. `agent.md` opt-in for untracked providers: `allow_untracked_budget: true`
+
+- **Decided:** dispatching through a provider with `usage_parser = "none"` requires `allow_untracked_budget: true` in the agent's `agent.md` frontmatter. Missing or `false` causes Dispatch to refuse with a clear error before any invocation.
+- **Alternatives:** global config flag; per-company flag; silent acceptance (current spec draft implied this).
+- **Why:** budget tracking is a product invariant — "you will always know what each agent costs." Providers without a parser break that invariant. The opt-in is agent-level rather than global because an organisation might reasonably want `pi` (untracked, local-only) for their research agent while requiring `claude-code` (tracked) for their engineer. A single field per agent makes the tradeoff visible in the file-as-source-of-truth layout: reading `agent.md` tells you whether that agent's spend is observable.
+
+### D16. Dashboard entry point: new `/providers` LiveView
+
+- **Decided:** add `/providers` as a standalone LiveView route rather than bolting onto `/health`.
+- **Alternatives:** section on `/health`; tab within the system-health page; inline card on company overview.
+- **Why:** `/health` is deliberately terse (status-code-style green/red checks) and widening it with a provider table dilutes the at-a-glance value. Providers have their own interaction surface (per-row refresh, per-provider detail drilldown in future milestones, user-config management) that deserves a dedicated page. Splitting avoids one LiveView trying to be two things.
+
+### D17. `source: :builtin | :user` as a computed field on the Provider struct
+
+- **Decided:** the Loader tags each entry with `source: :builtin` when it came from `priv/providers/*.toml` and `:user` when it came from `~/.glorbo/providers.toml`. This is a runtime-only field — TOML authors never write it.
+- **Alternatives:** omit the field entirely; require authors to declare it (sanity check); track in a separate index.
+- **Why:** the UI (and the future `glorbo doctor` table) wants to visually differentiate user entries from shipped defaults — dashboard badges, diagnostic filtering, security audit scope. Computing from the load path is zero-ceremony for authors and immune to manipulation (a user TOML claiming `source: :builtin` can't actually be a builtin). Named atoms are fine here since the possible values are a closed set known at compile time — GEP-12's no-user-input-atoms rule doesn't apply.
 
 ## 14. Related notes
 

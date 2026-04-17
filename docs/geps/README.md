@@ -31,7 +31,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0005 | [Sandboxing — bwrap / Podman](./0005-sandboxing-bwrap-then-podman.md)                    | Informational | Implemented |
 | 0006 | [Phoenix LiveView + Channels for the Dashboard](./0006-phoenix-liveview-dashboard.md)    | Informational | Implemented |
 | 0007 | [SQLite as Derived Data](./0007-sqlite-as-derived-data.md)                               | Informational | Implemented |
-| 0008 | [Provider Registry + CLI Auto-Detect](./0008-provider-registry-and-auto-detect.md)       | Standards     | Draft       |
+| 0008 | [Provider Registry + CLI Auto-Detect](./0008-provider-registry-and-auto-detect.md)       | Standards     | Accepted    |
 | 0009 | [Protocol-Level Integration — MCP, ACP](./0009-protocol-integration-mcp-acp.md)          | Informational | Draft       |
 | 0010 | [Agent and Role-Specific Skill Templates](./0010-agent-and-skill-templates.md)           | Standards     | Placeholder |
 | 0011 | [The Zen of Glorbo](./0011-zen-of-glorbo.md)                                             | Informational | Accepted    |
