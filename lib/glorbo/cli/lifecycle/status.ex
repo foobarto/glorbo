@@ -25,16 +25,16 @@ defmodule Glorbo.CLI.Lifecycle.Status do
   @tcp_timeout_ms 500
   @switches [help: :boolean, json: :boolean]
 
-  @spec run([String.t()]) :: Glorbo.CLI.result()
-  def run(argv) do
+  @spec run([String.t()], keyword()) :: Glorbo.CLI.result()
+  def run(argv, run_opts \\ []) do
     {opts, _positional, _invalid} = OptionParser.parse(argv, strict: @switches)
 
-    if opts[:help], do: {:status, 0, help_text()}, else: do_run(opts)
+    if opts[:help], do: {:status, 0, help_text()}, else: do_run(opts, run_opts)
   end
 
-  defp do_run(opts) do
+  defp do_run(opts, run_opts) do
     base = glorbo_home()
-    status_map = build_status_map(base)
+    status_map = build_status_map(base, run_opts)
     exit_code = if status_map.running and status_map.port_listening, do: 0, else: 3
 
     output =
@@ -47,7 +47,7 @@ defmodule Glorbo.CLI.Lifecycle.Status do
     {:status, exit_code, output}
   end
 
-  defp build_status_map(base) do
+  defp build_status_map(base, run_opts) do
     pidfile_status = Pidfile.status(base)
     running? = pidfile_status == :running
 
@@ -62,10 +62,12 @@ defmodule Glorbo.CLI.Lifecycle.Status do
         nil
       end
 
+    port_check = Keyword.get(run_opts, :port_check_fun, &port_listening?/0)
+
     %{
       running: running?,
       pid: pid,
-      port_listening: port_listening?(),
+      port_listening: port_check.(),
       dashboard_url: @dashboard_url
     }
   end

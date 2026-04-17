@@ -11,9 +11,14 @@ defmodule Glorbo.CLI.StatusTest do
 
   alias Glorbo.CLI.Lifecycle.{Pidfile, Status}
 
+  # Stubbed port probe — fixed return so tests don't depend on whatever
+  # is (or isn't) bound to port 4000 on the host running `mix test`.
+  defp port_closed, do: [port_check_fun: fn -> false end]
+  defp port_open, do: [port_check_fun: fn -> true end]
+
   describe "status" do
     test "no pidfile exits 3 with human-readable table", %{glorbo_home: _home} do
-      assert {:status, 3, out} = Status.run([])
+      assert {:status, 3, out} = Status.run([], port_closed())
       assert out =~ "glorbo status"
       assert out =~ "running"
       assert out =~ "no"
@@ -23,17 +28,18 @@ defmodule Glorbo.CLI.StatusTest do
 
     test "alive pidfile + closed port still exits 3 (both conditions required)",
          %{glorbo_home: home} do
-      # Our own BEAM pid → pidfile.status == :running, but port 4000 is
-      # not listening under mix test → exit 3.
+      # Our own BEAM pid → pidfile.status == :running; stub port 4000 as
+      # closed so this test asserts the AND contract without depending on
+      # whether a dev server happens to be running.
       Pidfile.write!(System.pid() |> String.to_integer(), home)
 
-      assert {:status, 3, out} = Status.run([])
+      assert {:status, 3, out} = Status.run([], port_closed())
       assert out =~ "running"
       assert out =~ "yes"
     end
 
     test "--json emits valid JSON with all 4 keys", %{glorbo_home: _home} do
-      assert {:status, 3, out} = Status.run(["--json"])
+      assert {:status, 3, out} = Status.run(["--json"], port_closed())
       assert {:ok, parsed} = Jason.decode(out)
       assert Map.has_key?(parsed, "running")
       assert Map.has_key?(parsed, "pid")
@@ -49,10 +55,20 @@ defmodule Glorbo.CLI.StatusTest do
       my_pid = System.pid() |> String.to_integer()
       Pidfile.write!(my_pid, home)
 
-      assert {:status, 3, out} = Status.run(["--json"])
+      assert {:status, 3, out} = Status.run(["--json"], port_closed())
       assert {:ok, parsed} = Jason.decode(out)
       assert parsed["running"] == true
       assert parsed["pid"] == my_pid
+    end
+
+    test "alive pidfile + open port exits 0 (both conditions met)",
+         %{glorbo_home: home} do
+      Pidfile.write!(System.pid() |> String.to_integer(), home)
+
+      assert {:status, 0, out} = Status.run([], port_open())
+      assert out =~ "running"
+      assert out =~ "yes"
+      assert out =~ "listening"
     end
 
     test "--help returns help text" do
