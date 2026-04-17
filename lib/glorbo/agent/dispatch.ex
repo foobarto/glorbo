@@ -189,6 +189,15 @@ defmodule Glorbo.Agent.Dispatch do
     path = if is_function(fun, 0), do: fun.(), else: fun.(spec)
     fs = fs_fun(opts)
     fs.mkdir_p!.(path)
+
+    # Also ensure the agent's canonical sibling dirs exist so bwrap
+    # can `--bind` them (inbox + outbox are required; workspace/state/
+    # history are convenience). A user-created agent dir with only
+    # AGENT.md would otherwise crash bwrap with:
+    #   bwrap: Can't find source path …/agents/<slug>/outbox
+    agent_root = Path.dirname(path)
+    Enum.each(~w(inbox outbox history state), &fs.mkdir_p!.(Path.join(agent_root, &1)))
+
     {:ok, path}
   end
 
@@ -216,6 +225,14 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp build_ctx(spec, task, workspace, run_dir, provider) do
+    # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
+    # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
+    # root — parent of inbox/outbox. The previous code stripped one
+    # dirname too many, landing at `…/agents/` and pointing bwrap at
+    # `…/agents/outbox` (no such path → `bwrap: Can't find source path
+    # …/agents/outbox` → CLI exits 1 → :reply_file_missing).
+    agent_root = Path.dirname(workspace)
+
     %{
       task_id: task.task_id,
       model: spec.model,
@@ -224,17 +241,9 @@ defmodule Glorbo.Agent.Dispatch do
       prompt_path: prompt_path(run_dir),
       bwrap_opts: %{
         agent_workspace: workspace,
-        inbox_path:
-          Path.join([
-            Path.dirname(Path.dirname(workspace)),
-            "inbox"
-          ]),
-        outbox_path:
-          Path.join([
-            Path.dirname(Path.dirname(workspace)),
-            "outbox"
-          ]),
-        company_path: Path.dirname(Path.dirname(Path.dirname(workspace))),
+        inbox_path: Path.join(agent_root, "inbox"),
+        outbox_path: Path.join(agent_root, "outbox"),
+        company_path: Path.dirname(Path.dirname(agent_root)),
         permissions: spec.permissions,
         network_policy: spec.network,
         timeout_seconds: spec.timeout_seconds,

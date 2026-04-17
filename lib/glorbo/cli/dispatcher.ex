@@ -38,6 +38,8 @@ defmodule Glorbo.CLI.Dispatcher do
   real Bwrap wiring.
   """
 
+  require Logger
+
   alias Glorbo.CLI.Parsers
   alias Glorbo.CLI.PathTransforms
   alias Glorbo.CLI.Registry.Provider
@@ -101,6 +103,7 @@ defmodule Glorbo.CLI.Dispatcher do
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
          env <- build_env(provider.env, substitutions, reply_path, invocation_id, ctx),
          {:ok, run_result} <- run(provider, args, env, ctx, opts),
+         :ok <- maybe_log_run_output(provider, run_result, reply_path, fs),
          {:ok, reply} <- read_reply(reply_path, provider.reply_max_bytes, fs) do
       {usage, usage_error} =
         parse_usage(provider, run_result, ctx, substitutions)
@@ -114,6 +117,29 @@ defmodule Glorbo.CLI.Dispatcher do
          usage_error: usage_error
        }}
     end
+  end
+
+  # Surface CLI run failures to the Director-visible audit trail. If the
+  # exit status is non-zero OR the reply file is missing, emit a warning
+  # with the captured stdout/stderr (merged at the Bwrap layer). Without
+  # this, `:reply_file_missing` is all the operator sees — no idea
+  # whether auth failed, the CLI segfaulted, or the bwrap syscall was
+  # denied.
+  defp maybe_log_run_output(%Provider{} = provider, run_result, reply_path, fs) do
+    exit_status = Map.get(run_result, :exit_status, 0)
+    stdout = Map.get(run_result, :stdout, "")
+    reply_exists? = fs.exists?.(reply_path)
+
+    if exit_status != 0 or not reply_exists? do
+      # Cap stdout so a flood doesn't drown the logs.
+      snippet = stdout |> to_string() |> String.slice(0, 2_000)
+
+      Logger.warning(
+        "cli #{provider.name} exit=#{exit_status} reply_exists?=#{reply_exists?} stdout=#{inspect(snippet)}"
+      )
+    end
+
+    :ok
   end
 
   # ---------------------------------------------------------------------------
