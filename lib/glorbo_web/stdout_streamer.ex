@@ -160,6 +160,8 @@ defmodule GlorboWeb.StdoutStreamer do
   # Split on `\n`; keep the trailing partial (no newline yet) in the
   # buffer for the next poll. Broadcast each COMPLETE line after ANSI
   # strip.
+  defp flush_lines("", state), do: state
+
   defp flush_lines(bytes, state) do
     parts = String.split(bytes, "\n")
     {complete, [tail]} = Enum.split(parts, -1)

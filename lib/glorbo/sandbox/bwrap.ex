@@ -471,6 +471,13 @@ defmodule Glorbo.Sandbox.Bwrap do
     end
   end
 
+  # Cap accumulated stdout/stderr at 16 MiB. A runaway CLI writing GBs
+  # to stdout/stderr would otherwise balloon BEAM heap during the drain
+  # loop — once the cap is hit, subsequent chunks are discarded but the
+  # port is allowed to run to completion so the CLI's exit code still
+  # surfaces (TODO.md Minor #5).
+  @stdout_cap 16 * 1024 * 1024
+
   # Receive-loop over the port: accumulate stdout/stderr data until the
   # `{port, {:exit_status, status}}` message arrives OR the timeout fires.
   defp drain_port(port, timeout_s, acc) do
@@ -478,7 +485,10 @@ defmodule Glorbo.Sandbox.Bwrap do
 
     receive do
       {^port, {:data, chunk}} ->
-        drain_port(port, timeout_s, acc <> chunk)
+        new_acc =
+          if byte_size(acc) >= @stdout_cap, do: acc, else: acc <> chunk
+
+        drain_port(port, timeout_s, new_acc)
 
       {^port, {:exit_status, status}} ->
         {:ok, status, acc}

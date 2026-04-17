@@ -293,7 +293,23 @@ defmodule Glorbo.Company.Router do
 
   defp maybe_route_mentions(_, _, _), do: :ok
 
+  # Slug format: lowercase alphanumerics + hyphens/underscores, 1–64 chars.
+  # Defence-in-depth against a mention like `@../../etc/passwd` sneaking
+  # past the regex scanner upstream (TODO.md Minor #10).
+  @slug_re ~r/\A[a-z0-9][a-z0-9_-]{0,63}\z/
+
+  defp valid_slug?(slug) when is_binary(slug), do: Regex.match?(@slug_re, slug)
+  defp valid_slug?(_), do: false
+
   defp try_write_mention(mentioned, channel, msg, state) do
+    if not valid_slug?(mentioned) do
+      :ok
+    else
+      do_write_mention(mentioned, channel, msg, state)
+    end
+  end
+
+  defp do_write_mention(mentioned, channel, msg, state) do
     inbox_mentions =
       Path.join([
         state.base,
@@ -309,7 +325,10 @@ defmodule Glorbo.Company.Router do
       Path.join([state.base, "companies", state.company, "agents", mentioned])
 
     if File.dir?(agent_dir) do
-      ts = DateTime.utc_now() |> DateTime.to_unix(:millisecond)
+      # Single DateTime to keep filename ts and delivered_at consistent
+      # (same invariant as perform_routing/3).
+      now = DateTime.utc_now()
+      ts = DateTime.to_unix(now, :millisecond)
       path = Path.join(inbox_mentions, "#{ts}-#{channel}.md")
 
       frontmatter = """
@@ -317,7 +336,7 @@ defmodule Glorbo.Company.Router do
       channel: "#{channel}"
       from: "#{msg.sender}"
       source_msg: "#{msg.msg_id}"
-      delivered_at: "#{DateTime.utc_now() |> DateTime.to_iso8601()}"
+      delivered_at: "#{DateTime.to_iso8601(now)}"
       ---
 
       """

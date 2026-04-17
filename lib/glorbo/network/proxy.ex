@@ -51,6 +51,13 @@ defmodule Glorbo.Network.Proxy do
 
   require Logger
 
+  # Idle-tunnel ceiling. A CONNECT tunnel carrying no bytes for this long
+  # gets torn down by relay_bytes/3's `after` clause. 5 minutes aligns
+  # with common reverse-proxy defaults (nginx, haproxy) and the
+  # bwrap-side timeout_seconds default (GEP-8 §7.4). Shortened from the
+  # original 600s (TODO.md Minor #2).
+  @tunnel_idle_timeout_ms 5 * 60 * 1_000
+
   @type start_opts :: [
           name: GenServer.name(),
           company: String.t(),
@@ -356,7 +363,7 @@ defmodule Glorbo.Network.Proxy do
     receive do
       {:pipe_done, _} -> :ok
     after
-      600_000 -> :ok
+      @tunnel_idle_timeout_ms -> :ok
     end
 
     _ = Task.shutdown(t1, :brutal_kill)

@@ -223,7 +223,9 @@ defmodule Glorbo.TaskDefinition do
   defp substitute_frontmatter(content, updates) do
     normalized_updates = Map.new(updates, fn {k, v} -> {to_string(k), v} end)
 
-    case String.split(content, ~r/\A---\n|\n---\n/, parts: 3) do
+    # Accept both LF and CRLF line endings so Windows-authored task files
+    # parse correctly (TODO.md Minor #3).
+    case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
       ["", fm, body] ->
         new_fm =
           fm

@@ -120,7 +120,22 @@ defmodule Glorbo.Budget.Ledger do
   (e.g. negative tokens). Callers MUST ensure deltas are non-negative.
   """
   @spec record!(usage_record()) :: Budget.t()
-  def record!(%{
+  def record!(record) do
+    case record(record) do
+      {:ok, budget} -> budget
+      {:error, changeset} -> raise Ecto.InvalidChangesetError, changeset: changeset
+    end
+  end
+
+  @doc """
+  Non-raising variant of `record!/1`. Returns `{:ok, Budget.t()}` on
+  success and `{:error, %Ecto.Changeset{}}` on validation failure —
+  callers that want to distinguish "negative tokens" from "DB unique
+  constraint violation" can inspect `changeset.errors` (TODO.md
+  Minor #13).
+  """
+  @spec record(usage_record()) :: {:ok, Budget.t()} | {:error, Ecto.Changeset.t()}
+  def record(%{
         agent_slug: agent_slug,
         year_month: year_month,
         prompt_tokens: prompt_tokens,
@@ -136,21 +151,23 @@ defmodule Glorbo.Budget.Ledger do
       cost_usd_cents: cost_usd_cents
     }
 
-    # Build a changeset first so negative-delta validation trips before we hit
-    # the DB (the unique_constraint inside the changeset also makes the
-    # conflict-target semantics explicit).
     changeset = Budget.changeset(%Budget{}, attrs)
 
-    Repo.insert!(changeset,
-      on_conflict: [
-        inc: [
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
-          cost_usd_cents: cost_usd_cents
-        ]
-      ],
-      conflict_target: [:agent_slug, :year_month]
-    )
+    if changeset.valid? do
+      {:ok,
+       Repo.insert!(changeset,
+         on_conflict: [
+           inc: [
+             prompt_tokens: prompt_tokens,
+             completion_tokens: completion_tokens,
+             cost_usd_cents: cost_usd_cents
+           ]
+         ],
+         conflict_target: [:agent_slug, :year_month]
+       )}
+    else
+      {:error, changeset}
+    end
   end
 
   # ---------------------------------------------------------------------------
