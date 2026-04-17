@@ -431,6 +431,34 @@ button { font-family: inherit; font-size: inherit; }
   grid-template-columns: 1fr;
   gap: var(--gl-space-md);
 }
+.gl-overview__main--with-org {
+  grid-template-columns: 1fr 360px;
+}
+
+/* Org chart — ASCII tree inside a panel */
+.gl-orgchart {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg-muted);
+  padding: var(--gl-space-md);
+  margin: 0;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+}
+.gl-orgchart__line { display: block; }
+.gl-orgchart__prefix { color: var(--gl-fg-ghost); }
+.gl-orgchart__name { color: var(--gl-fg); }
+.gl-orgchart__director {
+  color: var(--gl-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.gl-orgchart__state--alive { color: var(--gl-accent); }
+.gl-orgchart__state--warn { color: var(--gl-amber); }
+.gl-orgchart__state--stop { color: var(--gl-rose); }
+.gl-orgchart__state--idle { color: var(--gl-fg-subtle); }
+.gl-org-empty { padding: var(--gl-space-md); }
 
 .gl-overview__bottom {
   display: grid;

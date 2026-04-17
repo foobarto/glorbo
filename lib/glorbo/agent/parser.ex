@@ -123,6 +123,7 @@ defmodule Glorbo.Agent.Parser do
          budget_usd_cents_month: budget,
          timeout_seconds: timeout,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
+         reports_to: parse_reports_to(meta["reports_to"]),
          file_path: file_path
        }}
     end
@@ -130,6 +131,12 @@ defmodule Glorbo.Agent.Parser do
 
   defp parse_untracked(true), do: true
   defp parse_untracked(_), do: false
+
+  # Accepts a string (another agent's slug) or nil. No validation
+  # against the existing agents list — the value is used at render-
+  # time (org chart), where unknown slugs simply become leaf nodes.
+  defp parse_reports_to(slug) when is_binary(slug) and byte_size(slug) > 0, do: slug
+  defp parse_reports_to(_), do: nil
 
   # ---------------------------------------------------------------------------
   # Internals

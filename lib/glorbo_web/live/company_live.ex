@@ -147,7 +147,7 @@ defmodule GlorboWeb.CompanyLive do
         />
       </div>
 
-      <div class="gl-overview__main">
+      <div class="gl-overview__main gl-overview__main--with-org">
         <section class="gl-panel gl-overview__roster">
           <header class="gl-panel__header">
             <span>agents/</span>
@@ -211,6 +211,24 @@ defmodule GlorboWeb.CompanyLive do
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section class="gl-panel gl-overview__org">
+          <header class="gl-panel__header">
+            <span>org/</span>
+            <span class="gl-panel__title">chart</span>
+            <span class="gl-panel__hint">reports_to</span>
+          </header>
+          <div class="gl-panel__body gl-panel__body--flush">
+            <pre class="gl-orgchart"><span class="gl-orgchart__line"><span class="gl-orgchart__director">director</span> <span class="gl-muted">(human · you)</span></span><span :for={row <- @company.org_chart} class="gl-orgchart__line"><span class="gl-orgchart__prefix"> {row.prefix}</span><span class="gl-orgchart__name">{row.agent.slug}</span>  <span class="gl-muted">{row.agent.role}</span>  <span class={["gl-orgchart__state", "gl-orgchart__state--" <> Atom.to_string(row.agent.pill_status)]}>{org_state_glyph(row.agent.pill_status)} {row.agent.pill_label}</span></span>
+            </pre>
+            <p
+              :if={@company.org_chart == []}
+              class="gl-muted gl-panel__body gl-panel__body--flush gl-org-empty"
+            >
+              No agents — hire one to start the chart.
+            </p>
           </div>
         </section>
       </div>
@@ -337,8 +355,81 @@ defmodule GlorboWeb.CompanyLive do
       audit_tail: audit.tail,
       projects: projects_stats,
       provider_summary: providers_summary,
-      sparks: sparks
+      sparks: sparks,
+      org_chart: build_org_chart(agents)
     }
+  end
+
+  # Render agents as a nested tree keyed by `reports_to`. Agents with
+  # no reports_to (or a reports_to pointing at an unknown slug) become
+  # top-level children of the director. Output is a flat list of
+  # `%{depth, prefix, agent}` rows so the HEEX template just maps
+  # them — no recursion in the view.
+  defp build_org_chart(agents) do
+    agent_map = Map.new(agents, &{&1.slug, &1})
+    children_map = build_children_map(agents, agent_map)
+    roots = find_org_roots(agents, agent_map)
+
+    Enum.flat_map(Enum.sort_by(roots, & &1.slug), fn root ->
+      walk_org_tree(root, children_map, 0, [])
+    end)
+  end
+
+  defp build_children_map(agents, agent_map) do
+    Enum.reduce(agents, %{}, fn agent, acc ->
+      parent =
+        if agent.reports_to && Map.has_key?(agent_map, agent.reports_to),
+          do: agent.reports_to
+
+      Map.update(acc, parent, [agent], &[agent | &1])
+    end)
+  end
+
+  # Roots are agents whose reports_to is nil or points at a non-existent slug.
+  defp find_org_roots(agents, agent_map) do
+    Enum.filter(agents, fn a ->
+      a.reports_to == nil or not Map.has_key?(agent_map, a.reports_to)
+    end)
+  end
+
+  # Recursive tree walker — yields one row per agent with ASCII tree
+  # prefix. `ancestors_last?` is a list of booleans marking whether
+  # each ancestor was its parent's last sibling; used to draw the
+  # correct `│  ` vs `   ` continuation columns.
+  defp walk_org_tree(agent, children_map, depth, ancestors_last?) do
+    kids = children_map |> Map.get(agent.slug, []) |> Enum.sort_by(& &1.slug)
+    last_count = max(length(kids) - 1, 0)
+
+    row = %{
+      depth: depth,
+      prefix: org_prefix(ancestors_last?, depth == 0),
+      agent: agent
+    }
+
+    rest =
+      kids
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {kid, idx} ->
+        last? = idx == last_count
+        walk_org_tree(kid, children_map, depth + 1, ancestors_last? ++ [last?])
+      end)
+
+    [row | rest]
+  end
+
+  defp org_prefix(_ancestors_last?, true), do: ""
+
+  defp org_prefix(ancestors_last?, false) do
+    last_idx = length(ancestors_last?) - 1
+
+    ancestors_last?
+    |> Enum.with_index()
+    |> Enum.map_join("", fn
+      {true, ^last_idx} -> "└─ "
+      {false, ^last_idx} -> "├─ "
+      {true, _} -> "   "
+      {false, _} -> "│  "
+    end)
   end
 
   defp company_name(co_path, slug) do
@@ -394,6 +485,7 @@ defmodule GlorboWeb.CompanyLive do
       provider: meta[:provider] || "—",
       model: meta[:model] || "",
       network: meta[:network] || "none",
+      reports_to: meta[:reports_to],
       budget_used: used,
       budget_cap: cap,
       budget_pct: pct,
@@ -414,6 +506,7 @@ defmodule GlorboWeb.CompanyLive do
         provider: to_string(meta["provider"] || ""),
         model: to_string(meta["model"] || ""),
         network: to_string(meta["network"] || ""),
+        reports_to: meta["reports_to"] && to_string(meta["reports_to"]),
         budget_monthly_usd: budget_cents_to_dollars(meta["budget"])
       }
     else
@@ -755,6 +848,11 @@ defmodule GlorboWeb.CompanyLive do
       rem(seed + i * 7, Enum.max(range) - Enum.min(range) + 1) + Enum.min(range)
     end)
   end
+
+  defp org_state_glyph(:alive), do: "●"
+  defp org_state_glyph(:warn), do: "⚠"
+  defp org_state_glyph(:stop), do: "✕"
+  defp org_state_glyph(_), do: "○"
 
   defp two_dp(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 2)
   defp two_dp(_), do: "0.00"
