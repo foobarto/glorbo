@@ -19,4 +19,13 @@ defmodule GlorboWeb.OverviewLiveTest do
     {:ok, _view, html} = live(conn, ~p"/companies")
     assert html =~ "No companies yet"
   end
+
+  # TODO.md P1 — skip link renders as first focusable element + main
+  # has a focusable target id.
+  test "layout exposes a skip-to-content link", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies")
+    assert html =~ ~s(href="#gl-main-content")
+    assert html =~ ~s(class="gl-skip-link")
+    assert html =~ ~s(id="gl-main-content")
+  end
 end

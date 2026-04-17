@@ -1,10 +1,15 @@
 <div class="gl-app-shell">
+  <a href="#gl-main-content" class="gl-skip-link">Skip to main content</a>
   <GlorboWeb.Components.Sidebar.sidebar current_company={assigns[:current_company]} />
-  <main class="gl-main">
-    <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--muted" role="alert">
+  <main id="gl-main-content" class="gl-main" tabindex="-1">
+    <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--error" role="alert">
+      <span class="gl-banner__glyph" aria-hidden="true">✗</span>
+      <span class="gl-sr-only">Error:</span>
       {Phoenix.Flash.get(@flash, :error)}
     </div>
-    <div :if={Phoenix.Flash.get(@flash, :info)} class="gl-banner gl-banner--muted" role="status">
+    <div :if={Phoenix.Flash.get(@flash, :info)} class="gl-banner gl-banner--info" role="status">
+      <span class="gl-banner__glyph" aria-hidden="true">✓</span>
+      <span class="gl-sr-only">Info:</span>
       {Phoenix.Flash.get(@flash, :info)}
     </div>
     {@inner_content}
