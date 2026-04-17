@@ -85,12 +85,73 @@ defmodule GlorboWeb.Actions do
             channel: channel
           })
 
+          # Director mentions wake the named agent(s). Mirrors the
+          # Glorbo.Company.Router mention-write shape so the downstream
+          # Agent.Server treats it identically (same inbox/mentions/
+          # path + `agent.wake` audit with `trigger: "mention"`).
+          _ =
+            route_director_mentions(
+              base,
+              company,
+              channel,
+              body,
+              ts,
+              audit
+            )
+
           :ok
 
         {:error, _} = err ->
           err
       end
     end
+  end
+
+  @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
+
+  defp route_director_mentions(base, company, channel, body, ts, audit) do
+    @mention_regex
+    |> Regex.scan(body, capture: :all_but_first)
+    |> List.flatten()
+    |> Enum.uniq()
+    |> Enum.each(fn mentioned ->
+      write_director_mention(base, company, channel, mentioned, body, ts, audit)
+    end)
+  end
+
+  defp write_director_mention(base, company, channel, mentioned, body, ts, audit) do
+    agent_dir = Path.join([base, "companies", company, "agents", mentioned])
+
+    if File.dir?(agent_dir) do
+      inbox_mentions = Path.join(agent_dir, "inbox/mentions")
+      File.mkdir_p!(inbox_mentions)
+
+      now = DateTime.utc_now()
+      fname_ts = DateTime.to_unix(now, :millisecond)
+      path = Path.join(inbox_mentions, "#{fname_ts}-#{channel}.md")
+
+      frontmatter = """
+      ---
+      channel: "#{channel}"
+      from: "director"
+      source_msg: "#{ts}"
+      delivered_at: "#{DateTime.to_iso8601(now)}"
+      ---
+
+      """
+
+      _ = File.write(path, frontmatter <> body)
+
+      AuditLog.append(audit, %{
+        company: company,
+        actor: "system",
+        action: "agent.wake",
+        agent: mentioned,
+        trigger: "mention"
+      })
+    end
+
+    :ok
   end
 
   @doc """

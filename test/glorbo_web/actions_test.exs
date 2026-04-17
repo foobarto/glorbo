@@ -113,6 +113,57 @@ defmodule GlorboWeb.ActionsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    test "@mention of an existing agent writes inbox/mentions file + agent.wake audit",
+         %{base: base, audit: audit} do
+      # Create the target agent directory so the Director mention has
+      # somewhere to land.
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      assert :ok =
+               Actions.post_message(
+                 "acme",
+                 "general",
+                 "@ceo can you take a look?",
+                 base: base,
+                 audit: audit
+               )
+
+      mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+      assert File.dir?(mentions_dir)
+      files = File.ls!(mentions_dir)
+      assert Enum.any?(files, &String.ends_with?(&1, "-general.md"))
+
+      [content] =
+        files
+        |> Enum.map(&File.read!(Path.join(mentions_dir, &1)))
+        |> Enum.take(1)
+
+      assert content =~ ~s(channel: "general")
+      assert content =~ ~s(from: "director")
+      assert content =~ "can you take a look?"
+
+      # Expect both chat.post and agent.wake audit events.
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "chat.post" in actions
+      assert "agent.wake" in actions
+    end
+
+    test "@mention of unknown agent is a no-op", %{base: base, audit: audit} do
+      assert :ok =
+               Actions.post_message(
+                 "acme",
+                 "general",
+                 "@ghostagent you there?",
+                 base: base,
+                 audit: audit
+               )
+
+      # chat.post still fires; agent.wake does NOT.
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "chat.post" in actions
+      refute "agent.wake" in actions
+    end
   end
 
   # ---------------------------------------------------------------------------
