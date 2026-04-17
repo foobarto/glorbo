@@ -107,6 +107,112 @@ defmodule GlorboWeb.Actions do
     end
   end
 
+  @task_path_re ~r{\Aprojects/[a-z0-9-]+/tasks/[a-z0-9-]+\.md\z}
+
+  @doc """
+  Append a Director comment to a task's body and wake everyone who
+  should see it (assignee + any `@mentioned` agents).
+
+  Comments are stored inline at the end of the task's body using the
+  same `## <ts> | <author>\\n<body>` shape that channels use. This
+  makes the task file the single source of truth for the conversation
+  — the agent's next invocation reads the whole task file and sees
+  the new comment.
+
+  Wake targets:
+    * The task's `assigned_to` agent (if any) — as a `task-<id>` mention
+      delivered to `agents/<slug>/inbox/mentions/<ts>-task-<id>.md`.
+    * Every `@slug` in the comment body — same shape.
+
+  Rejects the same things `post_message/4` does: invalid company slug,
+  empty body, oversize body, symlinked target.
+  """
+  @spec post_task_comment(String.t(), String.t(), String.t(), keyword()) :: ok_or_err
+  def post_task_comment(company, task_path, body, opts \\ []) when is_binary(body) do
+    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
+
+    with :ok <- validate_slug(company),
+         :ok <- validate_task_path_strict(task_path),
+         :ok <- validate_body(body),
+         :ok <- validate_comment_nonblank(body),
+         abs = Path.join([base, "companies", company, task_path]),
+         :ok <- ensure_regular_file(abs) do
+      ts = DateTime.utc_now() |> DateTime.to_iso8601()
+      entry = "\n## #{ts} | Director\n#{body}\n"
+
+      case File.write(abs, entry, [:append, :sync]) do
+        :ok ->
+          task_id = task_path |> Path.basename() |> Path.rootname()
+
+          AuditLog.append(audit, %{
+            company: company,
+            actor: "director",
+            action: "task.comment",
+            target: task_path
+          })
+
+          _ = wake_task_assignee(base, company, abs, task_id, body, ts, audit)
+          _ = route_director_mentions(base, company, "task-#{task_id}", body, ts, audit)
+
+          :ok
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  defp validate_task_path_strict(p) when is_binary(p) do
+    cond do
+      String.contains?(p, "..") -> {:error, :invalid_task_path}
+      not Regex.match?(@task_path_re, p) -> {:error, :invalid_task_path}
+      true -> :ok
+    end
+  end
+
+  defp validate_task_path_strict(_), do: {:error, :invalid_task_path}
+
+  defp wake_task_assignee(base, company, abs_task_path, task_id, body, ts, audit) do
+    with {:ok, content} <- File.read(abs_task_path),
+         {:ok, fm} <- extract_frontmatter(content),
+         assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to") do
+      # The Router's `@mention` path only fires for literal `@slug` matches
+      # in the body — an assignee who isn't @mentioned wouldn't otherwise
+      # get notified. Write the same inbox/mentions shape for them.
+      write_director_mention(base, company, "task-#{task_id}", assignee, body, ts, audit)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp extract_frontmatter(content) do
+    case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
+      ["", fm, _body] ->
+        pairs =
+          fm
+          |> String.split("\n", trim: true)
+          |> Enum.map(&parse_fm_line/1)
+          |> Enum.reject(&is_nil/1)
+          |> Map.new()
+
+        {:ok, pairs}
+
+      _ ->
+        {:error, :no_frontmatter}
+    end
+  end
+
+  defp parse_fm_line(line) do
+    case Regex.run(~r/\A\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)\z/, line) do
+      [_, key, value] ->
+        {key, value |> String.trim() |> String.trim(~s("))}
+
+      _ ->
+        nil
+    end
+  end
+
   @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
 
   defp route_director_mentions(base, company, channel, body, ts, audit) do
@@ -253,6 +359,10 @@ defmodule GlorboWeb.Actions do
   defp validate_body(b) when byte_size(b) > @body_max_bytes, do: {:error, :body_too_large}
   defp validate_body(b) when is_binary(b), do: :ok
   defp validate_body(_), do: {:error, :invalid_body}
+
+  defp validate_comment_nonblank(b) when is_binary(b) do
+    if String.trim(b) == "", do: {:error, :empty_body}, else: :ok
+  end
 
   # WR-05: cap reason size and require a binary. nil is coerced to ""
   # by the caller, so all paths land here with a binary.

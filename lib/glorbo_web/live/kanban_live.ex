@@ -152,6 +152,34 @@ defmodule GlorboWeb.KanbanLive do
     {:noreply, assign(socket, :open_task, nil)}
   end
 
+  def handle_event("comment_task", %{"comment" => comment}, socket) do
+    task = socket.assigns.open_task
+    trimmed = String.trim(comment)
+
+    cond do
+      is_nil(task) ->
+        {:noreply, socket}
+
+      trimmed == "" ->
+        {:noreply, put_flash(socket, :error, "Comment is empty.")}
+
+      true ->
+        case GlorboWeb.Actions.post_task_comment(
+               socket.assigns.company_slug,
+               task.task_path,
+               trimmed
+             ) do
+          :ok ->
+            # Re-open the task so the refreshed body (with the new comment
+            # appended) is visible in the detail form.
+            handle_event("open_task", %{"path" => task.task_path}, socket)
+
+          _ ->
+            {:noreply, put_flash(socket, :error, "Could not post comment.")}
+        end
+    end
+  end
+
   def handle_event("save_task", params, socket) do
     task = socket.assigns.open_task
 
@@ -416,6 +444,25 @@ defmodule GlorboWeb.KanbanLive do
             <button type="submit" class="gl-btn gl-btn--primary">save</button>
           </div>
         </footer>
+      </form>
+
+      <form
+        :if={@open_task}
+        phx-submit="comment_task"
+        class="gl-task-comment"
+      >
+        <span class="gl-compose__prompt" aria-hidden="true">
+          director@{@open_task.task_id} ▸
+        </span>
+        <input
+          type="text"
+          name="comment"
+          class="gl-compose__input"
+          placeholder="Add a comment… @mention to ping another agent"
+          maxlength="10240"
+          autocomplete="off"
+        />
+        <button type="submit" class="gl-btn gl-btn--sm gl-btn--primary">send ↵</button>
       </form>
     </section>
     """

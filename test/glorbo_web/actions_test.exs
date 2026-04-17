@@ -167,6 +167,112 @@ defmodule GlorboWeb.ActionsTest do
   end
 
   # ---------------------------------------------------------------------------
+  # post_task_comment/4
+  # ---------------------------------------------------------------------------
+
+  describe "post_task_comment/4" do
+    setup %{base: base} do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      tasks_dir = Path.join([base, "companies", "acme", "projects", "web", "tasks"])
+      File.mkdir_p!(tasks_dir)
+
+      File.write!(Path.join(tasks_dir, "t-01.md"), """
+      ---
+      title: "Ship v2"
+      status: todo
+      assigned_to: ceo
+      ---
+
+      Initial prompt.
+      """)
+
+      %{task_path: "projects/web/tasks/t-01.md"}
+    end
+
+    test "appends `## <ts> | Director\\n<body>` to the task file", %{
+      base: base,
+      audit: audit,
+      task_path: tp
+    } do
+      assert :ok =
+               Actions.post_task_comment("acme", tp, "Looks good.",
+                 base: base,
+                 audit: audit
+               )
+
+      abs = Path.join([base, "companies", "acme", tp])
+      content = File.read!(abs)
+
+      assert content =~ "Initial prompt."
+      assert content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.* \| Director/
+      assert content =~ "Looks good."
+    end
+
+    test "wakes the assignee even without an @mention", %{
+      base: base,
+      audit: audit,
+      task_path: tp
+    } do
+      assert :ok =
+               Actions.post_task_comment("acme", tp, "Please review.",
+                 base: base,
+                 audit: audit
+               )
+
+      mentions_dir =
+        Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+
+      assert File.dir?(mentions_dir)
+      assert File.ls!(mentions_dir) != []
+
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "task.comment" in actions
+      assert "agent.wake" in actions
+    end
+
+    test "@mention in comment wakes that agent too", %{
+      base: base,
+      audit: audit,
+      task_path: tp
+    } do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "cto", "inbox"]))
+
+      assert :ok =
+               Actions.post_task_comment("acme", tp, "@cto can you weigh in?",
+                 base: base,
+                 audit: audit
+               )
+
+      cto_mentions =
+        Path.join([base, "companies", "acme", "agents", "cto", "inbox", "mentions"])
+
+      assert File.dir?(cto_mentions)
+      assert File.ls!(cto_mentions) != []
+    end
+
+    test "rejects a traversal task_path", %{base: base, audit: audit} do
+      assert {:error, :invalid_task_path} =
+               Actions.post_task_comment(
+                 "acme",
+                 "../../etc/passwd",
+                 "x",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects empty body", %{base: base, audit: audit, task_path: tp} do
+      assert {:error, :empty_body} =
+               Actions.post_task_comment("acme", tp, "   ", base: base, audit: audit)
+
+      assert FakeAudit.calls(audit) == []
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # set_approval/4
   # ---------------------------------------------------------------------------
 

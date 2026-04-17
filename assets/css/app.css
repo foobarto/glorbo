@@ -1219,6 +1219,24 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   gap: var(--gl-space-xs);
 }
+.gl-task-comment {
+  position: fixed;
+  /* Stick to the bottom of the detail overlay — overlay is 80vh high
+     and centered, so its bottom edge sits at ~90vh from top. */
+  top: calc(50% + 40vh + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  min-width: 560px;
+  max-width: min(90vw, 880px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 2px;
+}
 .gl-panel__spacer { flex: 1; }
 
 .gl-new-task-form {
