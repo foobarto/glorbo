@@ -1,12 +1,24 @@
 defmodule GlorboWeb.Components.TaskCard do
   @moduledoc """
-  Kanban cell (D-23). Renders title, assignee, and the lightning glyph
-  when the task frontmatter carries `requires_approval: director`
-  (the accessible `<title>` reads `Requires Director approval`, matching
-  04-UI-SPEC §Copy).
+  Kanban task card — mockup-aligned (abc.zip views/kanban.jsx).
 
-  Stateless — takes a `Glorbo.TaskDefinition` struct and the enclosing
-  company slug (unused right now but kept for future task-detail links).
+  Card shape:
+
+      ┌──────────────────────────────┐
+      │ t-01 · website     [⚠ approval]
+      │                              │
+      │ Deploy landing page          │
+      │                              │
+      │ ● high · ceo                 │
+      └──────────────────────────────┘
+
+  Approval-gated tasks get a 3px amber left border and an `⚠ approval`
+  pill in the top-right. Priority renders as a colored dot + label
+  (`● high` rose, `● medium` amber, `● low` muted). Project is derived
+  from the task_path (`projects/<project>/tasks/…`) in
+  `Glorbo.TaskDefinition`.
+
+  Click → opens the task detail overlay in KanbanLive.
   """
   use Phoenix.Component
 
@@ -17,7 +29,10 @@ defmodule GlorboWeb.Components.TaskCard do
     ~H"""
     <article
       id={"gl-task-" <> @task.task_id <> "-" <> String.replace(@task.task_path, "/", "-")}
-      class="gl-task-card"
+      class={[
+        "gl-task-card",
+        @task.requires_approval == :director && "gl-task-card--approval"
+      ]}
       data-status={@task.status}
       data-task-path={@task.task_path}
       phx-hook="KanbanCard"
@@ -26,17 +41,23 @@ defmodule GlorboWeb.Components.TaskCard do
       role="button"
       tabindex="0"
     >
-      <header class="gl-task-card__title">
-        {@task.title || @task.task_id}
-        <GlorboWeb.CoreComponents.icon
-          :if={@task.requires_approval == :director}
-          name="lightning"
-          label="Requires Director approval"
-          class="gl-task-card__lightning"
-        />
+      <header class="gl-task-card__header">
+        <span class="gl-task-card__id">{@task.task_id}</span>
+        <span :if={@task.project} class="gl-task-card__project gl-muted">· {@task.project}</span>
+        <span :if={@task.requires_approval == :director} class="gl-task-card__approval-tag">
+          ⚠ approval
+        </span>
       </header>
+      <div class="gl-task-card__title">{@task.title || @task.task_id}</div>
       <div class="gl-task-card__meta">
-        <span :if={@task.assigned_to} class="gl-muted">{@task.assigned_to}</span>
+        <span
+          :if={@task.priority}
+          class={"gl-task-card__priority gl-task-card__priority--" <> Atom.to_string(@task.priority)}
+        >
+          ● {Atom.to_string(@task.priority)}
+        </span>
+        <span :if={@task.priority && @task.assigned_to} class="gl-muted">·</span>
+        <span :if={@task.assigned_to} class="gl-task-card__assignee">{@task.assigned_to}</span>
       </div>
     </article>
     """

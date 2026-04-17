@@ -69,11 +69,12 @@ defmodule GlorboWeb.KanbanLiveTest do
              ~r|<a[^>]*href="/companies/acme/kanban"[^>]*gl-sidebar__nav-item--active|
   end
 
-  test "seeded t-01 task with requires_approval: director shows lightning icon",
+  test "seeded t-01 task with requires_approval: director renders the approval tag + modifier",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
     assert html =~ "Deploy landing page"
-    assert html =~ "Requires Director approval"
+    assert html =~ "⚠ approval"
+    assert html =~ "gl-task-card--approval"
   end
 
   test "new_task button opens inline form", %{conn: conn} do

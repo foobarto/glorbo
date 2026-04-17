@@ -1262,20 +1262,57 @@ button { font-family: inherit; font-size: inherit; }
   padding: var(--gl-space-md) 0;
   text-align: center;
 }
-.gl-task-card { margin-bottom: var(--gl-space-sm); }
-.gl-task-card__title {
+/* ========== Kanban task card (mockup views/kanban.jsx) ========== */
+.gl-task-card {
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border);
+  padding: 10px;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+  transition: border-color 100ms ease;
+  border-radius: 2px;
+  margin-bottom: var(--gl-space-sm);
+}
+.gl-task-card:hover { border-color: var(--gl-border-strong); }
+.gl-task-card--approval { border-left: 3px solid var(--gl-warning); }
+.gl-task-card__header {
+  display: flex;
   align-items: center;
-  gap: var(--gl-space-xs);
+  gap: 6px;
+  font-size: 10px;
+}
+.gl-task-card__id { color: var(--gl-fg-subtle); }
+.gl-task-card__project { font-size: 10px; }
+.gl-task-card__approval-tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--gl-amber-dim, var(--gl-warning));
+  color: var(--gl-warning);
+  background: color-mix(in oklch, var(--gl-warning) 15%, transparent);
+  white-space: nowrap;
+}
+.gl-task-card__title {
+  color: var(--gl-fg);
+  line-height: 1.4;
   font-weight: 600;
+  font-size: 13px;
 }
-.gl-task-card__lightning { color: var(--gl-warning); }
 .gl-task-card__meta {
-  font-size: var(--gl-font-label);
-  color: var(--gl-fg-muted);
-  margin-top: var(--gl-space-xs);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--gl-fg-subtle);
 }
+.gl-task-card__priority--high { color: var(--gl-danger); }
+.gl-task-card__priority--medium { color: var(--gl-warning); }
+.gl-task-card__priority--low { color: var(--gl-fg-muted); }
+.gl-task-card__assignee { color: var(--gl-accent-dim); }
 
 /* ========== Agent detail ========== */
 .gl-agent__header {

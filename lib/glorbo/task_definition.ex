@@ -60,6 +60,8 @@ defmodule Glorbo.TaskDefinition do
 
   @type approval_mode :: :director | nil
 
+  @type priority :: :low | :medium | :high | nil
+
   @type t :: %__MODULE__{
           task_path: String.t(),
           task_id: String.t(),
@@ -68,6 +70,8 @@ defmodule Glorbo.TaskDefinition do
           assigned_to: String.t() | nil,
           requires_approval: approval_mode(),
           denial_reason: String.t() | nil,
+          priority: priority(),
+          project: String.t() | nil,
           prompt_body: String.t(),
           file_path: String.t()
         }
@@ -80,6 +84,8 @@ defmodule Glorbo.TaskDefinition do
     :assigned_to,
     :requires_approval,
     :denial_reason,
+    :priority,
+    :project,
     :prompt_body,
     :file_path
   ]
@@ -138,10 +144,17 @@ defmodule Glorbo.TaskDefinition do
          status: as_string(meta["status"]),
          assigned_to: as_string(meta["assigned_to"]),
          requires_approval: requires_approval,
-         denial_reason: as_string(meta["denial_reason"])
+         denial_reason: as_string(meta["denial_reason"]),
+         priority: coerce_priority(meta["priority"])
        }}
     end
   end
+
+  defp coerce_priority("high"), do: :high
+  defp coerce_priority("medium"), do: :medium
+  defp coerce_priority("low"), do: :low
+  defp coerce_priority(p) when p in [:high, :medium, :low], do: p
+  defp coerce_priority(_), do: nil
 
   @doc """
   Whether the task requires Director approval before an agent may execute
@@ -348,8 +361,19 @@ defmodule Glorbo.TaskDefinition do
        assigned_to: partial.assigned_to,
        requires_approval: partial.requires_approval,
        denial_reason: partial.denial_reason,
+       priority: partial.priority,
+       project: derive_project(task_path),
        prompt_body: body || "",
        file_path: file_path
      }}
   end
+
+  defp derive_project(task_path) when is_binary(task_path) do
+    case Regex.run(~r{^projects/([^/]+)/tasks/}, task_path) do
+      [_, project] -> project
+      _ -> nil
+    end
+  end
+
+  defp derive_project(_), do: nil
 end
