@@ -38,8 +38,18 @@ defmodule GlorboWeb.Components.BudgetRing do
       |> assign(:over_cap, over?)
       |> assign(:dasharray, "#{r * @circumference} #{@circumference}")
 
+    assigns = assign(assigns, :aria_label, aria_label(assigns[:used], assigns[:cap], over?))
+
     ~H"""
-    <svg class="gl-budget-ring" viewBox="0 0 36 36" width={@size} height={@size}>
+    <svg
+      class="gl-budget-ring"
+      viewBox="0 0 36 36"
+      width={@size}
+      height={@size}
+      role="img"
+      aria-label={@aria_label}
+    >
+      <title>{@aria_label}</title>
       <circle cx="18" cy="18" r="16" stroke="var(--gl-surface-raised)" stroke-width="3" fill="none" />
       <circle
         :if={@cap}
@@ -52,12 +62,35 @@ defmodule GlorboWeb.Components.BudgetRing do
         stroke-dasharray={@dasharray}
         transform="rotate(-90 18 18)"
       />
-      <text x="18" y="20" text-anchor="middle" font-size="8" fill="var(--gl-fg)">
+      <text
+        x="18"
+        y="20"
+        text-anchor="middle"
+        font-size="8"
+        fill="var(--gl-fg)"
+        aria-hidden="true"
+      >
         {center_text(@used, @cap, @size, @over_cap)}
       </text>
     </svg>
     """
   end
+
+  # Human-readable accessible label read by screen readers. Kept
+  # distinct from the visual center text because the visual form
+  # abbreviates (`$42/100`) while the label spells out the relationship.
+  defp aria_label(used, nil, _over) when is_number(used),
+    do: "Budget: #{two_decimals(used)} USD spent (no cap configured)"
+
+  defp aria_label(used, cap, true) when is_number(used) and is_number(cap),
+    do: "Budget: #{two_decimals(used)} USD spent — over the #{zero_decimals(cap)} USD monthly cap"
+
+  defp aria_label(used, cap, _over) when is_number(used) and is_number(cap) and cap > 0 do
+    pct = round(used / cap * 100)
+    "Budget: #{two_decimals(used)} USD of #{zero_decimals(cap)} USD (#{pct}% of monthly cap)"
+  end
+
+  defp aria_label(_used, _cap, _over), do: "Budget ring"
 
   defp ratio(_used, nil), do: 0.0
 
