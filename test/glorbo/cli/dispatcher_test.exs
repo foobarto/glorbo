@@ -1,0 +1,295 @@
+defmodule Glorbo.CLI.DispatcherTest do
+  use ExUnit.Case, async: true
+
+  alias Glorbo.CLI.Dispatcher
+  alias Glorbo.CLI.Registry.Provider
+
+  # ---------------------------------------------------------------------------
+  # Helpers
+  # ---------------------------------------------------------------------------
+
+  defp tmp_workspace do
+    path = Path.join(System.tmp_dir!(), "dispatcher-test-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(path, ".glorbo/outbox"))
+    on_exit(fn -> File.rm_rf!(path) end)
+    path
+  end
+
+  defp base_provider(overrides \\ []) do
+    struct!(
+      %Provider{
+        name: "fake",
+        binary: "/bin/fake",
+        resolved_path: "/bin/fake",
+        installed?: true,
+        args: ["--model", "{model}"],
+        reply_dir: "{workspace}/.glorbo/outbox",
+        reply_filename_template: "{invocation_id}.md",
+        source: :builtin,
+        source_file: "<test>",
+        usage_parser: "none"
+      },
+      overrides
+    )
+  end
+
+  defp base_ctx(workspace, overrides \\ []) do
+    Enum.into(overrides, %{
+      model: "m-1",
+      workspace: workspace,
+      prompt: "hi",
+      prompt_path: Path.join(workspace, "prompt.md"),
+      task_id: "task-1",
+      invocation_id: "abc123",
+      timestamp: "20260417T000000"
+    })
+  end
+
+  # A run_fun that writes a canned reply to $GLORBO_REPLY_PATH and
+  # returns a clean exit.
+  defp writer_run_fun(reply_body, exit_status \\ 0) do
+    fn _args, env, _bwrap_opts, _run_opts ->
+      File.write!(env["GLORBO_REPLY_PATH"], reply_body)
+      {:ok, %{exit_status: exit_status, stdout: "", usage_dir: nil}}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Template expansion
+  # ---------------------------------------------------------------------------
+
+  describe "template expansion" do
+    test "expands {model}, {workspace}, {invocation_id}, {timestamp} in args and reply path" do
+      ws = tmp_workspace()
+      p = base_provider()
+      ctx = base_ctx(ws)
+
+      captured = :ets.new(:captured, [:public, :set])
+
+      fun = fn args, env, _b, run_opts ->
+        :ets.insert(captured, {:args, args})
+        :ets.insert(captured, {:env, env})
+        :ets.insert(captured, {:cli_binary, run_opts.cli_binary})
+        File.write!(env["GLORBO_REPLY_PATH"], "reply body")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, result} = Dispatcher.invoke(p, ctx, run_fun: fun)
+      assert result.reply == "reply body"
+      assert result.reply_path == Path.join([ws, ".glorbo/outbox", "abc123.md"])
+
+      assert [{:args, ["--model", "m-1"]}] = :ets.lookup(captured, :args)
+      assert [{:cli_binary, "/bin/fake"}] = :ets.lookup(captured, :cli_binary)
+
+      [{:env, env}] = :ets.lookup(captured, :env)
+      assert env["GLORBO_TASK_ID"] == "task-1"
+      assert env["GLORBO_INVOCATION_ID"] == "abc123"
+      assert env["GLORBO_WORKSPACE"] == ws
+      assert env["GLORBO_REPLY_PATH"] == result.reply_path
+    end
+
+    test "applies named path_transforms before template expansion" do
+      ws = "/home/agents/alice"
+      tmp = tmp_workspace()
+
+      p =
+        base_provider(
+          reply_dir: tmp,
+          env: %{"CLAUDE_CONFIG_DIR" => "{encoded}"},
+          path_transforms: [
+            %{name: "encoded", from: "{workspace}", transform: "slash_to_dash"}
+          ]
+        )
+
+      ctx = base_ctx(ws)
+
+      seen_env = :ets.new(:seen_env, [:public, :set])
+
+      fun = fn _a, env, _b, _r ->
+        :ets.insert(seen_env, {:env, env})
+        File.write!(env["GLORBO_REPLY_PATH"], "reply")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, run_fun: fun)
+      [{:env, env}] = :ets.lookup(seen_env, :env)
+      assert env["CLAUDE_CONFIG_DIR"] == "-home-agents-alice"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Reply-file contract
+  # ---------------------------------------------------------------------------
+
+  describe "reply-file contract" do
+    test "succeeds when agent writes a valid reply" do
+      ws = tmp_workspace()
+
+      assert {:ok, %{reply: "hello"}} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws),
+                 run_fun: writer_run_fun("hello")
+               )
+    end
+
+    test "fails with :reply_file_missing when agent writes nothing" do
+      ws = tmp_workspace()
+
+      silent = fn _a, _env, _b, _r -> {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}} end
+
+      assert {:error, :reply_file_missing} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: silent)
+    end
+
+    test "fails with :reply_file_empty on zero-byte file" do
+      ws = tmp_workspace()
+      empty = writer_run_fun("")
+
+      assert {:error, :reply_file_empty} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: empty)
+    end
+
+    test "fails with :reply_file_too_large past the cap" do
+      ws = tmp_workspace()
+      p = base_provider(reply_max_bytes: 10)
+      big = writer_run_fun(String.duplicate("x", 100))
+
+      assert {:error, {:reply_file_too_large, 100, 10}} =
+               Dispatcher.invoke(p, base_ctx(ws), run_fun: big)
+    end
+
+    test "clears stale reply file from a prior run" do
+      ws = tmp_workspace()
+      reply_path = Path.join([ws, ".glorbo/outbox", "abc123.md"])
+      File.write!(reply_path, "stale content from last time")
+
+      # This run writes an empty file — must still surface :reply_file_empty
+      # rather than succeeding on the stale contents.
+      empty = writer_run_fun("")
+
+      assert {:error, :reply_file_empty} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: empty)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Env composition
+  # ---------------------------------------------------------------------------
+
+  describe "env composition" do
+    test "merges provider.env with GLORBO_* standard vars" do
+      ws = tmp_workspace()
+      p = base_provider(env: %{"CUSTOM_VAR" => "fixed", "REDIRECT" => "{workspace}/.data"})
+
+      captured = :ets.new(:env, [:public, :set])
+
+      fun = fn _a, env, _b, _r ->
+        :ets.insert(captured, {:env, env})
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, _} = Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+
+      [{:env, env}] = :ets.lookup(captured, :env)
+      assert env["CUSTOM_VAR"] == "fixed"
+      assert env["REDIRECT"] == ws <> "/.data"
+      assert env["GLORBO_TASK_ID"] == "task-1"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Usage parsing
+  # ---------------------------------------------------------------------------
+
+  describe "usage parsing" do
+    test "usage_parser = none leaves usage nil" do
+      ws = tmp_workspace()
+
+      assert {:ok, %{usage: nil, usage_error: nil}} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: writer_run_fun("ok"))
+    end
+
+    test "stdout kind forwards to parser with run_result.stdout" do
+      ws = tmp_workspace()
+
+      gemini_blob = """
+      {"stats":{"models":{"g":{"tokens":{"prompt":10,"cached":5,"candidates":20,"thoughts":2,"tool":1}}}}}
+      """
+
+      fun = fn _a, env, _b, _r ->
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: gemini_blob, usage_dir: nil}}
+      end
+
+      p =
+        base_provider(
+          usage_parser: "gemini_stdout",
+          usage_path: %{kind: :stdout, path: nil}
+        )
+
+      assert {:ok, %{usage: usage, usage_error: nil}} =
+               Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+
+      assert usage.prompt_tokens == 15
+      assert usage.completion_tokens == 23
+    end
+
+    test "parse errors land in :usage_error, invocation still succeeds" do
+      ws = tmp_workspace()
+
+      p =
+        base_provider(
+          usage_parser: "gemini_stdout",
+          usage_path: %{kind: :stdout, path: nil}
+        )
+
+      fun = fn _a, env, _b, _r ->
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "not json", usage_dir: nil}}
+      end
+
+      assert {:ok, %{usage: nil, usage_error: :json_decode_error}} =
+               Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # run_fun contract
+  # ---------------------------------------------------------------------------
+
+  describe "run_fun contract" do
+    test "propagates {:error, reason} from run_fun" do
+      ws = tmp_workspace()
+      crash = fn _a, _e, _b, _r -> {:error, :bwrap_failed} end
+
+      assert {:error, :bwrap_failed} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: crash)
+    end
+
+    test "handles malformed run_fun return" do
+      ws = tmp_workspace()
+      weird = fn _a, _e, _b, _r -> :yolo end
+
+      assert {:error, {:run_fun_bad_return, :yolo}} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: weird)
+    end
+
+    test "passes cli_args and cli_binary to run_fun" do
+      ws = tmp_workspace()
+      p = base_provider(args: ["--print", "--model", "{model}"])
+
+      spy = :ets.new(:spy, [:public, :set])
+
+      fun = fn args, env, _b, run_opts ->
+        :ets.insert(spy, {:args, args})
+        :ets.insert(spy, {:binary, run_opts.cli_binary})
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, _} = Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+      assert [{:args, ["--print", "--model", "m-1"]}] = :ets.lookup(spy, :args)
+      assert [{:binary, "/bin/fake"}] = :ets.lookup(spy, :binary)
+    end
+  end
+end
