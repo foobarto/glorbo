@@ -72,19 +72,43 @@ defmodule GlorboWeb.Components.Topbar do
         providers
       </span>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
-      <%!-- TWEAKS toggle wire-up lands in M5 alongside the Tweaks drawer
-            itself. Rendered as a disabled-looking button for now so the
-            shell's visual shape is complete. --%>
       <button
         type="button"
+        id="gl-tweaks-toggle"
         class={["gl-topbar__tweaks", @tweaks_open? && "gl-topbar__tweaks--on"]}
-        disabled
-        aria-disabled="true"
-        title="Tweaks panel lands in M5"
+        aria-expanded="false"
+        aria-controls="gl-tweaks-drawer"
       >
         TWEAKS
       </button>
     </header>
+
+    <div
+      id="gl-tweaks-drawer"
+      class="gl-tweaks-drawer"
+      role="region"
+      aria-label="Interface tweaks"
+      hidden
+    >
+      <h2 class="gl-panel__header">/tweaks</h2>
+      <label class="gl-tweaks-drawer__row">
+        <span>density</span>
+        <select id="gl-tweaks-density" name="density">
+          <option value="comfortable">comfortable</option>
+          <option value="dense">dense</option>
+        </select>
+      </label>
+      <label class="gl-tweaks-drawer__row">
+        <span>vocab</span>
+        <select id="gl-tweaks-vocab" name="vocab">
+          <option value="default">agents · companies · director</option>
+          <option value="crew">crew · orgs · chief</option>
+        </select>
+      </label>
+      <p class="gl-muted gl-tweaks-drawer__hint">
+        Saved to localStorage. Density applies instantly; vocab ships in M5.3.
+      </p>
+    </div>
     """
   end
 

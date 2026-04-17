@@ -100,6 +100,55 @@ window.addEventListener("keydown", (e) => {
   }
 })
 
+// Tweaks drawer — density + vocab settings persisted in localStorage.
+// Density maps to a `data-density` attribute on <html> that CSS reads.
+const TWEAKS_KEY = "glorbo.tweaks.v1"
+function loadTweaks() {
+  try { return JSON.parse(localStorage.getItem(TWEAKS_KEY)) || {} }
+  catch (_) { return {} }
+}
+function saveTweaks(t) { localStorage.setItem(TWEAKS_KEY, JSON.stringify(t)) }
+function applyTweaks(t) {
+  document.documentElement.dataset.density = t.density || "comfortable"
+  document.documentElement.dataset.vocab = t.vocab || "default"
+}
+applyTweaks(loadTweaks())
+document.addEventListener("DOMContentLoaded", () => {
+  const toggle = document.getElementById("gl-tweaks-toggle")
+  const drawer = document.getElementById("gl-tweaks-drawer")
+  const density = document.getElementById("gl-tweaks-density")
+  const vocab = document.getElementById("gl-tweaks-vocab")
+  if (!toggle || !drawer) return
+
+  const t = loadTweaks()
+  if (density) density.value = t.density || "comfortable"
+  if (vocab) vocab.value = t.vocab || "default"
+
+  toggle.addEventListener("click", () => {
+    const open = !drawer.hasAttribute("hidden")
+    if (open) {
+      drawer.setAttribute("hidden", "")
+      toggle.setAttribute("aria-expanded", "false")
+      toggle.classList.remove("gl-topbar__tweaks--on")
+    } else {
+      drawer.removeAttribute("hidden")
+      toggle.setAttribute("aria-expanded", "true")
+      toggle.classList.add("gl-topbar__tweaks--on")
+    }
+  })
+
+  const persist = () => {
+    const next = {
+      density: density ? density.value : "comfortable",
+      vocab: vocab ? vocab.value : "default",
+    }
+    saveTweaks(next)
+    applyTweaks(next)
+  }
+  if (density) density.addEventListener("change", persist)
+  if (vocab) vocab.addEventListener("change", persist)
+})
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
   hooks: {KanbanLane, KanbanCard},

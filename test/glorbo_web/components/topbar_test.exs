@@ -35,11 +35,14 @@ defmodule GlorboWeb.Components.TopbarTest do
       assert html =~ "providers"
     end
 
-    test "renders a disabled TWEAKS button (M1; wiring lands in M5)" do
+    test "renders a working TWEAKS toggle wired to the drawer" do
       html = render_topbar([])
       assert html =~ "TWEAKS"
-      assert html =~ ~s(disabled)
-      assert html =~ ~s(aria-disabled="true")
+      assert html =~ ~s(id="gl-tweaks-toggle")
+      assert html =~ ~s(aria-controls="gl-tweaks-drawer")
+      assert html =~ ~s(id="gl-tweaks-drawer")
+      assert html =~ ~s(id="gl-tweaks-density")
+      assert html =~ ~s(id="gl-tweaks-vocab")
     end
 
     test "path breadcrumb always reads ~/.glorbo/companies/" do
