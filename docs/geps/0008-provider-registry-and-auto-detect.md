@@ -99,10 +99,6 @@ args = [
 ]
 prompt_mode = "stdin"                        # "stdin" | "stdin_dash" | "argv" | "tmpfile_argv"
 
-# Environment overrides passed to the CLI sandbox.
-[env]
-CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
-
 # Reply contract. Dispatcher generates a unique path per invocation and
 # exports it as GLORBO_REPLY_PATH. Agent must write its final reply there.
 # Absence or emptiness of the file on exit = invocation failure.
@@ -115,13 +111,24 @@ version_flag         = "--version"           # "" disables probing
 version_regex        = '(\d+\.\d+\.\d+)'
 allow_version_probe  = true                  # User entries default false (D13)
 
+# NOTE on TOML layout: tables (`[env]`, `[path_transforms.*]`) must come
+# AFTER all top-level key-value pairs. TOML's grammar scopes subsequent
+# keys into the most-recent table header, so putting `[env]` mid-file
+# would silently consume `reply_dir`, `version_flag`, etc. into the env
+# map. Built-in and sample configs below follow this ordering convention.
+
 # Usage parsing (optional).
 usage_parser = "claude_jsonl"                # "none" for no budget tracking
 usage_path   = { kind = "jsonl_latest_in_dir", path = "{workspace}/.glorbo-claude/projects/{encoded_workspace}" }
 
+# Environment overrides passed to the CLI sandbox.
+[env]
+CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
+
 # Path transforms used when expanding templates that can't be a pure substitution.
-[path_transforms]
-encoded_workspace = { from = "{workspace}", transform = "slash_to_dash" }
+[path_transforms.encoded_workspace]
+from      = "{workspace}"
+transform = "slash_to_dash"
 ```
 
 ### Validation rules (all hard-fail at load)
