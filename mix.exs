@@ -63,6 +63,9 @@ defmodule Glorbo.MixProject do
       {:file_system, "~> 1.0"},
       {:yaml_front_matter, "~> 1.0"},
       {:yaml_elixir, "~> 2.9"},
+      # GEP-8 — provider registry TOML parser (priv/providers/*.toml +
+      # ~/.glorbo/providers.toml). Pure-Elixir, Apache-2.0.
+      {:toml, "~> 0.7"},
       {:finch, "~> 0.21"},
       {:muontrap, "~> 1.6"},
       # Phase 4 Wave 0 — LiveView dashboard dependencies.
