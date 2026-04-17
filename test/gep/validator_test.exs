@@ -470,10 +470,9 @@ defmodule Gep.ValidatorTest do
 
   defp build_frontmatter(gep) do
     history_yaml =
-      Enum.map(gep.history, fn h ->
+      Enum.map_join(gep.history, "\n", fn h ->
         "  - date: #{h["date"]}\n    status: #{h["status"]}\n    note: #{h["note"]}"
       end)
-      |> Enum.join("\n")
 
     optional_fields =
       [
@@ -484,17 +483,16 @@ defmodule Gep.ValidatorTest do
         {"see-also", gep.see_also}
       ]
       |> Enum.reject(fn {_k, v} -> v == nil end)
-      |> Enum.map(fn {k, v} ->
+      |> Enum.map_join("\n", fn {k, v} ->
         yaml_val =
           if is_list(v) do
-            "[" <> Enum.join(Enum.map(v, &to_string/1), ", ") <> "]"
+            "[" <> Enum.map_join(v, ", ", &to_string/1) <> "]"
           else
             to_string(v)
           end
 
         "#{k}: #{yaml_val}"
       end)
-      |> Enum.join("\n")
 
     optional_block =
       if optional_fields != "" do

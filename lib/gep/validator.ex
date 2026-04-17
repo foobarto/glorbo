@@ -311,7 +311,9 @@ defmodule Gep.Validator do
             entry_errors ++
               [%{severity: :error, idx: idx, detail: "history[#{idx}] missing date"}]
           else
-            unless Regex.match?(@date_re, to_string(entry["date"])) do
+            if Regex.match?(@date_re, to_string(entry["date"])) do
+              entry_errors
+            else
               entry_errors ++
                 [
                   %{
@@ -320,8 +322,6 @@ defmodule Gep.Validator do
                     detail: "history[#{idx}] invalid date format: #{entry["date"]}"
                   }
                 ]
-            else
-              entry_errors
             end
           end
 
@@ -492,54 +492,14 @@ defmodule Gep.Validator do
         acc =
           (record.supersedes || [])
           |> Enum.reduce(acc, fn ref_n, acc ->
-            ref = number_map[ref_n]
-
-            if ref == nil do
-              acc
-            else
-              if ref.superseded_by != record.number do
-                acc ++
-                  [
-                    %{
-                      severity: :error,
-                      label: "Bidirectional links",
-                      detail:
-                        "GEP-#{gep_label(record.number)} supersedes GEP-#{gep_label(ref_n)} but GEP-#{gep_label(ref_n)} has no superseded-by: #{record.number}",
-                      gep_number: record.number
-                    }
-                  ]
-              else
-                acc
-              end
-            end
+            check_superseded_by(acc, record, number_map[ref_n], ref_n)
           end)
 
         # extended-by → see-also or requires on target
         acc =
           (record.extended_by || [])
           |> Enum.reduce(acc, fn ref_n, acc ->
-            ref = number_map[ref_n]
-
-            if ref == nil do
-              acc
-            else
-              back_refs = (ref.see_also || []) ++ (ref.requires || []) ++ (ref.extended_by || [])
-
-              if record.number not in back_refs do
-                acc ++
-                  [
-                    %{
-                      severity: :error,
-                      label: "Bidirectional links",
-                      detail:
-                        "GEP-#{gep_label(record.number)} extended-by GEP-#{gep_label(ref_n)} but GEP-#{gep_label(ref_n)} does not reference back",
-                      gep_number: record.number
-                    }
-                  ]
-              else
-                acc
-              end
-            end
+            check_back_ref(acc, record, number_map[ref_n], ref_n)
           end)
 
         acc
@@ -548,6 +508,46 @@ defmodule Gep.Validator do
     case errors do
       [] -> [%{severity: :pass, label: "Bidirectional links", detail: "All consistent"}]
       _ -> errors
+    end
+  end
+
+  defp check_superseded_by(acc, _record, nil, _ref_n), do: acc
+
+  defp check_superseded_by(acc, record, ref, ref_n) do
+    if ref.superseded_by == record.number do
+      acc
+    else
+      acc ++
+        [
+          %{
+            severity: :error,
+            label: "Bidirectional links",
+            detail:
+              "GEP-#{gep_label(record.number)} supersedes GEP-#{gep_label(ref_n)} but GEP-#{gep_label(ref_n)} has no superseded-by: #{record.number}",
+            gep_number: record.number
+          }
+        ]
+    end
+  end
+
+  defp check_back_ref(acc, _record, nil, _ref_n), do: acc
+
+  defp check_back_ref(acc, record, ref, ref_n) do
+    back_refs = (ref.see_also || []) ++ (ref.requires || []) ++ (ref.extended_by || [])
+
+    if record.number in back_refs do
+      acc
+    else
+      acc ++
+        [
+          %{
+            severity: :error,
+            label: "Bidirectional links",
+            detail:
+              "GEP-#{gep_label(record.number)} extended-by GEP-#{gep_label(ref_n)} but GEP-#{gep_label(ref_n)} does not reference back",
+            gep_number: record.number
+          }
+        ]
     end
   end
 
@@ -586,15 +586,7 @@ defmodule Gep.Validator do
   end
 
   defp check_readme_index(records, readme_path) do
-    unless File.exists?(readme_path) do
-      [
-        %{
-          severity: :error,
-          label: "README index",
-          detail: "README.md not found at #{readme_path}"
-        }
-      ]
-    else
+    if File.exists?(readme_path) do
       content = File.read!(readme_path)
 
       index_entries = parse_readme_index(content)
@@ -673,6 +665,14 @@ defmodule Gep.Validator do
         [] -> [%{severity: :pass, label: "README index", detail: "All entries valid"}]
         _ -> errors
       end
+    else
+      [
+        %{
+          severity: :error,
+          label: "README index",
+          detail: "README.md not found at #{readme_path}"
+        }
+      ]
     end
   end
 
