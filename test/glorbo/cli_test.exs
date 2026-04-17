@@ -110,10 +110,14 @@ defmodule Glorbo.CLITest do
       assert output =~ "OLLAMA_HOST=unix"
     end
 
-    test ~S|dispatch(["init", "--skip-pull"]) skips binary_bootstrap + image_pull| do
+    test ~S|dispatch(["init", "--skip-pull"]) still parses| do
+      # image_pull step was removed with the Podman tier (GEP-5 D6);
+      # binary_bootstrap is now a no-op stub that always skips. TODO(GEP-5
+      # D6 cleanup, commit 2): prune --skip-pull entirely once
+      # step_binary_bootstrap is gone.
       {:init, _, output} = CLI.dispatch(["init", "--skip-pull", "--no-example"])
-      assert output =~ "binary_bootstrap — --skip-pull"
-      assert output =~ "image_pull — --skip-pull"
+      assert output =~ "binary_bootstrap"
+      refute output =~ "image_pull"
     end
 
     test ~S|dispatch(["init", "--force"]) parses without error| do

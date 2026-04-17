@@ -16,7 +16,7 @@ defmodule Glorbo.Doctor.FixerTest do
       registered = Fixer.fixers() |> Map.keys() |> Enum.sort()
 
       expected =
-        ~w(glorbo_dir audit_dir sockets_dir podman ollama runtime_image bwrap)
+        ~w(glorbo_dir audit_dir sockets_dir bwrap)
         |> Enum.sort()
 
       assert registered == expected

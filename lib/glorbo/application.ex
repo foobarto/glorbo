@@ -68,15 +68,8 @@ defmodule Glorbo.Application do
       Glorbo.Repo,
       {DNSCluster, query: Application.get_env(:glorbo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Glorbo.PubSub},
-      # Shared Finch pool — used by Glorbo.Container.WorkerClient over Unix
-      # domain sockets (Phase 2 Plan 03) and by Init downloads (Plan 02).
       {Finch, name: Glorbo.Finch},
       GlorboWeb.Telemetry,
-      # CR-04: DaemonSupervisor MUST start before ContainerManager so
-      # persistent-mode launches register Daemons out-of-band instead of
-      # linking them to ContainerManager (crash isolation invariant).
-      {DynamicSupervisor, name: Glorbo.Container.DaemonSupervisor, strategy: :one_for_one},
-      Glorbo.ContainerManager,
       # Plan 03-05: Agent.Registry MUST start before CompanySupervisor — the
       # per-agent sub-supervisors register their Server/Task.Supervisor pids
       # here via :via tuples during company boot.

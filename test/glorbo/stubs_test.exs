@@ -8,7 +8,6 @@ defmodule Glorbo.StubsTest do
   """
 
   @modules [
-    Glorbo.ContainerManager,
     Glorbo.Company.FileWatcher,
     Glorbo.Company.Router,
     Glorbo.Company.Scheduler,

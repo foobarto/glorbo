@@ -26,7 +26,7 @@ defmodule Glorbo.Init.Orchestrator do
   alias Glorbo.Doctor
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.{Hierarchy, Reindex}
-  alias Glorbo.Init.{BinaryBootstrap, ImagePull, ExampleCompany}
+  alias Glorbo.Init.ExampleCompany
 
   @type status :: :ok | :skipped | :error
 
@@ -83,11 +83,12 @@ defmodule Glorbo.Init.Orchestrator do
   end
 
   defp run_pipeline(opts_with_base) do
+    # TODO(GEP-5 D6 cleanup, commit 2): prune :binary_bootstrap fully;
+    # :image_pull is already gone with the Podman runtime.
     steps = [
       {:pre_doctor, fn o -> step_pre_doctor(o) end},
       {:hierarchy, fn o -> step_hierarchy(o) end},
       {:binary_bootstrap, fn o -> step_binary_bootstrap(o) end},
-      {:image_pull, fn o -> ImagePull.run(o) end},
       {:example_company, fn o -> step_example_company(o) end},
       {:reindex, fn o -> step_reindex(o) end},
       {:post_doctor, fn o -> step_post_doctor(o) end}
@@ -129,18 +130,11 @@ defmodule Glorbo.Init.Orchestrator do
     %{status: :ok, detail: "~/.glorbo/ materialised"}
   end
 
-  defp step_binary_bootstrap(opts) do
-    if Keyword.get(opts, :skip_pull, false) do
-      %{status: :skipped, detail: "--skip-pull"}
-    else
-      podman_fun = Keyword.get(opts, :ensure_podman_fun, &BinaryBootstrap.ensure_podman/1)
-      ollama_fun = Keyword.get(opts, :ensure_ollama_fun, &BinaryBootstrap.ensure_ollama/1)
-
-      # IN-11: domain-named variables are easier to scan than `or_`.
-      podman_result = podman_fun.(opts)
-      ollama_result = ollama_fun.(opts)
-      combine([podman_result, ollama_result])
-    end
+  defp step_binary_bootstrap(_opts) do
+    # TODO(GEP-5 D6 cleanup, commit 2): remove this step entirely.
+    # Podman + Ollama bootstrap was for the dropped Python-in-Podman
+    # runtime; agents are CLI-tool subprocesses under bwrap now.
+    %{status: :skipped, detail: "no binary bootstrap — agents use host CLIs (GEP-4)"}
   end
 
   defp step_example_company(opts) do

@@ -30,9 +30,6 @@ defmodule Glorbo.Doctor.Fixer do
     "glorbo_dir" => &__MODULE__.fix_glorbo_dir/1,
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
-    "podman" => &__MODULE__.fix_podman/1,
-    "ollama" => &__MODULE__.fix_ollama/1,
-    "runtime_image" => &__MODULE__.fix_runtime_image/1,
     "bwrap" => &__MODULE__.explain_bwrap/1
   }
 
@@ -236,15 +233,6 @@ defmodule Glorbo.Doctor.Fixer do
   end
 
   @doc false
-  def fix_podman(_check), do: normalise_tuple(Glorbo.Init.BinaryBootstrap.ensure_podman([]))
-
-  @doc false
-  def fix_ollama(_check), do: normalise_tuple(Glorbo.Init.BinaryBootstrap.ensure_ollama([]))
-
-  @doc false
-  def fix_runtime_image(_check), do: normalise_map(Glorbo.Init.ImagePull.run([]))
-
-  @doc false
   def explain_bwrap(_check) do
     {:explain,
      """
@@ -257,36 +245,4 @@ defmodule Glorbo.Doctor.Fixer do
      Then re-run `glorbo doctor`.
      """}
   end
-
-  # BinaryBootstrap returns tuple-shaped results. Normalise to the fixer
-  # contract ({:ok, _} | {:error, _} | {:explain, _}).
-  #
-  #   {:ok, :system, path}      — binary already on PATH (no-op repair)
-  #   {:ok, :downloaded, path}  — downloaded into ~/.glorbo/bin/
-  #   {:ok, :skipped, reason}   — offline fallback (warn, continue)
-  #   {:error, reason}          — genuine failure
-  defp normalise_tuple({:ok, :system, path}), do: {:ok, "already present at #{path}"}
-  defp normalise_tuple({:ok, :downloaded, path}), do: {:ok, "downloaded to #{path}"}
-
-  defp normalise_tuple({:ok, :skipped, reason}),
-    do: {:ok, "skipped: #{detail_to_string(reason)}"}
-
-  defp normalise_tuple({:ok, detail}), do: {:ok, detail_to_string(detail)}
-  defp normalise_tuple({:error, reason}), do: {:error, reason}
-  defp normalise_tuple(other), do: {:error, {:unexpected, other}}
-
-  # ImagePull.run/1 returns a map shaped `%{status: :ok|:skipped|:error,
-  # detail: binary()}`. Normalise to the fixer contract.
-  defp normalise_map(%{status: :ok, detail: detail}), do: {:ok, detail_to_string(detail)}
-
-  defp normalise_map(%{status: :skipped, detail: detail}),
-    do: {:ok, "skipped: #{detail_to_string(detail)}"}
-
-  defp normalise_map(%{status: :error, detail: detail}),
-    do: {:error, detail_to_string(detail)}
-
-  defp normalise_map(other), do: {:error, {:unexpected, other}}
-
-  defp detail_to_string(d) when is_binary(d), do: d
-  defp detail_to_string(other), do: inspect(other)
 end

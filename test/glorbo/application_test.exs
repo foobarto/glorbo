@@ -11,7 +11,6 @@ defmodule Glorbo.ApplicationTest do
   test "Glorbo.Application supervision tree starts cleanly" do
     for mod <- [
           Glorbo.Repo,
-          Glorbo.ContainerManager,
           Glorbo.CompanySupervisor,
           GlorboWeb.Endpoint,
           Glorbo.PubSub,
