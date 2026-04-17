@@ -82,15 +82,31 @@ policy-enforced.
 already on your machine. Credentials are `--ro-bind`ed into the sandbox;
 session state stays on the host. No new API keys to manage.
 
+**Config-driven providers (v0.0.3, GEP-8)** — Each provider is a TOML
+entry declaring how to invoke a CLI and how to parse its usage. Built-in
+providers ship under `priv/providers/*.toml`; drop your own into
+`~/.glorbo/providers.toml`. The `/providers` LiveView shows what's
+routable. No Elixir code needed to register a new CLI.
+
 **Local-first LLMs** — Agents use whichever CLI is installed on your
 host (`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
 `hermes`, `pi`). Add a local model by installing its CLI; Glorbo detects
-it via `glorbo doctor`. No bundled runtime, no SDK layer.
+it via `glorbo doctor` or the `/providers` panel. No bundled runtime,
+no SDK layer.
 
-**Real-time dashboard (v0.0.2)** — Phoenix LiveView at `http://127.0.0.1:4000`
-provides company overview, kanban board, agent monitoring with stdout streaming,
-chat, approval queue, audit viewer, and system health. Inotify events repaint
-the UI in under a second with no polling. No JavaScript framework. No build step.
+**Reply-file contract (v0.0.3, GEP-8)** — Every sandboxed invocation
+ends with Glorbo reading the file at `$GLORBO_REPLY_PATH`. Agents
+scaffolded by `glorbo new agent` are pre-populated with a system prompt
+that instructs the CLI to write its final answer there. Failures
+(missing / empty / too-large) surface as structured dispatch errors
+in the audit log.
+
+**Real-time dashboard** — Phoenix LiveView at `http://127.0.0.1:4000`
+provides company overview, kanban board, agent monitoring with stdout
+streaming, chat, approval queue, audit viewer, system health, and a
+provider-registry panel at `/providers` (v0.0.3). Inotify events
+repaint the UI in under a second with no polling. No JavaScript
+framework. No build step.
 
 **Agent chat** — Talk to your agents. Agents talk to each other. Channels are
 append-only markdown files underneath. Phoenix Channels handles real-time
@@ -198,7 +214,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All 17 verbs from `DESIGN.md` §10 are wired in v0.0.2:
+All verbs from `DESIGN.md` §10 are wired; the shipped surface as of v0.0.3:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -328,8 +344,8 @@ captures the project's design philosophy in one page.
 
 ## Project Status
 
-Pre-1.0 (currently **v0.0.2**, shipped 2026-04-16). Milestone 01
-(CLI-agent runtime) is complete:
+Pre-1.0. **v0.0.2** shipped 2026-04-16 and closed Milestone 01 (CLI-agent
+runtime):
 
 - Phase 01 — Compilable skeleton + CI + signed releases ✓
 - Phase 02 — Filesystem foundation, doctor, `glorbo init` ✓
@@ -337,8 +353,19 @@ Pre-1.0 (currently **v0.0.2**, shipped 2026-04-16). Milestone 01
 - Phase 04 — LiveView dashboard + Channels + PubSub ✓
 - Phase 05 — CLI completeness + backup/restore + portability ✓
 
-Tests: 621/621 green · `mix compile --warnings-as-errors` clean ·
-38/38 v0.0.2 requirements covered.
+**v0.0.3** is in progress on the `worktree-gep-8-provider-registry` branch:
+
+- **GEP-8 — provider registry + CLI auto-detect** ✓
+- **GEP-12 — no user-input atoms** ✓ (rolled into v0.0.3)
+- Reply-file contract (breaking change — existing agents need an
+  updated system prompt; `glorbo new agent` scaffolds this
+  automatically)
+- 5 Critical + 15 Important + 15 Minor code-quality findings closed
+- Tests: 680/680 green · `mix credo --strict` clean ·
+  `mix gep.validate` clean
+
+Pending: `api-only` netns + nftables egress hardening, and GEP-10
+agent-template scaffolding.
 
 Active design work lives in `docs/geps/`. Historical phase plans
 are in `git log` for anyone who needs the archaeology.
