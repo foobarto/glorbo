@@ -35,6 +35,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0009 | [Protocol-Level Integration — MCP, ACP](./0009-protocol-integration-mcp-acp.md)          | Informational | Draft       |
 | 0010 | [Agent and Role-Specific Skill Templates](./0010-agent-and-skill-templates.md)           | Standards     | Placeholder |
 | 0011 | [The Zen of Glorbo](./0011-zen-of-glorbo.md)                                             | Informational | Accepted    |
+| 0012 | [No User-Input Atoms — Registry Over Process Names](./0012-no-user-input-atoms.md)       | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
