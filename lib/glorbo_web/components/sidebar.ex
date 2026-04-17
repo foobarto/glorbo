@@ -116,9 +116,11 @@ defmodule GlorboWeb.Components.Sidebar do
     >
       <span class="gl-sidebar__tree-line" aria-hidden="true">{@prefix}</span>
       <span
-        class={["gl-sidebar__dot", "gl-sidebar__dot--#{@agent.status}"]}
+        class={["gl-pill gl-pill--" <> Atom.to_string(@agent.status), "gl-sidebar__pill"]}
         aria-hidden="true"
-      />
+      >
+        <span class="gl-pill__dot"></span>
+      </span>
       <span class="gl-sidebar__label">{@agent.slug}</span>
       <span class="gl-sidebar__meta">{short_provider(@agent.provider)}</span>
     </.link>

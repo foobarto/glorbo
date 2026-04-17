@@ -944,20 +944,14 @@ button { font-family: inherit; font-size: inherit; }
   flex: 0 0 auto;
   line-height: 1;
 }
-.gl-sidebar__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gl-fg-subtle);
-  flex: 0 0 6px;
+.gl-sidebar__pill {
+  /* Mockup uses the standard status pill in the agent rows but with
+     tighter padding and no label — just the dot. */
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 14px;
+  flex: 0 0 auto;
 }
-.gl-sidebar__dot--alive {
-  background: var(--gl-accent);
-  box-shadow: 0 0 4px var(--gl-accent);
-}
-.gl-sidebar__dot--idle { background: var(--gl-fg-subtle); }
-.gl-sidebar__dot--warn { background: var(--gl-warning); }
-.gl-sidebar__dot--stop { background: var(--gl-danger); }
 .gl-sidebar__empty {
   padding: 4px 14px;
   color: var(--gl-fg-subtle);
