@@ -7,10 +7,8 @@ defmodule Glorbo.CLI do
   responsible for printing `output` and halting with `exit_code`; tests call
   `dispatch/1` directly and assert the tuple shape, no CaptureIO needed.
 
-  Per user-confirmed A6 (Phase 1 CONTEXT): `./glorbo` (no args) prints help
-  and exits 0. Plan 05-01 extends the verb set with the full DESIGN.md §10
-  surface; unimplemented verbs return Wave-0 stub tuples until Plans 02/03
-  fill their respective modules.
+  `./glorbo` (no args) prints help and exits 0. The full DESIGN.md §10
+  verb surface is wired.
   """
 
   alias Glorbo.CLI.{Lifecycle, Scaffold, Logs, Migrate, Console, DoctorFix}
@@ -43,9 +41,8 @@ defmodule Glorbo.CLI do
   # init flags. No `--repair` — repair lives under `doctor --fix`.
   @init_switches [force: :boolean, example: :boolean]
 
-  # D-46 + Plan 05-01: `--fix` now routes to `Glorbo.CLI.DoctorFix.run/1`
-  # (Wave-0 stub returning a "not implemented in Wave 0 (Plan 03 fills)"
-  # tuple; Plan 03 fills the actual Fixer registry).
+  # `--fix` routes to `Glorbo.CLI.DoctorFix.run/1` which dispatches to
+  # a registry of per-check fixers.
   @doctor_switches [json: :boolean, fix: :boolean, dry_run: :boolean]
 
   @spec dispatch([String.t()]) :: result()
@@ -74,9 +71,6 @@ defmodule Glorbo.CLI do
     {opts, _argv, _invalid} = OptionParser.parse(rest, strict: @doctor_switches)
 
     if opts[:fix] do
-      # Plan 05-01: route --fix through the DoctorFix module. Wave-0 stub
-      # returns the "not implemented in Wave 0 (Plan 03 fills)" tuple;
-      # Plan 03 populates the actual Fixer registry.
       DoctorFix.run(opts)
     else
       results = Doctor.run_checks()

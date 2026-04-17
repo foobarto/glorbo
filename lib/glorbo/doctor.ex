@@ -200,19 +200,7 @@ defmodule Glorbo.Doctor do
   defp check_glorbo_dir(deps) do
     home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
     path = Path.join(home_fun.(), ".glorbo")
-
-    try do
-      File.mkdir_p!(path)
-      # WR-04: unique probe name per invocation so two concurrent doctors
-      # don't race on the same filename (doctor is documented idempotent).
-      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
-      File.write!(probe, "ok")
-      File.rm!(probe)
-      {:ok, "#{path} (writable)", "writable directory"}
-    rescue
-      e in [File.Error] ->
-        {:fail, Exception.message(e), "writable directory"}
-    end
+    write_probe(path, "writable directory", "#{path} (writable)")
   end
 
   @spec check_erts_version(keyword()) :: {:ok | :fail, String.t(), String.t()}
@@ -240,18 +228,7 @@ defmodule Glorbo.Doctor do
   defp check_audit_dir(deps) do
     home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
     path = Path.join([home_fun.(), ".glorbo", "audit", "_system"])
-
-    try do
-      File.mkdir_p!(path)
-      # WR-04: unique per-invocation probe name.
-      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
-      File.write!(probe, "ok")
-      File.rm!(probe)
-      {:ok, "#{path} (writable)", "writable append-only audit dir"}
-    rescue
-      e in [File.Error] ->
-        {:fail, Exception.message(e), "writable append-only audit dir"}
-    end
+    write_probe(path, "writable append-only audit dir", "#{path} (writable)")
   end
 
   @spec check_sockets_dir(keyword()) :: {:ok | :fail, String.t(), String.t()}
@@ -262,15 +239,26 @@ defmodule Glorbo.Doctor do
     try do
       File.mkdir_p!(path)
       File.chmod!(path, 0o700)
-      # WR-04: unique per-invocation probe name.
-      probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
-      File.write!(probe, "ok")
-      File.rm!(probe)
-      {:ok, "#{path} (writable, 0700)", "writable runtime socket dir, mode 0700"}
+      write_probe(path, "writable runtime socket dir, mode 0700", "#{path} (writable, 0700)")
     rescue
-      e in [File.Error] ->
-        {:fail, Exception.message(e), "writable runtime socket dir, mode 0700"}
+      e in [File.Error] -> {:fail, Exception.message(e), "writable runtime socket dir, mode 0700"}
     end
+  end
+
+  # Canonical doctor write-probe: make the dir, touch a uniquely-named
+  # sentinel, remove it, report writable. WR-04: unique-per-invocation
+  # probe name so two concurrent doctors don't collide. Consolidates
+  # the three duplicated probe blocks (TODO.md audit Medium #6).
+  @spec write_probe(String.t(), String.t(), String.t()) ::
+          {:ok | :fail, String.t(), String.t()}
+  defp write_probe(path, required, ok_detail) do
+    File.mkdir_p!(path)
+    probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
+    File.write!(probe, "ok")
+    File.rm!(probe)
+    {:ok, ok_detail, required}
+  rescue
+    e in [File.Error] -> {:fail, Exception.message(e), required}
   end
 
   @spec check_tar_zstd(keyword()) :: {:ok | :fail, String.t(), String.t()}

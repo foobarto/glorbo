@@ -70,8 +70,18 @@ if config_env() == :prod do
   config :glorbo, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
   config :glorbo, :dashboard_token, cfg.dashboard_token
 
+  # Derive the LiveView signing_salt from the runtime secret_key_base
+  # so we don't ship a hardcoded value. The compile-time config.exs
+  # fallback remains a defensible placeholder (TODO.md audit Medium
+  # #8); this runtime override is what production actually uses.
+  signing_salt =
+    :crypto.hash(:sha256, secret_key_base)
+    |> Base.url_encode64(padding: false)
+    |> binary_part(0, 12)
+
   config :glorbo, GlorboWeb.Endpoint,
     url: [host: host, port: port, scheme: "http"],
     http: [ip: {127, 0, 0, 1}, port: port],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    live_view: [signing_salt: signing_salt]
 end

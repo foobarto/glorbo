@@ -14,6 +14,12 @@ defmodule Glorbo.CLI.Scaffold.Company do
 
   alias Glorbo.CLI.Audit
 
+  # Company/project slug regex — more permissive than the agent/parser
+  # slug regex (no length cap, allows digit-leading) because company
+  # and project names are user-facing labels, not Elixir atoms or
+  # supervisor keys. Kept separate from Glorbo.Agent.Parser's stricter
+  # regex on purpose; unifying would tighten semantics that downstream
+  # consumers rely on.
   @slug_re ~r/\A[a-z0-9-]+\z/
 
   @spec run([String.t()]) :: Glorbo.CLI.result()
