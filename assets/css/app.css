@@ -379,6 +379,197 @@ button { font-family: inherit; font-size: inherit; }
 .gl-stat-card--amber .gl-stat-card__value { color: var(--gl-amber); }
 .gl-stat-card--rose .gl-stat-card__value { color: var(--gl-rose); }
 
+/* ========== Overview layout (M2 rewrite) ========== */
+.gl-overview { display: flex; flex-direction: column; gap: var(--gl-space-lg); }
+.gl-overview__header { justify-content: space-between; }
+.gl-overview__path {
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+  margin: 4px 0 0;
+}
+.gl-overview__quote {
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-faint);
+  font-style: italic;
+  margin: 4px 0 0;
+}
+.gl-overview__actions {
+  display: flex;
+  gap: var(--gl-space-sm);
+  align-items: flex-end;
+}
+.gl-btn--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  padding: 4px 10px;
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.gl-btn--primary {
+  color: var(--gl-accent);
+  border-color: var(--gl-accent-dim);
+  background: var(--gl-accent-bg);
+}
+
+.gl-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gl-space-md);
+}
+
+.gl-overview__main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gl-space-md);
+}
+
+.gl-overview__bottom {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: var(--gl-space-md);
+}
+.gl-overview__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-md);
+}
+.gl-overview__audit-link { text-transform: none; letter-spacing: 0; }
+
+/* ========== Agents roster table ========== */
+.gl-agent-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-body);
+}
+.gl-agent-table thead th {
+  text-align: left;
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  background: var(--gl-surface);
+  color: var(--gl-fg-subtle);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+  border-bottom: 1px solid var(--gl-border);
+}
+.gl-agent-table tbody td {
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border-faint);
+  vertical-align: top;
+}
+.gl-agent-table__row { cursor: pointer; transition: background-color 120ms ease; }
+.gl-agent-table__row:hover { background: var(--gl-surface-hover); }
+.gl-agent-table__name { color: var(--gl-fg); }
+.gl-agent-table__role,
+.gl-agent-table__model,
+.gl-agent-table__budget-text {
+  font-size: 10px;
+}
+.gl-agent-table__activity { max-width: 280px; }
+
+/* Inline budget bar */
+.gl-budget-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gl-budget-bar::before {
+  content: "";
+  width: 80px;
+  height: 4px;
+  background: var(--gl-surface-raised);
+  position: relative;
+  flex-shrink: 0;
+}
+.gl-budget-bar__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 4px;
+  background: var(--gl-accent-dim);
+  transition: width 200ms ease;
+}
+.gl-budget-bar__fill--amber { background: var(--gl-amber); }
+.gl-budget-bar__fill--rose { background: var(--gl-rose); }
+.gl-budget-bar {
+  position: relative;
+}
+
+/* Inline badge (unstyled; deprecated in favour of StatusPill) */
+.gl-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: var(--gl-ff-mono);
+  color: var(--gl-fg-muted);
+  border: 1px solid var(--gl-border-strong);
+  background: var(--gl-surface);
+  text-transform: lowercase;
+}
+
+/* ========== Audit tail (overview bottom) ========== */
+.gl-activity { list-style: none; margin: 0; padding: 0; }
+.gl-activity__row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: var(--gl-space-md);
+  padding: 6px var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border-faint);
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+}
+.gl-activity__row:last-child { border-bottom: none; }
+.gl-activity__ts { color: var(--gl-fg-subtle); }
+.gl-activity__actor { color: var(--gl-accent); }
+
+/* ========== Bar list (projects/providers rows) ========== */
+.gl-bar-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gl-space-sm); }
+.gl-bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 48px;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+}
+.gl-bar-row--provider {
+  grid-template-columns: 120px 1fr auto;
+}
+.gl-bar-row__label { min-width: 0; }
+.gl-bar-row__sub { font-size: 10px; }
+.gl-bar-row__track {
+  height: 4px;
+  background: var(--gl-surface-raised);
+  position: relative;
+}
+.gl-bar-row__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--gl-accent-dim);
+}
+.gl-bar-row__fill--amber { background: var(--gl-amber); }
+.gl-bar-row__fill--rose { background: var(--gl-rose); }
+.gl-bar-row__fill--accent { background: var(--gl-accent); }
+.gl-bar-row__val { color: var(--gl-fg-muted); text-align: right; }
+
+.gl-empty--inline {
+  padding: var(--gl-space-md);
+  text-align: center;
+  color: var(--gl-fg-muted);
+}
+
 /* ========== Sidebar ========== */
 .gl-sidebar {
   background: var(--gl-surface);
