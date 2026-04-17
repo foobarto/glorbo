@@ -75,7 +75,11 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
       assert p.version_flag == "--version"
       assert p.version_regex == "(\\d+\\.\\d+\\.\\d+)"
       assert p.usage_parser == "claude_jsonl"
-      assert p.usage_path == %{kind: :jsonl_latest_in_dir, path: "{workspace}/.glorbo-claude/projects/{encoded}"}
+
+      assert p.usage_path == %{
+               kind: :jsonl_latest_in_dir,
+               path: "{workspace}/.glorbo-claude/projects/{encoded}"
+             }
 
       assert [%{name: "encoded", from: "{workspace}", transform: "slash_to_dash"}] =
                p.path_transforms

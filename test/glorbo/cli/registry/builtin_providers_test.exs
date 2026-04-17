@@ -69,7 +69,10 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     for {_name, %Provider{} = prov} <- p do
       assert prov.source == :builtin
       assert prov.allow_version_probe == true, "built-in #{prov.name} must allow probes"
-      assert prov.reply_max_bytes == 1_048_576, "built-in #{prov.name} reply cap must match default"
+
+      assert prov.reply_max_bytes == 1_048_576,
+             "built-in #{prov.name} reply cap must match default"
+
       assert prov.version_flag == "--version"
       assert prov.version_regex == "(\\d+\\.\\d+\\.\\d+)"
     end

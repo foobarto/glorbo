@@ -80,7 +80,10 @@ defmodule GlorboWeb.ProvidersLive do
           </tr>
         </thead>
         <tbody>
-          <tr :for={p <- @providers} class={"gl-providers__row gl-providers__row--" <> status_class(p)}>
+          <tr
+            :for={p <- @providers}
+            class={"gl-providers__row gl-providers__row--" <> status_class(p)}
+          >
             <td class="gl-tabular">{p.name}</td>
             <td>
               <span class={["gl-badge", "gl-badge--" <> status_class(p)]}>{status_label(p)}</span>
@@ -94,9 +97,8 @@ defmodule GlorboWeb.ProvidersLive do
       </table>
 
       <p :if={@providers == []} class="gl-subtle">
-        No providers declared. Ship built-ins via
-        <code>priv/providers/*.toml</code> or drop user-declared entries at
-        <code>~/.glorbo/providers.toml</code>.
+        No providers declared. Ship built-ins via <code>priv/providers/*.toml</code>
+        or drop user-declared entries at <code>~/.glorbo/providers.toml</code>.
       </p>
     </section>
     """

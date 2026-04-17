@@ -126,9 +126,7 @@ defmodule Glorbo.CLI.DispatcherTest do
       ws = tmp_workspace()
 
       assert {:ok, %{reply: "hello"}} =
-               Dispatcher.invoke(base_provider(), base_ctx(ws),
-                 run_fun: writer_run_fun("hello")
-               )
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: writer_run_fun("hello"))
     end
 
     test "fails with :reply_file_missing when agent writes nothing" do

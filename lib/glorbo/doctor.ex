@@ -133,8 +133,7 @@ defmodule Glorbo.Doctor do
     end
   rescue
     _ ->
-      {:fail, "uname not available",
-       "≥ #{elem(@minimum_kernel, 0)}.#{elem(@minimum_kernel, 1)}"}
+      {:fail, "uname not available", "≥ #{elem(@minimum_kernel, 0)}.#{elem(@minimum_kernel, 1)}"}
   end
 
   defp parse_kernel(v) do

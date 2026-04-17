@@ -236,7 +236,12 @@ defmodule Glorbo.CLI.Dispatcher do
     {nil, nil}
   end
 
-  defp parse_usage(%Provider{usage_parser: name, usage_path: usage_path} = provider, run_result, ctx, subs) do
+  defp parse_usage(
+         %Provider{usage_parser: name, usage_path: usage_path} = provider,
+         run_result,
+         ctx,
+         subs
+       ) do
     module = Parsers.module_for(name)
     source = resolve_source(usage_path, run_result, ctx, subs, provider)
 
@@ -254,7 +259,13 @@ defmodule Glorbo.CLI.Dispatcher do
     {:jsonl_file, expand(path, Map.merge(base_substitutions(ctx), subs))}
   end
 
-  defp resolve_source(%{kind: :jsonl_latest_in_dir, path: path}, _run_result, ctx, subs, _provider) do
+  defp resolve_source(
+         %{kind: :jsonl_latest_in_dir, path: path},
+         _run_result,
+         ctx,
+         subs,
+         _provider
+       ) do
     dir = expand(path, Map.merge(base_substitutions(ctx), subs))
 
     case latest_jsonl(dir) do
