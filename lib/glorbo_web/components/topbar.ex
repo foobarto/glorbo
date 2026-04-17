@@ -1,0 +1,141 @@
+defmodule GlorboWeb.Components.Topbar do
+  @moduledoc """
+  Persistent top bar (M1 mockup alignment — see abc.zip shell.jsx:11-29).
+
+  Renders the brand, the path breadcrumb to the currently-focused
+  company directory, a company picker (HTML `<select>` that navigates
+  on change), version info (app/bwrap/kernel), the keyboard-shortcut
+  hint line, and the TWEAKS toggle button.
+
+  ## Attrs
+
+    * `:current_company` — slug string or nil. Drives the path
+      breadcrumb and the picker's selected option.
+    * `:tweaks_open?` — whether the tweaks drawer is open (toggles
+      the button's visual state). Defaults to false.
+
+  ## Version data
+
+  `app_version/0` reads `Application.spec(:glorbo, :vsn)` so the
+  topbar always matches the shipped release. `bwrap_version/0` is
+  best-effort (runs `bwrap --version`, short-timeout, caches nothing
+  — the topbar re-renders often but a cache here would need a
+  GenServer and the answer is rarely interesting). If either shell-
+  out fails the bar just hides the value rather than crashing.
+  """
+  use Phoenix.Component
+
+  attr :current_company, :string, default: nil
+  attr :tweaks_open?, :boolean, default: false
+
+  def topbar(assigns) do
+    assigns =
+      assigns
+      |> assign(:companies, list_company_slugs())
+      |> assign(:app_version, app_version())
+      |> assign(:bwrap_version, bwrap_version())
+      |> assign(:kernel_version, kernel_version())
+
+    ~H"""
+    <header class="gl-topbar" role="banner">
+      <span class="gl-topbar__brand" aria-label="Glorbo">GLORBO</span>
+      <span class="gl-topbar__sep" aria-hidden="true">│</span>
+
+      <span class="gl-topbar__path">~/.glorbo/companies/</span>
+      <select
+        :if={@companies != []}
+        class="gl-topbar__picker"
+        aria-label="Switch company"
+        onchange="window.location = '/companies/' + this.value"
+      >
+        <option :for={slug <- @companies} value={slug} selected={slug == @current_company}>
+          {slug}
+        </option>
+      </select>
+      <span :if={@companies == []} class="gl-topbar__picker" aria-disabled="true">
+        (no companies)
+      </span>
+
+      <span class="gl-topbar__sep" aria-hidden="true">│</span>
+      <span class="gl-topbar__version">
+        v{@app_version}<span :if={@bwrap_version != ""}> · bwrap {@bwrap_version}</span><span :if={@kernel_version != ""}> · kernel {@kernel_version}</span>
+      </span>
+
+      <span class="gl-topbar__spacer"></span>
+
+      <span class="gl-topbar__kbd" aria-hidden="true">
+        <kbd>g</kbd><kbd>o</kbd> overview · <kbd>g</kbd><kbd>k</kbd> kanban · <kbd>g</kbd><kbd>c</kbd> chat
+      </span>
+      <span class="gl-topbar__sep" aria-hidden="true">│</span>
+      <%!-- TWEAKS toggle wire-up lands in M5 alongside the Tweaks drawer
+            itself. Rendered as a disabled-looking button for now so the
+            shell's visual shape is complete. --%>
+      <button
+        type="button"
+        class={["gl-topbar__tweaks", @tweaks_open? && "gl-topbar__tweaks--on"]}
+        disabled
+        aria-disabled="true"
+        title="Tweaks panel lands in M5"
+      >
+        TWEAKS
+      </button>
+    </header>
+    """
+  end
+
+  # ---------------------------------------------------------------------------
+  # Data sources
+  # ---------------------------------------------------------------------------
+
+  defp list_company_slugs do
+    base = Glorbo.Filesystem.Hierarchy.default_root()
+    dir = Path.join(base, "companies")
+
+    case File.ls(dir) do
+      {:ok, slugs} ->
+        slugs
+        |> Enum.sort()
+        |> Enum.filter(&File.dir?(Path.join(dir, &1)))
+
+      _ ->
+        []
+    end
+  end
+
+  defp app_version do
+    case Application.spec(:glorbo, :vsn) do
+      nil -> "dev"
+      v -> to_string(v)
+    end
+  end
+
+  defp bwrap_version do
+    try do
+      case System.cmd("bwrap", ["--version"], stderr_to_stdout: true) do
+        {output, 0} ->
+          output
+          |> String.split("\n", parts: 2)
+          |> List.first()
+          |> to_string()
+          |> String.replace("bwrap ", "")
+          |> String.trim()
+
+        _ ->
+          ""
+      end
+    rescue
+      _ -> ""
+    end
+  end
+
+  defp kernel_version do
+    try do
+      case System.cmd("uname", ["-r"], stderr_to_stdout: true) do
+        {output, 0} -> String.trim(output)
+        _ -> ""
+      end
+    rescue
+      _ -> ""
+    end
+  end
+end

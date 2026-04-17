@@ -1,5 +1,6 @@
 <div class="gl-app-shell">
   <a href="#gl-main-content" class="gl-skip-link">Skip to main content</a>
+  <GlorboWeb.Components.Topbar.topbar current_company={assigns[:current_company]} />
   <GlorboWeb.Components.Sidebar.sidebar current_company={assigns[:current_company]} />
   <main id="gl-main-content" class="gl-main" tabindex="-1">
     <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--error" role="alert">

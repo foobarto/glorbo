@@ -92,17 +92,87 @@ button { font-family: inherit; font-size: inherit; }
   outline-offset: 2px;
 }
 
-/* ========== App shell (D-09) ========== */
+/* ========== App shell (D-09, updated for M1 mockup alignment) ==========
+
+   Three-row grid:
+     topbar    (32px — brand + path + company picker + kbd hints)
+     sidebar+main
+     statusbar (24px — daemon/agents/SQLite/clock)
+*/
 .gl-app-shell {
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: 1fr;
+  grid-template-rows: 32px 1fr 24px;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main"
+    "statusbar statusbar";
   height: 100vh;
 }
-.gl-main {
-  background: var(--gl-bg);
-  padding: var(--gl-space-lg) var(--gl-space-xl);
-  overflow-y: auto;
+.gl-sidebar { grid-area: sidebar; }
+.gl-main    { grid-area: main; background: var(--gl-bg); overflow-y: auto;
+              padding: var(--gl-space-lg) var(--gl-space-xl); }
+
+/* ========== Topbar (mockup: shell.jsx Topbar) ========== */
+.gl-topbar {
+  grid-area: topbar;
+  background: var(--gl-surface);
+  border-bottom: 1px solid var(--gl-border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--gl-space-md);
+  gap: var(--gl-space-md);
+  font-family: var(--gl-ff-mono);
+  font-size: var(--gl-font-label);
+  color: var(--gl-fg-muted);
+}
+.gl-topbar__brand {
+  font-weight: 700;
+  color: var(--gl-accent);
+  letter-spacing: 0.02em;
+}
+.gl-topbar__brand::before { content: "▚ "; }
+.gl-topbar__sep { color: var(--gl-fg-ghost); }
+.gl-topbar__path { color: var(--gl-fg-muted); }
+.gl-topbar__picker {
+  color: var(--gl-fg);
+  padding: 2px 6px;
+  border: 1px solid var(--gl-border-strong);
+  background: var(--gl-surface-raised);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.gl-topbar__picker:hover { background: var(--gl-surface-hover); }
+.gl-topbar__picker::after { content: " ▾"; color: var(--gl-fg-subtle); }
+.gl-topbar__version { color: var(--gl-fg-subtle); }
+.gl-topbar__spacer { flex: 1; }
+.gl-topbar__kbd { color: var(--gl-fg-subtle); }
+.gl-topbar__kbd kbd {
+  font-family: var(--gl-ff-mono);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--gl-fg-muted);
+  border-radius: 2px;
+}
+.gl-topbar__tweaks {
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--gl-fg);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gl-topbar__tweaks:hover { background: var(--gl-surface-hover); }
+.gl-topbar__tweaks--on {
+  color: var(--gl-accent);
+  border-color: var(--gl-accent-dim);
+  background: var(--gl-accent-bg);
 }
 
 /* ========== Sidebar ========== */
