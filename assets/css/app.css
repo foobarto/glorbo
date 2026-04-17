@@ -725,24 +725,6 @@ button { font-family: inherit; font-size: inherit; }
 .gl-perm__tag--router { color: var(--gl-violet); border-color: var(--gl-border-strong); }
 .gl-perm--empty { padding: var(--gl-space-md); cursor: default; }
 
-/* Inline wake form in header */
-.gl-wake-inline {
-  display: flex;
-  gap: var(--gl-space-xs);
-  align-items: center;
-}
-.gl-wake-inline__reason {
-  padding: 3px var(--gl-space-sm);
-  font-family: var(--gl-ff-mono);
-  font-size: 11px;
-  background: var(--gl-surface);
-  border: 1px solid var(--gl-border-strong);
-  color: var(--gl-fg);
-  width: 140px;
-}
-.gl-wake-inline__btn {
-  padding: 3px var(--gl-space-sm);
-}
 .gl-btn--danger {
   color: var(--gl-rose);
   border-color: var(--gl-rose-dim);

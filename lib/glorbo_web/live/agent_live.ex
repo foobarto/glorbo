@@ -445,16 +445,14 @@ defmodule GlorboWeb.AgentLive do
 
   defp wake_button(assigns) do
     ~H"""
-    <form phx-submit="wake" class="gl-wake-inline">
-      <input
-        type="text"
-        name="reason"
-        class="gl-input gl-wake-inline__reason"
-        placeholder="reason (optional)"
-        maxlength="200"
-      />
-      <button type="submit" class="gl-btn gl-btn--primary gl-wake-inline__btn">↻ wake now</button>
-    </form>
+    <button
+      type="button"
+      class="gl-btn gl-btn--primary"
+      phx-click="wake"
+      phx-value-reason=""
+    >
+      ↻ wake now
+    </button>
     """
   end
 

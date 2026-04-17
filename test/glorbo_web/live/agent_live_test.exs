@@ -36,7 +36,7 @@ defmodule GlorboWeb.AgentLiveTest do
 
   test "wake button writes state/wake-request.md", %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
-    render_submit(view, "wake", %{"reason" => "test"})
+    render_click(view, "wake", %{"reason" => ""})
 
     wake_path =
       Path.join([base, "companies", "acme", "agents", "ceo", "state", "wake-request.md"])
@@ -44,6 +44,5 @@ defmodule GlorboWeb.AgentLiveTest do
     assert File.exists?(wake_path), "wake-request.md was not written"
     content = File.read!(wake_path)
     assert content =~ "reason:"
-    assert content =~ "test"
   end
 end
