@@ -65,7 +65,7 @@ defmodule GlorboWeb.Actions do
   @spec post_message(String.t(), String.t(), String.t(), keyword()) :: ok_or_err
   def post_message(company, channel, body, opts \\ []) when is_binary(body) do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
-    audit = Keyword.get(opts, :audit, AuditLog)
+    audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
     with :ok <- validate_slug(company),
          :ok <- validate_slug(channel),
@@ -102,7 +102,7 @@ defmodule GlorboWeb.Actions do
   def set_approval(company, task_path, decision, opts \\ [])
       when decision in [:approved, :denied] do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
-    audit = Keyword.get(opts, :audit, AuditLog)
+    audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
     with :ok <- validate_slug(company),
          :ok <- validate_task_path(task_path) do
@@ -135,7 +135,7 @@ defmodule GlorboWeb.Actions do
   @spec wake_agent(String.t(), String.t(), String.t() | nil, keyword()) :: ok_or_err
   def wake_agent(company, agent, reason, opts \\ []) do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
-    audit = Keyword.get(opts, :audit, AuditLog)
+    audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
     reason = reason || ""
 
     with :ok <- validate_slug(company),
@@ -244,6 +244,19 @@ defmodule GlorboWeb.Actions do
       {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
       {:error, :enoent} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Resolve the per-company AuditLog server. Falls back to the bare module
+  # name if no pid is registered under the company-scoped via tuple — that
+  # path keeps test-time fallbacks (where LiveCase starts an AuditLog under
+  # the module name directly) working without changes.
+  defp resolve_audit(company) do
+    via = {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
+
+    case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
+      [{_pid, _}] -> via
+      _ -> AuditLog
     end
   end
 end

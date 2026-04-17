@@ -1,5 +1,10 @@
 import Config
 
+# Do not auto-start companies on app boot under ExUnit — each test
+# manages its own per-test tmp root + fixtures; auto-boot would fight
+# the isolation.
+config :glorbo, auto_start_companies: false
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

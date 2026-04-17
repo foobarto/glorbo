@@ -79,6 +79,12 @@ defmodule Glorbo.Application do
       # Load-validation failure is a hard crash by design (GEP-8 D9).
       Glorbo.CLI.Registry,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
+      # M-series fix: enumerate companies on disk at boot and start a
+      # per-company supervisor for each. Without this, the dashboard
+      # has no AuditLog/Router/Gate/etc. registered — every Director
+      # write-action would time out and crash the LiveView.
+      # Disabled under `mix test` via config (:glorbo, :auto_start_companies, false).
+      Glorbo.CompanyBoot,
       # Phase 4 Wave 0: per-agent-page stdout tail streamers. AgentLive
       # spawns children on mount; crash in one streamer does not affect
       # other streamers or the LiveView (LV uses Process.monitor/1 for
