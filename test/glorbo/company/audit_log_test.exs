@@ -9,7 +9,7 @@ defmodule Glorbo.Company.AuditLogTest do
   # Start a fresh AuditLog GenServer rooted at a tmp dir for each test.
   setup do
     base = TmpGlorboHome.setup()
-    name = :"audit_log_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("audit_log")
     {:ok, pid} = AuditLog.start_link(name: name, base: base)
     # Allow the GenServer to use the test's sandboxed Repo connection so
     # the SQLite mirror actually inserts inside the Sandbox transaction.

@@ -25,7 +25,7 @@ defmodule GlorboWeb.ApprovalQueueIntegrationTest do
     start_supervised!(
       {Glorbo.Company.Supervisor,
        [
-         name: :"acme_approval_sup_#{System.unique_integer([:positive])}",
+         name: Glorbo.Test.UniqueName.gen("acme_approval_sup"),
          company: "acme",
          base: base
        ]}

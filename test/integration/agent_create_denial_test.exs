@@ -36,7 +36,7 @@ defmodule Glorbo.Integration.AgentCreateDenialTest do
 
       {:ok, router} =
         Router.start_link(
-          name: :"rt_#{System.unique_integer([:positive])}",
+          name: Glorbo.Test.UniqueName.gen("rt"),
           company: @company,
           base: ctx.base,
           audit_fun: audit_fun

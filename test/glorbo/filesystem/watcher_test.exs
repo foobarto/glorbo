@@ -42,7 +42,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
         [
           company: company,
           base: base,
-          name: :"watcher_#{System.unique_integer([:positive])}",
+          name: Glorbo.Test.UniqueName.gen("watcher"),
           reindex_fun: default_reindex_fun
         ],
         overrides
@@ -228,7 +228,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       company = "sup_#{System.unique_integer([:positive])}"
       File.mkdir_p!(Path.join([base, "companies", company]))
 
-      sup_name = :"company_sup_#{System.unique_integer([:positive])}"
+      sup_name = Glorbo.Test.UniqueName.gen("company_sup")
 
       # Plan 03-05 wires Agent.Registry into Application; start it manually
       # for this test when not running under the full app.

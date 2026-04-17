@@ -5,10 +5,10 @@ defmodule Glorbo.Company.AgentSupervisorTest do
   alias Glorbo.Company.AgentSupervisor
 
   setup do
-    reg_name = :"agsup_reg_#{System.unique_integer([:positive])}"
+    reg_name = Glorbo.Test.UniqueName.gen("agsup_reg")
     start_supervised!({Registry, keys: :unique, name: reg_name})
 
-    sup_name = :"agsup_#{System.unique_integer([:positive])}"
+    sup_name = Glorbo.Test.UniqueName.gen("agsup")
     sup = start_supervised!({AgentSupervisor, name: sup_name, company: "acme"})
 
     {:ok, sup: sup, registry: reg_name}

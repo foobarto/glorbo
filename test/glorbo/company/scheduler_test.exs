@@ -17,7 +17,7 @@ defmodule Glorbo.Company.SchedulerTest do
   end
 
   defp start_sched!(opts) do
-    name = :"scheduler_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("scheduler")
 
     pid =
       start_supervised!(

@@ -18,8 +18,7 @@ defmodule GlorboWeb.ChannelRealtimeTest do
     start_supervised!(
       {Glorbo.Company.Supervisor,
        [
-         name:
-           String.to_atom("acme_realtime_sup_#{System.unique_integer([:positive, :monotonic])}"),
+         name: Glorbo.Test.UniqueName.gen("acme_realtime_sup"),
          company: "acme",
          base: base
        ]}

@@ -5,7 +5,7 @@ defmodule Glorbo.Agent.RegistryTest do
 
   setup do
     # Use a per-test unique registry name via a dynamically-created module alias
-    name = :"test_registry_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("test_registry")
     start_supervised!({Registry, keys: :unique, name: name})
     {:ok, registry: name}
   end

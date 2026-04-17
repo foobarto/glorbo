@@ -156,6 +156,10 @@
           {Credo.Check.Warning.SpecWithStruct, []},
           {Credo.Check.Warning.StructFieldAmount, []},
           {Credo.Check.Warning.UnsafeExec, []},
+          # GEP-12 / T-03-15: block atom creation from user input. The stock
+          # Credo rule covers String.to_atom, List.to_atom, :erlang.{binary,list}_to_atom,
+          # Module.concat/{1,2}, and Jason.decode(..., keys: :atoms).
+          {Credo.Check.Warning.UnsafeToAtom, []},
           {Credo.Check.Warning.UnusedEnumOperation, []},
           {Credo.Check.Warning.UnusedFileOperation, []},
           {Credo.Check.Warning.UnusedKeywordOperation, []},
@@ -209,8 +213,8 @@
           {Credo.Check.Warning.LazyLogging, []},
           {Credo.Check.Warning.LeakyEnvironment, []},
           {Credo.Check.Warning.MapGetUnsafePass, []},
-          {Credo.Check.Warning.MixEnv, []},
-          {Credo.Check.Warning.UnsafeToAtom, []}
+          {Credo.Check.Warning.MixEnv, []}
+          # UnsafeToAtom moved to :enabled list — see GEP-12.
           # {Credo.Check.Warning.UnusedOperation, [{MyMagicModule, [:fun1, :fun2]}]}
 
           # {Credo.Check.Refactor.MapInto, []},

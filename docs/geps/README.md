@@ -28,7 +28,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0002 | [Glorbo Architecture Overview](./0002-architecture-overview.md)                          | Informational | Accepted    |
 | 0003 | [Filesystem as Source of Truth](./0003-filesystem-as-source-of-truth.md)                 | Informational | Implemented |
 | 0004 | [CLI-Tool Agents over a Custom LLM Client](./0004-cli-tool-agents.md)                    | Informational | Implemented |
-| 0005 | [Sandboxing — bwrap / Podman](./0005-sandboxing-bwrap-then-podman.md)                    | Informational | Accepted    |
+| 0005 | [Sandboxing — bwrap / Podman](./0005-sandboxing-bwrap-then-podman.md)                    | Informational | Implemented |
 | 0006 | [Phoenix LiveView + Channels for the Dashboard](./0006-phoenix-liveview-dashboard.md)    | Informational | Implemented |
 | 0007 | [SQLite as Derived Data](./0007-sqlite-as-derived-data.md)                               | Informational | Implemented |
 | 0008 | [Provider Registry + CLI Auto-Detect](./0008-provider-registry-and-auto-detect.md)       | Standards     | Draft       |

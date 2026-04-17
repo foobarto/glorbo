@@ -28,7 +28,7 @@ defmodule Glorbo.Company.RouterTest do
   end
 
   defp start_router!(base) do
-    name = :"router_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("router")
 
     pid =
       start_supervised!(

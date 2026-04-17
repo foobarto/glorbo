@@ -41,7 +41,7 @@ defmodule Glorbo.Integration.AgentCrashIsolationTest do
     # Registry is global across the test — start if not present.
     _ = Registry.start_link(keys: :unique, name: AgentRegistry)
 
-    sup_name = :"agent_sup_#{company}_#{System.unique_integer([:positive])}"
+    sup_name = Glorbo.Test.UniqueName.gen("agent_sup_#{company}")
 
     {:ok, sup_pid} =
       AgentSupervisor.start_link(name: sup_name, company: company)

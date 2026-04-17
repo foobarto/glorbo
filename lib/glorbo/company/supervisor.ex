@@ -45,10 +45,38 @@ defmodule Glorbo.Company.Supervisor do
 
   alias Glorbo.Agent.Parser, as: AgentParser
 
+  @typedoc """
+  Roles registered under `Glorbo.Agent.Registry` by a per-company tree.
+  Compile-time atoms — never derived from user input (GEP-12 / T-03-15).
+  """
+  @type role ::
+          :audit_log
+          | :file_watcher
+          | :router
+          | :scheduler
+          | :budget_tracker
+          | :agent_sup
+          | :network_proxy
+          | :approvals_gate
+
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     Supervisor.start_link(__MODULE__, opts, name: name)
+  end
+
+  @doc """
+  `:via` tuple for a named per-company child process. Key is
+  `{:company_child, company_slug, role}` — see GEP-12 for the rule.
+
+  Use this from tests or operator-tools that need to send messages to
+  a specific company's Router, AuditLog, etc., instead of guessing
+  at a registered-name atom.
+  """
+  @spec via(String.t(), role()) ::
+          {:via, Registry, {module(), {:company_child, String.t(), role()}}}
+  def via(company, role) when is_binary(company) and is_atom(role) do
+    {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, role}}}
   end
 
   @impl Supervisor
@@ -57,17 +85,15 @@ defmodule Glorbo.Company.Supervisor do
     base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
 
     base_children = [
-      {Glorbo.Company.AuditLog,
-       [name: child_name(company, :audit_log), company: company, base: base]},
+      {Glorbo.Company.AuditLog, [name: via(company, :audit_log), company: company, base: base]},
       {Glorbo.Filesystem.Watcher,
-       [name: child_name(company, :file_watcher), company: company, base: base]},
-      {Glorbo.Company.Router, [name: child_name(company, :router), company: company, base: base]},
-      {Glorbo.Company.Scheduler,
-       [name: child_name(company, :scheduler), company: company, base: base]},
+       [name: via(company, :file_watcher), company: company, base: base]},
+      {Glorbo.Company.Router, [name: via(company, :router), company: company, base: base]},
+      {Glorbo.Company.Scheduler, [name: via(company, :scheduler), company: company, base: base]},
       {Glorbo.Company.BudgetTracker,
-       [name: child_name(company, :budget_tracker), company: company, base: base]},
+       [name: via(company, :budget_tracker), company: company, base: base]},
       {Glorbo.Company.AgentSupervisor,
-       [name: child_name(company, :agent_sup), company: company, base: base]}
+       [name: via(company, :agent_sup), company: company, base: base]}
     ]
 
     # GAP-4: start Glorbo.Network.Proxy when at least one agent declares
@@ -86,8 +112,6 @@ defmodule Glorbo.Company.Supervisor do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
-  defp child_name(company, role), do: String.to_atom("#{company}_#{role}")
-
   # ---------------------------------------------------------------------------
   # Conditional Network.Proxy (GAP-4)
   # ---------------------------------------------------------------------------
@@ -99,8 +123,7 @@ defmodule Glorbo.Company.Supervisor do
     if api_only? do
       children ++
         [
-          {Glorbo.Network.Proxy,
-           [name: child_name(company, :network_proxy), company: company, port: 0]}
+          {Glorbo.Network.Proxy, [name: via(company, :network_proxy), company: company, port: 0]}
         ]
     else
       children
@@ -137,7 +160,7 @@ defmodule Glorbo.Company.Supervisor do
     children ++
       [
         {Glorbo.Approvals.Gate,
-         [name: child_name(company, :approvals_gate), company: company, base: base]}
+         [name: via(company, :approvals_gate), company: company, base: base]}
       ]
   end
 end

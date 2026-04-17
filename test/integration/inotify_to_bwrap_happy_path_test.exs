@@ -146,7 +146,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       Glorbo.Filesystem.Watcher.start_link(
         company: company,
         base: base,
-        name: :"watcher_#{System.unique_integer([:positive])}"
+        name: Glorbo.Test.UniqueName.gen("watcher")
       )
 
     on_exit(fn -> if Process.alive?(watcher_pid), do: GenServer.stop(watcher_pid) end)

@@ -57,7 +57,7 @@ defmodule Glorbo.Integration.BudgetHardStopE2ETest do
 
       {:ok, tracker} =
         BudgetTracker.start_link(
-          name: :"bt_#{System.unique_integer([:positive])}",
+          name: Glorbo.Test.UniqueName.gen("bt"),
           company: @company,
           budgets_fun: fn "engineer" -> 100 end,
           audit_fun: fn _, entry -> send(test_pid, {:audit, entry}) end

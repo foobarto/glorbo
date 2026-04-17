@@ -23,7 +23,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     test_pid = self()
     audit_fun = Keyword.get(opts, :audit_fun, capturing_audit_fun(test_pid))
 
-    name = :"budget_tracker_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("budget_tracker")
 
     pid =
       start_supervised!(
@@ -294,7 +294,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     File.mkdir_p!(Path.join([base, "companies", company, "alerts"]))
 
     test_pid = self()
-    name = :"budget_tracker_#{System.unique_integer([:positive])}"
+    name = Glorbo.Test.UniqueName.gen("budget_tracker")
 
     pid =
       start_supervised!(
@@ -365,7 +365,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
       pid
     end
 
-    name1 = :"bt_crash_1_#{System.unique_integer([:positive])}"
+    name1 = Glorbo.Test.UniqueName.gen("bt_crash_1")
     pid1 = start_tracker.(name1)
 
     ym = Ledger.month_bucket(DateTime.utc_now())
@@ -386,7 +386,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     assert_receive {:DOWN, ^ref, :process, ^pid1, :killed}, 1_000
 
     # Fresh tracker — state rebuilds from Repo (5000 < 8000 alert threshold).
-    name2 = :"bt_crash_2_#{System.unique_integer([:positive])}"
+    name2 = Glorbo.Test.UniqueName.gen("bt_crash_2")
     pid2 = start_tracker.(name2)
     on_exit(fn -> if Process.alive?(pid2), do: Process.exit(pid2, :normal) end)
     assert pid2 != pid1

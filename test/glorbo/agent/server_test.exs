@@ -22,10 +22,10 @@ defmodule Glorbo.Agent.ServerTest do
       file_path: "/tmp/agent.md"
     }
 
-    reg_name = :"srv_reg_#{System.unique_integer([:positive])}"
+    reg_name = Glorbo.Test.UniqueName.gen("srv_reg")
     start_supervised!({Registry, keys: :unique, name: reg_name})
 
-    task_sup_name = :"srv_task_sup_#{System.unique_integer([:positive])}"
+    task_sup_name = Glorbo.Test.UniqueName.gen("srv_task_sup")
     start_supervised!({Task.Supervisor, name: task_sup_name})
 
     {:ok, test_pid: pid, spec: spec, registry: reg_name, task_supervisor: task_sup_name}
@@ -54,7 +54,7 @@ defmodule Glorbo.Agent.ServerTest do
           company: "acme",
           task_supervisor: ctx.task_supervisor,
           registry: ctx.registry,
-          name: :"srv_#{System.unique_integer([:positive])}"
+          name: Glorbo.Test.UniqueName.gen("srv")
         ],
         extra_opts
       )

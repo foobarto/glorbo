@@ -63,7 +63,7 @@ defmodule Glorbo.StubsTest do
       File.mkdir_p!(base)
       ExUnit.Callbacks.on_exit(fn -> File.rm_rf!(base) end)
 
-      name = :"stubs_audit_#{System.unique_integer([:positive])}"
+      name = Glorbo.Test.UniqueName.gen("stubs_audit")
       {:ok, _pid} = AuditLog.start_link(name: name, base: base)
 
       assert :ok =

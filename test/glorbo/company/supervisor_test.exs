@@ -15,7 +15,7 @@ defmodule Glorbo.Company.SupervisorTest do
     company = Keyword.get(overrides, :company, "co_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join([base, "companies", company]))
 
-    sup_name = :"company_sup_#{System.unique_integer([:positive])}"
+    sup_name = Glorbo.Test.UniqueName.gen("company_sup")
 
     # Registry may or may not already be started by the application — start if
     # not already up.

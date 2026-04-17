@@ -25,7 +25,7 @@ defmodule GlorboWeb.KanbanRealtimeTest do
     start_supervised!(
       {Glorbo.Company.Supervisor,
        [
-         name: :"acme_kanban_sup_#{System.unique_integer([:positive])}",
+         name: Glorbo.Test.UniqueName.gen("acme_kanban_sup"),
          company: "acme",
          base: base
        ]}

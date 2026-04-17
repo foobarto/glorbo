@@ -81,9 +81,19 @@ defmodule Glorbo.Filesystem.Watcher do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc "Process registration name for the watcher of `company`."
-  @spec via(String.t()) :: {:global, {:glorbo_watcher, String.t()}}
-  def via(company), do: {:global, {:glorbo_watcher, company}}
+  @doc """
+  `:via` tuple for this watcher's registered name.
+
+  Keyed under `Glorbo.Agent.Registry` with `{:company_child, company, :file_watcher}`
+  — same shape as every other per-company child (GEP-12). Prior
+  implementation used `{:global, {:glorbo_watcher, company}}`; switched
+  to the project-wide Registry convention for consistency.
+  """
+  @spec via(String.t()) ::
+          {:via, Registry, {module(), {:company_child, String.t(), :file_watcher}}}
+  def via(company) when is_binary(company) do
+    {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :file_watcher}}}
+  end
 
   @impl GenServer
   def init(opts) do
