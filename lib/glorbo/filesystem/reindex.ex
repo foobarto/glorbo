@@ -169,12 +169,13 @@ defmodule Glorbo.Filesystem.Reindex do
     end)
   end
 
-  # Ordering key: 0 = company.md (parent), 1 = agent.md (child), 2 = other.
-  # Ensures parents are inserted before children so company_id resolves.
+  # Ordering key: 0 = company.md (parent), 1 = AGENT.md / agent.md (child),
+  # 2 = other. Ensures parents are inserted before children so company_id
+  # resolves.
   defp path_kind(path) do
     cond do
       String.ends_with?(path, "/company.md") -> 0
-      Regex.match?(~r{/agents/[^/]+/agent\.md$}, path) -> 1
+      Regex.match?(~r{/agents/[^/]+/(?:AGENT|agent)\.md$}, path) -> 1
       true -> 2
     end
   end
@@ -240,7 +241,7 @@ defmodule Glorbo.Filesystem.Reindex do
       String.ends_with?(path, "/company.md") ->
         upsert_company(path, meta)
 
-      Regex.match?(~r{/agents/[^/]+/agent\.md$}, path) ->
+      Regex.match?(~r{/agents/[^/]+/(?:AGENT|agent)\.md$}, path) ->
         upsert_agent(path, meta)
 
       true ->

@@ -136,8 +136,8 @@ defmodule Glorbo.RestoreTest do
       assert File.read!(Path.join([a, "companies", "acme", "company.md"])) ==
                File.read!(Path.join([b, "companies", "acme", "company.md"]))
 
-      assert File.read!(Path.join([a, "companies", "acme", "agents", "ceo", "agent.md"])) ==
-               File.read!(Path.join([b, "companies", "acme", "agents", "ceo", "agent.md"]))
+      assert File.read!(Path.join([a, "companies", "acme", "agents", "ceo", "AGENT.md"])) ==
+               File.read!(Path.join([b, "companies", "acme", "agents", "ceo", "AGENT.md"]))
     end
 
     test "archive_not_found returns :archive_not_found", %{host_b: b} do

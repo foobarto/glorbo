@@ -239,4 +239,7 @@ need the user to author one.
   wake path delivering HEARTBEAT.md is a CLI-adapter concern.
 - [GEP-8](./0008-provider-registry-and-auto-detect.md) — provider
   TOMLs are where each CLI's prompt-delivery shape is declared.
+- [GEP-15](./0015-allcaps-agent-md-convention.md) — ALLCAPS naming
+  convention for agent-facing contract files; `HEARTBEAT.md` is the
+  second file to adopt it.
 - `Glorbo.Company.Scheduler` — existing cron scheduler (AGT-02).

@@ -25,7 +25,7 @@ defmodule Glorbo.CLI.NewAgentTest do
       end
 
       # agent.md contains D-12 defaults.
-      content = File.read!(Path.join(ag_path, "agent.md"))
+      content = File.read!(Path.join(ag_path, "AGENT.md"))
       assert content =~ "slug: ceo"
       assert content =~ ~s(role: "Agent")
       assert content =~ "provider: claude-code"
@@ -43,7 +43,7 @@ defmodule Glorbo.CLI.NewAgentTest do
     test "--role overrides default role", %{home: home} do
       assert {:new_agent, 0, _} = Agent.run(["acme/ceo", "--role", "CEO"])
 
-      content = File.read!(Path.join([home, "companies/acme/agents/ceo/agent.md"]))
+      content = File.read!(Path.join([home, "companies/acme/agents/ceo/AGENT.md"]))
       assert content =~ ~s(role: "CEO")
       refute content =~ ~s(role: "Agent")
     end
@@ -52,7 +52,7 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert {:new_agent, 0, _} =
                Agent.run(["acme/ceo", "--provider", "gemini-cli"])
 
-      content = File.read!(Path.join([home, "companies/acme/agents/ceo/agent.md"]))
+      content = File.read!(Path.join([home, "companies/acme/agents/ceo/AGENT.md"]))
       assert content =~ "provider: gemini-cli"
       refute content =~ "provider: claude-code"
     end
@@ -89,7 +89,7 @@ defmodule Glorbo.CLI.NewAgentTest do
          %{home: home} do
       assert {:new_agent, 0, _} = Agent.run(["acme/ceo"])
 
-      path = Path.join([home, "companies/acme/agents/ceo/agent.md"])
+      path = Path.join([home, "companies/acme/agents/ceo/AGENT.md"])
 
       # Parser must accept our generated frontmatter without error.
       assert {:ok, %Glorbo.Agent.Spec{} = spec} =

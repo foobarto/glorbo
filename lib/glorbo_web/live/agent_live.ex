@@ -462,7 +462,7 @@ defmodule GlorboWeb.AgentLive do
 
   defp load_agent_detail(base, co, ag) do
     ag_dir = Path.join([base, "companies", co, "agents", ag])
-    agent_md = Path.join(ag_dir, "agent.md")
+    agent_md = Glorbo.Agent.FileLayout.agent_md(ag_dir)
 
     spec =
       case Glorbo.Agent.Parser.parse_file(agent_md) do

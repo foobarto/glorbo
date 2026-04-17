@@ -483,7 +483,7 @@ defmodule GlorboWeb.CompanyLive do
 
   defp build_agent_row(agent_slug, _base, _company_slug, agents_dir, audit_map, year_month) do
     agent_path = Path.join(agents_dir, agent_slug)
-    agent_md = Path.join(agent_path, "agent.md")
+    agent_md = Glorbo.Agent.FileLayout.agent_md(agent_path)
 
     meta = parse_agent_md(agent_md)
 

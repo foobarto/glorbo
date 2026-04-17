@@ -59,7 +59,8 @@ defmodule Glorbo.CLI.Lifecycle.Run do
     base = glorbo_home()
 
     with :ok <- ensure_tree_started(),
-         spec_path <- Path.join([base, "companies", company, "agents", agent, "agent.md"]),
+         agent_dir <- Path.join([base, "companies", company, "agents", agent]),
+         spec_path <- Glorbo.Agent.FileLayout.agent_md(agent_dir),
          {:ok, spec} <- Glorbo.Agent.Parser.parse_file(spec_path),
          task_path <- resolve_task_path(base, company, task_file),
          {:ok, task_def} <-

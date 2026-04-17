@@ -197,7 +197,7 @@ defmodule GlorboWeb.Components.Sidebar do
   end
 
   defp agent_row(agents_dir, slug) do
-    md = Path.join([agents_dir, slug, "agent.md"])
+    md = Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, slug))
 
     provider =
       case File.read(md) do

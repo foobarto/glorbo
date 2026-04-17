@@ -87,7 +87,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     role = opts[:role] || "Agent"
     provider = opts[:provider] || "claude-code"
 
-    File.write!(Path.join(ag_path, "agent.md"), """
+    File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
     name: #{String.upcase(agent)}
     slug: #{agent}
@@ -107,6 +107,16 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     Scaffolded by `glorbo new agent #{company}/#{agent}`.
 
     #{SystemPrompt.reply_contract()}
+    """)
+
+    # GEP-14: HEARTBEAT.md sits next to AGENT.md and holds the cron-wake
+    # instructions. Scaffold a safe default so a newly-created agent with
+    # an eventual cron has something to do on tick.
+    File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
+    # Heartbeat — #{agent}
+
+    Check your inbox. Reply to anything that needs attention.
+    Otherwise exit cleanly.
     """)
 
     Audit.emit("new_agent", "complete", %{

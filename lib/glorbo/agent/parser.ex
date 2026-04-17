@@ -149,12 +149,13 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  # agent.md path shape: ".../companies/<co>/agents/<slug>/agent.md"
+  # agent frontmatter path shape: ".../companies/<co>/agents/<slug>/AGENT.md"
+  # (legacy `agent.md` accepted for backwards compatibility).
   defp derive_slug(path) do
     parts = Path.split(path)
 
     case Enum.reverse(parts) do
-      ["agent.md", slug | _] ->
+      [name, slug | _] when name in ["AGENT.md", "agent.md"] ->
         if Regex.match?(@slug_regex, slug) do
           {:ok, slug}
         else
@@ -174,16 +175,20 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  # Extract company slug from ".../companies/<co>/agents/<slug>/agent.md".
+  # Extract company slug from ".../companies/<co>/agents/<slug>/AGENT.md".
   # If the path doesn't fit that shape we default to "" — the company is
   # usually provided explicitly by the caller (AgentSupervisor will override
   # it). Tests that rely on path-derived company use the canonical layout.
+  # Both `AGENT.md` (canonical) and `agent.md` (legacy) are accepted.
   defp derive_company(path) do
     parts = path |> Path.split() |> Enum.reverse()
 
     case parts do
-      ["agent.md", _slug, "agents", company | _] -> {:ok, company}
-      _ -> {:ok, ""}
+      [name, _slug, "agents", company | _] when name in ["AGENT.md", "agent.md"] ->
+        {:ok, company}
+
+      _ ->
+        {:ok, ""}
     end
   end
 

@@ -10,12 +10,12 @@ defmodule Glorbo.Init.ExampleCompanyTest do
   end
 
   describe "scaffold!/1 (Tests 1-3, D-10)" do
-    test "Test 1: creates company.md + ceo agent.md + general channel + goal", %{base: base} do
+    test "Test 1: creates company.md + ceo AGENT.md + general channel + goal", %{base: base} do
       assert :ok = ExampleCompany.scaffold!(base: base)
 
       company_dir = Path.join([base, "companies", "acme"])
       assert File.exists?(Path.join(company_dir, "company.md"))
-      assert File.exists?(Path.join(company_dir, "agents/ceo/agent.md"))
+      assert File.exists?(Path.join(company_dir, "agents/ceo/AGENT.md"))
       assert File.exists?(Path.join(company_dir, "channels/general.md"))
       assert File.exists?(Path.join(company_dir, "goals/q3-2026.md"))
 
@@ -32,10 +32,10 @@ defmodule Glorbo.Init.ExampleCompanyTest do
       end
     end
 
-    test "Test 2: company.md and ceo agent.md carry the expected frontmatter", %{base: base} do
+    test "Test 2: company.md and ceo AGENT.md carry the expected frontmatter", %{base: base} do
       :ok = ExampleCompany.scaffold!(base: base)
       company_md = File.read!(Path.join([base, "companies", "acme", "company.md"]))
-      ceo_md = File.read!(Path.join([base, "companies", "acme", "agents/ceo/agent.md"]))
+      ceo_md = File.read!(Path.join([base, "companies", "acme", "agents/ceo/AGENT.md"]))
 
       assert company_md =~ "name: acme"
       assert company_md =~ "mission:"

@@ -21,7 +21,7 @@ defmodule Glorbo.Agent.ParserTest do
 
   defp write_agent(ctx, slug, content) do
     dir = agent_dir(ctx, slug)
-    path = Path.join(dir, "agent.md")
+    path = Path.join(dir, "AGENT.md")
     File.write!(path, content)
     path
   end
@@ -376,7 +376,7 @@ defmodule Glorbo.Agent.ParserTest do
       # (which the regex forbids because it requires `[a-z]` start).
       dir = Path.join(ctx.agents_dir, "UPPER")
       File.mkdir_p!(dir)
-      path = Path.join(dir, "agent.md")
+      path = Path.join(dir, "AGENT.md")
 
       File.write!(path, """
       ---

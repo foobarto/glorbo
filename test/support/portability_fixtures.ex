@@ -17,7 +17,7 @@ defmodule Glorbo.Test.PortabilityFixtures do
     * `config.md` with a deterministic `erl_cookie:` so backup is
       cookie-stable across host A → B.
     * `companies/<company>/{company.md,agents/<agent>/{inbox,outbox,
-      workspace,history,state,stdout.log,agent.md},audit/<YYYY-MM>.jsonl}`
+      workspace,history,state,stdout.log,AGENT.md},audit/<YYYY-MM>.jsonl}`
     * `audit/_system/<YYYY-MM>.jsonl` (system-scope audit)
     * `run/` (empty — will hold glorbo.pid post-up)
     * `glorbo.db` (empty file — tests that exercise the real Repo start
@@ -50,7 +50,7 @@ defmodule Glorbo.Test.PortabilityFixtures do
     Enum.each(~w(inbox outbox workspace history state), &File.mkdir_p!(Path.join(ag_path, &1)))
     File.write!(Path.join(ag_path, "stdout.log"), "")
 
-    File.write!(Path.join(ag_path, "agent.md"), """
+    File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
     name: #{String.upcase(agent)}
     slug: #{agent}

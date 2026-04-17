@@ -5,9 +5,10 @@ defmodule Glorbo.Init.ExampleCompany do
   Creates the full DESIGN.md §3 tree for a single company with:
 
     * `company.md` with `name: acme` and a short mission
-    * `agents/ceo/agent.md` with `provider: claude-code`,
+    * `agents/ceo/AGENT.md` with `provider: claude-code`,
       `network: none` (v1 safe default), default model
       `claude-sonnet-4-5`
+    * `agents/ceo/HEARTBEAT.md` (GEP-14) — cron-wake instructions
     * `channels/general.md` (default company-wide channel)
     * `goals/q3-2026.md` (simple active goal)
     * Empty `agents/ceo/{inbox,outbox,workspace,history}` dirs
@@ -60,6 +61,20 @@ defmodule Glorbo.Init.ExampleCompany do
     """
   end
 
+  defp ceo_heartbeat_md do
+    ~s"""
+    # Heartbeat — ceo
+
+    Every 30 minutes:
+
+    1. Check your inbox. If anything is urgent, reply via outbox.
+    2. Skim the audit tail for `approval.denied` or `agent.error`
+       events; if any, post a brief summary in `#general`.
+    3. If the monthly budget used is > 80%, ping @director.
+    4. Otherwise: exit cleanly. A quiet heartbeat is a good heartbeat.
+    """
+  end
+
   @general_channel_md ~s"""
   # general
 
@@ -102,7 +117,8 @@ defmodule Glorbo.Init.ExampleCompany do
       end
 
       File.write!(sentinel, @company_md)
-      File.write!(Path.join(company_dir, "agents/ceo/agent.md"), ceo_agent_md())
+      File.write!(Path.join(company_dir, "agents/ceo/AGENT.md"), ceo_agent_md())
+      File.write!(Path.join(company_dir, "agents/ceo/HEARTBEAT.md"), ceo_heartbeat_md())
       File.write!(Path.join(company_dir, "channels/general.md"), @general_channel_md)
       File.write!(Path.join(company_dir, "goals/q3-2026.md"), @goal_md)
       File.touch!(Path.join(company_dir, "agents/ceo/stdout.log"))

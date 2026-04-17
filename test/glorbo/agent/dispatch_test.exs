@@ -28,7 +28,7 @@ defmodule Glorbo.Agent.DispatchTest do
       budget_usd_cents_month: nil,
       timeout_seconds: 300,
       allow_untracked_budget: false,
-      file_path: Path.join([base, "companies", "acme", "agents", "engineer", "agent.md"])
+      file_path: Path.join([base, "companies", "acme", "agents", "engineer", "AGENT.md"])
     }
 
     task = %{

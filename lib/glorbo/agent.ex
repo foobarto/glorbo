@@ -1,6 +1,7 @@
 defmodule Glorbo.Agent do
   @moduledoc """
-  Ecto schema mirror of `companies/<co>/agents/<n>/agent.md`.
+  Ecto schema mirror of `companies/<co>/agents/<n>/AGENT.md` (legacy
+  `agent.md` also accepted during the soft-migration window).
 
   Derived row populated by `Glorbo.Filesystem.Reindex`. Links to `companies`
   via `company_id`. Rebuilt from disk — no data stored here that isn't in

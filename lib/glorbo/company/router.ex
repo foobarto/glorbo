@@ -625,15 +625,16 @@ defmodule Glorbo.Company.Router do
   # the Router; the downstream ACLMapper check will deny any action that
   # requires a permission.
   defp default_agent_permissions(sender, state) do
-    agent_md_path =
+    agent_dir =
       Path.join([
         state.base,
         "companies",
         state.company,
         "agents",
-        sender,
-        "agent.md"
+        sender
       ])
+
+    agent_md_path = Glorbo.Agent.FileLayout.agent_md(agent_dir)
 
     case AgentParser.parse_file(agent_md_path) do
       {:ok, spec} -> {:ok, spec.permissions}

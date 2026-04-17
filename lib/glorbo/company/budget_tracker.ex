@@ -364,10 +364,11 @@ defmodule Glorbo.Company.BudgetTracker do
   end
 
   # Default budgets_fun: read per-agent cap from
-  # `<base>/companies/<co>/agents/<slug>/agent.md` frontmatter field
+  # `<base>/companies/<co>/agents/<slug>/AGENT.md` frontmatter field
   # `budget_usd_cents_month:`. Returns `nil` if the agent or field is missing.
   defp default_budgets_fun(company, base, agent_slug) do
-    path = Path.join([base, "companies", company, "agents", agent_slug, "agent.md"])
+    agent_dir = Path.join([base, "companies", company, "agents", agent_slug])
+    path = Glorbo.Agent.FileLayout.agent_md(agent_dir)
 
     with true <- File.exists?(path),
          {:ok, content} <- File.read(path),

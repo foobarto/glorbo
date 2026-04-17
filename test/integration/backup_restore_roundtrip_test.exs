@@ -76,8 +76,8 @@ defmodule Glorbo.Integration.BackupRestoreRoundtripTest do
     assert File.read!(Path.join([a, "companies", "acme", "company.md"])) ==
              File.read!(Path.join([b, "companies", "acme", "company.md"]))
 
-    assert File.read!(Path.join([a, "companies", "acme", "agents", "ceo", "agent.md"])) ==
-             File.read!(Path.join([b, "companies", "acme", "agents", "ceo", "agent.md"]))
+    assert File.read!(Path.join([a, "companies", "acme", "agents", "ceo", "AGENT.md"])) ==
+             File.read!(Path.join([b, "companies", "acme", "agents", "ceo", "AGENT.md"]))
 
     assert File.exists?(Path.join(b, "config.md"))
     assert File.read!(Path.join(a, "config.md")) == File.read!(Path.join(b, "config.md"))

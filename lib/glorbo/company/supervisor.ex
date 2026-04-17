@@ -136,7 +136,7 @@ defmodule Glorbo.Company.Supervisor do
     case File.ls(agents_dir) do
       {:ok, entries} ->
         entries
-        |> Enum.map(&Path.join([agents_dir, &1, "agent.md"]))
+        |> Enum.map(&Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, &1)))
         |> Enum.filter(&File.regular?/1)
         |> Enum.any?(&agent_md_declares_api_only?/1)
 

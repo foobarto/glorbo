@@ -51,7 +51,7 @@ defmodule Glorbo.Test.Fixtures do
 
     File.write!(Path.join(agent_dir, "stdout.log"), "")
 
-    File.write!(Path.join(agent_dir, "agent.md"), """
+    File.write!(Path.join(agent_dir, "AGENT.md"), """
     ---
     name: CEO
     slug: ceo

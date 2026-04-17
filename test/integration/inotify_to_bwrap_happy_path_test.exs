@@ -70,7 +70,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 60,
-      file_path: Path.join(agent_dir, "agent.md")
+      file_path: Path.join(agent_dir, "AGENT.md")
     }
 
     parent = self()
