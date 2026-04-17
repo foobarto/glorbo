@@ -237,6 +237,9 @@ defmodule GlorboWeb.KanbanLive do
          :ok <- validate_title(title),
          {:ok, task_id} <- next_task_id(base, company, project),
          :ok <- write_new_task(base, company, project, task_id, title) do
+      rel_path = "projects/#{project}/tasks/#{task_id}.md"
+      emit_task_create_audit(company, rel_path, String.trim(title))
+
       tasks =
         base
         |> load_tasks(company)
@@ -551,6 +554,36 @@ defmodule GlorboWeb.KanbanLive do
         else: Integer.to_string(next)
 
     {:ok, "#{project}-#{n_str}"}
+  end
+
+  # Resolve the company's AuditLog via-tuple (same shape Actions uses),
+  # fall back silently if the audit server isn't registered — new-task
+  # creation must not fail just because audit is unavailable.
+  defp emit_task_create_audit(company, rel_path, title) do
+    via =
+      case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
+        [{_pid, _}] ->
+          {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
+
+        _ ->
+          Glorbo.Company.AuditLog
+      end
+
+    try do
+      Glorbo.Company.AuditLog.append(via, %{
+        company: company,
+        actor: "director",
+        action: "task.create",
+        target: rel_path,
+        title: title
+      })
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+
+    :ok
   end
 
   defp write_new_task(base, company, project, task_id, title) do

@@ -130,6 +130,23 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     assert new_file, "new task file was not written with the expected frontmatter"
     assert new_file =~ ~r/\Awebsite-\d+\.md\z/, "expected website-NN.md, got #{inspect(new_file)}"
+
+    # Audit trail: every on-disk mutation must leave a `task.create` row.
+    month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
+    audit_path = Path.join([base, "companies", "acme", "audit", "#{month}.jsonl"])
+    assert File.exists?(audit_path), "audit JSONL was not written"
+
+    entries =
+      audit_path
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.map(&Jason.decode!/1)
+
+    create_entry = Enum.find(entries, &(&1["action"] == "task.create"))
+    assert create_entry, "no task.create audit entry for new task"
+    assert create_entry["target"] =~ ~r{^projects/website/tasks/website-\d+\.md$}
+    assert create_entry["detail"]["title"] == "Probe from tests"
+    assert create_entry["actor"] == "director"
   end
 
   test "new_task_create rejects an empty title", %{conn: conn} do
