@@ -67,6 +67,39 @@ const csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : ""
 if (!csrfToken) {
   console.error("glorbo: csrf-token meta missing; LiveSocket will fail CSRF check")
 }
+// Global keyboard shortcuts: two-key `g <x>` sequences map to routes.
+// No LV round-trip — on match, navigate directly.
+// Reset the prefix if the second key doesn't arrive within 1s.
+const NAV_MAP = {
+  o: "/companies",
+  h: "/health",
+  p: "/providers",
+}
+let gPrefixActive = false
+let gPrefixTimer = null
+const isTyping = (el) =>
+  el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)
+window.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (isTyping(document.activeElement)) return
+
+  if (gPrefixActive) {
+    const dest = NAV_MAP[e.key]
+    gPrefixActive = false
+    clearTimeout(gPrefixTimer)
+    if (dest) {
+      e.preventDefault()
+      window.location.assign(dest)
+    }
+    return
+  }
+
+  if (e.key === "g") {
+    gPrefixActive = true
+    gPrefixTimer = setTimeout(() => { gPrefixActive = false }, 1000)
+  }
+})
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
   hooks: {KanbanLane, KanbanCard},

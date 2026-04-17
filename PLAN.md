@@ -16,9 +16,9 @@ invariants in `DESIGN.md` / `CLAUDE.md`.
 | --------- | ----------------------------------------------------- | --------------- |
 | **M1**    | Shell & visual language (tokens, topbar, statusbar, pills) | ✅ shipped      |
 | **M2**    | Company overview rewrite (stats + roster + orgchart + audit) | ✅ shipped      |
-| **M3**    | Agent detail rewrite (3-column: identity / tabs / config) | 🟡 code complete, uncommitted |
-| **M4**    | Kanban drag-drop, Chat switcher+DMs, Approvals diff, Audit search, Providers grid | ⏳ pending      |
-| **M5**    | Keyboard shortcuts (`g` prefix), Tweaks persistence, vocab toggle, new-X entry points | ⏳ pending      |
+| **M3**    | Agent detail rewrite (3-column: identity / tabs / config) | ✅ shipped      |
+| **M4**    | Kanban drag-drop, Chat switcher+DMs, Approvals diff, Audit search, Providers grid | ✅ shipped      |
+| **M5**    | Keyboard shortcuts (`g` prefix), Tweaks persistence, vocab toggle, new-X entry points | 🟡 in progress |
 
 ## Prior P0/P1/P2/P3 tracks (completed ahead of M-series)
 

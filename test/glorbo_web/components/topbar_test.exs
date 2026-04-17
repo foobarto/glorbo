@@ -31,7 +31,8 @@ defmodule GlorboWeb.Components.TopbarTest do
       html = render_topbar([])
       assert html =~ "<kbd>g</kbd>"
       assert html =~ "overview"
-      assert html =~ "kanban"
+      assert html =~ "health"
+      assert html =~ "providers"
     end
 
     test "renders a disabled TWEAKS button (M1; wiring lands in M5)" do

@@ -67,9 +67,9 @@ defmodule GlorboWeb.Components.Topbar do
 
       <span class="gl-topbar__kbd" aria-hidden="true">
         <kbd>g</kbd><kbd>o</kbd>
-        overview · <kbd>g</kbd><kbd>k</kbd>
-        kanban · <kbd>g</kbd><kbd>c</kbd>
-        chat
+        overview · <kbd>g</kbd><kbd>h</kbd>
+        health · <kbd>g</kbd><kbd>p</kbd>
+        providers
       </span>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
       <%!-- TWEAKS toggle wire-up lands in M5 alongside the Tweaks drawer
