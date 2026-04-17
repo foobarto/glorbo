@@ -1,78 +1,54 @@
 defmodule Glorbo.Agent.Dispatch do
   @moduledoc """
-  Pure dispatch pipeline — budget-check, skills materialise, prompt write,
-  adapter resolve, sandbox-run (via dep-injected `run_fun`), usage parse,
-  budget record, cleanup.
+  Pure dispatch pipeline (post-GEP-8 rewrite).
 
-  This module does NOT open a `Port` or invoke `bwrap`. Plan 03-05 supplies
-  the real `Glorbo.Sandbox.Bwrap.start/2` via the `:run_fun` opt; v0.0.1
-  unit tests pass a fake that returns a canned result. The pipeline is
-  linear and observable:
+  Responsibilities:
 
-  ```
-  check_budget → resolve_workspace → prepare_run_dir →
-    materialize skills → write prompt → resolve adapter →
-    verify binary (D8 / provider.unavailable) → build argv → env →
-    emit agent.dispatch audit → run_fun → compute duration →
-    parse usage → record to BudgetTracker → emit agent.complete audit →
-    cleanup run_dir
-  ```
-
-  `cleanup` runs in a `try/after` so it executes on ANY exit path
-  (success, error, exception) — T-03-22 mitigation; no stale `.glorbo-run`
-  directories leak skills or prompts across invocations.
+    1. Enforce the prompt size cap (5 MiB; mitigates stdin-block hangs).
+    2. Check the per-agent budget.
+    3. Resolve the provider from `Glorbo.CLI.Registry` (by `spec.provider`).
+    4. Refuse if provider has `usage_parser = "none"` and agent's
+       `agent.md` lacks `allow_untracked_budget: true` (GEP-8 D15).
+    5. Ensure workspace + run_dir exist; materialise skills.
+    6. Write the prompt file (audit + stdin source).
+    7. Invoke via `Glorbo.CLI.Dispatcher.invoke/3` — which expands
+       templates, runs the CLI in the sandbox, reads the reply file,
+       and parses usage.
+    8. Record usage (if tracked); emit audit events; cleanup run_dir.
 
   ## Dep-injected opts
 
-  Every step is dep-injectable via `opts` so unit tests exercise the full
-  pipeline without hitting the filesystem, a Port, the Budget GenServer,
-  or the audit log:
+  Every filesystem / process / time call is dep-injectable so tests
+  exercise the full pipeline without hitting disk, the Registry
+  process, or the sandbox.
 
-    * `:base` — glorbo home dir (default `~/.glorbo`)
-    * `:workspace_fun` — `(spec -> workspace_path)` (default derives from
-      company/agent under `base`)
-    * `:budget_tracker_fun` — `(spec -> :ok | {:stop, used, cap})`
-    * `:record_usage_fun` — `(spec, task, usage -> :ok)`
-    * `:adapter_registry` — `%{provider_string => Adapter module}`
-      (default is the three v0.0.1 adapters)
-    * `:run_fun` — `(argv, env, spec, ctx -> {:ok, result_map} | {:error,
-      reason})`. `ctx` is a map containing resolved dispatch context
-      (`prompt, workspace, run_dir, usage_dir, company_path, inbox_path,
-      outbox_path, permissions, network_policy, cli_auth_binds, proxy_url,
-      timeout_seconds`). Default is
-      `&Glorbo.Sandbox.Bwrap.start/2`-based wiring that composes
-      `invocation_opts` + `run_opts` from spec + ctx. Legacy 3-arity
-      run_funs (returning a 3-arg function) are still supported for
-      backward compatibility with existing test callers.
-    * `:audit_fun` — `(company, entry -> any)`
-    * `:fs_fun` — map of filesystem ops (`mkdir_p!`, `write!`, `rm_rf!`)
-    * `:clock_fun` — `(-> integer)` monotonic time for duration; default
-      `System.monotonic_time(:millisecond)`
-    * `:parse_usage_fun` — override per-adapter usage parsing (for tests
-      wanting to stub that step)
+    * `:base` — glorbo home dir (default `~/.glorbo`).
+    * `:workspace_fun` — `(spec -> workspace)`.
+    * `:budget_tracker_fun` — `(spec -> :ok | {:alert, ...} | {:stop, ...})`.
+    * `:record_usage_fun` — `(spec, task, usage -> :ok)`.
+    * `:provider_fun` — `(provider_name -> Provider.t() | nil)` — default
+      reads from `Glorbo.CLI.Registry`. Tests pass a function returning
+      a handcrafted Provider struct.
+    * `:run_fun` — passed through to Dispatcher.invoke (see
+      `Glorbo.CLI.Dispatcher`).
+    * `:audit_fun` — `(company, entry -> any)`.
+    * `:fs_fun` — map of filesystem ops.
+    * `:clock_fun` — monotonic clock for duration measurement.
 
-  ## Prompt size cap (Pitfall 8 / T-03-23)
+  ## Cleanup guarantee
 
-  `execute/3` returns `{:error, :prompt_too_large}` when `task.prompt`
-  exceeds 5 MB. Prevents stdin-block scenarios on large prompts where the
-  CLI hangs waiting for EOF.
+  `execute/3` runs under `try/after` so `.glorbo-run/<task_id>` is
+  always cleaned, regardless of error, timeout, or exception
+  (T-03-22).
   """
   require Logger
 
-  alias Glorbo.CLI.Adapter.ClaudeCode
-  alias Glorbo.CLI.Adapter.Codex
-  alias Glorbo.CLI.Adapter.GeminiCli
+  alias Glorbo.CLI.Dispatcher
+  alias Glorbo.CLI.Registry
   alias Glorbo.Company.AuditLog
-  alias Glorbo.Sandbox.Bwrap
   alias Glorbo.Skills.Resolver
 
   @prompt_max_bytes 5 * 1024 * 1024
-
-  @default_adapter_registry %{
-    "claude-code" => ClaudeCode,
-    "gemini-cli" => GeminiCli,
-    "codex" => Codex
-  }
 
   @type task :: %{
           required(:task_id) => String.t(),
@@ -107,22 +83,28 @@ defmodule Glorbo.Agent.Dispatch do
   defp do_execute(spec, task, run_dir, opts) do
     with :ok <- check_prompt_size(task.prompt),
          :ok <- check_budget(spec, opts),
-         {:ok, adapter} <- resolve_adapter(spec, opts),
-         :ok <- verify_binary(spec, adapter, opts),
+         {:ok, provider} <- resolve_provider(spec, opts),
+         :ok <- check_untracked_allowed(spec, provider, opts),
+         :ok <- verify_installed(spec, provider, opts),
          {:ok, workspace} <- ensure_workspace(spec, opts),
          :ok <- materialize_skills(spec, run_dir, opts),
          :ok <- write_prompt(run_dir, task.prompt, opts),
-         argv <- adapter.args(spec, prompt_path(run_dir), []),
-         env <- adapter.env(spec, workspace),
-         ctx <- build_run_ctx(spec, task, adapter, workspace, run_dir, opts),
-         :ok <- emit_dispatch_audit(spec, task, opts),
+         :ok <- emit_dispatch_audit(spec, task, provider, opts),
          start <- clock(opts),
-         {:ok, run_result} <- invoke_run_fun(argv, env, spec, ctx, opts),
+         ctx <- build_ctx(spec, task, workspace, run_dir),
+         {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
          duration_ms <- compute_duration(start, opts),
-         {:ok, usage} <- parse_usage_for(adapter, spec, workspace, run_result, opts),
+         usage <- finalize_usage(dispatcher_result, spec),
          :ok <- record_usage(spec, task, usage, opts),
-         :ok <- emit_complete_audit(spec, task, run_result, duration_ms, opts) do
-      {:ok, %{exit_status: run_result[:exit_status] || 0, usage: usage, duration_ms: duration_ms}}
+         :ok <- emit_complete_audit(spec, task, dispatcher_result, duration_ms, opts) do
+      {:ok,
+       %{
+         exit_status: dispatcher_result.exit_status,
+         usage: usage,
+         duration_ms: duration_ms,
+         reply: dispatcher_result.reply,
+         reply_path: dispatcher_result.reply_path
+       }}
     else
       {:stop, _used, _cap} ->
         {:stopped, :budget_hard_stop}
@@ -132,6 +114,13 @@ defmodule Glorbo.Agent.Dispatch do
 
       {:error, :provider_unavailable} ->
         {:error, :provider_unavailable}
+
+      {:error, {:unknown_provider, _} = reason} ->
+        Logger.warning("dispatch: unknown provider for #{spec.slug}: #{inspect(reason)}")
+        {:error, :unknown_provider}
+
+      {:error, :untracked_disallowed} = err ->
+        err
 
       {:error, reason} ->
         Logger.warning("dispatch failed for #{spec.slug}: #{inspect(reason)}")
@@ -158,25 +147,35 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp resolve_adapter(spec, opts) do
-    registry = Keyword.get(opts, :adapter_registry, @default_adapter_registry)
+  defp resolve_provider(spec, opts) do
+    fun = Keyword.get(opts, :provider_fun, &Registry.get/1)
 
-    case Map.fetch(registry, spec.provider) do
-      {:ok, mod} -> {:ok, mod}
-      :error -> {:error, {:unknown_provider, spec.provider}}
+    case fun.(spec.provider) do
+      nil -> {:error, {:unknown_provider, spec.provider}}
+      %{} = provider -> {:ok, provider}
     end
   end
 
-  defp verify_binary(spec, adapter, opts) do
-    binary_fun = Keyword.get(opts, :binary_fun, fn mod -> mod.binary() end)
+  defp check_untracked_allowed(spec, %{usage_parser: "none"}, _opts) do
+    if Map.get(spec, :allow_untracked_budget) == true do
+      :ok
+    else
+      Logger.warning(
+        "dispatch: agent #{spec.slug} lacks allow_untracked_budget; cannot route to untracked provider"
+      )
 
-    case binary_fun.(adapter) do
-      nil ->
-        emit_unavailable_audit(spec, opts)
-        {:error, :provider_unavailable}
+      {:error, :untracked_disallowed}
+    end
+  end
 
-      path when is_binary(path) ->
-        :ok
+  defp check_untracked_allowed(_spec, _provider, _opts), do: :ok
+
+  defp verify_installed(spec, provider, opts) do
+    if Map.get(provider, :installed?, false) and not is_nil(Map.get(provider, :resolved_path)) do
+      :ok
+    else
+      emit_unavailable_audit(spec, provider, opts)
+      {:error, :provider_unavailable}
     end
   end
 
@@ -216,89 +215,35 @@ defmodule Glorbo.Agent.Dispatch do
     :ok
   end
 
-  defp invoke_run_fun(argv, env, spec, ctx, opts) do
-    fun = Keyword.get(opts, :run_fun, &default_bwrap_run_fun/4)
-    result = call_run_fun(fun, argv, env, spec, ctx)
-
-    case result do
-      {:ok, r} when is_map(r) -> {:ok, r}
-      {:error, _} = err -> err
-      other -> {:error, {:run_fun_bad_return, other}}
-    end
-  end
-
-  # Dispatch the run_fun honouring both the 4-arity (new, ctx-aware) and
-  # 3-arity (legacy) signatures. Test callers in this codebase still pass
-  # 3-arg funs; production Agent.Server wires the 4-arg
-  # default_bwrap_run_fun/4.
-  defp call_run_fun(fun, argv, env, spec, ctx) when is_function(fun, 4),
-    do: fun.(argv, env, spec, ctx)
-
-  defp call_run_fun(fun, argv, env, spec, _ctx) when is_function(fun, 3),
-    do: fun.(argv, env, spec)
-
-  # Build the run context fed to the run_fun. Everything the default
-  # Bwrap wiring needs to assemble an invocation — resolved from spec,
-  # task, adapter, and pre-computed workspace/run_dir.
-  defp build_run_ctx(spec, task, adapter, workspace, run_dir, opts) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
-    company_path = Path.join([base, "companies", spec.company])
-    agent_dir = Path.join([company_path, "agents", spec.slug])
-
-    usage_dir =
-      case adapter.usage_path(spec, workspace) do
-        {:jsonl_dir, dir} -> dir
-        {:jsonl_file, path} -> Path.dirname(path)
-        :stdout -> nil
-      end
-
+  defp build_ctx(spec, task, workspace, run_dir) do
     %{
-      prompt: task.prompt,
+      task_id: task.task_id,
+      model: spec.model,
       workspace: workspace,
-      run_dir: run_dir,
-      usage_dir: usage_dir,
-      company_path: company_path,
-      inbox_path: Path.join(agent_dir, "inbox"),
-      outbox_path: Path.join(agent_dir, "outbox"),
-      permissions: spec.permissions,
-      network_policy: spec.network,
-      cli_auth_binds: Keyword.get(opts, :cli_auth_binds, []),
-      proxy_url: Keyword.get(opts, :proxy_url),
-      timeout_seconds: spec.timeout_seconds,
-      adapter: adapter
+      prompt: task.prompt,
+      prompt_path: prompt_path(run_dir),
+      bwrap_opts: %{
+        agent_workspace: workspace,
+        inbox_path:
+          Path.join([
+            Path.dirname(Path.dirname(workspace)),
+            "inbox"
+          ]),
+        outbox_path:
+          Path.join([
+            Path.dirname(Path.dirname(workspace)),
+            "outbox"
+          ]),
+        company_path: Path.dirname(Path.dirname(Path.dirname(workspace))),
+        permissions: spec.permissions,
+        network_policy: spec.network,
+        timeout_seconds: spec.timeout_seconds
+      }
     }
   end
 
-  # Default run_fun: compose Bwrap invocation_opts + run_opts from ctx/spec,
-  # call Glorbo.Sandbox.Bwrap.start/2, normalise the return shape.
-  @doc false
-  def default_bwrap_run_fun(_argv, env, spec, ctx) do
-    adapter = ctx.adapter
-
-    invocation_opts = %{
-      agent_workspace: ctx.workspace,
-      inbox_path: ctx.inbox_path,
-      outbox_path: ctx.outbox_path,
-      company_path: ctx.company_path,
-      permissions: ctx.permissions,
-      network_policy: ctx.network_policy,
-      cli_auth_binds: ctx.cli_auth_binds,
-      cli_env: env,
-      proxy_url: ctx.proxy_url,
-      timeout_seconds: ctx.timeout_seconds
-    }
-
-    cli_binary = adapter.binary()
-    prompt_path_in_run_dir = prompt_path(ctx.run_dir)
-
-    run_opts = [
-      cli_binary: cli_binary,
-      cli_args: adapter.args(spec, prompt_path_in_run_dir, []),
-      prompt: ctx.prompt,
-      usage_dir: ctx.usage_dir
-    ]
-
-    Bwrap.start(invocation_opts, run_opts)
+  defp dispatcher_opts(opts) do
+    Keyword.take(opts, [:run_fun, :fs_fun, :now_fun, :rand_fun])
   end
 
   defp compute_duration(start, opts) do
@@ -306,82 +251,17 @@ defmodule Glorbo.Agent.Dispatch do
     max(now - start, 0)
   end
 
-  defp parse_usage_for(adapter, spec, workspace, run_result, opts) do
-    override = Keyword.get(opts, :parse_usage_fun)
-
-    if is_function(override, 4) do
-      {:ok, override.(adapter, spec, workspace, run_result)}
-    else
-      do_default_parse_usage(adapter, spec, workspace, run_result)
-    end
+  defp finalize_usage(%{usage: nil}, spec) do
+    # Either :none parser (untracked), or a parse error that the
+    # Dispatcher already recorded in :usage_error. Record zeros so
+    # the budget ledger stays consistent (Pitfall 5).
+    %{prompt_tokens: 0, completion_tokens: 0, model: spec.model}
   end
 
-  defp do_default_parse_usage(adapter, spec, workspace, run_result) do
-    case adapter.usage_path(spec, workspace) do
-      :stdout ->
-        blob = run_result[:stdout] || ""
-        finalize_parse(adapter.parse_usage({:stdout, blob}), spec)
+  defp finalize_usage(%{usage: %{model: nil} = usage}, spec),
+    do: %{usage | model: spec.model}
 
-      {:jsonl_dir, dir} ->
-        parse_from_dir(adapter, spec, dir)
-
-      {:jsonl_file, path} ->
-        finalize_parse(adapter.parse_usage({:jsonl_file, path}), spec)
-    end
-  end
-
-  defp parse_from_dir(adapter, spec, dir) do
-    case latest_jsonl(dir) do
-      nil -> conservative_zero({:error, :no_usage_file}, spec)
-      path -> finalize_parse(adapter.parse_usage({:jsonl_file, path}), spec)
-    end
-  end
-
-  defp finalize_parse({:ok, usage}, spec), do: {:ok, fill_model(usage, spec)}
-  defp finalize_parse({:error, _} = err, spec), do: conservative_zero(err, spec)
-
-  # Pitfall 5: record 0 tokens when usage is missing/malformed rather than
-  # crash dispatch. Dispatch still emits agent.complete — just with zero
-  # usage and a Logger.warning noting the cause.
-  defp conservative_zero({:error, reason}, spec) do
-    Logger.warning(
-      "dispatch.usage_parse_error: agent=#{spec.slug} reason=#{inspect(reason)} — recording 0 tokens (Pitfall 5)"
-    )
-
-    {:ok, %{prompt_tokens: 0, completion_tokens: 0, model: spec.model}}
-  end
-
-  defp fill_model(%{model: nil} = usage, spec), do: %{usage | model: spec.model}
-  defp fill_model(usage, _spec), do: usage
-
-  defp latest_jsonl(dir) do
-    # WR-09: use File.stat/1 (non-bang) and skip entries whose stat fails —
-    # CLI tools rotate session files concurrently, so a file listed by
-    # File.ls/1 can disappear before we stat it. File.stat! would raise
-    # File.Error, escape the caller's `with` via unwind, and cause
-    # conservative_zero recovery to be skipped → lost usage record →
-    # budget undercount.
-    case File.ls(dir) do
-      {:ok, entries} ->
-        entries
-        |> Enum.filter(&String.ends_with?(&1, ".jsonl"))
-        |> Enum.map(&Path.join(dir, &1))
-        |> Enum.flat_map(fn path ->
-          case File.stat(path) do
-            {:ok, stat} -> [{path, stat.mtime}]
-            {:error, _} -> []
-          end
-        end)
-        |> Enum.sort_by(fn {_path, mtime} -> mtime end, :desc)
-        |> case do
-          [] -> nil
-          [{path, _mtime} | _] -> path
-        end
-
-      _ ->
-        nil
-    end
-  end
+  defp finalize_usage(%{usage: usage}, _spec), do: usage
 
   defp record_usage(spec, task, usage, opts) do
     fun = Keyword.get(opts, :record_usage_fun, fn _spec, _task, _usage -> :ok end)
@@ -428,7 +308,7 @@ defmodule Glorbo.Agent.Dispatch do
   # Audit emission
   # ---------------------------------------------------------------------------
 
-  defp emit_dispatch_audit(spec, task, opts) do
+  defp emit_dispatch_audit(spec, task, provider, opts) do
     audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
 
     entry = %{
@@ -436,7 +316,7 @@ defmodule Glorbo.Agent.Dispatch do
       actor: "system",
       agent: spec.slug,
       task_path: task.task_path,
-      provider: spec.provider,
+      provider: provider.name,
       model: spec.model,
       container_id: "bwrap-inline"
     }
@@ -449,7 +329,7 @@ defmodule Glorbo.Agent.Dispatch do
       :ok
   end
 
-  defp emit_complete_audit(spec, task, run_result, duration_ms, opts) do
+  defp emit_complete_audit(spec, task, result, duration_ms, opts) do
     audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
 
     entry = %{
@@ -458,7 +338,7 @@ defmodule Glorbo.Agent.Dispatch do
       agent: spec.slug,
       task_path: task.task_path,
       duration_ms: duration_ms,
-      exit_status: to_string(run_result[:exit_status] || 0)
+      exit_status: to_string(result.exit_status)
     }
 
     audit.(spec.company, entry)
@@ -469,14 +349,14 @@ defmodule Glorbo.Agent.Dispatch do
       :ok
   end
 
-  defp emit_unavailable_audit(spec, opts) do
+  defp emit_unavailable_audit(spec, provider, opts) do
     audit = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
 
     entry = %{
       action: "provider.unavailable",
       actor: "system",
       agent: spec.slug,
-      provider: spec.provider
+      provider: Map.get(provider, :name, spec.provider)
     }
 
     audit.(spec.company, entry)

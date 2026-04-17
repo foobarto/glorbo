@@ -29,6 +29,7 @@ defmodule Glorbo.Agent.Spec do
           skills: [String.t()],
           budget_usd_cents_month: non_neg_integer() | nil,
           timeout_seconds: pos_integer(),
+          allow_untracked_budget: boolean(),
           file_path: String.t()
         }
 
@@ -56,6 +57,7 @@ defmodule Glorbo.Agent.Spec do
     :skills,
     :budget_usd_cents_month,
     :timeout_seconds,
-    :file_path
+    :file_path,
+    allow_untracked_budget: false
   ]
 end

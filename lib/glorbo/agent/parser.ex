@@ -122,10 +122,14 @@ defmodule Glorbo.Agent.Parser do
          skills: skills,
          budget_usd_cents_month: budget,
          timeout_seconds: timeout,
+         allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
          file_path: file_path
        }}
     end
   end
+
+  defp parse_untracked(true), do: true
+  defp parse_untracked(_), do: false
 
   # ---------------------------------------------------------------------------
   # Internals
