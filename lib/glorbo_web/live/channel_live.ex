@@ -174,15 +174,17 @@ defmodule GlorboWeb.ChannelLive do
           </div>
 
           <form phx-submit="post" class="gl-compose">
+            <span class="gl-compose__prompt" aria-hidden="true">
+              director@{@channel} ▸
+            </span>
             <textarea
               name="body"
               maxlength="10240"
-              class="gl-input"
+              class="gl-compose__input"
               placeholder={compose_placeholder(@channel)}
+              rows="1"
             >{@compose_body}</textarea>
-            <div class="gl-compose__actions">
-              <button type="submit" class="gl-btn gl-btn--primary">Send</button>
-            </div>
+            <button type="submit" class="gl-btn gl-btn--sm gl-btn--primary">send ↵</button>
           </form>
         </div>
       </div>
