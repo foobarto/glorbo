@@ -2180,6 +2180,27 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   color: var(--gl-accent);
 }
 
+/* Task #143 — contract-file actions (create/delete) as subtle link-
+ * style spans beside the filename. Hidden until hover on the parent
+ * row so they don't clutter the tree. */
+.gl-filetree__node { position: relative; }
+.gl-filetree__action {
+  margin-left: var(--gl-space-md);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.gl-filetree__node:hover .gl-filetree__action { opacity: 1; }
+.gl-filetree__action:hover { color: var(--gl-accent); }
+.gl-filetree__node--missing .gl-filetree__file { font-style: italic; }
+.gl-filetree__count {
+  margin-left: var(--gl-space-sm);
+  font-size: 10px;
+}
+
 /* ========== Reduced-motion ========== */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

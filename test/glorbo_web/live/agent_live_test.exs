@@ -100,23 +100,20 @@ defmodule GlorboWeb.AgentLiveTest do
 
   # task #117 — workspace file tree + edit overlay.
   describe "workspace file editor" do
-    test "lists real workspace files and opens editor for them",
+    test "open_file opens workspace files via the widened resolver",
          %{conn: conn, base: base} do
       workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
       File.mkdir_p!(workspace)
       File.write!(Path.join(workspace, "notes.md"), "initial content")
 
-      {:ok, view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/agents/ceo")
 
-      # File appears in the tree as a clickable button.
-      assert html =~ "notes.md"
-      assert html =~ "phx-click=\"open_file\""
-      assert html =~ ~s(phx-value-path="notes.md")
-
-      # Click opens the editor with the file's content.
-      html = render_click(view, "open_file", %{"path" => "notes.md"})
+      # Task #143 — the top-level "files" panel no longer enumerates
+      # workspace files individually (it shows subdirs with counts).
+      # The open_file handler still accepts workspace-relative paths
+      # via the widened resolver.
+      html = render_click(view, "open_file", %{"path" => "workspace/notes.md"})
       assert html =~ "initial content"
-      assert html =~ "workspace/"
       assert html =~ "gl-file-editor"
     end
 
@@ -128,7 +125,7 @@ defmodule GlorboWeb.AgentLiveTest do
       File.write!(path, "v1")
 
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
-      render_click(view, "open_file", %{"path" => "notes.md"})
+      render_click(view, "open_file", %{"path" => "workspace/notes.md"})
       render_submit(view, "save_file", %{"content" => "v2 changed"})
 
       assert File.read!(path) == "v2 changed"
@@ -154,9 +151,62 @@ defmodule GlorboWeb.AgentLiveTest do
       File.write!(Path.join(workspace, "blob.bin"), <<0, 1, 2, 3, 0, 255>>)
 
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
-      html = render_click(view, "open_file", %{"path" => "blob.bin"})
+      html = render_click(view, "open_file", %{"path" => "workspace/blob.bin"})
 
       assert html =~ "Binary file"
+    end
+  end
+
+  # task #143 — agent dir file manager: contracts + subdirs + actions.
+  describe "agent file manager (#143)" do
+    test "lists contract files and directories", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+
+      # Contract files named in @contract_files are always listed.
+      for name <- ~w(AGENT.md HEARTBEAT.md SOUL.md stdout.log), do: assert(html =~ name)
+      # Subdirs listed with counts.
+      for name <- ~w(inbox outbox history state workspace), do: assert(html =~ "#{name}/")
+    end
+
+    test "create_file on a missing contract creates it and opens editor",
+         %{conn: conn, base: base} do
+      ag = Path.join([base, "companies/acme/agents/ceo"])
+      # Ensure SOUL.md doesn't exist in the fixture.
+      File.rm(Path.join(ag, "SOUL.md"))
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "create_file", %{"path" => "SOUL.md"})
+
+      # File now exists and editor is open for it.
+      assert File.exists?(Path.join(ag, "SOUL.md"))
+      assert html =~ "gl-file-editor"
+    end
+
+    test "delete_file soft-deletes via history/deleted/",
+         %{conn: conn, base: base} do
+      ag = Path.join([base, "companies/acme/agents/ceo"])
+      File.write!(Path.join(ag, "HEARTBEAT.md"), "test body")
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "delete_file", %{"path" => "HEARTBEAT.md"})
+
+      refute File.exists?(Path.join(ag, "HEARTBEAT.md"))
+      # Moved to history/deleted/<ts>-HEARTBEAT.md
+      {:ok, deleted} = File.ls(Path.join([ag, "history", "deleted"]))
+      assert Enum.any?(deleted, &String.ends_with?(&1, "-HEARTBEAT.md"))
+
+      assert html =~ "Moved"
+    end
+
+    test "delete_file refuses AGENT.md",
+         %{conn: conn, base: base} do
+      ag = Path.join([base, "companies/acme/agents/ceo"])
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "delete_file", %{"path" => "AGENT.md"})
+
+      assert File.exists?(Path.join(ag, "AGENT.md"))
+      assert html =~ "load-bearing"
     end
   end
 

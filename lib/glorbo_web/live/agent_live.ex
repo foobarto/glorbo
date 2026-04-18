@@ -220,11 +220,9 @@ defmodule GlorboWeb.AgentLive do
       %{rel: rel} ->
         case write_workspace_file(socket, rel, content) do
           :ok ->
-            detail = %{socket.assigns.detail | workspace_tree: walk_workspace(agent_dir(socket))}
-
             {:noreply,
              socket
-             |> assign(:detail, detail)
+             |> assign(:detail, refresh_files(socket))
              |> assign(:open_file, nil)
              |> put_flash(:info, "Saved #{rel}.")}
 
@@ -239,6 +237,76 @@ defmodule GlorboWeb.AgentLive do
       _ ->
         {:noreply, socket}
     end
+  end
+
+  # Task #143 — create an empty file under the agent dir and open the
+  # editor on it. Refuses to overwrite an existing file.
+  def handle_event("create_file", %{"path" => rel}, socket) do
+    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         false <- File.exists?(abs_path),
+         :ok <- File.mkdir_p(Path.dirname(abs_path)),
+         :ok <- File.write(abs_path, "") do
+      {:noreply,
+       socket
+       |> assign(:detail, refresh_files(socket))
+       |> assign(:open_file, %{rel: rel, content: "", error: nil})
+       |> put_flash(:info, "Created #{rel}.")}
+    else
+      true ->
+        {:noreply, put_flash(socket, :error, "File already exists.")}
+
+      {:error, :invalid_path} ->
+        {:noreply, put_flash(socket, :error, "Invalid path.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}.")}
+    end
+  end
+
+  # Task #143 — soft-delete: move to history/deleted/<ts>-<basename>
+  # so the Director can recover. AGENT.md and stdout.log are refused
+  # outright (AGENT.md is the agent's identity; stdout.log is runtime
+  # state). Other contract files deleted = agent simply falls back to
+  # whatever AGENT.md says (SOUL.md / HEARTBEAT.md / etc).
+  def handle_event("delete_file", %{"path" => rel}, socket) do
+    if rel in ["AGENT.md", "stdout.log"] do
+      {:noreply, put_flash(socket, :error, "#{rel} is load-bearing; delete refused.")}
+    else
+      case soft_delete(socket, rel) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:detail, refresh_files(socket))
+           |> put_flash(:info, "Moved #{rel} to history/deleted/.")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}.")}
+      end
+    end
+  end
+
+  defp soft_delete(socket, rel) do
+    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         true <- File.exists?(abs_path) do
+      ts = System.system_time(:millisecond)
+      trash_dir = Path.join([agent_dir(socket), "history", "deleted"])
+      File.mkdir_p!(trash_dir)
+      dst = Path.join(trash_dir, "#{ts}-#{Path.basename(rel)}")
+      File.rename(abs_path, dst)
+    else
+      false -> {:error, :not_found}
+      err -> err
+    end
+  end
+
+  defp refresh_files(socket) do
+    ag_dir = agent_dir(socket)
+
+    %{
+      socket.assigns.detail
+      | files: scan_agent_files(ag_dir),
+        workspace_tree: walk_workspace(ag_dir)
+    }
   end
 
   defp read_workspace_file(socket, rel) do
@@ -261,13 +329,15 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
+  # Widened from workspace-only to full agent dir for task #143. The
+  # UI now manages contract files (AGENT.md/SOUL.md/HEARTBEAT.md) +
+  # their sibling dirs, not just workspace/. Traversal guard stays
+  # strict — expanded path must live under the agent's own dir.
   defp resolve_workspace_path(socket, rel) do
-    workspace = Path.join(agent_dir(socket), "workspace")
-    candidate = Path.expand(Path.join(workspace, rel))
+    root = agent_dir(socket)
+    candidate = Path.expand(Path.join(root, rel))
 
-    # Defence in depth against `../` traversal — expanded path must
-    # still start with the workspace dir.
-    if String.starts_with?(candidate, workspace <> "/") do
+    if String.starts_with?(candidate, root <> "/") do
       {:ok, candidate}
     else
       {:error, :invalid_path}
@@ -389,36 +459,71 @@ defmodule GlorboWeb.AgentLive do
             </div>
           </section>
 
-          <section class="gl-panel gl-workspace-panel">
+          <%!-- Task #143 — agent dir file manager (contracts + subdirs) --%>
+          <section class="gl-panel gl-agent-files">
             <header class="gl-panel__header">
-              <span>workspace/</span>
-              <span class="gl-panel__hint">bind-mount view</span>
+              <span>files</span>
+              <span class="gl-panel__hint">agents/{@agent_slug}/</span>
             </header>
             <div class="gl-panel__body gl-panel__body--flush">
               <div class="gl-filetree">
-                <div class="gl-filetree__node gl-filetree__node--mount">
-                  <span class="gl-filetree__prefix">┌─ </span>/workspace
-                  <span class="gl-mount-tag gl-mount-tag--rw">rw</span>
-                </div>
+                <div class="gl-filetree__section">contract files</div>
+
                 <div
-                  :for={entry <- @detail.workspace_tree}
-                  class="gl-filetree__node"
-                  style={"padding-left: #{10 + entry.depth * 14}px"}
+                  :for={row <- @detail.files.contracts}
+                  class={[
+                    "gl-filetree__node",
+                    not row.exists? && "gl-filetree__node--missing"
+                  ]}
                 >
                   <span class="gl-filetree__prefix">├─ </span>
-                  <span :if={entry.kind == :dir} class="gl-filetree__dir">{entry.name}/</span>
                   <button
-                    :if={entry.kind == :file}
+                    :if={row.exists?}
                     type="button"
                     class="gl-filetree__file gl-filetree__file--clickable"
                     phx-click="open_file"
-                    phx-value-path={entry.rel}
+                    phx-value-path={row.rel}
                   >
-                    {entry.name}
+                    {row.name}
                   </button>
+                  <span :if={not row.exists?} class="gl-filetree__file gl-muted">
+                    {row.name}
+                  </span>
+                  <span
+                    :if={not row.exists?}
+                    class="gl-filetree__action gl-muted"
+                    phx-click="create_file"
+                    phx-value-path={row.rel}
+                  >
+                    + create
+                  </span>
+                  <span
+                    :if={row.exists? and row.name not in ["AGENT.md", "stdout.log"]}
+                    class="gl-filetree__action gl-muted"
+                    phx-click="delete_file"
+                    phx-value-path={row.rel}
+                    data-confirm={"Delete #{row.name}?"}
+                  >
+                    × delete
+                  </span>
                 </div>
-                <div :if={@detail.workspace_tree == []} class="gl-muted gl-filetree__node">
-                  <span class="gl-filetree__prefix">└─ </span>(empty)
+
+                <div class="gl-filetree__section">directories</div>
+
+                <div
+                  :for={row <- @detail.files.subdirs}
+                  class="gl-filetree__node"
+                >
+                  <span class="gl-filetree__prefix">├─ </span>
+                  <span class="gl-filetree__dir">{row.name}/</span>
+                  <span class="gl-filetree__count gl-muted">{row.count}</span>
+                </div>
+
+                <%!-- Bind-mount view (preserved from pre-#143) --%>
+                <div class="gl-filetree__section">sandbox view</div>
+                <div class="gl-filetree__node gl-filetree__node--mount">
+                  <span class="gl-filetree__prefix">├─ </span>/workspace
+                  <span class="gl-mount-tag gl-mount-tag--rw">rw</span>
                 </div>
                 <div class="gl-filetree__node gl-filetree__node--mount">
                   <span class="gl-filetree__prefix">├─ </span>/inbox
@@ -428,6 +533,7 @@ defmodule GlorboWeb.AgentLive do
                   <span class="gl-filetree__prefix">└─ </span>/outbox
                   <span class="gl-mount-tag gl-mount-tag--rw">rw</span>
                 </div>
+
                 <div class="gl-filetree__section">
                   not mounted — invisible by construction
                 </div>
@@ -725,7 +831,8 @@ defmodule GlorboWeb.AgentLive do
       inbox: load_inbox_preview(ag_dir),
       outbox: load_outbox_preview(ag_dir),
       sandbox: build_sandbox_preview(spec, co, ag),
-      soul: load_soul(ag_dir)
+      soul: load_soul(ag_dir),
+      files: scan_agent_files(ag_dir)
     }
   end
 
@@ -808,15 +915,18 @@ defmodule GlorboWeb.AgentLive do
     root = Path.join(ag_dir, "workspace")
 
     if File.dir?(root) do
-      walk_workspace_dir(root, root, 0)
+      # Paths emitted are relative to the AGENT dir now (task #143
+      # widened resolve_workspace_path from workspace-only to
+      # agent-root). E.g. "workspace/notes.md" not "notes.md".
+      walk_workspace_dir(ag_dir, root, 0)
     else
       []
     end
   end
 
-  defp walk_workspace_dir(_root, _path, depth) when depth >= @workspace_tree_depth, do: []
+  defp walk_workspace_dir(_ag_dir, _path, depth) when depth >= @workspace_tree_depth, do: []
 
-  defp walk_workspace_dir(root, path, depth) do
+  defp walk_workspace_dir(ag_dir, path, depth) do
     case File.ls(path) do
       {:ok, entries} ->
         entries
@@ -827,11 +937,11 @@ defmodule GlorboWeb.AgentLive do
 
           cond do
             File.dir?(full) ->
-              [%{name: e, kind: :dir, depth: depth, rel: Path.relative_to(full, root)}] ++
-                walk_workspace_dir(root, full, depth + 1)
+              [%{name: e, kind: :dir, depth: depth, rel: Path.relative_to(full, ag_dir)}] ++
+                walk_workspace_dir(ag_dir, full, depth + 1)
 
             File.regular?(full) ->
-              [%{name: e, kind: :file, depth: depth, rel: Path.relative_to(full, root)}]
+              [%{name: e, kind: :file, depth: depth, rel: Path.relative_to(full, ag_dir)}]
 
             true ->
               []
@@ -840,6 +950,56 @@ defmodule GlorboWeb.AgentLive do
 
       _ ->
         []
+    end
+  end
+
+  # Task #143 — scan the whole agent dir (not just workspace/) and
+  # return a structured listing the UI can render as a file manager.
+  # Output shape:
+  #
+  #   %{
+  #     contracts: [%{name, rel, role: :contract, exists?}],
+  #     subdirs:   [%{name, rel, role: :dir, count}],
+  #     scratch:   [%{name, rel, role: :file}]
+  #   }
+  #
+  # `rel` is always relative to the agent dir (e.g. "AGENT.md",
+  # "workspace/notes.md", "inbox/mentions/5.md"). Contract files are
+  # the named ones the runtime expects (GEP-15) regardless of
+  # existence — the UI offers create when exists?=false.
+  @contract_files ~w(AGENT.md HEARTBEAT.md SOUL.md stdout.log)
+  @contract_subdirs ~w(inbox outbox history state workspace)
+
+  defp scan_agent_files(ag_dir) do
+    %{
+      contracts: contract_rows(ag_dir),
+      subdirs: subdir_rows(ag_dir)
+    }
+  end
+
+  defp contract_rows(ag_dir) do
+    Enum.map(@contract_files, fn name ->
+      %{name: name, rel: name, role: :contract, exists?: File.regular?(Path.join(ag_dir, name))}
+    end)
+  end
+
+  defp subdir_rows(ag_dir) do
+    Enum.map(@contract_subdirs, fn name ->
+      dir = Path.join(ag_dir, name)
+      count = if File.dir?(dir), do: count_files(dir), else: 0
+      %{name: name, rel: name, role: :dir, count: count}
+    end)
+  end
+
+  defp count_files(dir) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.map(&Path.join(dir, &1))
+        |> Enum.count(&File.regular?/1)
+
+      _ ->
+        0
     end
   end
 
