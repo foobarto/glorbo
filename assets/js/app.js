@@ -402,9 +402,27 @@ document.addEventListener("DOMContentLoaded", () => {
   if (vocab) vocab.addEventListener("change", persist)
 })
 
+// Flash banners auto-dismiss after 6s (UAT4 U3 — they were pinned
+// until the next LV event, which could sit in the user's viewport
+// for minutes). Error banners get 10s — longer because the user
+// usually wants to read them — but still not indefinite.
+const AutoDismissFlash = {
+  mounted() {
+    const isError = this.el.classList.contains("gl-banner--error")
+    const timeout = isError ? 10000 : 6000
+    this._timer = setTimeout(() => {
+      this.el.classList.add("gl-banner--leaving")
+      setTimeout(() => this.el.remove(), 250)
+    }, timeout)
+  },
+  destroyed() {
+    if (this._timer) clearTimeout(this._timer)
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

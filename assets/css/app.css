@@ -1674,6 +1674,11 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-banner--info .gl-banner__glyph { color: var(--gl-success); }
 .gl-banner--error .gl-banner__glyph { color: var(--gl-danger); }
+.gl-banner--leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
 
 /* ========== Accessibility utilities ========== */
 

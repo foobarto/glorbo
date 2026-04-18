@@ -6,12 +6,24 @@
     active={assigns[:sidebar_active]}
   />
   <main id="gl-main-content" class="gl-main" tabindex="-1">
-    <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--error" role="alert">
+    <div
+      :if={Phoenix.Flash.get(@flash, :error)}
+      id="gl-flash-error"
+      phx-hook="AutoDismissFlash"
+      class="gl-banner gl-banner--error"
+      role="alert"
+    >
       <span class="gl-banner__glyph" aria-hidden="true">✗</span>
       <span class="gl-sr-only">Error:</span>
       {Phoenix.Flash.get(@flash, :error)}
     </div>
-    <div :if={Phoenix.Flash.get(@flash, :info)} class="gl-banner gl-banner--info" role="status">
+    <div
+      :if={Phoenix.Flash.get(@flash, :info)}
+      id="gl-flash-info"
+      phx-hook="AutoDismissFlash"
+      class="gl-banner gl-banner--info"
+      role="status"
+    >
       <span class="gl-banner__glyph" aria-hidden="true">✓</span>
       <span class="gl-sr-only">Info:</span>
       {Phoenix.Flash.get(@flash, :info)}

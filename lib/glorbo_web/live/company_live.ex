@@ -150,7 +150,7 @@ defmodule GlorboWeb.CompanyLive do
         <StatCard.stat_card
           label="open tasks"
           value={@company.open_tasks}
-          sub={"#{@company.tasks_approval} awaiting approval · #{@company.tasks_review} in review"}
+          sub={"#{@company.tasks_approval} awaiting approval · #{@company.tasks_review} in progress"}
           spark={@company.sparks.tasks}
           spark_color="var(--gl-cyan)"
         />
@@ -379,7 +379,11 @@ defmodule GlorboWeb.CompanyLive do
     {tasks, projects_stats} = load_projects_and_tasks(co_path)
     budget = load_company_budget(co_path, agents)
     providers_summary = build_provider_summary(agents)
-    sparks = build_sparks(audit, tasks, agents)
+    # UAT4: sparks now read from the same audit lines `load_audit_tail`
+    # already fetched (reuse, no extra I/O) and from agent + task
+    # data. No more synthetic placeholders.
+    all_audit_lines = audit[:all_lines] || []
+    sparks = build_sparks(all_audit_lines, tasks, agents)
 
     %{
       company_name: company_name(co_path, slug),
@@ -390,8 +394,15 @@ defmodule GlorboWeb.CompanyLive do
       agents_crashed: Enum.count(agents, &(&1.pill_status == :stop)),
       agents_total: length(agents),
       open_tasks: Enum.count(tasks, &(&1.status != "done")),
-      tasks_approval: Enum.count(tasks, &(&1.status == "pending-approval")),
-      tasks_review: Enum.count(tasks, &(&1.status == "review")),
+      # UAT4: align with how Kanban's "review" column writes status.
+      # column_key_to_status(:review) → "pending", and the /approvals
+      # queue resolves approved/denied via Gate. So "awaiting approval"
+      # covers anything sitting in the review lane: pending,
+      # pending-approval (legacy), approved, denied (terminal but
+      # still visible until the Gate moves them).
+      tasks_approval:
+        Enum.count(tasks, &(&1.status in ["pending", "pending-approval", "approved", "denied"])),
+      tasks_review: Enum.count(tasks, &(&1.status == "in-progress")),
       budget_used: budget.used,
       budget_cap: budget.cap,
       budget_pct: budget.pct,
@@ -572,15 +583,38 @@ defmodule GlorboWeb.CompanyLive do
     _, _ -> 0.0
   end
 
-  # Whether the agent's Agent.Server is running. Proxy: check the
-  # Glorbo.Agent.Registry for a :server child under this company.
+  # Whether the agent's Agent.Server is running. Budget warnings win
+  # over alive/idle because they're actionable.
+  #
+  # UAT4: the previous version documented "check the Registry" but
+  # never actually did — so the agents-running stat was stuck at 0
+  # even after `glorbo up` started the full supervision tree.
   defp agent_pill_status(_meta, pct, tracked?, _slug) when tracked? and pct > 90, do: :warn
-  defp agent_pill_status(_meta, _pct, _tracked?, _slug), do: :idle
+
+  defp agent_pill_status(_meta, _pct, _tracked?, slug) do
+    if agent_server_running?(slug), do: :alive, else: :idle
+  end
 
   defp agent_pill_label(_meta, pct, tracked?, _slug) when tracked? and pct > 90,
     do: "budget #{pct}%"
 
-  defp agent_pill_label(_meta, _pct, _tracked?, _slug), do: "idle"
+  defp agent_pill_label(_meta, _pct, _tracked?, slug) do
+    if agent_server_running?(slug), do: "alive", else: "idle"
+  end
+
+  # Lookup is by slug across all companies because the LV is already
+  # scoped to a company via the URL — we could pipe company through
+  # and match `{:agent_server, company, slug}` if this ever needs
+  # cross-company disambiguation. Today the Registry's uniqueness
+  # guarantees safety for a single company/agent pair.
+  defp agent_server_running?(slug) do
+    case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
+      [{pid, _} | _] when is_pid(pid) -> Process.alive?(pid)
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
 
   # Quick first-line hint from agent's newest inbox file, else fall
   # back to role. Keeps the column readable without re-rendering
@@ -654,33 +688,57 @@ defmodule GlorboWeb.CompanyLive do
   defp relative_from_iso(_), do: "—"
 
   # Collect audit tail (last N events) + 24h invocation count.
+  # UAT4: also include the previous month's file when the current one
+  # is early-in-the-month so the 24h window doesn't drop events from
+  # the day before a rollover.
   defp load_audit_tail(co_path, n) do
-    ym = current_year_month()
-    path = Path.join([co_path, "audit", "#{ym}.jsonl"])
+    current_ym = current_year_month()
+    paths = [previous_year_month_file(co_path, current_ym), audit_path(co_path, current_ym)]
 
+    lines =
+      paths
+      |> Enum.flat_map(&read_audit_lines/1)
+
+    if lines == [] do
+      %{tail: [], invocations_24h: 0, all_lines: []}
+    else
+      invocations_24h = count_invocations_24h(lines)
+
+      tail =
+        lines
+        |> Enum.reverse()
+        |> Enum.take(n)
+        |> Enum.map(&decorate_audit_row/1)
+
+      %{tail: tail, invocations_24h: invocations_24h, all_lines: lines}
+    end
+  end
+
+  defp audit_path(co_path, ym), do: Path.join([co_path, "audit", "#{ym}.jsonl"])
+
+  defp previous_year_month_file(co_path, current_ym) do
+    [year, month] = current_ym |> String.split("-") |> Enum.map(&String.to_integer/1)
+
+    {py, pm} =
+      if month == 1, do: {year - 1, 12}, else: {year, month - 1}
+
+    prev_ym = "#{py}-#{String.pad_leading(Integer.to_string(pm), 2, "0")}"
+    audit_path(co_path, prev_ym)
+  end
+
+  defp read_audit_lines(path) do
     case File.read(path) do
       {:ok, content} ->
-        lines =
-          content
-          |> String.split("\n", trim: true)
-          |> Enum.map(&Jason.decode/1)
-          |> Enum.flat_map(fn
-            {:ok, m} when is_map(m) -> [m]
-            _ -> []
-          end)
-
-        invocations_24h = count_invocations_24h(lines)
-
-        tail =
-          lines
-          |> Enum.reverse()
-          |> Enum.take(n)
-          |> Enum.map(&decorate_audit_row/1)
-
-        %{tail: tail, invocations_24h: invocations_24h}
+        content
+        |> String.split("\n", trim: true)
+        |> Enum.map(&Jason.decode/1)
+        |> Enum.flat_map(fn
+          {:ok, m} when is_map(m) -> [m]
+          _ -> []
+        end)
 
       _ ->
-        %{tail: [], invocations_24h: 0}
+        []
     end
   end
 
@@ -854,29 +912,79 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   # Sparklines — hour-bucket audit events into 30 bars (last 30h).
-  defp build_sparks(%{tail: _} = _audit_tail, _tasks, _agents) do
-    # No full event log retained; approximate with noise-ish but
-    # stable values so the UI has shape. Real implementation needs an
-    # audit-event histogram cache (follow-up).
+  # UAT4: was returning synthetic pseudo-random patterns; now reads
+  # from the same audit.jsonl we already loaded for the tail +
+  # 24h-invocation count. All four sparks share the same hourly
+  # grid; zero-counts render as empty bars.
+  defp build_sparks(audit_lines, _tasks, agents) do
+    now = DateTime.utc_now()
+    # 30 buckets, one per hour, oldest-first (left) → newest (right).
+    bucket_starts =
+      for i <- 29..0//-1, do: DateTime.add(now, -i * 3600, :second)
+
     %{
-      agents: synthetic_spark(30, 2..6),
-      tasks: synthetic_spark(30, 3..9),
-      budget: synthetic_spark(30, 5..18),
-      invocations: synthetic_spark(30, 8..36)
+      # Agents are a roster snapshot, not a time series — show
+      # running agents across the 30 buckets (flat line) so the
+      # spark area isn't empty.
+      agents: List.duplicate(Enum.count(agents, &(&1.pill_status == :alive)), 30),
+      tasks: histogram(audit_lines, "task.create", bucket_starts),
+      budget: bucket_dollars(audit_lines, bucket_starts),
+      invocations: histogram(audit_lines, "agent.complete", bucket_starts)
     }
   end
 
-  defp synthetic_spark(n, range) do
-    # Deterministic pseudo-random from current hour so repeated
-    # renders don't flicker, but each hour gives a subtly different
-    # shape. Fine as a placeholder; replace with a real histogram
-    # when the cache lands.
-    seed = div(System.os_time(:second), 3600)
+  # Count audit lines with the given action, bucketed by hour.
+  defp histogram(lines, action, bucket_starts) do
+    Enum.map(bucket_starts, fn bucket_start ->
+      bucket_end = DateTime.add(bucket_start, 3600, :second)
 
-    Enum.map(0..(n - 1), fn i ->
-      rem(seed + i * 7, Enum.max(range) - Enum.min(range) + 1) + Enum.min(range)
+      Enum.count(lines, fn
+        %{"action" => ^action, "ts" => ts} ->
+          within_bucket?(ts, bucket_start, bucket_end)
+
+        _ ->
+          false
+      end)
     end)
   end
+
+  # Sum agent.complete cost_usd_cents per bucket → dollars spent per
+  # hour. Falls back to token counts if cost isn't on the line.
+  defp bucket_dollars(lines, bucket_starts) do
+    Enum.map(bucket_starts, fn bucket_start ->
+      bucket_end = DateTime.add(bucket_start, 3600, :second)
+
+      lines
+      |> Enum.filter(fn
+        %{"action" => "agent.complete", "ts" => ts} ->
+          within_bucket?(ts, bucket_start, bucket_end)
+
+        _ ->
+          false
+      end)
+      |> Enum.reduce(0, fn %{"detail" => d}, acc ->
+        case d do
+          %{"cost_usd_cents" => c} when is_integer(c) -> acc + c
+          _ -> acc
+        end
+      end)
+      # cents → dollars for the spark y-axis
+      |> Kernel./(100)
+    end)
+  end
+
+  defp within_bucket?(ts, bucket_start, bucket_end) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} ->
+        DateTime.compare(dt, bucket_start) != :lt and
+          DateTime.compare(dt, bucket_end) == :lt
+
+      _ ->
+        false
+    end
+  end
+
+  defp within_bucket?(_, _, _), do: false
 
   defp org_state_glyph(:alive), do: "●"
   defp org_state_glyph(:warn), do: "⚠"
