@@ -219,6 +219,28 @@ defmodule GlorboWeb.StdoutStreamerTest do
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
+  # task #142 — blank lines (and whitespace-only lines) are dropped
+  # before broadcast so the STDOUT tab doesn't render empty rows.
+  # Header/exit markers survive because their bodies have non-ws
+  # content.
+  test "blank and whitespace-only lines are filtered out",
+       %{base: base, agent: agent, path: path} do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    File.write!(path, "real line\n\n   \n\t\nanother real line\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "real line"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "another real line"}}, 2_000
+    # Give the streamer another poll cycle to make sure we don't
+    # receive a stray blank-body payload afterwards.
+    Process.sleep(400)
+    refute_received {:stdout_line, "acme", ^agent, %{body: ""}}
+    refute_received {:stdout_line, "acme", ^agent, %{body: "   "}}
+    refute_received {:stdout_line, "acme", ^agent, %{body: "\t"}}
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
   # task #134 — singleton guarantee: multiple start/3 calls for the
   # same {company, agent} return the SAME pid. Without this, every
   # open dashboard tab would spawn its own streamer tailing the same

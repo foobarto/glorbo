@@ -189,12 +189,7 @@ defmodule GlorboWeb.StdoutStreamer do
     # skip it on replay than broadcast a fragment.
     complete = Enum.drop(parts, -1)
 
-    Enum.reduce(complete, state, fn raw, acc ->
-      body = strip_ansi(raw)
-      payload = build_payload(body)
-      broadcast_payload(acc, payload)
-      remember(acc, payload)
-    end)
+    Enum.reduce(complete, state, &process_line(&1, &2))
   end
 
   defp seek_to_eof(%{io: io} = state) do
@@ -277,15 +272,27 @@ defmodule GlorboWeb.StdoutStreamer do
     parts = String.split(bytes, "\n")
     {complete, [tail]} = Enum.split(parts, -1)
 
-    state =
-      Enum.reduce(complete, state, fn raw, acc ->
-        body = strip_ansi(raw)
-        payload = build_payload(body)
-        broadcast_payload(acc, payload)
-        remember(acc, payload)
-      end)
+    state = Enum.reduce(complete, state, &process_line(&1, &2))
 
     %{state | buf: tail}
+  end
+
+  # Drop whitespace-only lines (task #142) before turning them into
+  # payloads. claude-code sprinkles blank lines around tool-use echoes
+  # and spinner clears; without this filter they pile up as empty rows
+  # in the STDOUT tab, breaking the dispatch-card rhythm. Header/exit
+  # markers still survive the filter because their bodies contain
+  # non-whitespace.
+  defp process_line(raw, state) do
+    body = strip_ansi(raw)
+
+    if String.trim(body) == "" do
+      state
+    else
+      payload = build_payload(body)
+      broadcast_payload(state, payload)
+      remember(state, payload)
+    end
   end
 
   defp broadcast_payload(state, payload) do
