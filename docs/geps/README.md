@@ -39,6 +39,8 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0013 | [Project-prefixed Task IDs](./0013-project-prefixed-task-ids.md)                         | Standards     | Implemented |
 | 0014 | [Agent Heartbeat Semantics and HEARTBEAT.md](./0014-agent-heartbeat-semantics.md)        | Standards     | Implemented |
 | 0015 | [ALLCAPS Convention for Agent-facing Markdown](./0015-allcaps-agent-md-convention.md)    | Informational | Accepted    |
+| 0016 | [Agent Wake + Dispatch Pipeline](./0016-agent-wake-dispatch-pipeline.md)                 | Informational | Implemented |
+| 0017 | [Cross-OS Sandbox and Filesystem Watcher Landscape](./0017-cross-os-sandbox-and-watcher.md) | Informational | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
