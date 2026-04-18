@@ -21,6 +21,7 @@ defmodule GlorboWeb.ChannelLive do
   """
   use GlorboWeb, :live_view
   require Logger
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0]
   alias GlorboWeb.Components.ChannelMessage
 
   # Splits `## <ts> | <author>\n<body>` entries. `body` captures until
@@ -281,7 +282,4 @@ defmodule GlorboWeb.ChannelLive do
       }
     end)
   end
-
-  defp base_dir,
-    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

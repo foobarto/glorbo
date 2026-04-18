@@ -27,6 +27,15 @@ defmodule GlorboWeb.CompanyLive do
   """
   use GlorboWeb, :live_view
 
+  import GlorboWeb.LiveHelpers,
+    only: [
+      base_dir: 0,
+      current_year_month: 0,
+      budget_classify: 2,
+      two_dp: 1,
+      zero_dp: 1
+    ]
+
   alias Glorbo.Budget.Ledger
   alias Glorbo.CLI.Registry, as: CLIRegistry
   alias Glorbo.CLI.Registry.Provider
@@ -544,21 +553,6 @@ defmodule GlorboWeb.CompanyLive do
     _, _ -> 0.0
   end
 
-  defp budget_classify(_used, cap) when not is_number(cap) or cap <= 0, do: {0, nil}
-
-  defp budget_classify(used, cap) do
-    pct = min(round(used / cap * 100), 100)
-
-    cls =
-      cond do
-        pct > 90 -> "rose"
-        pct > 80 -> "amber"
-        true -> nil
-      end
-
-    {pct, cls}
-  end
-
   # Whether the agent's Agent.Server is running. Proxy: check the
   # Glorbo.Agent.Registry for a :server child under this company.
   defp agent_pill_status(_meta, pct, tracked?, _slug) when tracked? and pct > 90, do: :warn
@@ -869,18 +863,4 @@ defmodule GlorboWeb.CompanyLive do
   defp org_state_glyph(:warn), do: "⚠"
   defp org_state_glyph(:stop), do: "✕"
   defp org_state_glyph(_), do: "○"
-
-  defp two_dp(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 2)
-  defp two_dp(_), do: "0.00"
-
-  defp zero_dp(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 0)
-  defp zero_dp(_), do: "0"
-
-  defp current_year_month do
-    now = DateTime.utc_now()
-    "#{now.year}-#{String.pad_leading(Integer.to_string(now.month), 2, "0")}"
-  end
-
-  defp base_dir,
-    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

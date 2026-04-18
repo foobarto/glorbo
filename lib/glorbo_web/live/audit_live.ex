@@ -22,6 +22,7 @@ defmodule GlorboWeb.AuditLive do
   a row.
   """
   use GlorboWeb, :live_view
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0, current_year_month: 0]
   alias GlorboWeb.Components.AuditEntry
 
   # Out-of-band safety-net poll. PubSub `{:audit_append, record}` drives
@@ -255,11 +256,6 @@ defmodule GlorboWeb.AuditLive do
   defp audit_path(base, co, ym),
     do: Path.join([base, "companies", co, "audit", "#{ym}.jsonl"])
 
-  defp current_year_month do
-    d = Date.utc_today()
-    "#{d.year}-#{String.pad_leading(Integer.to_string(d.month), 2, "0")}"
-  end
-
   defp load_tail(path, n) do
     case File.read(path) do
       {:ok, content} ->
@@ -332,7 +328,4 @@ defmodule GlorboWeb.AuditLive do
   defp detail_haystack(d) when is_binary(d), do: d
   defp detail_haystack(d) when is_map(d) or is_list(d), do: Jason.encode!(d)
   defp detail_haystack(d), do: to_string(d)
-
-  defp base_dir,
-    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

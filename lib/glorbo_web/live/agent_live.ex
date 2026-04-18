@@ -35,6 +35,9 @@ defmodule GlorboWeb.AgentLive do
   use GlorboWeb, :live_view
   require Logger
 
+  import GlorboWeb.LiveHelpers,
+    only: [base_dir: 0, current_year_month: 0, two_dp: 1, zero_dp: 1]
+
   alias GlorboWeb.Components.{StatusPill, StdoutTail}
 
   @impl true
@@ -821,8 +824,8 @@ defmodule GlorboWeb.AgentLive do
       pill_label: agent_pill_label(pct, tracked?),
       budget: %{
         tracked?: tracked?,
-        used_str: dp2(used),
-        cap_str: dp0(cap),
+        used_str: two_dp(used),
+        cap_str: zero_dp(cap),
         pct: pct,
         cls: cls
       },
@@ -1202,19 +1205,6 @@ defmodule GlorboWeb.AgentLive do
   catch
     _, _ -> 0.0
   end
-
-  defp current_year_month do
-    now = DateTime.utc_now()
-    "#{now.year}-#{String.pad_leading(Integer.to_string(now.month), 2, "0")}"
-  end
-
-  defp dp2(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 2)
-  defp dp2(_), do: "0.00"
-
-  defp dp0(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 0)
-  defp dp0(_), do: "0"
-
-  defp base_dir, do: Glorbo.Filesystem.Hierarchy.default_root()
 
   # ---------------------------------------------------------------------------
   # History panel (GEP-14-adjacent — shows heartbeat + dispatch + wake activity)

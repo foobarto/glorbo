@@ -23,6 +23,8 @@ defmodule GlorboWeb.KanbanLive do
   """
   use GlorboWeb, :live_view
 
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+
   alias GlorboWeb.Components.TaskCard
 
   @task_path_re ~r{\Aprojects/.+/tasks/.+\.md\z}
@@ -783,7 +785,4 @@ defmodule GlorboWeb.KanbanLive do
       done: Enum.filter(tasks, &(&1.status == "done"))
     }
   end
-
-  defp base_dir,
-    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

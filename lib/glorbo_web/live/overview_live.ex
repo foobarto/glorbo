@@ -16,6 +16,8 @@ defmodule GlorboWeb.OverviewLive do
   """
   use GlorboWeb, :live_view
 
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0, current_year_month: 0]
+
   alias GlorboWeb.Components.CompanyCard
 
   @impl true
@@ -203,11 +205,6 @@ defmodule GlorboWeb.OverviewLive do
     _, _ -> 0.0
   end
 
-  defp current_year_month do
-    now = DateTime.utc_now()
-    "#{now.year}-#{String.pad_leading(Integer.to_string(now.month), 2, "0")}"
-  end
-
   # Sum of `agents/*/alerts/*.md` files (budget alerts from Phase 3).
   defp alert_count(path) do
     agents_dir = Path.join(path, "agents")
@@ -227,6 +224,4 @@ defmodule GlorboWeb.OverviewLive do
         0
     end
   end
-
-  defp base_dir, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

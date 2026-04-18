@@ -22,6 +22,8 @@ defmodule GlorboWeb.ProjectLive do
   """
   use GlorboWeb, :live_view
 
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+
   @project_md_size_cap 64 * 1024
 
   @impl true
@@ -435,9 +437,5 @@ defmodule GlorboWeb.ProjectLive do
     |> String.replace("\\", "\\\\")
     |> String.replace(~s("), ~s(\\"))
     |> String.replace("\n", " ")
-  end
-
-  defp base_dir do
-    Glorbo.Filesystem.Hierarchy.default_root()
   end
 end

@@ -20,6 +20,8 @@ defmodule GlorboWeb.ApprovalQueueLive do
   `Glorbo.TaskDefinition.write/2`.
   """
   use GlorboWeb, :live_view
+
+  import GlorboWeb.LiveHelpers, only: [base_dir: 0]
   require Logger
 
   alias GlorboWeb.Components.ApprovalCard
@@ -297,9 +299,6 @@ defmodule GlorboWeb.ApprovalQueueLive do
   end
 
   defp selected_body(_, _), do: "(select a row to preview)"
-
-  defp base_dir,
-    do: Glorbo.Filesystem.Hierarchy.default_root()
 
   defp clamp_selection(_, []), do: nil
   defp clamp_selection(nil, _), do: 0
