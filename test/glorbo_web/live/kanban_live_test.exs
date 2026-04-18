@@ -105,7 +105,11 @@ defmodule GlorboWeb.KanbanLiveTest do
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
     assert html =~ "Deploy landing page"
-    assert html =~ "⚠ approval"
+    # UAT N7: renamed from "⚠ approval" to "⚠ gated" so the badge
+    # clearly marks *metadata* (requires_approval flag) and doesn't
+    # visually collide with the distinct "currently awaiting approval"
+    # state that lives in /approvals.
+    assert html =~ "⚠ gated"
     assert html =~ "gl-task-card--approval"
   end
 

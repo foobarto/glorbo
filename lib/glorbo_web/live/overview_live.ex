@@ -58,7 +58,14 @@ defmodule GlorboWeb.OverviewLive do
     <section class="gl-view">
       <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">Companies</h1>
-        <button type="button" class="gl-btn" phx-click="new_company">+ new company</button>
+        <button
+          type="button"
+          class="gl-btn gl-btn--soon"
+          phx-click="new_company"
+          title="Coming soon — use `glorbo new company <slug>` from a terminal for now"
+        >
+          + new company <span class="gl-btn__soon-tag">soon</span>
+        </button>
       </header>
 
       <div :if={@companies == []} class="gl-empty">
@@ -72,6 +79,27 @@ defmodule GlorboWeb.OverviewLive do
       <div :if={@companies != []} class="gl-grid gl-grid--cards">
         <CompanyCard.company_card :for={c <- @companies} company={c} />
       </div>
+
+      <%!--
+        UAT N1: single-company installs left the right ~70% of the
+        viewport empty and the user wondering if they were missing
+        something. Hint panel shows only when every company has ≤1
+        agent (otherwise the board is already populated and noise).
+      --%>
+      <aside
+        :if={@companies != [] and Enum.all?(@companies, &(&1.agent_count <= 1))}
+        class="gl-welcome-hint"
+      >
+        <h2 class="gl-heading gl-heading--heading">Next step</h2>
+        <ul class="gl-welcome-hint__list">
+          <li>Click a company card → see its agents + kanban.</li>
+          <li>Press <kbd>?</kbd> to see keyboard shortcuts.</li>
+          <li>Press <kbd>⌘K</kbd> / <kbd>CtrlK</kbd> for the command palette.</li>
+          <li>
+            Scaffold another agent: <code>glorbo new agent &lt;company&gt;/&lt;slug&gt;</code>
+          </li>
+        </ul>
+      </aside>
     </section>
     """
   end

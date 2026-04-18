@@ -419,15 +419,19 @@ defmodule GlorboWeb.KanbanLive do
 
           <label class="gl-task-detail__field">
             <span class="gl-muted">status</span>
+            <%!--
+              Dropdown is limited to the 3 Kanban columns (UAT N3 —
+              tasks with other statuses vanish from the board). The
+              approval-gate lifecycle (pending-approval / approved /
+              denied) is driven by `requires_approval` + sentinel
+              files in `agents/<slug>/state/`, not by this dropdown.
+            --%>
             <select name="status" class="gl-input">
               <option value="todo" selected={@open_task.status == "todo"}>todo</option>
               <option value="in-progress" selected={@open_task.status == "in-progress"}>
                 in-progress
               </option>
               <option value="done" selected={@open_task.status == "done"}>done</option>
-              <option value="pending" selected={@open_task.status == "pending"}>pending</option>
-              <option value="approved" selected={@open_task.status == "approved"}>approved</option>
-              <option value="denied" selected={@open_task.status == "denied"}>denied</option>
             </select>
           </label>
 

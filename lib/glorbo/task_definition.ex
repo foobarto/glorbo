@@ -142,7 +142,12 @@ defmodule Glorbo.TaskDefinition do
          task_id: derive_task_id(file_path),
          title: as_string(meta["title"]),
          status: as_string(meta["status"]),
-         assigned_to: as_string(meta["assigned_to"]),
+         # Accept `assignee:` as an alias for `assigned_to:` (UAT N8 —
+         # users from Linear/GitHub projects instinctively type
+         # `assignee`, and the parser used to silently drop those
+         # tasks off the board). `assigned_to` takes precedence when
+         # both are present.
+         assigned_to: as_string(meta["assigned_to"]) || as_string(meta["assignee"]),
          requires_approval: requires_approval,
          denial_reason: as_string(meta["denial_reason"]),
          priority: coerce_priority(meta["priority"])

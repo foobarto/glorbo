@@ -5,15 +5,21 @@ defmodule GlorboWeb.Components.TaskCard do
   Card shape:
 
       ┌──────────────────────────────┐
-      │ t-01 · website     [⚠ approval]
+      │ t-01 · website     [⚠ gated]  │
       │                              │
       │ Deploy landing page          │
       │                              │
       │ ● high · ceo                 │
       └──────────────────────────────┘
 
-  Approval-gated tasks get a 3px amber left border and an `⚠ approval`
-  pill in the top-right. Priority renders as a colored dot + label
+  Tasks flagged `requires_approval: director` in frontmatter get a
+  3px amber left border and an `⚠ gated` pill — signalling that the
+  director has to approve before the agent's side-effect lands.
+  This pill is a *metadata* marker; a task is only actually waiting
+  on approval once the agent writes an `awaiting-approval-*.md`
+  sentinel, which shows in `/approvals` (and not here — the
+  kanban doesn't poll per-task sentinel state, UAT N7).
+  Priority renders as a colored dot + label
   (`● high` rose, `● medium` amber, `● low` muted). Project is derived
   from the task_path (`projects/<project>/tasks/…`) in
   `Glorbo.TaskDefinition`.
@@ -44,8 +50,12 @@ defmodule GlorboWeb.Components.TaskCard do
       <header class="gl-task-card__header">
         <span class="gl-task-card__id">{@task.task_id}</span>
         <span :if={@task.project} class="gl-task-card__project gl-muted">· {@task.project}</span>
-        <span :if={@task.requires_approval == :director} class="gl-task-card__approval-tag">
-          ⚠ approval
+        <span
+          :if={@task.requires_approval == :director}
+          class="gl-task-card__approval-tag"
+          title="Approval-gated: director approval required before the agent's side-effect lands. Awaiting-approval state appears in /approvals when the agent writes a sentinel."
+        >
+          ⚠ gated
         </span>
       </header>
       <div class="gl-task-card__title">{@task.title || @task.task_id}</div>

@@ -162,8 +162,13 @@ defmodule GlorboWeb.AuditLive do
 
   @impl true
   def render(assigns) do
+    # UAT N4: entries are stored oldest-first (append-only tail); reverse
+    # at render time so the user sees newest at the top, matching how
+    # every other log viewer (Slack, Datadog, `tail` + page-up) behaves.
     filtered =
-      filter_entries(assigns.entries, assigns.actor_filter, assigns.action_filter, assigns.q)
+      assigns.entries
+      |> filter_entries(assigns.actor_filter, assigns.action_filter, assigns.q)
+      |> Enum.reverse()
 
     assigns = assign(assigns, :filtered, filtered)
 
@@ -207,17 +212,22 @@ defmodule GlorboWeb.AuditLive do
 
       <div :if={@filtered == []} class="gl-empty">No audit events this month.</div>
 
-      <button :if={not @beginning} phx-click="load_older" class="gl-btn gl-audit__load-older">
-        Load 500 older
-      </button>
-      <div :if={@beginning} class="gl-audit__beginning gl-muted">— beginning of log —</div>
-
       <AuditEntry.audit_entry
         :for={{entry, idx} <- Enum.with_index(@filtered)}
         id={entry_id(entry, idx)}
         entry={entry}
         expanded={MapSet.member?(@expanded, entry_id(entry, idx))}
       />
+
+      <%!--
+        Load-older button moved below the list (UAT N4): newest-first
+        rendering means older events sit "further down" in the feed,
+        which matches how the Load Older control has to work.
+      --%>
+      <button :if={not @beginning} phx-click="load_older" class="gl-btn gl-audit__load-older">
+        Load 500 older
+      </button>
+      <div :if={@beginning} class="gl-audit__beginning gl-muted">— beginning of log —</div>
     </section>
     """
   end

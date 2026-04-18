@@ -1565,6 +1565,54 @@ button { font-family: inherit; font-size: inherit; }
   cursor: not-allowed;
 }
 
+/* Placeholder actions that will ship in a later milestone. Stays
+   readable but obviously non-primary; the `soon` tag earns its
+   keep by telling the user this isn't a bug. */
+.gl-btn--soon {
+  opacity: 0.55;
+  border-style: dashed;
+  cursor: help;
+}
+.gl-btn--soon:hover {
+  opacity: 0.75;
+}
+.gl-btn__soon-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.8;
+  vertical-align: middle;
+}
+
+.gl-welcome-hint {
+  margin-top: var(--gl-space-xl);
+  padding: var(--gl-space-lg);
+  border: 1px dashed var(--gl-border);
+  border-radius: 8px;
+  max-width: 640px;
+}
+.gl-welcome-hint__list {
+  list-style: none;
+  padding: 0;
+  margin: var(--gl-space-sm) 0 0 0;
+}
+.gl-welcome-hint__list li {
+  padding: 4px 0;
+  color: var(--gl-fg-subtle);
+}
+.gl-welcome-hint__list kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--gl-border);
+  border-radius: 3px;
+  color: var(--gl-fg);
+}
+
 /* ========== Form inputs ========== */
 .gl-input {
   background: var(--gl-surface-raised);

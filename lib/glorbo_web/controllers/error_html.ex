@@ -44,3 +44,14 @@ defmodule GlorboWeb.ErrorHTML do
     Phoenix.Controller.status_message_from_template(template)
   end
 end
+
+# UAT N6: Plug.Static.InvalidPathError is raised on URL-encoded path
+# traversal attempts (e.g. /companies/%2e%2e%2fetc%2fpasswd) BEFORE
+# the router has a chance to 404. Phoenix's debug_errors then renders
+# a 500. Tell Plug to treat this as a 404 instead — safer UX, no
+# security surface lost (Plug.Static's own guard still rejects the
+# underlying request).
+defimpl Plug.Exception, for: Plug.Static.InvalidPathError do
+  def status(_), do: 404
+  def actions(_), do: []
+end

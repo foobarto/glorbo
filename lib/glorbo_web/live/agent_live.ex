@@ -409,19 +409,29 @@ defmodule GlorboWeb.AgentLive do
           </p>
         </div>
         <div class="gl-overview__actions">
-          <button type="button" class="gl-btn" disabled title="Pending P3 AGENT.md editor">
-            ✎ edit AGENT.md
-          </button>
-          <button type="button" class="gl-btn" disabled title="Pending P3 messaging UI">
-            ✉ send message
+          <button
+            type="button"
+            class="gl-btn gl-btn--soon"
+            disabled
+            title="Coming soon — edit AGENT.md in your text editor for now"
+          >
+            ✎ edit AGENT.md <span class="gl-btn__soon-tag">soon</span>
           </button>
           <button
             type="button"
-            class="gl-btn gl-btn--deny"
+            class="gl-btn gl-btn--soon"
             disabled
-            title="Pending M3.5 stop sentinel"
+            title="Coming soon — post to #general with @mention for now"
           >
-            ⏻ stop
+            ✉ send message <span class="gl-btn__soon-tag">soon</span>
+          </button>
+          <button
+            type="button"
+            class="gl-btn gl-btn--deny gl-btn--soon"
+            disabled
+            title="Coming soon — M3.5 stop sentinel"
+          >
+            ⏻ stop <span class="gl-btn__soon-tag">soon</span>
           </button>
           <.wake_button />
         </div>

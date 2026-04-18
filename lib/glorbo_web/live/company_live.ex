@@ -113,8 +113,13 @@ defmodule GlorboWeb.CompanyLive do
         <div class="gl-overview__actions">
           <button type="button" class="gl-btn" phx-click="reindex">↻ reindex</button>
           <button type="button" class="gl-btn" phx-click="backup">⇩ backup</button>
-          <button type="button" class="gl-btn gl-btn--primary" phx-click="new_agent">
-            + new agent
+          <button
+            type="button"
+            class="gl-btn gl-btn--primary gl-btn--soon"
+            phx-click="new_agent"
+            title="Coming soon — use `glorbo new agent <company>/<slug>` from a terminal for now"
+          >
+            + new agent <span class="gl-btn__soon-tag">soon</span>
           </button>
         </div>
       </header>
