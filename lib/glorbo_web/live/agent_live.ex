@@ -89,6 +89,11 @@ defmodule GlorboWeb.AgentLive do
         case GlorboWeb.StdoutStreamer.start(co, ag, base: base) do
           {:ok, pid} ->
             Process.monitor(pid)
+            # Backfill the local stream from the streamer's rolling
+            # buffer (task #141) — singleton streamers only replay at
+            # their init, so late-subscribing mounts need this call
+            # to see recent history.
+            socket = backfill_stdout(socket, pid)
             {:ok, assign(socket, :streamer_pid, pid)}
 
           _ ->
@@ -278,6 +283,23 @@ defmodule GlorboWeb.AgentLive do
     # markdown/JSON/YAML sail through.
     head = binary_part(bytes, 0, min(byte_size(bytes), 4096))
     if String.contains?(head, <<0>>), do: {:error, :binary}, else: :ok
+  end
+
+  # Task #141 — streamer is a singleton per agent; late-subscribing
+  # LVs miss the init-time replay broadcast. We GenServer.call the
+  # streamer for its rolling `recent` buffer and stream_insert each
+  # payload locally so this LV sees the same history.
+  defp backfill_stdout(socket, pid) do
+    try do
+      GlorboWeb.StdoutStreamer.backfill(pid)
+    rescue
+      _ -> []
+    catch
+      :exit, _ -> []
+    end
+    |> Enum.reduce(socket, fn payload, acc ->
+      stream_insert(acc, :stdout, payload, at: -1, limit: -1000)
+    end)
   end
 
   defp agent_dir(socket) do

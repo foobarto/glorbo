@@ -189,6 +189,36 @@ defmodule GlorboWeb.StdoutStreamerTest do
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1_000
   end
 
+  # task #141 — backfill/1 returns the rolling buffer of recent
+  # payloads in chronological (oldest-first) order. Late-subscribing
+  # LVs call this to seed their local stream; without it, singleton
+  # streamers only emit history at init and later mounts start empty.
+  test "backfill/1 returns recent payloads in chronological order",
+       %{base: base, agent: agent, path: path} do
+    # Pre-seed so the init-time replay populates `recent`.
+    File.write!(path, "first\nsecond\nthird\n")
+
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    # Wait for init replay to finish.
+    Process.sleep(200)
+
+    payloads = GlorboWeb.StdoutStreamer.backfill(pid)
+    bodies = Enum.map(payloads, & &1.body)
+
+    assert bodies == ["first", "second", "third"]
+
+    # A live-written line should also accumulate into backfill.
+    File.write!(path, "fourth\n", [:append])
+    Process.sleep(500)
+
+    payloads = GlorboWeb.StdoutStreamer.backfill(pid)
+    bodies = Enum.map(payloads, & &1.body)
+    assert "fourth" in bodies
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
   # task #134 — singleton guarantee: multiple start/3 calls for the
   # same {company, agent} return the SAME pid. Without this, every
   # open dashboard tab would spawn its own streamer tailing the same

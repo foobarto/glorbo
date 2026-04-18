@@ -84,6 +84,17 @@ defmodule GlorboWeb.StdoutStreamer do
   @spec stop(pid()) :: :ok
   def stop(pid), do: GenServer.stop(pid, :normal)
 
+  @doc """
+  Return the streamer's rolling buffer of recent broadcast payloads.
+  Used by late-subscribing LiveViews (task #141) to seed their local
+  stream with what the streamer has already emitted since it booted.
+  Returns `[]` if the streamer hasn't produced anything yet.
+  """
+  @spec backfill(pid()) :: [map()]
+  def backfill(pid) when is_pid(pid) do
+    GenServer.call(pid, :backfill)
+  end
+
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     company = Keyword.fetch!(opts, :company)
@@ -106,7 +117,13 @@ defmodule GlorboWeb.StdoutStreamer do
       company: company,
       agent: agent,
       pubsub: pubsub,
-      buf: ""
+      buf: "",
+      # Rolling buffer of recent payloads (newest-last). Late
+      # subscribers (additional LV mounts on the same agent) call
+      # backfill/1 to seed their local stream with this slice —
+      # fixes the #141 collision between singleton streamer and
+      # per-mount history replay.
+      recent: []
     }
 
     # Open with replay (task #136): seek to `max(0, size - N)`, flush
@@ -151,7 +168,7 @@ defmodule GlorboWeb.StdoutStreamer do
           end
         end
 
-      replay_broadcast(to_replay, state)
+      state = replay_broadcast(to_replay, state)
       seek_to_eof(state)
     else
       _ -> state
@@ -160,8 +177,10 @@ defmodule GlorboWeb.StdoutStreamer do
 
   # Replay = broadcast only fully-terminated lines; no tail buffering
   # (we reset the state.buf to "" because the subsequent live tail
-  # starts at EOF with no partial).
-  defp replay_broadcast("", _state), do: :ok
+  # starts at EOF with no partial). Also accumulates each replayed
+  # payload into state.recent so late-subscribing LVs can backfill
+  # (#141) without re-reading the log themselves.
+  defp replay_broadcast("", state), do: state
 
   defp replay_broadcast(bytes, state) do
     parts = String.split(bytes, "\n")
@@ -170,18 +189,12 @@ defmodule GlorboWeb.StdoutStreamer do
     # skip it on replay than broadcast a fragment.
     complete = Enum.drop(parts, -1)
 
-    Enum.each(complete, fn raw ->
+    Enum.reduce(complete, state, fn raw, acc ->
       body = strip_ansi(raw)
       payload = build_payload(body)
-
-      Phoenix.PubSub.broadcast(
-        state.pubsub,
-        "company:#{state.company}:agents:#{state.agent}:stdout",
-        {:stdout_line, state.company, state.agent, payload}
-      )
+      broadcast_payload(acc, payload)
+      remember(acc, payload)
     end)
-
-    :ok
   end
 
   defp seek_to_eof(%{io: io} = state) do
@@ -233,6 +246,14 @@ defmodule GlorboWeb.StdoutStreamer do
   def handle_info(_other, state), do: {:noreply, state}
 
   @impl GenServer
+  def handle_call(:backfill, _from, state) do
+    # state.recent is prepended newest-first; reverse so the LV stream
+    # inserts them in chronological order (oldest first, matching the
+    # live tail order).
+    {:reply, Enum.reverse(state.recent), state}
+  end
+
+  @impl GenServer
   def terminate(_reason, %{io: io}) when not is_nil(io) do
     _ = File.close(io)
     :ok
@@ -256,18 +277,41 @@ defmodule GlorboWeb.StdoutStreamer do
     parts = String.split(bytes, "\n")
     {complete, [tail]} = Enum.split(parts, -1)
 
-    Enum.each(complete, fn raw ->
-      body = strip_ansi(raw)
-      payload = build_payload(body)
-
-      Phoenix.PubSub.broadcast(
-        state.pubsub,
-        "company:#{state.company}:agents:#{state.agent}:stdout",
-        {:stdout_line, state.company, state.agent, payload}
-      )
-    end)
+    state =
+      Enum.reduce(complete, state, fn raw, acc ->
+        body = strip_ansi(raw)
+        payload = build_payload(body)
+        broadcast_payload(acc, payload)
+        remember(acc, payload)
+      end)
 
     %{state | buf: tail}
+  end
+
+  defp broadcast_payload(state, payload) do
+    Phoenix.PubSub.broadcast(
+      state.pubsub,
+      "company:#{state.company}:agents:#{state.agent}:stdout",
+      {:stdout_line, state.company, state.agent, payload}
+    )
+
+    :ok
+  end
+
+  # Cap the rolling buffer so long-running agents with millions of
+  # dispatch lines don't balloon the streamer's heap. Matches the
+  # @history_replay_bytes sentiment ("a few dispatches") at the
+  # payload-count level.
+  @recent_cap 500
+
+  defp remember(%{recent: recent} = state, payload) do
+    new_recent =
+      case [payload | recent] do
+        list when length(list) > @recent_cap -> Enum.take(list, @recent_cap)
+        list -> list
+      end
+
+    %{state | recent: new_recent}
   end
 
   defp build_payload(body) do
