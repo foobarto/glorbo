@@ -21,10 +21,29 @@ defmodule GlorboWeb.ProvidersLiveTest do
     end
 
     test "shows status badges (routable / no budget track / not installed)", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/providers")
+      # Inject a fake provider with usage_parser=none and installed?=true
+      # so the :installed_untracked branch has at least one card to
+      # render. The shipped untracked providers (hermes/opencode/pi)
+      # aren't on CI runners, so without this stub the test fails
+      # environment-dependently.
+      stub = %Provider{
+        name: "stub-untracked",
+        binary: "/bin/sh",
+        args: [],
+        reply_dir: "{workspace}",
+        reply_filename_template: "r.md",
+        source: :builtin,
+        source_file: "<test>",
+        installed?: true,
+        resolved_path: "/bin/sh",
+        usage_parser: "none"
+      }
 
-      # Untracked providers always display the "no budget track" label
-      # regardless of PATH presence (GEP-8 §8).
+      prior = Registry.list()
+      Agent.update(Registry, fn _ -> %{"stub-untracked" => stub} end)
+      on_exit(fn -> Agent.update(Registry, fn _ -> Map.new(prior, &{&1.name, &1}) end) end)
+
+      {:ok, _view, html} = live(conn, "/providers")
       assert html =~ "no budget track"
     end
 
