@@ -364,4 +364,202 @@ defmodule Glorbo.Agent.ServerTest do
       refute File.dir?(processed_dir)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # A12 — reply routing after successful dispatch (task #124)
+  #
+  # On :inbox or :mention trigger with exit_status 0 and a reply, the server
+  # synthesizes a Router-routable outbox envelope at agents/<slug>/outbox/
+  # with a `to:` field derived from the source file's frontmatter. Without
+  # this, replies land at GEP-8's {workspace}/.glorbo/outbox/ which Router
+  # doesn't watch, and bidirectional chat breaks silently.
+  # ---------------------------------------------------------------------------
+
+  describe "A12 — reply routing to Router outbox" do
+    defp setup_source_with_from(_ctx, filename, from_field) do
+      base = Path.join(System.tmp_dir!(), "route-test-#{System.unique_integer([:positive])}")
+      inbox_dir = Path.join([base, "companies", "acme", "agents", "engineer", "inbox"])
+      File.mkdir_p!(inbox_dir)
+      path = Path.join(inbox_dir, filename)
+      File.mkdir_p!(Path.dirname(path))
+
+      File.write!(path, """
+      ---
+      from: #{from_field}
+      ---
+
+      body
+      """)
+
+      on_exit(fn -> File.rm_rf!(base) end)
+      rel = Path.relative_to(path, Path.join([base, "companies", "acme"]))
+      {base, rel}
+    end
+
+    defp setup_mention_source(_ctx, filename, channel) do
+      base = Path.join(System.tmp_dir!(), "route-test-#{System.unique_integer([:positive])}")
+      inbox_dir = Path.join([base, "companies", "acme", "agents", "engineer", "inbox"])
+      File.mkdir_p!(Path.dirname(Path.join(inbox_dir, filename)))
+      path = Path.join(inbox_dir, filename)
+
+      File.write!(path, """
+      ---
+      channel: #{channel}
+      from: director
+      ---
+
+      body
+      """)
+
+      on_exit(fn -> File.rm_rf!(base) end)
+      rel = Path.relative_to(path, Path.join([base, "companies", "acme"]))
+      {base, rel}
+    end
+
+    test ":inbox reply to an agent writes outbox envelope with to: agent:<from>", ctx do
+      {base, rel} = setup_source_with_from(ctx, "greet.md", "ceo")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: "HELLO BACK"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "greet", task_path: rel, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+      assert {:ok, files} = File.ls(outbox)
+      assert [file] = Enum.filter(files, &String.ends_with?(&1, ".md"))
+
+      content = File.read!(Path.join(outbox, file))
+      assert content =~ ~s(to: "agent:ceo")
+      assert content =~ "HELLO BACK"
+    end
+
+    test ":inbox reply from Director is skipped (no outbox write)", ctx do
+      # Director isn't an agent; replying to "agent:director" would be
+      # rejected by Router. Director reads replies via the dashboard.
+      {base, rel} = setup_source_with_from(ctx, "dir-msg.md", "director")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: "reply body"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "dir-msg", task_path: rel, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+
+      files =
+        case File.ls(outbox),
+          do: (
+            {:ok, f} -> f
+            _ -> []
+          )
+
+      assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
+    end
+
+    test ":mention reply writes outbox envelope with to: chat:<channel>", ctx do
+      {base, rel} = setup_mention_source(ctx, "mentions/1-general.md", "general")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: "CHAT ACK"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "1-general", task_path: rel, prompt: "x", trigger: :mention}
+      :ok = AgentServer.wake(pid, :mention, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+      assert {:ok, files} = File.ls(outbox)
+      assert [file] = Enum.filter(files, &String.ends_with?(&1, ".md"))
+
+      content = File.read!(Path.join(outbox, file))
+      assert content =~ ~s(to: "chat:general")
+      assert content =~ "CHAT ACK"
+    end
+
+    test "no reply content → no outbox write", ctx do
+      {base, rel} = setup_source_with_from(ctx, "nore.md", "ceo")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: ""}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "nore", task_path: rel, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+      # outbox dir may or may not exist; either way, no .md files
+      files =
+        case File.ls(outbox),
+          do: (
+            {:ok, f} -> f
+            _ -> []
+          )
+
+      assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
+    end
+
+    test "non-zero exit → no outbox write", ctx do
+      {base, rel} = setup_source_with_from(ctx, "fail.md", "ceo")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 1, reply: "would-be reply"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "fail", task_path: rel, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+
+      files =
+        case File.ls(outbox),
+          do: (
+            {:ok, f} -> f
+            _ -> []
+          )
+
+      assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
+    end
+
+    test ":heartbeat trigger → no outbox write", ctx do
+      {base, rel} = setup_source_with_from(ctx, "hb.md", "ceo")
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: "tick"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "hb", task_path: rel, prompt: "x", trigger: :heartbeat}
+      :ok = AgentServer.wake(pid, :heartbeat, task)
+      await_state(pid, :idle)
+
+      outbox = Path.join([base, "companies/acme/agents/engineer/outbox"])
+
+      files =
+        case File.ls(outbox),
+          do: (
+            {:ok, f} -> f
+            _ -> []
+          )
+
+      assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
+    end
+  end
 end

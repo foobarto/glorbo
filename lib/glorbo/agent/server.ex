@@ -339,6 +339,7 @@ defmodule Glorbo.Agent.Server do
 
   defp finish(state, {:result, result}) do
     exit_status = dispatch_result_to_exit_status(result)
+    maybe_route_reply(state, result, exit_status)
     maybe_drain_inbox(state, exit_status)
 
     new_state = %{
@@ -366,6 +367,126 @@ defmodule Glorbo.Agent.Server do
     }
 
     pop_pending(new_state)
+  end
+
+  # GEP-16 post-completion reply routing: synthesize a Router-routable
+  # outbox envelope from the agent's reply, so inbox/mention-triggered
+  # replies flow back to the original sender (or the originating
+  # channel for @mentions). Without this, the reply lands at the
+  # GEP-8 reply path ({workspace}/.glorbo/outbox/<ts>-<id>.md) which
+  # the Router never watches — two-way conversation silently breaks.
+  #
+  # The synthesized file lives at agents/<slug>/outbox/<ts>-reply-<id>.md
+  # with a `to:` header the Router's extract_to/1 accepts:
+  #   - agent:<from> for regular inbox replies (`from:` in source)
+  #   - chat:<channel> for @mention replies (`channel:` in source)
+  # Router's inotify subscription picks it up and routes.
+  #
+  # Failure modes (all no-ops): no reply in result, source file gone,
+  # frontmatter missing `from:`/`channel:`, filesystem error — we log
+  # and move on rather than losing the reply entirely (the file still
+  # exists at the GEP-8 reply path).
+  defp maybe_route_reply(state, result, exit_status) do
+    trigger = Map.get(state, :current_task_trigger)
+    rel_path = Map.get(state, :current_task_path)
+
+    cond do
+      exit_status != 0 -> :ok
+      trigger not in [:inbox, :mention] -> :ok
+      not is_binary(rel_path) -> :ok
+      true -> do_route_reply(state, result, rel_path)
+    end
+  end
+
+  defp do_route_reply(state, {:ok, %{reply: reply}}, rel_path)
+       when is_binary(reply) and reply != "" do
+    company_root = Path.join([state.base, "companies", state.spec.company])
+    source_abs = Path.join(company_root, rel_path)
+
+    with {:ok, meta} <- read_source_frontmatter(source_abs),
+         {:ok, to} <- reply_target(meta) do
+      write_outbox_reply(state, reply, to)
+    else
+      {:error, reason} ->
+        require Logger
+
+        Logger.debug(
+          "[agent/#{state.spec.slug}] reply routing skipped " <>
+            "path=#{rel_path} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp do_route_reply(_state, _result, _rel_path), do: :ok
+
+  defp read_source_frontmatter(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      {:ok, meta}
+    end
+  end
+
+  # mention source file carries `channel:`; regular-inbox source
+  # carries `from:`. Mention takes priority when both are present.
+  #
+  # Director isn't a real agent (no `agents/director/` dir) — replies
+  # to the Director are surfaced via the audit log + dashboard, not
+  # the Router pipeline. Returning :skip here prevents a "Message to
+  # `agent:director` was rejected: agents:create:*" rejection cycle
+  # observed in 2026-04-18 E2E testing.
+  defp reply_target(meta) do
+    cond do
+      is_binary(channel = Map.get(meta, "channel")) and channel != "" ->
+        {:ok, "chat:#{channel}"}
+
+      is_binary(from = Map.get(meta, "from")) and from == "director" ->
+        {:error, :director_reply_skipped}
+
+      is_binary(from = Map.get(meta, "from")) and from != "" ->
+        {:ok, "agent:#{from}"}
+
+      true ->
+        {:error, :no_reply_target}
+    end
+  end
+
+  defp write_outbox_reply(state, body, to) do
+    ts = System.system_time(:millisecond)
+    msg_id = "reply-#{ts}"
+
+    outbox_dir =
+      Path.join([
+        state.base,
+        "companies",
+        state.spec.company,
+        "agents",
+        state.spec.slug,
+        "outbox"
+      ])
+
+    path = Path.join(outbox_dir, "#{ts}-#{msg_id}.md")
+
+    content = """
+    ---
+    to: "#{to}"
+    msg_id: "#{msg_id}"
+    ---
+
+    #{String.trim(body)}
+    """
+
+    try do
+      File.mkdir_p!(outbox_dir)
+      File.write!(path, content)
+      :ok
+    rescue
+      e ->
+        require Logger
+        Logger.warning("reply outbox write failed: #{Exception.message(e)}")
+        :ok
+    end
   end
 
   # GEP-16 post-completion drain: move the inbox file the agent just
