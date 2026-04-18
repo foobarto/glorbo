@@ -291,8 +291,11 @@ defmodule GlorboWeb.AgentLive do
   end
 
   @impl true
-  def terminate(_reason, socket) do
-    if pid = socket.assigns[:streamer_pid], do: GlorboWeb.StdoutStreamer.stop(pid)
+  def terminate(_reason, _socket) do
+    # Don't stop the StdoutStreamer — it's a singleton per {company,
+    # agent} shared by every open AgentLive (#134). Lingering after
+    # the last tab closes is fine: the poll loop is cheap, and the
+    # next mount reuses the pid. Streamer supervisor restarts on crash.
     :ok
   end
 

@@ -49,20 +49,35 @@ defmodule GlorboWeb.StdoutStreamer do
   @ansi_re ~r/\x1B\[[0-9;]*[a-zA-Z]/
 
   @doc """
-  Start a streamer under the supervision tree. Returns `{:ok, pid}`.
+  Start (or look up) a streamer for this {company, agent}. Singleton
+  keyed by `{:stdout_streamer, company, agent}` in `Glorbo.Agent.Registry`
+  — if one already exists, the pid is returned instead of starting a
+  second (task #134, avoids N-way line duplication with multiple LV
+  tabs open on the same agent).
 
   Opts:
     * `:base`   — filesystem root (default `~/.glorbo`)
     * `:pubsub` — PubSub registry (default `Glorbo.PubSub`)
   """
-  @spec start(String.t(), String.t(), keyword()) :: DynamicSupervisor.on_start_child()
+  @spec start(String.t(), String.t(), keyword()) ::
+          {:ok, pid()} | {:error, term()}
   def start(company, agent, opts \\ []) do
-    child_opts = Keyword.merge(opts, company: company, agent: agent)
+    case Registry.lookup(Glorbo.Agent.Registry, {:stdout_streamer, company, agent}) do
+      [{pid, _}] when is_pid(pid) ->
+        {:ok, pid}
 
-    DynamicSupervisor.start_child(
-      GlorboWeb.StdoutStreamer.Supervisor,
-      {__MODULE__, child_opts}
-    )
+      _ ->
+        child_opts = Keyword.merge(opts, company: company, agent: agent)
+
+        case DynamicSupervisor.start_child(
+               GlorboWeb.StdoutStreamer.Supervisor,
+               {__MODULE__, child_opts}
+             ) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          other -> other
+        end
+    end
   end
 
   @doc "Stop the streamer normally (closes the file handle via terminate/2)."
@@ -71,7 +86,10 @@ defmodule GlorboWeb.StdoutStreamer do
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+    company = Keyword.fetch!(opts, :company)
+    agent = Keyword.fetch!(opts, :agent)
+    name = {:via, Registry, {Glorbo.Agent.Registry, {:stdout_streamer, company, agent}}}
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   @impl GenServer

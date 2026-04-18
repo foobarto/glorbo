@@ -16,14 +16,26 @@ defmodule GlorboWeb.StdoutStreamerTest do
     ensure_supervisor!()
 
     base = TmpGlorboHome.setup()
-    path = Path.join([base, "companies", "acme", "agents", "ceo", "stdout.log"])
+
+    # Each test gets a unique agent slug so the singleton Registry key
+    # (#134) doesn't leak streamer pids between tests. Company stays
+    # "acme" since the PubSub topic partition is per-agent anyway.
+    agent = "ceo-#{System.unique_integer([:positive])}"
+    path = Path.join([base, "companies", "acme", "agents", agent, "stdout.log"])
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, "")
 
-    topic = "company:acme:agents:ceo:stdout"
+    topic = "company:acme:agents:#{agent}:stdout"
     Phoenix.PubSub.subscribe(Glorbo.PubSub, topic)
 
-    %{base: base, path: path, topic: topic}
+    on_exit(fn ->
+      case Registry.lookup(Glorbo.Agent.Registry, {:stdout_streamer, "acme", agent}) do
+        [{pid, _}] -> if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+        _ -> :ok
+      end
+    end)
+
+    %{base: base, agent: agent, path: path, topic: topic}
   end
 
   defp ensure_supervisor! do
@@ -44,35 +56,37 @@ defmodule GlorboWeb.StdoutStreamerTest do
 
   test "replays trailing history on mount then tails live (task #136)", %{
     base: base,
+    agent: agent,
     path: path
   } do
     File.write!(path, "old history line\n")
 
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     # Pre-existing content IS replayed so the user sees recent activity
     # when revisiting an agent detail page.
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "old history line"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "old history line"}}, 2_000
 
     # New bytes continue to stream live.
     File.write!(path, "fresh line\n", [:append])
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "fresh line"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "fresh line"}}, 2_000
 
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
   test "replay is bounded — only the last ~32KiB is surfaced", %{
     base: base,
+    agent: agent,
     path: path
   } do
     # Write > 32 KiB so the seek-back trims the leading content.
     old_padding = String.duplicate("padding-line\n", 4_000)
     File.write!(path, old_padding <> "MARKER-LATEST-LINE\n")
 
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     # The trailing marker shows up.
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "MARKER-LATEST-LINE"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "MARKER-LATEST-LINE"}}, 2_000
 
     # Collect everything the replay broadcast and verify we didn't
     # replay the FIRST line (which should have been seeked past).
@@ -105,33 +119,35 @@ defmodule GlorboWeb.StdoutStreamerTest do
 
   test "broadcasts each new line as a separate PubSub message", %{
     base: base,
+    agent: agent,
     path: path
   } do
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     File.write!(path, "hello\nworld\n", [:append])
 
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "hello"}}, 2_000
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "world"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "hello"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "world"}}, 2_000
 
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
-  test "strips ANSI escape sequences", %{base: base, path: path} do
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+  test "strips ANSI escape sequences", %{base: base, agent: agent, path: path} do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     File.write!(path, "\e[31mred text\e[0m\n", [:append])
 
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "red text"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "red text"}}, 2_000
 
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
   test "buffers partial trailing line until newline arrives", %{
     base: base,
+    agent: agent,
     path: path
   } do
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     File.write!(path, "partial", [:append])
     Process.sleep(400)
@@ -139,46 +155,63 @@ defmodule GlorboWeb.StdoutStreamerTest do
 
     File.write!(path, " trailing\n", [:append])
 
-    assert_receive {:stdout_line, "acme", "ceo", %{body: "partial trailing"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "partial trailing"}}, 2_000
 
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
   test "lazy-opens a file that doesn't exist at start time", %{base: base} do
-    # No stdout.log yet for this agent.
-    late_path = Path.join([base, "companies", "acme", "agents", "engineer", "stdout.log"])
+    # A different agent to the shared fixture — file intentionally NOT created.
+    engineer = "engineer-#{System.unique_integer([:positive])}"
+    late_path = Path.join([base, "companies", "acme", "agents", engineer, "stdout.log"])
     File.mkdir_p!(Path.dirname(late_path))
-    # File intentionally NOT created yet.
 
-    Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:acme:agents:engineer:stdout")
+    Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:acme:agents:#{engineer}:stdout")
 
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "engineer", base: base)
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", engineer, base: base)
+
+    on_exit(fn ->
+      if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    end)
 
     # Give the streamer a couple of open-retry cycles, then create + write.
     Process.sleep(400)
     File.write!(late_path, "late arrival\n")
 
-    assert_receive {:stdout_line, "acme", "engineer", %{body: "late arrival"}}, 3_000
-
-    GlorboWeb.StdoutStreamer.stop(pid)
+    assert_receive {:stdout_line, "acme", ^engineer, %{body: "late arrival"}}, 3_000
   end
 
-  test "stop/1 terminates cleanly and closes the file handle", %{base: base} do
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+  test "stop/1 terminates cleanly and closes the file handle", %{base: base, agent: agent} do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
     ref = Process.monitor(pid)
 
     GlorboWeb.StdoutStreamer.stop(pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1_000
   end
 
-  test "line id is monotonically increasing per line", %{base: base, path: path} do
-    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+  # task #134 — singleton guarantee: multiple start/3 calls for the
+  # same {company, agent} return the SAME pid. Without this, every
+  # open dashboard tab would spawn its own streamer tailing the same
+  # file, producing N-way line duplication in every LV.
+  test "start/3 is a singleton per {company, agent}", %{base: base, agent: agent} do
+    {:ok, pid1} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+    {:ok, pid2} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+    {:ok, pid3} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    assert pid1 == pid2
+    assert pid2 == pid3
+
+    GlorboWeb.StdoutStreamer.stop(pid1)
+  end
+
+  test "line id is monotonically increasing per line", %{base: base, agent: agent, path: path} do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
 
     File.write!(path, "a\nb\nc\n", [:append])
 
-    assert_receive {:stdout_line, "acme", "ceo", %{id: id1, body: "a"}}, 2_000
-    assert_receive {:stdout_line, "acme", "ceo", %{id: id2, body: "b"}}, 2_000
-    assert_receive {:stdout_line, "acme", "ceo", %{id: id3, body: "c"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{id: id1, body: "a"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{id: id2, body: "b"}}, 2_000
+    assert_receive {:stdout_line, "acme", ^agent, %{id: id3, body: "c"}}, 2_000
 
     assert id1 < id2
     assert id2 < id3
