@@ -8,7 +8,7 @@ defmodule GlorboWeb.Components.StatCardTest do
 
   defp render_card(overrides) do
     base = %{
-      label: "agents alive",
+      label: "agents running",
       value: 3,
       unit: "/ 6",
       sub: "2 idle · 0 crashed",
@@ -35,7 +35,7 @@ defmodule GlorboWeb.Components.StatCardTest do
   describe "stat_card/1" do
     test "renders label/value/unit/sub" do
       html = render_card(%{})
-      assert html =~ "agents alive"
+      assert html =~ "agents running"
       assert html =~ "3"
       assert html =~ "/ 6"
       assert html =~ "2 idle"

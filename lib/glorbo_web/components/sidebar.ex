@@ -34,6 +34,7 @@ defmodule GlorboWeb.Components.Sidebar do
 
   @nav [
     {:overview, "◈", "Overview", :company},
+    {:kanban, "▤", "Kanban", :company},
     {:chat, "◫", "Channels", :company},
     {:approvals, "✓", "Approvals", :company},
     {:audit, "≡", "Audit log", :company},
@@ -164,6 +165,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(:overview, nil), do: ~p"/companies"
   defp nav_href(:overview, slug), do: ~p"/companies/#{slug}"
   defp nav_href(_, nil), do: "#"
+  defp nav_href(:kanban, slug), do: ~p"/companies/#{slug}/kanban"
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
   defp nav_href(:approvals, slug), do: ~p"/companies/#{slug}/approvals"
   defp nav_href(:audit, slug), do: ~p"/companies/#{slug}/audit"

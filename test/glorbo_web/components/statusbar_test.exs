@@ -22,9 +22,9 @@ defmodule GlorboWeb.Components.StatusbarTest do
                (html =~ "alive" or html =~ "stopped" or html =~ "stale pidfile")
     end
 
-    test "renders the agents-alive count" do
+    test "renders the agents-running count" do
       html = render_statusbar()
-      assert html =~ "agents alive"
+      assert html =~ "agents running"
     end
 
     test "renders SQLite WAL line" do

@@ -66,12 +66,18 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert render(view) =~ "Could not move task"
   end
 
-  test "sidebar exposes PROJECTS rail with project-scoped kanban links", %{conn: conn} do
+  test "sidebar exposes a Kanban nav item + PROJECTS rail with project-scoped kanban links",
+       %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
-    # The "Kanban" nav item was removed from the sidebar; project rows
-    # under /PROJECTS now route to a project-scoped kanban board.
+
+    # Global Kanban sidebar entry (re-added 2026-04-18 after an e2e
+    # walkthrough found users couldn't reach /kanban without knowing
+    # the `g k` shortcut).
+    assert html =~ ~r|<a[^>]*>\s*<span[^>]*>▤</span>\s*<span[^>]*>Kanban</span>|
+
+    # Project rows under /PROJECTS continue to route to a project-
+    # scoped kanban board.
     assert html =~ ~r|href="/companies/acme/kanban\?project=website"|
-    refute html =~ ~r|<a[^>]*>\s*<span[^>]*>▤</span>\s*<span[^>]*>Kanban</span>|
   end
 
   test "?project=<slug> filters the board to that project's tasks",

@@ -6,7 +6,7 @@ defmodule GlorboWeb.CompanyLive do
 
     1. **View header** — `{company} / overview`, path breadcrumb,
        quote line, actions (reindex / backup / + new agent).
-    2. **Stat row** — 4 cards: agents alive, open tasks, budget burn,
+    2. **Stat row** — 4 cards: agents running, open tasks, budget burn,
        invocations 24h. Each with a sparkline.
     3. **Agents roster** — table with status/agent/activity/provider/
        net/budget/last-wake columns; click row → agent detail.
@@ -121,7 +121,7 @@ defmodule GlorboWeb.CompanyLive do
 
       <div class="gl-overview__stats">
         <StatCard.stat_card
-          label="agents alive"
+          label="agents running"
           value={@company.agents_alive}
           unit={"/ #{@company.agents_total}"}
           sub={"#{@company.agents_idle} idle · #{@company.agents_crashed} crashed · #{@company.agents_warn} warn"}

@@ -7,7 +7,7 @@ defmodule GlorboWeb.Components.Statusbar do
 
     - Daemon state dot + uptime ("daemon alive · uptime 4d 12h 03m")
       or "daemon stopped".
-    - Agents-alive count ("3/6 agents alive") — queries
+    - Agents-running count ("3/6 agents running") — queries
       `Glorbo.Agent.Registry` match-spec (same technique as
       HealthLive).
     - SQLite WAL size — reads `glorbo.db` stat.
@@ -42,7 +42,7 @@ defmodule GlorboWeb.Components.Statusbar do
         ]} /> {daemon_label(@s)}
       </span>
       <span class="gl-statusbar__sep">│</span>
-      <span>{@s.agents_alive}/{@s.agents_total} agents alive</span>
+      <span>{@s.agents_alive}/{@s.agents_total} agents running</span>
       <span class="gl-statusbar__sep">│</span>
       <span>
         sqlite WAL · {@s.sqlite_human}
