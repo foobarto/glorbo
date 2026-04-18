@@ -53,6 +53,8 @@ defmodule Glorbo.Agent.Server do
   @type status :: %{
           state: :idle | :busy,
           current_task: String.t() | nil,
+          current_task_path: String.t() | nil,
+          current_task_trigger: trigger() | nil,
           pending_wake: {trigger(), DateTime.t()} | nil,
           last_exit_status: term() | nil
         }
@@ -158,6 +160,8 @@ defmodule Glorbo.Agent.Server do
       dispatch_opts: Keyword.get(opts, :dispatch_opts, []),
       status: :idle,
       current_task: nil,
+      current_task_path: nil,
+      current_task_trigger: nil,
       current_task_ref: nil,
       pending_wake: nil,
       last_exit_status: nil,
@@ -326,6 +330,8 @@ defmodule Glorbo.Agent.Server do
       state
       | status: :busy,
         current_task: task.task_id,
+        current_task_path: Map.get(task, :task_path),
+        current_task_trigger: Map.get(task, :trigger),
         current_task_ref: ref,
         pending_wake: nil
     }
@@ -333,11 +339,14 @@ defmodule Glorbo.Agent.Server do
 
   defp finish(state, {:result, result}) do
     exit_status = dispatch_result_to_exit_status(result)
+    maybe_drain_inbox(state, exit_status)
 
     new_state = %{
       state
       | status: :idle,
         current_task: nil,
+        current_task_path: nil,
+        current_task_trigger: nil,
         current_task_ref: nil,
         last_exit_status: exit_status
     }
@@ -350,11 +359,88 @@ defmodule Glorbo.Agent.Server do
       state
       | status: :idle,
         current_task: nil,
+        current_task_path: nil,
+        current_task_trigger: nil,
         current_task_ref: nil,
         last_exit_status: {:crashed, reason}
     }
 
     pop_pending(new_state)
+  end
+
+  # GEP-16 post-completion drain: move the inbox file the agent just
+  # processed into `history/processed/<ts>-<basename>` so the next wake
+  # doesn't re-pick it. Without this, default_inbox_scan returns the
+  # same oldest file forever and the agent loops at O(seconds) on every
+  # fresh PubSub event — observed in E2E testing 2026-04-18, burned 6
+  # redundant claude-code dispatches on a single stuck inbox file.
+  #
+  # Scope of the drain:
+  #   - only on exit_status 0 (don't lose the file on a crash)
+  #   - only for :inbox and :mention triggers (heartbeat + director_request
+  #     don't own the inbox file that woke them; their task_path may be nil
+  #     or point to a file that must stay in place)
+  #   - task_path must be relative to companies/<co>/ (the shape
+  #     default_inbox_scan returns); absolute paths or nil → no-op
+  defp maybe_drain_inbox(state, exit_status) do
+    trigger = Map.get(state, :current_task_trigger)
+    rel_path = Map.get(state, :current_task_path)
+
+    cond do
+      exit_status != 0 ->
+        :ok
+
+      trigger not in [:inbox, :mention] ->
+        :ok
+
+      not is_binary(rel_path) ->
+        :ok
+
+      not String.starts_with?(rel_path, "agents/#{state.spec.slug}/inbox/") ->
+        :ok
+
+      true ->
+        do_drain_inbox(state, rel_path)
+    end
+  end
+
+  defp do_drain_inbox(state, rel_path) do
+    company_root = Path.join([state.base, "companies", state.spec.company])
+    src = Path.join(company_root, rel_path)
+
+    # Strip the `agents/<slug>/inbox/` prefix so the destination path
+    # keeps any subdirectory structure (mentions/, from-<sender>/, etc.)
+    # inside history/processed.
+    prefix = "agents/#{state.spec.slug}/inbox/"
+
+    suffix =
+      case String.split(rel_path, prefix, parts: 2) do
+        [_, rest] -> rest
+        _ -> Path.basename(rel_path)
+      end
+
+    ts = System.system_time(:millisecond)
+
+    dst =
+      Path.join([
+        company_root,
+        "agents",
+        state.spec.slug,
+        "history",
+        "processed",
+        "#{ts}-#{Path.basename(suffix)}"
+      ])
+
+    try do
+      File.mkdir_p!(Path.dirname(dst))
+      File.rename!(src, dst)
+    rescue
+      e ->
+        require Logger
+        Logger.warning("inbox drain failed for #{rel_path}: #{Exception.message(e)}")
+    end
+
+    :ok
   end
 
   defp pop_pending(%{pending_wake: nil} = state), do: {:noreply, state}

@@ -252,4 +252,116 @@ defmodule Glorbo.Agent.ServerTest do
     Process.sleep(20)
     assert %{state: :idle} = AgentServer.status(pid)
   end
+
+  # ---------------------------------------------------------------------------
+  # A11 — inbox drain after successful dispatch (task #123)
+  #
+  # E2E testing on 2026-04-18 found that completed inbox messages were never
+  # removed, causing default_inbox_scan to re-pick the same oldest file on
+  # every subsequent wake → infinite redispatch loop burning provider budget.
+  # The fix: on successful completion of an :inbox/:mention-triggered
+  # dispatch, move the file to history/processed/ so the next wake advances.
+  # ---------------------------------------------------------------------------
+
+  describe "A11 — inbox drain after successful dispatch" do
+    defp setup_inbox_file(_ctx, filename, content \\ "---\nfrom: director\n---\n\nhi") do
+      base = Path.join(System.tmp_dir!(), "drain-test-#{System.unique_integer([:positive])}")
+      inbox_dir = Path.join([base, "companies", "acme", "agents", "engineer", "inbox"])
+      File.mkdir_p!(inbox_dir)
+      path = Path.join(inbox_dir, filename)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, content)
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      rel_path = Path.relative_to(path, Path.join([base, "companies", "acme"]))
+      {base, rel_path, path}
+    end
+
+    test "successful :inbox dispatch moves file to history/processed/", ctx do
+      {base, rel_path, src} = setup_inbox_file(ctx, "msg1.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 0}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "msg1", task_path: rel_path, prompt: "hi", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      refute File.exists?(src), "inbox file must be removed after success"
+
+      processed_dir =
+        Path.join([base, "companies/acme/agents/engineer/history/processed"])
+
+      assert {:ok, [moved]} = File.ls(processed_dir)
+      assert String.ends_with?(moved, "-msg1.md")
+    end
+
+    test "successful :mention dispatch drains the mention file", ctx do
+      {base, rel_path, src} = setup_inbox_file(ctx, "mentions/5-general.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 0}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{
+        task_id: "5-general",
+        task_path: rel_path,
+        prompt: "hi",
+        trigger: :mention
+      }
+
+      :ok = AgentServer.wake(pid, :mention, task)
+      await_state(pid, :idle)
+
+      refute File.exists?(src)
+      assert File.exists?(Path.dirname(src))
+
+      processed = Path.join([base, "companies/acme/agents/engineer/history/processed"])
+      assert {:ok, [_file]} = File.ls(processed)
+    end
+
+    test "non-zero exit leaves inbox file in place (retry-safe)", ctx do
+      {base, rel_path, src} = setup_inbox_file(ctx, "oopsie.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 1}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "oopsie", task_path: rel_path, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      assert File.exists?(src), "failed dispatch must preserve the inbox file"
+    end
+
+    test ":heartbeat trigger does not drain (task_path may belong elsewhere)", ctx do
+      {base, rel_path, src} = setup_inbox_file(ctx, "keepme.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 0}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      # Simulate a heartbeat that happens to have the inbox task_path —
+      # drain still must not fire because the trigger isn't :inbox/:mention.
+      task = %{task_id: "keepme", task_path: rel_path, prompt: "x", trigger: :heartbeat}
+      :ok = AgentServer.wake(pid, :heartbeat, task)
+      await_state(pid, :idle)
+
+      assert File.exists?(src)
+    end
+
+    test "successful :director_request (no task_path) is a no-op", ctx do
+      {base, _rel, _src} = setup_inbox_file(ctx, "other.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 0}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "dir-1", task_path: nil, prompt: "tick", trigger: :director_request}
+      :ok = AgentServer.wake(pid, :director_request, task)
+      await_state(pid, :idle)
+
+      # Nothing moved, nothing broken.
+      processed_dir =
+        Path.join([base, "companies/acme/agents/engineer/history/processed"])
+
+      refute File.dir?(processed_dir)
+    end
+  end
 end
