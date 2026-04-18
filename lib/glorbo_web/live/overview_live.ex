@@ -43,6 +43,9 @@ defmodule GlorboWeb.OverviewLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("chat_drawer_post", _params, socket),
+    do: {:noreply, put_flash(socket, :info, "Pick a company to chat.")}
+
   def handle_event("new_company", _params, socket) do
     {:noreply,
      put_flash(

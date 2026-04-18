@@ -420,9 +420,89 @@ const AutoDismissFlash = {
   },
 }
 
+// Bottom-docked chat drawer. Resizable via the top handle; minimize
+// via click on the header. Both states persist to localStorage.
+const CHAT_DRAWER_H_KEY = "glorbo.chatdrawer.height"
+const CHAT_DRAWER_MIN_KEY = "glorbo.chatdrawer.minimized"
+const ChatDrawer = {
+  mounted() {
+    this._applyStored()
+    this._bindHandle()
+    this._bindHeader()
+  },
+  updated() {
+    // Re-apply on LV re-render so the persisted state survives.
+    this._applyStored()
+  },
+  _applyStored() {
+    const h = parseInt(localStorage.getItem(CHAT_DRAWER_H_KEY) || "", 10)
+    if (!isNaN(h) && h >= 80 && h <= window.innerHeight * 0.7) {
+      document.documentElement.style.setProperty("--gl-chat-drawer-h", h + "px")
+    }
+    if (localStorage.getItem(CHAT_DRAWER_MIN_KEY) === "1") {
+      this.el.classList.add("gl-chat-drawer--minimized")
+    } else {
+      this.el.classList.remove("gl-chat-drawer--minimized")
+    }
+  },
+  _bindHandle() {
+    const handle = this.el.querySelector(".gl-chat-drawer__handle")
+    if (!handle) return
+
+    let startY = 0
+    let startH = 0
+    const onMove = (e) => {
+      const dy = startY - e.clientY
+      const next = Math.max(80, Math.min(window.innerHeight * 0.7, startH + dy))
+      document.documentElement.style.setProperty("--gl-chat-drawer-h", next + "px")
+    }
+    const onUp = () => {
+      this.el.classList.remove("gl-chat-drawer--resizing")
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      // Read the value back off the CSS var and persist.
+      const px = getComputedStyle(document.documentElement)
+        .getPropertyValue("--gl-chat-drawer-h").trim()
+      const n = parseInt(px, 10)
+      if (!isNaN(n)) localStorage.setItem(CHAT_DRAWER_H_KEY, String(n))
+    }
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault()
+      // Skip resize while minimized (handle is effectively hidden).
+      if (this.el.classList.contains("gl-chat-drawer--minimized")) return
+      startY = e.clientY
+      startH = this.el.getBoundingClientRect().height
+      this.el.classList.add("gl-chat-drawer--resizing")
+      document.addEventListener("mousemove", onMove)
+      document.addEventListener("mouseup", onUp)
+    })
+  },
+  _bindHeader() {
+    const header = this.el.querySelector(".gl-chat-drawer__header")
+    if (!header) return
+
+    const toggle = () => {
+      const min = this.el.classList.toggle("gl-chat-drawer--minimized")
+      localStorage.setItem(CHAT_DRAWER_MIN_KEY, min ? "1" : "0")
+    }
+
+    // Whole header toggles; compose input below isn't swallowed.
+    header.addEventListener("click", (e) => {
+      // Let the dedicated toggle button through (it dispatches its own click).
+      if (e.target.closest(".gl-chat-drawer__toggle")) return
+      toggle()
+    })
+    const btn = this.el.querySelector(".gl-chat-drawer__toggle")
+    if (btn) btn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      toggle()
+    })
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

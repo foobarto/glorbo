@@ -34,6 +34,9 @@ defmodule GlorboWeb.ProvidersLive do
   end
 
   @impl true
+  def handle_event("chat_drawer_post", _params, socket),
+    do: {:noreply, put_flash(socket, :info, "Pick a company to chat.")}
+
   def handle_event("refresh", _params, socket) do
     Registry.refresh()
     {:noreply, assign_providers(socket)}

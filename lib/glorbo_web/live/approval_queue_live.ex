@@ -55,14 +55,16 @@ defmodule GlorboWeb.ApprovalQueueLive do
      |> assign(:current_company, co)
      |> assign(:base, base)
      |> assign(:sentinels, sentinels)
-     |> assign(:selected_index, initial_selection(sentinels))}
+     |> assign(:selected_index, initial_selection(sentinels))
+     |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
   end
 
   defp initial_selection([]), do: nil
   defp initial_selection(_), do: 0
 
   @impl true
-  def handle_info({:file_event, _rel, _events}, socket) do
+  def handle_info({:file_event, rel, _events}, socket) do
+    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel)
     sentinels = load_sentinels(socket.assigns.base, socket.assigns.company_slug)
 
     {:noreply,
@@ -74,6 +76,9 @@ defmodule GlorboWeb.ApprovalQueueLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("chat_drawer_post", %{"body" => body}, socket),
+    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+
   def handle_event("approve", %{"task_path" => tp}, socket) do
     case GlorboWeb.Actions.set_approval(
            socket.assigns.company_slug,

@@ -74,7 +74,8 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:current_company, slug)
        |> assign(:company_slug, slug)
        |> assign(:company_name, data.company_name)
-       |> assign(:company, data)}
+       |> assign(:company, data)
+       |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
     else
       {:ok,
        socket
@@ -84,7 +85,8 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   @impl true
-  def handle_info({:file_event, _rel_path, _events}, socket) do
+  def handle_info({:file_event, rel_path, _events}, socket) do
+    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
     base = base_dir()
     slug = socket.assigns.company_slug
     co_path = Path.join([base, "companies", slug])
@@ -347,6 +349,9 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   @impl true
+  def handle_event("chat_drawer_post", %{"body" => body}, socket),
+    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+
   def handle_event("open_agent", %{"slug" => slug}, socket) do
     company = socket.assigns.company_slug
     {:noreply, push_navigate(socket, to: ~p"/companies/#{company}/agents/#{slug}")}

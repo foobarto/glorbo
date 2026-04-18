@@ -30,6 +30,10 @@
     </div>
     {@inner_content}
   </main>
+  <GlorboWeb.Components.ChatDrawer.chat_drawer
+    current_company={assigns[:current_company]}
+    messages={assigns[:chat_drawer_messages] || []}
+  />
   <GlorboWeb.Components.Statusbar.statusbar />
   <div class="gl-disconnect-banner" role="status">Connection lost. Reconnecting…</div>
 </div>

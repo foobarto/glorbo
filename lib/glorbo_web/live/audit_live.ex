@@ -70,7 +70,8 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:total_lines, total)
      |> assign(:beginning, offset == 0)
      |> assign(:expanded, MapSet.new())
-     |> assign(:entries, entries)}
+     |> assign(:entries, entries)
+     |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
   end
 
   @impl true
@@ -102,6 +103,10 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:total_lines, new_total)}
   end
 
+  def handle_info({:file_event, rel, _events}, socket) do
+    {:noreply, GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
 
   defp stringify_keys(map) when is_map(map) do
@@ -123,6 +128,9 @@ defmodule GlorboWeb.AuditLive do
   end
 
   @impl true
+  def handle_event("chat_drawer_post", %{"body" => body}, socket),
+    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+
   def handle_event("filter", params, socket) do
     {:noreply,
      socket
