@@ -2,10 +2,11 @@
 gep: 10
 title: Agent and Role-Specific Skill Templates
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-17
 updated: 2026-04-18
+implemented-in: v0.0.3
 requires: [2]
 see-also: [4, 8, 15]
 history:
@@ -15,6 +16,9 @@ history:
   - date: 2026-04-18
     status: Draft
     note: Brainstorm resolved the 10 open questions. Scope narrowed to 3 agent templates (CEO, Engineer, Researcher) + 2 skill templates (code-review, web-search) for v1. Decisions recorded as D4–D13.
+  - date: 2026-04-18
+    status: Implemented
+    note: Ships in v0.0.3 — priv/templates/{agents,skills}/*.md, Scaffold.{Agent,Skill,Renderer,TemplateRegistry,TemplatesVerb}. 840/840 tests green, mix credo --strict clean. `glorbo new agent --template`, `glorbo new skill`, `glorbo templates list|show` wired. User override via ~/.glorbo/templates/ shadows by filename (D5). Missing-skill warning on agent scaffold (D8). Templates use only permissions the ACL allowlist accepts (budget:read:* removed from agent templates — not in @whitelisted_resources).
 ---
 
 # GEP-10: Agent and Role-Specific Skill Templates
