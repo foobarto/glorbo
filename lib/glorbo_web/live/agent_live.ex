@@ -106,8 +106,10 @@ defmodule GlorboWeb.AgentLive do
   end
 
   @impl true
-  def handle_info({:stdout_line, _co, _ag, %{id: id, body: body}}, socket) do
-    {:noreply, stream_insert(socket, :stdout, %{id: id, body: body}, at: -1, limit: -1000)}
+  def handle_info({:stdout_line, _co, _ag, %{id: _id} = payload}, socket) do
+    # Forward the full payload — it carries `kind` + optional `ts`/`exit_code`
+    # for the dispatch-card rendering in Components.StdoutTail (task #135).
+    {:noreply, stream_insert(socket, :stdout, payload, at: -1, limit: -1000)}
   end
 
   # Realtime history: append audit records that concern this agent.

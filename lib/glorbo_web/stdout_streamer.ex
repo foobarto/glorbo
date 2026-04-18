@@ -168,15 +168,48 @@ defmodule GlorboWeb.StdoutStreamer do
 
     Enum.each(complete, fn raw ->
       body = strip_ansi(raw)
+      payload = build_payload(body)
 
       Phoenix.PubSub.broadcast(
         state.pubsub,
         "company:#{state.company}:agents:#{state.agent}:stdout",
-        {:stdout_line, state.company, state.agent, %{id: make_id(), body: body}}
+        {:stdout_line, state.company, state.agent, payload}
       )
     end)
 
     %{state | buf: tail}
+  end
+
+  defp build_payload(body) do
+    {kind, extra} = classify_and_extract(body)
+    Map.merge(%{id: make_id(), body: body, kind: kind}, extra)
+  end
+
+  # Tag each line so the UI can render dispatch boundaries as cards.
+  # Markers written by Glorbo.Sandbox.Bwrap's tee (task #135):
+  #
+  #   === glorbo dispatch <ISO8601> ===
+  #   <body lines>
+  #   === exit <code> ===
+  #
+  # The streamer emits `:header` / `:exit` / `:body` per line; AgentLive
+  # groups them into styled dispatch cards.
+  @header_re ~r/^=== glorbo dispatch (.+?) ===$/
+  @exit_re ~r/^=== exit (\S+) ===$/
+
+  defp classify_and_extract(body) do
+    trimmed = String.trim(body)
+
+    case Regex.run(@header_re, trimmed) do
+      [_, ts] ->
+        {:header, %{ts: ts}}
+
+      _ ->
+        case Regex.run(@exit_re, trimmed) do
+          [_, code] -> {:exit, %{exit_code: code}}
+          _ -> {:body, %{}}
+        end
+    end
   end
 
   defp make_id, do: System.unique_integer([:positive, :monotonic])

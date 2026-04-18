@@ -29,9 +29,26 @@ defmodule GlorboWeb.Components.StdoutTail do
         <div
           :for={{dom_id, line} <- @stream}
           id={dom_id}
-          class="gl-stdout-tail__line"
+          class={[
+            "gl-stdout-tail__line",
+            line_kind_class(Map.get(line, :kind))
+          ]}
         >
-          {line.body}
+          <%= case Map.get(line, :kind) do %>
+            <% :header -> %>
+              <span class="gl-stdout-tail__marker">dispatch</span>
+              <time class="gl-stdout-tail__ts gl-muted">{Map.get(line, :ts, "")}</time>
+            <% :exit -> %>
+              <span class="gl-stdout-tail__marker">exit</span>
+              <span class={[
+                "gl-stdout-tail__exit-code",
+                exit_code_class(Map.get(line, :exit_code))
+              ]}>
+                {Map.get(line, :exit_code, "?")}
+              </span>
+            <% _ -> %>
+              {line.body}
+          <% end %>
         </div>
       </div>
       <div class="gl-stdout-tail__empty gl-muted" id="stdout-tail-empty">
@@ -40,4 +57,11 @@ defmodule GlorboWeb.Components.StdoutTail do
     </div>
     """
   end
+
+  defp line_kind_class(:header), do: "gl-stdout-tail__line--header"
+  defp line_kind_class(:exit), do: "gl-stdout-tail__line--exit"
+  defp line_kind_class(_), do: nil
+
+  defp exit_code_class("0"), do: "gl-stdout-tail__exit-code--ok"
+  defp exit_code_class(_), do: "gl-stdout-tail__exit-code--err"
 end

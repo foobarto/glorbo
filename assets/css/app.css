@@ -1369,7 +1369,52 @@ button { font-family: inherit; font-size: inherit; }
   font-size: var(--gl-font-body);
   line-height: 1.5;
 }
-.gl-stdout-tail__line { word-break: break-all; white-space: pre-wrap; }
+.gl-stdout-tail__line {
+  word-break: break-all;
+  white-space: pre-wrap;
+  padding: 2px 0;
+}
+
+/* Dispatch boundary lines — styled as chips that break up the flow
+ * so the Director can see where one invocation ends and the next
+ * begins at a glance (task #135). */
+.gl-stdout-tail__line--header,
+.gl-stdout-tail__line--exit {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: var(--gl-space-xs) var(--gl-space-sm);
+  margin: var(--gl-space-sm) 0;
+  border-radius: 3px;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--gl-surface-raised);
+  border-left: 3px solid var(--gl-accent);
+}
+.gl-stdout-tail__line--exit { border-left-color: var(--gl-border-strong); }
+.gl-stdout-tail__marker {
+  color: var(--gl-accent);
+  font-weight: 600;
+}
+.gl-stdout-tail__line--exit .gl-stdout-tail__marker {
+  color: var(--gl-muted);
+}
+.gl-stdout-tail__ts { font-size: 10px; letter-spacing: 0; }
+.gl-stdout-tail__exit-code {
+  padding: 0 6px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+.gl-stdout-tail__exit-code--ok {
+  color: #34d058;
+  background: rgb(52 208 88 / 0.12);
+}
+.gl-stdout-tail__exit-code--err {
+  color: #f97583;
+  background: rgb(249 117 131 / 0.12);
+}
 .gl-stdout-tail__empty {
   padding: var(--gl-space-sm) 0;
   font-style: italic;
