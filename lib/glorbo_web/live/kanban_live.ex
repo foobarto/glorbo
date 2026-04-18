@@ -196,6 +196,29 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
+  def handle_event("delete_task", %{"path" => path}, socket) do
+    company = socket.assigns.company_slug
+
+    case delete_task_file(socket.assigns, path, company) do
+      :ok ->
+        tasks =
+          base_dir()
+          |> load_tasks(company)
+          |> apply_project_filter(socket.assigns.project_filter)
+
+        emit_task_delete_audit(company, path)
+
+        {:noreply,
+         socket
+         |> assign(:columns, group_by_column(tasks))
+         |> assign(:open_task, nil)
+         |> put_flash(:info, "Task moved to history.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not delete task.")}
+    end
+  end
+
   def handle_event("save_task", params, socket) do
     task = socket.assigns.open_task
 
@@ -666,6 +689,15 @@ defmodule GlorboWeb.KanbanLive do
             ~/.glorbo/companies/{@company_slug}/{@open_task.task_path}
           </span>
           <div class="gl-task-detail__actions">
+            <button
+              type="button"
+              class="gl-btn gl-btn--deny"
+              phx-click="delete_task"
+              phx-value-path={@open_task.task_path}
+              data-confirm="Delete this task? It'll move to projects/history/tasks/ (recoverable on disk)."
+            >
+              ✕ delete
+            </button>
             <button type="button" class="gl-btn" phx-click="close_task">cancel</button>
             <button type="submit" class="gl-btn gl-btn--primary">save</button>
           </div>
@@ -872,6 +904,76 @@ defmodule GlorboWeb.KanbanLive do
     end
 
     :ok
+  end
+
+  defp emit_task_delete_audit(company, rel_path) do
+    via =
+      case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
+        [{_pid, _}] ->
+          {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
+
+        _ ->
+          Glorbo.Company.AuditLog
+      end
+
+    try do
+      Glorbo.Company.AuditLog.append(via, %{
+        company: company,
+        actor: "director",
+        action: "task.delete",
+        target: rel_path
+      })
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+
+    :ok
+  end
+
+  # Move the .md file + any attachments dir to projects/<p>/history/tasks/.
+  # Not a hard delete — audit trail + recoverability matter more than
+  # disk space for user task markdown.
+  defp delete_task_file(_assigns, rel_path, company) do
+    with {:ok, abs_path} <- resolve_task_path(rel_path, company) do
+      base = base_dir()
+      # rel_path looks like `projects/<p>/tasks/<id>.md`
+      [_, project, _, filename] = Path.split(rel_path)
+      task_id = String.replace_suffix(filename, ".md", "")
+
+      history_dir =
+        Path.join([base, "companies", company, "projects", project, "history", "tasks"])
+
+      File.mkdir_p!(history_dir)
+
+      history_md = Path.join(history_dir, filename)
+
+      with :ok <- File.rename(abs_path, history_md) do
+        # Move attachments dir too (if it exists).
+        attach_src =
+          Path.join([base, "companies", company, "projects", project, "attachments", task_id])
+
+        attach_dst =
+          Path.join([
+            base,
+            "companies",
+            company,
+            "projects",
+            project,
+            "history",
+            "attachments",
+            task_id
+          ])
+
+        if File.dir?(attach_src) do
+          File.mkdir_p!(Path.dirname(attach_dst))
+          File.rename(attach_src, attach_dst)
+        end
+
+        :ok
+      end
+    end
   end
 
   # Rich create: writes frontmatter with title/status/assigned_to/priority/
