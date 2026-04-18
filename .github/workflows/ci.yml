@@ -139,7 +139,10 @@ jobs:
         env:
           BINARY_NAME: ${{ matrix.binary_name }}
         run: |
-          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.version == "0.1.0"'
+          # Read expected version from mix.exs so CI tracks bumps without manual edits.
+          expected_version=$(grep -E '^\s*version:' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Expected version: $expected_version"
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e --arg v "$expected_version" '.version == $v'
           # Check count grows as phases add new doctor probes (Phase 1: 5,
           # Phase 2: +8, Phase 3: +2 = 16). Assert it's non-empty rather
           # than pinning to a phase-specific count.
