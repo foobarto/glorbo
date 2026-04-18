@@ -1395,6 +1395,54 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent-history__action.gl-action--approval { color: var(--gl-cyan); }
 .gl-agent-history__action.gl-action--default { color: var(--gl-fg); }
 .gl-agent-history__row--skipped .gl-agent-history__action { opacity: 0.6; }
+
+.gl-project__icon {
+  color: var(--gl-accent);
+  margin-right: 8px;
+}
+.gl-grid--project {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr);
+  gap: var(--gl-space-md);
+}
+.gl-project__tasks {
+  grid-column: 1 / -1;
+}
+.gl-project__form .gl-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--gl-space-sm) 0;
+}
+.gl-project__form .gl-form__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gl-fg-subtle);
+}
+.gl-project__form .gl-form__actions {
+  display: flex;
+  gap: var(--gl-space-sm);
+  margin-top: var(--gl-space-sm);
+}
+.gl-project__task-list { list-style: none; padding: 0; margin: 0; }
+.gl-project__task-row {
+  display: grid;
+  grid-template-columns: 100px 120px 1fr auto;
+  gap: var(--gl-space-sm);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--gl-border);
+}
+.gl-project__task-row:last-child { border-bottom: none; }
+.gl-project__task-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gl-fg-subtle);
+}
+.gl-project__task-status.gl-status--done { color: var(--gl-accent); }
+.gl-project__task-status.gl-status--in-progress { color: var(--gl-cyan); }
+.gl-project__task-status.gl-status--todo { color: var(--gl-fg-subtle); }
 .gl-wake-form {
   display: flex;
   gap: var(--gl-space-sm);

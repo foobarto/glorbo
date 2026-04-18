@@ -293,6 +293,13 @@ defmodule GlorboWeb.KanbanLive do
         <div class="gl-kanban__actions">
           <.link
             :if={@project_filter}
+            navigate={~p"/companies/#{@company_slug}/projects/#{@project_filter}"}
+            class="gl-btn gl-btn--sm"
+          >
+            ⚙ {@project_filter} config
+          </.link>
+          <.link
+            :if={@project_filter}
             navigate={~p"/companies/#{@company_slug}/kanban"}
             class="gl-btn gl-btn--sm"
           >
