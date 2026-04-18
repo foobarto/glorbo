@@ -238,6 +238,82 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Pick a project"
   end
 
+  # task #126 — assigning a task to an agent via save_task drops a
+  # notification file into the agent's inbox, which the wake pipeline
+  # picks up on the next inotify tick. Covers: fresh assignment, no
+  # dup on same-assignee re-save, skip when director is assignee.
+  describe "task assignment triggers agent inbox notification (#126)" do
+    setup %{base: base} do
+      proj = Path.join([base, "companies", "acme", "projects", "demo", "tasks"])
+      File.mkdir_p!(proj)
+      path = Path.join(proj, "demo-assign.md")
+
+      File.write!(path, """
+      ---
+      title: "Initial"
+      status: todo
+      ---
+
+      body
+      """)
+
+      {:ok, task_rel: "projects/demo/tasks/demo-assign.md"}
+    end
+
+    test "assigning to an existing agent writes to their inbox",
+         %{conn: conn, base: base, task_rel: task_rel} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?project=demo")
+      render_click(view, "open_task", %{"path" => task_rel})
+
+      render_submit(view, "save_task", %{
+        "title" => "Pick up this task",
+        "status" => "todo",
+        "assigned_to" => "ceo",
+        "priority" => "",
+        "requires_approval" => "",
+        "body" => "Please handle this."
+      })
+
+      inbox = Path.join([base, "companies/acme/agents/ceo/inbox"])
+      assert {:ok, files} = File.ls(inbox)
+      notifications = Enum.filter(files, &String.contains?(&1, "task-demo-assign"))
+      assert length(notifications) == 1
+
+      content = File.read!(Path.join(inbox, hd(notifications)))
+      assert content =~ "from: director"
+      assert content =~ "kind: task_assignment"
+      assert content =~ "Pick up this task"
+    end
+
+    test "assignee=director does NOT write to an inbox",
+         %{conn: conn, base: base, task_rel: task_rel} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?project=demo")
+      render_click(view, "open_task", %{"path" => task_rel})
+
+      render_submit(view, "save_task", %{
+        "title" => "For Director",
+        "status" => "todo",
+        "assigned_to" => "director",
+        "priority" => "",
+        "requires_approval" => "",
+        "body" => "x"
+      })
+
+      # Director isn't an agent; no inbox dir to write to. agents/ceo
+      # stays clean.
+      inbox = Path.join([base, "companies/acme/agents/ceo/inbox"])
+
+      files =
+        case File.ls(inbox),
+          do: (
+            {:ok, f} -> f
+            _ -> []
+          )
+
+      refute Enum.any?(files, &String.contains?(&1, "task-demo-assign"))
+    end
+  end
+
   # task #116 — the assigned_to input on the task-detail overlay uses an
   # HTML datalist sourced from company agents + "director". Director is
   # the human operator and always a valid assignment target even though

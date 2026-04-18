@@ -198,6 +198,20 @@ defmodule GlorboWeb.KanbanLive do
 
         with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
              :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
+          # Task #126 — when assigned_to changed to a real agent (or was
+          # set for the first time), drop a notification into that
+          # agent's inbox so the wake pipeline picks it up. Skips when
+          # the field is empty, matches "director" (not an agent), or
+          # the target dir doesn't exist.
+          maybe_notify_assignee(
+            Map.get(task, :assigned_to, ""),
+            fm["assigned_to"],
+            socket.assigns.company_slug,
+            task.task_id,
+            fm["title"],
+            body
+          )
+
           # Reload everything — filter-aware refresh.
           tasks =
             base_dir()
@@ -525,6 +539,50 @@ defmodule GlorboWeb.KanbanLive do
   # Options for the `assigned_to` datalist: every agent slug under
   # companies/<co>/agents/ plus "director" (the human operator — not a
   # real agent dir, but a valid assignment target per task #116).
+  # Task #126 — when the Director reassigns a task to an agent, drop a
+  # notification into that agent's inbox. inotify → PubSub → Agent.Server
+  # wakes the agent with the task as context. No-op if:
+  #
+  #   - assignee unchanged (avoids duplicate wakes on re-save)
+  #   - new assignee is empty or "director" (Director isn't an agent)
+  #   - agent dir doesn't exist
+  defp maybe_notify_assignee(prev, new, _co, _id, _title, _body)
+       when new == prev or new == "" or new == "director" do
+    :ok
+  end
+
+  defp maybe_notify_assignee(_prev, new_assignee, company, task_id, title, body)
+       when is_binary(new_assignee) do
+    agent_dir = Path.join([base_dir(), "companies", company, "agents", new_assignee])
+
+    if File.dir?(agent_dir) do
+      inbox_dir = Path.join([agent_dir, "inbox"])
+      File.mkdir_p!(inbox_dir)
+
+      ts = System.system_time(:millisecond)
+      path = Path.join(inbox_dir, "#{ts}-task-#{task_id}.md")
+
+      content = """
+      ---
+      from: director
+      task_id: "#{task_id}"
+      kind: task_assignment
+      delivered_at: "#{DateTime.to_iso8601(DateTime.utc_now())}"
+      ---
+
+      # New task assigned: #{title}
+
+      #{body}
+      """
+
+      File.write!(path, content)
+    end
+
+    :ok
+  end
+
+  defp maybe_notify_assignee(_prev, _new, _co, _id, _title, _body), do: :ok
+
   defp list_assignees(base, company) do
     agents_dir = Path.join([base, "companies", company, "agents"])
 
