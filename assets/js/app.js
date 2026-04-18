@@ -127,8 +127,21 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault()
     toggleCheatsheet()
   }
-  // ESC closes the cheatsheet if it's open.
-  if (e.key === "Escape") hideCheatsheet()
+  // ESC closes any overlay that's open.
+  if (e.key === "Escape") {
+    hideCheatsheet()
+    hideCommandPalette()
+  }
+})
+
+// Cmd/Ctrl+K opens the command palette (#140). Registered separately
+// because the modifier-key check at the top of the main handler
+// filters out Cmd/Ctrl events — the palette trigger is the exception.
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault()
+    toggleCommandPalette()
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -153,6 +166,7 @@ function cheatsheetHtml() {
               <dt><kbd>g</kbd><kbd>o</kbd></dt><dd>companies overview</dd>
               <dt><kbd>g</kbd><kbd>h</kbd></dt><dd>system health</dd>
               <dt><kbd>g</kbd><kbd>p</kbd></dt><dd>providers</dd>
+              <dt><kbd>⌘</kbd><kbd>K</kbd> / <kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>command palette</dd>
               <dt><kbd>?</kbd></dt><dd>this cheatsheet</dd>
             </dl>
           </section>
@@ -188,6 +202,154 @@ function toggleCheatsheet() {
 }
 function hideCheatsheet() {
   const el = document.getElementById("gl-cheatsheet-scrim")
+  if (el) el.remove()
+}
+
+// ---------------------------------------------------------------------------
+// Command palette (task #140).
+// Fuzzy-search overlay. Sources: nav destinations (NAV_MAP), agents
+// from the sidebar (read at open-time), director actions. ESC to
+// close. Arrow keys + ENTER for keyboard navigation. Click to activate.
+// ---------------------------------------------------------------------------
+function collectCommands() {
+  const co = currentCompanySlug()
+  const items = [
+    { label: "Companies", hint: "g o", href: "/companies" },
+    { label: "System health", hint: "g h", href: "/health" },
+    { label: "Providers", hint: "g p", href: "/providers" },
+  ]
+  if (co) {
+    items.push(
+      { label: `#general (${co})`, hint: "g c", href: `/companies/${co}/channels/general` },
+      { label: `Audit (${co})`, hint: "g a", href: `/companies/${co}/audit` },
+      { label: `Approvals (${co})`, hint: "g v", href: `/companies/${co}/approvals` },
+      { label: `Kanban (${co})`, hint: "g k", href: `/companies/${co}/kanban` },
+    )
+    // Agents read from the sidebar — one DOM query, no refresh cycle.
+    const agentLinks = document.querySelectorAll(
+      '.gl-sidebar a[href^="/companies/"][href*="/agents/"]'
+    )
+    agentLinks.forEach((a) => {
+      const slug = a.getAttribute("href").split("/agents/")[1]
+      if (slug) items.push({ label: `agent ${slug}`, hint: "", href: a.getAttribute("href") })
+    })
+  }
+  return items
+}
+
+function paletteHtml(items) {
+  const rows = items
+    .map(
+      (it, i) => `
+      <li class="gl-palette__row" data-idx="${i}" data-href="${it.href}">
+        <span class="gl-palette__label">${it.label}</span>
+        ${it.hint ? `<span class="gl-palette__hint gl-muted">${it.hint}</span>` : ""}
+      </li>`
+    )
+    .join("")
+  return `
+    <div class="gl-modal-scrim" id="gl-palette-scrim">
+      <div class="gl-modal gl-palette" role="dialog" aria-label="Command palette">
+        <header class="gl-modal__header">
+          command palette
+          <span class="gl-muted" style="font-size:10px">↑↓ navigate · ↵ go · ESC close</span>
+        </header>
+        <input
+          type="text"
+          id="gl-palette-input"
+          class="gl-input gl-palette__input"
+          placeholder="Search..."
+          autocomplete="off"
+        />
+        <ul id="gl-palette-list" class="gl-palette__list">${rows}</ul>
+      </div>
+    </div>
+  `
+}
+
+let paletteItems = []
+let paletteCursor = 0
+
+function toggleCommandPalette() {
+  if (document.getElementById("gl-palette-scrim")) {
+    hideCommandPalette()
+    return
+  }
+  paletteItems = collectCommands()
+  paletteCursor = 0
+  const host = document.createElement("div")
+  host.innerHTML = paletteHtml(paletteItems)
+  document.body.appendChild(host.firstElementChild)
+
+  const scrim = document.getElementById("gl-palette-scrim")
+  const input = document.getElementById("gl-palette-input")
+  const list = document.getElementById("gl-palette-list")
+  input.focus()
+  updatePaletteCursor()
+
+  input.addEventListener("input", () => {
+    const q = input.value.toLowerCase()
+    const filtered = paletteItems.filter((it) => it.label.toLowerCase().includes(q))
+    list.innerHTML = filtered
+      .map(
+        (it, i) => `
+        <li class="gl-palette__row" data-idx="${i}" data-href="${it.href}">
+          <span class="gl-palette__label">${it.label}</span>
+          ${it.hint ? `<span class="gl-palette__hint gl-muted">${it.hint}</span>` : ""}
+        </li>`
+      )
+      .join("")
+    // Re-bind filtered items to cursor navigation.
+    paletteItems = filtered
+    paletteCursor = 0
+    updatePaletteCursor()
+  })
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      paletteCursor = Math.min(paletteCursor + 1, paletteItems.length - 1)
+      updatePaletteCursor()
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      paletteCursor = Math.max(paletteCursor - 1, 0)
+      updatePaletteCursor()
+    } else if (e.key === "Enter") {
+      e.preventDefault()
+      const chosen = paletteItems[paletteCursor]
+      if (chosen) {
+        hideCommandPalette()
+        window.location.assign(chosen.href)
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      hideCommandPalette()
+    }
+  })
+
+  list.addEventListener("click", (e) => {
+    const row = e.target.closest(".gl-palette__row")
+    if (row && row.dataset.href) {
+      hideCommandPalette()
+      window.location.assign(row.dataset.href)
+    }
+  })
+
+  scrim.addEventListener("click", (e) => {
+    if (e.target === scrim) hideCommandPalette()
+  })
+}
+
+function updatePaletteCursor() {
+  const rows = document.querySelectorAll(".gl-palette__row")
+  rows.forEach((r, i) => {
+    if (i === paletteCursor) r.classList.add("gl-palette__row--active")
+    else r.classList.remove("gl-palette__row--active")
+  })
+}
+
+function hideCommandPalette() {
+  const el = document.getElementById("gl-palette-scrim")
   if (el) el.remove()
 }
 

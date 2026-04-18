@@ -2028,6 +2028,51 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   letter-spacing: 0;
 }
 
+/* ========== Command palette (task #140) ========== */
+.gl-palette {
+  min-width: 560px;
+  max-width: 720px;
+}
+.gl-palette__input {
+  border: 0;
+  border-bottom: 1px solid var(--gl-border);
+  border-radius: 0;
+  width: 100%;
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  font-family: var(--gl-ff-mono);
+  font-size: 13px;
+}
+.gl-palette__input:focus { outline: 0; }
+.gl-palette__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.gl-palette__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--gl-space-sm) var(--gl-space-lg);
+  cursor: pointer;
+  font-size: 13px;
+  border-left: 2px solid transparent;
+}
+.gl-palette__row:hover {
+  background: var(--gl-surface-raised);
+}
+.gl-palette__row--active {
+  background: var(--gl-surface-raised);
+  border-left-color: var(--gl-accent);
+}
+.gl-palette__hint {
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* ========== Keyboard cheatsheet overlay (task #139) ========== */
 .gl-cheatsheet {
   min-width: 400px;
