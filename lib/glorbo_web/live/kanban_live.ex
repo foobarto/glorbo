@@ -420,17 +420,33 @@ defmodule GlorboWeb.KanbanLive do
           <label class="gl-task-detail__field">
             <span class="gl-muted">status</span>
             <%!--
-              Dropdown is limited to the 3 Kanban columns (UAT N3 —
-              tasks with other statuses vanish from the board). The
-              approval-gate lifecycle (pending-approval / approved /
-              denied) is driven by `requires_approval` + sentinel
-              files in `agents/<slug>/state/`, not by this dropdown.
+              Six options map to four Kanban columns (see
+              kanban_live.ex:720 `column_key_to_status` +
+              `columns/1`):
+
+                  todo          → "todo"          column
+                  in-progress   → "in progress"   column
+                  pending, approved, denied → "review" column
+                  done          → "done"          column
+
+              UAT N3 was a false alarm — the extras aren't dead
+              values; the `review` column maps 3 statuses into one
+              lane. Keeping the dropdown honest: inline the mapping
+              as a group label so users don't wonder where a
+              "pending" task would appear.
             --%>
             <select name="status" class="gl-input">
               <option value="todo" selected={@open_task.status == "todo"}>todo</option>
               <option value="in-progress" selected={@open_task.status == "in-progress"}>
                 in-progress
               </option>
+              <optgroup label="review (approval gate)">
+                <option value="pending" selected={@open_task.status == "pending"}>pending</option>
+                <option value="approved" selected={@open_task.status == "approved"}>
+                  approved
+                </option>
+                <option value="denied" selected={@open_task.status == "denied"}>denied</option>
+              </optgroup>
               <option value="done" selected={@open_task.status == "done"}>done</option>
             </select>
           </label>

@@ -172,10 +172,20 @@ defmodule Glorbo.Company.Supervisor do
   # ---------------------------------------------------------------------------
 
   defp append_gate(children, company, base) do
+    # G1: point Gate at THIS company's AuditLog via tuple. Without this
+    # it defaults to the bare module name `Glorbo.Company.AuditLog`
+    # which is registered nowhere — so any time Gate tried to audit a
+    # parse error it `GenServer.call`-ed a dead process, got :no_process
+    # and the supervisor restarted Gate endlessly.
     children ++
       [
         {Glorbo.Approvals.Gate,
-         [name: via(company, :approvals_gate), company: company, base: base]}
+         [
+           name: via(company, :approvals_gate),
+           company: company,
+           base: base,
+           audit_server: via(company, :audit_log)
+         ]}
       ]
   end
 
