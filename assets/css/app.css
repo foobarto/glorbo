@@ -228,6 +228,10 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-statusbar__sep { color: var(--gl-fg-ghost); }
 .gl-statusbar__spacer { flex: 1; }
+.gl-statusbar__warn {
+  color: var(--gl-amber);
+  font-weight: 600;
+}
 @keyframes gl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* ========== Panel primitives (mockup TUI style) ==========

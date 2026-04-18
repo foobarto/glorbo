@@ -34,7 +34,11 @@ defmodule GlorboWeb.Components.StatusbarTest do
 
     test "renders inotify watching line" do
       html = render_statusbar()
-      assert html =~ "inotify: watching"
+      # The backend label ("inotify:" or "polling:") + "watching N paths"
+      # can land across span breaks; assert each piece individually.
+      assert html =~ "inotify:"
+      assert html =~ "watching"
+      assert html =~ "paths"
     end
 
     test "renders a clock with datetime attr" do

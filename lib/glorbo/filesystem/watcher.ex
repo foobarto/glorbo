@@ -102,11 +102,18 @@ defmodule Glorbo.Filesystem.Watcher do
     company_dir = Path.join([base, "companies", company])
     File.mkdir_p!(company_dir)
 
-    {:ok, pid} = FileSystem.start_link(dirs: [company_dir], recursive: true)
+    {pid, backend} = start_backend(company_dir)
     FileSystem.subscribe(pid)
     # WR-15: monitor the inotify subprocess so we stop (not silently idle)
     # when it dies — e.g. when fs.inotify.max_user_watches is exceeded.
     fs_ref = Process.monitor(pid)
+
+    if backend == :fs_poll do
+      Logger.warning(
+        "[watcher/#{company}] inotifywait not found — falling back to polling (~2s). " <>
+          "Performance hit on large trees; install inotify-tools for realtime updates."
+      )
+    end
 
     {:ok,
      %{
@@ -115,10 +122,54 @@ defmodule Glorbo.Filesystem.Watcher do
        dir: company_dir,
        fs_pid: pid,
        fs_ref: fs_ref,
+       backend: backend,
        pending: %{},
        pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
        reindex_fun: Keyword.get(opts, :reindex_fun, &Reindex.mark_dirty/2)
      }}
+  end
+
+  # Try the platform default (inotify on Linux). If that fails (no
+  # inotifywait on PATH, or non-Linux dev with no supported backend),
+  # fall back to the always-available FSPoll. Users on broken kernels
+  # or minimal containers get a slower, noisier but functional path.
+  defp start_backend(company_dir) do
+    case FileSystem.start_link(dirs: [company_dir], recursive: true) do
+      {:ok, pid} ->
+        {pid, default_backend()}
+
+      {:error, _reason} ->
+        {:ok, pid} =
+          FileSystem.start_link(
+            dirs: [company_dir],
+            recursive: true,
+            backend: :fs_poll,
+            backend_opts: [interval: 2_000]
+          )
+
+        {pid, :fs_poll}
+    end
+  end
+
+  defp default_backend do
+    case :os.type() do
+      {:unix, :linux} -> :fs_inotify
+      {:unix, :darwin} -> :fs_mac
+      {:win32, _} -> :fs_windows
+      _ -> :fs_poll
+    end
+  end
+
+  @doc """
+  Return the Watcher's active backend for UI hints. Cheap GenServer
+  call — used by the statusbar to flag "polling" mode.
+  """
+  @spec backend(GenServer.server()) :: atom()
+  def backend(server), do: GenServer.call(server, :backend)
+
+  @impl GenServer
+  def handle_call(:backend, _from, state) do
+    {:reply, state.backend, state}
   end
 
   @impl GenServer

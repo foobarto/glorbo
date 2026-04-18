@@ -48,7 +48,10 @@ defmodule GlorboWeb.Components.Statusbar do
         sqlite WAL · {@s.sqlite_human}
       </span>
       <span class="gl-statusbar__sep">│</span>
-      <span>inotify: watching {@s.inotify_paths} paths</span>
+      <span>
+        <span :if={@s.watch_mode == :polling} class="gl-statusbar__warn">polling:</span>
+        <span :if={@s.watch_mode != :polling}>inotify:</span> watching {@s.inotify_paths} paths
+      </span>
       <span class="gl-statusbar__spacer"></span>
       <span>{@s.director}</span>
       <span class="gl-statusbar__sep">│</span>
@@ -72,6 +75,7 @@ defmodule GlorboWeb.Components.Statusbar do
       agents_total: agents_total(),
       sqlite_human: sqlite_size_human(base),
       inotify_paths: inotify_path_count(),
+      watch_mode: watch_mode(),
       director: director_identity(),
       now_str: now_str(),
       now_iso: now_iso()
@@ -190,6 +194,32 @@ defmodule GlorboWeb.Components.Statusbar do
     _ -> 0
   catch
     _, _ -> 0
+  end
+
+  # If any watcher is in polling mode, flag the whole fleet — it means
+  # inotify isn't available on this host and every watcher will have
+  # made the same fallback. Cheap: pick one watcher via the Registry
+  # and ask it.
+  defp watch_mode do
+    case Registry.select(
+           Glorbo.Agent.Registry,
+           [{{{:company_child, :"$1", :file_watcher}, :"$2", :_}, [], [:"$2"]}]
+         ) do
+      [pid | _] when is_pid(pid) ->
+        try do
+          case Glorbo.Filesystem.Watcher.backend(pid) do
+            :fs_poll -> :polling
+            _ -> :inotify
+          end
+        catch
+          _, _ -> :inotify
+        end
+
+      _ ->
+        :inotify
+    end
+  rescue
+    _ -> :inotify
   end
 
   defp director_identity do
