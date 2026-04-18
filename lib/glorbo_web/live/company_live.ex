@@ -111,8 +111,22 @@ defmodule GlorboWeb.CompanyLive do
           </p>
         </div>
         <div class="gl-overview__actions">
-          <button type="button" class="gl-btn" phx-click="reindex">↻ reindex</button>
-          <button type="button" class="gl-btn" phx-click="backup">⇩ backup</button>
+          <button
+            type="button"
+            class="gl-btn gl-btn--soon"
+            phx-click="reindex"
+            title="Coming soon — use `glorbo reindex` from a terminal for now"
+          >
+            ↻ reindex <span class="gl-btn__soon-tag">soon</span>
+          </button>
+          <button
+            type="button"
+            class="gl-btn gl-btn--soon"
+            phx-click="backup"
+            title="Coming soon — use `glorbo backup` from a terminal for now"
+          >
+            ⇩ backup <span class="gl-btn__soon-tag">soon</span>
+          </button>
           <button
             type="button"
             class="gl-btn gl-btn--primary gl-btn--soon"
