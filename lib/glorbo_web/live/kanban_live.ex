@@ -61,6 +61,12 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:new_task_projects, list_projects(base, slug))
        |> assign(:assignee_options, list_assignees(base, slug))
        |> assign(:open_task, nil)
+       |> assign(:new_task_form, default_new_task_form())
+       |> allow_upload(:new_task_attachments,
+         accept: :any,
+         max_entries: 8,
+         max_file_size: 10_000_000
+       )
        |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -245,34 +251,78 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   def handle_event("new_task_cancel", _params, socket) do
-    {:noreply, assign(socket, :new_task_open?, false)}
+    {:noreply,
+     socket
+     |> assign(:new_task_open?, false)
+     |> assign(:new_task_form, default_new_task_form())}
   end
 
-  def handle_event(
-        "new_task_create",
-        %{"project" => project, "title" => title},
-        socket
-      ) do
+  # `phx-change` on the form keeps upload entries in sync AND
+  # persists form values on the socket — otherwise a re-render
+  # triggered by an upload chunk would wipe the text inputs (they
+  # aren't value-bound to avoid overwriting the user's typing on
+  # every keystroke).
+  def handle_event("new_task_validate", params, socket) do
+    form = %{
+      project: Map.get(params, "project", socket.assigns.new_task_form.project),
+      title: Map.get(params, "title", socket.assigns.new_task_form.title),
+      assigned_to: Map.get(params, "assigned_to", socket.assigns.new_task_form.assigned_to),
+      priority: Map.get(params, "priority", socket.assigns.new_task_form.priority),
+      severity: Map.get(params, "severity", socket.assigns.new_task_form.severity),
+      description: Map.get(params, "description", socket.assigns.new_task_form.description)
+    }
+
+    {:noreply, assign(socket, :new_task_form, form)}
+  end
+
+  def handle_event("new_task_cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :new_task_attachments, ref)}
+  end
+
+  def handle_event("new_task_create", params, socket) do
     base = base_dir()
     company = socket.assigns.company_slug
 
-    with :ok <- validate_project(project, socket.assigns.new_task_projects),
-         :ok <- validate_title(title),
+    with :ok <- validate_project(Map.get(params, "project", ""), socket.assigns.new_task_projects),
+         :ok <- validate_title(Map.get(params, "title", "")),
+         project = Map.fetch!(params, "project"),
          {:ok, task_id} <- next_task_id(base, company, project),
-         :ok <- write_new_task(base, company, project, task_id, title) do
+         # Order matters: consume uploads BEFORE writing the task md so
+         # the body can link to the attachment files.
+         attachments <- consume_new_task_uploads(socket, base, company, project, task_id),
+         :ok <- write_new_task_rich(base, company, project, task_id, params, attachments) do
       rel_path = "projects/#{project}/tasks/#{task_id}.md"
-      emit_task_create_audit(company, rel_path, String.trim(title))
+      emit_task_create_audit(company, rel_path, String.trim(Map.get(params, "title", "")))
+
+      # If the user assigned the task, drop an inbox notification so
+      # the wake pipeline picks it up (same pattern as kanban save).
+      maybe_notify_assignee(
+        "",
+        Map.get(params, "assigned_to", "") |> String.trim(),
+        company,
+        task_id,
+        String.trim(Map.get(params, "title", "")),
+        build_body(params, attachments)
+      )
 
       tasks =
         base
         |> load_tasks(company)
         |> apply_project_filter(socket.assigns.project_filter)
 
+      summary =
+        if attachments == [] do
+          "Created #{task_id} in #{project}."
+        else
+          "Created #{task_id} in #{project} with #{length(attachments)} attachment(s)."
+        end
+
       {:noreply,
        socket
        |> assign(:columns, group_by_column(tasks))
        |> assign(:new_task_open?, false)
-       |> put_flash(:info, "Created #{task_id} in #{project}.")}
+       |> assign(:new_task_form, default_new_task_form())
+       |> put_flash(:info, summary)}
     else
       {:error, :invalid_project} ->
         {:noreply, put_flash(socket, :error, "Pick a project.")}
@@ -337,43 +387,153 @@ defmodule GlorboWeb.KanbanLive do
         frontmatter.
       </p>
 
-      <form
-        :if={@new_task_open?}
-        phx-submit="new_task_create"
-        class="gl-new-task-form"
-        aria-label="Create new task"
-      >
-        <label class="gl-sr-only" for="new-task-project">Project</label>
-        <select
-          id="new-task-project"
-          name="project"
-          class="gl-input"
-          required
-          disabled={@new_task_projects == []}
+      <%!--
+        New-task modal: title/description/assignee/priority/severity +
+        file uploads. Attachments are uploaded to
+        `projects/<proj>/attachments/<task_id>/<filename>`.
+      --%>
+      <div :if={@new_task_open?} class="gl-modal-scrim" phx-click-away="new_task_cancel">
+        <form
+          phx-submit="new_task_create"
+          phx-change="new_task_validate"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-new-task-title"
         >
-          <option :if={@new_task_projects == []} value="">(no projects)</option>
-          <option :for={p <- @new_task_projects} value={p}>{p}</option>
-        </select>
-        <label class="gl-sr-only" for="new-task-title">Title</label>
-        <input
-          id="new-task-title"
-          type="text"
-          name="title"
-          class="gl-input"
-          placeholder="Task title…"
-          required
-          maxlength="200"
-          autofocus
-        />
-        <button type="submit" class="gl-btn gl-btn--primary">Create</button>
-        <button
-          type="button"
-          class="gl-btn"
-          phx-click="new_task_cancel"
-        >
-          Cancel
-        </button>
-      </form>
+          <header class="gl-modal__header">
+            <div id="gl-new-task-title"><strong>+ new task</strong></div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="new_task_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-new-task-form gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">project</span>
+              <select
+                name="project"
+                class="gl-input"
+                required
+                disabled={@new_task_projects == []}
+              >
+                <option :if={@new_task_projects == []} value="">(no projects)</option>
+                <option :for={p <- @new_task_projects} value={p}>{p}</option>
+              </select>
+            </label>
+
+            <label class="gl-form__row">
+              <span class="gl-form__label">title</span>
+              <input
+                type="text"
+                name="title"
+                class="gl-input"
+                value={@new_task_form.title}
+                required
+                maxlength="200"
+                autofocus
+                placeholder="Short task title…"
+              />
+            </label>
+
+            <label class="gl-form__row">
+              <span class="gl-form__label">assigned to</span>
+              <input
+                type="text"
+                name="assigned_to"
+                class="gl-input"
+                value={@new_task_form.assigned_to}
+                list="gl-new-task-assignees"
+                placeholder="(nobody yet)"
+              />
+            </label>
+            <datalist id="gl-new-task-assignees">
+              <option :for={a <- @assignee_options} value={a}></option>
+            </datalist>
+
+            <label class="gl-form__row">
+              <span class="gl-form__label">priority</span>
+              <select name="priority" class="gl-input">
+                <option value="" selected={@new_task_form.priority == ""}>—</option>
+                <option value="low" selected={@new_task_form.priority == "low"}>low</option>
+                <option value="medium" selected={@new_task_form.priority == "medium"}>medium</option>
+                <option value="high" selected={@new_task_form.priority == "high"}>high</option>
+              </select>
+            </label>
+
+            <label class="gl-form__row">
+              <span class="gl-form__label">severity</span>
+              <select name="severity" class="gl-input">
+                <option value="" selected={@new_task_form.severity == ""}>—</option>
+                <option value="info" selected={@new_task_form.severity == "info"}>info</option>
+                <option value="minor" selected={@new_task_form.severity == "minor"}>minor</option>
+                <option value="major" selected={@new_task_form.severity == "major"}>major</option>
+                <option value="critical" selected={@new_task_form.severity == "critical"}>
+                  critical
+                </option>
+              </select>
+            </label>
+
+            <label class="gl-form__row gl-form__row--stretch">
+              <span class="gl-form__label">description</span>
+              <textarea
+                name="description"
+                rows="6"
+                class="gl-input gl-company-md-form__body"
+                placeholder="Markdown supported."
+              >{@new_task_form.description}</textarea>
+            </label>
+
+            <label class="gl-form__row gl-form__row--stretch">
+              <span class="gl-form__label">attachments</span>
+              <div class="gl-new-task-form__uploads">
+                <.live_file_input upload={@uploads.new_task_attachments} class="gl-input" />
+                <p class="gl-muted gl-new-task-form__hint">
+                  Up to 8 files, 10 MB each. Stored under <code>projects/&lt;project&gt;/attachments/&lt;task-id&gt;/</code>.
+                </p>
+                <ul :if={@uploads.new_task_attachments.entries != []} class="gl-upload-list">
+                  <li
+                    :for={entry <- @uploads.new_task_attachments.entries}
+                    class="gl-upload-list__row"
+                  >
+                    <span class="gl-upload-list__name">{entry.client_name}</span>
+                    <span class="gl-muted gl-upload-list__size">
+                      {Float.round(entry.client_size / 1024, 1)} KB
+                    </span>
+                    <button
+                      type="button"
+                      class="gl-btn gl-btn--sm"
+                      phx-click="new_task_cancel_upload"
+                      phx-value-ref={entry.ref}
+                    >
+                      remove
+                    </button>
+                    <p
+                      :for={err <- upload_errors(@uploads.new_task_attachments, entry)}
+                      class="gl-form__error"
+                    >
+                      {upload_error_message(err)}
+                    </p>
+                  </li>
+                </ul>
+                <p :for={err <- upload_errors(@uploads.new_task_attachments)} class="gl-form__error">
+                  {upload_error_message(err)}
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="new_task_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+          </footer>
+        </form>
+      </div>
 
       <div class="gl-kanban__board">
         <section
@@ -711,18 +871,33 @@ defmodule GlorboWeb.KanbanLive do
     :ok
   end
 
-  defp write_new_task(base, company, project, task_id, title) do
-    trimmed = String.trim(title)
-    escaped = trimmed |> String.replace("\\", "\\\\") |> String.replace(~s("), ~s(\\"))
+  # Rich create: writes frontmatter with title/status/assigned_to/priority/
+  # severity + markdown body (description + attachment refs, if any).
+  # Falls through to the same atomic tmp+rename path as the original
+  # simple write.
+  defp write_new_task_rich(base, company, project, task_id, params, attachments) do
+    title = Map.get(params, "title", "") |> String.trim()
+    assigned_to = Map.get(params, "assigned_to", "") |> String.trim()
+    priority = Map.get(params, "priority", "") |> String.trim()
+    severity = Map.get(params, "severity", "") |> String.trim()
 
-    body = """
-    ---
-    title: "#{escaped}"
-    status: todo
-    ---
+    frontmatter_lines =
+      [
+        {"title", title},
+        {"status", "todo"},
+        {"assigned_to", assigned_to},
+        {"priority", priority},
+        {"severity", severity}
+      ]
+      |> Enum.reject(fn {k, v} -> k != "status" and v in ["", nil] end)
+      |> Enum.map(fn {k, v} -> "#{k}: #{yaml_scalar(v)}\n" end)
 
-    #{trimmed}
-    """
+    body =
+      "---\n" <>
+        Enum.join(frontmatter_lines) <>
+        "---\n\n" <>
+        build_body(params, attachments) <>
+        "\n"
 
     path = Path.join([base, "companies", company, "projects", project, "tasks", "#{task_id}.md"])
     tmp = path <> ".tmp"
@@ -736,6 +911,83 @@ defmodule GlorboWeb.KanbanLive do
         err
     end
   end
+
+  # Sink uploads to projects/<proj>/attachments/<task_id>/<safe-filename>.
+  # Returns a list of relative paths (as strings) for the markdown
+  # body's attachment list. Silently ignores entries we couldn't
+  # consume — LiveView guarantees upload_errors renders in the UI.
+  defp consume_new_task_uploads(socket, base, company, project, task_id) do
+    dest_dir =
+      Path.join([base, "companies", company, "projects", project, "attachments", task_id])
+
+    if has_uploaded_files?(socket) do
+      File.mkdir_p!(dest_dir)
+    end
+
+    consume_uploaded_entries(socket, :new_task_attachments, fn %{path: tmp}, entry ->
+      safe_name = sanitize_filename(entry.client_name)
+      dest = Path.join(dest_dir, safe_name)
+      File.cp!(tmp, dest)
+      {:ok, Path.join(["attachments", task_id, safe_name])}
+    end)
+  end
+
+  defp has_uploaded_files?(socket) do
+    socket.assigns.uploads.new_task_attachments.entries
+    |> Enum.any?(fn e -> e.done? end)
+  end
+
+  defp sanitize_filename(name) do
+    name
+    |> String.replace(~r/[^\w.\-]/u, "_")
+    |> String.trim_leading(".")
+    |> case do
+      "" -> "file"
+      ok -> ok
+    end
+  end
+
+  defp build_body(params, attachments) do
+    description = Map.get(params, "description", "") |> String.trim()
+
+    attach_block =
+      case attachments do
+        [] ->
+          ""
+
+        list ->
+          "\n\n## Attachments\n\n" <>
+            Enum.map_join(list, "\n", fn rel -> "- [#{Path.basename(rel)}](../#{rel})" end) <>
+            "\n"
+      end
+
+    if description == "" do
+      Map.get(params, "title", "") |> String.trim()
+    else
+      description
+    end <> attach_block
+  end
+
+  defp yaml_scalar(s) when is_binary(s) do
+    if String.contains?(s, [":", "#", "[", "]", "\"", "'", "\n"]) do
+      escaped = s |> String.replace("\\", "\\\\") |> String.replace(~s("), ~s(\\"))
+      ~s("#{escaped}")
+    else
+      s
+    end
+  end
+
+  defp yaml_scalar(other), do: inspect(other)
+
+  defp default_new_task_form do
+    %{project: "", title: "", assigned_to: "", priority: "", severity: "", description: ""}
+  end
+
+  @doc false
+  def upload_error_message(:too_large), do: "file too large (max 10 MB)"
+  def upload_error_message(:too_many_files), do: "too many files (max 8)"
+  def upload_error_message(:not_accepted), do: "file type not accepted"
+  def upload_error_message(other), do: "upload error: #{inspect(other)}"
 
   defp column_key_to_status(:todo), do: "todo"
   defp column_key_to_status(:in_progress), do: "in-progress"

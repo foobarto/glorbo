@@ -2448,3 +2448,44 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   resize: vertical;
   min-height: 120px;
 }
+
+/* ========== New-task form attachments ========== */
+.gl-new-task-form__uploads {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gl-new-task-form__hint {
+  font-size: 11px;
+}
+.gl-upload-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gl-upload-list__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--gl-surface-raised);
+  border-radius: 3px;
+  font-size: 12px;
+}
+.gl-upload-list__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gl-upload-list__size {
+  font-size: 11px;
+}
+.gl-form__error {
+  color: var(--gl-danger);
+  font-size: 11px;
+  margin: 4px 0 0 0;
+}

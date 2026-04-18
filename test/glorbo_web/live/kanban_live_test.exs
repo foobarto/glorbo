@@ -113,11 +113,18 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "gl-task-card--approval"
   end
 
-  test "new_task button opens inline form", %{conn: conn} do
+  test "new_task button opens the modal with project + title + assignee fields",
+       %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     html = render_click(view, "new_task")
-    assert html =~ ~s(id="new-task-project")
-    assert html =~ ~s(id="new-task-title")
+    # Modal dialog + selectors by name (more stable than DOM ids)
+    assert html =~ ~s(role="dialog")
+    assert html =~ ~s(name="project")
+    assert html =~ ~s(name="title")
+    assert html =~ ~s(name="assigned_to")
+    assert html =~ ~s(name="priority")
+    assert html =~ ~s(name="severity")
+    assert html =~ ~s(name="description")
   end
 
   test "new_task_create writes a new task markdown", %{conn: conn, base: base} do
