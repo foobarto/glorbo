@@ -284,7 +284,9 @@ defmodule GlorboWeb.KanbanLive do
     base = base_dir()
     company = socket.assigns.company_slug
 
-    with :ok <- validate_project(Map.get(params, "project", ""), socket.assigns.new_task_projects),
+    projects = socket.assigns.new_task_projects
+
+    with :ok <- validate_project(Map.get(params, "project", ""), projects),
          :ok <- validate_title(Map.get(params, "title", "")),
          project = Map.fetch!(params, "project"),
          {:ok, task_id} <- next_task_id(base, company, project),
