@@ -98,7 +98,7 @@ defmodule Glorbo.Filesystem.Watcher do
   @impl GenServer
   def init(opts) do
     company = Keyword.fetch!(opts, :company)
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     company_dir = Path.join([base, "companies", company])
     File.mkdir_p!(company_dir)
 

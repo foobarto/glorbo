@@ -180,7 +180,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp short_provider(_), do: ""
 
   defp first_company do
-    base = Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    base = Glorbo.Filesystem.Hierarchy.default_root()
     dir = Path.join(base, "companies")
 
     case File.ls(dir) do
@@ -197,7 +197,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp list_agents(nil), do: []
 
   defp list_agents(company) do
-    base = Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    base = Glorbo.Filesystem.Hierarchy.default_root()
     agents_dir = Path.join([base, "companies", company, "agents"])
 
     case File.ls(agents_dir) do
@@ -299,7 +299,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp list_projects(nil), do: []
 
   defp list_projects(company) do
-    base = Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    base = Glorbo.Filesystem.Hierarchy.default_root()
     projects_dir = Path.join([base, "companies", company, "projects"])
 
     case File.ls(projects_dir) do

@@ -182,7 +182,7 @@ defmodule Glorbo.Agent.Dispatch do
   defp ensure_workspace(spec, opts) do
     fun =
       Keyword.get(opts, :workspace_fun, fn ->
-        base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+        base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
         Path.join([base, "companies", spec.company, "agents", spec.slug, "workspace"])
       end)
 
@@ -205,7 +205,7 @@ defmodule Glorbo.Agent.Dispatch do
     target = Path.join(run_dir, ".glorbo-skills")
 
     skills_opts = [
-      base: Keyword.get(opts, :base, Path.expand("~/.glorbo")),
+      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
       company: spec.company,
       agent_slug: spec.slug,
       audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2)
@@ -412,7 +412,7 @@ defmodule Glorbo.Agent.Dispatch do
   # ---------------------------------------------------------------------------
 
   defp prepare_run_dir_path(spec, task, opts) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
 
     Path.join([
       base,

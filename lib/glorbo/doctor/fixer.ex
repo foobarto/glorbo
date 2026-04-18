@@ -202,7 +202,7 @@ defmodule Glorbo.Doctor.Fixer do
 
   @doc false
   def fix_glorbo_dir(_check) do
-    path = Path.expand("~/.glorbo")
+    path = Glorbo.Filesystem.Hierarchy.default_root()
 
     case File.mkdir_p(path) do
       :ok -> {:ok, "created #{path}"}

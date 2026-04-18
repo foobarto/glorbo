@@ -107,7 +107,7 @@ defmodule GlorboWeb.StdoutStreamer do
   def init(opts) do
     company = Keyword.fetch!(opts, :company)
     agent = Keyword.fetch!(opts, :agent)
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     pubsub = Keyword.get(opts, :pubsub, Glorbo.PubSub)
     path = Path.join([base, "companies", company, "agents", agent, "stdout.log"])
 

@@ -48,7 +48,7 @@ defmodule Glorbo.Config do
   logs or process dictionaries (T-04-05).
   """
   @spec load(Path.t()) :: {:ok, config()} | {:error, :config_parse}
-  def load(base \\ Path.expand("~/.glorbo")) do
+  def load(base \\ Glorbo.Filesystem.Hierarchy.default_root()) do
     path = Path.join(base, "config.md")
     unless File.exists?(path), do: write_default!(path)
 
@@ -154,7 +154,7 @@ defmodule Glorbo.Config do
   MUST NEVER emit it to logs or audit (threat T-05-02).
   """
   @spec erl_cookie(Path.t()) :: {:ok, String.t()} | {:error, :config_parse}
-  def erl_cookie(base \\ Path.expand("~/.glorbo")), do: erl_cookie(base, _retried? = false)
+  def erl_cookie(base \\ Glorbo.Filesystem.Hierarchy.default_root()), do: erl_cookie(base, _retried? = false)
 
   # WR-08: classic TOCTOU — the previous implementation did
   # `unless File.exists?(path), do: write_default!(path)` followed by

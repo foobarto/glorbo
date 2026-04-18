@@ -72,7 +72,7 @@ defmodule Glorbo.Company.Scheduler do
   def init(opts) do
     state = %{
       company: Keyword.fetch!(opts, :company),
-      base: Keyword.get(opts, :base, Path.expand("~/.glorbo")),
+      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
       agents: %{},
       clock_fun: Keyword.get(opts, :clock_fun, &DateTime.utc_now/0),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after/3),

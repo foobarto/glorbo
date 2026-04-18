@@ -64,7 +64,7 @@ defmodule GlorboWeb.Actions do
   """
   @spec post_message(String.t(), String.t(), String.t(), keyword()) :: ok_or_err
   def post_message(company, channel, body, opts \\ []) when is_binary(body) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
     with :ok <- validate_slug(company),
@@ -129,7 +129,7 @@ defmodule GlorboWeb.Actions do
   """
   @spec post_task_comment(String.t(), String.t(), String.t(), keyword()) :: ok_or_err
   def post_task_comment(company, task_path, body, opts \\ []) when is_binary(body) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
     with :ok <- validate_slug(company),
@@ -268,7 +268,7 @@ defmodule GlorboWeb.Actions do
   @spec set_approval(String.t(), String.t(), :approved | :denied, keyword()) :: ok_or_err
   def set_approval(company, task_path, decision, opts \\ [])
       when decision in [:approved, :denied] do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
     with :ok <- validate_slug(company),
@@ -301,7 +301,7 @@ defmodule GlorboWeb.Actions do
   """
   @spec wake_agent(String.t(), String.t(), String.t() | nil, keyword()) :: ok_or_err
   def wake_agent(company, agent, reason, opts \\ []) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
     reason = reason || ""
 

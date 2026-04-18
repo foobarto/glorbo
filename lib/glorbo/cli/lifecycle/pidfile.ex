@@ -19,7 +19,7 @@ defmodule Glorbo.CLI.Lifecycle.Pidfile do
   @type status :: :stopped | :running | :stale
 
   @spec default_base() :: Path.t()
-  def default_base, do: Path.expand("~/.glorbo")
+  def default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 
   @spec path(Path.t()) :: Path.t()
   def path(base \\ default_base()), do: Path.join([base, "run", "glorbo.pid"])

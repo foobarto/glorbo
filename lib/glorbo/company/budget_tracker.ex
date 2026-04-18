@@ -105,7 +105,7 @@ defmodule Glorbo.Company.BudgetTracker do
   @impl GenServer
   def init(opts) do
     company = Keyword.fetch!(opts, :company)
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     alert_threshold_pct = Keyword.get(opts, :alert_threshold_pct, @default_alert_threshold_pct)
     repo = Keyword.get(opts, :repo, Glorbo.Repo)
     budgets_fun = Keyword.get(opts, :budgets_fun, &default_budgets_fun(company, base, &1))

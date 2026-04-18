@@ -47,7 +47,7 @@ defmodule Glorbo.Company.AuditLog do
 
   @impl GenServer
   def init(opts) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     {:ok, %{base: base}}
   end
 

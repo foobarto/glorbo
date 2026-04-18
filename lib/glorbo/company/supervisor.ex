@@ -85,7 +85,7 @@ defmodule Glorbo.Company.Supervisor do
   @impl Supervisor
   def init(opts) do
     company = Keyword.fetch!(opts, :company)
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
 
     base_children = [
       {Glorbo.Company.AuditLog, [name: via(company, :audit_log), company: company, base: base]},

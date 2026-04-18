@@ -71,7 +71,7 @@ defmodule Glorbo.Filesystem.Reindex do
   """
   @spec run(keyword()) :: {:ok, result()}
   def run(opts \\ []) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     companies_dir = Path.join(base, "companies")
 
     if File.dir?(companies_dir) do

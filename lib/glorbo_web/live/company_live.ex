@@ -882,5 +882,5 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   defp base_dir,
-    do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

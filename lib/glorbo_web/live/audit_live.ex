@@ -334,5 +334,5 @@ defmodule GlorboWeb.AuditLive do
   defp detail_haystack(d), do: to_string(d)
 
   defp base_dir,
-    do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    do: Glorbo.Filesystem.Hierarchy.default_root()
 end

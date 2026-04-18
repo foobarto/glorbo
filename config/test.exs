@@ -12,6 +12,19 @@ config :glorbo, auto_boot_agents: false
 # is for real `phx.server` / `glorbo up` sessions.
 config :glorbo, write_pidfile_on_boot: false
 
+# CRITICAL (#144): set :glorbo_base to a tmpdir so any code path that
+# calls Glorbo.Filesystem.Hierarchy.default_root/0 in test env lands
+# inside an isolated dir, not the user's real ~/.glorbo. Per-test
+# cases (LiveCase/CLICase) override this with their own
+# TmpGlorboHome, but this shared default catches every test that
+# forgot to — and prevents ever corrupting a developer's actual
+# install by running `mix test` locally. The dir is created eagerly
+# so code paths that assume it exists (e.g. inotify watchers opened
+# during Application.start) don't crash on first access.
+test_base = Path.join(System.tmp_dir!(), "glorbo_test_base_#{System.os_time(:nanosecond)}")
+File.mkdir_p!(test_base)
+config :glorbo, :glorbo_base, test_base
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

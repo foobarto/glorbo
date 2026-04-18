@@ -83,7 +83,7 @@ defmodule Glorbo.CLI.Scaffold.Project do
   end
 
   defp glorbo_home do
-    System.get_env("GLORBO_HOME") || Path.expand("~/.glorbo")
+    System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
   end
 
   defp usage do

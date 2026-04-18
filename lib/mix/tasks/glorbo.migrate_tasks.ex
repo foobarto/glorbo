@@ -31,7 +31,7 @@ defmodule Mix.Tasks.Glorbo.MigrateTasks do
   def run(argv) do
     {opts, _rest, _invalid} = OptionParser.parse(argv, strict: @switches)
 
-    base = opts[:base] || Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    base = opts[:base] || Glorbo.Filesystem.Hierarchy.default_root()
     dry_run? = Keyword.get(opts, :dry_run, false)
 
     if dry_run?, do: Mix.shell().info("[dry-run] no files will be renamed\n")

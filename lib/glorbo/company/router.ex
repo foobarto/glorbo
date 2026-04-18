@@ -112,7 +112,7 @@ defmodule Glorbo.Company.Router do
 
     state = %{
       company: company,
-      base: Keyword.get(opts, :base, Path.expand("~/.glorbo")),
+      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
       audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
       fs_fun: Keyword.get(opts, :fs_fun, default_fs_fun()),
       pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),

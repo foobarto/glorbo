@@ -165,7 +165,7 @@ defmodule Glorbo.Agent.Server do
       current_task_ref: nil,
       pending_wake: nil,
       last_exit_status: nil,
-      base: Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     }
 
     {:ok, state}

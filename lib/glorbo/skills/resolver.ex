@@ -54,7 +54,7 @@ defmodule Glorbo.Skills.Resolver do
           {:ok, [String.t()]} | {:error, term()}
   def materialize(skills, target_dir, opts \\ [])
       when is_list(skills) and is_binary(target_dir) and is_list(opts) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     company = Keyword.get(opts, :company, "")
     agent_slug = Keyword.get(opts, :agent_slug, "")
     audit_fun = Keyword.get(opts, :audit_fun, &AuditLog.append/2)

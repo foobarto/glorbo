@@ -46,7 +46,7 @@ defmodule Glorbo.Init.Orchestrator do
 
   @spec run(keyword()) :: {:ok | :error, summary()}
   def run(opts \\ []) do
-    base = Keyword.get(opts, :base, Path.expand("~/.glorbo"))
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     opts_with_base = Keyword.put(opts, :base, base)
 
     # WR-05: wrap the pre-pipeline bootstrap so an exception (e.g. EACCES on

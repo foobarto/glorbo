@@ -125,7 +125,7 @@ defmodule Glorbo.CLI do
     # dispatch/1 — produced a spurious "Unknown command: reindex" for users
     # following the docs. Reindex.run/1 is a pure operation (no daemon
     # required) so the CLI verb runs it directly.
-    base = System.get_env("GLORBO_HOME") || Path.expand("~/.glorbo")
+    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
     {:ok, %{indexed: i, skipped: s, deleted: d}} = Glorbo.Filesystem.Reindex.run(base: base)
     output = "glorbo reindex — indexed=#{i} skipped=#{s} deleted=#{d}\n"
     {:reindex, 0, output}

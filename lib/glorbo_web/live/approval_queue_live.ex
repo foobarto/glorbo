@@ -299,7 +299,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
   defp selected_body(_, _), do: "(select a row to preview)"
 
   defp base_dir,
-    do: Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    do: Glorbo.Filesystem.Hierarchy.default_root()
 
   defp clamp_selection(_, []), do: nil
   defp clamp_selection(nil, _), do: 0
