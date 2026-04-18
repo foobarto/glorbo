@@ -11,6 +11,13 @@ history:
     note: >-
       Retrofit: AGENT.md + HEARTBEAT.md landed as ALLCAPS alongside
       GEP-14's scheduler hook. Captured here as the ongoing convention.
+  - date: 2026-04-18
+    status: Accepted
+    note: >-
+      Extended: SOUL.md added as a tone + character file, sibling to
+      AGENT.md. Opt-in per agent; scaffolder writes it when the chosen
+      template has a matching priv/templates/souls/<role>.md. See
+      task #118 commit history.
 ---
 
 # GEP-15: ALLCAPS convention for agent-facing markdown files
@@ -49,6 +56,7 @@ with a `.md` extension**. Specifically:
 |----------------|------------------------------------------|------------------------------------------------|
 | `AGENT.md`     | `companies/<co>/agents/<slug>/`          | identity, permissions, provider, cron          |
 | `HEARTBEAT.md` | `companies/<co>/agents/<slug>/`          | GEP-14; cron-wake instructions                 |
+| `SOUL.md`      | `companies/<co>/agents/<slug>/`          | tone + character + voice (complements AGENT.md — task #118, 2026-04-18) |
 | `SKILLS.md`    | `companies/<co>/agents/<slug>/` (future) | placeholder — per-agent skill index if needed  |
 
 User data files stay lowercase: `company.md`, `channels/general.md`,

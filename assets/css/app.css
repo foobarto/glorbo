@@ -2009,6 +2009,25 @@ html[data-density="dense"] .gl-agent-card,
 html[data-density="dense"] .gl-company-card { padding: var(--gl-space-sm); }
 html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space-md); }
 
+/* ========== Agent SOUL panel (task #118) ========== */
+.gl-agent-soul__body {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: var(--gl-space-md);
+  font-style: italic;
+  color: var(--gl-text);
+}
+.gl-agent-soul__body h1,
+.gl-agent-soul__body h2 {
+  font-style: normal;
+  font-size: 13px;
+  margin: 0 0 var(--gl-space-sm) 0;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* ========== Keyboard cheatsheet overlay (task #139) ========== */
 .gl-cheatsheet {
   min-width: 400px;

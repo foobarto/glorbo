@@ -196,6 +196,18 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert out =~ "glorbo new skill acme code-review"
     end
 
+    test "scaffolder writes SOUL.md when the template has one (#118)", %{home: home} do
+      assert {:new_agent, 0, _} = Agent.run(["acme/eng", "--template", "engineer"])
+
+      soul_path = Path.join([home, "companies/acme/agents/eng/SOUL.md"])
+      assert File.exists?(soul_path)
+
+      soul = File.read!(soul_path)
+      # The engineer soul template renders company placeholders.
+      assert soul =~ "Software Engineer"
+      assert soul =~ "ACME"
+    end
+
     test "no warning when referenced skill already exists", %{home: home} do
       # Pre-create the skill file the engineer template wants.
       skill_dir = Path.join([home, "companies/acme/skills"])

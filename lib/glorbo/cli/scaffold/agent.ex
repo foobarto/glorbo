@@ -177,6 +177,11 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     File.write!(Path.join(ag_path, "AGENT.md"), rendered)
 
+    # GEP-15 extension (task #118): SOUL.md for tone + character. We
+    # look up a soul template with the same name as the agent template;
+    # missing = no soul file (the Director can write one later).
+    maybe_write_soul(ag_path, entry.name, vars)
+
     File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
     # Heartbeat — #{agent}
 
@@ -289,6 +294,25 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     {:new_agent, 1,
      "Usage: glorbo new agent <company>/<slug> [--role R] [--provider P]" <>
        " [--template T] [--reports-to R]\n"}
+  end
+
+  # task #118 — SOUL.md is a sibling of AGENT.md carrying tone + voice
+  # rather than prescriptive rules. Ships per agent template under
+  # priv/templates/souls/<name>.md; missing template = no file written
+  # (user can author one later).
+  defp maybe_write_soul(ag_path, template_name, vars) do
+    soul_path = Path.join([:code.priv_dir(:glorbo), "templates/souls", "#{template_name}.md"])
+
+    if File.exists?(soul_path) do
+      rendered =
+        soul_path
+        |> File.read!()
+        |> Renderer.render(vars)
+
+      File.write!(Path.join(ag_path, "SOUL.md"), rendered)
+    end
+
+    :ok
   end
 
   @spec help_text() :: String.t()

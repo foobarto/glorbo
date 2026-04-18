@@ -159,4 +159,39 @@ defmodule GlorboWeb.AgentLiveTest do
       assert html =~ "Binary file"
     end
   end
+
+  # task #118 — SOUL.md renders as an identity-column panel when
+  # present; absent = no panel.
+  describe "SOUL.md rendering" do
+    test "shows a soul panel when SOUL.md exists",
+         %{conn: conn, base: base} do
+      ag = Path.join([base, "companies/acme/agents/ceo"])
+      File.mkdir_p!(ag)
+
+      File.write!(Path.join(ag, "SOUL.md"), """
+      ---
+      role: "CEO"
+      ---
+
+      Direct. Quiet. Pragmatic.
+      """)
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+      assert html =~ "gl-agent-soul"
+      assert html =~ "Direct. Quiet. Pragmatic"
+      # Frontmatter is stripped — don't render the --- delimiters in body.
+      refute html =~ ~s(role: "CEO")
+    end
+
+    test "no soul panel when SOUL.md is missing",
+         %{conn: conn, base: base} do
+      # Default fixture doesn't ship a SOUL.md; confirm the panel is
+      # absent.
+      soul_path = Path.join([base, "companies/acme/agents/ceo/SOUL.md"])
+      File.rm(soul_path)
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+      refute html =~ "gl-agent-soul"
+    end
+  end
 end

@@ -356,6 +356,17 @@ defmodule GlorboWeb.AgentLive do
             </div>
           </section>
 
+          <%!-- task #118 — render SOUL.md if the agent has one --%>
+          <section :if={@detail.soul} class="gl-panel gl-agent-soul">
+            <header class="gl-panel__header">
+              <span>soul</span>
+              <span class="gl-panel__hint">SOUL.md</span>
+            </header>
+            <div class="gl-panel__body gl-agent-soul__body">
+              {@detail.soul}
+            </div>
+          </section>
+
           <section class="gl-panel gl-workspace-panel">
             <header class="gl-panel__header">
               <span>workspace/</span>
@@ -691,8 +702,26 @@ defmodule GlorboWeb.AgentLive do
       not_mounted: not_mounted_list(base, co, ag),
       inbox: load_inbox_preview(ag_dir),
       outbox: load_outbox_preview(ag_dir),
-      sandbox: build_sandbox_preview(spec, co, ag)
+      sandbox: build_sandbox_preview(spec, co, ag),
+      soul: load_soul(ag_dir)
     }
+  end
+
+  # task #118 — if the agent has a SOUL.md file, render its body on
+  # the identity column. We strip frontmatter since the frontmatter
+  # fields (`role:`) duplicate identity data already on display.
+  defp load_soul(ag_dir) do
+    path = Path.join(ag_dir, "SOUL.md")
+
+    with true <- File.exists?(path),
+         {:ok, content} <- File.read(path),
+         stripped <- strip_frontmatter(content),
+         trimmed <- String.trim(stripped),
+         true <- trimmed != "" do
+      trimmed
+    else
+      _ -> nil
+    end
   end
 
   defp agent_name(nil, ag), do: String.capitalize(ag)
