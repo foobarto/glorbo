@@ -9,14 +9,19 @@ defmodule GlorboWeb.KanbanLiveTest do
   """
   use GlorboWeb.LiveCase, async: false
 
-  test "renders three columns with exact header labels", %{conn: conn} do
+  test "renders four columns including review (task #115/#122)", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
     assert html =~ "todo"
     assert html =~ "in progress"
+    assert html =~ "review"
     assert html =~ "done"
     # M4.1: columns are now drop targets with the KanbanLane hook
     assert html =~ ~s|phx-hook="KanbanLane"|
     assert html =~ ~s|data-status="in-progress"|
+    # Drag-to-review sets status=pending (task #115 fix — previously
+    # the dropdown offered pending/approved/denied but no lane showed
+    # them, so tasks would vanish).
+    assert html =~ ~s|data-status="pending"|
   end
 
   test "kanban:move writes new status to the task frontmatter",

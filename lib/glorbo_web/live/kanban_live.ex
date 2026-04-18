@@ -499,10 +499,11 @@ defmodule GlorboWeb.KanbanLive do
     Enum.filter(tasks, fn t -> t.project == project end)
   end
 
-  defp columns(%{todo: t, in_progress: i, done: d}) do
+  defp columns(%{todo: t, in_progress: i, review: r, done: d}) do
     [
       {:todo, "todo", t},
       {:in_progress, "in progress", i},
+      {:review, "review", r},
       {:done, "done", d}
     ]
   end
@@ -652,10 +653,16 @@ defmodule GlorboWeb.KanbanLive do
 
   defp column_key_to_status(:todo), do: "todo"
   defp column_key_to_status(:in_progress), do: "in-progress"
+  defp column_key_to_status(:review), do: "pending"
   defp column_key_to_status(:done), do: "done"
 
+  # Drag-target column name → canonical task status. `review` accepts
+  # drops as `pending` (the neutral approval-gate state); existing
+  # `approved`/`denied` tasks stay in the same lane until the Director
+  # explicitly edits the status on the detail overlay.
   defp column_to_status("todo"), do: {:ok, "todo"}
   defp column_to_status("in-progress"), do: {:ok, "in-progress"}
+  defp column_to_status("pending"), do: {:ok, "pending"}
   defp column_to_status("done"), do: {:ok, "done"}
   defp column_to_status(_), do: :error
 
@@ -704,10 +711,17 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
+  # Default four-lane layout. Keeps the status dropdown and board in
+  # sync: every status the user can select lands in a visible lane.
+  # `review` collects approval-gate states (pending/approved/denied)
+  # so the Director sees at-a-glance which tasks are awaiting or
+  # contested. Full PROJECT.md-configurable lanes land separately
+  # (task #122 full scope).
   defp group_by_column(tasks) do
     %{
-      todo: Enum.filter(tasks, &(&1.status in ["todo", "pending"])),
+      todo: Enum.filter(tasks, &(&1.status == "todo")),
       in_progress: Enum.filter(tasks, &(&1.status == "in-progress")),
+      review: Enum.filter(tasks, &(&1.status in ["pending", "approved", "denied"])),
       done: Enum.filter(tasks, &(&1.status == "done"))
     }
   end
