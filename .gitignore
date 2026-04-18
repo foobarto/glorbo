@@ -88,3 +88,6 @@ coverage/
 *.tar.gz
 *.sig
 .claude/launch.json
+
+# Local .reports/ — session outputs from audits/E2E runs; not source.
+.reports/
