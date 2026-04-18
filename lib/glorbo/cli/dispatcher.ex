@@ -104,6 +104,7 @@ defmodule Glorbo.CLI.Dispatcher do
          env <- build_env(provider.env, substitutions, reply_path, invocation_id, ctx),
          {:ok, run_result} <- run(provider, args, env, ctx, opts),
          :ok <- maybe_log_run_output(provider, run_result, reply_path, fs),
+         :ok <- maybe_stdout_to_reply(run_result, reply_path, provider.reply_max_bytes, fs),
          {:ok, reply} <- read_reply(reply_path, provider.reply_max_bytes, fs) do
       {usage, usage_error} =
         parse_usage(provider, run_result, ctx, substitutions)
@@ -116,6 +117,39 @@ defmodule Glorbo.CLI.Dispatcher do
          usage: usage,
          usage_error: usage_error
        }}
+    end
+  end
+
+  # Fallback reply capture: if the CLI exited cleanly but didn't write
+  # to $GLORBO_REPLY_PATH, AND stdout has content, treat stdout as the
+  # effective reply. This lets CLIs like `claude --print` — which write
+  # their response to stdout rather than following the GLORBO_REPLY_PATH
+  # contract — integrate without the agent needing a shell-redirect
+  # wrapper. Does nothing if stdout is empty or exit != 0; the existing
+  # :reply_file_missing/:reply_file_empty errors still surface then.
+  defp maybe_stdout_to_reply(run_result, reply_path, max_bytes, fs) do
+    exit_status = Map.get(run_result, :exit_status, 0)
+    stdout = Map.get(run_result, :stdout, "") |> to_string()
+    trimmed = String.trim(stdout)
+
+    cond do
+      exit_status != 0 ->
+        :ok
+
+      trimmed == "" ->
+        :ok
+
+      fs.exists?.(reply_path) ->
+        :ok
+
+      byte_size(stdout) > max_bytes ->
+        :ok
+
+      true ->
+        parent = Path.dirname(reply_path)
+        fs.mkdir_p!.(parent)
+        File.write!(reply_path, stdout)
+        :ok
     end
   end
 

@@ -51,8 +51,13 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   test "bundled providers with auth needs declare auth_binds", %{providers: p} do
     claude = p["claude-code"]
 
-    assert [%{host: "~/.claude", sandbox: "/workspace/.glorbo-claude", mode: :ro}] =
-             claude.auth_binds
+    # claude-code reads creds from both ~/.claude/ (dir) and
+    # ~/.claude.json (file at home root, not inside the dir). Both
+    # bind into the sandbox HOME (= /workspace) as siblings.
+    assert [
+             %{host: "~/.claude", sandbox: "/workspace/.claude", mode: :ro},
+             %{host: "~/.claude.json", sandbox: "/workspace/.claude.json", mode: :ro}
+           ] = claude.auth_binds
 
     codex = p["codex"]
     assert [%{host: "~/.codex", mode: :ro}] = codex.auth_binds

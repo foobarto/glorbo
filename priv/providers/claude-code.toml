@@ -27,10 +27,12 @@ allow_version_probe = true
 usage_parser = "claude_jsonl"
 usage_path   = { kind = "jsonl_latest_in_dir", path = "{workspace}/.glorbo-claude/projects/{encoded_workspace}" }
 
-# Redirect session writes into the agent workspace. Auth still lives in
-# ~/.claude/ (bind-mounted read-only by Sandbox.Bwrap).
+# No CLAUDE_CONFIG_DIR — let claude-code use its default
+# `$HOME/.claude/` + `$HOME/.claude.json` layout. The sandbox's HOME
+# is /workspace (set by Bwrap), so claude-code looks at
+# `/workspace/.claude/` and `/workspace/.claude.json`, both of which
+# we bind below from the Director's real home.
 [env]
-CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
 
 # Claude encodes the workspace path into a single directory name by
 # replacing every `/` with `-`. See PathTransforms.slash_to_dash/1.
@@ -38,11 +40,20 @@ CLAUDE_CONFIG_DIR = "{workspace}/.glorbo-claude"
 from      = "{workspace}"
 transform = "slash_to_dash"
 
-# Auth bind (GEP-8 auth_binds). Mount the Director's `~/.claude/`
-# read-only at the same path the TOML sets `CLAUDE_CONFIG_DIR` to, so
-# claude-code finds its credentials. Dispatch skips this bind when the
-# host path doesn't exist (dev boxes without claude installed).
+# Auth binds (GEP-8 auth_binds). claude-code expects both:
+#
+#   - `$HOME/.claude/` — OAuth refresh token (.credentials.json),
+#     session history (history.jsonl), plugins, etc.
+#   - `$HOME/.claude.json` — session config file at home root.
+#
+# The two are sibling paths in the same HOME. Neither bind overlays
+# the other, so bwrap's no-create-in-ro constraint doesn't bite.
 [[auth_binds]]
 host    = "~/.claude"
-sandbox = "/workspace/.glorbo-claude"
+sandbox = "/workspace/.claude"
+mode    = "ro"
+
+[[auth_binds]]
+host    = "~/.claude.json"
+sandbox = "/workspace/.claude.json"
 mode    = "ro"
