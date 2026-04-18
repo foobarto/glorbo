@@ -57,6 +57,7 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:columns, group_by_column([]))
        |> assign(:new_task_open?, false)
        |> assign(:new_task_projects, list_projects(base, slug))
+       |> assign(:assignee_options, list_assignees(base, slug))
        |> assign(:open_task, nil)}
     else
       {:ok,
@@ -416,7 +417,17 @@ defmodule GlorboWeb.KanbanLive do
 
           <label class="gl-task-detail__field">
             <span class="gl-muted">assigned_to</span>
-            <input type="text" name="assigned_to" value={@open_task.assigned_to} class="gl-input" />
+            <input
+              type="text"
+              name="assigned_to"
+              value={@open_task.assigned_to}
+              list="gl-assignee-options"
+              class="gl-input"
+              autocomplete="off"
+            />
+            <datalist id="gl-assignee-options">
+              <option :for={slug <- @assignee_options} value={slug}></option>
+            </datalist>
           </label>
 
           <label class="gl-task-detail__field">
@@ -508,6 +519,26 @@ defmodule GlorboWeb.KanbanLive do
       _ ->
         []
     end
+  end
+
+  # Options for the `assigned_to` datalist: every agent slug under
+  # companies/<co>/agents/ plus "director" (the human operator — not a
+  # real agent dir, but a valid assignment target per task #116).
+  defp list_assignees(base, company) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    slugs =
+      case File.ls(agents_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+          |> Enum.sort()
+
+        _ ->
+          []
+      end
+
+    ["director" | slugs]
   end
 
   defp validate_project(project, allowed) do

@@ -232,4 +232,33 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     assert html =~ "Pick a project"
   end
+
+  # task #116 — the assigned_to input on the task-detail overlay uses an
+  # HTML datalist sourced from company agents + "director". Director is
+  # the human operator and always a valid assignment target even though
+  # no agents/director/ dir exists.
+  test "task detail exposes assignee datalist with agents + director",
+       %{conn: conn, base: base} do
+    proj = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
+    File.mkdir_p!(proj)
+    path = Path.join(proj, "site-x1.md")
+
+    File.write!(path, """
+    ---
+    title: "Sitemap"
+    status: todo
+    ---
+
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?project=website")
+    html = render_click(view, "open_task", %{"path" => "projects/website/tasks/site-x1.md"})
+
+    assert html =~ ~s(list="gl-assignee-options")
+    assert html =~ ~s(<datalist id="gl-assignee-options">)
+    # "director" always present; "ceo" comes from the acme fixture.
+    assert html =~ ~s(<option value="director")
+    assert html =~ ~s(<option value="ceo")
+  end
 end
