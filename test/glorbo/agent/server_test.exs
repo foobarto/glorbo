@@ -537,6 +537,30 @@ defmodule Glorbo.Agent.ServerTest do
       assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
     end
 
+    test "inbox scan skips rejections/ subdir (task #130)", ctx do
+      # Router writes rejection notices to inbox/rejections/. Those are
+      # notifications, not new work — a wake that picks them up would
+      # dispatch, produce a reply, get rejected again, and loop.
+      base = Path.join(System.tmp_dir!(), "reject-test-#{System.unique_integer([:positive])}")
+      inbox = Path.join([base, "companies/acme/agents/engineer/inbox"])
+      rejections = Path.join(inbox, "rejections")
+      File.mkdir_p!(rejections)
+      File.write!(Path.join(rejections, "1-oops.md"), "---\nrejected: true\n---\nno good")
+
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      dispatch_fun = fn _spec, task, _opts ->
+        send(ctx.test_pid, {:dispatched, task.task_path})
+        {:ok, %{exit_status: 0}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+      :ok = AgentServer.wake(pid, :inbox, nil)
+
+      refute_receive {:dispatched, _}, 200
+      assert %{state: :idle} = AgentServer.status(pid)
+    end
+
     test ":mention wake prefers inbox/mentions/ over older top-level files", ctx do
       # Seed both a stale top-level file AND a newer mention file.
       # Pre-fix: the oldest top-level would win even for mention wakes,

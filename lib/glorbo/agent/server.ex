@@ -621,7 +621,11 @@ defmodule Glorbo.Agent.Server do
   # `agents/<slug>/inbox/`. Doesn't match agents/<other>/inbox/ so each
   # Agent.Server only wakes on its own events.
   defp inbox_event_for_me?(rel_path, slug) do
-    String.starts_with?(rel_path, "agents/#{slug}/inbox/")
+    # Rejection notices are an inbox write but not a task; matching
+    # them here would fire a wake that dispatches on the rejection
+    # itself, producing another rejection, ad infinitum (task #130).
+    String.starts_with?(rel_path, "agents/#{slug}/inbox/") and
+      not String.starts_with?(rel_path, "agents/#{slug}/inbox/rejections/")
   end
 
   defp mention_event_for_me?(rel_path, slug) do
@@ -684,9 +688,16 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
+  # Subdirs of inbox/ that carry actionable tasks. `rejections/` is
+  # deliberately excluded: rejection notices from the Router are
+  # notifications, not new work — scanning them creates a self-wake
+  # loop where every rejected reply spawns a fresh dispatch that
+  # produces yet another rejection (task #130).
+  @non_actionable_inbox_subdirs ~w(rejections)
+
   defp list_inbox_md_files(inbox_dir) do
     # Walk top-level + one subdir deep (`from-<sender>/*.md`,
-    # `mentions/*.md`, `rejections/*.md`) — Router writes under these.
+    # `mentions/*.md`) — Router writes under these.
     direct = md_files_in(inbox_dir)
 
     sub_dirs_files =
@@ -696,6 +707,7 @@ defmodule Glorbo.Agent.Server do
         {:ok, entries} -> entries
         _ -> []
       end
+      |> Enum.reject(&(&1 in @non_actionable_inbox_subdirs))
       |> Enum.map(&Path.join(inbox_dir, &1))
       |> Enum.filter(&File.dir?/1)
       |> Enum.flat_map(&md_files_in/1)
