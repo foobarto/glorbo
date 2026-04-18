@@ -70,10 +70,30 @@ if (!csrfToken) {
 // Global keyboard shortcuts: two-key `g <x>` sequences map to routes.
 // No LV round-trip — on match, navigate directly.
 // Reset the prefix if the second key doesn't arrive within 1s.
+//
+// Global (company-independent) routes use a plain string.
+// Per-company routes use a function receiving the current company
+// slug (resolved from the URL or the sidebar's company picker).
 const NAV_MAP = {
   o: "/companies",
   h: "/health",
   p: "/providers",
+  // Per-company shortcuts — Director pressing `g c` / `g a` / `g v` /
+  // `g k` from anywhere inside a company sends them to that company's
+  // channels / audit / approvals / kanban.
+  c: (co) => co && `/companies/${co}/channels/general`,
+  a: (co) => co && `/companies/${co}/audit`,
+  v: (co) => co && `/companies/${co}/approvals`,
+  k: (co) => co && `/companies/${co}/kanban`,
+}
+
+// Resolve current company from the URL first (most reliable), falling
+// back to the sidebar company-picker's selected option.
+function currentCompanySlug() {
+  const urlMatch = window.location.pathname.match(/^\/companies\/([a-z][a-z0-9_-]{0,63})/)
+  if (urlMatch) return urlMatch[1]
+  const picker = document.querySelector(".gl-topbar__picker-select")
+  return picker ? picker.value : null
 }
 let gPrefixActive = false
 let gPrefixTimer = null
@@ -84,9 +104,10 @@ window.addEventListener("keydown", (e) => {
   if (isTyping(document.activeElement)) return
 
   if (gPrefixActive) {
-    const dest = NAV_MAP[e.key]
+    const raw = NAV_MAP[e.key]
     gPrefixActive = false
     clearTimeout(gPrefixTimer)
+    const dest = typeof raw === "function" ? raw(currentCompanySlug()) : raw
     if (dest) {
       e.preventDefault()
       window.location.assign(dest)

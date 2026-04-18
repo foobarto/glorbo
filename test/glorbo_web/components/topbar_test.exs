@@ -28,12 +28,16 @@ defmodule GlorboWeb.Components.TopbarTest do
       assert html =~ ~s(aria-label="Go to companies list")
     end
 
-    test "renders keyboard hints" do
+    test "renders keyboard hints for the primary per-company nav" do
       html = render_topbar([])
       assert html =~ "<kbd>g</kbd>"
       assert html =~ "overview"
-      assert html =~ "health"
-      assert html =~ "providers"
+      # Per-company shortcuts are the ones Director uses most; the
+      # cheatsheet prioritises them over globals (health/providers
+      # still work and appear in the `?` overlay — task #139).
+      assert html =~ "chat"
+      assert html =~ "kanban"
+      assert html =~ "audit"
     end
 
     test "renders a working TWEAKS toggle wired to the drawer" do
