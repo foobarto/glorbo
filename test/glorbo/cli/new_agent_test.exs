@@ -105,4 +105,107 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert spec.model == "claude-sonnet-4-5"
     end
   end
+
+  # GEP-10: --template flag scaffolds from a role template.
+  describe "new agent --template" do
+    test "ceo template produces a parseable AGENT.md with CEO role", %{home: home} do
+      assert {:new_agent, 0, out} = Agent.run(["acme/ceo", "--template", "ceo"])
+      assert out =~ "template: ceo"
+
+      path = Path.join([home, "companies/acme/agents/ceo/AGENT.md"])
+      content = File.read!(path)
+
+      assert content =~ ~s(role: "Chief Executive Officer")
+      assert content =~ "slug: ceo"
+      assert content =~ "heartbeat: \"*/30 * * * *\""
+
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert spec.slug == "ceo"
+    end
+
+    test "engineer template produces parseable AGENT.md", %{home: home} do
+      assert {:new_agent, 0, out} = Agent.run(["acme/alice", "--template", "engineer"])
+      assert out =~ "template: engineer"
+
+      path = Path.join([home, "companies/acme/agents/alice/AGENT.md"])
+      content = File.read!(path)
+
+      assert content =~ ~s(role: "Software Engineer")
+      assert content =~ "company_upper" |> then(fn _ -> "ACME" end)
+      assert content =~ "ACME"
+
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert "code-review" in spec.skills
+    end
+
+    test "researcher template produces parseable AGENT.md", %{home: home} do
+      assert {:new_agent, 0, _out} = Agent.run(["acme/rae", "--template", "researcher"])
+
+      path = Path.join([home, "companies/acme/agents/rae/AGENT.md"])
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert "web-search" in spec.skills
+    end
+
+    test "--reports-to fills the template reports_to placeholder", %{home: home} do
+      assert {:new_agent, 0, _} =
+               Agent.run([
+                 "acme/alice",
+                 "--template",
+                 "engineer",
+                 "--reports-to",
+                 "ceo"
+               ])
+
+      content =
+        File.read!(Path.join([home, "companies/acme/agents/alice/AGENT.md"]))
+
+      assert content =~ "reports_to: ceo"
+      refute content =~ "reports_to: director"
+      assert content =~ "You report to ceo"
+    end
+
+    test "--provider feeds template provider placeholder", %{home: home} do
+      assert {:new_agent, 0, _} =
+               Agent.run([
+                 "acme/alice",
+                 "--template",
+                 "engineer",
+                 "--provider",
+                 "gemini-cli"
+               ])
+
+      content =
+        File.read!(Path.join([home, "companies/acme/agents/alice/AGENT.md"]))
+
+      assert content =~ "provider: gemini-cli"
+    end
+
+    test "unknown template returns exit 1 with available list" do
+      assert {:new_agent, 1, out} = Agent.run(["acme/alice", "--template", "nope"])
+      assert out =~ "Unknown agent template"
+      assert out =~ "ceo"
+      assert out =~ "engineer"
+      assert out =~ "researcher"
+    end
+
+    test "template referencing missing skills warns the Director", %{home: _home} do
+      assert {:new_agent, 0, out} =
+               Agent.run(["acme/alice", "--template", "engineer"])
+
+      assert out =~ "⚠ template references skills not present"
+      assert out =~ "glorbo new skill acme code-review"
+    end
+
+    test "no warning when referenced skill already exists", %{home: home} do
+      # Pre-create the skill file the engineer template wants.
+      skill_dir = Path.join([home, "companies/acme/skills"])
+      File.mkdir_p!(skill_dir)
+      File.write!(Path.join(skill_dir, "code-review.md"), "---\nname: code-review\n---\n")
+
+      assert {:new_agent, 0, out} =
+               Agent.run(["acme/alice", "--template", "engineer"])
+
+      refute out =~ "⚠ template references skills"
+    end
+  end
 end

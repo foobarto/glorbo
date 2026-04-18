@@ -2,15 +2,19 @@
 gep: 10
 title: Agent and Role-Specific Skill Templates
 author: Glorbo Maintainers <security@example.invalid>
-status: Placeholder
+status: Draft
 type: Standards
 created: 2026-04-17
+updated: 2026-04-18
 requires: [2]
-see-also: [4]
+see-also: [4, 8, 15]
 history:
   - date: 2026-04-17
     status: Placeholder
     note: Idea captured with problem statement, goals, non-goals, and open questions. Implementation shape still to be worked out via brainstorm before promoting to Draft.
+  - date: 2026-04-18
+    status: Draft
+    note: Brainstorm resolved the 10 open questions. Scope narrowed to 3 agent templates (CEO, Engineer, Researcher) + 2 skill templates (code-review, web-search) for v1. Decisions recorded as D4–D13.
 ---
 
 # GEP-10: Agent and Role-Specific Skill Templates
@@ -68,10 +72,11 @@ from.
   render with a handful of variable substitutions (name, company,
   reports_to) and that's it — keep the scaffolding simple.
 
-## 4. Open questions for the brainstorm
+## 4. Open questions — resolved 2026-04-18
 
-This GEP is Draft-in-scope; the shape below is a proposal, not a
-commitment. Key decisions to work through before acceptance:
+All ten resolved in brainstorm on 2026-04-18. Resolutions are
+recorded as D4–D13 in §9 and summarised below; the original question
+text is kept verbatim for historical context.
 
 1. **Where do built-in templates live on disk?** Options:
    `priv/templates/agents/*.md` inside the Glorbo release; a
@@ -299,11 +304,135 @@ be filled in during the brainstorm that takes this to Accepted.)
   provider registry (GEP-8) layers user config on built-ins. A
   remote registry is premature.
 
-### D4 onwards
+### D4. Built-in templates ship under `priv/templates/{agents,skills}/*.md`
 
-To be captured during the brainstorm that takes this GEP from
-Draft to Accepted. See §4 (Open Questions) for what needs working
-out.
+- **Decided:** `priv/templates/agents/*.md` + `priv/templates/skills/*.md`
+  inside the Glorbo release. Loaded via `Application.app_dir(:glorbo,
+  "priv/templates")` (same pattern as provider TOMLs in GEP-8).
+- **Alternatives:** separate `glorbo-templates` repo; extract to
+  `~/.glorbo/templates/` on `glorbo init`; remote registry.
+- **Why:** symmetric with GEP-8 provider layout, no extraction step
+  needed, Burrito bundles `priv/` already. Separate repo / remote
+  registry are premature for a template library with 5 entries.
+
+### D5. User overrides shadow by filename under `~/.glorbo/templates/`
+
+- **Decided:** a file at `~/.glorbo/templates/agents/<name>.md`
+  shadows `priv/templates/agents/<name>.md` by the filename. Skills
+  analogously.
+- **Alternatives:** per-company template dirs; fork-and-modify
+  workflow; no overrides until v2.
+- **Why:** single shadow rule is one sentence to explain. Mirrors
+  GEP-8's `~/.glorbo/providers.toml` layering of user config onto
+  built-ins. Per-company dirs would create a four-way lookup (user
+  per-company → user global → builtin per-company → builtin global)
+  with no clear benefit.
+
+### D6. Plain markdown + YAML + `{{ var }}` placeholders
+
+- **Decided:** template file IS an `AGENT.md` / skill markdown file
+  with `{{ variable }}` placeholders. No companion `template.yaml`
+  or declared-variable manifest.
+- **Alternatives:** companion YAML file listing required variables;
+  EEx; mustache library dependency.
+- **Why:** the template shape IS the output shape — `cat
+  priv/templates/agents/ceo.md` shows what gets scaffolded. A
+  manifest is ceremony for placeholders that are obvious in the
+  template body. A hand-rolled `String.replace/3` loop is ~10 lines
+  of Elixir; a mustache dep is overkill.
+
+### D7. Fixed 8-variable set, no escape hatch
+
+- **Decided:** variables available to every template:
+  - `{{ name }}` — agent display name (defaults to slug upcased)
+  - `{{ slug }}` — agent slug (lowercase, `[a-z][a-z0-9_-]{0,63}`)
+  - `{{ company }}` — company slug
+  - `{{ company_upper }}` — company slug uppercased for display
+  - `{{ reports_to }}` — reports-to target (default `director`)
+  - `{{ provider }}` — provider name (default `claude-code`)
+  - `{{ model }}` — model id (default `claude-sonnet-4-5`)
+  - `{{ date }}` — YYYY-MM-DD scaffold date
+- **Alternatives:** project-specific vars like `{{ default_project }}`;
+  template-declared extension vars; full EEx.
+- **Why:** every extra variable creates a required-argument failure
+  mode. The Director can hand-edit after scaffold. If a template
+  needs project-specific content, the Director writes the project
+  slug in themselves — it's a one-line edit.
+
+### D8. Templates carry skill dependencies but scaffolder does NOT auto-create skills
+
+- **Decided:** agent template frontmatter can include
+  `skills: [code-review]`; scaffolding an agent with a missing
+  company-level skill emits a warning line with the remediation
+  command (`glorbo new skill acme code-review --template code-review`).
+- **Alternatives:** auto-scaffold missing skills; refuse to scaffold
+  if skills are missing; ignore the dependency entirely.
+- **Why:** auto-scaffolding means one command has side effects in
+  adjacent directories — surprising. Refusing blocks the common
+  "I know what I'm doing" path. A warning is enough nudge without
+  being obstructive.
+
+### D9. Permissions live in the template frontmatter
+
+- **Decided:** role-appropriate permissions are declared directly
+  in the template's frontmatter. No separate permission registry.
+- **Alternatives:** `priv/templates/permissions.toml` mapping role →
+  permission list; inherited from a base template.
+- **Why:** single source of truth per template. Director can read
+  `priv/templates/agents/ceo.md` to see exactly what the CEO gets.
+  A separate registry creates two files to keep in sync, and role
+  inheritance is a feature we don't have a use case for.
+
+### D10. Opinionated system prompts with `[EDIT: ...]` markers
+
+- **Decided:** each template ships an opinionated but short system
+  prompt with `[EDIT: ...]` markers on the parts that must be
+  customised per installation.
+- **Alternatives:** blank system prompts; elaborate "director's
+  guide to system prompts" in docs.
+- **Why:** a blank prompt defeats the purpose of the template
+  library. A too-prescriptive one becomes the Glorbo default voice
+  for every CEO on earth, which is cringe. `[EDIT: ...]` markers
+  are a visible nudge that this is a starting point, not a contract.
+
+### D11. No versioning story in v1
+
+- **Decided:** v1 ships with no template-versioning mechanism.
+  Glorbo upgrades that refine templates are documented in
+  CHANGELOG and the Director can re-scaffold into a sibling
+  directory to diff by hand.
+- **Alternatives:** semver per template; `glorbo templates diff`;
+  "template updated since last upgrade" nag screens.
+- **Why:** per D1, templates leave no runtime trace after scaffold.
+  The in-place `AGENT.md` is authoritative forever. Which version
+  of the template it came from is archaeology — git log of the
+  scaffold commit answers it.
+
+### D12. Curated agent template set: CEO, Engineer, Researcher
+
+- **Decided:** v1 ships exactly three agent templates:
+  **CEO**, **Engineer**, **Researcher**. More get added when real
+  user requests surface patterns we missed.
+- **Alternatives:** kitchen sink (CEO, CTO, Engineer, QA, PM,
+  Researcher, Reviewer, Copywriter, Analyst, Designer, ...);
+  zero templates (users always start from blank).
+- **Why:** these three cover the 80% archetype split —
+  executive/strategic, technical/implementation, and
+  investigative/information-gathering. Every additional template
+  needs ongoing curation and risks becoming stale vocabulary. Four
+  isn't meaningfully better than three for the first release.
+
+### D13. Curated skill template set: code-review, web-search
+
+- **Decided:** v1 ships exactly two skill templates: **code-review**
+  and **web-search**. Both are concrete, have well-understood shapes,
+  and compose with multiple agent templates.
+- **Alternatives:** ship "retrieval", "summarisation", "translation",
+  "code-runner" too; ship zero skills.
+- **Why:** concrete over meta. `code-review` is used by Engineer
+  templates; `web-search` is used by Researcher. "Retrieval" and
+  "summarisation" are meta-capabilities whose templates would end
+  up too abstract to be useful without heavy context.
 
 ## 10. Related
 

@@ -29,6 +29,8 @@ defmodule Glorbo.CLI do
           | :new_company
           | :new_agent
           | :new_project
+          | :new_skill
+          | :templates
           | :logs
           | :migrate
           | :backup
@@ -99,14 +101,17 @@ defmodule Glorbo.CLI do
   def dispatch(["new", "company" | rest]), do: Scaffold.Company.run(rest)
   def dispatch(["new", "agent" | rest]), do: Scaffold.Agent.run(rest)
   def dispatch(["new", "project" | rest]), do: Scaffold.Project.run(rest)
+  def dispatch(["new", "skill" | rest]), do: Scaffold.Skill.run(rest)
 
   def dispatch(["new", sub | _]) do
     {:unknown, 1, "Unknown subcommand: new #{sub}\n\n" <> help_text()}
   end
 
   def dispatch(["new"]) do
-    {:unknown, 1, "Usage: glorbo new {company|agent|project} <slug>\n\n" <> help_text()}
+    {:unknown, 1, "Usage: glorbo new {company|agent|project|skill} <slug>\n\n" <> help_text()}
   end
+
+  def dispatch(["templates" | rest]), do: Scaffold.TemplatesVerb.run(rest)
 
   # Phase-5 observability + maintenance + portability + ops.
   def dispatch(["logs" | rest]), do: Logs.run(rest)
@@ -149,8 +154,12 @@ defmodule Glorbo.CLI do
       serve                    Run glorbo in the foreground (blocks until SIGINT)
       run <co>/<agent> <task>  One-shot agent dispatch without the dashboard
       new company <slug>       Scaffold a new company directory
-      new agent <co>/<slug>    Scaffold a new agent (Director-only)
+      new agent <co>/<slug>    Scaffold a new agent (--template supported)
       new project <co>/<slug>  Scaffold a new project
+      new skill <co> <name>    Scaffold a new skill (--template supported)
+      templates list [kind]    List agent/skill templates (GEP-10)
+      templates show <kind> <name>
+                               Print a template's contents
       logs <co> [agent]        Tail audit or stdout log (--follow, --lines N)
       migrate                  Run Ecto migrations against ~/.glorbo/glorbo.db
       backup [--output PATH]   Produce a portable tar.gz of ~/.glorbo/
@@ -172,6 +181,7 @@ defmodule Glorbo.CLI do
   defp verb_help_text("serve"), do: Lifecycle.Serve.help_text()
   defp verb_help_text("run"), do: Lifecycle.Run.help_text()
   defp verb_help_text("new"), do: new_help_text()
+  defp verb_help_text("templates"), do: Scaffold.TemplatesVerb.help_text()
   defp verb_help_text("logs"), do: Logs.help_text()
   defp verb_help_text("migrate"), do: Migrate.help_text()
   defp verb_help_text("backup"), do: Backup.help_text()
@@ -182,12 +192,15 @@ defmodule Glorbo.CLI do
 
   defp new_help_text do
     """
-    glorbo new — scaffold a new company, agent, or project.
+    glorbo new — scaffold a new company, agent, project, or skill.
 
     USAGE
       glorbo new company <slug>
-      glorbo new agent <company>/<slug>
+      glorbo new agent <company>/<slug> [--template T]
       glorbo new project <company>/<slug>
+      glorbo new skill <company> <name> [--template T]
+
+    See `glorbo templates list` for available templates (GEP-10).
     """
   end
 
