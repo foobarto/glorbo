@@ -119,7 +119,77 @@ window.addEventListener("keydown", (e) => {
     gPrefixActive = true
     gPrefixTimer = setTimeout(() => { gPrefixActive = false }, 1000)
   }
+
+  // `?` — open the keyboard-shortcut cheatsheet overlay (#139).
+  // Shift+/ produces "?" on most layouts; Firefox sometimes delivers
+  // just "/" with shiftKey set. Guard for both.
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    e.preventDefault()
+    toggleCheatsheet()
+  }
+  // ESC closes the cheatsheet if it's open.
+  if (e.key === "Escape") hideCheatsheet()
 })
+
+// ---------------------------------------------------------------------------
+// Keyboard cheatsheet overlay (task #139).
+// Static content sourced from this file's NAV_MAP for single-source
+// truth. Shown by pressing `?` anywhere outside an input; hidden by ESC
+// or by clicking the scrim.
+// ---------------------------------------------------------------------------
+function cheatsheetHtml() {
+  return `
+    <div class="gl-modal-scrim" id="gl-cheatsheet-scrim">
+      <div class="gl-modal gl-cheatsheet" role="dialog" aria-label="Keyboard shortcuts">
+        <header class="gl-modal__header">
+          keyboard shortcuts
+          <button type="button" class="gl-btn gl-btn--ghost gl-modal__close"
+                  id="gl-cheatsheet-close" aria-label="close">×</button>
+        </header>
+        <div class="gl-cheatsheet__body">
+          <section>
+            <h3 class="gl-cheatsheet__group">global</h3>
+            <dl class="gl-cheatsheet__list">
+              <dt><kbd>g</kbd><kbd>o</kbd></dt><dd>companies overview</dd>
+              <dt><kbd>g</kbd><kbd>h</kbd></dt><dd>system health</dd>
+              <dt><kbd>g</kbd><kbd>p</kbd></dt><dd>providers</dd>
+              <dt><kbd>?</kbd></dt><dd>this cheatsheet</dd>
+            </dl>
+          </section>
+          <section>
+            <h3 class="gl-cheatsheet__group">company</h3>
+            <dl class="gl-cheatsheet__list">
+              <dt><kbd>g</kbd><kbd>c</kbd></dt><dd>#general chat</dd>
+              <dt><kbd>g</kbd><kbd>a</kbd></dt><dd>audit log</dd>
+              <dt><kbd>g</kbd><kbd>v</kbd></dt><dd>approvals queue</dd>
+              <dt><kbd>g</kbd><kbd>k</kbd></dt><dd>kanban board</dd>
+            </dl>
+          </section>
+          <p class="gl-muted gl-cheatsheet__hint">
+            Shortcuts ignore when typing in inputs. Press ESC to close.
+          </p>
+        </div>
+      </div>
+    </div>
+  `
+}
+function toggleCheatsheet() {
+  const existing = document.getElementById("gl-cheatsheet-scrim")
+  if (existing) { existing.remove(); return }
+  const host = document.createElement("div")
+  host.innerHTML = cheatsheetHtml()
+  document.body.appendChild(host.firstElementChild)
+  const scrim = document.getElementById("gl-cheatsheet-scrim")
+  scrim.addEventListener("click", (e) => {
+    if (e.target === scrim) hideCheatsheet()
+  })
+  document.getElementById("gl-cheatsheet-close")
+    .addEventListener("click", hideCheatsheet)
+}
+function hideCheatsheet() {
+  const el = document.getElementById("gl-cheatsheet-scrim")
+  if (el) el.remove()
+}
 
 // Tweaks drawer — density + vocab settings persisted in localStorage.
 // Density maps to a `data-density` attribute on <html> that CSS reads.

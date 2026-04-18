@@ -2009,6 +2009,44 @@ html[data-density="dense"] .gl-agent-card,
 html[data-density="dense"] .gl-company-card { padding: var(--gl-space-sm); }
 html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space-md); }
 
+/* ========== Keyboard cheatsheet overlay (task #139) ========== */
+.gl-cheatsheet {
+  min-width: 400px;
+  max-width: 560px;
+}
+.gl-cheatsheet__body {
+  padding: var(--gl-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-lg);
+}
+.gl-cheatsheet__group {
+  margin: 0 0 var(--gl-space-sm) 0;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gl-muted);
+}
+.gl-cheatsheet__list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--gl-space-sm) var(--gl-space-lg);
+  margin: 0;
+  font-size: 13px;
+}
+.gl-cheatsheet__list dt {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.gl-cheatsheet__list dd { margin: 0; }
+.gl-cheatsheet__hint {
+  margin: 0;
+  font-size: 11px;
+  font-style: italic;
+}
+
 /* ========== Workspace file editor (task #117) ========== */
 .gl-modal-scrim {
   position: fixed;
