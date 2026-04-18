@@ -9,6 +9,14 @@
 name   = "opencode"
 binary = "opencode"
 
+# opencode's official installer (`curl -fsSL https://opencode.ai/install | bash`)
+# drops the binary at `~/.opencode/bin/opencode` and does NOT add that
+# directory to `$PATH` unless the user sources it in their shell rc.
+# Declaring the install path here lets Detection find the binary even
+# when it's not on `$PATH`. See GEP-16 §4 for the sibling mechanism
+# (`cli_binary_binds`) that mounts the found path into the sandbox.
+fallback_paths = ["~/.opencode/bin/opencode"]
+
 args = [
   "--print",
   "--model", "{model}",

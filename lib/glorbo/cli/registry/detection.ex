@@ -6,8 +6,9 @@ defmodule Glorbo.CLI.Registry.Detection do
   Detection is split into two phases:
 
     * **`detect_all/1`** — synchronous `System.find_executable/1` per
-      provider (or `File.stat/1` for absolute paths). Sub-ms total.
-      Runs at boot.
+      provider (or `File.stat/1` for absolute paths). On a miss, falls
+      back to each entry in `provider.fallback_paths` (expanded via
+      `Path.expand/1`, so `~` works). Sub-ms total. Runs at boot.
     * **`probe_versions/2`** — fan-out `Task.async_stream` calling
       `System.cmd/3` on each provider's `version_flag`. Per-probe timeout
       of 3 s; non-fatal failures (timeout, non-zero exit, regex miss)
@@ -53,14 +54,34 @@ defmodule Glorbo.CLI.Registry.Detection do
     if absolute?(binary) do
       case stat_fun.(binary) do
         {:ok, _} -> %{p | installed?: true, resolved_path: binary}
-        {:error, _} -> %{p | installed?: false, resolved_path: nil}
+        {:error, _} -> try_fallback_paths(p, stat_fun)
       end
     else
       case find_fun.(binary) do
-        nil -> %{p | installed?: false, resolved_path: nil}
+        nil -> try_fallback_paths(p, stat_fun)
         path -> %{p | installed?: true, resolved_path: path}
       end
     end
+  end
+
+  # Walk the provider's declared `fallback_paths` in order; first one
+  # whose expanded path stat()s becomes the resolved binary. Expands
+  # `~` / `$HOME` here (not at load time) so the same TOML works for
+  # any director on any box. Missing paths are skipped silently — the
+  # provider simply remains `installed?: false` if nothing hits.
+  defp try_fallback_paths(%Provider{fallback_paths: []} = p, _stat_fun) do
+    %{p | installed?: false, resolved_path: nil}
+  end
+
+  defp try_fallback_paths(%Provider{fallback_paths: paths} = p, stat_fun) do
+    Enum.find_value(paths, %{p | installed?: false, resolved_path: nil}, fn raw ->
+      candidate = Path.expand(raw)
+
+      case stat_fun.(candidate) do
+        {:ok, _} -> %{p | installed?: true, resolved_path: candidate}
+        {:error, _} -> nil
+      end
+    end)
   end
 
   defp absolute?(binary) when is_binary(binary), do: Path.type(binary) == :absolute

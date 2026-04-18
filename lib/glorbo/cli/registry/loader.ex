@@ -165,7 +165,8 @@ defmodule Glorbo.CLI.Registry.Loader do
          {:ok, usage_parser} <- parse_usage_parser(raw, path),
          {:ok, usage_path} <- parse_usage_path(raw, path),
          {:ok, path_transforms} <- parse_path_transforms(raw, path),
-         {:ok, auth_binds} <- parse_auth_binds(raw, path) do
+         {:ok, auth_binds} <- parse_auth_binds(raw, path),
+         {:ok, fallback_paths} <- parse_fallback_paths(raw, path) do
       provider = %Provider{
         name: raw["name"],
         binary: raw["binary"],
@@ -182,6 +183,7 @@ defmodule Glorbo.CLI.Registry.Loader do
         usage_path: usage_path,
         path_transforms: path_transforms,
         auth_binds: auth_binds,
+        fallback_paths: fallback_paths,
         source: source,
         source_file: path
       }
@@ -365,6 +367,26 @@ defmodule Glorbo.CLI.Registry.Loader do
     {:error, {:invalid_auth_binds, path, "each entry needs host + sandbox fields"}}
   end
 
+  # `fallback_paths` — well-known absolute paths to try when the PATH
+  # lookup for `binary` misses. Useful for CLIs whose official installer
+  # drops the binary outside a `$PATH`-standard directory (opencode's
+  # `~/.opencode/bin/opencode`). `~` / `$HOME` expand in Detection, not
+  # here, so the TOML stays user-agnostic. Validation is shape-only;
+  # non-existent paths are a runtime concern.
+  defp parse_fallback_paths(%{"fallback_paths" => list}, path) when is_list(list) do
+    if Enum.all?(list, &is_binary/1) do
+      {:ok, list}
+    else
+      {:error, {:invalid_fallback_paths, path, "entries must be strings"}}
+    end
+  end
+
+  defp parse_fallback_paths(%{"fallback_paths" => _non_list}, path) do
+    {:error, {:invalid_fallback_paths, path, "must be a list of strings"}}
+  end
+
+  defp parse_fallback_paths(_raw, _path), do: {:ok, []}
+
   defp build_transform(name, %{"from" => from, "transform" => transform}, path)
        when is_binary(name) and is_binary(from) and is_binary(transform) do
     if PathTransforms.known?(transform) do
@@ -458,6 +480,9 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   def format_error({:invalid_auth_binds, path, detail}),
     do: "providers config error: #{path} auth_binds: #{detail}"
+
+  def format_error({:invalid_fallback_paths, path, detail}),
+    do: "providers config error: #{path} fallback_paths: #{detail}"
 
   def format_error({:invalid_shape, path, detail}),
     do: "providers config error: #{path} #{detail}"

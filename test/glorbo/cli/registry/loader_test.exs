@@ -150,6 +150,65 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                Loader.load_all(builtin_dir: dir, user_file: nil)
     end
 
+    test "parses fallback_paths as a list of strings", %{builtin_dir: dir} do
+      write!(dir, "with-fallback.toml", """
+      name   = "with-fallback"
+      binary = "opencode"
+      args   = ["--print"]
+      fallback_paths = ["~/.opencode/bin/opencode", "/opt/opencode/bin/opencode"]
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{timestamp}.md"
+      """)
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert p.fallback_paths == [
+               "~/.opencode/bin/opencode",
+               "/opt/opencode/bin/opencode"
+             ]
+    end
+
+    test "fallback_paths defaults to empty list", %{builtin_dir: dir} do
+      write!(dir, "no-fallback.toml", minimal_toml("no-fallback"))
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+      assert p.fallback_paths == []
+    end
+
+    test "fallback_paths rejects non-list value", %{builtin_dir: dir} do
+      write!(dir, "bad.toml", """
+      name   = "bad"
+      binary = "x"
+      args   = []
+      fallback_paths = "~/.opencode/bin/opencode"
+
+      reply_dir               = "x"
+      reply_filename_template = "y"
+      """)
+
+      assert {:error, {:invalid_fallback_paths, _, msg}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert msg =~ "list"
+    end
+
+    test "fallback_paths rejects non-string entries", %{builtin_dir: dir} do
+      write!(dir, "bad.toml", """
+      name   = "bad"
+      binary = "x"
+      args   = []
+      fallback_paths = ["ok", 42]
+
+      reply_dir               = "x"
+      reply_filename_template = "y"
+      """)
+
+      assert {:error, {:invalid_fallback_paths, _, msg}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert msg =~ "string"
+    end
+
     test "user-file providers come through with source: :user", %{user_file: path} do
       File.write!(path, """
       [[providers]]

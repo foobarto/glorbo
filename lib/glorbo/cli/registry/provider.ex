@@ -62,6 +62,7 @@ defmodule Glorbo.CLI.Registry.Provider do
           usage_path: usage_path_spec() | nil,
           path_transforms: [path_transform()],
           auth_binds: [auth_bind()],
+          fallback_paths: [String.t()],
           source: source(),
           source_file: String.t(),
           installed?: boolean(),
@@ -101,6 +102,7 @@ defmodule Glorbo.CLI.Registry.Provider do
     usage_parser: "none",
     path_transforms: [],
     auth_binds: [],
+    fallback_paths: [],
     installed?: false
   ]
 

@@ -62,6 +62,85 @@ defmodule Glorbo.CLI.Registry.DetectionTest do
 
       assert result.installed? == false
     end
+
+    test "falls back to fallback_paths when PATH misses" do
+      home = Path.expand("~")
+      fallback = Path.join([home, ".opencode/bin/opencode"])
+
+      p = provider(binary: "opencode", fallback_paths: ["~/.opencode/bin/opencode"])
+
+      [result] =
+        Detection.detect_all([p],
+          find_executable_fun: fn _ -> nil end,
+          file_stat_fun: fn
+            ^fallback -> {:ok, %{}}
+            _ -> {:error, :enoent}
+          end
+        )
+
+      assert result.installed? == true
+      assert result.resolved_path == fallback
+    end
+
+    test "walks fallback_paths in order; first hit wins" do
+      p =
+        provider(
+          binary: "unfound",
+          fallback_paths: ["/a/missing", "/b/found", "/c/also-found"]
+        )
+
+      [result] =
+        Detection.detect_all([p],
+          find_executable_fun: fn _ -> nil end,
+          file_stat_fun: fn
+            "/a/missing" -> {:error, :enoent}
+            "/b/found" -> {:ok, %{}}
+            "/c/also-found" -> {:ok, %{}}
+          end
+        )
+
+      assert result.resolved_path == "/b/found"
+    end
+
+    test "fallback_paths ignored when PATH resolves" do
+      p = provider(binary: "echo", fallback_paths: ["/never/looked/at"])
+
+      [result] =
+        Detection.detect_all([p],
+          find_executable_fun: fn "echo" -> "/usr/bin/echo" end,
+          file_stat_fun: fn _ -> flunk("stat_fun must not be called when PATH hits") end
+        )
+
+      assert result.resolved_path == "/usr/bin/echo"
+    end
+
+    test "installed? false when neither PATH nor any fallback resolves" do
+      p = provider(binary: "gone", fallback_paths: ["/x", "/y"])
+
+      [result] =
+        Detection.detect_all([p],
+          find_executable_fun: fn _ -> nil end,
+          file_stat_fun: fn _ -> {:error, :enoent} end
+        )
+
+      assert result.installed? == false
+      assert result.resolved_path == nil
+    end
+
+    test "absolute binary with fallback — fallback wins when primary missing" do
+      p = provider(binary: "/opt/primary/cli", fallback_paths: ["/opt/fallback/cli"])
+
+      [result] =
+        Detection.detect_all([p],
+          file_stat_fun: fn
+            "/opt/primary/cli" -> {:error, :enoent}
+            "/opt/fallback/cli" -> {:ok, %{}}
+          end
+        )
+
+      assert result.installed? == true
+      assert result.resolved_path == "/opt/fallback/cli"
+    end
   end
 
   describe "probe_versions/2 — version probing" do
