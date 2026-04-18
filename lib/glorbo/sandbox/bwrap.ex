@@ -372,11 +372,12 @@ defmodule Glorbo.Sandbox.Bwrap do
     cli_args = Keyword.get(run_opts, :cli_args, [])
     prompt = Keyword.get(run_opts, :prompt, "")
     usage_dir = Keyword.get(run_opts, :usage_dir)
+    stdout_log = Keyword.get(run_opts, :stdout_log)
     timeout_s = Map.get(opts, :timeout_seconds, @default_timeout_seconds)
 
     argv = build_argv(opts) ++ ["--", cli_bin] ++ cli_args
 
-    run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir)
+    run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log)
   end
 
   # Invoke bwrap via a `/bin/sh -c 'exec bwrap "$@" < prompt_file'` wrapper.
@@ -401,11 +402,11 @@ defmodule Glorbo.Sandbox.Bwrap do
   #
   # The prompt tempfile is deleted via `File.rm/1` in an after-clause so the
   # cleanup runs on both normal exit and exception paths.
-  defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir) do
+  defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log) do
     case write_prompt_tempfile(prompt) do
       {:ok, prompt_file} ->
         try do
-          do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir)
+          do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log)
         after
           _ = File.rm(prompt_file)
         end
@@ -431,7 +432,7 @@ defmodule Glorbo.Sandbox.Bwrap do
     end
   end
 
-  defp do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir) do
+  defp do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log) do
     sh_path = System.find_executable("sh") || "/bin/sh"
 
     # The shell script:
@@ -456,20 +457,62 @@ defmodule Glorbo.Sandbox.Bwrap do
 
     port = Port.open({:spawn_executable, sh_path}, port_opts)
 
-    case drain_port(port, timeout_s, <<>>) do
-      {:ok, exit_status, output} ->
-        {:ok, %{exit_status: exit_status, stdout: output, usage_dir: usage_dir}}
+    tee_io = open_stdout_tee(stdout_log)
+    write_tee_header(tee_io)
 
-      {:error, :timeout} ->
-        Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
-        safe_port_close(port)
-        {:error, :timeout}
+    try do
+      case drain_port(port, timeout_s, <<>>, tee_io) do
+        {:ok, exit_status, output} ->
+          write_tee_footer(tee_io, exit_status)
+          {:ok, %{exit_status: exit_status, stdout: output, usage_dir: usage_dir}}
 
-      {:error, reason} ->
-        safe_port_close(port)
-        {:error, reason}
+        {:error, :timeout} ->
+          Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
+          safe_port_close(port)
+          {:error, :timeout}
+
+        {:error, reason} ->
+          safe_port_close(port)
+          {:error, reason}
+      end
+    after
+      close_stdout_tee(tee_io)
     end
   end
+
+  # Open an append-mode file handle for the agent's stdout.log. nil
+  # stdout_log → nil IO (drain_port skips writes). Directory
+  # mkdir_p!'d just in case (e.g. fresh-scaffolded agent whose
+  # workspace sibling dirs exist but the slot has been deleted).
+  defp open_stdout_tee(nil), do: nil
+
+  defp open_stdout_tee(path) when is_binary(path) do
+    File.mkdir_p!(Path.dirname(path))
+
+    case File.open(path, [:append, :binary]) do
+      {:ok, io} ->
+        io
+
+      {:error, reason} ->
+        Logger.warning("stdout_log open failed path=#{path} reason=#{inspect(reason)}")
+        nil
+    end
+  end
+
+  defp write_tee_header(nil), do: :ok
+
+  defp write_tee_header(io) do
+    IO.binwrite(io, "\n=== glorbo dispatch #{DateTime.utc_now() |> DateTime.to_iso8601()} ===\n")
+  end
+
+  defp write_tee_footer(nil, _status), do: :ok
+
+  defp write_tee_footer(io, status) do
+    IO.binwrite(io, "\n=== exit #{status} ===\n")
+  end
+
+  defp close_stdout_tee(nil), do: :ok
+  defp close_stdout_tee(io), do: File.close(io)
 
   # Cap accumulated stdout/stderr at 16 MiB. A runaway CLI writing GBs
   # to stdout/stderr would otherwise balloon BEAM heap during the drain
@@ -480,15 +523,20 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   # Receive-loop over the port: accumulate stdout/stderr data until the
   # `{port, {:exit_status, status}}` message arrives OR the timeout fires.
-  defp drain_port(port, timeout_s, acc) do
+  # When `tee_io` is non-nil (task #131), every chunk also appends to the
+  # agent's `stdout.log` so the dashboard STDOUT tab + `glorbo logs` CLI
+  # see live output, not just the post-exit capture.
+  defp drain_port(port, timeout_s, acc, tee_io) do
     deadline_ms = timeout_s * 1_000
 
     receive do
       {^port, {:data, chunk}} ->
+        tee_write(tee_io, chunk)
+
         new_acc =
           if byte_size(acc) >= @stdout_cap, do: acc, else: acc <> chunk
 
-        drain_port(port, timeout_s, new_acc)
+        drain_port(port, timeout_s, new_acc, tee_io)
 
       {^port, {:exit_status, status}} ->
         {:ok, status, acc}
@@ -497,6 +545,9 @@ defmodule Glorbo.Sandbox.Bwrap do
         {:error, :timeout}
     end
   end
+
+  defp tee_write(nil, _chunk), do: :ok
+  defp tee_write(io, chunk), do: IO.binwrite(io, chunk)
 
   defp safe_port_close(port) do
     try do

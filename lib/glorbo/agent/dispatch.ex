@@ -336,11 +336,18 @@ defmodule Glorbo.Agent.Dispatch do
 
     invocation_opts = Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, sandbox_env))
 
+    # Tee stdout into agents/<slug>/stdout.log so the dashboard's
+    # STDOUT tab + `glorbo logs` CLI see real output. agent_workspace
+    # is `.../agents/<slug>/workspace`; its parent is the agent dir.
+    agent_root = Path.dirname(host_workspace)
+    stdout_log_path = Path.join(agent_root, "stdout.log")
+
     run_opts = [
       cli_binary: Map.fetch!(run_opts_map, :cli_binary),
       cli_args: Map.get(run_opts_map, :cli_args, []),
       prompt: Map.get(run_opts_map, :prompt, ""),
-      usage_dir: Map.get(run_opts_map, :usage_dir)
+      usage_dir: Map.get(run_opts_map, :usage_dir),
+      stdout_log: stdout_log_path
     ]
 
     Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
