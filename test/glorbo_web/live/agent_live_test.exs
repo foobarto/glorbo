@@ -97,4 +97,66 @@ defmodule GlorboWeb.AgentLiveTest do
     html = render_click(view, "tab", %{"tab" => "inbox"})
     assert html =~ "inbox/outbox"
   end
+
+  # task #117 — workspace file tree + edit overlay.
+  describe "workspace file editor" do
+    test "lists real workspace files and opens editor for them",
+         %{conn: conn, base: base} do
+      workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
+      File.mkdir_p!(workspace)
+      File.write!(Path.join(workspace, "notes.md"), "initial content")
+
+      {:ok, view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+
+      # File appears in the tree as a clickable button.
+      assert html =~ "notes.md"
+      assert html =~ "phx-click=\"open_file\""
+      assert html =~ ~s(phx-value-path="notes.md")
+
+      # Click opens the editor with the file's content.
+      html = render_click(view, "open_file", %{"path" => "notes.md"})
+      assert html =~ "initial content"
+      assert html =~ "workspace/"
+      assert html =~ "gl-file-editor"
+    end
+
+    test "save_file writes new content to disk",
+         %{conn: conn, base: base} do
+      workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
+      File.mkdir_p!(workspace)
+      path = Path.join(workspace, "notes.md")
+      File.write!(path, "v1")
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "open_file", %{"path" => "notes.md"})
+      render_submit(view, "save_file", %{"content" => "v2 changed"})
+
+      assert File.read!(path) == "v2 changed"
+    end
+
+    test "traversal attempts are rejected",
+         %{conn: conn, base: base} do
+      workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
+      File.mkdir_p!(workspace)
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "open_file", %{"path" => "../../etc/passwd"})
+
+      assert html =~ "Invalid path"
+      refute html =~ "gl-file-editor"
+    end
+
+    test "binary files are refused",
+         %{conn: conn, base: base} do
+      workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
+      File.mkdir_p!(workspace)
+      # Write a file with NUL bytes in the first 4 KiB.
+      File.write!(Path.join(workspace, "blob.bin"), <<0, 1, 2, 3, 0, 255>>)
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "open_file", %{"path" => "blob.bin"})
+
+      assert html =~ "Binary file"
+    end
+  end
 end

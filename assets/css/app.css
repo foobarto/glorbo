@@ -1964,6 +1964,75 @@ html[data-density="dense"] .gl-agent-card,
 html[data-density="dense"] .gl-company-card { padding: var(--gl-space-sm); }
 html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space-md); }
 
+/* ========== Workspace file editor (task #117) ========== */
+.gl-modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.6);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gl-modal {
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  min-width: 560px;
+  max-width: min(90vw, 960px);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gl-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gl-space-md);
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  border-bottom: 1px solid var(--gl-border);
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+}
+.gl-modal__close {
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 var(--gl-space-sm);
+}
+.gl-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gl-space-md);
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  border-top: 1px solid var(--gl-border);
+}
+.gl-file-editor__textarea {
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  width: 100%;
+  resize: vertical;
+  min-height: 400px;
+  border: 0;
+  border-radius: 0;
+  padding: var(--gl-space-md) var(--gl-space-lg);
+}
+.gl-filetree__file--clickable {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+}
+.gl-filetree__file--clickable:hover {
+  text-decoration: underline;
+  color: var(--gl-accent);
+}
+
 /* ========== Reduced-motion ========== */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

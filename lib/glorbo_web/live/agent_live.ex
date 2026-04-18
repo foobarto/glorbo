@@ -77,6 +77,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:hovered_perm, nil)
         |> assign(:streamer_pid, nil)
         |> assign(:history, history)
+        |> assign(:open_file, nil)
         |> stream(:stdout, [], limit: -1000)
 
       if connected?(socket) do
@@ -178,6 +179,115 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
+  # task #117 — click a file in the workspace tree to open an editor.
+  # `path` is the workspace-relative path so the UI never leaks
+  # absolute paths, and the server re-anchors against the known
+  # workspace dir (defence in depth against traversal).
+  @workspace_edit_max_bytes 512 * 1024
+
+  def handle_event("open_file", %{"path" => rel}, socket) do
+    case read_workspace_file(socket, rel) do
+      {:ok, content} ->
+        {:noreply, assign(socket, :open_file, %{rel: rel, content: content, error: nil})}
+
+      {:error, :too_large} ->
+        {:noreply, put_flash(socket, :error, "File is larger than 512 KB — edit on disk.")}
+
+      {:error, :binary} ->
+        {:noreply, put_flash(socket, :error, "Binary file — won't open in the editor.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "File no longer exists.")}
+
+      {:error, :invalid_path} ->
+        {:noreply, put_flash(socket, :error, "Invalid path.")}
+    end
+  end
+
+  def handle_event("close_file", _params, socket) do
+    {:noreply, assign(socket, :open_file, nil)}
+  end
+
+  def handle_event("save_file", %{"content" => content}, socket) do
+    case socket.assigns.open_file do
+      %{rel: rel} ->
+        case write_workspace_file(socket, rel, content) do
+          :ok ->
+            detail = %{socket.assigns.detail | workspace_tree: walk_workspace(agent_dir(socket))}
+
+            {:noreply,
+             socket
+             |> assign(:detail, detail)
+             |> assign(:open_file, nil)
+             |> put_flash(:info, "Saved #{rel}.")}
+
+          {:error, reason} ->
+            {:noreply,
+             assign(socket, :open_file, %{
+               socket.assigns.open_file
+               | error: "save failed: #{inspect(reason)}"
+             })}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp read_workspace_file(socket, rel) do
+    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         {:ok, %File.Stat{size: size}} <- File.stat(abs_path),
+         :ok <- check_size(size),
+         {:ok, bytes} <- File.read(abs_path),
+         :ok <- check_binary(bytes) do
+      {:ok, bytes}
+    else
+      {:error, :enoent} -> {:error, :not_found}
+      {:error, reason} when reason in [:too_large, :binary, :invalid_path] -> {:error, reason}
+      {:error, _} -> {:error, :not_found}
+    end
+  end
+
+  defp write_workspace_file(socket, rel, content) do
+    with {:ok, abs_path} <- resolve_workspace_path(socket, rel) do
+      File.write(abs_path, content)
+    end
+  end
+
+  defp resolve_workspace_path(socket, rel) do
+    workspace = Path.join(agent_dir(socket), "workspace")
+    candidate = Path.expand(Path.join(workspace, rel))
+
+    # Defence in depth against `../` traversal — expanded path must
+    # still start with the workspace dir.
+    if String.starts_with?(candidate, workspace <> "/") do
+      {:ok, candidate}
+    else
+      {:error, :invalid_path}
+    end
+  end
+
+  defp check_size(size) when size <= @workspace_edit_max_bytes, do: :ok
+  defp check_size(_), do: {:error, :too_large}
+
+  defp check_binary(bytes) do
+    # Crude but effective — files with NUL bytes in the first 4 KiB are
+    # treated as binary and refused in the editor. Plain text + UTF-8
+    # markdown/JSON/YAML sail through.
+    head = binary_part(bytes, 0, min(byte_size(bytes), 4096))
+    if String.contains?(head, <<0>>), do: {:error, :binary}, else: :ok
+  end
+
+  defp agent_dir(socket) do
+    Path.join([
+      base_dir(),
+      "companies",
+      socket.assigns.company_slug,
+      "agents",
+      socket.assigns.agent_slug
+    ])
+  end
+
   @impl true
   def terminate(_reason, socket) do
     if pid = socket.assigns[:streamer_pid], do: GlorboWeb.StdoutStreamer.stop(pid)
@@ -258,11 +368,16 @@ defmodule GlorboWeb.AgentLive do
                   style={"padding-left: #{10 + entry.depth * 14}px"}
                 >
                   <span class="gl-filetree__prefix">├─ </span>
-                  <span class={
-                    if entry.kind == :dir, do: "gl-filetree__dir", else: "gl-filetree__file"
-                  }>
+                  <span :if={entry.kind == :dir} class="gl-filetree__dir">{entry.name}/</span>
+                  <button
+                    :if={entry.kind == :file}
+                    type="button"
+                    class="gl-filetree__file gl-filetree__file--clickable"
+                    phx-click="open_file"
+                    phx-value-path={entry.rel}
+                  >
                     {entry.name}
-                  </span>
+                  </button>
                 </div>
                 <div :if={@detail.workspace_tree == []} class="gl-muted gl-filetree__node">
                   <span class="gl-filetree__prefix">└─ </span>(empty)
@@ -483,6 +598,36 @@ defmodule GlorboWeb.AgentLive do
           </section>
         </div>
       </div>
+
+      <%!-- task #117 — workspace file editor overlay --%>
+      <div :if={@open_file} class="gl-modal-scrim" phx-click="close_file">
+        <div class="gl-modal gl-file-editor" phx-click-away="close_file">
+          <form phx-submit="save_file" onclick="event.stopPropagation()">
+            <header class="gl-modal__header">
+              <span class="gl-muted">workspace/</span>{@open_file.rel}
+              <button
+                type="button"
+                class="gl-btn gl-btn--ghost gl-modal__close"
+                phx-click="close_file"
+              >
+                ×
+              </button>
+            </header>
+            <div :if={@open_file.error} class="gl-flash gl-flash--error">{@open_file.error}</div>
+            <textarea
+              name="content"
+              rows="20"
+              class="gl-input gl-file-editor__textarea"
+            >{@open_file.content}</textarea>
+            <footer class="gl-modal__footer">
+              <button type="button" class="gl-btn gl-btn--ghost" phx-click="close_file">
+                cancel
+              </button>
+              <button type="submit" class="gl-btn">save</button>
+            </footer>
+          </form>
+        </div>
+      </div>
     </section>
     """
   end
@@ -596,17 +741,45 @@ defmodule GlorboWeb.AgentLive do
   defp filesystem_permission?("chat", "read"), do: true
   defp filesystem_permission?(_, _), do: false
 
-  defp walk_workspace(ag_dir) do
-    path = Path.join(ag_dir, "workspace")
+  # Walk the agent's workspace dir up to @workspace_tree_depth levels
+  # deep. Skip dotfiles + known ephemeral caches. For files, include a
+  # relative path (relative to the workspace root) so the UI can open
+  # them for editing (task #117).
+  @workspace_tree_depth 3
+  @workspace_skip_dirs ~w(.cache .glorbo-claude .glorbo-skills node_modules .git)
 
+  defp walk_workspace(ag_dir) do
+    root = Path.join(ag_dir, "workspace")
+
+    if File.dir?(root) do
+      walk_workspace_dir(root, root, 0)
+    else
+      []
+    end
+  end
+
+  defp walk_workspace_dir(_root, _path, depth) when depth >= @workspace_tree_depth, do: []
+
+  defp walk_workspace_dir(root, path, depth) do
     case File.ls(path) do
       {:ok, entries} ->
         entries
-        |> Enum.reject(&String.starts_with?(&1, "."))
+        |> Enum.reject(&(String.starts_with?(&1, ".") or &1 in @workspace_skip_dirs))
         |> Enum.sort()
-        |> Enum.map(fn e ->
+        |> Enum.flat_map(fn e ->
           full = Path.join(path, e)
-          %{name: e, kind: if(File.dir?(full), do: :dir, else: :file), depth: 0}
+
+          cond do
+            File.dir?(full) ->
+              [%{name: e, kind: :dir, depth: depth, rel: Path.relative_to(full, root)}] ++
+                walk_workspace_dir(root, full, depth + 1)
+
+            File.regular?(full) ->
+              [%{name: e, kind: :file, depth: depth, rel: Path.relative_to(full, root)}]
+
+            true ->
+              []
+          end
         end)
 
       _ ->
