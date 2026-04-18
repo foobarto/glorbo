@@ -72,4 +72,29 @@ defmodule GlorboWeb.AgentLiveTest do
     assert html =~ "agent.wake_request"
     refute html =~ "agent.heartbeat_skipped"
   end
+
+  # Regression (task #121, 2026-04-18): the inbox/outbox tab used
+  # `:if={not @detail.inbox.latest}` where `latest` is a map, not a
+  # boolean. `not map` raises ArgumentError, crashing the LiveView on
+  # tab-click. Covered now so the HEEX stays boolean-safe.
+  test "inbox/outbox tab renders without crashing the LiveView",
+       %{conn: conn, base: base} do
+    # Seed a non-empty inbox so `latest` is a map (the crash trigger).
+    ag = Path.join([base, "companies", "acme", "agents", "ceo"])
+    File.mkdir_p!(Path.join(ag, "inbox"))
+
+    File.write!(Path.join([ag, "inbox", "hello.md"]), """
+    ---
+    from: director
+    ---
+
+    hi
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+    # Pre-fix this raised ArgumentError; now returns normal HTML.
+    html = render_click(view, "tab", %{"tab" => "inbox"})
+    assert html =~ "inbox/outbox"
+  end
 end

@@ -354,7 +354,7 @@ defmodule GlorboWeb.AgentLive do
                   <div class="gl-io-card__title">{@detail.inbox.latest.title}</div>
                   <div class="gl-io-card__body">{@detail.inbox.latest.preview}</div>
                 </div>
-                <div :if={not @detail.inbox.latest} class="gl-muted">No inbox messages.</div>
+                <div :if={is_nil(@detail.inbox.latest)} class="gl-muted">No inbox messages.</div>
               </div>
               <div class="gl-io-section">
                 <div class="gl-io-section__label">── outbox/ · pending route ──</div>
@@ -365,7 +365,7 @@ defmodule GlorboWeb.AgentLive do
                   <div class="gl-io-card__title">{@detail.outbox.latest.title}</div>
                   <div class="gl-io-card__body">{@detail.outbox.latest.preview}</div>
                 </div>
-                <div :if={not @detail.outbox.latest} class="gl-muted">No pending outbox.</div>
+                <div :if={is_nil(@detail.outbox.latest)} class="gl-muted">No pending outbox.</div>
               </div>
             </div>
 
