@@ -39,18 +39,30 @@ defmodule GlorboWeb.StdoutStreamerTest do
   end
 
   defp ensure_supervisor! do
-    case Process.whereis(GlorboWeb.StdoutStreamer.Supervisor) do
-      nil ->
-        {:ok, _pid} =
-          DynamicSupervisor.start_link(
-            name: GlorboWeb.StdoutStreamer.Supervisor,
-            strategy: :one_for_one
-          )
+    # The StdoutStreamer.Supervisor is a child of Glorbo.Application's
+    # supervision tree — `mix test` starts the app which starts this
+    # supervisor. If it's there, return immediately.
+    #
+    # Bug #145: previous version used DynamicSupervisor.start_link
+    # without a parent, which linked the supervisor to the test pid
+    # and killed all streamer children when the test finished. Don't
+    # introduce a test-linked supervisor.
+    unless Process.whereis(GlorboWeb.StdoutStreamer.Supervisor) do
+      Application.ensure_all_started(:glorbo)
+      wait_for_supervisor!(50)
+    end
 
-        :ok
+    :ok
+  end
 
-      _pid ->
-        :ok
+  defp wait_for_supervisor!(0), do: raise("StdoutStreamer.Supervisor never started")
+
+  defp wait_for_supervisor!(attempts) do
+    if Process.whereis(GlorboWeb.StdoutStreamer.Supervisor) do
+      :ok
+    else
+      Process.sleep(20)
+      wait_for_supervisor!(attempts - 1)
     end
   end
 

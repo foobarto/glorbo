@@ -230,9 +230,16 @@ defmodule Glorbo.Filesystem.WatcherTest do
 
       sup_name = Glorbo.Test.UniqueName.gen("company_sup")
 
-      # Plan 03-05 wires Agent.Registry into Application; start it manually
-      # for this test when not running under the full app.
-      _ = Registry.start_link(keys: :unique, name: Glorbo.Agent.Registry)
+      # Glorbo.Agent.Registry lives in the Application supervision tree
+      # (see lib/glorbo/application.ex). Previously this test did
+      # `Registry.start_link(..., name: Glorbo.Agent.Registry)` which
+      # returned {:error, {:already_started, pid}} when the app was up
+      # (harmless) but LINKED a stand-in process to the test pid when
+      # the app hadn't finished booting. That link-killed the shared
+      # registry on test-exit, cascading every later test with
+      # "unknown registry" errors. Fix (#145): wait for the app's
+      # registered registry instead of racing it.
+      Application.ensure_all_started(:glorbo)
 
       {:ok, sup_pid} =
         Glorbo.Company.Supervisor.start_link(name: sup_name, company: company, base: base)

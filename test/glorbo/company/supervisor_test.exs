@@ -19,7 +19,8 @@ defmodule Glorbo.Company.SupervisorTest do
 
     # Registry may or may not already be started by the application — start if
     # not already up.
-    _ = Registry.start_link(keys: :unique, name: Glorbo.Agent.Registry)
+    # #145: avoid racing Application.Agent.Registry; ensure app is up.
+    Application.ensure_all_started(:glorbo)
 
     {:ok, sup_pid} =
       CompanySup.start_link(

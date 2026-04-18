@@ -18,7 +18,8 @@ defmodule Glorbo.Company.AgentBootTest do
     Application.put_env(:glorbo, :auto_boot_agents, true)
     on_exit(fn -> Application.put_env(:glorbo, :auto_boot_agents, previous) end)
 
-    _ = Registry.start_link(keys: :unique, name: Glorbo.Agent.Registry)
+    # #145: avoid racing Application.Agent.Registry; ensure app is up.
+    Application.ensure_all_started(:glorbo)
     :ok
   end
 

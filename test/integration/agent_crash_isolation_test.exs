@@ -38,8 +38,10 @@ defmodule Glorbo.Integration.AgentCrashIsolationTest do
   end
 
   defp start_agent_sup(company) do
-    # Registry is global across the test — start if not present.
-    _ = Registry.start_link(keys: :unique, name: AgentRegistry)
+    # Rely on the Application-owned registry — do NOT start a
+    # test-linked one (#145: it dies with the test pid and breaks
+    # every later test that expects the global registry).
+    Application.ensure_all_started(:glorbo)
 
     sup_name = Glorbo.Test.UniqueName.gen("agent_sup_#{company}")
 

@@ -96,11 +96,17 @@ defmodule Glorbo.Application do
       # spawns children on mount; crash in one streamer does not affect
       # other streamers or the LiveView (LV uses Process.monitor/1 for
       # cleanup — see GlorboWeb.StdoutStreamer moduledoc).
-      {DynamicSupervisor, name: GlorboWeb.StdoutStreamer.Supervisor, strategy: :one_for_one},
+      {DynamicSupervisor,
+       name: GlorboWeb.StdoutStreamer.Supervisor, strategy: :one_for_one, max_restarts: 100},
       GlorboWeb.Endpoint
     ]
 
-    opts = [strategy: :one_for_one, name: Glorbo.Supervisor]
+    # #145: raise the parent supervisor's restart intensity too — when
+    # streamer test tests rapidly churn children, the default
+    # `max_restarts: 3, max_seconds: 5` can cascade and kill the whole
+    # tree (Ecto.Repo, PubSub, Registry). Production agents don't churn
+    # anywhere near this rate, so a higher tolerance is pure test ergonomics.
+    opts = [strategy: :one_for_one, name: Glorbo.Supervisor, max_restarts: 100, max_seconds: 5]
     Supervisor.start_link(children, opts)
   end
 

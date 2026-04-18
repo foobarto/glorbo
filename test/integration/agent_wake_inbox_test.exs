@@ -25,7 +25,10 @@ defmodule Glorbo.Integration.AgentWakeInboxTest do
   end
 
   setup do
-    _ = Registry.start_link(keys: :unique, name: AgentRegistry)
+    # Rely on the Application-owned registry instead of starting a
+    # test-linked one (which dies with the test pid and cascades
+    # "unknown registry" failures into the rest of the suite — #145).
+    Application.ensure_all_started(:glorbo)
     :ok
   end
 

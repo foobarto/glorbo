@@ -52,9 +52,10 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       File.mkdir_p!(Path.join(agent_dir, sub))
     end
 
-    # Agent.Registry may or may not already be running via the app; start if
-    # not.
-    _ = Registry.start_link(keys: :unique, name: AgentRegistry)
+    # Rely on the Application-owned registry (#145). A test-linked
+    # `Registry.start_link` dies when the test pid exits, cascading
+    # "unknown registry" errors into the rest of the suite.
+    Application.ensure_all_started(:glorbo)
 
     # Spec matches what Agent.Parser would produce for a claude-code agent
     # with a minimal declaration.

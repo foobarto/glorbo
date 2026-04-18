@@ -154,7 +154,8 @@ defmodule Glorbo.Config do
   MUST NEVER emit it to logs or audit (threat T-05-02).
   """
   @spec erl_cookie(Path.t()) :: {:ok, String.t()} | {:error, :config_parse}
-  def erl_cookie(base \\ Glorbo.Filesystem.Hierarchy.default_root()), do: erl_cookie(base, _retried? = false)
+  def erl_cookie(base \\ Glorbo.Filesystem.Hierarchy.default_root()),
+    do: erl_cookie(base, _retried? = false)
 
   # WR-08: classic TOCTOU — the previous implementation did
   # `unless File.exists?(path), do: write_default!(path)` followed by
