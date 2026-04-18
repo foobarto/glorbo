@@ -40,6 +40,7 @@ defmodule GlorboWeb.CompanyLive do
   alias Glorbo.CLI.Registry, as: CLIRegistry
   alias Glorbo.CLI.Registry.Provider
   alias Glorbo.Filesystem.Frontmatter
+  alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{StatCard, StatusPill}
 
   @impl true
@@ -76,7 +77,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:company_name, data.company_name)
        |> assign(:company, data)
        |> assign(:edit_company_md, nil)
-       |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
+       |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
        socket
@@ -87,7 +88,7 @@ defmodule GlorboWeb.CompanyLive do
 
   @impl true
   def handle_info({:file_event, rel_path, _events}, socket) do
-    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
+    socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
     base = base_dir()
     slug = socket.assigns.company_slug
     co_path = Path.join([base, "companies", slug])
@@ -440,7 +441,7 @@ defmodule GlorboWeb.CompanyLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("edit_company_md", _params, socket) do
     base = base_dir()

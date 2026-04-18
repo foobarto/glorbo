@@ -25,6 +25,7 @@ defmodule GlorboWeb.KanbanLive do
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
+  alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.TaskCard
 
   @task_path_re ~r{\Aprojects/.+/tasks/.+\.md\z}
@@ -67,7 +68,7 @@ defmodule GlorboWeb.KanbanLive do
          max_entries: 8,
          max_file_size: 10_000_000
        )
-       |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
+       |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
        socket
@@ -110,7 +111,7 @@ defmodule GlorboWeb.KanbanLive do
 
   @impl true
   def handle_info({:file_event, rel_path, _events}, socket) do
-    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
+    socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
 
     if Regex.match?(@task_path_re, rel_path) do
       base = base_dir()
@@ -130,7 +131,7 @@ defmodule GlorboWeb.KanbanLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("open_task", %{"path" => path}, socket) do
     case resolve_task_path(path, socket.assigns.company_slug) do

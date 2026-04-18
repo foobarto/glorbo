@@ -64,21 +64,19 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
   def post(%{assigns: %{current_company: co}} = socket, body) when is_binary(co) do
     trimmed = String.trim(body || "")
 
-    cond do
-      trimmed == "" ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message is empty.")}
+    if trimmed == "" do
+      {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message is empty.")}
+    else
+      case GlorboWeb.Actions.post_message(co, "general", trimmed) do
+        :ok ->
+          {:noreply, socket}
 
-      true ->
-        case GlorboWeb.Actions.post_message(co, "general", trimmed) do
-          :ok ->
-            {:noreply, socket}
+        {:error, :body_too_large} ->
+          {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message exceeds 10 KB.")}
 
-          {:error, :body_too_large} ->
-            {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message exceeds 10 KB.")}
-
-          {:error, _reason} ->
-            {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Could not post message.")}
-        end
+        {:error, _reason} ->
+          {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Could not post message.")}
+      end
     end
   end
 

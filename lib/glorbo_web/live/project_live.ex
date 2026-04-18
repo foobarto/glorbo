@@ -24,6 +24,8 @@ defmodule GlorboWeb.ProjectLive do
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
+  alias GlorboWeb.Components.ChatDrawer
+
   @project_md_size_cap 64 * 1024
 
   @impl true
@@ -52,7 +54,7 @@ defmodule GlorboWeb.ProjectLive do
        |> assign(:meta, meta)
        |> assign(:tasks, tasks)
        |> assign(:edit_mode, false)
-       |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
+       |> ChatDrawer.State.wire_drawer()}
     else
       :bad_slug ->
         {:ok,
@@ -76,7 +78,7 @@ defmodule GlorboWeb.ProjectLive do
 
   @impl true
   def handle_info({:file_event, rel_path, _events}, socket) do
-    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
+    socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
 
     cond do
       project_md_for_me?(rel_path, socket.assigns.project_slug) ->
@@ -97,7 +99,7 @@ defmodule GlorboWeb.ProjectLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("edit", _params, socket) do
     {:noreply, assign(socket, :edit_mode, true)}

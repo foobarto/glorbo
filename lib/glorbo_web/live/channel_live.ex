@@ -22,6 +22,7 @@ defmodule GlorboWeb.ChannelLive do
   use GlorboWeb, :live_view
   require Logger
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+  alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.ChannelMessage
 
   # Splits `## <ts> | <author>\n<body>` entries. `body` captures until
@@ -71,7 +72,7 @@ defmodule GlorboWeb.ChannelLive do
        |> assign(:channels, list_channels(base, co))
        |> assign(:dm_threads, list_dm_threads(base, co))
        |> assign(:messages, load_messages(path, co))
-       |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
+       |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
        socket
@@ -82,7 +83,7 @@ defmodule GlorboWeb.ChannelLive do
 
   @impl true
   def handle_info({:file_event, rel, _events}, socket) do
-    socket = GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel)
+    socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel)
     path = channel_path(socket.assigns.base, socket.assigns.company_slug, socket.assigns.channel)
 
     {:noreply, assign(socket, :messages, load_messages(path, socket.assigns.company_slug))}
@@ -92,7 +93,7 @@ defmodule GlorboWeb.ChannelLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("post", %{"body" => body}, socket) do
     trimmed = String.trim(body)

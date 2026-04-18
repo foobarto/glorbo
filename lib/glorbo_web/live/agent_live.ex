@@ -38,6 +38,7 @@ defmodule GlorboWeb.AgentLive do
   import GlorboWeb.LiveHelpers,
     only: [base_dir: 0, current_year_month: 0, two_dp: 1, zero_dp: 1]
 
+  alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{StatusPill, StdoutTail}
 
   @impl true
@@ -82,7 +83,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:history, history)
         |> assign(:open_file, nil)
         |> stream(:stdout, [], limit: -1000)
-        |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()
+        |> ChatDrawer.State.wire_drawer()
 
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:stdout")
@@ -133,7 +134,7 @@ defmodule GlorboWeb.AgentLive do
   end
 
   def handle_info({:file_event, rel, _events}, socket) do
-    {:noreply, GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
+    {:noreply, ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
   end
 
   def handle_info(
@@ -158,7 +159,7 @@ defmodule GlorboWeb.AgentLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("tab", %{"tab" => tab}, socket) when tab in ~w(stdout sandbox inbox history) do
     {:noreply, assign(socket, :tab, String.to_existing_atom(tab))}

@@ -23,6 +23,7 @@ defmodule GlorboWeb.AuditLive do
   """
   use GlorboWeb, :live_view
   import GlorboWeb.LiveHelpers, only: [base_dir: 0, current_year_month: 0]
+  alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.AuditEntry
 
   # Out-of-band safety-net poll. PubSub `{:audit_append, record}` drives
@@ -71,7 +72,7 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:beginning, offset == 0)
      |> assign(:expanded, MapSet.new())
      |> assign(:entries, entries)
-     |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
+     |> ChatDrawer.State.wire_drawer()}
   end
 
   @impl true
@@ -104,7 +105,7 @@ defmodule GlorboWeb.AuditLive do
   end
 
   def handle_info({:file_event, rel, _events}, socket) do
-    {:noreply, GlorboWeb.Components.ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
+    {:noreply, ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -129,7 +130,7 @@ defmodule GlorboWeb.AuditLive do
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
-    do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+    do: ChatDrawer.State.post(socket, body)
 
   def handle_event("filter", params, socket) do
     {:noreply,
