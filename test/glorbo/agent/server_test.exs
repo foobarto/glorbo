@@ -537,6 +537,44 @@ defmodule Glorbo.Agent.ServerTest do
       assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
     end
 
+    test ":mention wake prefers inbox/mentions/ over older top-level files", ctx do
+      # Seed both a stale top-level file AND a newer mention file.
+      # Pre-fix: the oldest top-level would win even for mention wakes,
+      # meaning the agent ignored the @mention that woke it. Post-fix:
+      # trigger==:mention should pick the mentions/ file.
+      base = Path.join(System.tmp_dir!(), "mention-test-#{System.unique_integer([:positive])}")
+      inbox = Path.join([base, "companies/acme/agents/engineer/inbox"])
+      mentions = Path.join(inbox, "mentions")
+      File.mkdir_p!(mentions)
+
+      stale_path = Path.join(inbox, "stale-top-level.md")
+      File.write!(stale_path, "---\nfrom: ceo\n---\n\nold body")
+      File.touch!(stale_path, {{2020, 1, 1}, {0, 0, 0}})
+
+      mention_path = Path.join(mentions, "5-general.md")
+      File.write!(mention_path, "---\nchannel: general\nfrom: director\n---\n\nrecent body")
+
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      # Use the real default_inbox_scan through a 3-arity wrapper,
+      # simulating what resolve_task/3 passes.
+      spec = ctx.spec
+
+      # Drive through start_server so the full flow runs:
+      # wake(:mention, nil) → resolve_task → call_inbox_scan(state, :mention)
+      dispatch_fun = fn _spec, task, _opts ->
+        send(ctx.test_pid, {:dispatched, task.task_path})
+        {:ok, %{exit_status: 0, reply: "ok"}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+      :ok = AgentServer.wake(pid, :mention, nil)
+
+      # The mention file should be dispatched, NOT the stale top-level.
+      assert_receive {:dispatched, dispatched_path}, 2_000
+      assert dispatched_path =~ "mentions/5-general.md"
+    end
+
     test ":heartbeat trigger → no outbox write", ctx do
       {base, rel} = setup_source_with_from(ctx, "hb.md", "ceo")
 

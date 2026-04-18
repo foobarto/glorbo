@@ -156,7 +156,7 @@ defmodule Glorbo.Agent.Server do
       company: company,
       task_supervisor: task_sup,
       dispatch_fun: Keyword.get(opts, :dispatch_fun, &default_dispatch_fun/3),
-      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/2),
+      inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/3),
       dispatch_opts: Keyword.get(opts, :dispatch_opts, []),
       status: :idle,
       current_task: nil,
@@ -238,8 +238,11 @@ defmodule Glorbo.Agent.Server do
       wake_request_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
         handle_director_wake(state)
 
+      mention_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
+        handle_inbox_wake(state, :mention)
+
       inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
-        handle_inbox_wake(state)
+        handle_inbox_wake(state, :inbox)
 
       true ->
         {:noreply, state}
@@ -303,16 +306,16 @@ defmodule Glorbo.Agent.Server do
     }
   end
 
-  defp handle_inbox_wake(%{status: :idle} = state) do
-    case call_inbox_scan(state) do
+  defp handle_inbox_wake(%{status: :idle} = state, trigger) do
+    case call_inbox_scan(state, trigger) do
       nil -> {:noreply, state}
       %{} = task -> {:noreply, start_dispatch(state, task)}
     end
   end
 
-  defp handle_inbox_wake(%{status: :busy} = state) do
+  defp handle_inbox_wake(%{status: :busy} = state, trigger) do
     # Busy: queue a pending wake (most-recent-wins; at most one slot).
-    {:noreply, %{state | pending_wake: {:inbox, DateTime.utc_now()}}}
+    {:noreply, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
   end
 
   # ---------------------------------------------------------------------------
@@ -578,19 +581,25 @@ defmodule Glorbo.Agent.Server do
 
   defp resolve_task(_state, _trigger, %{} = explicit_task), do: explicit_task
 
-  defp resolve_task(state, _trigger, nil) do
-    call_inbox_scan(state)
+  defp resolve_task(state, trigger, nil) do
+    call_inbox_scan(state, trigger)
   end
 
-  # Call the inbox-scan fun compatibly with both the historical 1-arity
-  # `(spec)` signature (common in existing tests) and the new 2-arity
-  # `(spec, base)` signature — state.base replaces the prior
-  # hardcoded `Path.expand("~/.glorbo")` call inside default_inbox_scan
-  # (TODO.md High #3).
-  defp call_inbox_scan(%{inbox_scan_fun: fun, spec: spec, base: base}) do
+  # Call the inbox-scan fun compatibly with three signatures:
+  #
+  #   - 1-arity `(spec)` — historical; most existing tests.
+  #   - 2-arity `(spec, base)` — adds base dir injection (TODO.md High #3).
+  #   - 3-arity `(spec, base, trigger)` — new; lets the scanner pick
+  #     trigger-appropriate files. `:mention` wakes should prefer
+  #     files in `inbox/mentions/` over whatever oldest-by-mtime
+  #     returns from the top-level (task #125).
+  defp call_inbox_scan(state, trigger \\ nil) do
+    %{inbox_scan_fun: fun, spec: spec, base: base} = state
+
     case :erlang.fun_info(fun, :arity) do
       {:arity, 1} -> fun.(spec)
       {:arity, 2} -> fun.(spec, base)
+      {:arity, 3} -> fun.(spec, base, trigger)
       _ -> fun.(spec)
     end
   end
@@ -615,6 +624,10 @@ defmodule Glorbo.Agent.Server do
     String.starts_with?(rel_path, "agents/#{slug}/inbox/")
   end
 
+  defp mention_event_for_me?(rel_path, slug) do
+    String.starts_with?(rel_path, "agents/#{slug}/inbox/mentions/")
+  end
+
   defp inbox_event_write?(events) when is_list(events),
     do: Enum.any?(events, &(&1 in [:created, :modified]))
 
@@ -625,19 +638,49 @@ defmodule Glorbo.Agent.Server do
   # inbox is empty. Directories walked lazily; never reads the whole
   # inbox into memory. Called from resolve_task/3 (explicit wake/3) and
   # from handle_inbox_wake/1 (PubSub :file_event path).
-  defp default_inbox_scan(%_{} = spec, base) when is_binary(base) do
+  #
+  # 3-arity variant (trigger-aware): for `:mention` wakes, scan
+  # `inbox/mentions/` FIRST — the file that caused the wake is in there
+  # and should be processed before any unrelated stale top-level files
+  # (task #125). Falls back to the 2-arity behaviour if nothing in
+  # mentions/.
+  defp default_inbox_scan(%_{} = spec, base, trigger) when is_binary(base) do
     inbox_dir = Path.join([base, "companies", spec.company, "agents", spec.slug, "inbox"])
+    company_root = Path.join([base, "companies", spec.company])
 
-    with true <- File.dir?(inbox_dir),
-         [oldest_path | _] <- list_inbox_md_files(inbox_dir) do
-      %{
-        task_id: Path.basename(oldest_path, ".md"),
-        task_path: Path.relative_to(oldest_path, Path.join([base, "companies", spec.company])),
-        prompt: read_or_empty(oldest_path),
-        trigger: :inbox
-      }
-    else
-      _ -> nil
+    if File.dir?(inbox_dir) do
+      pick_inbox_file(inbox_dir, trigger)
+      |> case do
+        nil ->
+          nil
+
+        path ->
+          %{
+            task_id: Path.basename(path, ".md"),
+            task_path: Path.relative_to(path, company_root),
+            prompt: read_or_empty(path),
+            trigger: trigger || :inbox
+          }
+      end
+    end
+  end
+
+  # `:mention` → prefer the oldest file in `mentions/`; fall through
+  # to the canonical oldest-across-all-dirs scan if that subdir is
+  # empty. Any other trigger uses the canonical scan.
+  defp pick_inbox_file(inbox_dir, :mention) do
+    mentions_dir = Path.join(inbox_dir, "mentions")
+
+    case md_files_in(mentions_dir) |> Enum.sort_by(&file_mtime/1) do
+      [first | _] -> first
+      [] -> pick_inbox_file(inbox_dir, nil)
+    end
+  end
+
+  defp pick_inbox_file(inbox_dir, _trigger) do
+    case list_inbox_md_files(inbox_dir) do
+      [first | _] -> first
+      [] -> nil
     end
   end
 
