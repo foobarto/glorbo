@@ -38,6 +38,14 @@ defmodule GlorboWeb.StdoutStreamer do
   # remaining bytes are picked up on the next poll.
   @read_chunk 64_000
 
+  # On init, read the trailing slice of the existing log so the user
+  # sees recent activity when revisiting an agent (task #136 — the
+  # D-15 "no history replay" default meant the STDOUT tab was always
+  # empty until the next wake). 32 KiB ≈ last ~10 dispatches worth
+  # of claude-code output; streamer then positions at EOF and tails
+  # from there.
+  @history_replay_bytes 32_000
+
   @ansi_re ~r/\x1B\[[0-9;]*[a-zA-Z]/
 
   @doc """
@@ -83,12 +91,16 @@ defmodule GlorboWeb.StdoutStreamer do
       buf: ""
     }
 
-    # Open at EOF if the file exists; otherwise lazy-open on retry.
+    # Open with replay (task #136): seek to `max(0, size - N)`, flush
+    # the trailing slice so the UI shows recent history on mount, then
+    # continue tailing from EOF. If the file doesn't exist yet we
+    # lazy-open on retry (common for freshly scaffolded agents).
     case File.open(path, [:read, :binary, :raw]) do
       {:ok, io} ->
-        {:ok, _} = :file.position(io, :eof)
+        state = %{state | io: io}
+        state = replay_history(state)
         schedule_poll()
-        {:ok, %{state | io: io}}
+        {:ok, state}
 
       {:error, :enoent} ->
         schedule_open_retry()
@@ -97,6 +109,66 @@ defmodule GlorboWeb.StdoutStreamer do
       {:error, reason} ->
         {:stop, {:open_failed, reason}}
     end
+  end
+
+  # Read up to @history_replay_bytes from the tail of the log and emit
+  # each complete line as if it had just been written. Drops the
+  # leading partial fragment (we may have seeked mid-line) so we never
+  # broadcast a half-line. Leaves the file position at EOF so
+  # schedule_poll resumes live-tail mode.
+  defp replay_history(%{io: io} = state) do
+    with {:ok, size} <- :file.position(io, :eof),
+         start_pos <- max(0, size - @history_replay_bytes),
+         {:ok, _} <- :file.position(io, start_pos),
+         {:ok, chunk} <- :file.read(io, size - start_pos) do
+      to_replay =
+        if start_pos == 0 do
+          chunk
+        else
+          # Drop the partial first line — we likely seeked into the
+          # middle of one.
+          case :binary.split(chunk, "\n") do
+            [_partial, rest] -> rest
+            [_] -> ""
+          end
+        end
+
+      replay_broadcast(to_replay, state)
+      seek_to_eof(state)
+    else
+      _ -> state
+    end
+  end
+
+  # Replay = broadcast only fully-terminated lines; no tail buffering
+  # (we reset the state.buf to "" because the subsequent live tail
+  # starts at EOF with no partial).
+  defp replay_broadcast("", _state), do: :ok
+
+  defp replay_broadcast(bytes, state) do
+    parts = String.split(bytes, "\n")
+    # Drop the final element — it's either "" (if bytes ends with "\n")
+    # or a partial mid-line that hasn't been completed yet. Safer to
+    # skip it on replay than broadcast a fragment.
+    complete = Enum.drop(parts, -1)
+
+    Enum.each(complete, fn raw ->
+      body = strip_ansi(raw)
+      payload = build_payload(body)
+
+      Phoenix.PubSub.broadcast(
+        state.pubsub,
+        "company:#{state.company}:agents:#{state.agent}:stdout",
+        {:stdout_line, state.company, state.agent, payload}
+      )
+    end)
+
+    :ok
+  end
+
+  defp seek_to_eof(%{io: io} = state) do
+    {:ok, _} = :file.position(io, :eof)
+    state
   end
 
   @impl GenServer

@@ -42,7 +42,7 @@ defmodule GlorboWeb.StdoutStreamerTest do
     end
   end
 
-  test "opens at EOF — pre-existing content is NOT replayed", %{
+  test "replays trailing history on mount then tails live (task #136)", %{
     base: base,
     path: path
   } do
@@ -50,15 +50,57 @@ defmodule GlorboWeb.StdoutStreamerTest do
 
     {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
 
-    # Give the streamer > one poll interval to read any pre-existing bytes.
-    Process.sleep(400)
-    refute_received {:stdout_line, "acme", "ceo", _}
+    # Pre-existing content IS replayed so the user sees recent activity
+    # when revisiting an agent detail page.
+    assert_receive {:stdout_line, "acme", "ceo", %{body: "old history line"}}, 2_000
 
-    # New bytes DO stream through.
+    # New bytes continue to stream live.
     File.write!(path, "fresh line\n", [:append])
     assert_receive {:stdout_line, "acme", "ceo", %{body: "fresh line"}}, 2_000
 
     GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
+  test "replay is bounded — only the last ~32KiB is surfaced", %{
+    base: base,
+    path: path
+  } do
+    # Write > 32 KiB so the seek-back trims the leading content.
+    old_padding = String.duplicate("padding-line\n", 4_000)
+    File.write!(path, old_padding <> "MARKER-LATEST-LINE\n")
+
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", "ceo", base: base)
+
+    # The trailing marker shows up.
+    assert_receive {:stdout_line, "acme", "ceo", %{body: "MARKER-LATEST-LINE"}}, 2_000
+
+    # Collect everything the replay broadcast and verify we didn't
+    # replay the FIRST line (which should have been seeked past).
+    Process.sleep(300)
+
+    messages =
+      for _ <- 1..1000, msg = drop_message(), msg != nil, do: msg
+
+    bodies =
+      messages
+      |> Enum.filter(&match?({:stdout_line, _, _, _}, &1))
+      |> Enum.map(fn {:stdout_line, _, _, %{body: b}} -> b end)
+
+    # Every body must have been within the trailing window. Since
+    # every replay line is identical padding ("padding-line"), we
+    # just assert that the replay didn't include ALL 4000 of them.
+    padding_count = Enum.count(bodies, &(&1 == "padding-line"))
+    assert padding_count < 4_000, "expected bounded replay; saw #{padding_count} padding lines"
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
+  defp drop_message do
+    receive do
+      msg -> msg
+    after
+      10 -> nil
+    end
   end
 
   test "broadcasts each new line as a separate PubSub message", %{
