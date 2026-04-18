@@ -75,6 +75,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:company_slug, slug)
        |> assign(:company_name, data.company_name)
        |> assign(:company, data)
+       |> assign(:edit_company_md, nil)
        |> GlorboWeb.Components.ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -113,6 +114,14 @@ defmodule GlorboWeb.CompanyLive do
           </p>
         </div>
         <div class="gl-overview__actions">
+          <button
+            type="button"
+            class="gl-btn"
+            phx-click="edit_company_md"
+            title="Edit company.md frontmatter + body"
+          >
+            ✎ edit company.md
+          </button>
           <button
             type="button"
             class="gl-btn gl-btn--soon"
@@ -344,6 +353,87 @@ defmodule GlorboWeb.CompanyLive do
           </section>
         </div>
       </div>
+
+      <%!-- company.md edit modal (opens via `edit_company_md` event) --%>
+      <div :if={@edit_company_md} class="gl-modal-scrim" phx-click-away="cancel_company_md">
+        <form
+          phx-submit="save_company_md"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-company-md-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-company-md-title">
+              <span class="gl-muted">companies/{@company_slug}/</span><strong>company.md</strong>
+            </div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="cancel_company_md"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">name</span>
+              <input
+                type="text"
+                name="name"
+                value={@edit_company_md.name}
+                maxlength="200"
+                class="gl-input"
+                required
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">description</span>
+              <input
+                type="text"
+                name="description"
+                value={@edit_company_md.description}
+                maxlength="500"
+                class="gl-input"
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">icon</span>
+              <input
+                type="text"
+                name="icon"
+                value={@edit_company_md.icon}
+                maxlength="100"
+                class="gl-input"
+                placeholder="fa-building"
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">monthly budget (USD)</span>
+              <input
+                type="number"
+                name="monthly_usd"
+                value={@edit_company_md.monthly_usd}
+                min="0"
+                step="0.01"
+                class="gl-input"
+                placeholder="100.00"
+              />
+            </label>
+            <label class="gl-form__row gl-form__row--stretch">
+              <span class="gl-form__label">body (markdown)</span>
+              <textarea name="body" rows="10" class="gl-input gl-company-md-form__body">{@edit_company_md.body}</textarea>
+            </label>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="cancel_company_md">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">save</button>
+          </footer>
+        </form>
+      </div>
     </section>
     """
   end
@@ -351,6 +441,39 @@ defmodule GlorboWeb.CompanyLive do
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: GlorboWeb.Components.ChatDrawer.State.post(socket, body)
+
+  def handle_event("edit_company_md", _params, socket) do
+    base = base_dir()
+    slug = socket.assigns.company_slug
+    co_path = Path.join([base, "companies", slug])
+    form = load_company_md_form(co_path, slug)
+    {:noreply, assign(socket, :edit_company_md, form)}
+  end
+
+  def handle_event("cancel_company_md", _params, socket) do
+    {:noreply, assign(socket, :edit_company_md, nil)}
+  end
+
+  def handle_event("save_company_md", params, socket) do
+    base = base_dir()
+    slug = socket.assigns.company_slug
+    co_path = Path.join([base, "companies", slug])
+
+    case write_company_md(co_path, params) do
+      :ok ->
+        data = load_company_data(base, slug, co_path)
+
+        {:noreply,
+         socket
+         |> assign(:edit_company_md, nil)
+         |> assign(:company, data)
+         |> assign(:company_name, data.company_name)
+         |> put_flash(:info, "Saved.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not save: #{inspect(reason)}")}
+    end
+  end
 
   def handle_event("open_agent", %{"slug" => slug}, socket) do
     company = socket.assigns.company_slug
@@ -995,4 +1118,111 @@ defmodule GlorboWeb.CompanyLive do
   defp org_state_glyph(:warn), do: "⚠"
   defp org_state_glyph(:stop), do: "✕"
   defp org_state_glyph(_), do: "○"
+
+  # ---------------------------------------------------------------------------
+  # company.md editor (form state + atomic write)
+  # ---------------------------------------------------------------------------
+
+  defp load_company_md_form(co_path, slug) do
+    path = Path.join(co_path, "company.md")
+
+    {meta, body} =
+      case File.read(path) do
+        {:ok, content} ->
+          case Frontmatter.parse(content) do
+            {:ok, m, b} -> {m, b}
+            _ -> {%{}, ""}
+          end
+
+        _ ->
+          {%{}, ""}
+      end
+
+    monthly =
+      case meta["budget"] do
+        %{"monthly_usd" => n} when is_number(n) -> to_string(n)
+        _ -> ""
+      end
+
+    %{
+      name: to_string(meta["name"] || slug),
+      description: to_string(meta["description"] || ""),
+      icon: to_string(meta["icon"] || ""),
+      monthly_usd: monthly,
+      body: body || ""
+    }
+  end
+
+  defp write_company_md(co_path, params) do
+    name = params |> Map.get("name", "") |> String.trim()
+    description = params |> Map.get("description", "") |> String.trim()
+    icon = params |> Map.get("icon", "") |> String.trim()
+    monthly_raw = params |> Map.get("monthly_usd", "") |> String.trim()
+    body = params |> Map.get("body", "") |> String.trim_trailing()
+
+    if name == "" do
+      {:error, :name_required}
+    else
+      monthly = parse_monthly(monthly_raw)
+
+      yaml =
+        render_company_yaml(%{
+          name: name,
+          description: description,
+          icon: icon,
+          monthly_usd: monthly
+        })
+
+      content = "---\n" <> yaml <> "---\n\n" <> body <> "\n"
+
+      path = Path.join(co_path, "company.md")
+      tmp = path <> ".tmp"
+
+      with :ok <- File.write(tmp, content),
+           :ok <- File.rename(tmp, path) do
+        :ok
+      else
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp parse_monthly(""), do: nil
+
+  defp parse_monthly(raw) do
+    case Float.parse(raw) do
+      {n, _} when n >= 0 -> n
+      _ -> nil
+    end
+  end
+
+  # Build YAML frontmatter deterministically. We control every
+  # string, so quoting is hand-rolled rather than dragging in a YAML
+  # encoder — same pattern as TaskDefinition.write_frontmatter.
+  defp render_company_yaml(%{name: name, description: desc, icon: icon, monthly_usd: monthly}) do
+    lines =
+      [
+        {"name", name},
+        {"description", desc},
+        {"icon", icon}
+      ]
+      |> Enum.reject(fn {_k, v} -> v == "" end)
+      |> Enum.map(fn {k, v} -> "#{k}: #{yaml_string(v)}\n" end)
+
+    budget_block =
+      case monthly do
+        nil -> ""
+        n -> "budget:\n  monthly_usd: #{Float.round(n * 1.0, 2)}\n"
+      end
+
+    Enum.join(lines) <> budget_block
+  end
+
+  defp yaml_string(s) do
+    if String.contains?(s, [":", "#", "[", "]", "\"", "'", "\n"]) do
+      ~s("#{String.replace(s, "\"", "\\\"")}")
+    else
+      s
+    end
+  end
 end

@@ -2416,3 +2416,35 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-app-shell:has(.gl-chat-drawer--minimized) .gl-main {
   padding-bottom: calc(30px + var(--gl-space-lg));
 }
+
+/* ========== company.md edit modal form ========== */
+.gl-company-md-form {
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+  overflow-y: auto;
+  min-width: 540px;
+}
+.gl-company-md-form .gl-form__row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: var(--gl-space-md);
+  font-size: 12px;
+}
+.gl-company-md-form .gl-form__row--stretch {
+  align-items: start;
+}
+.gl-company-md-form .gl-form__label {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.gl-company-md-form__body {
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  resize: vertical;
+  min-height: 120px;
+}
