@@ -134,11 +134,12 @@ defmodule GlorboWeb.CompanyLive do
           </button>
           <button
             type="button"
-            class="gl-btn gl-btn--soon"
+            class="gl-btn"
             phx-click="backup"
-            title="Coming soon — use `glorbo backup` from a terminal for now"
+            title="Create ~/.glorbo/backups/YYYY-MM-DD.tar.zst snapshot (live)"
+            data-confirm="Create a backup archive now? This reads the live WAL while agents run — safe for snapshots but not for byte-exact restore testing."
           >
-            ⇩ backup <span class="gl-btn__soon-tag">soon</span>
+            ⇩ backup
           </button>
           <button
             type="button"
@@ -563,7 +564,13 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_event("backup", _params, socket) do
-    {:noreply, put_flash(socket, :info, "backup: run `glorbo backup` from the CLI for now.")}
+    case Glorbo.Backup.run(base: base_dir(), force_live: true) do
+      {:ok, path} ->
+        {:noreply, put_flash(socket, :info, "backup ok — #{Path.basename(path)}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "backup failed: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("new_agent", _params, socket) do
