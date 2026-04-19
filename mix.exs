@@ -94,6 +94,18 @@ defmodule Glorbo.MixProject do
   defp releases do
     [
       glorbo: [
+        # Skip the boot-time `validate_compile_env` checks entirely.
+        # LV 1.1 + Endpoint compile-env keys (`code_reloader`,
+        # `debug_errors`, `force_ssl`, `enable_expensive_runtime_checks`)
+        # get baked into every dep module's compile-env table when any
+        # Mix env sets them. Prod sys.config can't always mirror that
+        # exactly (especially with Burrito-cached releases + cross-env
+        # _build/), so the release boot validator aborts with confusing
+        # "compile time vs runtime" errors. We don't rely on these keys
+        # at runtime — Endpoint reloader flags, LV expensive checks —
+        # so disabling the boot check is safe and keeps binaries usable
+        # regardless of which envs compiled what into _build/.
+        validate_compile_env: false,
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
           targets: [
