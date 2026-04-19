@@ -255,9 +255,37 @@ defmodule GlorboWeb.Actions do
         agent: mentioned,
         trigger: "mention"
       })
+
+      # Belt-and-braces: directly nudge the agent's Server.
+      # Filesystem event → Watcher → PubSub → Agent.Server is the
+      # canonical path but can miss in a few scenarios (watcher
+      # subscription failed on boot before PubSub was ready, agent
+      # was restarted between mention-write and event-propagation,
+      # an inotify event got dropped under kernel pressure). A
+      # direct `wake/3` call is idempotent with the handle_info
+      # path — the server's wake-queue dedupes most-recent-wins —
+      # so the worst case is we wake once instead of twice. Best
+      # case, the mention lands on the agent within milliseconds.
+      _ = safe_wake_mention(company, mentioned)
     end
 
     :ok
+  end
+
+  defp safe_wake_mention(company, slug) do
+    case Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, slug}) do
+      [{pid, _}] when is_pid(pid) ->
+        try do
+          Glorbo.Agent.Server.wake(pid, :mention, nil)
+        catch
+          _, _ -> :ok
+        end
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
   end
 
   @doc """
