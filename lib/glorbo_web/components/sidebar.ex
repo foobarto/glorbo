@@ -281,12 +281,8 @@ defmodule GlorboWeb.Components.Sidebar do
     case Registry.lookup(Glorbo.Agent.Registry, key) do
       [{pid, _}] when is_pid(pid) ->
         try do
-          case Glorbo.Agent.Server.status({:via, Registry, {Glorbo.Agent.Registry, key}}) do
-            %{state: :busy} -> :alive
-            %{last_exit_status: s} when is_integer(s) and s != 0 -> :stop
-            %{state: :idle} -> :idle
-            _ -> :idle
-          end
+          status = Glorbo.Agent.Server.status({:via, Registry, {Glorbo.Agent.Registry, key}})
+          classify_status(status)
         rescue
           _ -> :idle
         catch
@@ -297,6 +293,15 @@ defmodule GlorboWeb.Components.Sidebar do
         :idle
     end
   end
+
+  # Exit-status markers that should surface as red :stop on the pill.
+  # Integer non-zero exit AND the synthetic strings Glorbo.Agent.Server
+  # writes when the director kills a dispatch or the task crashes.
+  defp classify_status(%{state: :busy}), do: :alive
+  defp classify_status(%{last_exit_status: s}) when is_integer(s) and s != 0, do: :stop
+  defp classify_status(%{last_exit_status: "stopped_by_director"}), do: :stop
+  defp classify_status(%{last_exit_status: {:crashed, _}}), do: :stop
+  defp classify_status(_), do: :idle
 
   defp list_projects(nil), do: []
 

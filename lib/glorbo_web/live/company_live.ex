@@ -866,11 +866,7 @@ defmodule GlorboWeb.CompanyLive do
     case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
       [{pid, _} | _] when is_pid(pid) ->
         try do
-          case Glorbo.Agent.Server.status(pid) do
-            %{state: :busy} -> :alive
-            %{last_exit_status: s} when is_integer(s) and s != 0 -> :stop
-            _ -> :idle
-          end
+          classify_runtime_status(Glorbo.Agent.Server.status(pid))
         rescue
           _ -> :idle
         catch
@@ -883,6 +879,12 @@ defmodule GlorboWeb.CompanyLive do
   rescue
     _ -> :idle
   end
+
+  defp classify_runtime_status(%{state: :busy}), do: :alive
+  defp classify_runtime_status(%{last_exit_status: s}) when is_integer(s) and s != 0, do: :stop
+  defp classify_runtime_status(%{last_exit_status: "stopped_by_director"}), do: :stop
+  defp classify_runtime_status(%{last_exit_status: {:crashed, _}}), do: :stop
+  defp classify_runtime_status(_), do: :idle
 
   # Quick first-line hint from agent's newest inbox file, else fall
   # back to role. Keeps the column readable without re-rendering
