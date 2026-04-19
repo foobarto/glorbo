@@ -133,4 +133,40 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert html =~ "DM · director ↔ ceo"
     assert html =~ "Message ceo as Director"
   end
+
+  test "message body with markdown sub-header stays intact", %{conn: conn, base: base} do
+    # Regression: earlier regex treated ANY `## ` as a new message boundary,
+    # so a multi-step plan with `## Step 1:` got split mid-body.
+    path = Path.join([base, "companies", "acme", "channels", "general.md"])
+
+    File.write!(path, """
+    # general
+
+    ## 2026-04-19T08:00:00Z | Director
+    Deployment plan:
+
+    ## Step 1: Build
+
+    Build it.
+
+    ## Step 2: Deploy
+
+    Deploy it.
+    """)
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+    assert html =~ "Deployment plan"
+    # Sub-headers render as earmark h2 inside the message body
+    assert html =~ "Step 1: Build"
+    assert html =~ "Step 2: Deploy"
+    # Only ONE Director post — the sub-headers weren't treated as message boundaries
+    occurrences =
+      html
+      |> String.split("gl-channel-message--director")
+      |> length()
+      |> Kernel.-(1)
+
+    assert occurrences == 1
+  end
 end
