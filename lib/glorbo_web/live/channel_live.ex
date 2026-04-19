@@ -247,6 +247,8 @@ defmodule GlorboWeb.ChannelLive do
               class="gl-compose__input"
               placeholder={compose_placeholder(@channel)}
               rows="1"
+              id="gl-compose-input"
+              phx-hook="SubmitOnEnter"
             >{@compose_body}</textarea>
             <button type="submit" class="gl-btn gl-btn--sm gl-btn--primary">send ↵</button>
           </form>

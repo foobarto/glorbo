@@ -500,9 +500,22 @@ const ChatDrawer = {
   },
 }
 
+// Submit on Enter, newline on Shift+Enter. Used on the channel compose
+// textarea so the chat-app idiom works without chasing the send button.
+const SubmitOnEnter = {
+  mounted() {
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        this.el.form?.requestSubmit()
+      }
+    })
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket
