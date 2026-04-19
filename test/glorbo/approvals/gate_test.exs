@@ -114,6 +114,31 @@ defmodule Glorbo.Approvals.GateTest do
     assert entry.agent == "engineer" or entry[:agent] == "engineer"
   end
 
+  # G2b — request_approval rewrites assigned_to: director so the UI
+  # reflects the Director as the current owner of the decision.
+  test "G2b: request_approval reassigns task to director", ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-01b",
+        title: "Dangerous",
+        status: "pending-approval",
+        assigned_to: "engineer",
+        requires_approval: "director"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    content = File.read!(path)
+    assert content =~ "assigned_to: director"
+    refute content =~ "assigned_to: engineer"
+  end
+
   # G3 — request_approval is idempotent
   test "G3: duplicate request_approval is idempotent", ctx do
     %{pid: pid} = start_gate(ctx)

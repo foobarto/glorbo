@@ -349,6 +349,44 @@ defmodule GlorboWeb.ActionsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    test "approved restores assigned_to from matching sentinel", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      # Task was reassigned to director by the request-flow; sentinel
+      # preserves the original agent. Approve should swap it back.
+      File.write!(Path.join([base, "companies", "acme", task_path]), """
+      ---
+      title: "Deploy"
+      status: pending
+      assigned_to: director
+      requires_approval: director
+      ---
+
+      Ship it.
+      """)
+
+      sentinel_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+      File.mkdir_p!(sentinel_dir)
+
+      File.write!(Path.join(sentinel_dir, "awaiting-approval-t-01.md"), """
+      ---
+      agent: ceo
+      task_id: t-01
+      ---
+
+      awaiting
+      """)
+
+      assert :ok = Actions.set_approval("acme", task_path, :approved, base: base, audit: audit)
+
+      content = File.read!(Path.join([base, "companies", "acme", task_path]))
+      assert content =~ "status: approved"
+      assert content =~ "assigned_to: ceo"
+      refute content =~ "assigned_to: director"
+    end
   end
 
   # ---------------------------------------------------------------------------
