@@ -270,13 +270,23 @@ defmodule GlorboWeb.Actions do
       when decision in [:approved, :denied] do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
+    denial_reason = Keyword.get(opts, :denial_reason)
 
     with :ok <- validate_slug(company),
          :ok <- validate_task_path(task_path) do
       abs = Path.join([base, "companies", company, task_path])
       status = to_string(decision)
 
-      case TaskDefinition.write(abs, %{status: status}) do
+      write_result =
+        if decision == :denied and is_binary(denial_reason) and denial_reason != "" do
+          # Use write_frontmatter so we can ADD denial_reason even if the
+          # file doesn't currently declare it. Rebuild from parsed fm.
+          rebuild_frontmatter_with_denial(abs, status, String.trim(denial_reason))
+        else
+          TaskDefinition.write(abs, %{status: status})
+        end
+
+      case write_result do
         :ok ->
           AuditLog.append(audit, %{
             company: company,
@@ -348,6 +358,20 @@ defmodule GlorboWeb.Actions do
 
   defp channel_path(base, company, channel),
     do: Path.join([base, "companies", company, "channels", "#{channel}.md"])
+
+  # Denial with reason: read existing fm, merge status+denial_reason, write
+  # via write_frontmatter which can add keys the file didn't declare.
+  defp rebuild_frontmatter_with_denial(abs, status, denial_reason) do
+    with {:ok, content} <- File.read(abs),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      merged =
+        fm
+        |> Map.put("status", status)
+        |> Map.put("denial_reason", denial_reason)
+
+      TaskDefinition.write_frontmatter(abs, merged)
+    end
+  end
 
   defp validate_slug(s) when is_binary(s) do
     if Regex.match?(@slug_re, s), do: :ok, else: {:error, :invalid_slug}

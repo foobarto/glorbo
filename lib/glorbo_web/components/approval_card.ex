@@ -48,7 +48,7 @@ defmodule GlorboWeb.Components.ApprovalCard do
         <button
           type="button"
           class="gl-btn gl-btn--deny"
-          phx-click="deny"
+          phx-click="deny_prompt"
           phx-value-task_path={@sentinel.task_path}
         >
           <GlorboWeb.CoreComponents.icon name="x" /> Deny

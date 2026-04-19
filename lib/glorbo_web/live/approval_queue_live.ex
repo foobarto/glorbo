@@ -57,6 +57,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
      |> assign(:base, base)
      |> assign(:sentinels, sentinels)
      |> assign(:selected_index, initial_selection(sentinels))
+     |> assign(:deny_task_path, nil)
      |> ChatDrawer.State.wire_drawer()}
   end
 
@@ -125,10 +126,53 @@ defmodule GlorboWeb.ApprovalQueueLive do
         keyboard_action(socket, "approve")
 
       "n" ->
-        keyboard_action(socket, "deny")
+        keyboard_action(socket, "deny_prompt")
 
       _ ->
         {:noreply, socket}
+    end
+  end
+
+  def handle_event("deny_prompt", %{"task_path" => tp}, socket) do
+    {:noreply, assign(socket, :deny_task_path, tp)}
+  end
+
+  def handle_event("deny_cancel", _params, socket) do
+    {:noreply, assign(socket, :deny_task_path, nil)}
+  end
+
+  def handle_event("deny_confirm", params, socket) do
+    tp = socket.assigns.deny_task_path
+    reason = Map.get(params, "reason", "")
+
+    case GlorboWeb.Actions.set_approval(
+           socket.assigns.company_slug,
+           tp,
+           :denied,
+           base: socket.assigns.base,
+           denial_reason: reason
+         ) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:deny_task_path, nil)
+         |> put_flash(:info, "Denied.")
+         |> assign(
+           :sentinels,
+           load_sentinels(socket.assigns.base, socket.assigns.company_slug)
+         )}
+
+      {:error, err} ->
+        Logger.warning("set_approval deny_confirm failed",
+          company: socket.assigns.company_slug,
+          task_path: tp,
+          reason: inspect(err)
+        )
+
+        {:noreply,
+         socket
+         |> assign(:deny_task_path, nil)
+         |> put_flash(:error, "Could not record denial.")}
     end
   end
 
@@ -198,6 +242,52 @@ defmodule GlorboWeb.ApprovalQueueLive do
           <h2 class="gl-panel__header">/prompt</h2>
           <pre class="gl-diff"><code>{selected_body(@sentinels, @selected_index)}</code></pre>
         </aside>
+      </div>
+
+      <div :if={@deny_task_path} class="gl-modal-scrim" phx-click-away="deny_cancel">
+        <form
+          phx-submit="deny_confirm"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-deny-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-deny-title"><strong>Deny approval</strong></div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="deny_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">REASON</span>
+              <textarea
+                name="reason"
+                rows="3"
+                class="gl-input"
+                maxlength="1024"
+                placeholder="Why are you denying? (optional — shown to the agent in its next prompt)"
+                autofocus
+              ></textarea>
+            </label>
+            <p class="gl-muted" style="font-size: 11px;">
+              Task status will be set to <code>denied</code>.
+              The reason is written to frontmatter <code>denial_reason:</code>
+              and surfaces in the agent's next wake prompt so it can course-correct.
+            </p>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="deny_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--deny">deny</button>
+          </footer>
+        </form>
       </div>
     </section>
     """

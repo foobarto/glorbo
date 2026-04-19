@@ -271,7 +271,7 @@ defmodule Glorbo.TaskDefinition do
     end
   end
 
-  @editor_keys ~w(title status assigned_to priority severity requires_approval)
+  @editor_keys ~w(title status assigned_to priority severity requires_approval denial_reason)
 
   defp replace_frontmatter(content, updates) do
     case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
