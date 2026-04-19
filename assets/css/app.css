@@ -1392,6 +1392,11 @@ button { font-family: inherit; font-size: inherit; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+.gl-task-comments__empty {
+  font-size: 12px;
+  font-style: italic;
+  margin: 4px 0 0;
+}
 .gl-panel__spacer { flex: 1; }
 
 .gl-new-task-form {

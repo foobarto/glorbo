@@ -808,17 +808,20 @@ defmodule GlorboWeb.KanbanLive do
             </ul>
           </div>
 
-          <div :if={@open_task.comments != []} class="gl-task-detail__field">
+          <div class="gl-task-detail__field">
             <span class="gl-muted">
               comments ({length(@open_task.comments)})
             </span>
-            <ul class="gl-task-comments">
+            <ul :if={@open_task.comments != []} class="gl-task-comments">
               <li :for={c <- @open_task.comments} class="gl-task-comments__row">
                 <span class="gl-task-comments__author">{c.author}</span>
                 <span class="gl-muted gl-task-comments__ts">{c.timestamp}</span>
                 <div class="gl-task-comments__body">{c.body}</div>
               </li>
             </ul>
+            <p :if={@open_task.comments == []} class="gl-muted gl-task-comments__empty">
+              No comments yet — use the field below to add one. @mentions wake the agent.
+            </p>
           </div>
         </div>
 
@@ -1042,12 +1045,35 @@ defmodule GlorboWeb.KanbanLive do
       """
 
       File.write!(path, content)
+
+      # Belt-and-braces: inotify → PubSub → Agent.Server is the canonical
+      # wake path, but boot-race or dropped events leave tasks sitting in
+      # inbox until the next heartbeat (observed 2026-04-19, >8 min
+      # delay). Directly wake via Registry lookup; idempotent with the
+      # fs-event path via the server's wake-queue.
+      safe_wake_assignee(company, new_assignee)
     end
 
     :ok
   end
 
   defp maybe_notify_assignee(_prev, _new, _co, _id, _title, _body), do: :ok
+
+  defp safe_wake_assignee(company, slug) do
+    case Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, slug}) do
+      [{pid, _}] when is_pid(pid) ->
+        try do
+          Glorbo.Agent.Server.wake(pid, :inbox, nil)
+        catch
+          _, _ -> :ok
+        end
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  end
 
   defp list_assignees(base, company) do
     agents_dir = Path.join([base, "companies", company, "agents"])
