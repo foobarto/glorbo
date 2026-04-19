@@ -163,7 +163,8 @@ defmodule GlorboWeb.ChannelLive do
       :ok ->
         # Belt-and-braces: inotify → PubSub can miss under load (esp. on
         # first write to a newly-created channel). Reload directly.
-        path = channel_path(socket.assigns.base, socket.assigns.company_slug, socket.assigns.channel)
+        path =
+          channel_path(socket.assigns.base, socket.assigns.company_slug, socket.assigns.channel)
 
         {:noreply,
          socket
