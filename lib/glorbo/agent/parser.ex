@@ -25,7 +25,7 @@ defmodule Glorbo.Agent.Parser do
       `{:error, :multiple_models_not_supported}`.
     * `permissions:` defaults to `[]` when absent (P7 — agent with no granted
       permissions is valid; it just can't route anything).
-    * `network:` defaults to `:none` (P9 — secure-by-default).
+    * `network:` defaults to `:api_only` (CLI providers need egress).
     * `timeout_seconds:` defaults to 300 (D-06).
     * `budget_usd_cents_month:` defaults to `nil` (P11 — no cap == no
       hard-stop, matches BudgetTracker semantics).
