@@ -342,6 +342,14 @@ defmodule Glorbo.Filesystem.Watcher do
           _ -> nil
         end
 
+      # Hot-reload: AGENT.md edits re-broadcast on the inbox topic so
+      # Agent.Server's existing subscription picks them up and re-parses
+      # its spec (permissions/network/provider changes take effect
+      # without a full server restart).
+      String.starts_with?(rel, "agents/") and
+          (String.ends_with?(rel, "/AGENT.md") or String.ends_with?(rel, "/agent.md")) ->
+        "inbox"
+
       String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") ->
         "inbox"
 

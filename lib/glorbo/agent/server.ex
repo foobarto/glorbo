@@ -286,12 +286,45 @@ defmodule Glorbo.Agent.Server do
       inbox_event_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
         handle_inbox_wake(state, :inbox)
 
+      agent_md_for_me?(rel_path, state.spec.slug) and inbox_event_write?(events) ->
+        {:noreply, maybe_reload_spec(state)}
+
       true ->
         {:noreply, state}
     end
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  # agents/<slug>/AGENT.md or agents/<slug>/agent.md — hot-reload
+  # trigger so edits to permissions/network/provider take effect
+  # without restarting the whole server.
+  defp agent_md_for_me?(rel_path, slug) do
+    case Path.split(rel_path) do
+      ["agents", ^slug, file] when file in ["AGENT.md", "agent.md"] -> true
+      _ -> false
+    end
+  end
+
+  defp maybe_reload_spec(%{spec: old_spec} = state) do
+    path = Path.join([state.base, "companies", state.company, "agents", old_spec.slug, "AGENT.md"])
+
+    case Glorbo.Agent.Parser.parse_file(path) do
+      {:ok, new_spec} ->
+        require Logger
+        Logger.info("agent spec reloaded from disk: #{old_spec.slug}@#{state.company}")
+        %{state | spec: new_spec}
+
+      {:error, reason} ->
+        require Logger
+
+        Logger.warning(
+          "agent spec reload failed for #{old_spec.slug}@#{state.company}: #{inspect(reason)}"
+        )
+
+        state
+    end
+  end
 
   # agents/<slug>/state/wake-request.md — matches the shape emitted by
   # Glorbo.Filesystem.Watcher's :wake classification.
