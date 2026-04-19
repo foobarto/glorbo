@@ -96,3 +96,6 @@ coverage/
 
 # Local .reports/ — session outputs from audits/E2E runs; not source.
 .reports/
+/REVIEW.md
+/TESTPLAN.md
+.claude/agents/
