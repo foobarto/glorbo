@@ -2334,6 +2334,11 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.1s;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
 }
 .gl-filetree__node:hover .gl-filetree__action { opacity: 1; }
 .gl-filetree__action:hover { color: var(--gl-accent); }

@@ -541,23 +541,25 @@ defmodule GlorboWeb.AgentLive do
                   <span :if={not row.exists?} class="gl-filetree__file gl-muted">
                     {row.name}
                   </span>
-                  <span
+                  <button
                     :if={not row.exists?}
+                    type="button"
                     class="gl-filetree__action gl-muted"
                     phx-click="create_file"
                     phx-value-path={row.rel}
                   >
                     + create
-                  </span>
-                  <span
+                  </button>
+                  <button
                     :if={row.exists? and row.name not in ["AGENT.md", "stdout.log"]}
+                    type="button"
                     class="gl-filetree__action gl-muted"
                     phx-click="delete_file"
                     phx-value-path={row.rel}
                     data-confirm={"Delete #{row.name}?"}
                   >
                     × delete
-                  </span>
+                  </button>
                 </div>
 
                 <div class="gl-filetree__section">directories</div>
