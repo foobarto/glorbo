@@ -100,6 +100,36 @@ After Q1–Q6: summarize what you've heard and ask "does that sound
 right?" before moving on. If the user revises, update your summary;
 don't silently re-interpret.
 
+### Phase 1.5 — Ground in prior GEPs (delegate)
+
+Before diving into design, dispatch the **`gep-research`** subagent to
+read related GEPs and return their decision logs + invariants. This
+keeps your main context clean (some GEPs are long) and ensures Phase 2
+discussion doesn't silently contradict prior decisions or re-derive
+settled ones.
+
+What to pass the agent:
+
+- The explicit GEP numbers from Q4 (`supersedes`, `extends`,
+  `see-also`).
+- Plus a topic for adjacent GEPs the user may not have named — e.g.
+  if the proposal touches on-disk layout, ask the agent to also
+  surface anything related to "filesystem / on-disk layout / SQLite
+  derivation"; if it touches the agent runtime, "CLI tool agents,
+  sandboxing, provider registry"; etc. Keep the topic narrow.
+- Always include **GEP-2** (architecture overview) unless the user
+  explicitly already discussed it — it's the baseline almost every
+  Standards GEP touches.
+
+When to skip: pure Process GEPs that don't touch architecture, or
+Informational retrofits where the user clearly already has all the
+context. When in doubt, dispatch — the cost is one agent turn, the
+upside is not silently reinventing GEP-5's sandbox decisions.
+
+After the agent returns, briefly summarize for the user (3–5
+bullets) what's already locked in by prior GEPs that's relevant to
+their proposal. Then proceed to Phase 2.
+
 ### Phase 2 — Design (adaptive)
 
 Now dig into the *design*. Depth depends on complexity:
@@ -282,3 +312,6 @@ typically reviewed before landing.
 - **Validator:** `mix gep.validate` — runs structural + link checks
   (`lib/mix/tasks/gep.validate.ex`, implemented by `Gep.Validator` in
   `lib/gep/validator.ex`).
+- **Research helper:** `gep-research` subagent
+  (`.claude/agents/gep-research.md`) — read-only, summarizes related
+  GEPs' decision logs and invariants. Used in Phase 1.5.

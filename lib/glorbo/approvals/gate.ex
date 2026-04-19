@@ -191,7 +191,7 @@ defmodule Glorbo.Approvals.Gate do
         action: "approval.requested",
         actor: agent,
         agent: agent,
-        task_path: td.task_path,
+        target: td.task_path,
         task_id: td.task_id,
         previous_assigned_to: td.assigned_to || "",
         company: state.company
@@ -282,7 +282,7 @@ defmodule Glorbo.Approvals.Gate do
       audit(state, %{
         action: "approval.rejected_traversal",
         actor: "system",
-        task_path: rel_path,
+        target: rel_path,
         company: state.company
       })
 
@@ -298,7 +298,7 @@ defmodule Glorbo.Approvals.Gate do
           audit(state, %{
             action: "approval.parse_error",
             actor: "system",
-            task_path: rel_path,
+            target: rel_path,
             error: inspect(reason),
             company: state.company
           })
@@ -326,7 +326,7 @@ defmodule Glorbo.Approvals.Gate do
           action: "approval.spurious",
           actor: "director",
           agent: nil,
-          task_path: td.task_path,
+          target: td.task_path,
           status: "approved",
           company: state.company
         })
@@ -343,7 +343,7 @@ defmodule Glorbo.Approvals.Gate do
           action: "approval.spurious",
           actor: "director",
           agent: nil,
-          task_path: td.task_path,
+          target: td.task_path,
           status: "denied",
           company: state.company
         })
@@ -369,7 +369,7 @@ defmodule Glorbo.Approvals.Gate do
       action: "approval.granted",
       actor: "director",
       agent: agent,
-      task_path: td.task_path,
+      target: td.task_path,
       approved_at: DateTime.utc_now() |> DateTime.to_iso8601(),
       company: state.company
     })
@@ -402,9 +402,9 @@ defmodule Glorbo.Approvals.Gate do
       action: "approval.denied",
       actor: "director",
       agent: agent,
-      task_path: td.task_path,
+      target: td.task_path,
       denied_at: DateTime.utc_now() |> DateTime.to_iso8601(),
-      reason: td.denial_reason,
+      denial_reason: td.denial_reason,
       company: state.company
     })
 
@@ -429,8 +429,8 @@ defmodule Glorbo.Approvals.Gate do
         audit(state, %{
           action: "approval.rename_failed",
           actor: "system",
-          task_path: td.task_path,
-          target: history_path,
+          target: td.task_path,
+          history_path: history_path,
           error: inspect(reason),
           company: state.company
         })
