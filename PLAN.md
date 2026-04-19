@@ -226,8 +226,10 @@ GEP.
 
 - Real audit-backed sparkline history (M2 currently uses a synthetic
   seed).
-- The P3 disabled buttons in M3.5 (edit agent.md, send message, stop)
-  becoming real — each needs its own GEP.
+- The P3 disabled buttons in M3.5 are now real: **edit AGENT.md**
+  (in-browser editor modal), **send message** (navigates to
+  Director ↔ agent DM), and **stop** (`Agent.Server.stop_inflight/1`
+  kills the in-flight dispatch Task).
 - Mobile breakpoints — explicit non-goal for the dashboard; it is a
   desktop TUI-style tool.
 
@@ -247,12 +249,33 @@ GEP.
 Mockup-alignment sprint complete. M1 – M5 all shipped
 (`M5.3` vocab toggle deferred as noted above).
 
-Post-sprint work on `main` has focused on UAT-driven polish:
-accessibility (keyboard activation + aria-labels on all
-role="button" surfaces), chat UX (Enter-to-send textarea with
-autogrow, view fills viewport, messages auto-scroll), stdout
-hardening (mid-line `\r` / OSC sequences stripped, tail-pin
-autoscroll), approval workflow (director/agent `assigned_to`
-swap on request/grant/deny, denial reason on audit + frontmatter),
-and scaffolding flow (+new company/agent/task wired through the
-existing CLI scaffold code paths).
+Post-sprint work on `main` has focused on UAT-driven polish and
+feature completion:
+
+- **Accessibility** — keyboard activation + aria-labels on every
+  `role="button"` surface, file-tree actions as real `<button>`s.
+- **Chat UX** — Enter-to-send + Shift-Enter newline textarea with
+  autogrow, view fills viewport, messages auto-scroll + unpin on
+  scroll up.
+- **Stdout hardening** — mid-line `\r` / OSC / BEL stripping,
+  HEEX-whitespace fix that was the real ghost-gap source,
+  tail-pin autoscroll, backfill re-sanitizes stale payloads.
+- **Approval workflow** — director/agent `assigned_to` swap on
+  request/grant/deny (Gate + UI-direct parity), denial reason on
+  audit + frontmatter, Gate audit canonical `target:` key.
+  GEP-19 captures the protocol retroactively.
+- **CEO + role templates** — 5-step CEO company-stewardship
+  heartbeat, role-specific HEARTBEAT.md templates for engineer
+  and researcher, SOUL.md expansion to owner-vs-observer stance.
+- **Paperclip import** — `glorbo import paperclip <src>` scaffolds
+  an entire company from an agentcompanies tree, wraps each
+  paperclip AGENTS.md in Glorbo frontmatter, copies HEARTBEAT/
+  SOUL/TOOLS, prints a hint report of paperclip-isms to fix.
+- **Agent detail right-panel collapse** — thin toggle rail between
+  stdout and config columns, auto-collapses on viewports < 1200px,
+  persists in localStorage.
+- **Themed scrollbars** — Firefox + WebKit covered with phosphor
+  palette.
+- **Docs** — CHANGELOG + README + PLAN synced, six dashboard
+  screenshots embedded in README, GEP-19 shipped, DESIGN.md
+  GEP reference list current through GEP-19.

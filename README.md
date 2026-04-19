@@ -352,8 +352,13 @@ glorbo status                     Pidfile state + uptime
 glorbo serve                      Foreground-blocking supervision (for systemd)
 glorbo run <script>               One-shot script execution
 glorbo new company <slug>         Scaffold a new company directory
-glorbo new agent <co>/<slug>      Scaffold a new agent.md with defaults
+glorbo new agent <co>/<slug>      Scaffold a new agent (--template supported)
 glorbo new project <co>/<slug>    Scaffold a new project
+glorbo new skill <co> <name>      Scaffold a new skill (--template supported)
+glorbo templates list [kind]      List agent/skill templates (GEP-10)
+glorbo templates show <kind> <name>
+                                  Print a template's contents
+glorbo import paperclip <src>     Import a paperclip.ai agentcompanies tree
 glorbo logs <co> [agent] [--follow]
                                   Tail audit log or agent stdout (inotify-backed)
 glorbo doctor [--json] [--fix]    Verify host prerequisites; 7 auto-fixers
@@ -480,31 +485,60 @@ runtime):
 - Phase 04 — LiveView dashboard + Channels + PubSub ✓
 - Phase 05 — CLI completeness + backup/restore + portability ✓
 
-**v0.0.3** is in progress on `main`:
+**v0.0.3** shipped on `main`:
 
 - **GEP-8 — provider registry + CLI auto-detect** ✓
+- **GEP-10 — agent and skill templates** ✓ (`--template` on
+  `glorbo new agent` + `glorbo new skill`, CEO/engineer/researcher
+  templates built in, role-specific SOUL.md and HEARTBEAT.md
+  auto-wired)
 - **GEP-12 — no user-input atoms** ✓
-- Reply-file contract (breaking change — existing agents need an
+- **GEP-13 — project-prefixed task IDs** ✓
+- **GEP-14 — agent heartbeat semantics + HEARTBEAT.md** ✓
+- **GEP-15 — ALLCAPS agent-facing markdown convention** ✓
+- **GEP-16 — agent wake + dispatch pipeline** ✓
+- **GEP-19 — director approval workflow protocol** ✓
+- Reply-file contract (breaking — existing agents need an
   updated system prompt; `glorbo new agent` scaffolds this
-  automatically)
+  automatically).
+- **`glorbo import paperclip <src>`** — import paperclip.ai
+  `agentcompanies` trees; wraps each agent's `AGENTS.md` in
+  Glorbo frontmatter, preserves HEARTBEAT/SOUL/TOOLS verbatim,
+  prints a hint report naming every paperclip-ism the Director
+  should hand-fix.
 - **Dashboard UX overhaul** (M-series) ✓ — mockup-aligned shell
   (260px tri-section sidebar, topbar with `▚ GLORBO` + company
-  picker, terminal-TUI phosphor tokens), company overview rewrite
-  with stat cards + agent roster + org chart, agent-detail
-  three-column layout, Kanban drag-and-drop, chat channel switcher
-  + DM thread enumeration, approvals prompt-diff + `j/k/y/n`
-  keyboard, audit unified free-text search, providers card grid +
-  TOML snippet, global `g o/h/p` shortcuts, TWEAKS drawer with
-  localStorage persistence, `+ new company/agent/task` entry
-  points.
+  picker, terminal-TUI phosphor tokens), company overview with
+  stat cards + agent roster + org chart, agent-detail
+  three-column layout with a right-panel collapse rail (auto
+  on viewports < 1200px), Kanban drag-and-drop with `status:`
+  frontmatter writeback, chat channel switcher + DM thread
+  enumeration, approvals prompt-diff with `j/k/y/n` keyboard,
+  audit unified free-text search, providers card grid with TOML
+  snippet, global `g o/h/p` shortcuts, TWEAKS drawer, themed
+  scrollbars, `+ new company/agent/task` entry points.
+- **Approval workflow polish** — director/agent `assigned_to`
+  swap on approval-request/grant/deny (preserved across the
+  Gate daemon and UI-direct code paths), denial reason
+  persisted into task frontmatter and audit, Escape closes all
+  modals, Gate audit events now use canonical `target:` key.
+- **Stdout streamer hardening** — CR / OSC / BEL stripping so
+  terminal noise doesn't leak into the UI, autoscroll that
+  unpins when the user scrolls up to read older output.
+- **Accessibility sweep** — every `role="button"` surface gained
+  `phx-keydown="Enter"` activation and a descriptive
+  aria-label (task cards, agent table rows, approval rows,
+  permission rows, file-tree actions as real `<button>`s).
 - Dashboard hardening ✓ — auto-start company supervisors at app
   boot (fixes AuditLog-not-registered crash on every Director
   write-action).
 - Tests: 895/895 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
-Pending: `api-only` netns + nftables egress hardening, and GEP-10
-agent-template scaffolding.
+Pending for a later release: `api-only` netns + nftables egress
+hardening; the wider GEP-9 (MCP/ACP protocol integration) and
+GEP-17 (cross-OS sandbox + watcher) design work; optional
+GEP-18 agentcompanies/v1 schema convergence.
 
 Active design work lives in `docs/geps/`. Historical phase plans
 are in `git log` for anyone who needs the archaeology.
@@ -517,7 +551,7 @@ submitting a pull request.
 Security reports: see [SECURITY.md](SECURITY.md). Please don't file
 sandbox-escape findings as public issues.
 
-The project is Elixir through and through in v0.0.2. Familiarity with OTP
+The project is Elixir through and through. Familiarity with OTP
 supervision trees and Phoenix LiveView is helpful but not required — the
 codebase is intentionally straightforward.
 
