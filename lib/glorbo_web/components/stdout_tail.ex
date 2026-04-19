@@ -26,30 +26,7 @@ defmodule GlorboWeb.Components.StdoutTail do
     ~H"""
     <div class="gl-stdout-tail" id="stdout-tail-wrap" phx-hook="TailPin">
       <div id="stdout-tail" phx-update="stream">
-        <div
-          :for={{dom_id, line} <- @stream}
-          id={dom_id}
-          class={[
-            "gl-stdout-tail__line",
-            line_kind_class(Map.get(line, :kind))
-          ]}
-        >
-          <%= case Map.get(line, :kind) do %>
-            <% :header -> %>
-              <span class="gl-stdout-tail__marker">dispatch</span>
-              <time class="gl-stdout-tail__ts gl-muted">{Map.get(line, :ts, "")}</time>
-            <% :exit -> %>
-              <span class="gl-stdout-tail__marker">exit</span>
-              <span class={[
-                "gl-stdout-tail__exit-code",
-                exit_code_class(Map.get(line, :exit_code))
-              ]}>
-                {Map.get(line, :exit_code, "?")}
-              </span>
-            <% _ -> %>
-              {line.body}
-          <% end %>
-        </div>
+        <.stdout_line :for={{dom_id, line} <- @stream} dom_id={dom_id} line={line} />
       </div>
       <div class="gl-stdout-tail__empty gl-muted" id="stdout-tail-empty">
         {@empty_hint}
@@ -58,9 +35,31 @@ defmodule GlorboWeb.Components.StdoutTail do
     """
   end
 
-  defp line_kind_class(:header), do: "gl-stdout-tail__line--header"
-  defp line_kind_class(:exit), do: "gl-stdout-tail__line--exit"
-  defp line_kind_class(_), do: nil
+  attr :dom_id, :string, required: true
+  attr :line, :map, required: true
+
+  # A single stdout line. Critical: the text content (line.body for the
+  # body case) sits directly adjacent to the <div> open/close tags with
+  # NO template-source whitespace around it. Under `white-space:
+  # pre-wrap`, any HEEX indentation would render as literal blank space
+  # before/after every line, stacking visible gaps between lines.
+  defp stdout_line(%{line: %{kind: :header}} = assigns) do
+    ~H"""
+    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--header"><span class="gl-stdout-tail__marker">dispatch</span><time class="gl-stdout-tail__ts gl-muted">{Map.get(@line, :ts, "")}</time></div>
+    """
+  end
+
+  defp stdout_line(%{line: %{kind: :exit}} = assigns) do
+    ~H"""
+    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--exit"><span class="gl-stdout-tail__marker">exit</span><span class={["gl-stdout-tail__exit-code", exit_code_class(Map.get(@line, :exit_code))]}>{Map.get(@line, :exit_code, "?")}</span></div>
+    """
+  end
+
+  defp stdout_line(assigns) do
+    ~H"""
+    <div id={@dom_id} class="gl-stdout-tail__line">{@line.body}</div>
+    """
+  end
 
   defp exit_code_class("0"), do: "gl-stdout-tail__exit-code--ok"
   defp exit_code_class(_), do: "gl-stdout-tail__exit-code--err"
