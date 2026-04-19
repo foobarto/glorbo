@@ -273,6 +273,60 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute html =~ "gl-task-detail"
   end
 
+  test "comment_task appends `## ts | director\\n<body>` to the task file",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    task_rel = "projects/website/tasks/t-01.md"
+    render_click(view, "open_task", %{"path" => task_rel})
+
+    render_hook(view, "comment_task", %{"comment" => "Please review by EOD"})
+
+    abs = Path.join([base, "companies", "acme", task_rel])
+    content = File.read!(abs)
+
+    # Director's comment rendered with lowercase attribution (user
+    # 2026-04-19 UAT: all authors are lowercase for consistency).
+    assert content =~ " | director\n"
+    assert content =~ "Please review by EOD"
+  end
+
+  test "comment_task with empty body shows a flash and does not append",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    task_rel = "projects/website/tasks/t-01.md"
+    render_click(view, "open_task", %{"path" => task_rel})
+
+    abs = Path.join([base, "companies", "acme", task_rel])
+    before = File.read!(abs)
+
+    html = render_hook(view, "comment_task", %{"comment" => "   "})
+
+    assert html =~ "Comment is empty"
+    assert File.read!(abs) == before
+  end
+
+  test ":agent_status PubSub broadcast triggers a re-render (pill color refresh)",
+       %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    # Broadcast on the topic the LV subscribes to. The handler bumps
+    # `:_agent_status_tick` which forces a re-render — we just assert
+    # the view is still alive + renderable.
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :busy}
+    )
+
+    # Give the message time to flow through
+    Process.sleep(50)
+
+    # View should still render (message was handled, not swallowed)
+    assert render(view) =~ "Kanban"
+  end
+
   test "open_task rejects a traversal path", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 
