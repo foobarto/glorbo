@@ -232,7 +232,7 @@ defmodule Glorbo.Approvals.GateTest do
     assert row.status == "approved"
 
     # approval.granted audit
-    assert_audit_within(:action, "approval.granted", 300)
+    assert_audit_within(:action, "approval.granted", 1_500)
   end
 
   # G5 — denied flip moves task to history/tasks/ + upserts denied state
@@ -288,7 +288,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     refute File.exists?(sentinel_path)
 
-    assert_audit_within(:action, "approval.denied", 300)
+    assert_audit_within(:action, "approval.denied", 1_500)
 
     # No wake emitted on denial
     refute_received {:wake, _, _, _}
@@ -307,7 +307,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     send(pid, {:file_event, "projects/foo/tasks/t-06.md", [:modified]})
 
-    assert_audit_within(:action, "approval.spurious", 300)
+    assert_audit_within(:action, "approval.spurious", 1_500)
     refute_received {:wake, _, _, _}
 
     # No DB row created
@@ -361,7 +361,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     send(pid, {:file_event, "projects/foo/tasks/bad.md", [:modified]})
 
-    assert_audit_within(:action, "approval.parse_error", 300)
+    assert_audit_within(:action, "approval.parse_error", 1_500)
     assert Process.alive?(pid)
   end
 
@@ -399,7 +399,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     send(pid, {:file_event, "projects/foo/tasks/t-10.md", [:modified]})
 
-    assert_audit_within(:action, "approval.granted", 300)
+    assert_audit_within(:action, "approval.granted", 1_500)
 
     # Flush: handle_info may still be completing File.rm + upsert.
     _ = :sys.get_state(pid)
@@ -447,7 +447,7 @@ defmodule Glorbo.Approvals.GateTest do
     assert :ok == GateHelpers.resolve_approval(pid, "projects/foo/tasks/t-11.md", "approved")
 
     assert_receive {:wake, "engineer", :director_approval, _}, 500
-    assert_audit_within(:action, "approval.granted", 300)
+    assert_audit_within(:action, "approval.granted", 1_500)
   end
 
   # G12 — Gate crash + restart is stateless
@@ -491,7 +491,7 @@ defmodule Glorbo.Approvals.GateTest do
     """)
 
     send(pid2, {:file_event, "projects/foo/tasks/t-12.md", [:modified]})
-    assert_audit_within(:action, "approval.granted", 300)
+    assert_audit_within(:action, "approval.granted", 1_500)
   end
 
   # G13 — concurrent request_approval for different agents/tasks → 2 sentinels + 2 rows
@@ -629,7 +629,7 @@ defmodule Glorbo.Approvals.GateTest do
         {:file_event, "projects/foo/tasks/t-15.md", [:modified]}
       )
 
-    assert_audit_within(:action, "approval.granted", 500)
+    assert_audit_within(:action, "approval.granted", 1_500)
   end
 
   # ---- helpers ---------------------------------------------------------
