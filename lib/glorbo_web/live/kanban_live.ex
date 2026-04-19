@@ -848,10 +848,9 @@ defmodule GlorboWeb.KanbanLive do
     case task do
       %{comments: comments} when is_list(comments) and comments != [] ->
         comments
-        |> Enum.map(fn c ->
+        |> Enum.map_join("\n", fn c ->
           "## #{c.timestamp} | #{c.author}\n#{c.body}\n"
         end)
-        |> Enum.join("\n")
         |> String.trim_trailing()
 
       _ ->
