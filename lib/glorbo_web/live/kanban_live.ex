@@ -150,6 +150,7 @@ defmodule GlorboWeb.KanbanLive do
               status: task.status || "todo",
               assigned_to: task.assigned_to || "",
               priority: if(task.priority, do: Atom.to_string(task.priority), else: ""),
+              severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
               requires_approval:
                 if(task.requires_approval == :director, do: "director", else: ""),
               body: String.trim(task.prompt_body || "")
@@ -247,6 +248,7 @@ defmodule GlorboWeb.KanbanLive do
           "status" => Map.get(params, "status", task.status),
           "assigned_to" => Map.get(params, "assigned_to", "") |> String.trim(),
           "priority" => Map.get(params, "priority", ""),
+          "severity" => Map.get(params, "severity", ""),
           "requires_approval" => Map.get(params, "requires_approval", "")
         }
 
@@ -696,6 +698,17 @@ defmodule GlorboWeb.KanbanLive do
               <option value="low" selected={@open_task.priority == "low"}>low</option>
               <option value="medium" selected={@open_task.priority == "medium"}>medium</option>
               <option value="high" selected={@open_task.priority == "high"}>high</option>
+            </select>
+          </label>
+
+          <label class="gl-task-detail__field">
+            <span class="gl-muted">severity</span>
+            <select name="severity" class="gl-input">
+              <option value="" selected={@open_task.severity == ""}>—</option>
+              <option value="info" selected={@open_task.severity == "info"}>info</option>
+              <option value="minor" selected={@open_task.severity == "minor"}>minor</option>
+              <option value="major" selected={@open_task.severity == "major"}>major</option>
+              <option value="critical" selected={@open_task.severity == "critical"}>critical</option>
             </select>
           </label>
 
