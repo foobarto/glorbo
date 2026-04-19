@@ -892,7 +892,12 @@ defmodule GlorboWeb.KanbanLive do
           save form (HTML forbids nested <form>), so the outer
           .gl-task-detail wrapper is a div and each form is a child.
         --%>
-        <form phx-submit="comment_task" class="gl-task-comment">
+        <form
+          phx-submit="comment_task"
+          phx-hook="ResetOnSubmit"
+          id="gl-task-comment-form"
+          class="gl-task-comment"
+        >
           <span class="gl-compose__prompt" aria-hidden="true">
             director@{@open_task.task_id} ▸
           </span>
