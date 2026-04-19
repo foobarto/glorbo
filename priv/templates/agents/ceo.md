@@ -19,7 +19,6 @@ permissions:
   - chat:read:*
   - agents:list:*
   - agents:message:*
-  - goals:read:*
 ---
 
 # {{ name }}
