@@ -4,6 +4,11 @@
 # Burrito writes the wrapped single-file binary here.
 /burrito_out/
 
+# Convenience symlink to the latest linux_x86_64 burrito build,
+# maintained by `mix build.local` / end-of-task automation. Not
+# checked in; build locally to materialise it.
+/glorbo
+
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 
