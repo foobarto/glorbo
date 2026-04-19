@@ -103,11 +103,67 @@ defmodule GlorboWeb.KanbanLive do
         do: "Kanban · #{filter} — #{slug} — Glorbo",
         else: "Kanban — #{slug} — Glorbo"
 
-    {:noreply,
-     socket
-     |> assign(:page_title, title)
-     |> assign(:project_filter, filter)
-     |> assign(:columns, group_by_column(tasks))}
+    socket =
+      socket
+      |> assign(:page_title, title)
+      |> assign(:project_filter, filter)
+      |> assign(:columns, group_by_column(tasks))
+
+    # Deep-link: `?task=projects/<proj>/tasks/<id>.md` opens the task
+    # detail overlay on mount. Falls through silently if the path is
+    # malformed or the file is missing so a stale bookmark doesn't
+    # crash the page. If `?task=` is absent, make sure any previously-
+    # open task is cleared (covers browser-back after close).
+    socket =
+      case Map.get(params, "task") do
+        task_path when is_binary(task_path) and task_path != "" ->
+          maybe_open_task_from_param(socket, slug, task_path)
+
+        _ ->
+          assign(socket, :open_task, nil)
+      end
+
+    {:noreply, socket}
+  end
+
+  # Deep-link helper: materialise the same `:open_task` assign shape
+  # as the click-driven `handle_event("open_task", ...)` path so the
+  # existing overlay form works identically.
+  defp maybe_open_task_from_param(socket, company, task_path) do
+    with {:ok, abs} <- resolve_task_path(task_path, company),
+         {:ok, task} <-
+           Glorbo.TaskDefinition.parse_file(abs, base: base_dir(), company: company) do
+      {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")
+
+      detail = %{
+        task_path: task_path,
+        task_id: task.task_id,
+        title: task.title || "",
+        status: task.status || "todo",
+        assigned_to: task.assigned_to || "",
+        priority: if(task.priority, do: Atom.to_string(task.priority), else: ""),
+        severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
+        requires_approval: if(task.requires_approval == :director, do: "director", else: ""),
+        denial_reason: task.denial_reason || "",
+        body: prompt,
+        comments: comments,
+        attachments: list_task_attachments(task.project, task.task_id)
+      }
+
+      assign(socket, :open_task, detail)
+    else
+      _ -> socket
+    end
+  end
+
+  defp build_task_params(socket, path) do
+    base = [task: path]
+
+    case socket.assigns[:project_filter] do
+      nil -> base
+      "" -> base
+      filter -> [project: filter] ++ base
+    end
   end
 
   @impl true
@@ -136,36 +192,20 @@ defmodule GlorboWeb.KanbanLive do
     do: ChatDrawer.State.post(socket, body)
 
   def handle_event("open_task", %{"path" => path}, socket) do
+    # Validate up-front so an explicit click on a bad path produces a
+    # visible flash, then push_patch so the URL carries the open task
+    # as `?task=...` (shareable / bookmarkable). `handle_params/3`
+    # does the actual detail materialisation. Deep-link arrivals with
+    # a bad path silently fail-closed in the handle_params branch so
+    # stale bookmarks don't crash the page.
     case resolve_task_path(path, socket.assigns.company_slug) do
-      {:ok, abs} ->
-        case Glorbo.TaskDefinition.parse_file(abs,
-               base: base_dir(),
-               company: socket.assigns.company_slug
-             ) do
-          {:ok, task} ->
-            {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")
+      {:ok, _abs} ->
+        params = build_task_params(socket, path)
 
-            detail = %{
-              task_path: path,
-              task_id: task.task_id,
-              title: task.title || "",
-              status: task.status || "todo",
-              assigned_to: task.assigned_to || "",
-              priority: if(task.priority, do: Atom.to_string(task.priority), else: ""),
-              severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
-              requires_approval:
-                if(task.requires_approval == :director, do: "director", else: ""),
-              denial_reason: task.denial_reason || "",
-              body: prompt,
-              comments: comments,
-              attachments: list_task_attachments(task.project, task.task_id)
-            }
-
-            {:noreply, assign(socket, :open_task, detail)}
-
-          _ ->
-            {:noreply, put_flash(socket, :error, "Could not parse task.")}
-        end
+        {:noreply,
+         push_patch(socket,
+           to: ~p"/companies/#{socket.assigns.company_slug}/kanban?#{params}"
+         )}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Invalid task path.")}
@@ -173,7 +213,22 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   def handle_event("close_task", _params, socket) do
-    {:noreply, assign(socket, :open_task, nil)}
+    # Clear ?task= from the URL so bookmarks + browser-back behave
+    # as expected. Preserve the project filter if set.
+    params =
+      case socket.assigns[:project_filter] do
+        nil -> []
+        "" -> []
+        filter -> [project: filter]
+      end
+
+    path =
+      case params do
+        [] -> ~p"/companies/#{socket.assigns.company_slug}/kanban"
+        _ -> ~p"/companies/#{socket.assigns.company_slug}/kanban?#{params}"
+      end
+
+    {:noreply, socket |> assign(:open_task, nil) |> push_patch(to: path)}
   end
 
   def handle_event("search_task", %{"q" => q}, socket) do
