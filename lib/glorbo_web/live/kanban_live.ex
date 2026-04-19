@@ -63,6 +63,7 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:assignee_options, list_assignees(base, slug))
        |> assign(:open_task, nil)
        |> assign(:new_task_form, default_new_task_form())
+       |> assign(:task_search, "")
        |> allow_upload(:new_task_attachments,
          accept: :any,
          max_entries: 8,
@@ -120,6 +121,7 @@ defmodule GlorboWeb.KanbanLive do
         base
         |> load_tasks(socket.assigns.company_slug)
         |> apply_project_filter(socket.assigns.project_filter)
+        |> apply_search_filter(socket.assigns.task_search)
 
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
     else
@@ -168,6 +170,21 @@ defmodule GlorboWeb.KanbanLive do
     {:noreply, assign(socket, :open_task, nil)}
   end
 
+  def handle_event("search_task", %{"q" => q}, socket) do
+    base = base_dir()
+
+    tasks =
+      base
+      |> load_tasks(socket.assigns.company_slug)
+      |> apply_project_filter(socket.assigns.project_filter)
+      |> apply_search_filter(q)
+
+    {:noreply,
+     socket
+     |> assign(:task_search, q)
+     |> assign(:columns, group_by_column(tasks))}
+  end
+
   def handle_event("comment_task", %{"comment" => comment}, socket) do
     task = socket.assigns.open_task
     trimmed = String.trim(comment)
@@ -205,6 +222,7 @@ defmodule GlorboWeb.KanbanLive do
           base_dir()
           |> load_tasks(company)
           |> apply_project_filter(socket.assigns.project_filter)
+          |> apply_search_filter(socket.assigns.task_search)
 
         emit_task_delete_audit(company, path)
 
@@ -255,6 +273,7 @@ defmodule GlorboWeb.KanbanLive do
             base_dir()
             |> load_tasks(socket.assigns.company_slug)
             |> apply_project_filter(socket.assigns.project_filter)
+            |> apply_search_filter(socket.assigns.task_search)
 
           {:noreply,
            socket
@@ -335,6 +354,7 @@ defmodule GlorboWeb.KanbanLive do
         base
         |> load_tasks(company)
         |> apply_project_filter(socket.assigns.project_filter)
+        |> apply_search_filter(socket.assigns.task_search)
 
       summary =
         if attachments == [] do
@@ -371,6 +391,7 @@ defmodule GlorboWeb.KanbanLive do
         base
         |> load_tasks(socket.assigns.company_slug)
         |> apply_project_filter(socket.assigns.project_filter)
+        |> apply_search_filter(socket.assigns.task_search)
 
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
     else
@@ -404,6 +425,16 @@ defmodule GlorboWeb.KanbanLive do
           >
             × all projects
           </.link>
+          <form phx-change="search_task" class="gl-kanban__search">
+            <input
+              type="search"
+              name="q"
+              value={@task_search}
+              class="gl-input"
+              placeholder="search title/assignee…"
+              aria-label="Search tasks"
+            />
+          </form>
           <button type="button" class="gl-btn" phx-click="new_task">+ new task</button>
         </div>
       </header>
@@ -734,6 +765,23 @@ defmodule GlorboWeb.KanbanLive do
 
   defp apply_project_filter(tasks, project) when is_binary(project) do
     Enum.filter(tasks, fn t -> t.project == project end)
+  end
+
+  defp apply_search_filter(tasks, nil), do: tasks
+  defp apply_search_filter(tasks, ""), do: tasks
+
+  defp apply_search_filter(tasks, q) when is_binary(q) do
+    needle = String.downcase(q)
+
+    Enum.filter(tasks, fn t ->
+      title = String.downcase(t.title || "")
+      assigned = String.downcase(t.assigned_to || "")
+      task_id = String.downcase(t.task_id || "")
+
+      String.contains?(title, needle) or
+        String.contains?(assigned, needle) or
+        String.contains?(task_id, needle)
+    end)
   end
 
   defp columns(%{todo: t, in_progress: i, review: r, done: d}) do

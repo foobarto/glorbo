@@ -2489,3 +2489,11 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   font-size: 11px;
   margin: 4px 0 0 0;
 }
+
+.gl-kanban__search {
+  display: inline-block;
+  margin-right: var(--gl-space-sm);
+}
+.gl-kanban__search input {
+  width: 220px;
+}
