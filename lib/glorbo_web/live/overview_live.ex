@@ -114,7 +114,9 @@ defmodule GlorboWeb.OverviewLive do
           <li>Press <kbd>?</kbd> to see keyboard shortcuts.</li>
           <li>Press <kbd>⌘K</kbd> / <kbd>CtrlK</kbd> for the command palette.</li>
           <li>
-            Scaffold another agent: <code>glorbo new agent &lt;company&gt;/&lt;slug&gt;</code>
+            Inside a company page, use <strong>+ new agent</strong>
+            to scaffold one (or <code>glorbo new agent &lt;co&gt;/&lt;slug&gt;</code>
+            from the CLI).
           </li>
         </ul>
       </aside>
