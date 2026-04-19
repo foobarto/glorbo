@@ -82,6 +82,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:streamer_pid, nil)
         |> assign(:history, history)
         |> assign(:open_file, nil)
+        |> assign(:wake_open?, false)
         |> stream(:stdout, [], limit: -1000)
         |> ChatDrawer.State.wire_drawer()
 
@@ -173,7 +174,16 @@ defmodule GlorboWeb.AgentLive do
     {:noreply, assign(socket, :hovered_perm, nil)}
   end
 
-  def handle_event("wake", %{"reason" => reason}, socket) do
+  def handle_event("wake_prompt", _params, socket) do
+    {:noreply, assign(socket, :wake_open?, true)}
+  end
+
+  def handle_event("wake_cancel", _params, socket) do
+    {:noreply, assign(socket, :wake_open?, false)}
+  end
+
+  def handle_event("wake", params, socket) do
+    reason = Map.get(params, "reason", "")
     base = base_dir()
 
     case GlorboWeb.Actions.wake_agent(
@@ -183,7 +193,10 @@ defmodule GlorboWeb.AgentLive do
            base: base
          ) do
       :ok ->
-        {:noreply, put_flash(socket, :info, "Woken. Writing state/wake-request.md…")}
+        {:noreply,
+         socket
+         |> assign(:wake_open?, false)
+         |> put_flash(:info, "Woken. Writing state/wake-request.md…")}
 
       {:error, err} ->
         Logger.warning("wake_agent failed",
@@ -192,7 +205,10 @@ defmodule GlorboWeb.AgentLive do
           reason: inspect(err)
         )
 
-        {:noreply, put_flash(socket, :error, "Could not wake agent.")}
+        {:noreply,
+         socket
+         |> assign(:wake_open?, false)
+         |> put_flash(:error, "Could not wake agent.")}
     end
   end
 
@@ -793,6 +809,51 @@ defmodule GlorboWeb.AgentLive do
           </form>
         </div>
       </div>
+
+      <div :if={@wake_open?} class="gl-modal-scrim" phx-click-away="wake_cancel">
+        <form
+          phx-submit="wake"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-wake-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-wake-title"><strong>↻ wake {@agent_slug}</strong></div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="wake_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">REASON</span>
+              <textarea
+                name="reason"
+                rows="3"
+                class="gl-input"
+                maxlength="1024"
+                placeholder="Optional — e.g. 'check the new claude-code version' or 'roadmap changed'"
+                autofocus
+              ></textarea>
+            </label>
+            <p class="gl-muted" style="font-size: 11px;">
+              Writes <code>agents/{@agent_slug}/state/wake-request.md</code>.
+              The agent's next invocation sees the reason as part of the wake prompt.
+            </p>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="wake_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">wake</button>
+          </footer>
+        </form>
+      </div>
     </section>
     """
   end
@@ -802,8 +863,7 @@ defmodule GlorboWeb.AgentLive do
     <button
       type="button"
       class="gl-btn gl-btn--primary"
-      phx-click="wake"
-      phx-value-reason=""
+      phx-click="wake_prompt"
     >
       ↻ wake now
     </button>
