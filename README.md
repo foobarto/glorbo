@@ -485,7 +485,7 @@ runtime):
 - Phase 04 — LiveView dashboard + Channels + PubSub ✓
 - Phase 05 — CLI completeness + backup/restore + portability ✓
 
-**v0.0.3** shipped on `main`:
+**v0.0.3** shipped 2026-04-19:
 
 - **GEP-8 — provider registry + CLI auto-detect** ✓
 - **GEP-10 — agent and skill templates** ✓ (`--template` on

@@ -10,9 +10,15 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-_v0.0.3 in progress on `main`; not yet tagged. Pending milestone
-items: `api-only` netns + nftables egress hardening, agent-template
-scaffolding (GEP-10)._
+### Added
+
+### Changed
+
+### Fixed
+
+---
+
+## [0.0.3] — 2026-04-19
 
 ### Added
 
@@ -432,6 +438,7 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/foobarto/glorbo/releases/tag/v0.0.3
 [0.0.2]: https://github.com/foobarto/glorbo/releases/tag/v0.0.2
 [0.0.1]: https://github.com/foobarto/glorbo/releases/tag/v0.0.1
