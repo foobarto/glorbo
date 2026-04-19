@@ -115,21 +115,16 @@ defmodule GlorboWeb.ApprovalQueueLive do
   end
 
   def handle_event("keydown", %{"key" => key}, socket) do
-    case key do
-      k when k in ["j", "ArrowDown"] ->
-        {:noreply, assign(socket, :selected_index, step(socket.assigns, 1))}
-
-      k when k in ["k", "ArrowUp"] ->
-        {:noreply, assign(socket, :selected_index, step(socket.assigns, -1))}
-
-      "y" ->
-        keyboard_action(socket, "approve")
-
-      "n" ->
-        keyboard_action(socket, "deny_prompt")
-
-      _ ->
-        {:noreply, socket}
+    # Deny modal is open: Escape closes it, other keys fall through to
+    # the textarea inside. Without this guard, `y`/`n`/`j`/`k` would
+    # fire approve/deny_prompt on the SELECTED sentinel while the user
+    # is typing into the reason textarea.
+    if socket.assigns.deny_task_path != nil do
+      if key == "Escape",
+        do: {:noreply, assign(socket, :deny_task_path, nil)},
+        else: {:noreply, socket}
+    else
+      handle_approvals_key(key, socket)
     end
   end
 
@@ -437,6 +432,25 @@ defmodule GlorboWeb.ApprovalQueueLive do
       handle_event(event, %{"task_path" => sentinel.task_path}, socket)
     else
       {:noreply, socket}
+    end
+  end
+
+  defp handle_approvals_key(key, socket) do
+    case key do
+      k when k in ["j", "ArrowDown"] ->
+        {:noreply, assign(socket, :selected_index, step(socket.assigns, 1))}
+
+      k when k in ["k", "ArrowUp"] ->
+        {:noreply, assign(socket, :selected_index, step(socket.assigns, -1))}
+
+      "y" ->
+        keyboard_action(socket, "approve")
+
+      "n" ->
+        keyboard_action(socket, "deny_prompt")
+
+      _ ->
+        {:noreply, socket}
     end
   end
 end
