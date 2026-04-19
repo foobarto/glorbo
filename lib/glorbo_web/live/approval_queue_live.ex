@@ -181,7 +181,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
       :ok ->
         {:noreply,
          socket
-         |> put_flash(:info, "Denied. Task moved to history.")
+         |> put_flash(:info, "Denied.")
          |> assign(
            :sentinels,
            load_sentinels(socket.assigns.base, socket.assigns.company_slug)
@@ -195,7 +195,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
           reason: inspect(err)
         )
 
-        {:noreply, put_flash(socket, :error, "Could not record approval.")}
+        {:noreply, put_flash(socket, :error, "Could not record denial.")}
     end
   end
 
