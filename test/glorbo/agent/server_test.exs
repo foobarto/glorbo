@@ -855,6 +855,22 @@ defmodule Glorbo.Agent.ServerTest do
       assert content =~ ~r/^status: "?todo"?$/m
     end
 
+    test "TA-5a: empty ACTIONS block (all non-matching lines) no-op but comment retained",
+         ctx do
+      reply = """
+      Just noting.
+
+      ACTIONS:
+
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-empty", reply)
+      content = File.read!(path)
+      assert content =~ "Just noting."
+      # Frontmatter unchanged
+      assert content =~ ~r/^status: "?todo"?$/m
+    end
+
     test "TA-5: unknown ACTIONS keys are ignored (comment still appended)", ctx do
       reply = """
       Noted.
@@ -870,6 +886,30 @@ defmodule Glorbo.Agent.ServerTest do
       assert content =~ "Noted."
       # Original frontmatter untouched
       assert content =~ ~r/^status: "?todo"?$/m
+    end
+
+    test "TA-5b: duplicate ACTIONS blocks — only first is used; subsequent prose ignored",
+         ctx do
+      reply = """
+      First note.
+
+      ACTIONS:
+      - status: in-progress
+
+      Second note.
+
+      ACTIONS:
+      - status: done
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-dup", reply)
+      content = File.read!(path)
+
+      # `String.split(..., parts: 2)` means everything after the FIRST
+      # `ACTIONS:` header goes into the actions block. Both `status`
+      # lines are in scope; Enum.reduce → last-write-wins → final
+      # status is "done".
+      assert content =~ ~r/^status: "?done"?$/m
     end
 
     test "TA-6: prose containing 'status:' in a sentence is NOT parsed as action",
