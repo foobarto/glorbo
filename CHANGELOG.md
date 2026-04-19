@@ -16,6 +16,42 @@ scaffolding (GEP-10)._
 
 ### Added
 
+- **`glorbo import paperclip <src>`** — import a paperclip.ai
+  `agentcompanies` tree into a Glorbo company directory. Detects
+  paperclip's per-agent layout (`<agent>/AGENTS.md`, `HEARTBEAT.md`,
+  `SOUL.md`, `TOOLS.md`), wraps each `AGENTS.md` in Glorbo
+  frontmatter as `AGENT.md`, copies the rest verbatim, and prints a
+  hint report naming every paperclip-ism (`$AGENT_HOME`,
+  `PAPERCLIP_*` env vars, `paperclip-*` skills, `/api/...` HTTP
+  calls) so the Director can hand-fix them. `--as <slug>` overrides
+  the target name; `--force` overwrites only `agents/` on re-import.
+- **Role-specific HEARTBEAT.md templates (GEP-14 extension).** CEO
+  gets a 5-step company-stewardship loop (triage inbox → check
+  roster → check goals → budget + health → exit cleanly) instead of
+  the minimal 4-line default. Engineer + researcher get role-shaped
+  per-tick checklists too. Scaffolding picks them up
+  automatically via `priv/templates/heartbeats/<name>.md`.
+- **CEO AGENT.md + SOUL.md expansion.** Active-stewardship system
+  prompt (three concrete priorities: work flows / goals move /
+  roster fits) + actions catalogue + constraints. SOUL gets
+  owner-vs-observer stance.
+- **Right-panel collapse on agent detail.** Thin 14px toggle rail
+  between the center (stdout) and right (config + budget + perms)
+  columns. Defaults collapsed on viewports < 1200px so stdout gets
+  priority. Persists in localStorage.
+- **Themed scrollbars** — universal scrollbar styling matches the
+  phosphor palette (transparent track, thumb on
+  `--gl-border-strong`, `--gl-accent-dim` on hover). Firefox
+  + WebKit both covered.
+- **`glorbo new agent <co>/<slug> --template <name>`** with
+  SOUL.md + HEARTBEAT.md auto-wiring per template.
+- **GEP-19 Director Approval Workflow Protocol** — retroactive
+  Informational GEP capturing the `awaiting-approval-<task_id>.md`
+  sentinel contract, frontmatter transitions, audit-event
+  vocabulary, and the Gate-daemon vs UI-direct equivalence.
+- **README dashboard screenshots** — six captures (overview,
+  company, kanban, agent, approvals, providers) in a 2×3 table
+  showing the terminal phosphor UI.
 - **GEP-8 Provider Registry + CLI Auto-Detect** — config-driven CLI
   provider system. `priv/providers/*.toml` + optional
   `~/.glorbo/providers.toml` declare invocation shape, env overrides,
@@ -136,7 +172,7 @@ scaffolding (GEP-10)._
 - `skills-lock.json` pruned of 6 entries that weren't linked into
   `.claude/skills/` (docx / pdf / pptx / xlsx office skills,
   plus stale GSD plugins retired with the workflow).
-- 885/885 tests passing, Credo strict clean, `mix gep.validate`
+- 895/895 tests passing, Credo strict clean, `mix gep.validate`
   clean at time of writing.
 
 ---
