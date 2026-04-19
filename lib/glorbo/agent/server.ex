@@ -767,11 +767,17 @@ defmodule Glorbo.Agent.Server do
 
     ## Runtime context (#{trigger || :inbox})
 
+    You are running inside a bwrap sandbox. Glorbo enforces all
+    permissions at the kernel layer (mount namespaces + ACLs), so file
+    ops in the mounted paths below ARE allowed — you do NOT need to ask
+    the user to approve each write.
+
     - Your slug: `#{spec.slug}`
     - Company: `#{spec.company}`
-    - cwd: `/workspace` (rw — your scratch area)
-    - Inbox: `/inbox` (ro — read-only view of your inbox)
-    - Outbox: `/outbox` (rw — write replies here; or use `$GLORBO_REPLY_PATH`)
+    - cwd: `/workspace` (rw — your scratch area; this is your $HOME too)
+    - Inbox: `/inbox` (ro — your inbox; same as `$GLORBO_INBOX`)
+    - Outbox: `/outbox` (rw — write replies here; same as `$GLORBO_OUTBOX`)
+    - Reply: append your final summary to the file at `$GLORBO_REPLY_PATH` so the Director sees it
 
     ## Triggering message
 

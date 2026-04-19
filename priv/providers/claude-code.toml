@@ -10,6 +10,17 @@ args = [
   "--print",
   "--model", "{model}",
   "--output-format", "text",
+  # Glorbo is the outer permission boundary: bwrap mount namespaces +
+  # ACLMapper already gate every FS access at the kernel. Claude Code's
+  # own Write/Edit/Bash approval prompts are ineffective here (no
+  # interactive stdin under --print) and simply cause the agent to
+  # refuse file ops it would otherwise perform. Flip to bypass.
+  "--permission-mode", "bypassPermissions",
+  # Tell claude-code's tool scope about the sibling mount points. By
+  # default it sees only cwd (/workspace); without --add-dir the Write
+  # tool refuses /inbox and /outbox even when cwd=/workspace has them
+  # as siblings.
+  "--add-dir", "/inbox", "/outbox",
 ]
 prompt_mode = "stdin"
 
