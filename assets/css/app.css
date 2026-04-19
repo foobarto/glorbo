@@ -112,6 +112,12 @@ button { font-family: inherit; font-size: inherit; }
 .gl-sidebar { grid-area: sidebar; }
 .gl-main    { grid-area: main; background: var(--gl-bg); overflow-y: auto;
               padding: var(--gl-space-lg) var(--gl-space-xl); }
+/* Views that need to fill the viewport height (e.g. agent detail stdout).
+   Opt-in via a class on the outer <section>. */
+.gl-main:has(> .gl-view--tall) {
+  display: flex;
+  flex-direction: column;
+}
 
 /* ========== Topbar (mockup: shell.jsx Topbar) ========== */
 .gl-topbar {
@@ -463,18 +469,27 @@ button { font-family: inherit; font-size: inherit; }
 .gl-org-empty { padding: var(--gl-space-md); }
 
 /* ========== Agent detail (M3) ========== */
-.gl-agent-detail { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-agent-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-md);
+  flex: 1;
+  min-height: 0;
+}
 .gl-agent-detail__header { justify-content: space-between; align-items: flex-start; }
 .gl-agent-detail__grid {
   display: grid;
   grid-template-columns: 280px 1fr 320px;
   gap: var(--gl-space-md);
+  flex: 1;
+  min-height: 0;
 }
 .gl-agent-detail__col {
   display: flex;
   flex-direction: column;
   gap: var(--gl-space-md);
   min-width: 0;
+  min-height: 0;
 }
 .gl-agent-detail__col--center .gl-agent-detail__center-panel {
   flex: 1;
@@ -583,7 +598,13 @@ button { font-family: inherit; font-size: inherit; }
 .gl-mount-tag--ro { color: var(--gl-fg-subtle); }
 
 /* Stdout wrap */
-.gl-stdout-wrap { overflow: auto; flex: 1; }
+.gl-stdout-wrap {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
 
 /* Sandbox pane */
 .gl-sandbox { overflow: auto; max-height: 500px; }
@@ -1424,7 +1445,8 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent__section { margin-bottom: var(--gl-space-lg); }
 .gl-agent__stdout { margin-top: var(--gl-space-lg); }
 .gl-stdout-tail {
-  max-height: 400px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background: var(--gl-bg);
   border: 1px solid var(--gl-border);
@@ -1433,12 +1455,13 @@ button { font-family: inherit; font-size: inherit; }
   padding-left: 44px;
   font-family: inherit;
   font-size: var(--gl-font-body);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 .gl-stdout-tail__line {
   word-break: break-all;
   white-space: pre-wrap;
-  padding: 2px 0;
+  padding: 0;
+  margin: 0;
 }
 
 /* Dispatch boundary lines — styled as chips that break up the flow

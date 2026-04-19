@@ -435,7 +435,7 @@ defmodule GlorboWeb.AgentLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <section class="gl-view gl-agent-detail">
+    <section class="gl-view gl-view--tall gl-agent-detail">
       <header class="gl-view__header gl-agent-detail__header">
         <div>
           <h1 class="gl-heading gl-heading--display">
@@ -796,38 +796,37 @@ defmodule GlorboWeb.AgentLive do
       </div>
 
       <%!-- task #117 — workspace file editor overlay --%>
-      <div :if={@open_file} class="gl-modal-scrim" phx-click="close_file">
-        <div class="gl-modal gl-file-editor" phx-click-away="close_file">
-          <form
-            phx-submit="save_file"
-            phx-window-keydown="close_file"
-            phx-key="Escape"
-            onclick="event.stopPropagation()"
-          >
-            <header class="gl-modal__header">
-              <span class="gl-muted">workspace/</span>{@open_file.rel}
-              <button
-                type="button"
-                class="gl-btn gl-btn--ghost gl-modal__close"
-                phx-click="close_file"
-              >
-                ×
-              </button>
-            </header>
-            <div :if={@open_file.error} class="gl-flash gl-flash--error">{@open_file.error}</div>
-            <textarea
-              name="content"
-              rows="20"
-              class="gl-input gl-file-editor__textarea"
-            >{@open_file.content}</textarea>
-            <footer class="gl-modal__footer">
-              <button type="button" class="gl-btn gl-btn--ghost" phx-click="close_file">
-                cancel
-              </button>
-              <button type="submit" class="gl-btn">save</button>
-            </footer>
-          </form>
-        </div>
+      <div :if={@open_file} class="gl-modal-scrim" phx-click-away="close_file">
+        <form
+          phx-submit="save_file"
+          phx-window-keydown="close_file"
+          phx-key="Escape"
+          class="gl-modal gl-file-editor"
+        >
+          <header class="gl-modal__header">
+            <span class="gl-muted">workspace/</span>{@open_file.rel}
+            <button
+              type="button"
+              class="gl-btn gl-btn--ghost gl-modal__close"
+              phx-click="close_file"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </header>
+          <div :if={@open_file.error} class="gl-flash gl-flash--error">{@open_file.error}</div>
+          <textarea
+            name="content"
+            rows="20"
+            class="gl-input gl-file-editor__textarea"
+          >{@open_file.content}</textarea>
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn gl-btn--ghost" phx-click="close_file">
+              cancel
+            </button>
+            <button type="submit" class="gl-btn">save</button>
+          </footer>
+        </form>
       </div>
 
       <div :if={@wake_open?} class="gl-modal-scrim" phx-click-away="wake_cancel">

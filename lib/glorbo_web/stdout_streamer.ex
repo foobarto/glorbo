@@ -284,7 +284,7 @@ defmodule GlorboWeb.StdoutStreamer do
   # markers still survive the filter because their bodies contain
   # non-whitespace.
   defp process_line(raw, state) do
-    body = strip_ansi(raw)
+    body = raw |> strip_ansi() |> String.trim_trailing()
 
     if String.trim(body) == "" do
       state
