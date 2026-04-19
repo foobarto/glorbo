@@ -155,6 +155,7 @@ defmodule GlorboWeb.KanbanLive do
               severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
               requires_approval:
                 if(task.requires_approval == :director, do: "director", else: ""),
+              denial_reason: task.denial_reason || "",
               body: prompt,
               comments: comments,
               attachments: list_task_attachments(task.project, task.task_id)
@@ -732,6 +733,11 @@ defmodule GlorboWeb.KanbanLive do
             <span class="gl-muted">body</span>
             <textarea name="body" rows="8" class="gl-input">{@open_task.body}</textarea>
           </label>
+
+          <div :if={@open_task.denial_reason != ""} class="gl-task-detail__field">
+            <span class="gl-muted">denial reason</span>
+            <div class="gl-approval-card__reason">{@open_task.denial_reason}</div>
+          </div>
 
           <div :if={@open_task.attachments != []} class="gl-task-detail__field">
             <span class="gl-muted">attachments</span>
