@@ -116,12 +116,26 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_info({:agent_status, _slug, _status}, socket) do
-    # Reload agents data so the pills re-derive from Registry.
+    # The agent grid's pill_status is snapshotted at build time (see
+    # build_agent_row → agent_pill_status → agent_runtime_status). For
+    # the pills to re-derive we have to rebuild the agents list. Other
+    # company data (audit tail, budget, projects) is stable for the
+    # duration of a dispatch flip, so we only refresh `agents` +
+    # dependent stats — cheaper than the full load_company_data.
     base = GlorboWeb.LiveHelpers.base_dir()
     slug = socket.assigns.company_slug
     co_path = Path.join([base, "companies", slug])
-    data = load_company_data(base, slug, co_path)
-    {:noreply, assign(socket, :company, data)}
+    agents = load_agents(base, slug, co_path)
+
+    company =
+      socket.assigns[:company]
+      |> Map.put(:agents, agents)
+      |> Map.put(:agents_alive, Enum.count(agents, &(&1.pill_status == :alive)))
+      |> Map.put(:agents_idle, Enum.count(agents, &(&1.pill_status == :idle)))
+      |> Map.put(:agents_warn, Enum.count(agents, &(&1.pill_status == :warn)))
+      |> Map.put(:agents_crashed, Enum.count(agents, &(&1.pill_status == :stop)))
+
+    {:noreply, assign(socket, :company, company)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
