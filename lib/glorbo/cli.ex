@@ -11,7 +11,7 @@ defmodule Glorbo.CLI do
   verb surface is wired.
   """
 
-  alias Glorbo.CLI.{Lifecycle, Scaffold, Logs, Migrate, Console, DoctorFix}
+  alias Glorbo.CLI.{Lifecycle, Scaffold, Logs, Migrate, Console, DoctorFix, ImportPaperclip}
   alias Glorbo.{Backup, Restore}
   alias Glorbo.Doctor
   alias Glorbo.Doctor.Formatter
@@ -37,6 +37,7 @@ defmodule Glorbo.CLI do
           | :restore
           | :console
           | :reindex
+          | :import_paperclip
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -113,6 +114,17 @@ defmodule Glorbo.CLI do
 
   def dispatch(["templates" | rest]), do: Scaffold.TemplatesVerb.run(rest)
 
+  # `glorbo import paperclip <src>` — import an agentcompanies tree.
+  def dispatch(["import", "paperclip" | rest]), do: ImportPaperclip.run(rest)
+
+  def dispatch(["import", sub | _]) do
+    {:unknown, 1, "Unknown subcommand: import #{sub}\n\nSee: glorbo help import\n"}
+  end
+
+  def dispatch(["import"]) do
+    {:unknown, 1, "Usage: glorbo import paperclip <src-dir> [--as <slug>]\n"}
+  end
+
   # Phase-5 observability + maintenance + portability + ops.
   def dispatch(["logs" | rest]), do: Logs.run(rest)
   def dispatch(["migrate" | rest]), do: Migrate.run(rest)
@@ -160,6 +172,7 @@ defmodule Glorbo.CLI do
       templates list [kind]    List agent/skill templates (GEP-10)
       templates show <kind> <name>
                                Print a template's contents
+      import paperclip <src>   Import a paperclip.ai agentcompanies tree
       logs <co> [agent]        Tail audit or stdout log (--follow, --lines N)
       migrate                  Run Ecto migrations against ~/.glorbo/glorbo.db
       backup [--output PATH]   Produce a portable tar.gz of ~/.glorbo/
@@ -182,6 +195,7 @@ defmodule Glorbo.CLI do
   defp verb_help_text("run"), do: Lifecycle.Run.help_text()
   defp verb_help_text("new"), do: new_help_text()
   defp verb_help_text("templates"), do: Scaffold.TemplatesVerb.help_text()
+  defp verb_help_text("import"), do: ImportPaperclip.help_text()
   defp verb_help_text("logs"), do: Logs.help_text()
   defp verb_help_text("migrate"), do: Migrate.help_text()
   defp verb_help_text("backup"), do: Backup.help_text()
