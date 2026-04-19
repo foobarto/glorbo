@@ -251,6 +251,17 @@ defmodule Glorbo.Filesystem.Watcher do
       String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") ->
         :outbox
 
+      # Workspace is the agent's scratchpad — CLI caches, build artifacts,
+      # work-in-progress files. None of it belongs in the SQLite reindex
+      # (FS-03: SQLite mirrors markdown-under-projects + agent/company
+      # identity, not workspace bytes). Classify as :ignore so we don't
+      # fire `mark_dirty` for every jsonl claude-code writes to its
+      # .cache dir. Matches both the workspace dir itself and anything
+      # beneath it.
+      String.starts_with?(rel, "agents/") and
+          (String.ends_with?(rel, "/workspace") or String.contains?(rel, "/workspace/")) ->
+        :ignore
+
       String.starts_with?(rel, "audit/") ->
         :audit
 
@@ -285,6 +296,8 @@ defmodule Glorbo.Filesystem.Watcher do
 
   defp inline_dispatch(:projects, company, path, _rel, state),
     do: state.reindex_fun.(company, path)
+
+  defp inline_dispatch(:ignore, _company, _path, _rel, _state), do: :ok
 
   defp inline_dispatch(:other, company, path, _rel, state),
     do: state.reindex_fun.(company, path)

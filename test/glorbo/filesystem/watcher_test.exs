@@ -186,6 +186,28 @@ defmodule Glorbo.Filesystem.WatcherTest do
 
       refute_receive {:marked, ^co, _path}, 400
     end
+
+    test "workspace/ events do NOT call reindex (cache noise)" do
+      {_pid, co, dir, _base} = start_watcher()
+
+      # claude-code's jsonl cache dumps land here. Reindex is a markdown
+      # indexer for projects/agents/company metadata; workspace bytes are
+      # not mirrored to SQLite.
+      cache =
+        Path.join([
+          dir,
+          "agents",
+          "ceo",
+          "workspace",
+          ".cache",
+          "claude-cli-nodejs",
+          "mcp.jsonl"
+        ])
+
+      write!(cache, ~s({"tool":"foo"}\n))
+
+      refute_receive {:marked, ^co, _path}, 400
+    end
   end
 
   describe "lifecycle (Tests 7, 8)" do
