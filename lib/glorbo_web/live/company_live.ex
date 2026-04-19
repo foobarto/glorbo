@@ -476,7 +476,8 @@ defmodule GlorboWeb.CompanyLive do
                 class="gl-input"
                 required
                 maxlength="64"
-                pattern="[a-z0-9][a-z0-9-]*"
+                pattern="[a-z][a-z0-9_-]*"
+                title="Lowercase letter start, then letters / digits / dashes / underscores"
                 placeholder="engineer"
                 autocomplete="off"
                 autofocus
