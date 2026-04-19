@@ -798,7 +798,12 @@ defmodule GlorboWeb.AgentLive do
       <%!-- task #117 — workspace file editor overlay --%>
       <div :if={@open_file} class="gl-modal-scrim" phx-click="close_file">
         <div class="gl-modal gl-file-editor" phx-click-away="close_file">
-          <form phx-submit="save_file" onclick="event.stopPropagation()">
+          <form
+            phx-submit="save_file"
+            phx-window-keydown="close_file"
+            phx-key="Escape"
+            onclick="event.stopPropagation()"
+          >
             <header class="gl-modal__header">
               <span class="gl-muted">workspace/</span>{@open_file.rel}
               <button
@@ -828,6 +833,8 @@ defmodule GlorboWeb.AgentLive do
       <div :if={@wake_open?} class="gl-modal-scrim" phx-click-away="wake_cancel">
         <form
           phx-submit="wake"
+          phx-window-keydown="wake_cancel"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"

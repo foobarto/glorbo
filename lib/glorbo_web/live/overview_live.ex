@@ -124,6 +124,8 @@ defmodule GlorboWeb.OverviewLive do
       <div :if={@new_company_open?} class="gl-modal-scrim" phx-click-away="new_company_cancel">
         <form
           phx-submit="new_company_create"
+          phx-window-keydown="new_company_cancel"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"

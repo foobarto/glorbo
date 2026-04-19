@@ -360,6 +360,8 @@ defmodule GlorboWeb.CompanyLive do
       <div :if={@edit_company_md} class="gl-modal-scrim" phx-click-away="cancel_company_md">
         <form
           phx-submit="save_company_md"
+          phx-window-keydown="cancel_company_md"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"
@@ -440,6 +442,8 @@ defmodule GlorboWeb.CompanyLive do
       <div :if={@new_agent_open?} class="gl-modal-scrim" phx-click-away="new_agent_cancel">
         <form
           phx-submit="new_agent_create"
+          phx-window-keydown="new_agent_cancel"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"

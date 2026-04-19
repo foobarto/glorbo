@@ -462,6 +462,8 @@ defmodule GlorboWeb.KanbanLive do
         <form
           phx-submit="new_task_create"
           phx-change="new_task_validate"
+          phx-window-keydown="new_task_cancel"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"
