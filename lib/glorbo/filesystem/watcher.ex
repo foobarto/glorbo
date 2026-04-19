@@ -323,55 +323,52 @@ defmodule Glorbo.Filesystem.Watcher do
   # suffixes (dual-broadcast), or `nil` for no-broadcast.
   defp pubsub_topic_for(rel) do
     cond do
-      String.starts_with?(rel, "audit/") ->
-        nil
+      String.starts_with?(rel, "audit/") -> nil
+      String.starts_with?(rel, "agents/") -> agents_topic_for(rel)
+      String.starts_with?(rel, "projects/") -> "projects"
+      String.starts_with?(rel, "channels/") -> channels_topic_for(rel)
+      true -> nil
+    end
+  end
 
-      # Phase 4 Wave 0: per-agent stdout topic. Path shape:
-      # `agents/<slug>/stdout.log`.
-      String.starts_with?(rel, "agents/") and String.ends_with?(rel, "/stdout.log") ->
+  # `agents/...` path → topic string/nil. Split out of pubsub_topic_for/1
+  # to keep credo's cyclomatic complexity budget.
+  defp agents_topic_for(rel) do
+    cond do
+      # agents/<slug>/stdout.log → per-agent stdout topic.
+      String.ends_with?(rel, "/stdout.log") ->
         case Path.split(rel) do
           ["agents", slug, "stdout.log"] -> "agents:#{slug}:stdout"
           _ -> nil
         end
 
-      # Phase 4 Wave 0: Director-triggered wake-request. Path shape:
-      # `agents/<slug>/state/wake-request.md`.
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/state/wake-request") ->
+      # agents/<slug>/state/wake-request.md → Director wake trigger.
+      String.contains?(rel, "/state/wake-request") ->
         case Path.split(rel) do
           ["agents", slug, "state", _file] -> "agents:#{slug}:wake"
           _ -> nil
         end
 
-      # Hot-reload: AGENT.md edits re-broadcast on the inbox topic so
-      # Agent.Server's existing subscription picks them up and re-parses
-      # its spec (permissions/network/provider changes take effect
-      # without a full server restart).
-      String.starts_with?(rel, "agents/") and
-          (String.ends_with?(rel, "/AGENT.md") or String.ends_with?(rel, "/agent.md")) ->
+      # agents/<slug>/AGENT.md or agent.md → hot-reload spec. Re-broadcast
+      # on `inbox` so the existing Agent.Server subscription picks it up
+      # and re-parses the spec from disk.
+      String.ends_with?(rel, "/AGENT.md") or String.ends_with?(rel, "/agent.md") ->
         "inbox"
 
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/inbox/") ->
-        "inbox"
+      String.contains?(rel, "/inbox/") -> "inbox"
+      String.contains?(rel, "/outbox/") -> "outbox"
+      true -> nil
+    end
+  end
 
-      String.starts_with?(rel, "agents/") and String.contains?(rel, "/outbox/") ->
-        "outbox"
-
-      String.starts_with?(rel, "projects/") ->
-        "projects"
-
-      # Phase 4 Wave 0: dual-broadcast on channels/ — per-slug topic for
-      # ChannelLive (new) + generic `channels` topic preserved from
-      # Phase 3 (W5 regression safety). The per-slug string is first so
-      # subscribers are ordered deterministically but order is not
-      # contractually observable.
-      String.starts_with?(rel, "channels/") ->
-        case Path.split(rel) do
-          ["channels", file] -> ["channels:#{Path.basename(file, ".md")}", "channels"]
-          _ -> "channels"
-        end
-
-      true ->
-        nil
+  # Phase 4 Wave 0: dual-broadcast on channels/ — per-slug topic for
+  # ChannelLive (new) + generic `channels` topic preserved from Phase 3
+  # (W5 regression safety). Per-slug string first so subscribers are
+  # ordered deterministically but order is not contractually observable.
+  defp channels_topic_for(rel) do
+    case Path.split(rel) do
+      ["channels", file] -> ["channels:#{Path.basename(file, ".md")}", "channels"]
+      _ -> "channels"
     end
   end
 end
