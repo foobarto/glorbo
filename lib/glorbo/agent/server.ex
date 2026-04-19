@@ -776,8 +776,27 @@ defmodule Glorbo.Agent.Server do
     - Company: `#{spec.company}`
     - cwd: `/workspace` (rw — your scratch area; this is your $HOME too)
     - Inbox: `/inbox` (ro — your inbox; same as `$GLORBO_INBOX`)
-    - Outbox: `/outbox` (rw — write replies here; same as `$GLORBO_OUTBOX`)
-    - Reply: append your final summary to the file at `$GLORBO_REPLY_PATH` so the Director sees it
+    - Outbox: `/outbox` (rw — for artefacts, attachments, side-effects)
+
+    ## How to reply
+
+    **Your FINAL text response (what you print to stdout) IS the reply
+    that the Director sees in the channel.** Keep it terse and
+    conversational — like a chat message, not a status report.
+
+    Do NOT describe the files you wrote, the paths you used, or the
+    steps you took. Do NOT say "Done!" or "I've completed the task".
+    Just write what you want the Director (or channel) to read.
+
+    Example good reply to "ping":
+    > pong
+
+    Example bad reply to "ping":
+    > Done! I've replied "pong" to your ping message in
+    > `/outbox/1776633822974-reply-1776633822974.md`.
+
+    Use tools (Write, Edit, Bash) to do work on disk, but your final
+    conversational response must be your last assistant message.
 
     ## Triggering message
 
