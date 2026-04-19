@@ -25,7 +25,11 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
 
   import Phoenix.Component, only: [assign: 3]
 
-  @message_re ~r/^## (?<ts>[^|]+?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## |\z)/ms
+  # Split channel messages `## <iso-ts> | <author>\n<body>` without
+  # snagging markdown sub-headers inside message bodies — anchor on
+  # the YYYY-MM-DD prefix of real timestamps. Matches
+  # GlorboWeb.ChannelLive.@message_re.
+  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
 
   @doc """
   Subscribe to #general PubSub + load initial messages. Call this

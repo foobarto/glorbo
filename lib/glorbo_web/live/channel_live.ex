@@ -25,10 +25,12 @@ defmodule GlorboWeb.ChannelLive do
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.ChannelMessage
 
-  # Splits `## <ts> | <author>\n<body>` entries. `body` captures until
-  # the next `## ` header or EOF. Named captures return alphabetically:
-  # [author, body, ts].
-  @message_re ~r/^## (?<ts>[^|]+?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## |\z)/ms
+  # Splits `## <iso8601-ts> | <author>\n<body>` entries. Body may contain
+  # markdown sub-headers (`## Sub-heading`) which we DON'T want to treat
+  # as message boundaries — so the lookahead and the header anchor both
+  # require an ISO date (YYYY-MM-DD) prefix before the `|` separator.
+  # Named captures return alphabetically: [author, body, ts].
+  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
 
   @impl true
   def mount(%{"company" => co, "channel" => ch}, _session, socket) do
