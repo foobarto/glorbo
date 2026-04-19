@@ -133,20 +133,34 @@ defmodule Glorbo.CLI do
   def dispatch(["console" | rest]), do: Console.run(rest)
 
   def dispatch(["reindex" | _rest]) do
-    # Documented in help_text + DESIGN.md §10 but previously missing from
-    # dispatch/1 — produced a spurious "Unknown command: reindex" for users
-    # following the docs. Reindex.run/1 is a pure operation (no daemon
-    # required) so the CLI verb runs it directly.
+    # Documented in help_text + DESIGN.md §10. Reindex needs Glorbo.Repo
+    # running (it calls Repo.get/3 inside process_file/1) but Burrito's
+    # CLI path boots BEFORE the supervision tree — so we start the Repo
+    # on demand and stop it when done. Tolerates already-started for the
+    # `mix glorbo.cli` dev path where the app is already up.
     base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
-    {:ok, %{indexed: i, skipped: s, deleted: d}} = Glorbo.Filesystem.Reindex.run(base: base)
-    output = "glorbo reindex — indexed=#{i} skipped=#{s} deleted=#{d}\n"
-    {:reindex, 0, output}
+    repo_started? = ensure_repo_started()
+
+    try do
+      {:ok, %{indexed: i, skipped: s, deleted: d}} = Glorbo.Filesystem.Reindex.run(base: base)
+      output = "glorbo reindex — indexed=#{i} skipped=#{s} deleted=#{d}\n"
+      {:reindex, 0, output}
+    after
+      if repo_started?, do: Glorbo.Repo.stop(5_000)
+    end
   end
 
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
     {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
+  end
+
+  defp ensure_repo_started do
+    case Glorbo.Repo.start_link() do
+      {:ok, _pid} -> true
+      {:error, {:already_started, _pid}} -> false
+    end
   end
 
   @spec help_text() :: String.t()
