@@ -41,16 +41,14 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     root = File.cwd!()
     target = Path.join(root, @target_rel)
 
-    cond do
-      not File.exists?(target) ->
-        Mix.shell().error("Expected #{@target_rel} after release build, but it's missing.")
-        exit({:shutdown, 1})
-
-      true ->
-        link_path = Path.join(root, @symlink_name)
-        _ = File.rm(link_path)
-        :ok = File.ln_s!(@target_rel, link_path)
-        Mix.shell().info("✓ symlinked ./#{@symlink_name} -> #{@target_rel}")
+    if File.exists?(target) do
+      link_path = Path.join(root, @symlink_name)
+      _ = File.rm(link_path)
+      :ok = File.ln_s!(@target_rel, link_path)
+      Mix.shell().info("✓ symlinked ./#{@symlink_name} -> #{@target_rel}")
+    else
+      Mix.shell().error("Expected #{@target_rel} after release build, but it's missing.")
+      exit({:shutdown, 1})
     end
   end
 end
