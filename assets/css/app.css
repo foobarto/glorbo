@@ -1802,6 +1802,19 @@ button { font-family: inherit; font-size: inherit; }
 
 /* ========== Chat / ChannelLive ========== */
 .gl-channel { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-channel.gl-view--tall .gl-channel__layout {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.gl-channel.gl-view--tall .gl-channel__main {
+  min-height: 0;
+}
+.gl-channel.gl-view--tall .gl-channel__messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .gl-channel__layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

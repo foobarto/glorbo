@@ -172,7 +172,7 @@ defmodule GlorboWeb.ChannelLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <section class="gl-view gl-channel">
+    <section class="gl-view gl-view--tall gl-channel">
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">{channel_heading(@channel)}</h1>
       </header>
@@ -233,7 +233,12 @@ defmodule GlorboWeb.ChannelLive do
             <p>{empty_state(@channel)}</p>
           </div>
 
-          <div :if={@messages != []} class="gl-channel__messages">
+          <div
+            :if={@messages != []}
+            class="gl-channel__messages"
+            id="gl-channel-messages"
+            phx-hook="TailPin"
+          >
             <ChannelMessage.channel_message :for={m <- @messages} message={m} />
           </div>
 
