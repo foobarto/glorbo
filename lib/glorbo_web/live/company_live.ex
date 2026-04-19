@@ -770,6 +770,9 @@ defmodule GlorboWeb.CompanyLive do
         ags
         |> Enum.sort()
         |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+        # Hide the `.archive/` sibling — retired agents live there and
+        # don't belong in the active roster.
+        |> Enum.reject(&String.starts_with?(&1, "."))
         |> Enum.map(&build_agent_row(&1, base, slug, agents_dir, audit_map, ym))
 
       _ ->

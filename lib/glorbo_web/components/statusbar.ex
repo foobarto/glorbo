@@ -150,8 +150,13 @@ defmodule GlorboWeb.Components.Statusbar do
           agents_dir = Path.join([co_dir, slug, "agents"])
 
           case File.ls(agents_dir) do
-            {:ok, ags} -> Enum.filter(ags, &File.dir?(Path.join(agents_dir, &1)))
-            _ -> []
+            {:ok, ags} ->
+              ags
+              |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+              |> Enum.reject(&String.starts_with?(&1, "."))
+
+            _ ->
+              []
           end
         end)
         |> length()

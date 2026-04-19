@@ -58,6 +58,7 @@ defmodule Glorbo.Company.AgentBoot do
         {:ok, slugs} ->
           slugs
           |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+          |> Enum.reject(&String.starts_with?(&1, "."))
           |> Enum.each(&boot_one(company, &1, Path.join(agents_dir, &1)))
 
         _ ->

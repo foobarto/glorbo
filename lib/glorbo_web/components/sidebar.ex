@@ -207,6 +207,7 @@ defmodule GlorboWeb.Components.Sidebar do
         slugs
         |> Enum.sort()
         |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+        |> Enum.reject(&String.starts_with?(&1, "."))
         |> Enum.map(&agent_row(agents_dir, &1))
 
       _ ->

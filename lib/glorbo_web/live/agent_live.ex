@@ -227,6 +227,22 @@ defmodule GlorboWeb.AgentLive do
     _ -> {:noreply, put_flash(socket, :error, "Could not stop agent.")}
   end
 
+  def handle_event("retire", _params, socket) do
+    slug = socket.assigns.agent_slug
+    company = socket.assigns.company_slug
+
+    if retirable?(slug) do
+      do_retire(socket, company, slug)
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Can't retire #{slug} — CEO is a load-bearing role and must be reassigned, not archived."
+       )}
+    end
+  end
+
   # task #117 — click a file in the workspace tree to open an editor.
   # `path` is the workspace-relative path so the UI never leaks
   # absolute paths, and the server re-anchors against the known
@@ -423,6 +439,47 @@ defmodule GlorboWeb.AgentLive do
     ])
   end
 
+  # The CEO is load-bearing in the company heartbeat contract (see
+  # priv/templates/heartbeats/ceo.md + GEP-19 "assigned_to swap").
+  # Retiring it breaks everything; force a Director rename/reassign
+  # via CLI instead.
+  defp retirable?("ceo"), do: false
+  defp retirable?(slug) when is_binary(slug), do: true
+  defp retirable?(_), do: false
+
+  defp do_retire(socket, company, slug) do
+    # Stop any in-flight dispatch first so we don't rename a live dir.
+    _ =
+      case find_agent_server(slug) do
+        nil -> :ok
+        pid -> Glorbo.Agent.Server.stop_inflight(pid)
+      end
+
+    src = agent_dir(socket)
+    ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(~r/[:.]/, "-")
+    archive_root = Path.join([base_dir(), "companies", company, "agents", ".archive"])
+    dst = Path.join(archive_root, "#{slug}-#{ts}")
+
+    with :ok <- File.mkdir_p(archive_root),
+         :ok <- File.rename(src, dst) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Retired #{slug}. Moved to agents/.archive/#{Path.basename(dst)}/.")
+       |> push_navigate(to: ~p"/companies/#{company}")}
+    else
+      {:error, reason} ->
+        require Logger
+
+        Logger.warning("retire_agent failed",
+          company: company,
+          agent: slug,
+          reason: inspect(reason)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not retire agent.")}
+    end
+  end
+
   @impl true
   def terminate(_reason, _socket) do
     # Don't stop the StdoutStreamer — it's a singleton per {company,
@@ -471,6 +528,16 @@ defmodule GlorboWeb.AgentLive do
             title="Kill the current dispatch Task (no-op if agent is idle)"
           >
             ⏻ stop
+          </button>
+          <button
+            :if={retirable?(@agent_slug)}
+            type="button"
+            class="gl-btn gl-btn--ghost"
+            phx-click="retire"
+            data-confirm={"Retire #{@agent_slug}? The whole directory moves to agents/.archive/. Restore by moving the directory back. Company isolation is preserved."}
+            title="Move this agent to agents/.archive/ so it stops running"
+          >
+            🗃 retire
           </button>
           <.wake_button />
         </div>

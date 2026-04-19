@@ -363,6 +363,7 @@ defmodule GlorboWeb.ChannelLive do
         agents
         |> Enum.sort()
         |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
+        |> Enum.reject(&String.starts_with?(&1, "."))
         |> Enum.map(fn slug ->
           %{
             agent: slug,

@@ -244,4 +244,69 @@ defmodule GlorboWeb.AgentLiveTest do
       refute html =~ "gl-agent-soul"
     end
   end
+
+  describe "retire" do
+    test "retire button not rendered for ceo", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+      refute html =~ "🗃 retire"
+      refute html =~ ~s(phx-click="retire")
+    end
+
+    test "retire button rendered for non-ceo agents",
+         %{conn: conn, base: base} do
+      seed_engineer(base, "alice")
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/alice")
+      assert html =~ "🗃 retire"
+      assert html =~ ~s(phx-click="retire")
+    end
+
+    test "retire event refuses on ceo", %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/agents/ceo")
+
+      result = render_hook(view, "retire", %{})
+      assert result =~ "load-bearing role"
+
+      assert File.dir?(Path.join([base, "companies/acme/agents/ceo"]))
+    end
+
+    test "retire moves a non-ceo agent dir to agents/.archive/ and navigates to company page",
+         %{conn: conn, base: base} do
+      seed_engineer(base, "bob")
+      eng_dir = Path.join([base, "companies/acme/agents/bob"])
+
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/agents/bob")
+
+      assert {:error, {:live_redirect, %{to: "/companies/acme"}}} =
+               render_hook(view, "retire", %{})
+
+      refute File.exists?(eng_dir)
+
+      archive_root = Path.join([base, "companies/acme/agents/.archive"])
+      assert {:ok, archived_children} = File.ls(archive_root)
+      assert Enum.any?(archived_children, &String.starts_with?(&1, "bob-"))
+    end
+  end
+
+  defp seed_engineer(base, slug) do
+    eng_dir = Path.join([base, "companies/acme/agents", slug])
+    Enum.each(~w(inbox outbox workspace history state), &File.mkdir_p!(Path.join(eng_dir, &1)))
+
+    File.write!(Path.join(eng_dir, "AGENT.md"), """
+    ---
+    name: #{slug}
+    role: Engineer
+    provider: claude-code
+    model: claude-sonnet-4-5
+    network: api-only
+    heartbeat: null
+    permissions:
+      - projects:read:*
+    ---
+
+    # #{slug}
+    """)
+
+    :ok
+  end
 end
