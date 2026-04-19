@@ -289,9 +289,17 @@ defmodule GlorboWeb.Actions do
           decision == :denied and is_binary(denial_reason) and denial_reason != "" ->
             # Use write_frontmatter so we can ADD denial_reason even if the
             # file doesn't currently declare it. Rebuild from parsed fm.
-            rebuild_frontmatter_with_denial(abs, status, String.trim(denial_reason))
+            rebuild_frontmatter_with_denial(
+              abs,
+              status,
+              String.trim(denial_reason),
+              requesting_agent
+            )
 
-          decision == :approved and is_binary(requesting_agent) ->
+          is_binary(requesting_agent) ->
+            # Both :approved and :denied (without reason) restore the task
+            # assignment to the requesting agent so the requester sees the
+            # outcome on their own lane instead of "director".
             TaskDefinition.write(abs, %{status: status, assigned_to: requesting_agent})
 
           true ->
@@ -389,18 +397,26 @@ defmodule GlorboWeb.Actions do
     do: Path.join([base, "companies", company, "channels", "#{channel}.md"])
 
   # Denial with reason: read existing fm, merge status+denial_reason, write
-  # via write_frontmatter which can add keys the file didn't declare.
-  defp rebuild_frontmatter_with_denial(abs, status, denial_reason) do
+  # via write_frontmatter which can add keys the file didn't declare. When
+  # a requesting agent slug is recoverable (sentinel present), also restore
+  # assigned_to so the task lands back on the requester's lane.
+  defp rebuild_frontmatter_with_denial(abs, status, denial_reason, requesting_agent) do
     with {:ok, content} <- File.read(abs),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       merged =
         fm
         |> Map.put("status", status)
         |> Map.put("denial_reason", denial_reason)
+        |> maybe_put_assigned_to(requesting_agent)
 
       TaskDefinition.write_frontmatter(abs, merged)
     end
   end
+
+  defp maybe_put_assigned_to(fm, agent) when is_binary(agent) and agent != "",
+    do: Map.put(fm, "assigned_to", agent)
+
+  defp maybe_put_assigned_to(fm, _), do: fm
 
   # Scan `agents/*/state/awaiting-approval-<task_id>.md` to recover the
   # requesting agent's slug so grant can restore task assignment. Returns

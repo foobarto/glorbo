@@ -417,6 +417,86 @@ defmodule GlorboWeb.ActionsTest do
       assert event[:agent] == "ceo"
       assert event[:denial_reason] == "scope creep"
     end
+
+    test "denied restores assigned_to from sentinel (with reason)", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      # Task was reassigned to director by request-flow; on deny the
+      # task stays in the live tree (UI path), so assigned_to should
+      # swap back to the requester so they see the denial on their lane.
+      File.write!(Path.join([base, "companies", "acme", task_path]), """
+      ---
+      title: "Deploy"
+      status: pending-approval
+      assigned_to: director
+      requires_approval: director
+      ---
+
+      Ship it.
+      """)
+
+      sentinel_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+      File.mkdir_p!(sentinel_dir)
+
+      File.write!(Path.join(sentinel_dir, "awaiting-approval-t-01.md"), """
+      ---
+      agent: ceo
+      task_id: t-01
+      ---
+
+      awaiting
+      """)
+
+      assert :ok =
+               Actions.set_approval("acme", task_path, :denied,
+                 base: base,
+                 audit: audit,
+                 denial_reason: "too risky"
+               )
+
+      content = File.read!(Path.join([base, "companies", "acme", task_path]))
+      assert content =~ "status: denied"
+      assert content =~ "assigned_to: ceo"
+      refute content =~ "assigned_to: director"
+      assert content =~ "denial_reason:"
+    end
+
+    test "denied without reason restores assigned_to from sentinel", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      File.write!(Path.join([base, "companies", "acme", task_path]), """
+      ---
+      title: "Deploy"
+      status: pending-approval
+      assigned_to: director
+      requires_approval: director
+      ---
+
+      Ship it.
+      """)
+
+      sentinel_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+      File.mkdir_p!(sentinel_dir)
+
+      File.write!(Path.join(sentinel_dir, "awaiting-approval-t-01.md"), """
+      ---
+      agent: ceo
+      task_id: t-01
+      ---
+
+      awaiting
+      """)
+
+      assert :ok = Actions.set_approval("acme", task_path, :denied, base: base, audit: audit)
+
+      content = File.read!(Path.join([base, "companies", "acme", task_path]))
+      assert content =~ "status: denied"
+      assert content =~ "assigned_to: ceo"
+    end
   end
 
   # ---------------------------------------------------------------------------
