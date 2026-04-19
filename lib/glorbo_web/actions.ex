@@ -308,6 +308,7 @@ defmodule GlorboWeb.Actions do
               target: task_path
             }
             |> maybe_put_denial_reason(decision, denial_reason)
+            |> maybe_put_requesting_agent(requesting_agent)
 
           AuditLog.append(audit, entry)
 
@@ -318,6 +319,12 @@ defmodule GlorboWeb.Actions do
       end
     end
   end
+
+  defp maybe_put_requesting_agent(entry, agent) when is_binary(agent) and agent != "" do
+    Map.put(entry, :agent, agent)
+  end
+
+  defp maybe_put_requesting_agent(entry, _), do: entry
 
   defp maybe_put_denial_reason(entry, :denied, r) when is_binary(r) and r != "" do
     Map.put(entry, :denial_reason, String.trim(r))
