@@ -189,6 +189,42 @@ defmodule GlorboWeb.StdoutStreamerTest do
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
+  test "strips mid-line \\r so pre-wrap CSS doesn't break lines in the UI", %{
+    base: base,
+    agent: agent,
+    path: path
+  } do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    # claude-code's spinner clears emit \r INSIDE a line to overwrite
+    # previous content. With CSS white-space: pre-wrap the bare \r
+    # renders as a visual line break in Chrome, producing ghost gaps.
+    File.write!(path, "first\rsecond\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: body}}, 2_000
+    refute String.contains?(body, "\r")
+    assert body == "firstsecond"
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
+  test "strips OSC window-title sequences", %{
+    base: base,
+    agent: agent,
+    path: path
+  } do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    # OSC 0 / ST: "set window title"; claude-code emits these before
+    # prompting so the terminal tab shows the current task.
+    File.write!(path, "\e]0;glorbo\x07hello\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: body}}, 2_000
+    assert body == "hello"
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
   test "lazy-opens a file that doesn't exist at start time", %{base: base} do
     # A different agent to the shared fixture — file intentionally NOT created.
     engineer = "engineer-#{System.unique_integer([:positive])}"

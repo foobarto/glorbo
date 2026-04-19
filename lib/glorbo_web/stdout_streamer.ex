@@ -46,7 +46,12 @@ defmodule GlorboWeb.StdoutStreamer do
   # from there.
   @history_replay_bytes 32_000
 
-  @ansi_re ~r/\x1B\[[0-9;]*[a-zA-Z]/
+  # CSI (cursor-move, SGR, clear, etc), OSC (window-title), and
+  # standalone CR/BEL. `\r` survives after CSI/OSC strip and, under
+  # `white-space: pre-wrap`, renders as a line break in Chrome — which
+  # produces ghost blank lines between paragraphs of claude-code output.
+  # Kill them so the tail matches the on-disk log.
+  @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
 
   @doc """
   Start (or look up) a streamer for this {company, agent}. Singleton
