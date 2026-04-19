@@ -624,4 +624,30 @@ defmodule Glorbo.Agent.ServerTest do
       assert Enum.filter(files, &String.ends_with?(&1, ".md")) == []
     end
   end
+
+  describe "A13 — stop_inflight" do
+    test "returns :idle when nothing is running", ctx do
+      pid = start_server(ctx)
+      assert :idle == AgentServer.stop_inflight(pid)
+    end
+
+    test "kills the in-flight Task and leaves agent idle", ctx do
+      pid = start_server(ctx, dispatch_fun: blocking_dispatch(ctx.test_pid))
+
+      task = %{task_id: "t1", prompt: "x"}
+      :ok = AgentServer.wake(pid, :director_request, task)
+      assert_receive {:dispatch_started, "t1", _task_pid}, 1_000
+
+      status = AgentServer.status(pid)
+      assert status.state == :busy
+      assert status.current_task == "t1"
+
+      assert :ok == AgentServer.stop_inflight(pid)
+
+      status2 = await_state(pid, :idle)
+      assert status2.state == :idle
+      assert status2.current_task == nil
+      assert status2.last_exit_status == "stopped_by_director"
+    end
+  end
 end

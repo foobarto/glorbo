@@ -230,7 +230,10 @@ defmodule Glorbo.Agent.Server do
         last_exit_status: "stopped_by_director"
     }
 
-    {:reply, :ok, pop_pending(new_state)}
+    # pop_pending/1 returns `{:noreply, state}` — pattern-match to extract
+    # the state and form a proper {:reply, :ok, state} tuple for handle_call.
+    {:noreply, state_after_pop} = pop_pending(new_state)
+    {:reply, :ok, state_after_pop}
   end
 
   def handle_call(:stop_inflight, _from, state), do: {:reply, :idle, state}
