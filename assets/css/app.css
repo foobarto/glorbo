@@ -1348,6 +1348,23 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-task-card:hover { border-color: var(--gl-border-strong); }
 .gl-task-card--approval { border-left: 3px solid var(--gl-warning); }
+.gl-task-card--denied { border-left: 3px solid var(--gl-rose, var(--gl-danger)); opacity: 0.7; }
+.gl-task-card--approved { border-left: 3px solid var(--gl-accent); }
+.gl-task-card__status-tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.gl-task-card__status-tag--denied {
+  color: var(--gl-rose, var(--gl-danger));
+  background: color-mix(in oklch, var(--gl-rose, var(--gl-danger)) 15%, transparent);
+}
+.gl-task-card__status-tag--approved {
+  color: var(--gl-accent);
+  background: color-mix(in oklch, var(--gl-accent) 15%, transparent);
+}
 .gl-task-card__header {
   display: flex;
   align-items: center;

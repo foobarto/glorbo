@@ -37,7 +37,9 @@ defmodule GlorboWeb.Components.TaskCard do
       id={"gl-task-" <> @task.task_id <> "-" <> String.replace(@task.task_path, "/", "-")}
       class={[
         "gl-task-card",
-        @task.requires_approval == :director && "gl-task-card--approval"
+        @task.requires_approval == :director && "gl-task-card--approval",
+        @task.status == "denied" && "gl-task-card--denied",
+        @task.status == "approved" && "gl-task-card--approved"
       ]}
       data-status={@task.status}
       data-task-path={@task.task_path}
@@ -51,7 +53,21 @@ defmodule GlorboWeb.Components.TaskCard do
         <span class="gl-task-card__id">{@task.task_id}</span>
         <span :if={@task.project} class="gl-task-card__project gl-muted">· {@task.project}</span>
         <span
-          :if={@task.requires_approval == :director}
+          :if={@task.status == "denied"}
+          class="gl-task-card__status-tag gl-task-card__status-tag--denied"
+          title="Director denied this task — see denial_reason in the task detail."
+        >
+          ✕ denied
+        </span>
+        <span
+          :if={@task.status == "approved"}
+          class="gl-task-card__status-tag gl-task-card__status-tag--approved"
+          title="Director approved this task."
+        >
+          ✓ approved
+        </span>
+        <span
+          :if={@task.requires_approval == :director and @task.status not in ["denied", "approved"]}
           class="gl-task-card__approval-tag"
           title="Approval-gated: director approval required before the agent's side-effect lands. Awaiting-approval state appears in /approvals when the agent writes a sentinel."
         >
