@@ -116,6 +116,17 @@ defmodule Glorbo.Agent.Server do
     GenServer.call(server, :status)
   end
 
+  @doc """
+  Cancel the in-flight dispatch Task (if any). The agent itself keeps
+  running and stays idle; the killed Task's `{:DOWN, ...}` message
+  flows through the normal crash path and sets `last_exit_status` to
+  a stop marker. No-op when the agent is already idle.
+  """
+  @spec stop_inflight(GenServer.server()) :: :ok | :idle
+  def stop_inflight(server) do
+    GenServer.call(server, :stop_inflight)
+  end
+
   # ---------------------------------------------------------------------------
   # GenServer callbacks
   # ---------------------------------------------------------------------------
@@ -163,6 +174,7 @@ defmodule Glorbo.Agent.Server do
       current_task_path: nil,
       current_task_trigger: nil,
       current_task_ref: nil,
+      current_task_pid: nil,
       pending_wake: nil,
       last_exit_status: nil,
       base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
@@ -195,6 +207,33 @@ defmodule Glorbo.Agent.Server do
        last_exit_status: state.last_exit_status
      }, state}
   end
+
+  def handle_call(:stop_inflight, _from, %{current_task: nil} = state) do
+    {:reply, :idle, state}
+  end
+
+  def handle_call(:stop_inflight, _from, %{current_task_pid: pid} = state) when is_pid(pid) do
+    # Kill the dispatch Task unilaterally. The {:DOWN, ref, ...} message
+    # that the monitor would have delivered is converted to :normal by
+    # Process.exit(:kill), so we clean state here rather than rely on
+    # the handle_info crash path.
+    Process.exit(pid, :kill)
+
+    new_state = %{
+      state
+      | status: :idle,
+        current_task: nil,
+        current_task_path: nil,
+        current_task_trigger: nil,
+        current_task_ref: nil,
+        current_task_pid: nil,
+        last_exit_status: "stopped_by_director"
+    }
+
+    {:reply, :ok, pop_pending(new_state)}
+  end
+
+  def handle_call(:stop_inflight, _from, state), do: {:reply, :idle, state}
 
   defp handle_wake_idle(state, trigger, task) do
     case resolve_task(state, trigger, task) do
@@ -327,7 +366,7 @@ defmodule Glorbo.Agent.Server do
       state.dispatch_fun.(state.spec, task, state.dispatch_opts)
     end
 
-    %Task{ref: ref} = Task.Supervisor.async_nolink(state.task_supervisor, task_fn)
+    %Task{ref: ref, pid: pid} = Task.Supervisor.async_nolink(state.task_supervisor, task_fn)
 
     %{
       state
@@ -336,6 +375,7 @@ defmodule Glorbo.Agent.Server do
         current_task_path: Map.get(task, :task_path),
         current_task_trigger: Map.get(task, :trigger),
         current_task_ref: ref,
+        current_task_pid: pid,
         pending_wake: nil
     }
   end
@@ -352,6 +392,7 @@ defmodule Glorbo.Agent.Server do
         current_task_path: nil,
         current_task_trigger: nil,
         current_task_ref: nil,
+        current_task_pid: nil,
         last_exit_status: exit_status
     }
 
@@ -366,6 +407,7 @@ defmodule Glorbo.Agent.Server do
         current_task_path: nil,
         current_task_trigger: nil,
         current_task_ref: nil,
+        current_task_pid: nil,
         last_exit_status: {:crashed, reason}
     }
 

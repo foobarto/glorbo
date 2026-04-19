@@ -212,6 +212,21 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
+  def handle_event("stop", _params, socket) do
+    case find_agent_server(socket.assigns.agent_slug) do
+      nil ->
+        {:noreply, put_flash(socket, :info, "Agent is not running.")}
+
+      pid ->
+        case Glorbo.Agent.Server.stop_inflight(pid) do
+          :ok -> {:noreply, put_flash(socket, :info, "Stopped in-flight dispatch.")}
+          :idle -> {:noreply, put_flash(socket, :info, "Agent is idle — nothing to stop.")}
+        end
+    end
+  rescue
+    _ -> {:noreply, put_flash(socket, :error, "Could not stop agent.")}
+  end
+
   # task #117 — click a file in the workspace tree to open an editor.
   # `path` is the workspace-relative path so the UI never leaks
   # absolute paths, and the server re-anchors against the known
@@ -450,11 +465,12 @@ defmodule GlorboWeb.AgentLive do
           </.link>
           <button
             type="button"
-            class="gl-btn gl-btn--deny gl-btn--soon"
-            disabled
-            title="Coming soon — M3.5 stop sentinel"
+            class="gl-btn gl-btn--deny"
+            phx-click="stop"
+            data-confirm="Kill the in-flight dispatch task? Agent stays registered; only the current invocation is terminated."
+            title="Kill the current dispatch Task (no-op if agent is idle)"
           >
-            ⏻ stop <span class="gl-btn__soon-tag">soon</span>
+            ⏻ stop
           </button>
           <.wake_button />
         </div>
@@ -1418,4 +1434,13 @@ defmodule GlorboWeb.AgentLive do
 
   defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
   defp stringify_keys(other), do: other
+
+  defp find_agent_server(slug) do
+    case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
+      [{pid, _} | _] when is_pid(pid) -> pid
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
 end
