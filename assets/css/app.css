@@ -1347,15 +1347,12 @@ button { font-family: inherit; font-size: inherit; }
   gap: var(--gl-space-xs);
 }
 .gl-task-comment {
-  margin: var(--gl-space-sm) auto 0;
-  width: min(90vw, 880px);
   display: flex;
   align-items: center;
   gap: 8px;
   padding: var(--gl-space-sm) var(--gl-space-md);
   background: var(--gl-surface-raised);
-  border: 1px solid var(--gl-border-strong);
-  border-radius: 2px;
+  border-top: 1px solid var(--gl-border);
 }
 .gl-task-comments {
   list-style: none;

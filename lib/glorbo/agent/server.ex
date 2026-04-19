@@ -491,7 +491,10 @@ defmodule Glorbo.Agent.Server do
 
     with {:ok, meta} <- read_source_frontmatter(source_abs),
          {:ok, to} <- reply_target(meta) do
-      write_outbox_reply(state, reply, to)
+      case to do
+        {:task_comment, task_id} -> write_task_comment_reply(state, reply, task_id)
+        to -> write_outbox_reply(state, reply, to)
+      end
     else
       {:error, reason} ->
         require Logger
@@ -527,6 +530,13 @@ defmodule Glorbo.Agent.Server do
       is_binary(channel = Map.get(meta, "channel")) and channel != "" ->
         {:ok, "chat:#{channel}"}
 
+      # Task assignment notifications carry `kind: task_assignment` + the
+      # task id. Reply is appended to the task file as a comment (same
+      # format as `GlorboWeb.Actions.post_task_comment`). Handled by
+      # `write_task_comment_reply/3` instead of the outbox Router path.
+      Map.get(meta, "kind") == "task_assignment" and is_binary(Map.get(meta, "task_id")) ->
+        {:ok, {:task_comment, Map.get(meta, "task_id")}}
+
       is_binary(from = Map.get(meta, "from")) and from == "director" ->
         {:error, :director_reply_skipped}
 
@@ -535,6 +545,45 @@ defmodule Glorbo.Agent.Server do
 
       true ->
         {:error, :no_reply_target}
+    end
+  end
+
+  # Task-assignment replies: append a `## <ts> | <slug>\n<body>` block to
+  # the task file itself (same shape as GlorboWeb.Actions.post_task_comment).
+  # Writes go through the filesystem; the kanban overlay's comment thread
+  # renders them next to the Director's prompt.
+  defp write_task_comment_reply(state, body, task_id) do
+    company_root = Path.join([state.base, "companies", state.spec.company])
+
+    case resolve_task_path(company_root, task_id) do
+      {:ok, abs} ->
+        ts = DateTime.utc_now() |> DateTime.to_iso8601()
+        entry = "\n## #{ts} | #{state.spec.slug}\n#{String.trim(body)}\n"
+
+        case File.write(abs, entry, [:append, :sync]) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            require Logger
+            Logger.warning("task comment reply write failed: #{inspect(reason)}")
+            :ok
+        end
+
+      :error ->
+        require Logger
+        Logger.warning("task comment reply: task_id #{task_id} not found")
+        :ok
+    end
+  end
+
+  # Scan projects/*/tasks/<task_id>.md and return the first match.
+  defp resolve_task_path(company_root, task_id) do
+    pattern = Path.join([company_root, "projects", "*", "tasks", "#{task_id}.md"])
+
+    case Path.wildcard(pattern) do
+      [abs | _] -> {:ok, abs}
+      [] -> :error
     end
   end
 
@@ -759,6 +808,8 @@ defmodule Glorbo.Agent.Server do
   defp compose_prompt(spec, base, inbox_path, trigger) do
     body = read_or_empty(inbox_path)
     system = read_system_prompt(spec, base)
+    source_rel = Path.relative_to(inbox_path, Path.join([base, "companies", spec.company]))
+    reply_hint = reply_routing_hint(inbox_path)
 
     """
     #{system}
@@ -780,13 +831,13 @@ defmodule Glorbo.Agent.Server do
 
     ## How to reply
 
-    **Your FINAL text response (what you print to stdout) IS the reply
-    that the Director sees in the channel.** Keep it terse and
-    conversational — like a chat message, not a status report.
+    **Your FINAL text response (what you print to stdout) IS the reply.**
+    #{reply_hint}
 
-    Do NOT describe the files you wrote, the paths you used, or the
-    steps you took. Do NOT say "Done!" or "I've completed the task".
-    Just write what you want the Director (or channel) to read.
+    Keep it terse and conversational. Do NOT describe the files you
+    wrote, the paths you used, or the steps you took. Do NOT say
+    "Done!" or "I've completed the task". Just write what you want
+    the reader to see.
 
     Example good reply to "ping":
     > pong
@@ -800,11 +851,42 @@ defmodule Glorbo.Agent.Server do
 
     ## Triggering message
 
-    Source: `#{Path.relative_to(inbox_path, Path.join([base, "companies", spec.company]))}`
+    Source: `#{source_rel}`
 
     #{body}
     """
   end
+
+  # Tell the agent in one line where their stdout text will land, based
+  # on what kind of inbox file triggered them. Mentions route back to
+  # the channel; task-assignment notifications route as a task comment;
+  # inter-agent messages route to the sender's inbox.
+  defp reply_routing_hint(inbox_path) do
+    case File.read(inbox_path) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, meta, _body} -> format_reply_hint(meta)
+          _ -> "Reply lands wherever the triggering message specifies."
+        end
+
+      _ ->
+        "Reply lands wherever the triggering message specifies."
+    end
+  end
+
+  defp format_reply_hint(%{"channel" => ch}) when is_binary(ch) and ch != "" do
+    "Your reply posts to the `##{ch}` channel as a message."
+  end
+
+  defp format_reply_hint(%{"kind" => "task_assignment", "task_id" => tid}) when is_binary(tid) do
+    "Your reply appends as a comment on task `#{tid}` — the Director sees it in the task detail overlay."
+  end
+
+  defp format_reply_hint(%{"from" => from}) when is_binary(from) and from != "director" do
+    "Your reply goes to `@#{from}`'s inbox as an inter-agent message."
+  end
+
+  defp format_reply_hint(_), do: "Reply lands wherever the triggering message specifies."
 
   defp read_system_prompt(spec, base) do
     [base, "companies", spec.company, "agents", spec.slug, "AGENT.md"]
