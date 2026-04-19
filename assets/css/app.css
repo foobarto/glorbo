@@ -2511,3 +2511,16 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-kanban__search input {
   width: 220px;
 }
+
+.gl-channel-create {
+  padding: 4px 0;
+}
+.gl-channel-create input {
+  width: 100%;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+.gl-input--sm {
+  font-size: 12px;
+  padding: 2px 6px;
+}

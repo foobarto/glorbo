@@ -72,6 +72,7 @@ defmodule GlorboWeb.ChannelLive do
        |> assign(:channels, list_channels(base, co))
        |> assign(:dm_threads, list_dm_threads(base, co))
        |> assign(:messages, load_messages(path, co))
+       |> assign(:new_channel_slug, "")
        |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -94,6 +95,46 @@ defmodule GlorboWeb.ChannelLive do
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: ChatDrawer.State.post(socket, body)
+
+  def handle_event("create_channel", %{"slug" => slug}, socket) do
+    normalized = String.trim(slug || "")
+
+    cond do
+      not GlorboWeb.Slug.valid?(normalized) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Channel name must be lowercase letters / digits / dashes (starts with a letter or digit)."
+         )}
+
+      File.exists?(channel_path(socket.assigns.base, socket.assigns.company_slug, normalized)) ->
+        {:noreply, put_flash(socket, :error, "Channel ##{normalized} already exists.")}
+
+      true ->
+        path = channel_path(socket.assigns.base, socket.assigns.company_slug, normalized)
+        content = "# #" <> normalized <> "\n\n"
+
+        with :ok <- File.mkdir_p(Path.dirname(path)),
+             :ok <- File.write(path, content) do
+          {:noreply,
+           socket
+           |> assign(:new_channel_slug, "")
+           |> push_navigate(
+             to: ~p"/companies/#{socket.assigns.company_slug}/channels/#{normalized}"
+           )}
+        else
+          {:error, reason} ->
+            Logger.warning("create_channel failed",
+              company: socket.assigns.company_slug,
+              slug: normalized,
+              reason: inspect(reason)
+            )
+
+            {:noreply, put_flash(socket, :error, "Could not create channel.")}
+        end
+    end
+  end
 
   def handle_event("post", %{"body" => body}, socket) do
     trimmed = String.trim(body)
@@ -151,6 +192,19 @@ defmodule GlorboWeb.ChannelLive do
               </.link>
             </li>
           </ul>
+          <form phx-submit="create_channel" class="gl-channel-create">
+            <input
+              type="text"
+              name="slug"
+              value={@new_channel_slug}
+              class="gl-input gl-input--sm"
+              maxlength="64"
+              pattern="[a-z0-9][a-z0-9-]*"
+              title="Lowercase letters, digits, and dashes"
+              placeholder="+ new channel"
+              aria-label="New channel name"
+            />
+          </form>
           <h2 class="gl-panel__header">/dms</h2>
           <ul :if={@dm_threads != []} class="gl-channel-list">
             <li :for={d <- @dm_threads}>
