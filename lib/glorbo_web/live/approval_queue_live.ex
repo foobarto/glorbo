@@ -259,12 +259,23 @@ defmodule GlorboWeb.ApprovalQueueLive do
               title: task.title || task_id,
               requesting_agent: agent,
               requested_at: sentinel_mtime_iso(sentinel_path),
-              prompt_body: task.prompt_body || ""
+              prompt_body: task.prompt_body || "",
+              reason: sentinel_reason(sentinel_path)
             }
 
           _ ->
             nil
         end
+    end
+  end
+
+  defp sentinel_reason(sentinel_path) do
+    with {:ok, content} <- File.read(sentinel_path),
+         {:ok, fm, _} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         reason when is_binary(reason) and reason != "" <- Map.get(fm, "reason") do
+      reason
+    else
+      _ -> nil
     end
   end
 

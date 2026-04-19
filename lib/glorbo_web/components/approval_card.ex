@@ -33,6 +33,9 @@ defmodule GlorboWeb.Components.ApprovalCard do
           {TimeFormat.relative(@sentinel.requested_at)}
         </time>
       </div>
+      <div :if={Map.get(@sentinel, :reason)} class="gl-approval-card__reason">
+        {Map.get(@sentinel, :reason)}
+      </div>
       <div class="gl-approval-card__actions">
         <button
           type="button"

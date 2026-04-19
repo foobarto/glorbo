@@ -1054,6 +1054,14 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent-card:hover,
 .gl-task-card:hover,
 .gl-approval-card:hover { background: var(--gl-surface-raised); }
+.gl-approval-card__reason {
+  margin-top: var(--gl-space-xs);
+  padding: var(--gl-space-xs) var(--gl-space-sm);
+  border-left: 2px solid var(--gl-accent-muted, var(--gl-border));
+  background: var(--gl-surface-raised);
+  font-size: 13px;
+  color: var(--gl-text-muted);
+}
 .gl-approvals__split {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
