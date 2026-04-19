@@ -387,6 +387,36 @@ defmodule GlorboWeb.ActionsTest do
       assert content =~ "assigned_to: ceo"
       refute content =~ "assigned_to: director"
     end
+
+    test "denied carries requesting agent in audit entry", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      sentinel_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+      File.mkdir_p!(sentinel_dir)
+
+      File.write!(Path.join(sentinel_dir, "awaiting-approval-t-01.md"), """
+      ---
+      agent: ceo
+      task_id: t-01
+      ---
+
+      awaiting
+      """)
+
+      assert :ok =
+               Actions.set_approval("acme", task_path, :denied,
+                 base: base,
+                 audit: audit,
+                 denial_reason: "scope creep"
+               )
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "approval.denied"
+      assert event[:agent] == "ceo"
+      assert event[:denial_reason] == "scope creep"
+    end
   end
 
   # ---------------------------------------------------------------------------

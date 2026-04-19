@@ -280,9 +280,9 @@ defmodule GlorboWeb.Actions do
       # On approve, restore the task's assigned_to to the requesting
       # agent recorded in the sentinel. Request-flow (Gate) reassigns
       # to "director" while awaiting; grant must put it back so the
-      # Kanban reflects the agent owning the work.
-      requesting_agent =
-        if decision == :approved, do: lookup_requesting_agent(base, company, task_path)
+      # Kanban reflects the agent owning the work. We also look up on
+      # denial so the audit entry carries the requesting agent.
+      requesting_agent = lookup_requesting_agent(base, company, task_path)
 
       write_result =
         cond do
