@@ -28,6 +28,21 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
 
   @impl Mix.Task
   def run(_argv) do
+    # Burrito keeps the extracted release under
+    # `~/.local/share/.burrito/glorbo_erts-<vsn>_<app-vsn>/`. It only
+    # re-extracts when the embedded payload HASH changes; the extracted
+    # sys.config / vm.args / beams stick around between rebuilds. So a
+    # rebuild that changes `config/prod.exs` (compile-time values baked
+    # into sys.config) won't propagate to the running binary until the
+    # cache is cleared. Nuke it at the top of every build to keep local
+    # testing honest.
+    burrito_cache = Path.expand("~/.local/share/.burrito")
+
+    if File.dir?(burrito_cache) do
+      File.rm_rf!(burrito_cache)
+      Mix.shell().info("cleared burrito cache at #{burrito_cache}")
+    end
+
     prev_env = Mix.env()
 
     try do
