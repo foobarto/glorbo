@@ -773,10 +773,15 @@ defmodule GlorboWeb.AgentLive do
                 <li
                   :for={p <- @detail.permissions}
                   class={["gl-perm", @hovered_perm == p.raw && "gl-perm--hl"]}
+                  role="button"
+                  tabindex="0"
+                  aria-label={"Show #{p.raw} in sandbox argv"}
                   phx-mouseenter="hover_perm"
                   phx-value-perm={p.raw}
                   phx-mouseleave="unhover_perm"
                   phx-click="tab"
+                  phx-keydown="tab"
+                  phx-key="Enter"
                   phx-value-tab="sandbox"
                 >
                   <code class="gl-perm__token">
