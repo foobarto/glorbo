@@ -1244,6 +1244,34 @@ button { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--gl-border-strong);
   border-radius: 2px;
 }
+.gl-task-comments {
+  list-style: none;
+  padding: 0;
+  margin: var(--gl-space-xs) 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.gl-task-comments__row {
+  padding: var(--gl-space-xs) var(--gl-space-sm);
+  border-left: 2px solid var(--gl-border);
+  background: var(--gl-surface);
+}
+.gl-task-comments__author {
+  font-weight: 600;
+  color: var(--gl-text-strong);
+  margin-right: var(--gl-space-sm);
+}
+.gl-task-comments__ts {
+  font-size: 11px;
+}
+.gl-task-comments__body {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .gl-panel__spacer { flex: 1; }
 
 .gl-new-task-form {

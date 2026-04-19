@@ -143,6 +143,8 @@ defmodule GlorboWeb.KanbanLive do
                company: socket.assigns.company_slug
              ) do
           {:ok, task} ->
+            {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")
+
             detail = %{
               task_path: path,
               task_id: task.task_id,
@@ -153,7 +155,8 @@ defmodule GlorboWeb.KanbanLive do
               severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
               requires_approval:
                 if(task.requires_approval == :director, do: "director", else: ""),
-              body: String.trim(task.prompt_body || ""),
+              body: prompt,
+              comments: comments,
               attachments: list_task_attachments(task.project, task.task_id)
             }
 
@@ -253,7 +256,9 @@ defmodule GlorboWeb.KanbanLive do
           "requires_approval" => Map.get(params, "requires_approval", "")
         }
 
-        body = Map.get(params, "body", "") |> String.trim()
+        prompt = Map.get(params, "body", "") |> String.trim()
+        comments_tail = rebuild_comments_tail(task)
+        body = if comments_tail == "", do: prompt, else: prompt <> "\n\n" <> comments_tail
 
         with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
              :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
@@ -268,7 +273,7 @@ defmodule GlorboWeb.KanbanLive do
             socket.assigns.company_slug,
             task.task_id,
             fm["title"],
-            body
+            prompt
           )
 
           # Reload everything — filter-aware refresh.
@@ -739,6 +744,19 @@ defmodule GlorboWeb.KanbanLive do
               </li>
             </ul>
           </div>
+
+          <div :if={@open_task.comments != []} class="gl-task-detail__field">
+            <span class="gl-muted">
+              comments ({length(@open_task.comments)})
+            </span>
+            <ul class="gl-task-comments">
+              <li :for={c <- @open_task.comments} class="gl-task-comments__row">
+                <span class="gl-task-comments__author">{c.author}</span>
+                <span class="gl-muted gl-task-comments__ts">{c.timestamp}</span>
+                <div class="gl-task-comments__body">{c.body}</div>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <footer class="gl-task-detail__footer">
@@ -791,6 +809,54 @@ defmodule GlorboWeb.KanbanLive do
 
   defp apply_project_filter(tasks, project) when is_binary(project) do
     Enum.filter(tasks, fn t -> t.project == project end)
+  end
+
+  # Task body may contain a prompt (before any `## ` header) followed
+  # by a thread of `## <ts> | <author>\n<body>` comment blocks written
+  # by `GlorboWeb.Actions.post_task_comment/4` (same shape as channel
+  # messages). Split on the first `## ` header so the modal can show
+  # the editable prompt separate from the read-only comment history.
+  @task_comment_re ~r/^## (?<ts>[^|]+?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## |\z)/ms
+
+  defp split_prompt_and_comments(body) do
+    body = String.trim(body)
+
+    case Regex.run(~r/^(?<prompt>.*?)(?=\n## |\z)/ms, body, capture: :all_names) do
+      [prompt] ->
+        rest_start = byte_size(prompt)
+        rest = String.slice(body, rest_start, byte_size(body) - rest_start)
+
+        comments =
+          @task_comment_re
+          |> Regex.scan(rest, capture: :all_names)
+          |> Enum.map(fn [author, body_c, ts] ->
+            %{
+              author: String.trim(author),
+              timestamp: String.trim(ts),
+              body: String.trim(body_c)
+            }
+          end)
+
+        {String.trim(prompt), comments}
+
+      _ ->
+        {body, []}
+    end
+  end
+
+  defp rebuild_comments_tail(task) do
+    case task do
+      %{comments: comments} when is_list(comments) and comments != [] ->
+        comments
+        |> Enum.map(fn c ->
+          "## #{c.timestamp} | #{c.author}\n#{c.body}\n"
+        end)
+        |> Enum.join("\n")
+        |> String.trim_trailing()
+
+      _ ->
+        ""
+    end
   end
 
   defp list_task_attachments(project, task_id)
