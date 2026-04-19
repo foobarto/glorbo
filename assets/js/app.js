@@ -513,7 +513,9 @@ const SubmitOnEnter = {
     this.el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
-        this.el.form?.requestSubmit()
+        if (this.el.value.trim() !== "") {
+          this.el.form?.requestSubmit()
+        }
       }
     })
     autogrow()
