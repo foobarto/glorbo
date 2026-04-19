@@ -1151,8 +1151,9 @@ button { font-family: inherit; font-size: inherit; }
   border-radius: 6px;
 }
 .gl-kanban__board {
-  display: flex;
-  gap: var(--gl-space-xl);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gl-space-md);
   overflow-x: auto;
   padding-bottom: var(--gl-space-md);
 }
@@ -1286,9 +1287,7 @@ button { font-family: inherit; font-size: inherit; }
   margin-bottom: var(--gl-space-sm);
 }
 .gl-kanban__column {
-  min-width: 280px;
-  max-width: 360px;
-  flex: 1;
+  min-width: 0;
   background: var(--gl-surface);
   border-radius: 6px;
   padding: var(--gl-space-md);
