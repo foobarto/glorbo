@@ -118,6 +118,7 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   flex-direction: column;
 }
+.gl-view--tall { flex: 1; min-height: 0; }
 
 /* ========== Topbar (mockup: shell.jsx Topbar) ========== */
 .gl-topbar {
