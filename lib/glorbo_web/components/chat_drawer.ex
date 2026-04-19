@@ -75,7 +75,12 @@ defmodule GlorboWeb.Components.ChatDrawer do
           </p>
         </div>
 
-        <ol :if={@messages != []} class="gl-chat-drawer__messages" id="gl-chat-drawer-messages">
+        <ol
+          :if={@messages != []}
+          class="gl-chat-drawer__messages"
+          id="gl-chat-drawer-messages"
+          phx-hook="TailPin"
+        >
           <li
             :for={m <- @messages}
             class={[
