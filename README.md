@@ -65,6 +65,39 @@ sandboxes, and an Elixir process that keeps the office running.
 Back up with `tar`. Version-control with `git`. Move to another machine with
 `scp`. Debug with `cat`.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="assets/screenshots/overview.png" alt="Overview: company cards + next-step hint" width="100%"></td>
+    <td><img src="assets/screenshots/company.png" alt="Company page: stat cards, agent roster, org chart, chat drawer" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>/companies</code> — overview grid</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;</code> — stats, roster, org chart, chat drawer</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/kanban.png" alt="Kanban board with drag-drop lanes and a gated task" width="100%"></td>
+    <td><img src="assets/screenshots/agent.png" alt="Agent detail: identity, stdout tail, sandbox argv, permissions" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/kanban</code> — drag-drop writes <code>status:</code> frontmatter</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/agents/&lt;slug&gt;</code> — three-column agent detail</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/approvals.png" alt="Approval queue with prompt diff and j/k/y/n keyboard" width="100%"></td>
+    <td><img src="assets/screenshots/providers.png" alt="Provider registry: claude-code, codex, gemini-cli, hermes, opencode, pi" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/approvals</code> — prompt diff · <kbd>j</kbd>/<kbd>k</kbd>/<kbd>y</kbd>/<kbd>n</kbd></sub></td>
+    <td align="center"><sub><code>/providers</code> — config-driven CLI registry (GEP-8)</sub></td>
+  </tr>
+</table>
+
+Terminal phosphor aesthetic throughout — monospace, OKLCH tokens,
+lowercase-slash panel headers. No JS framework, no build step for the
+CSS.
+
 ## Features
 
 **Filesystem-first architecture** — Agents, tasks, chat, permissions, goals,
