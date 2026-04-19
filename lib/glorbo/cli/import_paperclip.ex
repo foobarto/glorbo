@@ -60,16 +60,21 @@ defmodule Glorbo.CLI.ImportPaperclip do
 
   @slug_re ~r/\A[a-z0-9-]+\z/
 
+  # Elixir 1.18 cannot escape compiled Regex structs into module
+  # attributes (Reference-typed internals don't survive beam-term
+  # encoding). Store the source strings here and compile on demand
+  # in `detect_hints/1`. Cheap — the module is loaded once per CLI
+  # invocation and regex compile at runtime is microseconds.
   @paperclip_hints [
-    {~r"\$AGENT_HOME",
+    {"\\$AGENT_HOME",
      "paperclip's `$AGENT_HOME` — Glorbo agents work relative to their sandbox root (`/workspace`, `/inbox`, `/outbox`)"},
-    {~r"PAPERCLIP_[A-Z_]+",
+    {"PAPERCLIP_[A-Z_]+",
      "paperclip environment variables not set by Glorbo (wake triggers come from `inbox/` / `state/wake-request.md` instead)"},
-    {~r"paperclip-[a-z-]+",
+    {"paperclip-[a-z-]+",
      "paperclip-specific skill (Glorbo skills live under `skills/` per company — install manually or leave as reference)"},
-    {~r"/api/[a-z/{}\-]+",
+    {"/api/[a-z/{}\\-]+",
      "paperclip HTTP API call (Glorbo has no HTTP control plane for agents; use the filesystem directly)"},
-    {~r"POST /api|GET /api", "paperclip HTTP API call (see above)"}
+    {"POST /api|GET /api", "paperclip HTTP API call (see above)"}
   ]
 
   @spec run([String.t()]) :: Glorbo.CLI.result()
@@ -261,7 +266,8 @@ defmodule Glorbo.CLI.ImportPaperclip do
   end
 
   defp detect_hints(content) do
-    Enum.reduce(@paperclip_hints, MapSet.new(), fn {re, hint}, acc ->
+    Enum.reduce(@paperclip_hints, MapSet.new(), fn {pattern, hint}, acc ->
+      re = Regex.compile!(pattern)
       if Regex.match?(re, content), do: MapSet.put(acc, hint), else: acc
     end)
   end

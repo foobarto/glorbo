@@ -97,6 +97,15 @@ defmodule GlorboWeb.OverviewLive do
           A company is a directory under <code>~/.glorbo/companies/</code>.
           Run <code>glorbo new company acme</code> then refresh.
         </p>
+        <p class="gl-muted">
+          Already have a <a
+            href="https://github.com/paperclipai/companies"
+            target="_blank"
+            rel="noopener"
+          >paperclip agentcompanies</a> tree?
+          Run <code>glorbo import paperclip &lt;path&gt; --as &lt;slug&gt;</code>
+          to bring it in.
+        </p>
       </div>
 
       <div :if={@companies != []} class="gl-grid gl-grid--cards">
