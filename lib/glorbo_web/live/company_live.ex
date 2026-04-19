@@ -126,11 +126,11 @@ defmodule GlorboWeb.CompanyLive do
           </button>
           <button
             type="button"
-            class="gl-btn gl-btn--soon"
+            class="gl-btn"
             phx-click="reindex"
-            title="Coming soon — use `glorbo reindex` from a terminal for now"
+            title="Rebuild SQLite index from filesystem (companies/*, agents/*, tasks/*)"
           >
-            ↻ reindex <span class="gl-btn__soon-tag">soon</span>
+            ↻ reindex
           </button>
           <button
             type="button"
@@ -555,7 +555,11 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_event("reindex", _params, socket) do
-    {:noreply, put_flash(socket, :info, "reindex: run `glorbo reindex` from the CLI for now.")}
+    {:ok, %{indexed: i, skipped: s, deleted: d}} =
+      Glorbo.Filesystem.Reindex.run(base: base_dir())
+
+    {:noreply,
+     put_flash(socket, :info, "reindex ok — indexed=#{i} skipped=#{s} deleted=#{d}")}
   end
 
   def handle_event("backup", _params, socket) do
