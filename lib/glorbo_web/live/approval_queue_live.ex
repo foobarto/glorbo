@@ -224,10 +224,13 @@ defmodule GlorboWeb.ApprovalQueueLive do
           <div
             :for={{s, idx} <- Enum.with_index(@sentinels)}
             phx-click="select"
+            phx-keydown="select"
+            phx-key="Enter"
             phx-value-index={idx}
             class={approval_row_class(idx, @selected_index)}
             role="button"
             tabindex="0"
+            aria-label={"Select approval for #{s.task_id}"}
           >
             <ApprovalCard.approval_card sentinel={s} />
           </div>
