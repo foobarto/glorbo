@@ -277,13 +277,25 @@ defmodule GlorboWeb.Actions do
       abs = Path.join([base, "companies", company, task_path])
       status = to_string(decision)
 
+      # On approve, restore the task's assigned_to to the requesting
+      # agent recorded in the sentinel. Request-flow (Gate) reassigns
+      # to "director" while awaiting; grant must put it back so the
+      # Kanban reflects the agent owning the work.
+      requesting_agent =
+        if decision == :approved, do: lookup_requesting_agent(base, company, task_path)
+
       write_result =
-        if decision == :denied and is_binary(denial_reason) and denial_reason != "" do
-          # Use write_frontmatter so we can ADD denial_reason even if the
-          # file doesn't currently declare it. Rebuild from parsed fm.
-          rebuild_frontmatter_with_denial(abs, status, String.trim(denial_reason))
-        else
-          TaskDefinition.write(abs, %{status: status})
+        cond do
+          decision == :denied and is_binary(denial_reason) and denial_reason != "" ->
+            # Use write_frontmatter so we can ADD denial_reason even if the
+            # file doesn't currently declare it. Rebuild from parsed fm.
+            rebuild_frontmatter_with_denial(abs, status, String.trim(denial_reason))
+
+          decision == :approved and is_binary(requesting_agent) ->
+            TaskDefinition.write(abs, %{status: status, assigned_to: requesting_agent})
+
+          true ->
+            TaskDefinition.write(abs, %{status: status})
         end
 
       case write_result do
@@ -381,6 +393,28 @@ defmodule GlorboWeb.Actions do
 
       TaskDefinition.write_frontmatter(abs, merged)
     end
+  end
+
+  # Scan `agents/*/state/awaiting-approval-<task_id>.md` to recover the
+  # requesting agent's slug so grant can restore task assignment. Returns
+  # nil if no sentinel found (e.g. director pre-approving without a
+  # request, or a task whose agent already retired).
+  defp lookup_requesting_agent(base, company, task_path) do
+    task_id = task_path |> Path.basename() |> Path.rootname()
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, agents} ->
+        Enum.find_value(agents, fn ag ->
+          sentinel = Path.join([agents_dir, ag, "state", "awaiting-approval-#{task_id}.md"])
+          if File.exists?(sentinel), do: ag
+        end)
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
   end
 
   defp validate_slug(s) when is_binary(s) do

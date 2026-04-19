@@ -182,6 +182,10 @@ defmodule Glorbo.Approvals.Gate do
     else
       :ok = write_sentinel(sentinel_path, agent, td, trigger)
       :ok = upsert_awaiting(state, agent, td)
+      # Reassign task to director while approval is pending.
+      # On grant, resolve_granted will restore assigned_to = <agent>.
+      # On deny, the task moves to history, so no restore needed.
+      _ = reassign_task(state, td.task_path, "director")
 
       audit(state, %{
         action: "approval.requested",
@@ -189,11 +193,19 @@ defmodule Glorbo.Approvals.Gate do
         agent: agent,
         task_path: td.task_path,
         task_id: td.task_id,
+        previous_assigned_to: td.assigned_to || "",
         company: state.company
       })
 
       {:ok, state}
     end
+  end
+
+  defp reassign_task(state, task_path, assignee) do
+    abs = Path.join([state.base, "companies", state.company, task_path])
+    Glorbo.TaskDefinition.write(abs, %{assigned_to: assignee})
+  rescue
+    _ -> :error
   end
 
   defp sentinel_path(state, agent, task_id) do
@@ -347,6 +359,11 @@ defmodule Glorbo.Approvals.Gate do
 
   defp resolve_granted(td, agent, state) do
     :ok = upsert_resolved(state, td, agent, "approved", nil)
+
+    # Restore task assignment to the requesting agent so the Kanban
+    # shows them owning the work again (the request flow swapped it
+    # to "director" while waiting on approval).
+    _ = reassign_task(state, td.task_path, agent)
 
     audit(state, %{
       action: "approval.granted",
