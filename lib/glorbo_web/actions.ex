@@ -288,12 +288,16 @@ defmodule GlorboWeb.Actions do
 
       case write_result do
         :ok ->
-          AuditLog.append(audit, %{
-            company: company,
-            actor: "director",
-            action: "approval.#{decision}",
-            target: task_path
-          })
+          entry =
+            %{
+              company: company,
+              actor: "director",
+              action: "approval.#{decision}",
+              target: task_path
+            }
+            |> maybe_put_denial_reason(decision, denial_reason)
+
+          AuditLog.append(audit, entry)
 
           :ok
 
@@ -302,6 +306,12 @@ defmodule GlorboWeb.Actions do
       end
     end
   end
+
+  defp maybe_put_denial_reason(entry, :denied, r) when is_binary(r) and r != "" do
+    Map.put(entry, :denial_reason, String.trim(r))
+  end
+
+  defp maybe_put_denial_reason(entry, _, _), do: entry
 
   @doc """
   Write a `state/wake-request.md` file for `agent` — this is the 4th
