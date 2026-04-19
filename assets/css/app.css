@@ -67,6 +67,33 @@
 *,
 *::before,
 *::after { box-sizing: border-box; }
+
+/* Scrollbars — match the phosphor palette instead of the OS default.
+ * Firefox supports scrollbar-color natively; WebKit needs the pseudo-
+ * elements. Thin track, rounded thumb, accent-tinted hover state.
+ */
+* {
+  scrollbar-color: var(--gl-border-strong) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--gl-border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--gl-bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--gl-accent-dim);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
 html,
 body {
   margin: 0;
