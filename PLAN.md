@@ -101,7 +101,7 @@ CompanyLive tests updated for new markup; all green.
 
 ---
 
-## M3 — agent detail rewrite (🟡 code complete, uncommitted)
+## M3 — agent detail rewrite (shipped)
 
 ### M3.1 — three-column grid
 `lib/glorbo_web/live/agent_live.ex`: `gl-agent-detail__grid` with left
@@ -149,20 +149,17 @@ inline-flex spacing of resource:action:scope segments.
 - "unknown agent redirects to company view" — unchanged.
 - "wake button writes state/wake-request.md" — unchanged.
 
-### M3 — gates (last verified before compaction)
-- `mix test` → 755/755 green.
+### M3 — gates (shipped)
+- `mix test` → green.
 - `mix credo --strict` → clean.
-- `mix format --check-formatted` → clean (after permissions-token HEEX
-  line-split fix).
+- `mix format --check-formatted` → clean.
 
-### M3 — remaining
-1. Rerun the three gates after compaction resumes the session.
-2. Single commit covering M3.1-M3.5, noting `stop` action is still a
-   disabled P3 placeholder (no server-side sentinel yet).
+The `stop` button moved from P3 placeholder to wired up
+(`Glorbo.Agent.Server.stop_inflight/1`).
 
 ---
 
-## M4 — feature surface per sub-view (⏳ pending)
+## M4 — feature surface per sub-view (shipped)
 
 ### M4.1 — Kanban drag-and-drop
 `kanban_live.ex`: HTML5 DnD (`phx-hook`) to move tasks between lanes.
@@ -247,12 +244,15 @@ GEP.
 
 ## Current progress snapshot
 
-- Working tree modified files (uncommitted):
-  - `assets/css/app.css`
-  - `lib/glorbo_web/live/agent_live.ex`
-  - `test/glorbo_web/live/agent_live_test.exs`
-- Untracked: `TODO.md`, `TODO2.md` (scratch; to delete once M-series
-  finishes).
-- Branch: `main`, 48 commits ahead of `origin/main`.
-- Immediate next: rerun gates → single commit for M3 → start M4.1
-  (Kanban DnD).
+Mockup-alignment sprint complete. M1 – M5 all shipped
+(`M5.3` vocab toggle deferred as noted above).
+
+Post-sprint work on `main` has focused on UAT-driven polish:
+accessibility (keyboard activation + aria-labels on all
+role="button" surfaces), chat UX (Enter-to-send textarea with
+autogrow, view fills viewport, messages auto-scroll), stdout
+hardening (mid-line `\r` / OSC sequences stripped, tail-pin
+autoscroll), approval workflow (director/agent `assigned_to`
+swap on request/grant/deny, denial reason on audit + frontmatter),
+and scaffolding flow (+new company/agent/task wired through the
+existing CLI scaffold code paths).

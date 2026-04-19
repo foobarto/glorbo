@@ -467,7 +467,7 @@ runtime):
 - Dashboard hardening ✓ — auto-start company supervisors at app
   boot (fixes AuditLog-not-registered crash on every Director
   write-action).
-- Tests: 759/759 green · `mix credo --strict` clean ·
+- Tests: 885/885 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
 Pending: `api-only` netns + nftables egress hardening, and GEP-10

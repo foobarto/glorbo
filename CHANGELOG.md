@@ -10,9 +10,9 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-_First items of v0.0.3 have landed on the `worktree-gep-8-provider-registry`
-branch; not yet tagged. Pending milestone items: `api-only` netns +
-nftables egress hardening, agent-template scaffolding (GEP-10)._
+_v0.0.3 in progress on `main`; not yet tagged. Pending milestone
+items: `api-only` netns + nftables egress hardening, agent-template
+scaffolding (GEP-10)._
 
 ### Added
 
@@ -28,6 +28,55 @@ nftables egress hardening, agent-template scaffolding (GEP-10)._
 - `agent.md` gains `allow_untracked_budget: true` frontmatter opt-in
   for routing through `usage_parser = "none"` providers. Dispatch
   refuses otherwise.
+- **Dashboard UX overhaul (M1-M5 sprint)** — mockup-aligned shell
+  (tri-section sidebar, topbar with brand + company picker, terminal
+  phosphor tokens), company overview with stat cards + agent roster
+  + org chart, agent detail three-column layout (identity /
+  tabbed stdout|sandbox argv|inbox-outbox|history / config + budget
+  + permissions), Kanban drag-drop with status writeback to
+  frontmatter, chat channel switcher + DM enumeration, approvals
+  prompt-diff with `j/k/y/n` keyboard, audit unified free-text
+  search, providers card grid with TOML snippet, global `g o/h/p`
+  shortcuts, TWEAKS drawer with localStorage persistence, and
+  `+ new company/agent/task` entry points that call the existing
+  CLI scaffolds.
+- **Approval workflow polish** — director/agent `assigned_to` swap
+  on approval-request/grant/deny (requesting agent slug recovered
+  via `awaiting-approval-<task_id>.md` sentinel when Gate isn't
+  running), denial reason surfaced on approval card + threaded
+  into audit JSONL + persisted to task frontmatter, denied-reason
+  modal with Escape close, Gate audit events now use canonical
+  `target:` field (matches UI-path shape).
+- **Agent page interactions** — `edit AGENT.md` opens in-browser
+  editor, `send message` opens Director DM, `stop` kills in-flight
+  dispatch (proper reply tuple, tested), `wake` prompts for
+  reason in a modal.
+- **Chat ergonomics** — Enter sends / Shift-Enter newlines in
+  channel compose, textarea autogrows with content, view fills
+  viewport with messages scrolling under a pinned compose row,
+  tail-pin autoscroll on new messages (user scroll-up unpins).
+- **Stdout hardening** — mid-line `\r` and OSC window-title
+  sequences stripped at the streamer (killed ghost gaps between
+  paragraphs rendered under `white-space: pre-wrap`); trailing
+  whitespace trimmed; autoscroll pins to bottom with tail-pin
+  hook, unpins when user scrolls up; stdout pane stretches to
+  viewport via `.gl-view--tall` opt-in.
+- **Kanban** — drag-drop writes `status:` frontmatter, live task
+  search across title/assignee/task_id, comment history in task
+  detail modal, denial reason surfaced on denied cards, visual
+  status tags for approved/denied, severity field wired
+  end-to-end.
+- **Accessibility sweep** — every role="button" surface gained
+  `phx-keydown=… phx-key="Enter"` and a descriptive `aria-label`
+  (task cards, agent table rows, approval rows, permission rows,
+  file-tree actions became actual `<button>` elements, topbar
+  TWEAKS button's aria-expanded reflects state).
+- **Scaffolding entry points** — new-company / new-agent / new-task
+  modals wire directly to `Glorbo.CLI.Scaffold.*`; scaffold "already
+  exists" responses now surface as info (not error) flashes; the
+  new-agent form's provider dropdown is populated from
+  `Glorbo.CLI.Registry` and its HTML `pattern` matches the scaffold
+  backend regex.
 
 ### Changed (Breaking)
 
@@ -44,6 +93,9 @@ nftables egress hardening, agent-template scaffolding (GEP-10)._
 - `Glorbo.CLI.Adapter` behaviour and its three implementations
   (`ClaudeCode`, `Codex`, `GeminiCli`) removed. Their parsing logic
   moved to `Glorbo.CLI.Parsers.{ClaudeJsonl, CodexJsonl, GeminiStdout}`.
+- Gate audit event payloads renamed `task_path:` → `target:` and
+  (for denials) `reason:` → `denial_reason:` so both daemon and
+  UI-direct code paths emit identical JSONL shape.
 
 ### Fixed
 
@@ -58,6 +110,21 @@ nftables egress hardening, agent-template scaffolding (GEP-10)._
   `Sandbox.Bwrap.drain_port` caps accumulated stdout at 16 MiB;
   `Ledger.record/1` (non-raising variant) added for callers that
   need error taxonomy.
+- **Task body parser** — distinguishes markdown sub-headers (`###
+  foo`) from new comment posts (`## YYYY-MM-DD …`); channel message
+  parser gets the same treatment so agent-posted markdown with
+  sub-headers doesn't fracture into spurious posts.
+- **File editor modal** — X/cancel buttons now actually close; the
+  blocking `onclick="event.stopPropagation()"` on the form was
+  swallowing delegated phx-click events.
+- **Agent status pill** — `:stop` now covers both director kills and
+  unexpected crashes (was conflating `:idle` with `:stop`).
+- **Approval flash** — UI-path denial no longer claims "moved to
+  history" (that only happens via Gate; UI only rewrites
+  frontmatter).
+- **`gl-view--tall`** — correctly stretches via `flex: 1 min-height: 0`;
+  previous commit introduced the class without the flex-grow.
+- **Kanban layout** — all 4 columns fit without horizontal scroll.
 
 ### Meta
 
@@ -66,6 +133,11 @@ nftables egress hardening, agent-template scaffolding (GEP-10)._
   container-runtime restoration has been dropped entirely (see
   GEP-5 D6); agents remain CLI-tool subprocesses under bwrap
   permanently.
+- `skills-lock.json` pruned of 6 entries that weren't linked into
+  `.claude/skills/` (docx / pdf / pptx / xlsx office skills,
+  plus stale GSD plugins retired with the workflow).
+- 885/885 tests passing, Credo strict clean, `mix gep.validate`
+  clean at time of writing.
 
 ---
 
