@@ -30,6 +30,8 @@ defmodule GlorboWeb.OverviewLive do
      socket
      |> assign(:page_title, "Companies — Glorbo")
      |> assign(:sidebar_active, :overview)
+     |> assign(:new_company_open?, false)
+     |> assign(:new_company_slug, "")
      |> assign(:companies, load_companies())}
   end
 
@@ -48,11 +50,29 @@ defmodule GlorboWeb.OverviewLive do
 
   def handle_event("new_company", _params, socket) do
     {:noreply,
-     put_flash(
-       socket,
-       :info,
-       "New-company UI ships in a later milestone. For now: mkdir ~/.glorbo/companies/<slug>."
-     )}
+     socket
+     |> assign(:new_company_open?, true)
+     |> assign(:new_company_slug, "")}
+  end
+
+  def handle_event("new_company_cancel", _params, socket) do
+    {:noreply, assign(socket, :new_company_open?, false)}
+  end
+
+  def handle_event("new_company_create", %{"slug" => slug}, socket) do
+    case Glorbo.CLI.Scaffold.Company.run([slug]) do
+      {:new_company, 0, _msg} ->
+        Phoenix.PubSub.broadcast(Glorbo.PubSub, "companies", {:company_added, slug})
+
+        {:noreply,
+         socket
+         |> assign(:new_company_open?, false)
+         |> assign(:companies, load_companies())
+         |> put_flash(:info, "Created company: #{slug}")}
+
+      {:new_company, _nonzero, msg} ->
+        {:noreply, put_flash(socket, :error, String.trim(msg))}
+    end
   end
 
   @impl true
@@ -61,13 +81,8 @@ defmodule GlorboWeb.OverviewLive do
     <section class="gl-view">
       <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">Companies</h1>
-        <button
-          type="button"
-          class="gl-btn gl-btn--soon"
-          phx-click="new_company"
-          title="Coming soon — use `glorbo new company <slug>` from a terminal for now"
-        >
-          + new company <span class="gl-btn__soon-tag">soon</span>
+        <button type="button" class="gl-btn" phx-click="new_company">
+          + new company
         </button>
       </header>
 
@@ -103,6 +118,57 @@ defmodule GlorboWeb.OverviewLive do
           </li>
         </ul>
       </aside>
+
+      <div :if={@new_company_open?} class="gl-modal-scrim" phx-click-away="new_company_cancel">
+        <form
+          phx-submit="new_company_create"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-new-company-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-new-company-title"><strong>+ new company</strong></div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="new_company_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">slug</span>
+              <input
+                type="text"
+                name="slug"
+                class="gl-input"
+                required
+                maxlength="64"
+                pattern="[a-z0-9][a-z0-9-]*"
+                placeholder="acme-corp"
+                title="Lowercase letters / digits / dashes"
+                autofocus
+              />
+            </label>
+            <p class="gl-muted" style="font-size: 11px;">
+              Creates <code>~/.glorbo/companies/&lt;slug&gt;/</code>
+              with <code>company.md</code>, <code>agents/</code>, <code>projects/</code>, <code>channels/</code>,
+              <code>audit/</code>
+              scaffolding. You can edit <code>company.md</code>
+              afterward.
+            </p>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="new_company_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+          </footer>
+        </form>
+      </div>
     </section>
     """
   end

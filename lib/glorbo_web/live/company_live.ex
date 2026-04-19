@@ -77,6 +77,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:company_name, data.company_name)
        |> assign(:company, data)
        |> assign(:edit_company_md, nil)
+       |> assign(:new_agent_open?, false)
        |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -141,11 +142,10 @@ defmodule GlorboWeb.CompanyLive do
           </button>
           <button
             type="button"
-            class="gl-btn gl-btn--primary gl-btn--soon"
+            class="gl-btn gl-btn--primary"
             phx-click="new_agent"
-            title="Coming soon — use `glorbo new agent <company>/<slug>` from a terminal for now"
           >
-            + new agent <span class="gl-btn__soon-tag">soon</span>
+            + new agent
           </button>
         </div>
       </header>
@@ -435,6 +435,79 @@ defmodule GlorboWeb.CompanyLive do
           </footer>
         </form>
       </div>
+
+      <div :if={@new_agent_open?} class="gl-modal-scrim" phx-click-away="new_agent_cancel">
+        <form
+          phx-submit="new_agent_create"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-new-agent-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-new-agent-title">
+              <strong>+ new agent</strong>
+              <span class="gl-muted">· {@company_slug}</span>
+            </div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="new_agent_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">slug</span>
+              <input
+                type="text"
+                name="slug"
+                class="gl-input"
+                required
+                maxlength="64"
+                pattern="[a-z0-9][a-z0-9-]*"
+                placeholder="engineer"
+                autofocus
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">role</span>
+              <input
+                type="text"
+                name="role"
+                class="gl-input"
+                maxlength="200"
+                placeholder="Software Engineer"
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">provider</span>
+              <select name="provider" class="gl-input">
+                <option value="">(default: claude-code)</option>
+                <option value="claude-code">claude-code</option>
+                <option value="gemini-cli">gemini-cli</option>
+                <option value="codex">codex</option>
+                <option value="opencode">opencode</option>
+              </select>
+            </label>
+            <p class="gl-muted" style="font-size: 11px;">
+              Creates <code>agents/&lt;slug&gt;/</code>
+              with <code>AGENT.md</code>, <code>inbox/</code>, <code>outbox/</code>, <code>workspace/</code>. Edit
+              <code>AGENT.md</code>
+              afterward to refine
+              permissions and heartbeat.
+            </p>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="new_agent_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+          </footer>
+        </form>
+      </div>
     </section>
     """
   end
@@ -490,13 +563,42 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_event("new_agent", _params, socket) do
-    {:noreply,
-     put_flash(
-       socket,
-       :info,
-       "New-agent UI ships in a later milestone. For now: mkdir agents/<slug>/ and drop an AGENT.md."
-     )}
+    {:noreply, assign(socket, :new_agent_open?, true)}
   end
+
+  def handle_event("new_agent_cancel", _params, socket) do
+    {:noreply, assign(socket, :new_agent_open?, false)}
+  end
+
+  def handle_event("new_agent_create", params, socket) do
+    slug = Map.get(params, "slug", "") |> String.trim()
+    role = Map.get(params, "role", "") |> String.trim()
+    provider = Map.get(params, "provider", "") |> String.trim()
+
+    argv =
+      ["#{socket.assigns.company_slug}/#{slug}"]
+      |> append_if_nonempty(["--role", role])
+      |> append_if_nonempty(["--provider", provider])
+
+    case Glorbo.CLI.Scaffold.Agent.run(argv) do
+      {:new_agent, 0, _msg} ->
+        base = base_dir()
+        co_path = Path.join([base, "companies", socket.assigns.company_slug])
+        data = load_company_data(base, socket.assigns.company_slug, co_path)
+
+        {:noreply,
+         socket
+         |> assign(:new_agent_open?, false)
+         |> assign(:company, data)
+         |> put_flash(:info, "Created agent: #{slug}")}
+
+      {:new_agent, _nonzero, msg} ->
+        {:noreply, put_flash(socket, :error, String.trim(msg))}
+    end
+  end
+
+  defp append_if_nonempty(argv, [_flag, ""]), do: argv
+  defp append_if_nonempty(argv, extra), do: argv ++ extra
 
   # ---------------------------------------------------------------------------
   # Data loaders
