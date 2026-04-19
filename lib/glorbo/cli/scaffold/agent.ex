@@ -134,10 +134,13 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     """)
 
     File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
-    # Heartbeat — #{agent}
+    # HEARTBEAT — #{agent}
+
+    Read `AGENT.md` first. Read `SOUL.md` for tone (if present).
 
     Check your inbox. Reply to anything that needs attention.
-    Otherwise exit cleanly.
+    Otherwise write a one-line "no action" summary to
+    `$GLORBO_REPLY_PATH` and exit cleanly.
     """)
 
     Audit.emit("new_agent", "complete", %{
@@ -182,12 +185,10 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     # missing = no soul file (the Director can write one later).
     maybe_write_soul(ag_path, entry.name, vars)
 
-    File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
-    # Heartbeat — #{agent}
-
-    Check your inbox. Reply to anything that needs attention.
-    Otherwise exit cleanly.
-    """)
+    # GEP-14: HEARTBEAT.md drives the tick-by-tick action loop. When a
+    # role-specific heartbeat exists (e.g. CEO's company-stewardship
+    # checklist), use it; otherwise fall back to the minimal default.
+    maybe_write_heartbeat(ag_path, agent, entry.name, vars)
 
     Audit.emit("new_agent", "complete", %{
       company: company,
@@ -312,6 +313,34 @@ defmodule Glorbo.CLI.Scaffold.Agent do
       File.write!(Path.join(ag_path, "SOUL.md"), rendered)
     end
 
+    :ok
+  end
+
+  # GEP-14 extension: role-specific HEARTBEAT.md templates. Ships under
+  # priv/templates/heartbeats/<name>.md; missing template falls through
+  # to the minimal default so every agent still gets a heartbeat file.
+  defp maybe_write_heartbeat(ag_path, agent, template_name, vars) do
+    template_path =
+      Path.join([:code.priv_dir(:glorbo), "templates/heartbeats", "#{template_name}.md"])
+
+    content =
+      if File.exists?(template_path) do
+        template_path
+        |> File.read!()
+        |> Renderer.render(vars)
+      else
+        """
+        # HEARTBEAT — #{agent}
+
+        Read `AGENT.md` first. Read `SOUL.md` for tone.
+
+        Check your inbox. Reply to anything that needs attention.
+        Otherwise write a one-line "no action" summary to
+        `$GLORBO_REPLY_PATH` and exit cleanly.
+        """
+      end
+
+    File.write!(Path.join(ag_path, "HEARTBEAT.md"), content)
     :ok
   end
 
