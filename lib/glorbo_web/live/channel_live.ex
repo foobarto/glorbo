@@ -161,7 +161,14 @@ defmodule GlorboWeb.ChannelLive do
            base: socket.assigns.base
          ) do
       :ok ->
-        {:noreply, assign(socket, :compose_body, "")}
+        # Belt-and-braces: inotify → PubSub can miss under load (esp. on
+        # first write to a newly-created channel). Reload directly.
+        path = channel_path(socket.assigns.base, socket.assigns.company_slug, socket.assigns.channel)
+
+        {:noreply,
+         socket
+         |> assign(:compose_body, "")
+         |> assign(:messages, load_messages(path, socket.assigns.company_slug))}
 
       {:error, :empty_body} ->
         {:noreply, put_flash(socket, :error, "Message is empty.")}

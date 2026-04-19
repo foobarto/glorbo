@@ -73,7 +73,12 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
     else
       case GlorboWeb.Actions.post_message(co, "general", trimmed) do
         :ok ->
-          {:noreply, socket}
+          # Belt-and-braces: inotify → PubSub can miss the event under
+          # load or on first write to a newly-created channel. Reload
+          # directly so the user always sees their own message without
+          # a page reload.
+          base = socket.assigns[:chat_drawer_base] || GlorboWeb.LiveHelpers.base_dir()
+          {:noreply, assign(socket, :chat_drawer_messages, load_messages(base, co))}
 
         {:error, :body_too_large} ->
           {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message exceeds 10 KB.")}
