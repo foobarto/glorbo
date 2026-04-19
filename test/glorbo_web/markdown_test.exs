@@ -60,4 +60,18 @@ defmodule GlorboWeb.MarkdownTest do
     html = IO.iodata_to_binary(html)
     refute html =~ "<script>"
   end
+
+  test "mention inside quoted text still renders as an anchor (UAT W5 regression)" do
+    # Earmark used to HTML-escape the `<a>` that the pre-pass emitted
+    # when the mention was in a quoted string, e.g. `"@ceo"` in agent
+    # replies. The new tokenize-then-detokenize pipeline survives that.
+    {:safe, html} =
+      GlorboWeb.Markdown.render(~s(message at "@ceo" — are you there?), company: "acme")
+
+    html = IO.iodata_to_binary(html)
+    # The <a> tag survives the quote context
+    assert html =~ ~s(<a class="gl-mention" href="/companies/acme/agents/ceo">@ceo</a>)
+    # No escaped &lt;a tag leakage
+    refute html =~ "&lt;a"
+  end
 end
