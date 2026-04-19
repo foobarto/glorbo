@@ -46,6 +46,30 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
   end
 
   defp ensure_tree_started do
+    # Start distribution FIRST. If the name is already taken, that's
+    # a running daemon — abort with a clear message instead of
+    # booting a second supervision tree that would collide on the
+    # pidfile + the dashboard port.
+    case Glorbo.CLI.Lifecycle.Distribution.start() do
+      :ok ->
+        :ok
+
+      {:error, :name_collision, node} ->
+        IO.puts(
+          :stderr,
+          "Another glorbo instance is already registered as #{inspect(node)}. " <>
+            "Run `glorbo status` to confirm, then `glorbo down` to stop it."
+        )
+
+        System.halt(3)
+
+      {:error, reason, other} ->
+        raise "Distribution.start/0 failed: #{inspect(reason)} (#{inspect(other)})"
+
+      {:error, reason} ->
+        raise "Distribution.start/0 failed: #{inspect(reason)}"
+    end
+
     case Glorbo.Application.start_supervision_tree_for_serve() do
       {:ok, _pid} -> :ok
       {:ok, :already_started, _pid} -> :ok

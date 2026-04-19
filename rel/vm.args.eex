@@ -9,19 +9,20 @@
 ## (honoured by Burrito at erlang_launcher.zig ~L44). `glorbo up` exports
 ## it from `Glorbo.Config.erl_cookie/1` when spawning the daemon.
 ##
-## Node name pinned to loopback only — single-Director trust model
-## (threat T-05-04). Distribution listener bound to an ephemeral port to
-## avoid colliding with other local BEAM nodes.
-
-## WR-09: long-name distribution. -sname wants an UNQUALIFIED short
-## name and appends the host automatically; -sname glorbo@127.0.0.1
-## would either be rejected outright or produce a node named
-## glorbo@127.0.0.1@<hostname>. Console.help_text/0 shows
-## `iex --name console@127.0.0.1 --remsh glorbo@127.0.0.1`, which
-## requires -name here to match name-class (short vs long) with the
-## caller. Verify manually after rebuild with:
-##   glorbo up
-##   iex --name console@127.0.0.1 --cookie <cookie> --remsh glorbo@127.0.0.1
--name glorbo@127.0.0.1
+## DISTRIBUTION IS NOT STARTED HERE. Earlier revisions pinned
+## `-name glorbo@127.0.0.1` so the daemon would be remsh-addressable
+## from `glorbo console`. That produced the following papercut: any
+## second ./glorbo invocation — even `./glorbo help` — tried to
+## register the same node name and collided with the running daemon,
+## failing BEAM-startup before Elixir code got a chance to print a
+## useful error ("Protocol 'inet_tcp': the name glorbo@127.0.0.1
+## seems to be in use by another Erlang node"). Distribution is now
+## started programmatically from Elixir (see
+## `Glorbo.CLI.Lifecycle.Distribution.start/0`) only for the verbs
+## that actually need it (serve, up, console). Help / status /
+## down / doctor / reindex / new-* / import-* never touch EPMD.
+##
+## Listener bound to an ephemeral port (kernel 0/0) so a running
+## daemon never pins a predictable port in another BEAM's way.
 -kernel inet_dist_listen_min 0
 -kernel inet_dist_listen_max 0
