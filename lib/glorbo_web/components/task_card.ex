@@ -66,7 +66,14 @@ defmodule GlorboWeb.Components.TaskCard do
         >
           ● {Atom.to_string(@task.priority)}
         </span>
-        <span :if={@task.priority && @task.assigned_to} class="gl-muted">·</span>
+        <span :if={@task.priority && @task.severity} class="gl-muted">·</span>
+        <span
+          :if={@task.severity}
+          class={"gl-task-card__severity gl-task-card__severity--" <> Atom.to_string(@task.severity)}
+        >
+          {Atom.to_string(@task.severity)}
+        </span>
+        <span :if={(@task.priority || @task.severity) && @task.assigned_to} class="gl-muted">·</span>
         <span :if={@task.assigned_to} class="gl-task-card__assignee">{@task.assigned_to}</span>
       </div>
     </article>

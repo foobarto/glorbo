@@ -61,6 +61,7 @@ defmodule Glorbo.TaskDefinition do
   @type approval_mode :: :director | nil
 
   @type priority :: :low | :medium | :high | nil
+  @type severity :: :info | :minor | :major | :critical | nil
 
   @type t :: %__MODULE__{
           task_path: String.t(),
@@ -71,6 +72,7 @@ defmodule Glorbo.TaskDefinition do
           requires_approval: approval_mode(),
           denial_reason: String.t() | nil,
           priority: priority(),
+          severity: severity(),
           project: String.t() | nil,
           prompt_body: String.t(),
           file_path: String.t()
@@ -85,6 +87,7 @@ defmodule Glorbo.TaskDefinition do
     :requires_approval,
     :denial_reason,
     :priority,
+    :severity,
     :project,
     :prompt_body,
     :file_path
@@ -150,10 +153,17 @@ defmodule Glorbo.TaskDefinition do
          assigned_to: as_string(meta["assigned_to"]) || as_string(meta["assignee"]),
          requires_approval: requires_approval,
          denial_reason: as_string(meta["denial_reason"]),
-         priority: coerce_priority(meta["priority"])
+         priority: coerce_priority(meta["priority"]),
+         severity: coerce_severity(meta["severity"])
        }}
     end
   end
+
+  defp coerce_severity("critical"), do: :critical
+  defp coerce_severity("major"), do: :major
+  defp coerce_severity("minor"), do: :minor
+  defp coerce_severity("info"), do: :info
+  defp coerce_severity(_), do: nil
 
   defp coerce_priority("high"), do: :high
   defp coerce_priority("medium"), do: :medium
@@ -466,6 +476,7 @@ defmodule Glorbo.TaskDefinition do
        requires_approval: partial.requires_approval,
        denial_reason: partial.denial_reason,
        priority: partial.priority,
+       severity: partial.severity,
        project: derive_project(task_path),
        prompt_body: body || "",
        file_path: file_path

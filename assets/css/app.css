@@ -1348,6 +1348,20 @@ button { font-family: inherit; font-size: inherit; }
 .gl-task-card__priority--low { color: var(--gl-fg-muted); }
 .gl-task-card__assignee { color: var(--gl-accent-dim); }
 
+.gl-task-card__severity {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+.gl-task-card__severity--critical { color: var(--gl-danger); }
+.gl-task-card__severity--major    { color: var(--gl-warning); }
+.gl-task-card__severity--minor    { color: var(--gl-fg-muted); }
+.gl-task-card__severity--info     { color: var(--gl-accent); }
+
 /* ========== Agent detail ========== */
 .gl-agent__header {
   display: flex;
