@@ -418,11 +418,12 @@ defmodule GlorboWeb.AgentLive do
         <div class="gl-overview__actions">
           <button
             type="button"
-            class="gl-btn gl-btn--soon"
-            disabled
-            title="Coming soon — edit AGENT.md in your text editor for now"
+            class="gl-btn"
+            phx-click="open_file"
+            phx-value-path="AGENT.md"
+            title="Open AGENT.md in the in-browser editor"
           >
-            ✎ edit AGENT.md <span class="gl-btn__soon-tag">soon</span>
+            ✎ edit AGENT.md
           </button>
           <button
             type="button"
