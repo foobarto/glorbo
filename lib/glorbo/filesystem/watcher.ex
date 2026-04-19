@@ -355,9 +355,14 @@ defmodule Glorbo.Filesystem.Watcher do
       String.ends_with?(rel, "/AGENT.md") or String.ends_with?(rel, "/agent.md") ->
         "inbox"
 
-      String.contains?(rel, "/inbox/") -> "inbox"
-      String.contains?(rel, "/outbox/") -> "outbox"
-      true -> nil
+      String.contains?(rel, "/inbox/") ->
+        "inbox"
+
+      String.contains?(rel, "/outbox/") ->
+        "outbox"
+
+      true ->
+        nil
     end
   end
 

@@ -307,7 +307,8 @@ defmodule Glorbo.Agent.Server do
   end
 
   defp maybe_reload_spec(%{spec: old_spec} = state) do
-    path = Path.join([state.base, "companies", state.company, "agents", old_spec.slug, "AGENT.md"])
+    path =
+      Path.join([state.base, "companies", state.company, "agents", old_spec.slug, "AGENT.md"])
 
     case Glorbo.Agent.Parser.parse_file(path) do
       {:ok, new_spec} ->
