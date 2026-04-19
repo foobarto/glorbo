@@ -845,6 +845,11 @@ defmodule GlorboWeb.KanbanLive do
         </footer>
       </form>
 
+      <%!--
+        Nested outside the save form (can't nest <form>s in HTML). Sits
+        inside the overlay so it follows the detail panel's layout
+        instead of floating off-screen on short viewports.
+      --%>
       <form
         :if={@open_task}
         phx-submit="comment_task"

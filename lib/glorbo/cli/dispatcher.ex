@@ -239,7 +239,9 @@ defmodule Glorbo.CLI.Dispatcher do
       "GLORBO_TASK_ID" => Map.get(ctx, :task_id, ""),
       "GLORBO_INVOCATION_ID" => invocation_id,
       "GLORBO_REPLY_PATH" => reply_path,
-      "GLORBO_WORKSPACE" => ctx.workspace
+      "GLORBO_WORKSPACE" => ctx.workspace,
+      "GLORBO_INBOX" => "/inbox",
+      "GLORBO_OUTBOX" => "/outbox"
     })
   end
 

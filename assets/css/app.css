@@ -1347,15 +1347,8 @@ button { font-family: inherit; font-size: inherit; }
   gap: var(--gl-space-xs);
 }
 .gl-task-comment {
-  position: fixed;
-  /* Stick to the bottom of the detail overlay — overlay is 80vh high
-     and centered, so its bottom edge sits at ~90vh from top. */
-  top: calc(50% + 40vh + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  min-width: 560px;
-  max-width: min(90vw, 880px);
+  margin: var(--gl-space-sm) auto 0;
+  width: min(90vw, 880px);
   display: flex;
   align-items: center;
   gap: 8px;

@@ -707,10 +707,56 @@ defmodule Glorbo.Agent.Server do
           %{
             task_id: Path.basename(path, ".md"),
             task_path: Path.relative_to(path, company_root),
-            prompt: read_or_empty(path),
+            prompt: compose_prompt(spec, base, path, trigger),
             trigger: trigger || :inbox
           }
       end
+    end
+  end
+
+  # Stitch the agent's AGENT.md system prompt in front of the inbox body
+  # so the CLI invocation has the persona/permissions context. Without
+  # this, the agent only sees the raw inbox body ("Please respond to
+  # chat!") with zero context about who it is or what it can do.
+  defp compose_prompt(spec, base, inbox_path, trigger) do
+    body = read_or_empty(inbox_path)
+    system = read_system_prompt(spec, base)
+
+    """
+    #{system}
+
+    ---
+
+    ## Runtime context (#{trigger || :inbox})
+
+    - Your slug: `#{spec.slug}`
+    - Company: `#{spec.company}`
+    - cwd: `/workspace` (rw — your scratch area)
+    - Inbox: `/inbox` (ro — read-only view of your inbox)
+    - Outbox: `/outbox` (rw — write replies here; or use `$GLORBO_REPLY_PATH`)
+
+    ## Triggering message
+
+    Source: `#{Path.relative_to(inbox_path, Path.join([base, "companies", spec.company]))}`
+
+    #{body}
+    """
+  end
+
+  defp read_system_prompt(spec, base) do
+    [base, "companies", spec.company, "agents", spec.slug, "AGENT.md"]
+    |> Path.join()
+    |> File.read()
+    |> case do
+      {:ok, content} -> strip_frontmatter(content)
+      _ -> "You are `#{spec.slug}` in company `#{spec.company}`."
+    end
+  end
+
+  defp strip_frontmatter(content) do
+    case String.split(content, ~r/\A---\r?\n.*?\r?\n---\r?\n/s, parts: 2) do
+      [_fm, body] -> String.trim_leading(body)
+      [body] -> body
     end
   end
 

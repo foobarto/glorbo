@@ -270,9 +270,12 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  # Network policy. Nil defaults to :none (secure-by-default per V14).
-  defp validate_network(nil), do: {:ok, :none}
-  defp validate_network(""), do: {:ok, :none}
+  # Network policy. Nil defaults to :api_only — CLI-provider agents need
+  # egress to their hosted API endpoint (api.anthropic.com etc). :none was
+  # the earlier secure-by-default but it silently bricks every claude-code
+  # dispatch; opt-in explicitly in `agent.md` if you really want airgapped.
+  defp validate_network(nil), do: {:ok, :api_only}
+  defp validate_network(""), do: {:ok, :api_only}
 
   defp validate_network(raw) when is_binary(raw) do
     case Map.fetch(@network_map, raw) do
