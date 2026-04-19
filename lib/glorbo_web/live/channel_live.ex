@@ -138,6 +138,19 @@ defmodule GlorboWeb.ChannelLive do
     end
   end
 
+  def handle_event("archive_channel", _params, socket) do
+    channel = socket.assigns.channel
+    company = socket.assigns.company_slug
+    base = socket.assigns.base
+
+    if archivable?(channel) do
+      do_archive(base, company, channel, socket)
+    else
+      {:noreply,
+       put_flash(socket, :error, "Can't archive ##{channel} — it's a canonical channel.")}
+    end
+  end
+
   def handle_event("post", %{"body" => body}, socket) do
     trimmed = String.trim(body)
 
@@ -173,8 +186,18 @@ defmodule GlorboWeb.ChannelLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-view--tall gl-channel">
-      <header class="gl-view__header">
+      <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">{channel_heading(@channel)}</h1>
+        <div :if={archivable?(@channel)} class="gl-channel__actions">
+          <button
+            type="button"
+            class="gl-btn gl-btn--sm gl-btn--ghost"
+            phx-click="archive_channel"
+            data-confirm={"Archive ##{@channel}? The markdown file moves to channels/.archive/; you can restore it by moving the file back."}
+          >
+            ⎘ archive
+          </button>
+        </div>
       </header>
 
       <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--muted" role="alert">
@@ -274,6 +297,40 @@ defmodule GlorboWeb.ChannelLive do
     do: "gl-channel-list__link gl-channel-list__link--active"
 
   defp channel_link_class(_, _), do: "gl-channel-list__link"
+
+  # `general` is the Director's catch-all + the chat drawer's backing
+  # channel. DM channels (`dm-director--<agent>`) are owned by their
+  # threads and should also not be archived from this UI.
+  defp archivable?("general"), do: false
+
+  defp archivable?(slug) when is_binary(slug) do
+    not String.starts_with?(slug, "dm-director--")
+  end
+
+  defp archivable?(_), do: false
+
+  defp do_archive(base, company, channel, socket) do
+    src = channel_path(base, company, channel)
+    archive_dir = Path.join([base, "companies", company, "channels", ".archive"])
+    dst = Path.join(archive_dir, "#{channel}.md")
+
+    with :ok <- File.mkdir_p(archive_dir),
+         :ok <- File.rename(src, dst) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Archived ##{channel}. Moved to channels/.archive/#{channel}.md.")
+       |> push_navigate(to: ~p"/companies/#{company}/channels/general")}
+    else
+      {:error, reason} ->
+        Logger.warning("archive_channel failed",
+          company: company,
+          channel: channel,
+          reason: inspect(reason)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not archive channel.")}
+    end
+  end
 
   defp list_channels(base, company) do
     dir = Path.join([base, "companies", company, "channels"])

@@ -169,4 +169,54 @@ defmodule GlorboWeb.ChannelLiveTest do
 
     assert occurrences == 1
   end
+
+  test "archive button is not rendered on #general", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+    refute html =~ "archive_channel"
+    refute html =~ "⎘ archive"
+  end
+
+  test "archive button appears on non-general channels", %{conn: conn, base: base} do
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "random.md"]),
+      "# random\n"
+    )
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/random")
+    assert html =~ "archive_channel"
+    assert html =~ "⎘ archive"
+  end
+
+  test "archive_channel event moves file to .archive/ and redirects to general", %{
+    conn: conn,
+    base: base
+  } do
+    src = Path.join([base, "companies", "acme", "channels", "random.md"])
+    File.write!(src, "# random\n")
+
+    {:ok, view, _html} = live(conn, "/companies/acme/channels/random")
+    render_hook(view, "archive_channel", %{})
+
+    refute File.exists?(src)
+
+    archived = Path.join([base, "companies", "acme", "channels", ".archive", "random.md"])
+    assert File.exists?(archived)
+  end
+
+  test "archive_channel refuses on #general", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/companies/acme/channels/general")
+
+    result = render_hook(view, "archive_channel", %{})
+    assert result =~ "canonical channel"
+
+    assert File.exists?(
+             Path.join([
+               GlorboWeb.LiveHelpers.base_dir(),
+               "companies",
+               "acme",
+               "channels",
+               "general.md"
+             ])
+           )
+  end
 end
