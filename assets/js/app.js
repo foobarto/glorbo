@@ -500,16 +500,27 @@ const ChatDrawer = {
   },
 }
 
-// Submit on Enter, newline on Shift+Enter. Used on the channel compose
-// textarea so the chat-app idiom works without chasing the send button.
+// Submit on Enter, newline on Shift+Enter. Autogrow height with content,
+// capped by CSS max-height. Used on the channel compose textarea so the
+// chat-app idiom works without chasing the send button.
 const SubmitOnEnter = {
   mounted() {
+    const autogrow = () => {
+      this.el.style.height = "auto"
+      this.el.style.height = this.el.scrollHeight + "px"
+    }
+    this.el.addEventListener("input", autogrow)
     this.el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         this.el.form?.requestSubmit()
       }
     })
+    autogrow()
+  },
+  updated() {
+    this.el.style.height = "auto"
+    this.el.style.height = this.el.scrollHeight + "px"
   },
 }
 
