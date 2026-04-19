@@ -203,6 +203,7 @@ defmodule GlorboWeb.ChannelLive do
               title="Lowercase letters, digits, and dashes"
               placeholder="+ new channel"
               aria-label="New channel name"
+              autocomplete="off"
             />
           </form>
           <h2 class="gl-panel__header">/dms</h2>

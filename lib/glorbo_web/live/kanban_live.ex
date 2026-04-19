@@ -819,17 +819,21 @@ defmodule GlorboWeb.KanbanLive do
     Enum.filter(tasks, fn t -> t.project == project end)
   end
 
-  # Task body may contain a prompt (before any `## ` header) followed
-  # by a thread of `## <ts> | <author>\n<body>` comment blocks written
-  # by `GlorboWeb.Actions.post_task_comment/4` (same shape as channel
-  # messages). Split on the first `## ` header so the modal can show
-  # the editable prompt separate from the read-only comment history.
-  @task_comment_re ~r/^## (?<ts>[^|]+?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## |\z)/ms
+  # Task body may contain a prompt (before any comment header) followed
+  # by a thread of `## <iso8601-ts> | <author>\n<body>` comment blocks
+  # written by `GlorboWeb.Actions.post_task_comment/4`. The split must
+  # recognize the TIMESTAMP shape specifically — a prompt may legitimately
+  # contain markdown `## Sub-section` headers that aren't comments.
+  # ISO8601 timestamps always start with a year (4 digits) followed by
+  # `-MM-DD`; matching that prefix before the `|` separator keeps
+  # markdown headers in the prompt where they belong.
+  @task_comment_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
 
   defp split_prompt_and_comments(body) do
     body = String.trim(body)
 
-    case Regex.run(~r/^(?<prompt>.*?)(?=\n## |\z)/ms, body, capture: :all_names) do
+    # Split on the first `## <iso-date>` header — anything before is prompt.
+    case Regex.run(~r/^(?<prompt>.*?)(?=\n## \d{4}-|\z)/ms, body, capture: :all_names) do
       [prompt] ->
         rest_start = byte_size(prompt)
         rest = String.slice(body, rest_start, byte_size(body) - rest_start)

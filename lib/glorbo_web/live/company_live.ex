@@ -475,6 +475,7 @@ defmodule GlorboWeb.CompanyLive do
                 maxlength="64"
                 pattern="[a-z0-9][a-z0-9-]*"
                 placeholder="engineer"
+                autocomplete="off"
                 autofocus
               />
             </label>

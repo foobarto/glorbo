@@ -200,6 +200,46 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Ship it."
   end
 
+  test "open_task splits prompt body from comment history",
+       %{conn: conn, base: base} do
+    # Seed a task that mixes a markdown `## Sub-section` header in the
+    # prompt (must stay in the body) with a real comment (must render
+    # in the comments panel). Earlier regex naively split on ANY `## `,
+    # which smashed sub-section headers into the comment stream.
+    path =
+      Path.join([base, "companies", "acme", "projects", "website", "tasks", "mix-body.md"])
+
+    File.write!(path, """
+    ---
+    title: Mixed body
+    status: todo
+    ---
+
+    Task prompt
+
+    ## Sub-section in prompt
+
+    Body continues
+
+    ## 2026-04-18T10:00:00Z | Director
+    Actual comment
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    html = render_click(view, "open_task", %{"path" => "projects/website/tasks/mix-body.md"})
+
+    # Prompt body keeps the sub-section header
+    assert html =~ "Task prompt"
+    assert html =~ "## Sub-section in prompt"
+    assert html =~ "Body continues"
+
+    # The real Director comment shows up in the comments panel
+    assert html =~ "Actual comment"
+    assert html =~ "comments (1)"
+
+    File.rm!(path)
+  end
+
   test "save_task rewrites title + body + priority on disk", %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})

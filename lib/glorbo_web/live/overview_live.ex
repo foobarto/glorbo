@@ -155,6 +155,7 @@ defmodule GlorboWeb.OverviewLive do
                 pattern="[a-z0-9][a-z0-9-]*"
                 placeholder="acme-corp"
                 title="Lowercase letters / digits / dashes"
+                autocomplete="off"
                 autofocus
               />
             </label>
