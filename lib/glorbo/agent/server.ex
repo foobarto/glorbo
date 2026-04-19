@@ -645,17 +645,25 @@ defmodule Glorbo.Agent.Server do
   defp apply_task_actions(_abs, []), do: :ok
 
   defp apply_task_actions(abs, actions) do
-    fm =
+    updates =
       Enum.reduce(actions, %{}, fn
         {"reassign_to", slug}, acc -> Map.put(acc, "assigned_to", slug)
         {"status", status}, acc -> Map.put(acc, "status", status)
         _, acc -> acc
       end)
 
-    if fm == %{} do
+    if updates == %{} do
       :ok
     else
-      case Glorbo.TaskDefinition.write_frontmatter(abs, fm) do
+      # TaskDefinition.write_frontmatter replaces the whole frontmatter
+      # with whatever map it receives — keys it knows about, wiping the
+      # rest. Merge the updates into the existing frontmatter first so
+      # title/priority/severity/requires_approval survive a partial
+      # mutation (regression: UAT 2026-04-20 test II-6 caught this).
+      existing = read_existing_frontmatter(abs)
+      merged = Map.merge(existing, updates)
+
+      case Glorbo.TaskDefinition.write_frontmatter(abs, merged) do
         :ok ->
           :ok
 
@@ -664,6 +672,19 @@ defmodule Glorbo.Agent.Server do
           Logger.warning("task action apply failed: #{inspect(reason)}")
           :ok
       end
+    end
+  end
+
+  defp read_existing_frontmatter(abs) do
+    with {:ok, content} <- File.read(abs),
+         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      meta
+      |> Map.new(fn
+        {k, v} when is_atom(k) -> {Atom.to_string(k), v}
+        {k, v} -> {k, v}
+      end)
+    else
+      _ -> %{}
     end
   end
 

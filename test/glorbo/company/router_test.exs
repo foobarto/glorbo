@@ -91,7 +91,13 @@ defmodule Glorbo.Company.RouterTest do
 
     channel_path = Path.join([base, "companies", @company, "channels", "general.md"])
     assert File.exists?(channel_path)
-    assert File.read!(channel_path) =~ "hello"
+
+    content = File.read!(channel_path)
+    assert content =~ "hello"
+    # Regression: agent posts MUST be wrapped in the canonical
+    # `## <iso-ts> | <sender>` attribution block so ChatDrawer and
+    # ChannelLive render them with the right author label.
+    assert content =~ ~r/^## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*\| engineer$/m
 
     assert_receive {:audit, %{action: "message.route"}}, 500
   end
