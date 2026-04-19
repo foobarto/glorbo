@@ -127,7 +127,7 @@ defmodule GlorboWeb.ChannelLive do
           {:error, reason} ->
             Logger.warning("create_channel failed",
               company: socket.assigns.company_slug,
-              slug: normalized,
+              channel: normalized,
               reason: inspect(reason)
             )
 
