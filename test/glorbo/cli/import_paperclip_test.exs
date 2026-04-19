@@ -1,5 +1,12 @@
 defmodule Glorbo.CLI.ImportPaperclipTest do
-  use ExUnit.Case, async: true
+  # `async: false` — setup mutates the process-global `GLORBO_HOME`
+  # env var and multiple async tests racing on it cause flakes like
+  # "target path doesn't exist after scaffold" when another test's
+  # on_exit clobbers the var mid-run. Keeping per-test isolation via
+  # the unique-integer home dir; serializing the test module is the
+  # cheapest fix that doesn't require restructuring the scaffold to
+  # take base as an argument everywhere.
+  use ExUnit.Case, async: false
 
   alias Glorbo.CLI.ImportPaperclip
 
