@@ -83,7 +83,7 @@ defmodule GlorboWeb.Components.Topbar do
         type="button"
         id="gl-tweaks-toggle"
         class={["gl-topbar__tweaks", @tweaks_open? && "gl-topbar__tweaks--on"]}
-        aria-expanded="false"
+        aria-expanded={to_string(@tweaks_open?)}
         aria-controls="gl-tweaks-drawer"
       >
         TWEAKS
