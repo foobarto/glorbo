@@ -113,7 +113,7 @@ defmodule Glorbo.Company.Router do
     state = %{
       company: company,
       base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
-      audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
+      audit_fun: Keyword.get(opts, :audit_fun, &default_audit_fun/2),
       fs_fun: Keyword.get(opts, :fs_fun, default_fs_fun()),
       pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
       # Test hook: override the agent.md → permissions lookup. Production
@@ -376,6 +376,30 @@ defmodule Glorbo.Company.Router do
   defp format_chat_post(msg) do
     ts = DateTime.utc_now() |> DateTime.to_iso8601()
     "\n## #{ts} | #{msg.sender}\n#{String.trim(msg.body)}\n"
+  end
+
+  # AuditLog.append/2 expects a GenServer.server reference, not a company
+  # slug string. Router used `&AuditLog.append/2` as the default, which
+  # raised `no function clause matching in GenServer.whereis/1` on every
+  # outbox event. Resolve via Registry and fall back to the default-named
+  # AuditLog (test mode / init orchestration edge cases).
+  defp default_audit_fun(company, entry) when is_binary(company) do
+    server =
+      case resolve_audit_server(company) do
+        {:ok, via} -> via
+        :not_found -> AuditLog
+      end
+
+    AuditLog.append(server, Map.put(entry, :company, company))
+  end
+
+  defp resolve_audit_server(company) do
+    key = {:company_child, company, :audit_log}
+
+    case Elixir.Registry.lookup(Glorbo.Agent.Registry, key) do
+      [{_pid, _}] -> {:ok, {:via, Elixir.Registry, {Glorbo.Agent.Registry, key}}}
+      _ -> :not_found
+    end
   end
 
   defp emit_route_audit(msg, to, state) do
