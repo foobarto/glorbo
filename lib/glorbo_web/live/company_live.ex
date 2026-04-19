@@ -78,6 +78,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:company, data)
        |> assign(:edit_company_md, nil)
        |> assign(:new_agent_open?, false)
+       |> assign(:new_project_open?, false)
        |> assign(:provider_options, provider_options())
        |> ChatDrawer.State.wire_drawer()}
     else
@@ -86,6 +87,21 @@ defmodule GlorboWeb.CompanyLive do
        |> put_flash(:error, "Company \"#{slug}\" not found.")
        |> push_navigate(to: ~p"/companies")}
     end
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    # `?modal=new_agent` / `?modal=new_project` opens the matching
+    # modal on mount. Used by the sidebar's "+" section-label buttons
+    # which don't have a direct phx-click path into CompanyLive.
+    socket =
+      case Map.get(params, "modal") do
+        "new_agent" -> assign(socket, :new_agent_open?, true)
+        "new_project" -> assign(socket, :new_project_open?, true)
+        _ -> socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -143,6 +159,13 @@ defmodule GlorboWeb.CompanyLive do
             data-confirm="Create a backup archive now? This reads the live WAL while agents run — safe for snapshots but not for byte-exact restore testing."
           >
             ⇩ backup
+          </button>
+          <button
+            type="button"
+            class="gl-btn"
+            phx-click="new_project"
+          >
+            + new project
           </button>
           <button
             type="button"
@@ -520,6 +543,63 @@ defmodule GlorboWeb.CompanyLive do
           </footer>
         </form>
       </div>
+
+      <div :if={@new_project_open?} class="gl-modal-scrim" phx-click-away="new_project_cancel">
+        <form
+          phx-submit="new_project_create"
+          phx-window-keydown="new_project_cancel"
+          phx-key="Escape"
+          class="gl-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gl-new-project-title"
+        >
+          <header class="gl-modal__header">
+            <div id="gl-new-project-title">
+              <strong>+ new project</strong>
+              <span class="gl-muted">· {@company_slug}</span>
+            </div>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="new_project_cancel"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div class="gl-company-md-form">
+            <label class="gl-form__row">
+              <span class="gl-form__label">slug</span>
+              <input
+                type="text"
+                name="slug"
+                class="gl-input"
+                required
+                maxlength="64"
+                pattern="[a-z0-9][a-z0-9-]*"
+                title="Lowercase letters / digits / dashes"
+                placeholder="website-redesign"
+                autocomplete="off"
+                autofocus
+              />
+            </label>
+            <p class="gl-muted" style="font-size: 11px;">
+              Creates <code>projects/&lt;slug&gt;/</code>
+              with <code>project.md</code>, <code>tasks/</code>, <code>attachments/</code>, and
+              <code>history/</code>
+              scaffolding. Add tasks via <strong>+ new task</strong>
+              on the Kanban board.
+            </p>
+          </div>
+
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="new_project_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+          </footer>
+        </form>
+      </div>
     </section>
     """
   end
@@ -619,6 +699,40 @@ defmodule GlorboWeb.CompanyLive do
          |> put_flash(:info, flash_msg)}
 
       {:new_agent, _nonzero, msg} ->
+        {:noreply, put_flash(socket, :error, String.trim(msg))}
+    end
+  end
+
+  def handle_event("new_project", _params, socket) do
+    {:noreply, assign(socket, :new_project_open?, true)}
+  end
+
+  def handle_event("new_project_cancel", _params, socket) do
+    {:noreply, assign(socket, :new_project_open?, false)}
+  end
+
+  def handle_event("new_project_create", params, socket) do
+    slug = Map.get(params, "slug", "") |> String.trim()
+    argv = ["#{socket.assigns.company_slug}/#{slug}"]
+
+    case Glorbo.CLI.Scaffold.Project.run(argv) do
+      {:new_project, 0, msg} ->
+        base = base_dir()
+        co_path = Path.join([base, "companies", socket.assigns.company_slug])
+        data = load_company_data(base, socket.assigns.company_slug, co_path)
+
+        flash_msg =
+          if String.contains?(msg, "already exists"),
+            do: "Project #{slug} already exists — no change.",
+            else: "Created project: #{slug}"
+
+        {:noreply,
+         socket
+         |> assign(:new_project_open?, false)
+         |> assign(:company, data)
+         |> put_flash(:info, flash_msg)}
+
+      {:new_project, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}
     end
   end

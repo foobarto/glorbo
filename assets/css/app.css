@@ -984,8 +984,26 @@ button { font-family: inherit; font-size: inherit; }
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
 }
 .gl-sidebar__section-label--spaced { margin-top: 12px; }
+.gl-sidebar__section-add {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  color: var(--gl-fg-subtle);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 2px;
+}
+.gl-sidebar__section-add:hover {
+  color: var(--gl-accent);
+  border-color: var(--gl-border-strong);
+  background: var(--gl-surface-raised);
+}
 .gl-sidebar nav {
   display: flex;
   flex-direction: column;

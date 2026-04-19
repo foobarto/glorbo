@@ -74,7 +74,17 @@ defmodule GlorboWeb.Components.Sidebar do
         </.link>
       </nav>
 
-      <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">AGENTS</div>
+      <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">
+        AGENTS
+        <.link
+          :if={@focus}
+          navigate={nav_with_modal(@focus, "new_agent")}
+          class="gl-sidebar__section-add"
+          title="Scaffold a new agent under this company"
+        >
+          +
+        </.link>
+      </div>
       <div :if={@agents == []} class="gl-sidebar__empty">(none)</div>
       <.agent_row
         :for={{a, i} <- Enum.with_index(@agents)}
@@ -83,7 +93,17 @@ defmodule GlorboWeb.Components.Sidebar do
         prefix={tree_prefix(i, length(@agents))}
       />
 
-      <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">PROJECTS</div>
+      <div class="gl-sidebar__section-label gl-sidebar__section-label--spaced">
+        PROJECTS
+        <.link
+          :if={@focus}
+          navigate={nav_with_modal(@focus, "new_project")}
+          class="gl-sidebar__section-add"
+          title="Scaffold a new project under this company"
+        >
+          +
+        </.link>
+      </div>
       <div :if={@projects == []} class="gl-sidebar__empty">(none)</div>
       <.project_row
         :for={{p, i} <- Enum.with_index(@projects)}
@@ -172,6 +192,12 @@ defmodule GlorboWeb.Components.Sidebar do
 
   defp tree_prefix(i, count) when i == count - 1, do: "└─ "
   defp tree_prefix(_, _), do: "├─ "
+
+  # Navigate to the company overview with a `modal=<name>` param so
+  # CompanyLive's handle_params/3 opens the matching modal on mount.
+  # Used by the `+` buttons next to AGENTS / PROJECTS section labels.
+  defp nav_with_modal(company, modal),
+    do: ~p"/companies/#{company}?modal=#{modal}"
 
   defp short_provider(nil), do: ""
 
