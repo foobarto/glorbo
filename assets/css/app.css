@@ -507,10 +507,11 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent-detail__header { justify-content: space-between; align-items: flex-start; }
 .gl-agent-detail__grid {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
+  grid-template-columns: 280px 1fr 14px 320px;
   gap: var(--gl-space-md);
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 .gl-agent-detail__col {
   display: flex;
@@ -524,6 +525,49 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   flex-direction: column;
   min-height: 420px;
+}
+
+/* Right-panel collapse (config/budget/permissions stack).
+ * Toggle sits as its own grid track between the center column and the
+ * right column, so neither panel overlaps it. Collapsed state hides
+ * the right col and keeps the 14px toggle visible. Persisted in
+ * localStorage via the RightPanelCollapse hook.
+ */
+.gl-agent-detail__grid {
+  grid-template-columns: 280px 1fr 14px 320px;
+}
+.gl-agent-detail__right-toggle {
+  align-self: stretch;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gl-fg-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.gl-agent-detail__right-toggle:hover {
+  color: var(--gl-accent);
+  background: var(--gl-surface-raised);
+}
+.gl-agent-detail__right-toggle-glyph {
+  font-family: var(--gl-ff-mono);
+  font-size: 14px;
+  line-height: 1;
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+.gl-agent-detail__grid--right-collapsed .gl-agent-detail__right-toggle-glyph {
+  transform: rotate(180deg);
+}
+.gl-agent-detail__grid--right-collapsed {
+  grid-template-columns: 280px 1fr 14px 0;
+}
+.gl-agent-detail__grid--right-collapsed #gl-agent-right {
+  display: none;
 }
 
 /* Tab bar inside the center panel header */

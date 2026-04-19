@@ -548,9 +548,37 @@ const TailPin = {
   },
 }
 
+// Agent detail right-panel collapse. Default state is "expanded" on
+// wide viewports, "collapsed" on narrow (<1200px) so the stdout pane
+// gets the bulk of the horizontal space. User override persists to
+// localStorage.
+const RIGHT_COL_KEY = "glorbo.agent.right_collapsed"
+const RightPanelCollapse = {
+  mounted() {
+    const toggle = this.el.querySelector(".gl-agent-detail__right-toggle")
+    if (!toggle) return
+
+    const stored = localStorage.getItem(RIGHT_COL_KEY)
+    const startCollapsed =
+      stored === null ? window.innerWidth < 1200 : stored === "1"
+    this._apply(startCollapsed)
+
+    toggle.addEventListener("click", () => {
+      const next = !this.el.classList.contains("gl-agent-detail__grid--right-collapsed")
+      this._apply(next)
+      localStorage.setItem(RIGHT_COL_KEY, next ? "1" : "0")
+    })
+  },
+  _apply(collapsed) {
+    this.el.classList.toggle("gl-agent-detail__grid--right-collapsed", collapsed)
+    const toggle = this.el.querySelector(".gl-agent-detail__right-toggle")
+    if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true")
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

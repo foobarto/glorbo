@@ -476,7 +476,7 @@ defmodule GlorboWeb.AgentLive do
         </div>
       </header>
 
-      <div class="gl-agent-detail__grid">
+      <div class="gl-agent-detail__grid" id="gl-agent-grid" phx-hook="RightPanelCollapse">
         <%!-- LEFT COLUMN --%>
         <div class="gl-agent-detail__col">
           <section class="gl-panel gl-agent-identity">
@@ -706,7 +706,16 @@ defmodule GlorboWeb.AgentLive do
         </div>
 
         <%!-- RIGHT COLUMN --%>
-        <div class="gl-agent-detail__col">
+        <button
+          type="button"
+          class="gl-agent-detail__right-toggle"
+          aria-controls="gl-agent-right"
+          aria-expanded="true"
+          title="Collapse/expand right panel (config · budget · permissions)"
+        >
+          <span class="gl-agent-detail__right-toggle-glyph" aria-hidden="true">⟩</span>
+        </button>
+        <div class="gl-agent-detail__col" id="gl-agent-right">
           <section class="gl-panel">
             <header class="gl-panel__header">
               <span>config</span>
