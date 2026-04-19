@@ -660,10 +660,12 @@ defmodule Glorbo.Agent.ServerTest do
   # director" landed precisely in that untested seam.
   describe "PubSub-driven :mention wake" do
     setup %{test_pid: test_pid} = ctx do
-      # Start a company-scoped PubSub so broadcasts don't escape
+      # Start a test-scoped PubSub so broadcasts don't escape
       # into Glorbo.PubSub (which might not be running under bare
-      # mix test).
-      pubsub = :"pubsub_#{System.unique_integer([:positive])}"
+      # mix test). `Glorbo.Test.UniqueName.gen/1` uses
+      # `String.to_atom` via a known-bounded prefix — same pattern
+      # the rest of this file uses for per-test registry names.
+      pubsub = Glorbo.Test.UniqueName.gen("test_pubsub")
       start_supervised!({Phoenix.PubSub, name: pubsub})
 
       base =
