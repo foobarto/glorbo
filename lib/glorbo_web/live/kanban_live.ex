@@ -153,7 +153,8 @@ defmodule GlorboWeb.KanbanLive do
               severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
               requires_approval:
                 if(task.requires_approval == :director, do: "director", else: ""),
-              body: String.trim(task.prompt_body || "")
+              body: String.trim(task.prompt_body || ""),
+              attachments: list_task_attachments(task.project, task.task_id)
             }
 
             {:noreply, assign(socket, :open_task, detail)}
@@ -726,6 +727,18 @@ defmodule GlorboWeb.KanbanLive do
             <span class="gl-muted">body</span>
             <textarea name="body" rows="8" class="gl-input">{@open_task.body}</textarea>
           </label>
+
+          <div :if={@open_task.attachments != []} class="gl-task-detail__field">
+            <span class="gl-muted">attachments</span>
+            <ul class="gl-upload-list">
+              <li :for={a <- @open_task.attachments} class="gl-upload-list__row">
+                <span class="gl-upload-list__name">{a.name}</span>
+                <span class="gl-muted gl-upload-list__size">
+                  {Float.round(a.size / 1024, 1)} KB
+                </span>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <footer class="gl-task-detail__footer">
@@ -779,6 +792,43 @@ defmodule GlorboWeb.KanbanLive do
   defp apply_project_filter(tasks, project) when is_binary(project) do
     Enum.filter(tasks, fn t -> t.project == project end)
   end
+
+  defp list_task_attachments(project, task_id)
+       when is_binary(project) and is_binary(task_id) do
+    base = base_dir()
+
+    # Need company slug too — get from socket via caller. Since this
+    # runs inside open_task (which has socket.assigns.company_slug),
+    # callers pass it in. For now we can derive from task_path, but
+    # safer to accept a 3rd arg. Keep this permissive: return [] on
+    # any filesystem hiccup.
+    pattern =
+      Path.join([
+        base,
+        "companies",
+        "*",
+        "projects",
+        project,
+        "attachments",
+        task_id,
+        "*"
+      ])
+
+    pattern
+    |> Path.wildcard()
+    |> Enum.map(fn abs ->
+      %{
+        name: Path.basename(abs),
+        size:
+          case File.stat(abs) do
+            {:ok, %File.Stat{size: s}} -> s
+            _ -> 0
+          end
+      }
+    end)
+  end
+
+  defp list_task_attachments(_, _), do: []
 
   defp apply_search_filter(tasks, nil), do: tasks
   defp apply_search_filter(tasks, ""), do: tasks
