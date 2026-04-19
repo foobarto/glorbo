@@ -128,6 +128,7 @@ defmodule GlorboWeb.CompanyLive do
             type="button"
             class="gl-btn"
             phx-click="reindex"
+            phx-disable-with="↻ reindexing…"
             title="Rebuild SQLite index from filesystem (companies/*, agents/*, tasks/*)"
           >
             ↻ reindex
@@ -136,6 +137,7 @@ defmodule GlorboWeb.CompanyLive do
             type="button"
             class="gl-btn"
             phx-click="backup"
+            phx-disable-with="⇩ archiving…"
             title="Create ~/.glorbo/backups/YYYY-MM-DD.tar.zst snapshot (live)"
             data-confirm="Create a backup archive now? This reads the live WAL while agents run — safe for snapshots but not for byte-exact restore testing."
           >
