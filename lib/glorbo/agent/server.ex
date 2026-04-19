@@ -178,7 +178,8 @@ defmodule Glorbo.Agent.Server do
       current_task_pid: nil,
       pending_wake: nil,
       last_exit_status: nil,
-      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+      base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
+      pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub)
     }
 
     {:ok, state}
@@ -409,7 +410,7 @@ defmodule Glorbo.Agent.Server do
 
     %Task{ref: ref, pid: pid} = Task.Supervisor.async_nolink(state.task_supervisor, task_fn)
 
-    %{
+    new_state = %{
       state
       | status: :busy,
         current_task: task.task_id,
@@ -419,6 +420,9 @@ defmodule Glorbo.Agent.Server do
         current_task_pid: pid,
         pending_wake: nil
     }
+
+    broadcast_status(new_state)
+    new_state
   end
 
   defp finish(state, {:result, result}) do
@@ -437,6 +441,7 @@ defmodule Glorbo.Agent.Server do
         last_exit_status: exit_status
     }
 
+    broadcast_status(new_state)
     pop_pending(new_state)
   end
 
@@ -452,7 +457,22 @@ defmodule Glorbo.Agent.Server do
         last_exit_status: {:crashed, reason}
     }
 
+    broadcast_status(new_state)
     pop_pending(new_state)
+  end
+
+  # Broadcast a status change to subscribers of `company:<co>:agents:status`.
+  # Subscribers (sidebar-hosting LVs) re-assign + re-render so pill dots
+  # reflect the live state without waiting for a nav event. Best-effort —
+  # PubSub down shouldn't crash the Server.
+  defp broadcast_status(%{pubsub: pubsub, company: co, spec: spec, status: status}) do
+    Phoenix.PubSub.broadcast(
+      pubsub,
+      "company:#{co}:agents:status",
+      {:agent_status, spec.slug, status}
+    )
+  rescue
+    _ -> :ok
   end
 
   # GEP-16 post-completion reply routing: synthesize a Router-routable
@@ -552,16 +572,23 @@ defmodule Glorbo.Agent.Server do
   # the task file itself (same shape as GlorboWeb.Actions.post_task_comment).
   # Writes go through the filesystem; the kanban overlay's comment thread
   # renders them next to the Director's prompt.
+  #
+  # Also parses an optional trailing `ACTIONS:` block for structured
+  # directives the agent can emit (reassign_to / status). This lets an
+  # agent who can't write task frontmatter directly (no projects:write
+  # permission) still request state changes via the reply contract.
   defp write_task_comment_reply(state, body, task_id) do
     company_root = Path.join([state.base, "companies", state.spec.company])
 
     case resolve_task_path(company_root, task_id) do
       {:ok, abs} ->
+        {comment_body, actions} = extract_task_actions(body)
         ts = DateTime.utc_now() |> DateTime.to_iso8601()
-        entry = "\n## #{ts} | #{state.spec.slug}\n#{String.trim(body)}\n"
+        entry = "\n## #{ts} | #{state.spec.slug}\n#{String.trim(comment_body)}\n"
 
         case File.write(abs, entry, [:append, :sync]) do
           :ok ->
+            apply_task_actions(abs, actions)
             :ok
 
           {:error, reason} ->
@@ -584,6 +611,59 @@ defmodule Glorbo.Agent.Server do
     case Path.wildcard(pattern) do
       [abs | _] -> {:ok, abs}
       [] -> :error
+    end
+  end
+
+  # Agents emit optional structured directives at the end of their
+  # reply. The block is anchored by `ACTIONS:` on its own line; each
+  # action is a `- key: value` list item. Unknown keys are ignored.
+  #
+  # Supported:
+  #   - reassign_to: <slug>   # change assigned_to
+  #   - status: <status>      # change status (todo/in-progress/done/...)
+  #
+  # Parser is deliberately narrow — structured actions shouldn't get
+  # triggered by prose that happens to contain "status:".
+  defp extract_task_actions(body) do
+    case String.split(body, ~r/^\s*ACTIONS:\s*$/m, parts: 2) do
+      [comment, actions_block] ->
+        {String.trim_trailing(comment), parse_task_actions(actions_block)}
+
+      [comment] ->
+        {comment, []}
+    end
+  end
+
+  @task_action_re ~r/^\s*-\s*(?<key>reassign_to|status)\s*:\s*(?<val>[^\s#][^\n]*?)\s*$/m
+
+  defp parse_task_actions(block) do
+    @task_action_re
+    |> Regex.scan(block, capture: :all_names)
+    |> Enum.map(fn [key, val] -> {key, val} end)
+  end
+
+  defp apply_task_actions(_abs, []), do: :ok
+
+  defp apply_task_actions(abs, actions) do
+    fm =
+      Enum.reduce(actions, %{}, fn
+        {"reassign_to", slug}, acc -> Map.put(acc, "assigned_to", slug)
+        {"status", status}, acc -> Map.put(acc, "status", status)
+        _, acc -> acc
+      end)
+
+    if fm == %{} do
+      :ok
+    else
+      case Glorbo.TaskDefinition.write_frontmatter(abs, fm) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          require Logger
+          Logger.warning("task action apply failed: #{inspect(reason)}")
+          :ok
+      end
     end
   end
 
@@ -879,7 +959,26 @@ defmodule Glorbo.Agent.Server do
   end
 
   defp format_reply_hint(%{"kind" => "task_assignment", "task_id" => tid}) when is_binary(tid) do
-    "Your reply appends as a comment on task `#{tid}` — the Director sees it in the task detail overlay."
+    """
+    Your reply appends as a comment on task `#{tid}` — the Director sees it in the task detail overlay.
+
+    To change the task state, append an `ACTIONS:` block at the very end
+    of your reply. Supported:
+
+        ACTIONS:
+        - reassign_to: <slug>   # change the assignee
+        - status: <status>      # one of: todo, in-progress, pending, done
+
+    Example — read the task, add a short note, hand back to the Director:
+
+    > Got it, reviewed. Handing back.
+    >
+    > ACTIONS:
+    > - reassign_to: director
+    > - status: todo
+
+    Omit the ACTIONS block if no state change is needed.
+    """
   end
 
   defp format_reply_hint(%{"from" => from}) when is_binary(from) and from != "director" do

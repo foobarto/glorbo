@@ -48,8 +48,10 @@ defmodule GlorboWeb.KanbanLive do
     co_path = Path.join([base, "companies", slug])
 
     if File.dir?(co_path) do
-      if connected?(socket),
-        do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:projects")
+      if connected?(socket) do
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:projects")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents:status")
+      end
 
       {:ok,
        socket
@@ -170,22 +172,60 @@ defmodule GlorboWeb.KanbanLive do
   def handle_info({:file_event, rel_path, _events}, socket) do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
 
-    if Regex.match?(@task_path_re, rel_path) do
-      base = base_dir()
+    cond do
+      Regex.match?(@task_path_re, rel_path) ->
+        base = base_dir()
+        slug = socket.assigns.company_slug
 
-      tasks =
-        base
-        |> load_tasks(socket.assigns.company_slug)
-        |> apply_project_filter(socket.assigns.project_filter)
-        |> apply_search_filter(socket.assigns.task_search)
+        tasks =
+          base
+          |> load_tasks(slug)
+          |> apply_project_filter(socket.assigns.project_filter)
+          |> apply_search_filter(socket.assigns.task_search)
 
-      {:noreply, assign(socket, :columns, group_by_column(tasks))}
-    else
-      {:noreply, socket}
+        socket =
+          socket
+          |> assign(:columns, group_by_column(tasks))
+          |> assign(:new_task_projects, list_projects(base, slug))
+          |> assign(:assignee_options, list_assignees(base, slug))
+          |> maybe_refresh_open_task(rel_path)
+
+        {:noreply, socket}
+
+      # New project scaffold drops `projects/<slug>/project.md` —
+      # refresh the project list so the Kanban create-task dialog's
+      # "project" dropdown sees it without a page reload.
+      String.starts_with?(rel_path, "projects/") and String.ends_with?(rel_path, "/project.md") ->
+        base = base_dir()
+        slug = socket.assigns.company_slug
+        {:noreply, assign(socket, :new_task_projects, list_projects(base, slug))}
+
+      true ->
+        {:noreply, socket}
     end
   end
 
+  # Agent busy/idle transition — touch the socket so the sidebar
+  # re-renders with the fresh pill color. We don't store the status
+  # in assigns because the sidebar recomputes it from Registry on
+  # every render.
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  # If the currently-open task overlay's source file was touched
+  # (e.g. an agent appended a task comment), re-materialise the detail
+  # so new comments + status changes appear without closing/reopening.
+  defp maybe_refresh_open_task(%{assigns: %{open_task: nil}} = socket, _rel_path), do: socket
+
+  defp maybe_refresh_open_task(%{assigns: %{open_task: %{task_path: path}}} = socket, rel_path)
+       when path == rel_path do
+    maybe_open_task_from_param(socket, socket.assigns.company_slug, rel_path)
+  end
+
+  defp maybe_refresh_open_task(socket, _rel_path), do: socket
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),

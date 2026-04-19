@@ -60,6 +60,7 @@ defmodule GlorboWeb.ChannelLive do
     if File.exists?(path) do
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels:#{ch}")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
       end
 
       {:ok,
@@ -90,6 +91,10 @@ defmodule GlorboWeb.ChannelLive do
     path = channel_path(socket.assigns.base, socket.assigns.company_slug, socket.assigns.channel)
 
     {:noreply, assign(socket, :messages, load_messages(path, socket.assigns.company_slug))}
+  end
+
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

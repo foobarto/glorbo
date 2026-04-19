@@ -37,8 +37,10 @@ defmodule GlorboWeb.ProjectLive do
          proj_dir <- Path.join([co_dir, "projects", proj]),
          true <- File.dir?(co_dir) or {:no_company, co},
          true <- File.dir?(proj_dir) or {:no_project, proj} do
-      if connected?(socket),
-        do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+      if connected?(socket) do
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+      end
 
       meta = ensure_and_load_meta(proj_dir)
       tasks = list_tasks(base, co, proj)
@@ -93,6 +95,10 @@ defmodule GlorboWeb.ProjectLive do
       true ->
         {:noreply, socket}
     end
+  end
+
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

@@ -91,6 +91,7 @@ defmodule GlorboWeb.AgentLive do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:wake")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:#{ag}:budget")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
 
         case GlorboWeb.StdoutStreamer.start(co, ag, base: base) do
           {:ok, pid} ->
@@ -153,6 +154,19 @@ defmodule GlorboWeb.AgentLive do
 
       _ ->
         {:noreply, assign(socket, :streamer_pid, nil)}
+    end
+  end
+
+  def handle_info({:agent_status, slug, _status}, socket) do
+    # If this IS the agent we're viewing, also re-materialise the detail
+    # so the runtime panel's "server pid / task pid / state" refreshes.
+    if slug == socket.assigns[:agent_slug] do
+      base = GlorboWeb.LiveHelpers.base_dir()
+      co = socket.assigns.company_slug
+      detail = load_agent_detail(base, co, slug)
+      {:noreply, assign(socket, :detail, detail)}
+    else
+      {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
     end
   end
 

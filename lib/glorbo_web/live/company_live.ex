@@ -62,6 +62,7 @@ defmodule GlorboWeb.CompanyLive do
     if File.dir?(co_path) do
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents:status")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:approvals")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:projects")
       end
@@ -108,6 +109,15 @@ defmodule GlorboWeb.CompanyLive do
   def handle_info({:file_event, rel_path, _events}, socket) do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
     base = base_dir()
+    slug = socket.assigns.company_slug
+    co_path = Path.join([base, "companies", slug])
+    data = load_company_data(base, slug, co_path)
+    {:noreply, assign(socket, :company, data)}
+  end
+
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    # Reload agents data so the pills re-derive from Registry.
+    base = GlorboWeb.LiveHelpers.base_dir()
     slug = socket.assigns.company_slug
     co_path = Path.join([base, "companies", slug])
     data = load_company_data(base, slug, co_path)

@@ -52,6 +52,7 @@ defmodule GlorboWeb.AuditLive do
     if connected?(socket) do
       Process.send_after(self(), :poll, @poll_ms)
       Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
     end
 
     {entries, offset, total} = load_tail(path, @page)
@@ -106,6 +107,10 @@ defmodule GlorboWeb.AuditLive do
 
   def handle_info({:file_event, rel, _events}, socket) do
     {:noreply, ChatDrawer.State.maybe_refresh_drawer(socket, rel)}
+  end
+
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

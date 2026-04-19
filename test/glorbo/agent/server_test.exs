@@ -726,4 +726,161 @@ defmodule Glorbo.Agent.ServerTest do
       refute_receive {:dispatched, _, _}, 300
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Task-assignment reply handling (regression suite for the
+  # "agent commented but didn't reassign" UAT class of bugs)
+  # ---------------------------------------------------------------------------
+
+  describe "task-assignment reply" do
+    # Setup: company/agents/<slug>/inbox/<ts>-task-<id>.md + a real
+    # project with a task file. The Server runs the dispatch, the test
+    # fakes the CLI reply, and we assert on the task file contents.
+    defp setup_task_assignment(ctx, task_id, reply_body) do
+      base = Path.join(System.tmp_dir!(), "srv_task_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(base)
+
+      slug = ctx.spec.slug
+      co = ctx.spec.company
+      co_root = Path.join([base, "companies", co])
+
+      # Inbox file (what kanban's maybe_notify_assignee would write)
+      inbox_dir = Path.join([co_root, "agents", slug, "inbox"])
+      File.mkdir_p!(inbox_dir)
+      inbox_file = Path.join(inbox_dir, "1-task-#{task_id}.md")
+
+      File.write!(inbox_file, """
+      ---
+      from: director
+      task_id: "#{task_id}"
+      kind: task_assignment
+      delivered_at: "2026-04-20T00:00:00Z"
+      ---
+
+      Please take a look and reassign back.
+      """)
+
+      # Task file the agent's reply should comment on / mutate
+      tasks_dir = Path.join([co_root, "projects", "demo", "tasks"])
+      File.mkdir_p!(tasks_dir)
+      task_path = Path.join(tasks_dir, "#{task_id}.md")
+
+      File.write!(task_path, """
+      ---
+      title: "Demo"
+      status: "todo"
+      assigned_to: "#{slug}"
+      priority: "low"
+      ---
+
+      Original task body.
+      """)
+
+      rel = "agents/#{slug}/inbox/1-task-#{task_id}.md"
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: reply_body}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{
+        task_id: "t-#{task_id}",
+        task_path: rel,
+        prompt: "x",
+        trigger: :inbox
+      }
+
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      %{task_path: task_path, base: base}
+    end
+
+    test "TA-1: plain reply appends `## ts | slug` comment block", ctx do
+      %{task_path: path} = setup_task_assignment(ctx, "t-01", "Got it.")
+
+      content = File.read!(path)
+      assert content =~ "## "
+      assert content =~ " | #{ctx.spec.slug}"
+      assert content =~ "Got it."
+    end
+
+    test "TA-2: ACTIONS/reassign_to rewrites assigned_to frontmatter", ctx do
+      reply = """
+      Handing back.
+
+      ACTIONS:
+      - reassign_to: director
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-02", reply)
+
+      content = File.read!(path)
+      assert content =~ ~r/^assigned_to: "?director"?$/m
+      # Comment body preserved (sans ACTIONS block)
+      assert content =~ "Handing back."
+      refute content =~ "reassign_to:"
+    end
+
+    test "TA-3: ACTIONS/status rewrites status frontmatter", ctx do
+      reply = """
+      Finished.
+
+      ACTIONS:
+      - status: done
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-03", reply)
+
+      content = File.read!(path)
+      assert content =~ ~r/^status: "?done"?$/m
+    end
+
+    test "TA-4: multiple ACTIONS apply together", ctx do
+      reply = """
+      Reviewed. Back to you.
+
+      ACTIONS:
+      - reassign_to: director
+      - status: todo
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-04", reply)
+
+      content = File.read!(path)
+      assert content =~ ~r/^assigned_to: "?director"?$/m
+      assert content =~ ~r/^status: "?todo"?$/m
+    end
+
+    test "TA-5: unknown ACTIONS keys are ignored (comment still appended)", ctx do
+      reply = """
+      Noted.
+
+      ACTIONS:
+      - delete_task: true
+      - nonsense: 42
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-05", reply)
+
+      content = File.read!(path)
+      assert content =~ "Noted."
+      # Original frontmatter untouched
+      assert content =~ ~r/^status: "?todo"?$/m
+    end
+
+    test "TA-6: prose containing 'status:' in a sentence is NOT parsed as action",
+         ctx do
+      reply = "The current status: unclear. Leaving alone."
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-06", reply)
+
+      content = File.read!(path)
+      # Status frontmatter unchanged (no ACTIONS block = no parse)
+      assert content =~ ~r/^status: "?todo"?$/m
+    end
+  end
 end

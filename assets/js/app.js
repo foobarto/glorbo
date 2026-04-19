@@ -591,9 +591,30 @@ const ResetOnSubmit = {
   },
 }
 
+// Tick a `<time>` element once per second with UTC wall-clock. Used
+// in the statusbar footer so the clock isn't frozen at last-render
+// time. Cheap — one setInterval per page, no server round-trip.
+const ClockTick = {
+  mounted() {
+    const render = () => {
+      const d = new Date()
+      const hh = String(d.getUTCHours()).padStart(2, "0")
+      const mm = String(d.getUTCMinutes()).padStart(2, "0")
+      const ss = String(d.getUTCSeconds()).padStart(2, "0")
+      this.el.textContent = `${hh}:${mm}:${ss} UTC`
+      this.el.setAttribute("datetime", d.toISOString())
+    }
+    render()
+    this._interval = setInterval(render, 1000)
+  },
+  destroyed() {
+    if (this._interval) clearInterval(this._interval)
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

@@ -43,8 +43,10 @@ defmodule GlorboWeb.ApprovalQueueLive do
   defp mount_valid(co, socket) do
     base = base_dir()
 
-    if connected?(socket),
-      do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+    end
 
     sentinels = load_sentinels(base, co)
 
@@ -73,6 +75,10 @@ defmodule GlorboWeb.ApprovalQueueLive do
      socket
      |> assign(:sentinels, sentinels)
      |> assign(:selected_index, clamp_selection(socket.assigns.selected_index, sentinels))}
+  end
+
+  def handle_info({:agent_status, _slug, _status}, socket) do
+    {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

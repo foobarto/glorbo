@@ -55,7 +55,9 @@ defmodule GlorboWeb.Components.Statusbar do
       <span class="gl-statusbar__spacer"></span>
       <span>{@s.director}</span>
       <span class="gl-statusbar__sep">│</span>
-      <time datetime={@s.now_iso}>{@s.now_str}</time>
+      <time id="gl-statusbar-clock" phx-hook="ClockTick" datetime={@s.now_iso}>
+        {@s.now_str}
+      </time>
     </footer>
     """
   end
