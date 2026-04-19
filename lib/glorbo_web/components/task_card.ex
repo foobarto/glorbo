@@ -45,9 +45,12 @@ defmodule GlorboWeb.Components.TaskCard do
       data-task-path={@task.task_path}
       phx-hook="KanbanCard"
       phx-click="open_task"
+      phx-keydown="open_task"
+      phx-key="Enter"
       phx-value-path={@task.task_path}
       role="button"
       tabindex="0"
+      aria-label={"Open task #{@task.task_id}: #{@task.title || "untitled"}"}
     >
       <header class="gl-task-card__header">
         <span class="gl-task-card__id">{@task.task_id}</span>
