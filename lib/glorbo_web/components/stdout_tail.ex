@@ -45,13 +45,20 @@ defmodule GlorboWeb.Components.StdoutTail do
   # before/after every line, stacking visible gaps between lines.
   defp stdout_line(%{line: %{kind: :header}} = assigns) do
     ~H"""
-    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--header"><span class="gl-stdout-tail__marker">dispatch</span><time class="gl-stdout-tail__ts gl-muted">{Map.get(@line, :ts, "")}</time></div>
+    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--header">
+      <span class="gl-stdout-tail__marker">dispatch</span><time class="gl-stdout-tail__ts gl-muted">{Map.get(@line, :ts, "")}</time>
+    </div>
     """
   end
 
   defp stdout_line(%{line: %{kind: :exit}} = assigns) do
     ~H"""
-    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--exit"><span class="gl-stdout-tail__marker">exit</span><span class={["gl-stdout-tail__exit-code", exit_code_class(Map.get(@line, :exit_code))]}>{Map.get(@line, :exit_code, "?")}</span></div>
+    <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--exit">
+      <span class="gl-stdout-tail__marker">exit</span><span class={[
+        "gl-stdout-tail__exit-code",
+        exit_code_class(Map.get(@line, :exit_code))
+      ]}>{Map.get(@line, :exit_code, "?")}</span>
+    </div>
     """
   end
 
