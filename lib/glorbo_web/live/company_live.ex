@@ -838,14 +838,20 @@ defmodule GlorboWeb.CompanyLive do
   defp agent_pill_status(_meta, pct, tracked?, _slug) when tracked? and pct > 90, do: :warn
 
   defp agent_pill_status(_meta, _pct, _tracked?, slug) do
-    if agent_server_running?(slug), do: :alive, else: :idle
+    # Match sidebar semantics: :alive only for actively busy dispatch;
+    # registered-but-quiet is :idle, non-zero exit is :stop.
+    agent_runtime_status(slug)
   end
 
   defp agent_pill_label(_meta, pct, tracked?, _slug) when tracked? and pct > 90,
     do: "budget #{pct}%"
 
   defp agent_pill_label(_meta, _pct, _tracked?, slug) do
-    if agent_server_running?(slug), do: "alive", else: "idle"
+    case agent_runtime_status(slug) do
+      :alive -> "alive"
+      :stop -> "stop"
+      _ -> "idle"
+    end
   end
 
   # Lookup is by slug across all companies because the LV is already
@@ -853,13 +859,29 @@ defmodule GlorboWeb.CompanyLive do
   # and match `{:agent_server, company, slug}` if this ever needs
   # cross-company disambiguation. Today the Registry's uniqueness
   # guarantees safety for a single company/agent pair.
-  defp agent_server_running?(slug) do
+  # Richer pill state: :alive when actively dispatching, :stop on
+  # non-zero exit, :idle when registered-but-quiet or no server.
+  # Matches GlorboWeb.Components.Sidebar.live_status/2.
+  defp agent_runtime_status(slug) do
     case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
-      [{pid, _} | _] when is_pid(pid) -> Process.alive?(pid)
-      _ -> false
+      [{pid, _} | _] when is_pid(pid) ->
+        try do
+          case Glorbo.Agent.Server.status(pid) do
+            %{state: :busy} -> :alive
+            %{last_exit_status: s} when is_integer(s) and s != 0 -> :stop
+            _ -> :idle
+          end
+        rescue
+          _ -> :idle
+        catch
+          :exit, _ -> :idle
+        end
+
+      _ ->
+        :idle
     end
   rescue
-    _ -> false
+    _ -> :idle
   end
 
   # Quick first-line hint from agent's newest inbox file, else fall
