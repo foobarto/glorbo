@@ -26,9 +26,16 @@ is a file.
 > - **GEP-8** — provider registry + CLI auto-detect.
 > - **GEP-9** — protocol-level integration (MCP, ACP) for future
 >   bidirectional needs.
-> - **GEP-10** — agent/skill templates (forward-looking).
+> - **GEP-10** — agent/skill templates.
 > - **GEP-11** — the Zen of Glorbo.
-> - **GEP-12** — no user-input atoms.
+> - **GEP-12** — no user-input atoms (Registry over named processes).
+> - **GEP-13** — project-prefixed task IDs.
+> - **GEP-14** — agent heartbeat semantics and `HEARTBEAT.md`.
+> - **GEP-15** — ALLCAPS convention for agent-facing markdown
+>   (`AGENT.md`, `SOUL.md`, `HEARTBEAT.md`).
+> - **GEP-16** — agent wake + dispatch pipeline.
+> - **GEP-17** — cross-OS sandbox + filesystem-watcher landscape.
+> - **GEP-18** — `agentcompanies/v1` interop (placeholder).
 >
 > **Runtime story:** agents are CLI-tool subprocesses under `bwrap`.
 > No Python on the host. No container runtime. No Ollama binary
