@@ -348,6 +348,50 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
   end
 
   # =====================================================================
+  # II-10: Chatty prose BEFORE and AFTER ACTIONS block
+  # =====================================================================
+
+  describe "II-10: mixed prose + ACTIONS" do
+    test "prose that comes after ACTIONS is ignored; comment body is pre-ACTIONS only",
+         ctx do
+      reply = """
+      Got it, marking done.
+
+      ACTIONS:
+      - status: done
+
+      Also here's some chatty trailing prose the model added.
+      """
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: reply, duration_ms: 0, usage: %{model: "m"}}}
+      end
+
+      _pid = boot_agent(ctx.company, "ceo", dispatch_fun, base: ctx.base)
+
+      {inbox_path, task_path} =
+        deliver_task_assignment(ctx.base, ctx.company, "ceo", "t-mixed", "x")
+
+      Phoenix.PubSub.broadcast(
+        Glorbo.PubSub,
+        "company:#{ctx.company}:inbox",
+        {:file_event, Path.relative_to(inbox_path, ctx.co_root), [:created]}
+      )
+
+      await_file_change(task_path, "status: done", 2_000)
+      content = File.read!(task_path)
+
+      # Status updated
+      assert content =~ ~r/^status: "?done"?$/m
+
+      # Comment body is the PRE-ACTIONS section only
+      assert content =~ "Got it, marking done."
+      # Post-ACTIONS chatter should NOT leak into the comment
+      refute content =~ "chatty trailing prose"
+    end
+  end
+
+  # =====================================================================
   # II-6: ACTIONS at end-of-reply with no trailing newline parses
   # =====================================================================
 
@@ -376,6 +420,50 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       # Frontmatter merge: other keys survive
       assert content =~ ~r/^title:/m
       assert content =~ ~r/^assigned_to:/m
+    end
+  end
+
+  # =====================================================================
+  # II-9: Multi-mention in one message wakes all mentioned agents
+  # =====================================================================
+
+  describe "II-9: multi-mention routing" do
+    test "@ceo @engineer in one message wakes both", ctx do
+      test_pid = self()
+
+      ceo_dispatch = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, "ceo", task.trigger})
+        {:ok, %{exit_status: 0, reply: "", duration_ms: 0, usage: %{model: "m"}}}
+      end
+
+      eng_dispatch = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, "engineer", task.trigger})
+        {:ok, %{exit_status: 0, reply: "", duration_ms: 0, usage: %{model: "m"}}}
+      end
+
+      _ceo = boot_agent(ctx.company, "ceo", ceo_dispatch, base: ctx.base)
+      _eng = boot_agent(ctx.company, "engineer", eng_dispatch, base: ctx.base)
+
+      channels_dir = Path.join([ctx.co_root, "channels"])
+      File.mkdir_p!(channels_dir)
+      File.write!(Path.join(channels_dir, "general.md"), "# general\n")
+
+      File.mkdir_p!(Path.join([ctx.co_root, "agents", "ceo", "inbox", "mentions"]))
+      File.mkdir_p!(Path.join([ctx.co_root, "agents", "engineer", "inbox", "mentions"]))
+
+      audit_pid = spawn_link(fn -> noop_audit_loop() end)
+
+      :ok =
+        GlorboWeb.Actions.post_message(
+          ctx.company,
+          "general",
+          "@ceo @engineer — standup in 5",
+          base: ctx.base,
+          audit: audit_pid
+        )
+
+      assert_receive {:dispatched, "ceo", :mention}, 2_000
+      assert_receive {:dispatched, "engineer", :mention}, 2_000
     end
   end
 

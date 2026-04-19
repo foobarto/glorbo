@@ -138,6 +138,30 @@ defmodule Glorbo.CLI.DispatcherTest do
                Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: silent)
     end
 
+    test "stdout-as-reply fallback: exit=0, non-empty stdout, no reply file → use stdout" do
+      ws = tmp_workspace()
+
+      chatty = fn _a, _env, _b, _r ->
+        {:ok, %{exit_status: 0, stdout: "hello from stdout", usage_dir: nil}}
+      end
+
+      assert {:ok, %{reply: reply}} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: chatty)
+
+      assert reply =~ "hello from stdout"
+    end
+
+    test "stdout-as-reply skipped when exit != 0" do
+      ws = tmp_workspace()
+
+      failed = fn _a, _env, _b, _r ->
+        {:ok, %{exit_status: 1, stdout: "whoops", usage_dir: nil}}
+      end
+
+      assert {:error, :reply_file_missing} =
+               Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: failed)
+    end
+
     test "fails with :reply_file_empty on zero-byte file" do
       ws = tmp_workspace()
       empty = writer_run_fun("")
