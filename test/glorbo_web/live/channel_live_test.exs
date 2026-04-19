@@ -14,7 +14,7 @@ defmodule GlorboWeb.ChannelLiveTest do
     File.write!(path, """
     # general
 
-    ## 2026-04-16T10:00:00Z | Director
+    ## 2026-04-16T10:00:00Z | director
     Hello everyone
 
     ## 2026-04-16T10:01:00Z | CEO
@@ -67,7 +67,7 @@ defmodule GlorboWeb.ChannelLiveTest do
 
     content = File.read!(path)
     assert content =~ "Quick update"
-    assert content =~ "| Director"
+    assert content =~ "| director"
   end
 
   test "empty body rejected", %{conn: conn} do
@@ -142,7 +142,7 @@ defmodule GlorboWeb.ChannelLiveTest do
     File.write!(path, """
     # general
 
-    ## 2026-04-19T08:00:00Z | Director
+    ## 2026-04-19T08:00:00Z | director
     Deployment plan:
 
     ## Step 1: Build

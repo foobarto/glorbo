@@ -228,13 +228,18 @@ defmodule Glorbo.Company.Router do
   defp required_permission_for({:agent, slug}), do: {"agents", "message", slug}
 
   # Channel-write routing: append-only, fsync per line.
+  #
+  # Wrap the body in a `## <iso-ts> | <author>\n<body>` message block so
+  # the chat renderers (ChatDrawer/State, ChannelLive) attribute it to
+  # the posting agent. Without the header the body gets swallowed by the
+  # prior director message block or shown unattributed (UAT 2026-04-19).
   defp perform_routing({:chat, channel}, msg, state) do
     channel_path =
       Path.join([state.base, "companies", state.company, "channels", "#{channel}.md"])
 
     dir = Path.dirname(channel_path)
     state.fs_fun.mkdir_p!.(dir)
-    append_line!(state.fs_fun, channel_path, msg.body)
+    append_line!(state.fs_fun, channel_path, format_chat_post(msg))
     :ok
   rescue
     e ->
@@ -363,6 +368,14 @@ defmodule Glorbo.Company.Router do
   defp append_line!(fs_fun, path, body) do
     line = if String.ends_with?(body, "\n"), do: body, else: body <> "\n"
     fs_fun.open_append_sync!.(path, line)
+  end
+
+  # Wrap an outbox-sourced chat message in the canonical
+  # `## <iso-ts> | <sender>\n<body>` block so ChatDrawer/State and
+  # ChannelLive render the agent's reply with proper attribution.
+  defp format_chat_post(msg) do
+    ts = DateTime.utc_now() |> DateTime.to_iso8601()
+    "\n## #{ts} | #{msg.sender}\n#{String.trim(msg.body)}\n"
   end
 
   defp emit_route_audit(msg, to, state) do

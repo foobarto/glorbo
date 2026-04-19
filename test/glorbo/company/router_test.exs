@@ -344,7 +344,7 @@ defmodule Glorbo.Company.RouterTest do
   # R11 — concurrent routes serialize cleanly
   # ---------------------------------------------------------------------------
 
-  test "R11: 20 concurrent routes produce 20 appended lines in channel" do
+  test "R11: 20 concurrent routes produce 20 attributed message blocks in channel" do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["engineer", "ceo"])
     {name, _pid} = start_router!(base)
@@ -370,8 +370,10 @@ defmodule Glorbo.Company.RouterTest do
     assert Enum.all?(results, &(&1 == :ok))
 
     channel_path = Path.join([base, "companies", @company, "channels", "general.md"])
-    lines = channel_path |> File.read!() |> String.split("\n", trim: true)
-    assert length(lines) == 20
+    content = File.read!(channel_path)
+    header_count = content |> String.split("\n## ") |> length() |> Kernel.-(1)
+    assert header_count == 20
+    assert content =~ "| engineer"
   end
 
   # ---------------------------------------------------------------------------

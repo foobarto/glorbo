@@ -55,6 +55,7 @@ defmodule Glorbo.Agent.Server do
           current_task: String.t() | nil,
           current_task_path: String.t() | nil,
           current_task_trigger: trigger() | nil,
+          current_task_pid: pid() | nil,
           pending_wake: {trigger(), DateTime.t()} | nil,
           last_exit_status: term() | nil
         }
@@ -203,6 +204,9 @@ defmodule Glorbo.Agent.Server do
      %{
        state: state.status,
        current_task: state.current_task,
+       current_task_path: state.current_task_path,
+       current_task_trigger: state.current_task_trigger,
+       current_task_pid: state.current_task_pid,
        pending_wake: state.pending_wake,
        last_exit_status: state.last_exit_status
      }, state}

@@ -221,7 +221,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     Body continues
 
-    ## 2026-04-18T10:00:00Z | Director
+    ## 2026-04-18T10:00:00Z | director
     Actual comment
     """)
 

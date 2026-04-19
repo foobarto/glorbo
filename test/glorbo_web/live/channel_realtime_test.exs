@@ -29,7 +29,7 @@ defmodule GlorboWeb.ChannelRealtimeTest do
       """
       # general
 
-      ## 2026-04-16T10:00:00Z | Director
+      ## 2026-04-16T10:00:00Z | director
       Hello
       """
     )

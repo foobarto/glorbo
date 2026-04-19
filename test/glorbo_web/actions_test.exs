@@ -63,7 +63,7 @@ defmodule GlorboWeb.ActionsTest do
 
       content = File.read!(Path.join([base, "companies", "acme", "channels", "general.md"]))
       assert content =~ "# general\n"
-      assert content =~ "| Director"
+      assert content =~ "| director"
       assert content =~ "hello world"
       # ISO 8601 timestamp shape
       assert content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
@@ -190,7 +190,7 @@ defmodule GlorboWeb.ActionsTest do
       %{task_path: "projects/web/tasks/t-01.md"}
     end
 
-    test "appends `## <ts> | Director\\n<body>` to the task file", %{
+    test "appends `## <ts> | director\\n<body>` to the task file", %{
       base: base,
       audit: audit,
       task_path: tp
@@ -205,7 +205,7 @@ defmodule GlorboWeb.ActionsTest do
       content = File.read!(abs)
 
       assert content =~ "Initial prompt."
-      assert content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.* \| Director/
+      assert content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.* \| director/
       assert content =~ "Looks good."
     end
 

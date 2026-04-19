@@ -73,7 +73,7 @@ defmodule GlorboWeb.Actions do
          path = channel_path(base, company, channel),
          :ok <- ensure_regular_file(path) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      entry = "\n## #{ts} | Director\n#{body}\n"
+      entry = "\n## #{ts} | director\n#{body}\n"
 
       case File.write(path, entry, [:append, :sync]) do
         :ok ->
@@ -139,7 +139,7 @@ defmodule GlorboWeb.Actions do
          abs = Path.join([base, "companies", company, task_path]),
          :ok <- ensure_regular_file(abs) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      entry = "\n## #{ts} | Director\n#{body}\n"
+      entry = "\n## #{ts} | director\n#{body}\n"
 
       case File.write(abs, entry, [:append, :sync]) do
         :ok ->

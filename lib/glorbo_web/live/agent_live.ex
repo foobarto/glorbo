@@ -783,6 +783,33 @@ defmodule GlorboWeb.AgentLive do
           <span class="gl-agent-detail__right-toggle-glyph" aria-hidden="true">⟩</span>
         </button>
         <div class="gl-agent-detail__col" id="gl-agent-right">
+          <section :if={@detail.runtime} class="gl-panel">
+            <header class="gl-panel__header">
+              <span>runtime</span>
+              <StatusPill.status_pill
+                status={if @detail.runtime.state == :busy, do: :alive, else: :idle}
+                label={to_string(@detail.runtime.state)}
+              />
+            </header>
+            <div class="gl-panel__body">
+              <dl class="gl-kv">
+                <dt>server pid</dt>
+                <dd><code>{@detail.runtime.server_pid}</code></dd>
+                <dt :if={@detail.runtime.task_pid}>task pid</dt>
+                <dd :if={@detail.runtime.task_pid}>
+                  <code>{@detail.runtime.task_pid}</code>
+                </dd>
+                <dt :if={@detail.runtime.task_id}>task</dt>
+                <dd :if={@detail.runtime.task_id}>
+                  {@detail.runtime.task_id}
+                  <span :if={@detail.runtime.task_trigger} class="gl-muted">
+                    · {to_string(@detail.runtime.task_trigger)}
+                  </span>
+                </dd>
+              </dl>
+            </div>
+          </section>
+
           <section class="gl-panel">
             <header class="gl-panel__header">
               <span>config</span>
@@ -1017,8 +1044,35 @@ defmodule GlorboWeb.AgentLive do
       outbox: load_outbox_preview(ag_dir),
       sandbox: build_sandbox_preview(spec, co, ag),
       soul: load_soul(ag_dir),
-      files: scan_agent_files(ag_dir)
+      files: scan_agent_files(ag_dir),
+      runtime: load_runtime_status(ag)
     }
+  end
+
+  # Runtime status is derived from the Agent.Server's :status call.
+  # Only useful when the server is alive; nil otherwise (agent dir
+  # exists on disk but not booted — e.g. failed to parse AGENT.md,
+  # or Glorbo is running but this agent's sub-supervisor crashed).
+  defp load_runtime_status(slug) do
+    case find_agent_server(slug) do
+      nil ->
+        nil
+
+      pid ->
+        try do
+          status = Glorbo.Agent.Server.status(pid)
+
+          %{
+            server_pid: inspect(pid),
+            state: status.state,
+            task_pid: status.current_task_pid && inspect(status.current_task_pid),
+            task_id: status.current_task,
+            task_trigger: status.current_task_trigger
+          }
+        catch
+          _, _ -> nil
+        end
+    end
   end
 
   # task #118 — if the agent has a SOUL.md file, render its body on
@@ -1038,8 +1092,8 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
-  defp agent_name(nil, ag), do: String.capitalize(ag)
-  defp agent_name(spec, _ag), do: spec.slug |> to_string() |> String.capitalize()
+  defp agent_name(nil, ag), do: ag
+  defp agent_name(spec, _ag), do: to_string(spec.slug)
 
   defp spec_cap(nil), do: 0.0
   defp spec_cap(%{budget_usd_cents_month: nil}), do: 0.0
