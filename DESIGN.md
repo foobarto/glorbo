@@ -36,6 +36,8 @@ is a file.
 > - **GEP-16** — agent wake + dispatch pipeline.
 > - **GEP-17** — cross-OS sandbox + filesystem-watcher landscape.
 > - **GEP-18** — `agentcompanies/v1` interop (placeholder).
+> - **GEP-19** — director approval workflow protocol (sentinel
+>   contract, `assigned_to` swap, Gate vs UI code paths).
 >
 > **Runtime story:** agents are CLI-tool subprocesses under `bwrap`.
 > No Python on the host. No container runtime. No Ollama binary

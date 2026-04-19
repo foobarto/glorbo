@@ -42,6 +42,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0016 | [Agent Wake + Dispatch Pipeline](./0016-agent-wake-dispatch-pipeline.md)                 | Informational | Implemented |
 | 0017 | [Cross-OS Sandbox and Filesystem Watcher Landscape](./0017-cross-os-sandbox-and-watcher.md) | Informational | Draft       |
 | 0018 | [agentcompanies/v1 interop — adopt paperclip.ai schema?](./0018-agentcompanies-v1-interop.md) | Informational | Placeholder |
+| 0019 | [Director Approval Workflow Protocol](./0019-director-approval-workflow.md)              | Informational | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
