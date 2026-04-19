@@ -273,6 +273,19 @@ defmodule GlorboWeb.StdoutStreamerTest do
 
     assert bodies == ["first", "second", "third"]
 
+    # Backfill is defensively re-sanitized: any stale buffer entries
+    # from before a strip_ansi regex tweak must come out clean even
+    # if the stored body was stored pre-fix. We simulate this by
+    # injecting a dirty payload directly into state.recent via :sys.
+    :sys.replace_state(pid, fn state ->
+      dirty = %{id: 999_999, body: "dirty\rline  ", kind: :body}
+      %{state | recent: [dirty | state.recent]}
+    end)
+
+    payloads = GlorboWeb.StdoutStreamer.backfill(pid)
+    assert "dirty\rline  " not in Enum.map(payloads, & &1.body)
+    assert "dirtyline" in Enum.map(payloads, & &1.body)
+
     # A live-written line should also accumulate into backfill.
     File.write!(path, "fourth\n", [:append])
     Process.sleep(500)

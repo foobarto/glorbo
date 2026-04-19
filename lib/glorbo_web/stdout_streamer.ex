@@ -250,7 +250,25 @@ defmodule GlorboWeb.StdoutStreamer do
     # state.recent is prepended newest-first; reverse so the LV stream
     # inserts them in chronological order (oldest first, matching the
     # live tail order).
-    {:reply, Enum.reverse(state.recent), state}
+    #
+    # Defensive re-strip: the server's buffer can outlive a hot code
+    # replace, and payloads stored before a strip_ansi regex tweak
+    # will still carry CR / OSC residue that renders as ghost gaps
+    # under `white-space: pre-wrap`. Apply the current regex to each
+    # body on the way out — cheap, idempotent, and guarantees the UI
+    # matches the current streamer policy.
+    cleaned =
+      state.recent
+      |> Enum.reverse()
+      |> Enum.map(fn
+        %{body: body} = payload when is_binary(body) ->
+          %{payload | body: body |> strip_ansi() |> String.trim_trailing()}
+
+        other ->
+          other
+      end)
+
+    {:reply, cleaned, state}
   end
 
   @impl GenServer
