@@ -576,9 +576,24 @@ const RightPanelCollapse = {
   },
 }
 
+// Clear a form's inputs after a phx-submit fires. Used on forms
+// that aren't rendered via the <.form> helper (e.g. the bottom
+// chat drawer), so Phoenix's auto-reset-on-<.form>-submit doesn't
+// apply. Phoenix's own submit listener extracts the form payload
+// synchronously before ours runs, so resetting in our `submit`
+// handler doesn't race with the event dispatch.
+const ResetOnSubmit = {
+  mounted() {
+    this.el.addEventListener("submit", () => {
+      // Defer one tick so Phoenix has grabbed values first.
+      setTimeout(() => this.el.reset(), 0)
+    })
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

@@ -94,6 +94,8 @@ defmodule GlorboWeb.Components.ChatDrawer do
         <form
           :if={@current_company != nil}
           phx-submit="chat_drawer_post"
+          phx-hook="ResetOnSubmit"
+          id="gl-chat-drawer-form"
           class="gl-chat-drawer__compose"
         >
           <input
