@@ -692,7 +692,8 @@ defmodule Glorbo.Agent.ServerTest do
           dispatch_fun: dispatch_fun
         )
 
-      {:ok, pubsub: pubsub, base: base, slug: slug, company: company, mentions: mentions, pid: pid}
+      {:ok,
+       pubsub: pubsub, base: base, slug: slug, company: company, mentions: mentions, pid: pid}
     end
 
     test "broadcast {:file_event, agents/<slug>/inbox/mentions/X, [:created]} wakes + dispatches",
