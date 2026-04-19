@@ -441,14 +441,13 @@ defmodule GlorboWeb.AgentLive do
           >
             ✎ edit AGENT.md
           </button>
-          <button
-            type="button"
-            class="gl-btn gl-btn--soon"
-            disabled
-            title="Coming soon — post to #general with @mention for now"
+          <.link
+            navigate={~p"/companies/#{@company_slug}/dms/#{@agent_slug}"}
+            class="gl-btn"
+            title="Open Director ↔ #{@agent_slug} DM"
           >
-            ✉ send message <span class="gl-btn__soon-tag">soon</span>
-          </button>
+            ✉ send message
+          </.link>
           <button
             type="button"
             class="gl-btn gl-btn--deny gl-btn--soon"
