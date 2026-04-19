@@ -596,16 +596,21 @@ defmodule GlorboWeb.CompanyLive do
       |> append_if_nonempty(["--provider", provider])
 
     case Glorbo.CLI.Scaffold.Agent.run(argv) do
-      {:new_agent, 0, _msg} ->
+      {:new_agent, 0, msg} ->
         base = base_dir()
         co_path = Path.join([base, "companies", socket.assigns.company_slug])
         data = load_company_data(base, socket.assigns.company_slug, co_path)
+
+        flash_msg =
+          if String.contains?(msg, "already exists"),
+            do: "Agent #{slug} already exists — no change.",
+            else: "Created agent: #{slug}"
 
         {:noreply,
          socket
          |> assign(:new_agent_open?, false)
          |> assign(:company, data)
-         |> put_flash(:info, "Created agent: #{slug}")}
+         |> put_flash(:info, flash_msg)}
 
       {:new_agent, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}

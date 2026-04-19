@@ -61,14 +61,19 @@ defmodule GlorboWeb.OverviewLive do
 
   def handle_event("new_company_create", %{"slug" => slug}, socket) do
     case Glorbo.CLI.Scaffold.Company.run([slug]) do
-      {:new_company, 0, _msg} ->
+      {:new_company, 0, msg} ->
         Phoenix.PubSub.broadcast(Glorbo.PubSub, "companies", {:company_added, slug})
+
+        flash_msg =
+          if String.contains?(msg, "already exists"),
+            do: "Company #{slug} already exists — no change.",
+            else: "Created company: #{slug}"
 
         {:noreply,
          socket
          |> assign(:new_company_open?, false)
          |> assign(:companies, load_companies())
-         |> put_flash(:info, "Created company: #{slug}")}
+         |> put_flash(:info, flash_msg)}
 
       {:new_company, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}
