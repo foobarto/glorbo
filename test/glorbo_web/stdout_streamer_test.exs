@@ -172,6 +172,23 @@ defmodule GlorboWeb.StdoutStreamerTest do
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
+  test "trims trailing whitespace and \\r from lines", %{
+    base: base,
+    agent: agent,
+    path: path
+  } do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    # Terminal clears / progress bars often emit CRLF or trailing spaces.
+    # Leading whitespace is meaningful for indented output so it must be preserved.
+    File.write!(path, "  indented body   \r\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: body}}, 2_000
+    assert body == "  indented body"
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
   test "lazy-opens a file that doesn't exist at start time", %{base: base} do
     # A different agent to the shared fixture — file intentionally NOT created.
     engineer = "engineer-#{System.unique_integer([:positive])}"
