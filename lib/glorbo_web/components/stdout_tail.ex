@@ -24,7 +24,7 @@ defmodule GlorboWeb.Components.StdoutTail do
 
   def stdout_tail(assigns) do
     ~H"""
-    <div class="gl-stdout-tail" id="stdout-tail-wrap">
+    <div class="gl-stdout-tail" id="stdout-tail-wrap" phx-hook="TailPin">
       <div id="stdout-tail" phx-update="stream">
         <div
           :for={{dom_id, line} <- @stream}

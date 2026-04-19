@@ -526,9 +526,31 @@ const SubmitOnEnter = {
   },
 }
 
+// Pin scroll to the bottom when new lines arrive, BUT leave the user
+// alone if they've scrolled up to read older output. Standard terminal
+// tail-with-follow behaviour.
+const TailPin = {
+  nearBottom() {
+    const el = this.el
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  },
+  mounted() {
+    this.pinned = true
+    this.el.addEventListener("scroll", () => {
+      this.pinned = this.nearBottom()
+    })
+    this.el.scrollTop = this.el.scrollHeight
+  },
+  updated() {
+    if (this.pinned) {
+      this.el.scrollTop = this.el.scrollHeight
+    }
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket
