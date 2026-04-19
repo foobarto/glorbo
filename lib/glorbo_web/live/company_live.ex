@@ -215,6 +215,11 @@ defmodule GlorboWeb.CompanyLive do
                   :for={a <- @company.agents}
                   phx-click="open_agent"
                   phx-value-slug={a.slug}
+                  phx-keydown="open_agent"
+                  phx-key="Enter"
+                  role="link"
+                  tabindex="0"
+                  aria-label={"Open agent #{a.slug}"}
                   class="gl-agent-table__row"
                 >
                   <td><StatusPill.status_pill status={a.pill_status} label={a.pill_label} /></td>
