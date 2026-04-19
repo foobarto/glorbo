@@ -78,6 +78,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:company, data)
        |> assign(:edit_company_md, nil)
        |> assign(:new_agent_open?, false)
+       |> assign(:provider_options, provider_options())
        |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -495,10 +496,7 @@ defmodule GlorboWeb.CompanyLive do
               <span class="gl-form__label">provider</span>
               <select name="provider" class="gl-input">
                 <option value="">(default: claude-code)</option>
-                <option value="claude-code">claude-code</option>
-                <option value="gemini-cli">gemini-cli</option>
-                <option value="codex">codex</option>
-                <option value="opencode">opencode</option>
+                <option :for={p <- @provider_options} value={p}>{p}</option>
               </select>
             </label>
             <p class="gl-muted" style="font-size: 11px;">
@@ -1344,5 +1342,16 @@ defmodule GlorboWeb.CompanyLive do
     else
       s
     end
+  end
+
+  # Providers declared in the registry. Falls back to the bundled
+  # builtins if the registry hasn't been started yet (e.g. tests that
+  # don't boot the full app).
+  defp provider_options do
+    CLIRegistry.list()
+    |> Enum.map(& &1.name)
+    |> Enum.sort()
+  rescue
+    _ -> ~w(claude-code codex gemini-cli hermes opencode pi)
   end
 end
