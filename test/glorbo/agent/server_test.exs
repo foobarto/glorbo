@@ -580,10 +580,6 @@ defmodule Glorbo.Agent.ServerTest do
 
       on_exit(fn -> File.rm_rf!(base) end)
 
-      # Use the real default_inbox_scan through a 3-arity wrapper,
-      # simulating what resolve_task/3 passes.
-      spec = ctx.spec
-
       # Drive through start_server so the full flow runs:
       # wake(:mention, nil) → resolve_task → call_inbox_scan(state, :mention)
       dispatch_fun = fn _spec, task, _opts ->
@@ -648,6 +644,83 @@ defmodule Glorbo.Agent.ServerTest do
       assert status2.state == :idle
       assert status2.current_task == nil
       assert status2.last_exit_status == "stopped_by_director"
+    end
+  end
+
+  # End-to-end regression: the Actions-driven path writes a mention
+  # file under `agents/<slug>/inbox/mentions/` and fires an inotify
+  # event. Watcher broadcasts `{:file_event, rel, events}` on
+  # `company:<co>:inbox`. The Agent.Server's handle_info should
+  # filter by slug, classify as :mention, and dispatch.
+  #
+  # Before this test existed, the chain was only tested in pieces
+  # — `AgentServer.wake(pid, :mention, nil)` verified the wake
+  # semantics, but the PubSub entry point was untested. User bug
+  # "agents not processing chat messages where mentioned by
+  # director" landed precisely in that untested seam.
+  describe "PubSub-driven :mention wake" do
+    setup %{test_pid: test_pid} = ctx do
+      # Start a company-scoped PubSub so broadcasts don't escape
+      # into Glorbo.PubSub (which might not be running under bare
+      # mix test).
+      pubsub = :"pubsub_#{System.unique_integer([:positive])}"
+      start_supervised!({Phoenix.PubSub, name: pubsub})
+
+      base =
+        Path.join(
+          System.tmp_dir!(),
+          "mention-pubsub-#{System.unique_integer([:positive])}"
+        )
+
+      slug = ctx.spec.slug
+      company = "acme"
+      mentions = Path.join([base, "companies", company, "agents", slug, "inbox/mentions"])
+      File.mkdir_p!(mentions)
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      dispatch_fun = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, task.trigger, task.task_path})
+        {:ok, %{exit_status: 0, reply: "ack"}}
+      end
+
+      pid =
+        start_server(ctx,
+          base: base,
+          pubsub: pubsub,
+          dispatch_fun: dispatch_fun
+        )
+
+      {:ok, pubsub: pubsub, base: base, slug: slug, company: company, mentions: mentions, pid: pid}
+    end
+
+    test "broadcast {:file_event, agents/<slug>/inbox/mentions/X, [:created]} wakes + dispatches",
+         %{pubsub: pubsub, company: company, slug: slug, mentions: mentions} do
+      # Seed the actual file so call_inbox_scan(:mention) can read it.
+      path = Path.join(mentions, "1-general.md")
+
+      File.write!(path, """
+      ---
+      channel: general
+      from: director
+      ---
+
+      @#{slug} please respond
+      """)
+
+      # Simulate what the Filesystem.Watcher would broadcast.
+      rel = "agents/#{slug}/inbox/mentions/1-general.md"
+      Phoenix.PubSub.broadcast(pubsub, "company:#{company}:inbox", {:file_event, rel, [:created]})
+
+      assert_receive {:dispatched, :mention, dispatched_path}, 2_000
+      assert dispatched_path =~ "mentions/1-general.md"
+    end
+
+    test "event for a DIFFERENT agent's mentions is ignored",
+         %{pubsub: pubsub, company: company} do
+      rel = "agents/otheragent/inbox/mentions/1-general.md"
+      Phoenix.PubSub.broadcast(pubsub, "company:#{company}:inbox", {:file_event, rel, [:created]})
+
+      refute_receive {:dispatched, _, _}, 300
     end
   end
 end
