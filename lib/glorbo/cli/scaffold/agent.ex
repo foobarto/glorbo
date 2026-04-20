@@ -136,11 +136,29 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
     # HEARTBEAT — #{agent}
 
-    Read `AGENT.md` first. Read `SOUL.md` for tone (if present).
+    Read `AGENT.md` first. Read `SOUL.md` for tone.
 
     Check your inbox. Reply to anything that needs attention.
     Otherwise write a one-line "no action" summary to
     `$GLORBO_REPLY_PATH` and exit cleanly.
+    """)
+
+    # SOUL.md is the tone/voice sibling to AGENT.md (task #118). The
+    # template-backed path resolves it from `priv/templates/souls/<t>.md`;
+    # the default path had no SOUL.md at all, which left AgentLive's
+    # contract-files panel showing a `+ CREATE` placeholder for every
+    # freshly-scaffolded agent. Give the default path a minimal SOUL.md
+    # so the three canonical files (AGENT / HEARTBEAT / SOUL) are always
+    # present after scaffold (PLAN P1-4).
+    File.write!(Path.join(ag_path, "SOUL.md"), """
+    # SOUL — #{agent}
+
+    Tone and voice for #{String.upcase(agent)}. Keep it short, direct,
+    and human. Write in first person. Prefer concrete over abstract.
+
+    Edit this file to shape how the agent speaks in channel messages
+    and task comments. The reply contract in `AGENT.md` still governs
+    the final deliverable; `SOUL.md` governs the *feel*.
     """)
 
     Audit.emit("new_agent", "complete", %{

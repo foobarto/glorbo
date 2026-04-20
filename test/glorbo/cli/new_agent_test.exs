@@ -41,6 +41,16 @@ defmodule Glorbo.CLI.NewAgentTest do
 
       # Empty stdout.log is staged.
       assert File.exists?(Path.join(ag_path, "stdout.log"))
+
+      # All three contract files exist after default scaffold (PLAN P1-4).
+      for contract <- ~w(AGENT.md HEARTBEAT.md SOUL.md) do
+        assert File.exists?(Path.join(ag_path, contract)),
+               "missing contract file: #{contract}"
+      end
+
+      soul = File.read!(Path.join(ag_path, "SOUL.md"))
+      assert soul =~ "SOUL — ceo"
+      assert soul =~ "Tone and voice"
     end
 
     test "--role overrides default role", %{home: home} do
