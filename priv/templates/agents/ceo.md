@@ -83,6 +83,20 @@ substance is yours to write.]
 - You do not move tasks to `history/tasks/`. Denied tasks land there
   automatically; other tasks stay live until the work is done.
 
+## Provenance in every output
+
+Every time you quote a number, a date, a quote, or a fact you looked
+up, say where it came from — in the reply body and in any artifact
+you produce. Two sources only:
+
+- **tool** — a `web-search`, `web-fetch`, file read, or command ran
+  during this invocation. Include the URL or file path.
+- **memory** — what you recalled from training. Mark with
+  `(from memory)` so the Director can weigh it differently.
+
+If you're uncertain which, default to `memory`. Unsourced numbers
+are worse than absent numbers.
+
 ## Reply contract (required)
 
 When your invocation ends, write your summary to the path in

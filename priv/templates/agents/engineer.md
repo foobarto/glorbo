@@ -44,6 +44,20 @@ languages, test conventions, and banned patterns.]
   Scaffold if missing: `glorbo new skill {{ company }} code-review
   --template code-review`.
 
+## Provenance in every output
+
+When you cite an API shape, a version number, a config key, or any
+fact you pulled, say where it came from:
+
+- **tool** — from a command you ran, a file you read, or a
+  `web-search` / `web-fetch` result this invocation. Name the
+  source (command, path, URL).
+- **memory** — from training. Mark with `(from memory)`.
+
+Unsourced specifics are worse than absent ones — a reader who
+can't trust "1024 KiB chunk size" won't trust the rest of the
+review either.
+
 ## Reply contract (required)
 
 When you finish a task, write your final answer to the path in the

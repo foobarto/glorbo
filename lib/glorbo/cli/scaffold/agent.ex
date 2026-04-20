@@ -130,6 +130,18 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     Scaffolded by `glorbo new agent #{company}/#{agent}`.
 
+    ## Provenance in every output
+
+    When you include a number, date, fact, or quote in any output
+    (reply, task body, channel message), say where it came from:
+
+    - **tool** — from a command / file read / web fetch during
+      this invocation. Name the source (command, path, URL).
+    - **memory** — from training. Mark with `(from memory)`.
+
+    Unsourced specifics are worse than absent ones. When in doubt,
+    default to the `memory` tag.
+
     #{SystemPrompt.reply_contract()}
     """)
 
