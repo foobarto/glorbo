@@ -198,9 +198,22 @@ defmodule Glorbo.Doctor do
 
   @spec check_glorbo_dir(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_glorbo_dir(deps) do
-    home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
-    path = Path.join(home_fun.(), ".glorbo")
+    path = glorbo_base(deps)
     write_probe(path, "writable directory", "#{path} (writable)")
+  end
+
+  # Resolves the Glorbo base directory honoring, in precedence:
+  #   1. `deps[:base]` (test injection)
+  #   2. `deps[:home_fun]` + ".glorbo" (legacy test override)
+  #   3. `Glorbo.Filesystem.Hierarchy.default_root/0` (production: reads
+  #      `:glorbo, :glorbo_base` or `GLORBO_HOME` env, falls back to
+  #      `~/.glorbo`)
+  defp glorbo_base(deps) do
+    cond do
+      base = Keyword.get(deps, :base) -> base
+      home_fun = Keyword.get(deps, :home_fun) -> Path.join(home_fun.(), ".glorbo")
+      true -> Glorbo.Filesystem.Hierarchy.default_root()
+    end
   end
 
   @spec check_erts_version(keyword()) :: {:ok | :fail, String.t(), String.t()}
@@ -226,15 +239,13 @@ defmodule Glorbo.Doctor do
 
   @spec check_audit_dir(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_audit_dir(deps) do
-    home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
-    path = Path.join([home_fun.(), ".glorbo", "audit", "_system"])
+    path = Path.join([glorbo_base(deps), "audit", "_system"])
     write_probe(path, "writable append-only audit dir", "#{path} (writable)")
   end
 
   @spec check_sockets_dir(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_sockets_dir(deps) do
-    home_fun = Keyword.get(deps, :home_fun, &System.user_home!/0)
-    path = Path.join([home_fun.(), ".glorbo", "runtime", "sockets"])
+    path = Path.join([glorbo_base(deps), "runtime", "sockets"])
 
     try do
       File.mkdir_p!(path)

@@ -55,11 +55,17 @@ defmodule Glorbo.Filesystem.Hierarchy do
 
   @doc """
   Default root — `~/.glorbo/` expanded against the current user's home.
-  Tests and integration paths override via
-  `config :glorbo, :glorbo_base, "..."`.
+
+  Precedence:
+    1. `config :glorbo, :glorbo_base, "..."` (tests and integration use this)
+    2. `GLORBO_HOME` environment variable (matches CLI lifecycle tasks)
+    3. `~/.glorbo/`
   """
   @spec default_root() :: Path.t()
   def default_root do
-    Application.get_env(:glorbo, :glorbo_base, Path.expand("~/.glorbo"))
+    case Application.get_env(:glorbo, :glorbo_base) do
+      nil -> System.get_env("GLORBO_HOME") || Path.expand("~/.glorbo")
+      base -> base
+    end
   end
 end

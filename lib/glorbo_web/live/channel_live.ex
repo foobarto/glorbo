@@ -237,7 +237,7 @@ defmodule GlorboWeb.ChannelLive do
               value={@new_channel_slug}
               class="gl-input gl-input--sm"
               maxlength="64"
-              pattern="[a-z0-9][a-z0-9-]*"
+              pattern="[a-z0-9][-a-z0-9]*"
               title="Lowercase letters, digits, and dashes"
               placeholder="+ new channel"
               aria-label="New channel name"

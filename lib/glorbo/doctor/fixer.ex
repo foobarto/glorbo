@@ -212,7 +212,7 @@ defmodule Glorbo.Doctor.Fixer do
 
   @doc false
   def fix_audit_dir(_check) do
-    path = Path.expand("~/.glorbo/audit/_system")
+    path = Path.join([Glorbo.Filesystem.Hierarchy.default_root(), "audit", "_system"])
 
     case File.mkdir_p(path) do
       :ok -> {:ok, "created #{path}"}
@@ -222,7 +222,7 @@ defmodule Glorbo.Doctor.Fixer do
 
   @doc false
   def fix_sockets_dir(_check) do
-    path = Path.expand("~/.glorbo/runtime/sockets")
+    path = Path.join([Glorbo.Filesystem.Hierarchy.default_root(), "runtime", "sockets"])
 
     with :ok <- File.mkdir_p(path),
          :ok <- File.chmod(path, 0o700) do

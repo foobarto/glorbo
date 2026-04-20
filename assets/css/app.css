@@ -1277,11 +1277,6 @@ button { font-family: inherit; font-size: inherit; }
   padding-bottom: var(--gl-space-md);
 }
 .gl-task-detail {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 30;
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border-strong);
   border-radius: 4px;
