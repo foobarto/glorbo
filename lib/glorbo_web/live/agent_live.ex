@@ -38,6 +38,7 @@ defmodule GlorboWeb.AgentLive do
   import GlorboWeb.LiveHelpers,
     only: [base_dir: 0, current_year_month: 0, two_dp: 1, zero_dp: 1]
 
+  alias Glorbo.CLI.Registry, as: CLIRegistry
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{StatusPill, StdoutTail}
 
@@ -86,6 +87,8 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:working_on, nil)
         |> assign(:open_file, nil)
         |> assign(:wake_open?, false)
+        |> assign(:config_editing?, false)
+        |> assign(:provider_options, provider_options())
         |> stream(:stdout, [], limit: -1000)
         |> ChatDrawer.State.wire_drawer()
 
@@ -378,6 +381,55 @@ defmodule GlorboWeb.AgentLive do
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}.")}
       end
+    end
+  end
+
+  # paperclip-ux-gaps §5 — the config panel is read-only on mount; the
+  # director clicks "edit" to flip to a structured form that writes the
+  # allow-listed keys back to AGENT.md frontmatter atomically.
+  def handle_event("config_edit", _params, socket),
+    do: {:noreply, assign(socket, :config_editing?, true)}
+
+  def handle_event("config_cancel", _params, socket),
+    do: {:noreply, assign(socket, :config_editing?, false)}
+
+  def handle_event("config_save", params, socket) do
+    agent_md =
+      Glorbo.Agent.FileLayout.agent_md(
+        Path.join([
+          base_dir(),
+          "companies",
+          socket.assigns.company_slug,
+          "agents",
+          socket.assigns.agent_slug
+        ])
+      )
+
+    updates =
+      %{
+        "provider" => params["provider"],
+        "model" => params["model"],
+        "reports_to" => params["reports_to"],
+        "heartbeat" => params["heartbeat"],
+        "network" => params["network"]
+      }
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Map.new()
+
+    case Glorbo.Filesystem.FrontmatterWriter.update_keys(agent_md, updates) do
+      :ok ->
+        base = base_dir()
+        co = socket.assigns.company_slug
+        ag = socket.assigns.agent_slug
+
+        {:noreply,
+         socket
+         |> assign(:detail, load_agent_detail(base, co, ag))
+         |> assign(:config_editing?, false)
+         |> put_flash(:info, "Saved AGENT.md for #{ag}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not save config: #{inspect(reason)}")}
     end
   end
 
@@ -935,10 +987,18 @@ defmodule GlorboWeb.AgentLive do
           <section class="gl-panel">
             <header class="gl-panel__header">
               <span>config</span>
-              <span class="gl-panel__hint">AGENT.md</span>
+              <button
+                :if={!@config_editing?}
+                type="button"
+                class="gl-btn gl-btn--sm"
+                phx-click="config_edit"
+              >
+                edit
+              </button>
+              <span :if={!@config_editing?} class="gl-panel__hint">AGENT.md</span>
             </header>
             <div class="gl-panel__body">
-              <dl class="gl-kv">
+              <dl :if={!@config_editing?} class="gl-kv">
                 <dt>provider</dt>
                 <dd class="gl-accent">{@detail.provider}</dd>
                 <dt>model</dt>
@@ -952,6 +1012,65 @@ defmodule GlorboWeb.AgentLive do
                 <dt>skills</dt>
                 <dd>{Enum.join(@detail.skills, ", ")}</dd>
               </dl>
+              <form :if={@config_editing?} phx-submit="config_save" class="gl-agent-config-form">
+                <label class="gl-form__row">
+                  <span class="gl-form__label">provider</span>
+                  <input
+                    type="text"
+                    name="provider"
+                    value={@detail.provider}
+                    class="gl-input"
+                    list="gl-agent-provider-options"
+                    required
+                  />
+                  <datalist id="gl-agent-provider-options">
+                    <option :for={p <- @provider_options} value={p}></option>
+                  </datalist>
+                </label>
+                <label class="gl-form__row">
+                  <span class="gl-form__label">model</span>
+                  <input type="text" name="model" value={@detail.model} class="gl-input" required />
+                </label>
+                <label class="gl-form__row">
+                  <span class="gl-form__label">reports_to</span>
+                  <input
+                    type="text"
+                    name="reports_to"
+                    value={@detail.reports_to || ""}
+                    class="gl-input"
+                    placeholder="(director)"
+                  />
+                </label>
+                <label class="gl-form__row">
+                  <span class="gl-form__label">heartbeat</span>
+                  <input
+                    type="text"
+                    name="heartbeat"
+                    value={@detail.heartbeat || ""}
+                    class="gl-input"
+                    placeholder="* * * * *  (blank = on-demand)"
+                  />
+                </label>
+                <label class="gl-form__row">
+                  <span class="gl-form__label">network</span>
+                  <select name="network" class="gl-input">
+                    <option value="none" selected={@detail.network == "none"}>none</option>
+                    <option value="outgoing" selected={@detail.network == "outgoing"}>
+                      outgoing
+                    </option>
+                  </select>
+                </label>
+                <footer class="gl-agent-config-form__actions">
+                  <button type="button" class="gl-btn" phx-click="config_cancel">cancel</button>
+                  <button type="submit" class="gl-btn gl-btn--primary">save</button>
+                </footer>
+                <p class="gl-muted" style="font-size: 11px;">
+                  Writes only these keys back to AGENT.md frontmatter — other
+                  keys (skills, permissions, env) stay untouched. Stop the agent
+                  first if you're switching provider/model so the next wake picks
+                  up the change.
+                </p>
+              </form>
             </div>
           </section>
 
@@ -1732,5 +1851,16 @@ defmodule GlorboWeb.AgentLive do
     end
   rescue
     _ -> nil
+  end
+
+  # Provider-name list for the Configuration tab datalist. Same
+  # fallback pattern as CompanyLive — when the registry isn't booted
+  # (tests using just the AgentLive harness), return a static list.
+  defp provider_options do
+    CLIRegistry.list()
+    |> Enum.map(& &1.name)
+    |> Enum.sort()
+  rescue
+    _ -> ~w(claude-code codex gemini-cli hermes opencode pi)
   end
 end

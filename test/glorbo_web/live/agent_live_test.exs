@@ -46,6 +46,48 @@ defmodule GlorboWeb.AgentLiveTest do
     assert content =~ "reason:"
   end
 
+  describe "config tab (paperclip-ux-gaps §5)" do
+    test "edit button flips to structured form", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "config_edit", %{})
+      assert html =~ ~s(phx-submit="config_save")
+      assert html =~ ~s(name="model")
+    end
+
+    test "config_save writes allow-listed keys back to AGENT.md",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      render_submit(view, "config_save", %{
+        "provider" => "opencode",
+        "model" => "lmstudio/qwen/qwen3.6-35b-a3b",
+        "reports_to" => "",
+        "heartbeat" => "* * * * *",
+        "network" => "outgoing"
+      })
+
+      agent_md = Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"])
+      content = File.read!(agent_md)
+      assert content =~ "provider: opencode"
+      assert content =~ "model: lmstudio/qwen/qwen3.6-35b-a3b"
+      assert content =~ "network: outgoing"
+    end
+
+    test "cancel returns to read-only view without writing", %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+      html = render_click(view, "config_cancel", %{})
+      refute html =~ ~s(phx-submit="config_save")
+
+      agent_md = Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"])
+      before_ctime = File.stat!(agent_md).mtime
+      :timer.sleep(10)
+      # Confirm no write happened on cancel
+      assert File.stat!(agent_md).mtime == before_ctime
+    end
+  end
+
   test "history tab lists audit activity filtered to this agent",
        %{conn: conn, base: base} do
     # Seed a mix of audit entries so we can check the filter. Write
