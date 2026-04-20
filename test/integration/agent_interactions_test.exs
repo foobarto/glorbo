@@ -573,13 +573,13 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       task = %{task_id: "s1", task_path: nil, prompt: "x", trigger: :director_request}
       :ok = AgentServer.wake(pid, :director_request, task)
 
-      assert_receive {:agent_status, "ceo", :busy}, 1_000
+      assert_receive {:agent_status, "ceo", :busy, _}, 1_000
 
       # Release the blocking dispatch
       dispatch_task_pid = find_agent_task_pid(pid)
       if is_pid(dispatch_task_pid), do: send(dispatch_task_pid, {:release})
 
-      assert_receive {:agent_status, "ceo", :idle}, 2_000
+      assert_receive {:agent_status, "ceo", :idle, _}, 2_000
     end
   end
 

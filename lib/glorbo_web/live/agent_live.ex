@@ -83,6 +83,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:history, history)
         |> assign(:runs, [])
         |> assign(:runs_expanded, MapSet.new())
+        |> assign(:working_on, nil)
         |> assign(:open_file, nil)
         |> assign(:wake_open?, false)
         |> stream(:stdout, [], limit: -1000)
@@ -159,14 +160,19 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
-  def handle_info({:agent_status, slug, _status}, socket) do
-    # If this IS the agent we're viewing, also re-materialise the detail
-    # so the runtime panel's "server pid / task pid / state" refreshes.
+  def handle_info({:agent_status, slug, _status, working_on}, socket) do
     if slug == socket.assigns[:agent_slug] do
+      # If this IS the agent we're viewing, re-materialise the detail
+      # so the runtime panel refreshes, and stamp the current working-on
+      # task path on the socket so the dashboard renders it immediately.
       base = GlorboWeb.LiveHelpers.base_dir()
       co = socket.assigns.company_slug
       detail = load_agent_detail(base, co, slug)
-      {:noreply, assign(socket, :detail, detail)}
+
+      {:noreply,
+       socket
+       |> assign(:detail, detail)
+       |> assign(:working_on, working_on)}
     else
       {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
     end
@@ -534,6 +540,9 @@ defmodule GlorboWeb.AgentLive do
           </h1>
           <p class="gl-overview__path">
             <span class="gl-muted">~/.glorbo/companies/{@company_slug}/agents/</span>{@agent_slug}<span class="gl-muted">/AGENT.md</span>
+          </p>
+          <p :if={@working_on} class="gl-agent-detail__working-on gl-muted">
+            working on <span class="gl-tabular">{@working_on}</span>
           </p>
         </div>
         <div class="gl-overview__actions">

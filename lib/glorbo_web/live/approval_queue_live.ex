@@ -77,7 +77,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
      |> assign(:selected_index, clamp_selection(socket.assigns.selected_index, sentinels))}
   end
 
-  def handle_info({:agent_status, _slug, _status}, socket) do
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket) do
     {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 

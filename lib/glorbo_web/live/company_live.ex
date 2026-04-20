@@ -115,7 +115,7 @@ defmodule GlorboWeb.CompanyLive do
     {:noreply, assign(socket, :company, data)}
   end
 
-  def handle_info({:agent_status, _slug, _status}, socket) do
+  def handle_info({:agent_status, slug, status, working_on}, socket) do
     # The agent grid's pill_status is snapshotted at build time (see
     # build_agent_row → agent_pill_status → agent_runtime_status). For
     # the pills to re-derive we have to rebuild the agents list. Other
@@ -123,9 +123,14 @@ defmodule GlorboWeb.CompanyLive do
     # duration of a dispatch flip, so we only refresh `agents` +
     # dependent stats — cheaper than the full load_company_data.
     base = GlorboWeb.LiveHelpers.base_dir()
-    slug = socket.assigns.company_slug
-    co_path = Path.join([base, "companies", slug])
-    agents = load_agents(base, slug, co_path)
+    co_slug = socket.assigns.company_slug
+    co_path = Path.join([base, "companies", co_slug])
+    agents = load_agents(base, co_slug, co_path)
+
+    # Inject the working-on path for the agent that just flipped state
+    # so the roster renders it immediately — don't wait for the next
+    # inotify sweep.
+    agents = Enum.map(agents, &maybe_stamp_working_on(&1, slug, status, working_on))
 
     company =
       socket.assigns[:company]
@@ -139,6 +144,14 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp maybe_stamp_working_on(agent_row, slug, :busy, path) when is_binary(path) do
+    if agent_row.slug == slug, do: Map.put(agent_row, :working_on, path), else: agent_row
+  end
+
+  defp maybe_stamp_working_on(agent_row, slug, _status, _) do
+    if agent_row.slug == slug, do: Map.put(agent_row, :working_on, nil), else: agent_row
+  end
 
   @impl true
   def render(assigns) do
@@ -274,7 +287,12 @@ defmodule GlorboWeb.CompanyLive do
                     <div class="gl-agent-table__name">{a.slug}</div>
                     <div class="gl-agent-table__role gl-muted">{a.role}</div>
                   </td>
-                  <td class="gl-muted gl-agent-table__activity">{a.activity}</td>
+                  <td class="gl-muted gl-agent-table__activity">
+                    <div :if={a[:working_on]} class="gl-agent-table__working-on">
+                      working on <span class="gl-tabular">{a[:working_on]}</span>
+                    </div>
+                    <div :if={!a[:working_on]}>{a.activity}</div>
+                  </td>
                   <td>
                     <div>{a.provider}</div>
                     <div class="gl-muted gl-agent-table__model">{a.model}</div>

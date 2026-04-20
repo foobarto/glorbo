@@ -97,7 +97,7 @@ defmodule GlorboWeb.ProjectLive do
     end
   end
 
-  def handle_info({:agent_status, _slug, _status}, socket) do
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket) do
     {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 

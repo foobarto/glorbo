@@ -209,7 +209,7 @@ defmodule GlorboWeb.KanbanLive do
   # re-renders with the fresh pill color. We don't store the status
   # in assigns because the sidebar recomputes it from Registry on
   # every render.
-  def handle_info({:agent_status, _slug, _status}, socket) do
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket) do
     {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
   end
 

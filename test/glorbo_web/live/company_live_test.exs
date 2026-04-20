@@ -30,4 +30,29 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert {:error, {:live_redirect, %{to: "/companies"}}} =
              live(conn, "/companies/ghost")
   end
+
+  test "agent roster renders working-on line when :agent_status is :busy",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :busy, "projects/foo/tasks/bar.md"}
+    )
+
+    Process.sleep(50)
+    html = render(view)
+    assert html =~ "working on"
+    assert html =~ "projects/foo/tasks/bar.md"
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :idle, nil}
+    )
+
+    Process.sleep(50)
+    refute render(view) =~ "projects/foo/tasks/bar.md"
+  end
 end

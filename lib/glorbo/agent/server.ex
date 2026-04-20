@@ -465,12 +465,20 @@ defmodule Glorbo.Agent.Server do
   # Subscribers (sidebar-hosting LVs) re-assign + re-render so pill dots
   # reflect the live state without waiting for a nav event. Best-effort —
   # PubSub down shouldn't crash the Server.
-  defp broadcast_status(%{pubsub: pubsub, company: co, spec: spec, status: status}) do
-    Phoenix.PubSub.broadcast(
-      pubsub,
-      "company:#{co}:agents:status",
-      {:agent_status, spec.slug, status}
-    )
+  #
+  # The `:busy` variant carries the current task path so CompanyLive's
+  # roster + AgentLive's dashboard can render a "working on: X" line
+  # without subscribing to the full dispatch stream (PLAN P1-2).
+  defp broadcast_status(state) do
+    %{pubsub: pubsub, company: co, spec: spec, status: status} = state
+
+    message =
+      case status do
+        :busy -> {:agent_status, spec.slug, :busy, state.current_task_path}
+        other -> {:agent_status, spec.slug, other, nil}
+      end
+
+    Phoenix.PubSub.broadcast(pubsub, "company:#{co}:agents:status", message)
   rescue
     _ -> :ok
   end

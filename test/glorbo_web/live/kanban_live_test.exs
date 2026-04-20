@@ -317,7 +317,7 @@ defmodule GlorboWeb.KanbanLiveTest do
     Phoenix.PubSub.broadcast(
       Glorbo.PubSub,
       "company:acme:agents:status",
-      {:agent_status, "ceo", :busy}
+      {:agent_status, "ceo", :busy, "projects/foo/tasks/bar.md"}
     )
 
     # Give the message time to flow through
