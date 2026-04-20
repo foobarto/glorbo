@@ -64,9 +64,13 @@ defmodule GlorboWeb.Router do
   end
 
   # T2-B (#232) — Ctrl+K content search. JSON endpoint consumed by
-  # the palette. Pipes through :api (no CSRF, JSON accept).
+  # the palette. Pipes through :api AND :dashboard — the same bearer-
+  # token gate that protects the LiveView surface also protects this
+  # endpoint on LAN exposure. Otherwise, with `dashboard_token:` set,
+  # the browser UI would be gated but task titles would be enumerable
+  # via `curl /api/search?co=<slug>&q=<prefix>`.
   scope "/api", GlorboWeb do
-    pipe_through :api
+    pipe_through [:api, :dashboard]
 
     get "/search", SearchController, :search
   end

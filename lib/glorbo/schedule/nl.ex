@@ -29,8 +29,9 @@ defmodule Glorbo.Schedule.NL do
     * `"daily at <time>"` → same as `every <time>`.
     * `"every monday at 9am"` (any weekday name) → weekday cron.
     * `"every hour"` → `0 * * * *`.
-    * `"every <N> minutes"` (5 / 10 / 15 / 20 / 30 / 60) →
-      `*/N * * * *`.
+    * `"every <N> minutes"` (1, 2, 5, 10, 15, 20, 30, 60) →
+      `*/N * * * *`. `60` normalises to `every hour`. Sub-minute or
+      non-divisor values (7, 23, …) are rejected.
 
   Everything else returns `:error`.
   """

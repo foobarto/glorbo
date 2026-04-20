@@ -311,7 +311,8 @@ defmodule Glorbo.TaskDefinition do
   @spec write_frontmatter(Path.t(), map()) :: :ok | {:error, term()}
   def write_frontmatter(file_path, updates) when is_binary(file_path) and is_map(updates) do
     with {:ok, content} <- File.read(file_path),
-         {:ok, new_content} <- replace_frontmatter(content, updates) do
+         rewritten <- maybe_loop_back_recurring(content, updates),
+         {:ok, new_content} <- replace_frontmatter(content, rewritten) do
       atomic_write(file_path, new_content)
     end
   end

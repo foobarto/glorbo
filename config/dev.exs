@@ -13,7 +13,9 @@ config :glorbo, Glorbo.Repo,
 config :glorbo, GlorboWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: 4000],
+  # Honour PORT env var so `PORT=4001 mix phx.server` can run a UAT
+  # instance alongside a live dev server on 4000 (user bug report).
+  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

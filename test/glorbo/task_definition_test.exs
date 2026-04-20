@@ -522,6 +522,25 @@ defmodule Glorbo.TaskDefinitionTest do
       assert td.status == "todo"
     end
 
+    test "T24e2: write_frontmatter also loops back (agent-report / denial path)",
+         ctx do
+      content = """
+      ---
+      title: weekly retro
+      status: in-progress
+      schedule: every friday at 5pm
+      ---
+      """
+
+      path = write_task(ctx, "t-r2a.md", content)
+
+      assert :ok =
+               TaskDefinition.write_frontmatter(path, %{status: "done", title: "weekly retro"})
+
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "todo"
+    end
+
     test "T24e: other statuses on recurring tasks pass through unchanged", ctx do
       content = """
       ---
