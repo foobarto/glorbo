@@ -77,6 +77,7 @@ defmodule Glorbo.TaskDefinition do
           goal: String.t() | nil,
           model: String.t() | nil,
           provider: String.t() | nil,
+          schedule: String.t() | nil,
           prompt_body: String.t(),
           file_path: String.t()
         }
@@ -95,6 +96,7 @@ defmodule Glorbo.TaskDefinition do
     :goal,
     :model,
     :provider,
+    :schedule,
     :prompt_body,
     :file_path
   ]
@@ -163,7 +165,8 @@ defmodule Glorbo.TaskDefinition do
          severity: coerce_severity(meta["severity"]),
          goal: as_string(meta["goal"]),
          model: as_string(meta["model"]),
-         provider: as_string(meta["provider"])
+         provider: as_string(meta["provider"]),
+         schedule: as_string(meta["schedule"])
        }}
     end
   end
@@ -245,8 +248,39 @@ defmodule Glorbo.TaskDefinition do
   def write(file_path, updates) when is_binary(file_path) and is_map(updates) do
     with :ok <- validate_keys(updates),
          {:ok, content} <- File.read(file_path),
-         {:ok, new_content} <- substitute_frontmatter(content, updates) do
+         rewritten <- maybe_loop_back_recurring(content, updates),
+         {:ok, new_content} <- substitute_frontmatter(content, rewritten) do
       atomic_write(file_path, new_content)
+    end
+  end
+
+  # #237: recurring tasks (frontmatter `schedule: <NL>`) loop back to
+  # `todo` instead of `done`. Applied uniformly across every call site
+  # (Kanban drag-to-done, agent self-report, director action) so
+  # nobody has to remember this rule. Non-scheduled tasks behave
+  # unchanged. Accepts both atom- and string-keyed updates maps
+  # because callers use both shapes interchangeably.
+  defp maybe_loop_back_recurring(content, updates) do
+    cond do
+      Map.get(updates, :status) == "done" and recurring?(content) ->
+        Map.put(updates, :status, "todo")
+
+      Map.get(updates, "status") == "done" and recurring?(content) ->
+        Map.put(updates, "status", "todo")
+
+      true ->
+        updates
+    end
+  end
+
+  defp recurring?(content) do
+    case Frontmatter.parse(content) do
+      {:ok, fm, _body} ->
+        value = to_string(fm["schedule"] || "")
+        value != ""
+
+      _ ->
+        false
     end
   end
 
@@ -492,6 +526,7 @@ defmodule Glorbo.TaskDefinition do
        goal: partial.goal,
        model: partial[:model],
        provider: partial[:provider],
+       schedule: partial[:schedule],
        prompt_body: body || "",
        file_path: file_path
      }}

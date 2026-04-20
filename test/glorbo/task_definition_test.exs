@@ -454,4 +454,88 @@ defmodule Glorbo.TaskDefinitionTest do
     assert td.model == nil
     assert td.provider == nil
   end
+
+  # T24 — #237: recurring tasks
+  describe "recurring tasks (#237)" do
+    test "T24a: schedule field parses into td.schedule", ctx do
+      content = """
+      ---
+      title: weekly summary
+      status: todo
+      schedule: every monday at 9am
+      ---
+      body
+      """
+
+      path = write_task(ctx, "t-r1.md", content)
+
+      assert {:ok, td} =
+               TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      assert td.schedule == "every monday at 9am"
+    end
+
+    test "T24b: writing status=done on a recurring task loops back to todo", ctx do
+      content = """
+      ---
+      title: daily standup review
+      status: in-progress
+      schedule: every morning
+      ---
+      """
+
+      path = write_task(ctx, "t-r2.md", content)
+
+      assert :ok = TaskDefinition.write(path, %{status: "done"})
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "todo"
+    end
+
+    test "T24c: non-recurring task still transitions to done", ctx do
+      content = """
+      ---
+      title: one-off
+      status: in-progress
+      ---
+      """
+
+      path = write_task(ctx, "t-r3.md", content)
+
+      assert :ok = TaskDefinition.write(path, %{status: "done"})
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "done"
+    end
+
+    test "T24d: loop-back works with string-keyed updates", ctx do
+      content = """
+      ---
+      title: hourly check
+      status: in-progress
+      schedule: every hour
+      ---
+      """
+
+      path = write_task(ctx, "t-r4.md", content)
+
+      assert :ok = TaskDefinition.write(path, %{"status" => "done"})
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "todo"
+    end
+
+    test "T24e: other statuses on recurring tasks pass through unchanged", ctx do
+      content = """
+      ---
+      title: weekly
+      status: todo
+      schedule: every monday at 9am
+      ---
+      """
+
+      path = write_task(ctx, "t-r5.md", content)
+
+      assert :ok = TaskDefinition.write(path, %{status: "in-progress"})
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "in-progress"
+    end
+  end
 end

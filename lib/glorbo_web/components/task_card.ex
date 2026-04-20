@@ -76,6 +76,13 @@ defmodule GlorboWeb.Components.TaskCard do
         >
           ⚠ gated
         </span>
+        <span
+          :if={recurring?(@task)}
+          class="gl-task-card__recurring"
+          title={"Recurring: " <> (Map.get(@task, :schedule) || "")}
+        >
+          ↻ {Map.get(@task, :schedule)}
+        </span>
       </header>
       <div class="gl-task-card__title">{@task.title || @task.task_id}</div>
       <div class="gl-task-card__meta">
@@ -97,5 +104,10 @@ defmodule GlorboWeb.Components.TaskCard do
       </div>
     </article>
     """
+  end
+
+  defp recurring?(task) do
+    value = Map.get(task, :schedule)
+    is_binary(value) and String.trim(value) != ""
   end
 end
