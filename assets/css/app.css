@@ -462,6 +462,64 @@ button { font-family: inherit; font-size: inherit; }
   gap: var(--gl-space-md);
 }
 
+/* paperclip-ux-gaps §4: "Last 14 days" strip. Same 4-col layout,
+   tighter vertical breathing room since each tile carries less
+   copy than the primary stat cards. */
+.gl-overview__stats--14d .gl-stat-card { padding: var(--gl-space-sm) var(--gl-space-md); }
+.gl-stat-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-stat-card__head strong { font-size: 18px; }
+.gl-stat-breakdown {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 2px;
+}
+.gl-stat-breakdown__head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-stat-breakdown__head strong { font-size: 18px; color: var(--gl-fg); }
+.gl-stat-breakdown__bar {
+  display: flex;
+  height: 6px;
+  background: var(--gl-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gl-stat-breakdown__seg {
+  display: block;
+  height: 100%;
+}
+.gl-stat-breakdown__legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg);
+}
+.gl-stat-breakdown__legend li { display: flex; align-items: center; gap: 4px; }
+.gl-stat-breakdown__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
 .gl-overview__main {
   display: grid;
   grid-template-columns: 1fr;

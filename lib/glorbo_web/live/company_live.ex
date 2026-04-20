@@ -41,7 +41,7 @@ defmodule GlorboWeb.CompanyLive do
   alias Glorbo.CLI.Registry.Provider
   alias Glorbo.Filesystem.Frontmatter
   alias GlorboWeb.Components.ChatDrawer
-  alias GlorboWeb.Components.{StatCard, StatusPill}
+  alias GlorboWeb.Components.{Spark, StatBreakdown, StatCard, StatusPill}
 
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
@@ -247,6 +247,44 @@ defmodule GlorboWeb.CompanyLive do
           sub="from agent.complete audit events"
           spark={@company.sparks.invocations}
           spark_color="var(--gl-violet)"
+        />
+      </div>
+
+      <%!--
+        paperclip-ux-gaps §4 — "Last 14 days" strip.
+        Four glanceable tiles: Run Activity / Success Rate /
+        Tasks by Status / Tasks by Priority. Reuses the existing
+        Spark component for the two time-series tiles.
+      --%>
+      <div class="gl-overview__stats gl-overview__stats--14d">
+        <article class="gl-stat-card">
+          <header class="gl-stat-card__head">
+            <span class="gl-muted">run activity · 14d</span>
+            <strong>{@company.rollups.run_activity_total}</strong>
+          </header>
+          <Spark.spark
+            data={Enum.map(@company.rollups.run_activity, &elem(&1, 1))}
+            label="Daily agent.dispatch counts, last 14 days"
+          />
+        </article>
+        <article class="gl-stat-card">
+          <header class="gl-stat-card__head">
+            <span class="gl-muted">success rate · 14d</span>
+            <strong>{success_rate_label(@company.rollups.success_rate_today)}</strong>
+          </header>
+          <Spark.spark
+            data={Enum.map(@company.rollups.success_rate, &success_bar(&1))}
+            color="var(--gl-success)"
+            label="Daily success rate of agent.complete, last 14 days"
+          />
+        </article>
+        <StatBreakdown.stat_breakdown
+          label="tasks by status"
+          buckets={@company.rollups.tasks_by_status}
+        />
+        <StatBreakdown.stat_breakdown
+          label="tasks by priority"
+          buckets={@company.rollups.tasks_by_priority}
         />
       </div>
 
@@ -853,6 +891,10 @@ defmodule GlorboWeb.CompanyLive do
       projects: projects_stats,
       provider_summary: providers_summary,
       sparks: sparks,
+      # paperclip-ux-gaps §4 — Run-activity / success-rate / tasks-by-
+      # status / tasks-by-priority tiles. Run-activity and success-rate
+      # feed the Spark component; the two tasks-by-* feed StatBreakdown.
+      rollups: load_rollups(base, slug, co_path),
       org_chart: build_org_chart(agents)
     }
   end
@@ -1416,6 +1458,48 @@ defmodule GlorboWeb.CompanyLive do
     _ -> nil
   catch
     _, _ -> nil
+  end
+
+  defp success_rate_label(nil), do: "—"
+  defp success_rate_label(pct) when is_integer(pct), do: "#{pct}%"
+
+  # For the success-rate spark we feed the component `nil` days as 0
+  # bars — the caller already shows the latest percentage in the head.
+  defp success_bar({_date, nil}), do: 0
+  defp success_bar({_date, pct}) when is_integer(pct), do: pct
+
+  # paperclip-ux-gaps §4 — 14-day rollups for the "Last 14 days"
+  # strip (Run Activity / Success Rate / Tasks by Status / Tasks by
+  # Priority). `Glorbo.Activity.Rollup` owns the parsing; we shape
+  # the result into a render-friendly map.
+  defp load_rollups(base, slug, co_path) do
+    runs = Glorbo.Activity.Rollup.runs_per_day(base, slug)
+    success = Glorbo.Activity.Rollup.success_rate_per_day(base, slug)
+    status = Glorbo.Activity.Rollup.tasks_by_status(co_path)
+    priority = Glorbo.Activity.Rollup.tasks_by_priority(co_path)
+
+    %{
+      run_activity: runs,
+      run_activity_total: runs |> Enum.map(&elem(&1, 1)) |> Enum.sum(),
+      success_rate: success,
+      success_rate_today:
+        case List.last(success) do
+          {_d, pct} when is_integer(pct) -> pct
+          _ -> nil
+        end,
+      tasks_by_status: status,
+      tasks_by_priority: priority
+    }
+  rescue
+    _ ->
+      %{
+        run_activity: [],
+        run_activity_total: 0,
+        success_rate: [],
+        success_rate_today: nil,
+        tasks_by_status: [],
+        tasks_by_priority: []
+      }
   end
 
   # Sparklines — hour-bucket audit events into 30 bars (last 30h).
