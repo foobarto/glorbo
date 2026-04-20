@@ -240,6 +240,11 @@ Each lands as its own commit, gated on `mix precommit` + CI green.
 | 12 | `d65d66c` | Router picks up agent-authored `/outbox/tasks/` + `/outbox/comments/` |
 | 13 | `0eef9da` | skill doc describes new outbox routes |
 | 14 | `7642ea3` | bwrap `/workspace/outbox` alias + opencode permission bypass + frontmatter validation |
+| 15 | `40e4831` | P2-1 — InboxLive at `/companies/:co/inbox` with Mine/Recent/All/Archive filter tabs |
+| 16 | `d813894` | P2-2 — goals as `company.md` frontmatter; tasks get `goal:` field; Kanban `?goal=` filter |
+| 17 | `9f11287` | P2-3 — `<ACTOR> <verb> <OBJECT>` sentence renderer for AuditEntry |
+| 18 | `c21ec34` | Stretch — `provenance-auditor` template (narrow CritiqueOps variant) |
+| 19 | `d4bd6d2` | Stretch — shared `TaskDetailForm` component; TaskLive gains save/delete surface |
 
 ## Paperclip-baseline parity — MET 2026-04-20
 
@@ -251,15 +256,15 @@ reads the `glorbo` skill, files three hire-request tasks to
 Director action. Same outcome shape paperclip produces via its
 HTTP `hire_agent` approval flow — just filesystem-first.
 
-## Items still open
+## Items still open (none from original plan)
 
-- **P2-1** Inbox rename (`ApprovalQueueLive → InboxLive` + Mine/Recent/Unread/All/Archive tabs).
-- **P2-2** Goals as `company.md` frontmatter. User steer: no
-  sub-issues; agents reference each other via body/comment text
-  (already covered by autolinker).
-- **P2-3** Activity feed with `<ACTOR> <verb> <OBJECT>` framing.
-- Extract the Kanban task-detail form into a shared component so
-  TaskLive's page gets the full edit surface (currently read + comment
-  only; save/delete/status flip still require opening the shelf).
-- Agent template for a "provenance-auditor" variant of CritiqueOps
-  (stretch).
+All P1 and P2 items plus the two stretch items shipped. Next
+iterations would involve genuinely new scope:
+
+- TaskLive body editing (currently frontmatter-only on the page;
+  body edit stays in the Kanban shelf). Requires a small safe
+  YAML emitter or a `write_body/2` helper on `TaskDefinition`.
+- Inbox @-mention + task-assignment feeds beyond approvals (needs
+  new event sources to subscribe to).
+- Archive actions on the InboxLive archive tab.
+- Cost/budget page (deferred in the original PLAN).
