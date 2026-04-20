@@ -83,6 +83,7 @@ defmodule GlorboWeb.GoalsLiveTest do
 
   test "empty state when no goals + no unassigned tasks", %{conn: conn, base: base} do
     File.rm_rf!(Path.join([base, "companies/acme/projects"]))
+
     File.write!(Path.join([base, "companies", "acme", "company.md"]), """
     ---
     slug: acme

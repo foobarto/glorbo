@@ -16,6 +16,7 @@ defmodule GlorboWeb.Components.ChannelMessage do
   """
   use Phoenix.Component
 
+  alias GlorboWeb.Components.AuditEntry
   alias GlorboWeb.TimeFormat
 
   attr :message, :map, required: true
@@ -26,6 +27,16 @@ defmodule GlorboWeb.Components.ChannelMessage do
     ~H"""
     <article class={["gl-channel-message", "gl-channel-message--" <> Atom.to_string(@kind)]}>
       <header class="gl-channel-message__meta">
+        <span
+          class={[
+            "gl-avatar",
+            "gl-avatar--" <> AuditEntry.actor_kind(@message.author)
+          ]}
+          aria-hidden="true"
+          title={@message.author}
+        >
+          {AuditEntry.actor_initials(@message.author)}
+        </span>
         <span class="gl-channel-message__author">{@message.author}</span>
         <time
           class="gl-tabular gl-channel-message__time"

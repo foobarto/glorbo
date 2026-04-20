@@ -26,6 +26,7 @@ defmodule GlorboWeb.InboxLive do
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
   alias Glorbo.Inbox.Archive
+  alias GlorboWeb.Components.AuditEntry
   alias GlorboWeb.Components.ChatDrawer
 
   @valid_tabs ~w(mine recent all archive)
@@ -372,6 +373,16 @@ defmodule GlorboWeb.InboxLive do
         <ul :if={@visible_audits != []} class="gl-inbox__list gl-inbox__audit">
           <li :for={row <- @visible_audits} class="gl-inbox__audit-row">
             <span class="gl-muted gl-tabular">{Map.get(row, "ts", "")}</span>
+            <span
+              class={[
+                "gl-avatar",
+                "gl-avatar--" <> AuditEntry.actor_kind(Map.get(row, "actor", "system"))
+              ]}
+              aria-hidden="true"
+              title={Map.get(row, "actor", "system")}
+            >
+              {AuditEntry.actor_initials(Map.get(row, "actor", "system"))}
+            </span>
             <span class="gl-inbox__audit-actor">{Map.get(row, "actor", "system")}</span>
             <span class="gl-inbox__audit-action">{Map.get(row, "action", "?")}</span>
             <span :if={Map.get(row, "target")} class="gl-muted gl-inbox__audit-target">
@@ -425,6 +436,16 @@ defmodule GlorboWeb.InboxLive do
         <ul :if={@archived_audits != []} class="gl-inbox__list gl-inbox__audit">
           <li :for={row <- @archived_audits} class="gl-inbox__audit-row">
             <span class="gl-muted gl-tabular">{Map.get(row, "ts", "")}</span>
+            <span
+              class={[
+                "gl-avatar",
+                "gl-avatar--" <> AuditEntry.actor_kind(Map.get(row, "actor", "system"))
+              ]}
+              aria-hidden="true"
+              title={Map.get(row, "actor", "system")}
+            >
+              {AuditEntry.actor_initials(Map.get(row, "actor", "system"))}
+            </span>
             <span class="gl-inbox__audit-actor">{Map.get(row, "actor", "system")}</span>
             <span class="gl-inbox__audit-action">{Map.get(row, "action", "?")}</span>
             <span :if={Map.get(row, "target")} class="gl-muted gl-inbox__audit-target">
