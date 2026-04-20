@@ -30,33 +30,111 @@ defmodule GlorboWeb.Components.AuditEntry do
   attr :id, :string, required: true
 
   def audit_entry(assigns) do
+    sentence = to_sentence(assigns.entry)
+    assigns = assign(assigns, :sentence, sentence)
+
     ~H"""
     <div
       class={["gl-audit-row", @expanded && "gl-audit-row--open"]}
       role="button"
       tabindex="0"
       aria-expanded={to_string(@expanded)}
-      aria-label={"Audit event #{@entry["action"]} by #{@entry["actor"]}"}
+      aria-label={@sentence}
       phx-click="toggle"
       phx-value-id={@id}
       phx-keydown="toggle"
       phx-key="Enter"
     >
       <time class="gl-audit-row__ts" datetime={@entry["ts"]}>{format_ts(@entry["ts"])}</time>
-      <span class={["gl-audit-row__actor", actor_class(@entry["actor"])]}>{@entry["actor"]}</span>
-      <span class={["gl-audit-row__action", action_class(@entry["action"])]}>
-        {@entry["action"]}
+      <span class="gl-audit-row__sentence">{@sentence}</span>
+      <span class={["gl-audit-row__actor gl-muted", actor_class(@entry["actor"])]}>
+        {@entry["actor"]}
       </span>
-      <span class="gl-audit-row__target">
-        <span class="gl-audit-row__target-main">{@entry["target"]}</span>
-        <span :if={detail_summary(@entry["detail"]) != ""} class="gl-muted">
-          · {detail_summary(@entry["detail"])}
-        </span>
+      <span class={[
+        "gl-audit-row__action gl-muted gl-audit-row__action--raw",
+        action_class(@entry["action"])
+      ]}>
+        {@entry["action"]}
       </span>
       <pre :if={@expanded} class="gl-audit-row__payload"><code>{Jason.encode!(@entry, pretty: true)}</code></pre>
     </div>
     """
   end
+
+  # Render `<ACTOR> <verb> <OBJECT>` — paperclip-ux-gaps §10. The
+  # verb and object phrasing are derived from the audit action;
+  # common actions get tailored copy and the fallback degrades
+  # gracefully to the raw action name.
+  #
+  # Status-change entries (agent.complete, task.update, etc.) surface
+  # the delta as `from X to Y` when both are present.
+  defp to_sentence(%{} = entry) do
+    actor = to_string(entry["actor"] || "system")
+    action = to_string(entry["action"] || "")
+    target = to_string(entry["target"] || "")
+    detail = entry["detail"] || %{}
+
+    phrase =
+      case action do
+        "task.create" -> "created " <> target_label(target)
+        "task.comment" -> "commented on " <> target_label(target)
+        "task.update" -> describe_update(detail, target_label(target))
+        "agent.dispatch" -> "dispatched " <> dispatch_target(entry, detail)
+        "agent.complete" -> describe_complete(detail, target_label(target))
+        "agent.wake_request" -> "requested wake of " <> target_label(target)
+        "message.route" -> "routed a message to " <> target_label(target)
+        "message.reject" -> "had a message rejected: " <> target_label(target)
+        "approval.granted" -> "approved " <> target_label(target)
+        "approval.denied" -> "denied " <> target_label(target)
+        "new_company" -> "created company " <> target_label(target)
+        "new_agent" -> "created agent " <> target_label(target)
+        "new_project" -> "created project " <> target_label(target)
+        "" -> "did nothing (empty event)"
+        other -> other <> " " <> target_label(target)
+      end
+
+    "#{actor} #{phrase}"
+  end
+
+  defp target_label(""), do: "(no target)"
+  defp target_label(t) when is_binary(t), do: t
+  defp target_label(_), do: "(unknown)"
+
+  defp dispatch_target(entry, detail) do
+    task = entry["task_path"] || detail["task_path"]
+    trigger = detail["trigger"] || entry["trigger"]
+    base = if is_binary(task) and task != "", do: task, else: "(no task)"
+    if is_binary(trigger) and trigger != "", do: base <> " (" <> trigger <> ")", else: base
+  end
+
+  defp describe_complete(%{} = detail, target) do
+    exit_s = detail["exit_status"]
+    duration = detail["duration_ms"]
+
+    exit_desc =
+      cond do
+        is_nil(exit_s) -> "finished"
+        exit_s in ["0", 0] -> "finished cleanly"
+        true -> "finished exit=" <> to_string(exit_s)
+      end
+
+    dur_desc = if is_integer(duration), do: " in " <> humanize_ms(duration), else: ""
+    exit_desc <> " on " <> target <> dur_desc
+  end
+
+  defp describe_complete(_detail, target), do: "finished on " <> target
+
+  defp describe_update(%{"from" => f, "to" => t, "field" => field}, target),
+    do: "changed #{field} from #{inspect(f)} to #{inspect(t)} on #{target}"
+
+  defp describe_update(%{"status_from" => f, "status_to" => t}, target),
+    do: "changed status from #{f} to #{t} on #{target}"
+
+  defp describe_update(_detail, target), do: "updated " <> target
+
+  defp humanize_ms(ms) when ms < 1_000, do: "#{ms}ms"
+  defp humanize_ms(ms) when ms < 60_000, do: "#{div(ms, 1_000)}s"
+  defp humanize_ms(ms), do: "#{div(ms, 60_000)}m#{rem(div(ms, 1_000), 60)}s"
 
   defp format_ts(ts) when is_binary(ts),
     do: ts |> String.replace("T", " ") |> String.replace("Z", "")
@@ -77,11 +155,4 @@ defmodule GlorboWeb.Components.AuditEntry do
   end
 
   defp action_class(_), do: nil
-
-  defp detail_summary(nil), do: ""
-  defp detail_summary(""), do: ""
-  defp detail_summary(d) when is_binary(d), do: d
-  defp detail_summary(%{} = d) when map_size(d) == 0, do: ""
-  defp detail_summary(%{} = d), do: Jason.encode!(d)
-  defp detail_summary(d), do: inspect(d)
 end
