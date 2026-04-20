@@ -38,6 +38,10 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/tasks/:task_id", TaskLive
     live "/companies/:company/agents/:agent", AgentLive
     live "/companies/:company/approvals", ApprovalQueueLive
+    # Unified director inbox — approvals + recent activity + future
+    # @mention and assignment feeds. Replaces the approval-only lens
+    # paperclip's /Inbox tab offers. See paperclip-ux-gaps.md §3.
+    live "/companies/:company/inbox", InboxLive
     # Plan 04-03 Task 2: content-scope chat view.
     live "/companies/:company/channels/:channel", ChannelLive
     # Director ↔ agent DM: delegates to ChannelLive with a reserved
