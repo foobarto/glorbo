@@ -85,6 +85,12 @@ defmodule GlorboWeb.Actions do
             channel: channel
           })
 
+          # #238 — rotate the channel file if it crossed size/line
+          # thresholds. Rotation is post-append and best-effort:
+          # failure here does NOT fail the post — the message is
+          # already durably on disk + audited.
+          _ = maybe_rotate_channel(company, path, channel, audit)
+
           # Director mentions wake the named agent(s). Mirrors the
           # Glorbo.Company.Router mention-write shape so the downstream
           # Agent.Server treats it identically (same inbox/mentions/
@@ -626,6 +632,29 @@ defmodule GlorboWeb.Actions do
     case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
       [{_pid, _}] -> via
       _ -> AuditLog
+    end
+  end
+
+  # #238 — post-append rotation hook. Best-effort; failure is logged
+  # but never bubbles up (the caller's chat.post audit has already
+  # been written). Emits `channel.rotate` on success so the archive
+  # boundary is itself a durable audit record.
+  defp maybe_rotate_channel(company, path, channel, audit) do
+    case Glorbo.Chat.Rotation.maybe_rotate(path) do
+      {:rotated, archive_path, kept} ->
+        AuditLog.append(audit, %{
+          company: company,
+          actor: "system",
+          action: "channel.rotate",
+          target: "channels/#{channel}.md",
+          archive_path: archive_path,
+          kept_messages: kept
+        })
+
+        :ok
+
+      _ ->
+        :ok
     end
   end
 end

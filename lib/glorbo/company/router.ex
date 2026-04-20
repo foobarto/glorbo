@@ -240,6 +240,10 @@ defmodule Glorbo.Company.Router do
     dir = Path.dirname(channel_path)
     state.fs_fun.mkdir_p!.(dir)
     append_line!(state.fs_fun, channel_path, format_chat_post(msg))
+    # #238 — rotate the channel post-append; failure is logged,
+    # never fails the route (message is already on disk + audited
+    # by emit_route_audit/3 upstream).
+    _ = maybe_rotate_channel(channel_path, channel, state)
     :ok
   rescue
     e ->
@@ -882,6 +886,31 @@ defmodule Glorbo.Company.Router do
       {:ok, spec} -> {:ok, spec.permissions}
       {:error, _} -> {:ok, []}
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # #238 — channel rotation (post-append, best-effort)
+  # ---------------------------------------------------------------------------
+
+  defp maybe_rotate_channel(path, channel, state) do
+    case Glorbo.Chat.Rotation.maybe_rotate(path) do
+      {:rotated, archive_path, kept} ->
+        state.audit_fun.(state.company, %{
+          company: state.company,
+          actor: "system",
+          action: "channel.rotate",
+          target: "channels/#{channel}.md",
+          archive_path: archive_path,
+          kept_messages: kept
+        })
+
+        :ok
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
   end
 
   # ---------------------------------------------------------------------------
