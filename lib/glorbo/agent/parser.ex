@@ -398,7 +398,17 @@ defmodule Glorbo.Agent.Parser do
   # job at register-time; here we only check it's a binary or absent.
   defp validate_heartbeat(nil), do: {:ok, nil}
   defp validate_heartbeat(""), do: {:ok, nil}
-  defp validate_heartbeat(cron) when is_binary(cron), do: {:ok, cron}
+
+  defp validate_heartbeat(value) when is_binary(value) do
+    # #233 — compile NL phrases ("every morning at 9am") to cron before
+    # the Scheduler sees them. Unknown inputs pass through as literals;
+    # Scheduler.register/3 surfaces invalid cron with its own error.
+    case Glorbo.Schedule.NL.compile(value) do
+      {:ok, cron} -> {:ok, cron}
+      :error -> {:ok, value}
+    end
+  end
+
   defp validate_heartbeat(_), do: {:ok, nil}
 
   # Budget: positive integer cents or nil (no cap → no hard-stop).

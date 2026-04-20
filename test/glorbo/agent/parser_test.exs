@@ -471,6 +471,54 @@ defmodule Glorbo.Agent.ParserTest do
     end
   end
 
+  describe "NL heartbeat (#233)" do
+    test "natural-language heartbeat phrase compiles to cron", ctx do
+      path =
+        write_agent(ctx, "nl-hb", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        heartbeat: "daily at 9am"
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.heartbeat == "0 9 * * *"
+    end
+
+    test "literal cron passes through unchanged", ctx do
+      path =
+        write_agent(ctx, "cron-hb", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        heartbeat: "*/15 * * * *"
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.heartbeat == "*/15 * * * *"
+    end
+
+    test "unparseable phrase is passed through as literal (lets scheduler reject it)",
+         ctx do
+      path =
+        write_agent(ctx, "bad-hb", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        heartbeat: "whenever I feel like it"
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.heartbeat == "whenever I feel like it"
+    end
+  end
+
   describe "model aliases (#236)" do
     test "defaults to empty map when absent", ctx do
       path =
