@@ -149,7 +149,7 @@ defmodule Glorbo.CLI.Dispatcher do
       true ->
         parent = Path.dirname(reply_path)
         fs.mkdir_p!.(parent)
-        File.write!(reply_path, stdout)
+        File.write!(reply_path, strip_ansi(stdout))
         :ok
     end
   end
@@ -216,7 +216,7 @@ defmodule Glorbo.CLI.Dispatcher do
 
       {:ok, %{size: size}} when size <= max_bytes ->
         case fs.read.(path) do
-          {:ok, contents} -> {:ok, contents}
+          {:ok, contents} -> {:ok, strip_ansi(contents)}
           {:error, reason} -> {:error, {:reply_file_read_error, reason}}
         end
 
@@ -227,6 +227,21 @@ defmodule Glorbo.CLI.Dispatcher do
         {:error, {:reply_file_stat_error, reason}}
     end
   end
+
+  # opencode (and claude-code's interactive mode) prefix every output
+  # line with SGR/CSI escapes for colour, cursor moves, and clear-line.
+  # Those sequences survive into the reply file when we stdout → reply
+  # fall back, and also leak through when the CLI echoes ANSI into the
+  # reply path directly. Strip them at the dispatcher seam so the
+  # Director-visible reply + audit log both carry clean text.
+  #
+  # Matches the pattern used by StdoutStreamer (`/\x1B\[.../`); adding
+  # OSC (window-title) and standalone CR/BEL suppression too.
+  @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
+
+  @doc false
+  def strip_ansi(text) when is_binary(text), do: String.replace(text, @ansi_re, "")
+  def strip_ansi(other), do: other
 
   # ---------------------------------------------------------------------------
   # Env composition

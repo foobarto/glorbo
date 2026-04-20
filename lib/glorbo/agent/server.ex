@@ -997,7 +997,11 @@ defmodule Glorbo.Agent.Server do
   # `/projects/<name>` etc explicitly — running models ignore AGENT.md
   # body if the Glorbo-composed system prompt doesn't name these
   # paths alongside /workspace, /inbox, /outbox.
-  defp permission_mount_summary(spec) do
+  #
+  # Public `@doc false` so tests can exercise it without faking the
+  # whole compose_prompt pipeline.
+  @doc false
+  def permission_mount_summary(spec) do
     entries =
       spec.permissions
       |> Enum.map(&permission_to_bullet/1)

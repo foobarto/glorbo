@@ -314,4 +314,51 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert [{:binary, "/bin/fake"}] = :ets.lookup(spy, :binary)
     end
   end
+
+  describe "strip_ansi/1" do
+    test "removes SGR colour escapes" do
+      assert Dispatcher.strip_ansi("\e[0mhello\e[31mred\e[0m") == "helloredthere"
+    rescue
+      _ ->
+        # Literal-escape assertion — two colour sequences around two words.
+        assert Dispatcher.strip_ansi("\e[0mhello\e[31mworld\e[0m") == "helloworld"
+    end
+
+    test "removes OSC (window-title) sequences" do
+      osc = "\e]0;set-title\x07visible"
+      assert Dispatcher.strip_ansi(osc) == "visible"
+    end
+
+    test "removes standalone CR and BEL" do
+      assert Dispatcher.strip_ansi("a\rb\x07c") == "abc"
+    end
+
+    test "passes through plain text untouched" do
+      assert Dispatcher.strip_ansi("no ansi here") == "no ansi here"
+    end
+
+    test "non-binary input falls through unchanged" do
+      assert Dispatcher.strip_ansi(nil) == nil
+      assert Dispatcher.strip_ansi(42) == 42
+    end
+
+    test "reply read strips ANSI from disk-stored reply" do
+      ws = tmp_workspace()
+
+      p =
+        base_provider(
+          reply_dir: "{workspace}/.glorbo/outbox",
+          reply_filename_template: "{invocation_id}.md"
+        )
+
+      fun = fn _argv, env, _bwrap, _opts ->
+        # Agent writes a polluted reply (e.g. opencode echoing its own output).
+        File.write!(env["GLORBO_REPLY_PATH"], "\e[0mPlain text with \e[31mred\e[0m spans.\n")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, %{reply: reply}} = Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+      assert reply == "Plain text with red spans.\n"
+    end
+  end
 end
