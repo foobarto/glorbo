@@ -36,7 +36,10 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
     |> Stream.map(&decode_line/1)
     |> Stream.reject(&(&1 == :skip))
     |> Stream.filter(&(Map.get(&1, "type") == "assistant"))
-    |> Enum.reduce(%{prompt_tokens: 0, completion_tokens: 0, model: nil}, &accumulate/2)
+    |> Enum.reduce(
+      %{prompt_tokens: 0, completion_tokens: 0, model: nil, tool_calls: %{}},
+      &accumulate/2
+    )
   end
 
   defp decode_line(line) do
@@ -48,6 +51,7 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
 
   defp accumulate(entry, acc) do
     usage = get_in(entry, ["message", "usage"]) || %{}
+    content = get_in(entry, ["message", "content"]) || []
 
     %{
       prompt_tokens:
@@ -56,7 +60,24 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
           (Map.get(usage, "cache_creation_input_tokens") || 0) +
           (Map.get(usage, "cache_read_input_tokens") || 0),
       completion_tokens: acc.completion_tokens + (Map.get(usage, "output_tokens") || 0),
-      model: get_in(entry, ["message", "model"]) || acc.model
+      model: get_in(entry, ["message", "model"]) || acc.model,
+      tool_calls: count_tool_calls(content, acc.tool_calls)
     }
   end
+
+  # `message.content` is a list of blocks for Claude-Code assistant
+  # messages. Tool-use blocks have `type: "tool_use"` and carry a
+  # `name` field (`Bash`, `Read`, `WebFetch`, etc). Accumulate counts
+  # per tool name; non-tool-use blocks are ignored.
+  defp count_tool_calls(content, acc) when is_list(content) do
+    Enum.reduce(content, acc, fn
+      %{"type" => "tool_use", "name" => name}, a when is_binary(name) ->
+        Map.update(a, name, 1, &(&1 + 1))
+
+      _, a ->
+        a
+    end)
+  end
+
+  defp count_tool_calls(_, acc), do: acc
 end

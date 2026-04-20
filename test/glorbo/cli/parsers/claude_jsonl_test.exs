@@ -32,4 +32,16 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonlTest do
   test "stdout source is not supported" do
     assert {:error, :stdout_not_supported} = ClaudeJsonl.parse({:stdout, "{}"})
   end
+
+  test "counts tool_use blocks by name (paperclip-ux-gaps §2)" do
+    assert {:ok, %{tool_calls: calls}} =
+             ClaudeJsonl.parse({:jsonl_file, "test/fixtures/claude_session_tool_use.jsonl"})
+
+    assert calls == %{"Bash" => 1, "Read" => 2}
+  end
+
+  test "tool_calls is empty map when content has no tool_use blocks" do
+    # The main fixture contains only text blocks in assistant content.
+    assert {:ok, %{tool_calls: %{}}} = ClaudeJsonl.parse({:jsonl_file, @fixture})
+  end
 end

@@ -24,6 +24,7 @@ defmodule Glorbo.Agent.RunLog do
           duration_ms: non_neg_integer() | nil,
           exit_status: String.t() | nil,
           reply_preview: String.t() | nil,
+          tool_calls: %{String.t() => non_neg_integer()} | nil,
           status: :complete | :running | :unknown
         }
 
@@ -111,6 +112,7 @@ defmodule Glorbo.Agent.RunLog do
       duration_ms: nil,
       exit_status: nil,
       reply_preview: nil,
+      tool_calls: nil,
       status: :unknown
     }
 
@@ -147,6 +149,7 @@ defmodule Glorbo.Agent.RunLog do
             duration_ms: duration,
             exit_status: Map.get(detail, "exit_status") || run.exit_status,
             reply_preview: Map.get(detail, "reply_preview") || run.reply_preview,
+            tool_calls: Map.get(detail, "tool_calls") || run.tool_calls,
             status: :complete
         }
 

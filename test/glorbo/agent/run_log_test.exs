@@ -114,6 +114,46 @@ defmodule Glorbo.Agent.RunLogTest do
       assert [%{invocation_id: "new"}, %{invocation_id: "old"}] =
                RunLog.group_runs(entries, "ceo")
     end
+
+    test "surfaces tool_calls from complete-audit detail (paperclip-ux-gaps §2)" do
+      entries = [
+        %{
+          "action" => "agent.dispatch",
+          "ts" => "2026-04-20T10:00:00Z",
+          "agent" => "ceo",
+          "invocation_id" => "t-1"
+        },
+        %{
+          "action" => "agent.complete",
+          "ts" => "2026-04-20T10:00:30Z",
+          "agent" => "ceo",
+          "invocation_id" => "t-1",
+          "detail" => %{
+            "exit_status" => "0",
+            "duration_ms" => 30_000,
+            "tool_calls" => %{"Bash" => 1, "Read" => 2}
+          }
+        }
+      ]
+
+      assert [run] = RunLog.group_runs(entries, "ceo")
+      assert run.tool_calls == %{"Bash" => 1, "Read" => 2}
+    end
+
+    test "tool_calls is nil when missing from detail" do
+      entries = [
+        %{
+          "action" => "agent.complete",
+          "ts" => "2026-04-20T10:00:00Z",
+          "agent" => "ceo",
+          "invocation_id" => "no-tools",
+          "detail" => %{"exit_status" => "0"}
+        }
+      ]
+
+      assert [run] = RunLog.group_runs(entries, "ceo")
+      assert is_nil(run.tool_calls)
+    end
   end
 
   describe "list/4" do

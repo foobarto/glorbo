@@ -888,6 +888,13 @@ defmodule GlorboWeb.AgentLive do
                     <span class="gl-agent-runs__task gl-muted">
                       {run.task_path || "(no task path)"}
                     </span>
+                    <span
+                      :if={run.tool_calls && run.tool_calls != %{}}
+                      class="gl-agent-runs__tools gl-muted"
+                      title={format_tool_calls(run.tool_calls)}
+                    >
+                      {tool_count_sum(run.tool_calls)} tools
+                    </span>
                     <span class={[
                       "gl-agent-runs__status",
                       "gl-agent-runs__status--" <> Atom.to_string(run.status)
@@ -913,6 +920,10 @@ defmodule GlorboWeb.AgentLive do
                       <dd class="gl-tabular">{format_ts(run.end_ts)}</dd>
                       <dt>exit</dt>
                       <dd>{run.exit_status || "—"}</dd>
+                      <dt :if={run.tool_calls && run.tool_calls != %{}}>tool calls</dt>
+                      <dd :if={run.tool_calls && run.tool_calls != %{}} class="gl-tabular">
+                        {format_tool_calls(run.tool_calls)}
+                      </dd>
                     </dl>
                     <div :if={run.reply_preview} class="gl-agent-runs__reply">
                       <div class="gl-muted">reply preview</div>
@@ -1706,6 +1717,22 @@ defmodule GlorboWeb.AgentLive do
   defp format_ts(nil), do: "—"
   defp format_ts(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_ts(_), do: "—"
+
+  # paperclip-ux-gaps §2 — render `Bash×1, Read×2` from
+  # `%{"Bash" => 1, "Read" => 2}`. Sorted by count descending so
+  # the heaviest tool wins the eye first.
+  defp format_tool_calls(map) when is_map(map) do
+    map
+    |> Enum.sort_by(fn {_name, count} -> -count end)
+    |> Enum.map_join(", ", fn {name, count} -> "#{name}×#{count}" end)
+  end
+
+  defp format_tool_calls(_), do: "—"
+
+  defp tool_count_sum(map) when is_map(map),
+    do: map |> Map.values() |> Enum.sum()
+
+  defp tool_count_sum(_), do: 0
 
   defp assign_task_url(company_slug, agent_slug) do
     return_to = "/companies/#{company_slug}/agents/#{agent_slug}"

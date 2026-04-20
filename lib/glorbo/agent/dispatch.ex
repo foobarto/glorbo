@@ -107,8 +107,9 @@ defmodule Glorbo.Agent.Dispatch do
          duration_ms <- compute_duration(start, opts),
          usage <- finalize_usage(dispatcher_result, spec),
          :ok <- record_usage(spec, task, usage, opts),
+         merged_result <- Map.put(dispatcher_result, :usage, usage),
          :ok <-
-           emit_complete_audit(spec, task, dispatcher_result, duration_ms, invocation_id, opts) do
+           emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts) do
       {:ok,
        %{
          exit_status: dispatcher_result.exit_status,
@@ -490,17 +491,20 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp emit_complete_audit(spec, task, result, duration_ms, invocation_id, opts) do
     audit = audit_fun(opts)
+    tool_calls = extract_tool_calls(result)
 
-    entry = %{
-      action: "agent.complete",
-      actor: spec.slug,
-      agent: spec.slug,
-      task_path: task.task_path,
-      duration_ms: duration_ms,
-      exit_status: to_string(result.exit_status),
-      invocation_id: invocation_id,
-      reply_preview: preview(result.reply)
-    }
+    entry =
+      %{
+        action: "agent.complete",
+        actor: spec.slug,
+        agent: spec.slug,
+        task_path: task.task_path,
+        duration_ms: duration_ms,
+        exit_status: to_string(result.exit_status),
+        invocation_id: invocation_id,
+        reply_preview: preview(result.reply)
+      }
+      |> maybe_put_tool_calls(tool_calls)
 
     audit.(spec.company, entry)
     :ok
@@ -509,6 +513,22 @@ defmodule Glorbo.Agent.Dispatch do
       Logger.warning("dispatch complete audit emit failed: #{Exception.message(e)}")
       :ok
   end
+
+  # paperclip-ux-gaps §2 — surface tool-call counts on agent.complete
+  # audit entries so AgentLive Runs tab + CompanyLive roster can show
+  # "ran 2 tool calls (Bash×1, Read×1)". `usage.tool_calls` is a map
+  # `%{tool_name => count}` populated by ClaudeJsonl; other parsers
+  # don't supply it yet, which surfaces as `nil` → audit entry omits
+  # the field entirely.
+  defp extract_tool_calls(%{usage: %{tool_calls: calls}}) when is_map(calls), do: calls
+  defp extract_tool_calls(_), do: nil
+
+  defp maybe_put_tool_calls(entry, nil), do: entry
+
+  defp maybe_put_tool_calls(entry, calls) when calls == %{}, do: entry
+
+  defp maybe_put_tool_calls(entry, calls) when is_map(calls),
+    do: Map.put(entry, :tool_calls, calls)
 
   # First non-empty line of the reply, capped for audit storage.
   defp preview(nil), do: ""

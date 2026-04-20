@@ -18,9 +18,10 @@ defmodule Glorbo.CLI.Parsers do
   }
 
   @type usage :: %{
-          prompt_tokens: non_neg_integer(),
-          completion_tokens: non_neg_integer(),
-          model: String.t() | nil
+          required(:prompt_tokens) => non_neg_integer(),
+          required(:completion_tokens) => non_neg_integer(),
+          required(:model) => String.t() | nil,
+          optional(:tool_calls) => %{optional(String.t()) => non_neg_integer()}
         }
 
   @type source ::
