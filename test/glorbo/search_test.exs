@@ -80,4 +80,47 @@ defmodule Glorbo.SearchTest do
   test "missing company returns []", %{base: base} do
     assert [] = Search.search(base, "ghost", "anything")
   end
+
+  # #240 — title cache skips reparse when mtime unchanged.
+  test "caches titles by (path, mtime) so repeated searches skip File.read",
+       %{base: base, company: co} do
+    # Prime the cache with a first search.
+    assert [_] = Search.search(base, co, "refactor")
+
+    # Rewrite the file's title WITHOUT changing mtime (Unix allows
+    # touch-m to pin it). The cache should still return the old
+    # title — proves the cache path is live and not bypassed.
+    tasks_dir = Path.join([base, "companies", co, "projects/foo/tasks"])
+    path = Path.join(tasks_dir, "foo-1.md")
+    {:ok, %File.Stat{mtime: original_mtime}} = File.stat(path)
+
+    File.write!(path, """
+    ---
+    title: Totally new title
+    status: todo
+    ---
+    body
+    """)
+
+    # Restore the old mtime so the cache key still matches.
+    File.touch!(path, original_mtime)
+
+    assert [hit] = Search.search(base, co, "refactor")
+    assert hit.label =~ "Refactor dispatch pipeline"
+    # The file on disk has the new title, but cache returns old one.
+    refute hit.label =~ "Totally new title"
+
+    # Bumping mtime to a distinct future time invalidates the cache.
+    # (Plain File.touch! would not — its resolution is 1s and the test
+    # runs faster than that.)
+    future_mtime =
+      original_mtime
+      |> :calendar.datetime_to_gregorian_seconds()
+      |> Kernel.+(10)
+      |> :calendar.gregorian_seconds_to_datetime()
+
+    File.touch!(path, future_mtime)
+    assert [] = Search.search(base, co, "refactor")
+    assert [_] = Search.search(base, co, "totally new")
+  end
 end

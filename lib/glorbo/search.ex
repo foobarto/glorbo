@@ -75,22 +75,65 @@ defmodule Glorbo.Search do
     end
   end
 
+  # ETS cache table name. Public + named so any process can read/write
+  # without passing a reference. Created lazily in `ensure_cache/0`.
+  @cache_table :glorbo_search_title_cache
+
   defp read_task(tasks_dir, filename) do
     path = Path.join(tasks_dir, filename)
     task_id = Path.basename(filename, ".md")
 
-    case File.read(path) do
-      {:ok, content} ->
-        title =
-          case Glorbo.Filesystem.Frontmatter.parse(content) do
-            {:ok, fm, _body} -> to_string(fm["title"] || task_id)
-            _ -> task_id
-          end
-
+    case File.stat(path) do
+      {:ok, %File.Stat{mtime: mtime}} ->
+        title = cached_or_parse_title(path, task_id, mtime)
         [%{task_id: task_id, title: title, path: path}]
 
       _ ->
         []
+    end
+  end
+
+  # `mtime` from File.Stat is a `{:erlang.datetime}` tuple (seconds
+  # precision). Use it + path as the cache key so a modified task
+  # re-parses on the next scan; an unchanged task serves from ETS.
+  defp cached_or_parse_title(path, task_id, mtime) do
+    ensure_cache()
+
+    case :ets.lookup(@cache_table, path) do
+      [{^path, ^mtime, title}] ->
+        title
+
+      _ ->
+        title = parse_title(path, task_id)
+        :ets.insert(@cache_table, {path, mtime, title})
+        title
+    end
+  end
+
+  defp parse_title(path, task_id) do
+    case File.read(path) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, fm, _body} -> to_string(fm["title"] || task_id)
+          _ -> task_id
+        end
+
+      _ ->
+        task_id
+    end
+  end
+
+  defp ensure_cache do
+    case :ets.whereis(@cache_table) do
+      :undefined ->
+        try do
+          :ets.new(@cache_table, [:named_table, :set, :public, read_concurrency: true])
+        rescue
+          ArgumentError -> :ok
+        end
+
+      _ ->
+        :ok
     end
   end
 
