@@ -684,7 +684,8 @@ defmodule Glorbo.Company.Router do
          :ok <- ensure_project_exists(project_md),
          :ok <- refuse_if_exists(dest_path),
          :ok <- File.mkdir_p(project_tasks_dir),
-         :ok <- File.write(dest_path, content, [:sync]),
+         stamped_content <- stamp_with_context(content, sender),
+         :ok <- File.write(dest_path, stamped_content, [:sync]),
          :ok <- File.rm(abs_path) do
       emit_task_route_audit(sender, project, task_id, state)
       :ok
@@ -696,6 +697,25 @@ defmodule Glorbo.Company.Router do
 
         :ok
     end
+  end
+
+  # Append a `## Context` footer to outbox-routed tasks naming the
+  # sender + ISO timestamp. Assignees can then trace provenance
+  # (`filed by @ceo on 2026-04-21`) without needing the Router to
+  # plumb parent-invocation state through — a strictly additive
+  # mutation keyed off what Router already knows.
+  defp stamp_with_context(content, sender) do
+    trimmed = String.trim_trailing(content)
+    ts = DateTime.utc_now() |> DateTime.to_iso8601()
+
+    footer = """
+
+
+    ## Context
+    Filed via outbox by `@#{sender}` on #{ts}.
+    """
+
+    trimmed <> footer <> "\n"
   end
 
   # Tasks without a `title:` in frontmatter are almost certainly

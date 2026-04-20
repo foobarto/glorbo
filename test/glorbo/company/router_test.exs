@@ -478,6 +478,42 @@ defmodule Glorbo.Company.RouterTest do
     assert_receive {:audit, %{action: "task.create", target: "projects/blog/tasks/blog-1.md"}}
   end
 
+  test "R-outbox-context: filed task gains a Context footer naming the sender" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-42.md"), """
+    ---
+    title: review draft-1
+    status: pending
+    ---
+    Please review `/projects/blog/tasks/draft-1.md`.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-42.md", [:created]})
+    _ = :sys.get_state(name)
+
+    dest =
+      Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-42.md"])
+
+    content = File.read!(dest)
+    # Original body is preserved.
+    assert content =~ "Please review"
+    # Context footer is appended.
+    assert content =~ "## Context"
+    assert content =~ "Filed via outbox by `@ceo`"
+    # ISO timestamp shape.
+    assert content =~ ~r/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+  end
+
   test "R-outbox-2: task filed to non-existent project is silently skipped" do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo"])
