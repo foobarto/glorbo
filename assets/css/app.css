@@ -1767,6 +1767,41 @@ button { font-family: inherit; font-size: inherit; }
 .gl-badge--custom { color: var(--gl-cyan); }
 .gl-badge--shadowed { color: var(--gl-warning); }
 
+/* GoalsLive cards (paperclip-ux-gaps §7). */
+.gl-goals-page { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-goals-list { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-goal-card {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-border);
+  padding: var(--gl-space-md);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+}
+.gl-goal-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--gl-space-md);
+}
+.gl-goal-card__slug { font-family: var(--gl-ff-mono); font-size: 11px; }
+.gl-goal-card__actions { display: flex; gap: var(--gl-space-xs); align-items: center; }
+.gl-goal-card__desc { font-size: var(--gl-font-label); }
+.gl-goal-card__stats {
+  display: flex;
+  gap: var(--gl-space-lg);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-goal-card__stats strong { font-size: 18px; color: var(--gl-fg); margin-left: 6px; }
+.gl-goal-card--unassigned { border-style: dashed; }
+
+/* Status badges for goal "status: active / paused / done" etc. */
+.gl-badge--active { color: var(--gl-accent); }
+.gl-badge--paused { color: var(--gl-fg-muted); }
+.gl-badge--done { color: var(--gl-success); }
+
 /* SkillsLive table (paperclip-ux-gaps §9). */
 .gl-skills-page { display: flex; flex-direction: column; gap: var(--gl-space-md); }
 .gl-skills-table {

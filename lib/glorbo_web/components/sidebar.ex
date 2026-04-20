@@ -24,7 +24,7 @@ defmodule GlorboWeb.Components.Sidebar do
 
     * `:current_company` — slug string or nil.
     * `:active` — one of `:overview | :kanban | :chat | :approvals |
-      :audit | :skills | :providers | nil`; drives the active-row highlight.
+      :audit | :goals | :skills | :providers | nil`; drives the active-row highlight.
   """
   use Phoenix.Component
   use GlorboWeb, :verified_routes
@@ -38,6 +38,7 @@ defmodule GlorboWeb.Components.Sidebar do
     {:chat, "◫", "Channels", :company},
     {:approvals, "✓", "Approvals", :company},
     {:audit, "≡", "Audit log", :company},
+    {:goals, "◇", "Goals", :company},
     {:skills, "◉", "Skills", :company},
     {:providers, "⎔", "Providers", :global}
   ]
@@ -190,6 +191,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
   defp nav_href(:approvals, slug), do: ~p"/companies/#{slug}/approvals"
   defp nav_href(:audit, slug), do: ~p"/companies/#{slug}/audit"
+  defp nav_href(:goals, slug), do: ~p"/companies/#{slug}/goals"
   defp nav_href(:skills, slug), do: ~p"/companies/#{slug}/skills"
 
   defp tree_prefix(i, count) when i == count - 1, do: "└─ "
