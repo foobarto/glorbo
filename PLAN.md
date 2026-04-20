@@ -262,6 +262,17 @@ original P1/P2 set (§§4, 5, 9, 13, 15, 18).
 | 25 | `0e9bb62` | §13 | `create + continue →` chains company → agent → project wizard |
 | 26 | `399623b` | —   | Credo cleanup (cond in SkillsLive mount, two nested-depth flattens) |
 
+## Round 3 — discoverability + remaining paperclip gaps (still 2026-04-20)
+
+Third sweep covers gaps §§7, 16 and closes the InboxLive archive
+TODO that was deferred in round 1.
+
+| # | Commit | Gap | Item |
+|---|--------|-----|------|
+| 27 | `eeb63c7` | §16 | Command palette now discovers Inbox / Skills / Projects / + new actions |
+| 28 | `b1fac61` | §7  | Dedicated `GoalsLive` at `/companies/:co/goals` with per-goal roll-up |
+| 29 | `732c316` | —   | InboxLive archive actions — hide handled rows via persistent set |
+
 ## Paperclip-baseline parity — MET 2026-04-20
 
 See `.reports/uat/glorbo-vs-paperclip.md`. Verified end-to-end:
@@ -283,11 +294,10 @@ session:
   YAML emitter or a `write_body/2` helper on `TaskDefinition`.
 - Inbox @-mention + task-assignment feeds beyond approvals (needs
   new event sources to subscribe to).
-- Archive actions on the InboxLive archive tab.
 - Cost/budget page (§6 — deferred in the original PLAN).
-- Command palette (§16) — affordance exists as g-prefix shortcuts
-  but no searchable overlay.
 - Sub-issues / blocker graph (§8) — user steered away from this;
   autolinker covers the common case.
-- Full `/goals` page (§7) — frontmatter + Kanban `?goal=` filter
-  shipped; a dedicated goals LV with aggregation is the next step.
+- Tool-call summary inline in dashboard feed (§2 — partial, agent
+  runs tab shipped, dashboard-level tool-count summary not).
+- Actor avatars on channel / inbox rows (partial — only audit
+  rows carry them today).
