@@ -246,6 +246,22 @@ Each lands as its own commit, gated on `mix precommit` + CI green.
 | 18 | `c21ec34` | Stretch — `provenance-auditor` template (narrow CritiqueOps variant) |
 | 19 | `d4bd6d2` | Stretch — shared `TaskDetailForm` component; TaskLive gains save/delete surface |
 
+## Round 2 — paperclip-ux-gaps closeout (still 2026-04-20)
+
+Second sweep targets gaps explicitly called out in
+`.reports/uat/paperclip-ux-gaps.md` that weren't part of the
+original P1/P2 set (§§4, 5, 9, 13, 15, 18).
+
+| # | Commit | Gap | Item |
+|---|--------|-----|------|
+| 20 | `2af3c33` | §15 | Two-letter actor avatars on audit rows (CE / DI / SY) |
+| 21 | `661caaf` | §18 | Inline slug-availability probe on new-company modal |
+| 22 | `a38f7e5` | §4  | 14-day rollups strip — runs · success · tasks-by-status · tasks-by-priority |
+| 23 | `356e3af` | §5  | AgentLive config edit form writes AGENT.md frontmatter via new FrontmatterWriter |
+| 24 | `27004c2` | §9  | SkillsLive at `/companies/:co/skills` — bundle view with used-by counts |
+| 25 | `0e9bb62` | §13 | `create + continue →` chains company → agent → project wizard |
+| 26 | `399623b` | —   | Credo cleanup (cond in SkillsLive mount, two nested-depth flattens) |
+
 ## Paperclip-baseline parity — MET 2026-04-20
 
 See `.reports/uat/glorbo-vs-paperclip.md`. Verified end-to-end:
@@ -258,8 +274,9 @@ HTTP `hire_agent` approval flow — just filesystem-first.
 
 ## Items still open (none from original plan)
 
-All P1 and P2 items plus the two stretch items shipped. Next
-iterations would involve genuinely new scope:
+All P1 / P2 / stretch items plus the Round-2 paperclip-gap sweep
+(§§4, 5, 9, 13, 15, 18) shipped. Genuinely new scope for a future
+session:
 
 - TaskLive body editing (currently frontmatter-only on the page;
   body edit stays in the Kanban shelf). Requires a small safe
@@ -267,4 +284,10 @@ iterations would involve genuinely new scope:
 - Inbox @-mention + task-assignment feeds beyond approvals (needs
   new event sources to subscribe to).
 - Archive actions on the InboxLive archive tab.
-- Cost/budget page (deferred in the original PLAN).
+- Cost/budget page (§6 — deferred in the original PLAN).
+- Command palette (§16) — affordance exists as g-prefix shortcuts
+  but no searchable overlay.
+- Sub-issues / blocker graph (§8) — user steered away from this;
+  autolinker covers the common case.
+- Full `/goals` page (§7) — frontmatter + Kanban `?goal=` filter
+  shipped; a dedicated goals LV with aggregation is the next step.
