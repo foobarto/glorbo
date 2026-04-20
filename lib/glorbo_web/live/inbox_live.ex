@@ -25,6 +25,7 @@ defmodule GlorboWeb.InboxLive do
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
+  alias Glorbo.Inbox.Archive
   alias GlorboWeb.Components.ChatDrawer
 
   @valid_tabs ~w(mine recent all archive)
@@ -53,6 +54,7 @@ defmodule GlorboWeb.InboxLive do
 
     sentinels = load_sentinels(base, co)
     audits = load_recent_audit(base, co)
+    archived = Archive.list(base, co)
 
     {:ok,
      socket
@@ -64,6 +66,7 @@ defmodule GlorboWeb.InboxLive do
      |> assign(:tab, :mine)
      |> assign(:sentinels, sentinels)
      |> assign(:audit_rows, audits)
+     |> assign(:archived, archived)
      |> assign(:deny_task_path, nil)
      |> ChatDrawer.State.wire_drawer()}
   end
@@ -84,11 +87,13 @@ defmodule GlorboWeb.InboxLive do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel)
     sentinels = load_sentinels(socket.assigns.base, socket.assigns.company_slug)
     audits = load_recent_audit(socket.assigns.base, socket.assigns.company_slug)
+    archived = Archive.list(socket.assigns.base, socket.assigns.company_slug)
 
     {:noreply,
      socket
      |> assign(:sentinels, sentinels)
-     |> assign(:audit_rows, audits)}
+     |> assign(:audit_rows, audits)
+     |> assign(:archived, archived)}
   end
 
   def handle_info({:audit_append, _row}, socket) do
@@ -147,6 +152,27 @@ defmodule GlorboWeb.InboxLive do
       {:error, reason_err} ->
         {:noreply, put_flash(socket, :error, "Deny failed: #{inspect(reason_err)}")}
     end
+  end
+
+  # Archive actions — the director marks an audit row (or pending
+  # approval) as "handled". Stored in a per-company JSON file; the
+  # Archive tab renders marked rows. Unarchive is symmetric.
+  def handle_event("archive", %{"key" => key}, socket) do
+    :ok = Archive.add(socket.assigns.base, socket.assigns.company_slug, key)
+
+    {:noreply,
+     socket
+     |> assign(:archived, Archive.list(socket.assigns.base, socket.assigns.company_slug))
+     |> put_flash(:info, "Archived.")}
+  end
+
+  def handle_event("unarchive", %{"key" => key}, socket) do
+    :ok = Archive.remove(socket.assigns.base, socket.assigns.company_slug, key)
+
+    {:noreply,
+     socket
+     |> assign(:archived, Archive.list(socket.assigns.base, socket.assigns.company_slug))
+     |> put_flash(:info, "Unarchived.")}
   end
 
   # ---------------------------------------------------------------------------
@@ -235,13 +261,44 @@ defmodule GlorboWeb.InboxLive do
   defp noise?(%{"action" => a}) when a in @audit_noise_actions, do: true
   defp noise?(_), do: false
 
+  # Archive-key derivation — opaque strings the director uses to mark
+  # an item as "handled". Stable across page reloads because they're
+  # built from on-disk identifiers (task path or audit row coords).
+  defp approval_key(%{task_path: tp}), do: "approval:" <> tp
+
+  defp audit_key(row) do
+    ts = to_string(row["ts"] || "")
+    action = to_string(row["action"] || "")
+    target = to_string(row["target"] || "")
+    "audit:" <> ts <> "|" <> action <> "|" <> target
+  end
+
   @impl true
   def render(assigns) do
+    assigns =
+      assigns
+      |> assign(
+        :visible_sentinels,
+        Enum.reject(assigns.sentinels, &MapSet.member?(assigns.archived, approval_key(&1)))
+      )
+      |> assign(
+        :visible_audits,
+        Enum.reject(assigns.audit_rows, &MapSet.member?(assigns.archived, audit_key(&1)))
+      )
+      |> assign(
+        :archived_sentinels,
+        Enum.filter(assigns.sentinels, &MapSet.member?(assigns.archived, approval_key(&1)))
+      )
+      |> assign(
+        :archived_audits,
+        Enum.filter(assigns.audit_rows, &MapSet.member?(assigns.archived, audit_key(&1)))
+      )
+
     ~H"""
     <section class="gl-view gl-inbox">
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">
-          Inbox <span class="gl-muted">({length(@sentinels)} pending)</span>
+          Inbox <span class="gl-muted">({length(@visible_sentinels)} pending)</span>
         </h1>
       </header>
 
@@ -262,13 +319,13 @@ defmodule GlorboWeb.InboxLive do
       <div :if={@tab in [:mine, :all]} class="gl-inbox__section">
         <h2 class="gl-heading gl-heading--heading">Pending approvals</h2>
 
-        <div :if={@sentinels == []} class="gl-muted gl-inbox__empty">
+        <div :if={@visible_sentinels == []} class="gl-muted gl-inbox__empty">
           No approvals pending. Tasks with <code>requires_approval: director</code>
           in frontmatter will appear here.
         </div>
 
-        <ul :if={@sentinels != []} class="gl-inbox__list">
-          <li :for={s <- @sentinels} class="gl-inbox__approval">
+        <ul :if={@visible_sentinels != []} class="gl-inbox__list">
+          <li :for={s <- @visible_sentinels} class="gl-inbox__approval">
             <div class="gl-inbox__approval-meta">
               <span class="gl-tabular">{s.task_id}</span>
               <span :if={s.assignee} class="gl-muted">· {s.assignee}</span>
@@ -291,6 +348,15 @@ defmodule GlorboWeb.InboxLive do
               >
                 deny
               </button>
+              <button
+                type="button"
+                class="gl-btn gl-btn--sm"
+                phx-click="archive"
+                phx-value-key={approval_key(s)}
+                title="Archive (hide without acting)"
+              >
+                archive
+              </button>
             </div>
           </li>
         </ul>
@@ -299,25 +365,81 @@ defmodule GlorboWeb.InboxLive do
       <div :if={@tab in [:recent, :all]} class="gl-inbox__section">
         <h2 class="gl-heading gl-heading--heading">Recent activity</h2>
 
-        <div :if={@audit_rows == []} class="gl-muted gl-inbox__empty">
+        <div :if={@visible_audits == []} class="gl-muted gl-inbox__empty">
           No recent activity this month.
         </div>
 
-        <ul :if={@audit_rows != []} class="gl-inbox__list gl-inbox__audit">
-          <li :for={row <- @audit_rows} class="gl-inbox__audit-row">
+        <ul :if={@visible_audits != []} class="gl-inbox__list gl-inbox__audit">
+          <li :for={row <- @visible_audits} class="gl-inbox__audit-row">
             <span class="gl-muted gl-tabular">{Map.get(row, "ts", "")}</span>
             <span class="gl-inbox__audit-actor">{Map.get(row, "actor", "system")}</span>
             <span class="gl-inbox__audit-action">{Map.get(row, "action", "?")}</span>
             <span :if={Map.get(row, "target")} class="gl-muted gl-inbox__audit-target">
               {Map.get(row, "target")}
             </span>
+            <button
+              type="button"
+              class="gl-btn gl-btn--sm gl-inbox__audit-archive"
+              phx-click="archive"
+              phx-value-key={audit_key(row)}
+              title="Archive this activity row"
+            >
+              archive
+            </button>
           </li>
         </ul>
       </div>
 
-      <div :if={@tab == :archive} class="gl-inbox__section gl-muted gl-inbox__empty">
-        Archive is not wired yet. Approved / denied items currently
-        disappear from the queue without an archive stop.
+      <div :if={@tab == :archive} class="gl-inbox__section">
+        <h2 class="gl-heading gl-heading--heading">Archived</h2>
+
+        <div
+          :if={@archived_sentinels == [] and @archived_audits == []}
+          class="gl-muted gl-inbox__empty"
+        >
+          Nothing archived yet. Use the <strong>archive</strong>
+          button on any approval or activity row to hide it from
+          the live feed. Unarchive restores it.
+        </div>
+
+        <ul :if={@archived_sentinels != []} class="gl-inbox__list">
+          <li :for={s <- @archived_sentinels} class="gl-inbox__approval gl-inbox__approval--archived">
+            <div class="gl-inbox__approval-meta">
+              <span class="gl-tabular">{s.task_id}</span>
+              <span :if={s.assignee} class="gl-muted">· {s.assignee}</span>
+            </div>
+            <div class="gl-inbox__approval-title">{s.title}</div>
+            <div class="gl-inbox__approval-actions">
+              <button
+                type="button"
+                class="gl-btn gl-btn--sm"
+                phx-click="unarchive"
+                phx-value-key={approval_key(s)}
+              >
+                unarchive
+              </button>
+            </div>
+          </li>
+        </ul>
+
+        <ul :if={@archived_audits != []} class="gl-inbox__list gl-inbox__audit">
+          <li :for={row <- @archived_audits} class="gl-inbox__audit-row">
+            <span class="gl-muted gl-tabular">{Map.get(row, "ts", "")}</span>
+            <span class="gl-inbox__audit-actor">{Map.get(row, "actor", "system")}</span>
+            <span class="gl-inbox__audit-action">{Map.get(row, "action", "?")}</span>
+            <span :if={Map.get(row, "target")} class="gl-muted gl-inbox__audit-target">
+              {Map.get(row, "target")}
+            </span>
+            <button
+              type="button"
+              class="gl-btn gl-btn--sm gl-inbox__audit-archive"
+              phx-click="unarchive"
+              phx-value-key={audit_key(row)}
+            >
+              unarchive
+            </button>
+          </li>
+        </ul>
       </div>
 
       <div :if={@deny_task_path} class="gl-modal-scrim" phx-click-away="deny_cancel">

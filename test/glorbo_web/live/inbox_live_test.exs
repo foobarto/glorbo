@@ -60,9 +60,39 @@ defmodule GlorboWeb.InboxLiveTest do
     refute html =~ "stdout_line"
   end
 
-  test "?tab=archive shows placeholder", %{conn: conn} do
+  test "?tab=archive shows empty-state when nothing archived", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/inbox?tab=archive")
-    assert html =~ "Archive is not wired yet"
+    assert html =~ "Nothing archived yet"
+  end
+
+  test "archiving an approval hides it from Mine and shows under Archive",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme/inbox")
+
+    render_click(view, "archive", %{"key" => "approval:projects/demo/tasks/demo-1.md"})
+
+    # Approval no longer visible on Mine
+    html = render(view)
+    refute html =~ "decide X"
+
+    # Archive tab carries the approval + an unarchive button
+    {:ok, _v2, archive_html} = live(conn, ~p"/companies/acme/inbox?tab=archive")
+    assert archive_html =~ "decide X"
+    assert archive_html =~ "unarchive"
+  end
+
+  test "unarchive restores an archived approval", %{conn: conn, base: base} do
+    # Seed an archived entry directly to keep the test self-contained.
+    :ok =
+      Glorbo.Inbox.Archive.add(base, "acme", "approval:projects/demo/tasks/demo-1.md")
+
+    {:ok, view, html} = live(conn, ~p"/companies/acme/inbox?tab=archive")
+    assert html =~ "unarchive"
+
+    render_click(view, "unarchive", %{"key" => "approval:projects/demo/tasks/demo-1.md"})
+
+    {:ok, _v2, mine_html} = live(conn, ~p"/companies/acme/inbox")
+    assert mine_html =~ "decide X"
   end
 
   test "deny_prompt opens the deny modal", %{conn: conn} do
