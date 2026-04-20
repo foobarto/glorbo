@@ -937,6 +937,13 @@ defmodule Glorbo.Agent.Server do
     - cwd: `/workspace` (rw — your scratch area; this is your $HOME too)
     - Inbox: `/inbox` (ro — your inbox; same as `$GLORBO_INBOX`)
     - Outbox: `/outbox` (rw — for artefacts, attachments, side-effects)
+    - Skills: `/workspace/.glorbo-run/$GLORBO_TASK_ID/.glorbo-skills/`
+      (ro). **Start every run by reading `INDEX.md` in that dir.** If a
+      `glorbo.md` skill is listed, read it first — it documents the
+      runtime contract (env vars, ACTIONS DSL, outbox routing for
+      messages / comments / task filing / hire requests). Other
+      skills listed there are role-specific capabilities you may
+      use.
 
     ## How to reply
 

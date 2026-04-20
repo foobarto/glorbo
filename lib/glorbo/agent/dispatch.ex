@@ -252,6 +252,8 @@ defmodule Glorbo.Agent.Dispatch do
       prompt: task.prompt,
       prompt_path: prompt_path(run_dir),
       invocation_id: invocation_id,
+      agent_slug: spec.slug,
+      company: spec.company,
       bwrap_opts: %{
         agent_workspace: workspace,
         inbox_path: Path.join(agent_root, "inbox"),

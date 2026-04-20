@@ -30,11 +30,18 @@ Everything below is in your sandbox. Nothing outside this tree
 exists for you.
 
 ```
-/workspace               your private rw scratch area
+/workspace               your private rw scratch area ($HOME)
 /inbox                   read-only — tasks assigned to you by others
 /outbox                  write-only — messages/replies routed out
-/workspace/.glorbo-skills/  this skill + any others you declared
+/workspace/.glorbo-run/<task_id>/.glorbo-skills/
+                         this skill + any others you declared
 ```
+
+Quick refs inside the sandbox:
+
+- `$GLORBO_WORKSPACE` = `/workspace`
+- `$GLORBO_TASK_ID` — use to find your skills dir:
+  `$GLORBO_WORKSPACE/.glorbo-run/$GLORBO_TASK_ID/.glorbo-skills/`
 
 Your *company's* filesystem (`/home/<user>/.glorbo/companies/<co>/`)
 is NOT visible to you directly. You act on it through

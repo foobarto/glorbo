@@ -242,7 +242,13 @@ defmodule Glorbo.CLI.Dispatcher do
       "GLORBO_REPLY_PATH" => reply_path,
       "GLORBO_WORKSPACE" => ctx.workspace,
       "GLORBO_INBOX" => "/inbox",
-      "GLORBO_OUTBOX" => "/outbox"
+      "GLORBO_OUTBOX" => "/outbox",
+      # Agents need these to self-identify and to datestamp their
+      # outputs. The `glorbo` skill documents them as guaranteed
+      # present; Dispatcher was silently dropping them before today.
+      "GLORBO_AGENT" => Map.get(ctx, :agent_slug, ""),
+      "GLORBO_COMPANY" => Map.get(ctx, :company, ""),
+      "GLORBO_TIMESTAMP" => Map.get(substitutions, "timestamp", "")
     })
   end
 
