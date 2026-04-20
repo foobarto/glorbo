@@ -315,10 +315,15 @@ function toggleCommandPalette() {
   input.focus()
   updatePaletteCursor()
 
-  input.addEventListener("input", () => {
-    const q = input.value.toLowerCase()
-    const filtered = paletteItems.filter((it) => it.label.toLowerCase().includes(q))
-    list.innerHTML = filtered
+  // Keep a reference to the full nav item set so typing can re-filter
+  // or reset cleanly when content-search results come back async.
+  const baseItems = paletteItems.slice()
+
+  let searchDebounce = null
+  let currentSearchToken = 0
+
+  const renderList = (items) => {
+    list.innerHTML = items
       .map(
         (it, i) => `
         <li class="gl-palette__row" data-idx="${i}" data-href="${it.href}">
@@ -327,10 +332,43 @@ function toggleCommandPalette() {
         </li>`
       )
       .join("")
-    // Re-bind filtered items to cursor navigation.
-    paletteItems = filtered
+    paletteItems = items
     paletteCursor = 0
     updatePaletteCursor()
+  }
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase()
+    const filtered = baseItems.filter((it) => it.label.toLowerCase().includes(q))
+    renderList(filtered)
+
+    // Content search (#232) — fire on ≥2 chars, 150ms debounce, scoped
+    // to the currently-focused company.
+    const co = currentCompanySlug()
+    if (!co || q.length < 2) return
+
+    if (searchDebounce) clearTimeout(searchDebounce)
+    const token = ++currentSearchToken
+
+    searchDebounce = setTimeout(() => {
+      const url = `/api/search?co=${encodeURIComponent(co)}&q=${encodeURIComponent(q)}&limit=15`
+      fetch(url, { headers: { accept: "application/json" } })
+        .then((r) => r.json())
+        .then((data) => {
+          // Ignore stale responses if the user kept typing.
+          if (token !== currentSearchToken) return
+          const hits = (data.results || []).map((r) => ({
+            label: `${r.kind} · ${r.label}`,
+            hint: "",
+            href: r.href,
+          }))
+          // Merge: nav matches first, then content hits (deduped).
+          const seen = new Set(filtered.map((it) => it.href))
+          const merged = filtered.concat(hits.filter((it) => !seen.has(it.href)))
+          renderList(merged)
+        })
+        .catch(() => {})
+    }, 150)
   })
 
   input.addEventListener("keydown", (e) => {

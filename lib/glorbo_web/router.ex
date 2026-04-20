@@ -63,8 +63,11 @@ defmodule GlorboWeb.Router do
     live "/providers", ProvidersLive
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", GlorboWeb do
-  #   pipe_through :api
-  # end
+  # T2-B (#232) — Ctrl+K content search. JSON endpoint consumed by
+  # the palette. Pipes through :api (no CSRF, JSON accept).
+  scope "/api", GlorboWeb do
+    pipe_through :api
+
+    get "/search", SearchController, :search
+  end
 end
