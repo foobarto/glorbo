@@ -221,3 +221,29 @@ baked-in provenance rules (addresses `paperclip-benchmark.md` O6).
 5. **P1-5** Autolinker (if session-time allows).
 
 Each lands as its own commit, gated on `mix precommit` + CI green.
+
+## Shipped on 2026-04-20
+
+| # | Commit | Item |
+|---|--------|------|
+| 1 | `be2e8a0` | P1-1 — Runs tab on AgentLive (groups dispatch+complete by invocation_id) |
+| 2 | `a067a5f` | P1-2 — "working on: …" line on CompanyLive roster + AgentLive header |
+| 3 | `1490e8a` | P1-3 — `+ assign task` button on AgentLive → Kanban new-task modal prefilled |
+| 4 | `eba06b4` | P1-4 — default scaffold writes SOUL.md (all three contract files always exist) |
+| 5 | `b25235c` | P1-5 — `<project>-<digits>` task-id autolinker in markdown pipeline |
+| 6 | `96de769` | P2-4 — editor + critiqueops templates; researcher provenance rubric tightened |
+| 7 | `e452dac` | Ad-hoc — TaskLive dedicated page + Kanban right-shelf overlay (JIRA pattern) |
+| 8 | `8c4cf55` | Ad-hoc — every template (incl. default) requires tool-vs-memory provenance tagging |
+
+## Items still open
+
+- **P2-1** Inbox rename (`ApprovalQueueLive → InboxLive` + Mine/Recent/Unread/All/Archive tabs).
+- **P2-2** Goals as `company.md` frontmatter. User steer: no
+  sub-issues; agents reference each other via body/comment text
+  (already covered by autolinker).
+- **P2-3** Activity feed with `<ACTOR> <verb> <OBJECT>` framing.
+- Extract the Kanban task-detail form into a shared component so
+  TaskLive's page gets the full edit surface (currently read + comment
+  only; save/delete/status flip still require opening the shelf).
+- Agent template for a "provenance-auditor" variant of CritiqueOps
+  (stretch).
