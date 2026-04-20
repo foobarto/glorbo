@@ -219,4 +219,63 @@ defmodule GlorboWeb.ChannelLiveTest do
              ])
            )
   end
+
+  # ---------------------------------------------------------------------------
+  # #239 — archive segment surfacing
+  # ---------------------------------------------------------------------------
+
+  describe "archive segments (#239)" do
+    setup %{base: base} do
+      archive_dir = Path.join([base, "companies/acme/channels/archive/general"])
+      File.mkdir_p!(archive_dir)
+
+      File.write!(Path.join(archive_dir, "2026-04-01-10-00-00Z.md"), """
+      # general · archive segment
+
+      Rotated from `channels/general.md` at 2026-04-01T10:00:00Z.
+
+      ## 2026-03-30T09:00:00Z | director
+      old message
+      """)
+
+      :ok
+    end
+
+    test "renders an archive summary when segments exist", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+      assert html =~ "archived segment"
+      assert html =~ "2026-04-01 10:00:00Z"
+    end
+
+    test "open_archive event loads segment messages", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/channels/general")
+
+      html =
+        view
+        |> element("button[phx-value-name='2026-04-01-10-00-00Z']")
+        |> render_click()
+
+      assert html =~ "old message"
+    end
+
+    test "invalid archive name is rejected", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/channels/general")
+
+      html = render_click(view, "open_archive", %{"name" => "../../../etc/passwd"})
+      assert html =~ "Invalid archive segment name."
+    end
+
+    test "missing segment shows error flash", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/channels/general")
+
+      html = render_click(view, "open_archive", %{"name" => "does-not-exist"})
+      assert html =~ "Archive segment not found."
+    end
+
+    test "no archive summary when directory is empty", %{conn: conn, base: base} do
+      File.rm_rf!(Path.join([base, "companies/acme/channels/archive"]))
+      {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+      refute html =~ "archived segment"
+    end
+  end
 end
