@@ -115,7 +115,8 @@ defmodule Glorbo.CLI.Dispatcher do
          reply: reply,
          reply_path: reply_path,
          usage: usage,
-         usage_error: usage_error
+         usage_error: usage_error,
+         invocation_id: invocation_id
        }}
     end
   end

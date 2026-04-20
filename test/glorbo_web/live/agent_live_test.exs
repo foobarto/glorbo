@@ -73,6 +73,38 @@ defmodule GlorboWeb.AgentLiveTest do
     refute html =~ "agent.heartbeat_skipped"
   end
 
+  test "runs tab groups dispatch + complete entries by invocation_id",
+       %{conn: conn, base: base} do
+    month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
+    audit_path = Path.join([base, "companies", "acme", "audit", "#{month}.jsonl"])
+    File.mkdir_p!(Path.dirname(audit_path))
+
+    File.write!(audit_path, """
+    {"ts":"2026-04-20T10:00:00Z","actor":"system","action":"agent.dispatch","target":"projects/foo/tasks/bar.md","detail":{"invocation_id":"abc12345","provider":"opencode","model":"lmstudio/qwen","agent":"ceo","trigger":"heartbeat"}}
+    {"ts":"2026-04-20T10:00:05Z","actor":"ceo","action":"agent.complete","target":"projects/foo/tasks/bar.md","detail":{"invocation_id":"abc12345","duration_ms":5000,"exit_status":"0","reply_preview":"all done","agent":"ceo"}}
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+    html = render_click(view, "tab", %{"tab" => "runs"})
+
+    # Short invocation id + trigger rendered in the row header.
+    assert html =~ "abc12345"
+    assert html =~ "heartbeat"
+    # Status 'complete' set after the agent.complete event.
+    assert html =~ "complete"
+    # Click to expand -> reply preview visible.
+    html = render_click(view, "toggle_run", %{"inv" => "abc12345"})
+    assert html =~ "all done"
+    assert html =~ "lmstudio/qwen"
+  end
+
+  test "runs tab empty state when no runs recorded",
+       %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+    html = render_click(view, "tab", %{"tab" => "runs"})
+    assert html =~ "No runs yet"
+  end
+
   # Regression (task #121, 2026-04-18): the inbox/outbox tab used
   # `:if={not @detail.inbox.latest}` where `latest` is a map, not a
   # boolean. `not map` raises ArgumentError, crashing the LiveView on

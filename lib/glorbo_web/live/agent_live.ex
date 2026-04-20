@@ -81,6 +81,8 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:hovered_perm, nil)
         |> assign(:streamer_pid, nil)
         |> assign(:history, history)
+        |> assign(:runs, [])
+        |> assign(:runs_expanded, MapSet.new())
         |> assign(:open_file, nil)
         |> assign(:wake_open?, false)
         |> stream(:stdout, [], limit: -1000)
@@ -176,8 +178,25 @@ defmodule GlorboWeb.AgentLive do
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: ChatDrawer.State.post(socket, body)
 
-  def handle_event("tab", %{"tab" => tab}, socket) when tab in ~w(stdout sandbox inbox history) do
-    {:noreply, assign(socket, :tab, String.to_existing_atom(tab))}
+  def handle_event("tab", %{"tab" => tab}, socket)
+      when tab in ~w(stdout sandbox inbox history runs) do
+    socket = assign(socket, :tab, String.to_existing_atom(tab))
+
+    socket =
+      if tab == "runs",
+        do: assign(socket, :runs, load_runs(socket)),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_run", %{"inv" => inv_id}, socket) do
+    expanded =
+      if MapSet.member?(socket.assigns.runs_expanded, inv_id),
+        do: MapSet.delete(socket.assigns.runs_expanded, inv_id),
+        else: MapSet.put(socket.assigns.runs_expanded, inv_id)
+
+    {:noreply, assign(socket, :runs_expanded, expanded)}
   end
 
   def handle_event("hover_perm", %{"perm" => perm}, socket) do
@@ -716,6 +735,14 @@ defmodule GlorboWeb.AgentLive do
                 </button>
                 <button
                   type="button"
+                  class={["gl-agent-detail__tab", @tab == :runs && "gl-agent-detail__tab--active"]}
+                  phx-click="tab"
+                  phx-value-tab="runs"
+                >
+                  runs
+                </button>
+                <button
+                  type="button"
                   class={["gl-agent-detail__tab", @tab == :history && "gl-agent-detail__tab--active"]}
                   phx-click="tab"
                   phx-value-tab="history"
@@ -761,6 +788,71 @@ defmodule GlorboWeb.AgentLive do
                 </div>
                 <div :if={is_nil(@detail.outbox.latest)} class="gl-muted">No pending outbox.</div>
               </div>
+            </div>
+
+            <div :if={@tab == :runs} class="gl-panel__body gl-agent-runs">
+              <div :if={@runs == []} class="gl-muted">
+                No runs yet. Each dispatch (heartbeat, director wake,
+                inbox event) appears here with its tool-call summary
+                once complete.
+              </div>
+              <ul :if={@runs != []} class="gl-agent-runs__list">
+                <li
+                  :for={run <- @runs}
+                  class={[
+                    "gl-agent-runs__row",
+                    "gl-agent-runs__row--" <> Atom.to_string(run.status)
+                  ]}
+                >
+                  <button
+                    type="button"
+                    class="gl-agent-runs__header"
+                    phx-click="toggle_run"
+                    phx-value-inv={run.invocation_id}
+                    aria-expanded={MapSet.member?(@runs_expanded, run.invocation_id)}
+                  >
+                    <span class="gl-agent-runs__inv gl-tabular">
+                      {String.slice(run.invocation_id, 0, 8)}
+                    </span>
+                    <span class="gl-agent-runs__trigger">
+                      {run.trigger || "—"}
+                    </span>
+                    <span class="gl-agent-runs__task gl-muted">
+                      {run.task_path || "(no task path)"}
+                    </span>
+                    <span class={[
+                      "gl-agent-runs__status",
+                      "gl-agent-runs__status--" <> Atom.to_string(run.status)
+                    ]}>
+                      {Atom.to_string(run.status)}
+                    </span>
+                    <span class="gl-agent-runs__duration gl-tabular">
+                      {format_duration(run.duration_ms)}
+                    </span>
+                  </button>
+                  <div
+                    :if={MapSet.member?(@runs_expanded, run.invocation_id)}
+                    class="gl-agent-runs__body"
+                  >
+                    <dl class="gl-agent-runs__meta">
+                      <dt>model</dt>
+                      <dd>{run.model || "—"}</dd>
+                      <dt>provider</dt>
+                      <dd>{run.provider || "—"}</dd>
+                      <dt>start</dt>
+                      <dd class="gl-tabular">{format_ts(run.start_ts)}</dd>
+                      <dt>end</dt>
+                      <dd class="gl-tabular">{format_ts(run.end_ts)}</dd>
+                      <dt>exit</dt>
+                      <dd>{run.exit_status || "—"}</dd>
+                    </dl>
+                    <div :if={run.reply_preview} class="gl-agent-runs__reply">
+                      <div class="gl-muted">reply preview</div>
+                      <pre class="gl-agent-runs__reply-body">{run.reply_preview}</pre>
+                    </div>
+                  </div>
+                </li>
+              </ul>
             </div>
 
             <div :if={@tab == :history} class="gl-panel__body gl-agent-history">
@@ -1461,6 +1553,24 @@ defmodule GlorboWeb.AgentLive do
   # ---------------------------------------------------------------------------
 
   @history_cap 200
+
+  defp load_runs(%{assigns: %{company_slug: co, agent_slug: ag}}) do
+    Glorbo.Agent.RunLog.list(base_dir(), co, ag, limit: 50)
+  end
+
+  defp format_duration(nil), do: "—"
+  defp format_duration(ms) when is_integer(ms) and ms < 1000, do: "#{ms}ms"
+  defp format_duration(ms) when is_integer(ms) and ms < 60_000, do: "#{div(ms, 1000)}s"
+
+  defp format_duration(ms) when is_integer(ms) do
+    m = div(ms, 60_000)
+    s = rem(div(ms, 1000), 60)
+    "#{m}m#{s}s"
+  end
+
+  defp format_ts(nil), do: "—"
+  defp format_ts(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp format_ts(_), do: "—"
 
   defp load_history(base, co, ag) do
     path =

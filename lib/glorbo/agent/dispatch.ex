@@ -81,6 +81,17 @@ defmodule Glorbo.Agent.Dispatch do
   # ---------------------------------------------------------------------------
 
   defp do_execute(spec, task, run_dir, opts) do
+    # Generate the invocation_id up-front so `agent.dispatch` and
+    # `agent.complete` audit entries carry the same id — that's what
+    # lets the AgentLive Runs tab group before/after events into a
+    # single run record. Tests inject via `:invocation_id_fun` (a
+    # zero-arity function returning the deterministic id).
+    invocation_id =
+      case Keyword.get(opts, :invocation_id_fun) do
+        nil -> gen_invocation_id()
+        fun when is_function(fun, 0) -> fun.()
+      end
+
     with :ok <- check_prompt_size(task.prompt),
          :ok <- check_budget(spec, opts),
          {:ok, provider} <- resolve_provider(spec, opts),
@@ -89,14 +100,15 @@ defmodule Glorbo.Agent.Dispatch do
          {:ok, workspace} <- ensure_workspace(spec, opts),
          :ok <- materialize_skills(spec, run_dir, opts),
          :ok <- write_prompt(run_dir, task.prompt, opts),
-         :ok <- emit_dispatch_audit(spec, task, provider, opts),
+         :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
          start <- clock(opts),
-         ctx <- build_ctx(spec, task, workspace, run_dir, provider),
+         ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id),
          {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
          duration_ms <- compute_duration(start, opts),
          usage <- finalize_usage(dispatcher_result, spec),
          :ok <- record_usage(spec, task, usage, opts),
-         :ok <- emit_complete_audit(spec, task, dispatcher_result, duration_ms, opts) do
+         :ok <-
+           emit_complete_audit(spec, task, dispatcher_result, duration_ms, invocation_id, opts) do
       {:ok,
        %{
          exit_status: dispatcher_result.exit_status,
@@ -224,7 +236,7 @@ defmodule Glorbo.Agent.Dispatch do
     :ok
   end
 
-  defp build_ctx(spec, task, workspace, run_dir, provider) do
+  defp build_ctx(spec, task, workspace, run_dir, provider, invocation_id) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -239,6 +251,7 @@ defmodule Glorbo.Agent.Dispatch do
       workspace: workspace,
       prompt: task.prompt,
       prompt_path: prompt_path(run_dir),
+      invocation_id: invocation_id,
       bwrap_opts: %{
         agent_workspace: workspace,
         inbox_path: Path.join(agent_root, "inbox"),
@@ -250,6 +263,14 @@ defmodule Glorbo.Agent.Dispatch do
         cli_auth_binds: resolve_auth_binds(provider) ++ cli_binary_binds(provider)
       }
     }
+  end
+
+  # 12-char lowercase-hex id; unique-enough across a single dispatch
+  # context. Mirrors `Glorbo.CLI.Dispatcher.gen_invocation_id/1` so the
+  # two subsystems produce the same shape even if Agent.Dispatch starts
+  # pinning ids up-front (what we do here).
+  defp gen_invocation_id do
+    :crypto.strong_rand_bytes(6) |> Base.encode16(case: :lower)
   end
 
   # Auto-detect the directory containing the provider's CLI binary and
@@ -442,7 +463,7 @@ defmodule Glorbo.Agent.Dispatch do
   # Audit emission
   # ---------------------------------------------------------------------------
 
-  defp emit_dispatch_audit(spec, task, provider, opts) do
+  defp emit_dispatch_audit(spec, task, provider, invocation_id, opts) do
     audit = audit_fun(opts)
 
     entry = %{
@@ -452,7 +473,9 @@ defmodule Glorbo.Agent.Dispatch do
       task_path: task.task_path,
       provider: provider.name,
       model: spec.model,
-      container_id: "bwrap-inline"
+      container_id: "bwrap-inline",
+      invocation_id: invocation_id,
+      trigger: Map.get(task, :trigger, :unknown) |> to_string()
     }
 
     audit.(spec.company, entry)
@@ -463,7 +486,7 @@ defmodule Glorbo.Agent.Dispatch do
       :ok
   end
 
-  defp emit_complete_audit(spec, task, result, duration_ms, opts) do
+  defp emit_complete_audit(spec, task, result, duration_ms, invocation_id, opts) do
     audit = audit_fun(opts)
 
     entry = %{
@@ -472,7 +495,9 @@ defmodule Glorbo.Agent.Dispatch do
       agent: spec.slug,
       task_path: task.task_path,
       duration_ms: duration_ms,
-      exit_status: to_string(result.exit_status)
+      exit_status: to_string(result.exit_status),
+      invocation_id: invocation_id,
+      reply_preview: preview(result.reply)
     }
 
     audit.(spec.company, entry)
@@ -482,6 +507,18 @@ defmodule Glorbo.Agent.Dispatch do
       Logger.warning("dispatch complete audit emit failed: #{Exception.message(e)}")
       :ok
   end
+
+  # First non-empty line of the reply, capped for audit storage.
+  defp preview(nil), do: ""
+
+  defp preview(reply) when is_binary(reply) do
+    reply
+    |> String.split("\n", trim: true)
+    |> List.first("")
+    |> String.slice(0, 160)
+  end
+
+  defp preview(_), do: ""
 
   # Default audit_fun for production wires the per-company AuditLog via
   # its Registry via-tuple. AuditLog.append(server, entry) expects `server`
