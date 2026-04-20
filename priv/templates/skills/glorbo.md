@@ -114,7 +114,9 @@ Three supported shapes:
 #### Filing a task — `/outbox/tasks/<project>/<task-id>.md`
 
 If you have `projects:write:<project>` (or `projects:write:*`),
-write a file with task frontmatter:
+write a file with task frontmatter. **The `---` fences and
+`title:` key are REQUIRED** — the Router rejects malformed
+tasks. Exact shape:
 
 ```markdown
 ---
@@ -125,6 +127,10 @@ priority: high
 ---
 Body of the task. What you want the assignee to do.
 ```
+
+Common mistake: emitting bare YAML keys without the `---`
+fences. Router logs this as `missing_title_frontmatter` and
+leaves your outbox file untouched so you can fix.
 
 On success the file moves to
 `companies/<co>/projects/<project>/tasks/<task-id>.md` and an

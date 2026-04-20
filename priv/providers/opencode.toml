@@ -26,6 +26,15 @@ fallback_paths = ["~/.opencode/bin/opencode"]
 args = [
   "run",
   "-m", "{model}",
+  # Glorbo is the outer permission boundary: bwrap mount namespaces +
+  # ACLMapper already gate every FS access at the kernel. Opencode
+  # has its own policy layer that prompts on writes to directories
+  # outside `/workspace` — which bites in Glorbo's sandbox because
+  # `/outbox`, `/inbox`, and `/workspace/.glorbo-skills` are siblings
+  # not children. Under `--print`-style non-interactive mode every
+  # prompt auto-rejects, causing permission denials on legit writes.
+  # Flip to auto-approve so the kernel layer stays authoritative.
+  "--dangerously-skip-permissions",
 ]
 prompt_mode = "stdin"
 

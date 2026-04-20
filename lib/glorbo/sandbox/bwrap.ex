@@ -260,9 +260,19 @@ defmodule Glorbo.Sandbox.Bwrap do
       "--bind",
       ws,
       "/workspace",
+      # Canonical `/outbox` mount.
       "--bind",
       outbox,
       "/outbox",
+      # Alias `/workspace/outbox` → same host outbox dir. Opencode's
+      # Write tool is cwd-scoped and silently rewrites absolute
+      # `/outbox/...` paths to cwd-relative `outbox/...`, which
+      # lands in `<workspace>/outbox/` without this alias. With the
+      # alias, writes to either path hit the real outbox and the
+      # Router picks them up.
+      "--bind",
+      outbox,
+      "/workspace/outbox",
       "--ro-bind",
       inbox,
       "/inbox"

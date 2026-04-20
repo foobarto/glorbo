@@ -677,7 +677,8 @@ defmodule Glorbo.Company.Router do
     project_md = Path.join([Path.dirname(project_tasks_dir), "project.md"])
 
     with {:ok, content} <- File.read(abs_path),
-         {:ok, _meta, _body} <- Frontmatter.parse(content),
+         {:ok, meta, _body} <- Frontmatter.parse(content),
+         :ok <- require_task_title(meta),
          {:ok, perms} <- lookup_permissions(sender, state),
          :ok <- check_project_write_permission(perms, project),
          :ok <- ensure_project_exists(project_md),
@@ -694,6 +695,17 @@ defmodule Glorbo.Company.Router do
         )
 
         :ok
+    end
+  end
+
+  # Tasks without a `title:` in frontmatter are almost certainly
+  # missing the whole `---`…`---` fence (the most common mistake
+  # agents make). Reject them so the Director sees the outbox file
+  # still in place and can intervene.
+  defp require_task_title(meta) do
+    case Map.get(meta, "title") do
+      t when is_binary(t) and byte_size(t) > 0 -> :ok
+      _ -> {:error, :missing_title_frontmatter}
     end
   end
 
