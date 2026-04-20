@@ -33,6 +33,9 @@ defmodule GlorboWeb.Router do
     live "/companies/:company", CompanyLive
     live "/companies/:company/kanban", KanbanLive
     live "/companies/:company/projects/:project", ProjectLive
+    # Dedicated task-detail page — JIRA-style. Kanban opens the same task
+    # as a right-side shelf; clicking "open task page →" navigates here.
+    live "/companies/:company/tasks/:task_id", TaskLive
     live "/companies/:company/agents/:agent", AgentLive
     live "/companies/:company/approvals", ApprovalQueueLive
     # Plan 04-03 Task 2: content-scope chat view.

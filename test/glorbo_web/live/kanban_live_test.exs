@@ -307,6 +307,37 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert File.read!(abs) == before
   end
 
+  test "open_task overlay exposes an `open task page →` link to TaskLive",
+       %{conn: conn, base: base} do
+    tasks_dir = Path.join([base, "companies/acme/projects/demo/tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    File.write!(Path.join([base, "companies/acme/projects/demo/project.md"]), """
+    ---
+    slug: demo
+    name: demo
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "demo-1.md"), """
+    ---
+    title: trace
+    status: todo
+    ---
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    html = render_click(view, "open_task", %{"path" => "projects/demo/tasks/demo-1.md"})
+
+    # Shelf-class marker (not the center-modal variant).
+    assert html =~ "gl-shelf-scrim"
+    assert html =~ "gl-task-detail--shelf"
+    # The JIRA-style "open task page" link points at TaskLive.
+    assert html =~ "open task page"
+    assert html =~ ~s(href="/companies/acme/tasks/demo-1")
+  end
+
   test "?assignee=<slug> opens new-task modal with assignee prefilled",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?assignee=ceo")

@@ -1290,6 +1290,35 @@ button { font-family: inherit; font-size: inherit; }
   max-height: 80vh;
   overflow: auto;
 }
+
+/* Right-shelf scrim — overlay variant used by Kanban so the task
+ * detail slides in from the right edge (JIRA pattern). Leaves the
+ * left half of the board visible so a director can still see
+ * neighbouring cards while triaging one. */
+.gl-shelf-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+}
+.gl-task-detail--shelf {
+  min-width: min(640px, 90vw);
+  max-width: min(720px, 92vw);
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+  animation: gl-shelf-slide 0.15s ease-out;
+}
+
+@keyframes gl-shelf-slide {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
 .gl-task-detail__fields {
   display: flex;
   flex-direction: column;

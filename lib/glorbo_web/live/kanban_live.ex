@@ -755,16 +755,23 @@ defmodule GlorboWeb.KanbanLive do
 
       <div
         :if={@open_task}
-        class="gl-modal-scrim"
+        class="gl-shelf-scrim"
         phx-click-away="close_task"
         phx-window-keydown="close_task"
         phx-key="Escape"
       >
-        <div class="gl-task-detail">
+        <div class="gl-task-detail gl-task-detail--shelf">
           <header class="gl-panel__header">
             <span class="gl-muted">task/</span>
             <span class="gl-panel__title">{@open_task.task_id}</span>
             <span class="gl-panel__spacer"></span>
+            <.link
+              navigate={~p"/companies/#{@company_slug}/tasks/#{@open_task.task_id}"}
+              class="gl-btn gl-btn--sm gl-btn--ghost"
+              title="Open the full task page (same as JIRA's issue detail)"
+            >
+              open task page →
+            </.link>
             <button
               type="button"
               class="gl-btn gl-btn--sm"
