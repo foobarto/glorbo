@@ -561,4 +561,166 @@ defmodule GlorboWeb.ActionsTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  # Scaffold-on-approve — director approves a hire-request task, Glorbo
+  # runs the agent scaffold automatically. Director remains the authority
+  # (AGT-05 P15 preserved); Glorbo just automates the CLI step.
+  describe "set_approval/4 scaffold-on-approve" do
+    setup %{base: base} do
+      tasks_dir = Path.join([base, "companies", "acme", "projects", "web", "tasks"])
+      File.mkdir_p!(tasks_dir)
+      task = Path.join(tasks_dir, "hire-01.md")
+
+      File.write!(task, """
+      ---
+      title: hire researcher
+      status: pending
+      kind: hire
+      agent_slug: researcher
+      role: Researcher
+      provider: opencode
+      model: lmstudio/qwen/qwen3.6-35b-a3b
+      ---
+
+      Please hire a Researcher.
+      """)
+
+      %{task_path: "projects/web/tasks/hire-01.md"}
+    end
+
+    test "kind:hire + :approved fires scaffold_fun with the right argv", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      me = self()
+      ref = make_ref()
+
+      scaffold_fun = fn argv ->
+        send(me, {ref, :scaffolded, argv})
+        {:new_agent, 0, "✓ created agent: /tmp/test/companies/acme/agents/researcher"}
+      end
+
+      assert :ok =
+               Actions.set_approval("acme", task_path, :approved,
+                 base: base,
+                 audit: audit,
+                 scaffold_fun: scaffold_fun
+               )
+
+      assert_receive {^ref, :scaffolded,
+                      ["acme/researcher", "--role", "Researcher", "--provider", "opencode"]}
+
+      # Both the approval AND the scaffold are audited.
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "approval.approved" in actions
+      assert "agent.scaffold" in actions
+    end
+
+    test "non-hire task does NOT invoke scaffold_fun", %{base: base, audit: audit} do
+      # Regular pending task (no `kind: hire`).
+      me = self()
+      ref = make_ref()
+
+      scaffold_fun = fn _argv ->
+        send(me, {ref, :called})
+        {:new_agent, 0, ""}
+      end
+
+      tasks_dir = Path.join([base, "companies", "acme", "projects", "web", "tasks"])
+      File.mkdir_p!(tasks_dir)
+
+      File.write!(Path.join(tasks_dir, "t-regular.md"), """
+      ---
+      title: "Deploy"
+      status: pending
+      assigned_to: ceo
+      requires_approval: director
+      ---
+
+      Ship it.
+      """)
+
+      assert :ok =
+               Actions.set_approval("acme", "projects/web/tasks/t-regular.md", :approved,
+                 base: base,
+                 audit: audit,
+                 scaffold_fun: scaffold_fun
+               )
+
+      refute_receive {^ref, :called}, 50
+    end
+
+    test ":denied on a hire task does NOT scaffold", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      me = self()
+      ref = make_ref()
+
+      scaffold_fun = fn _argv ->
+        send(me, {ref, :called})
+        {:new_agent, 0, ""}
+      end
+
+      assert :ok =
+               Actions.set_approval("acme", task_path, :denied,
+                 base: base,
+                 audit: audit,
+                 scaffold_fun: scaffold_fun,
+                 denial_reason: "budget hold"
+               )
+
+      refute_receive {^ref, :called}, 50
+    end
+
+    test "hire task missing required frontmatter does NOT scaffold", %{base: base, audit: audit} do
+      me = self()
+      ref = make_ref()
+
+      scaffold_fun = fn _argv ->
+        send(me, {ref, :called})
+        {:new_agent, 0, ""}
+      end
+
+      tasks_dir = Path.join([base, "companies", "acme", "projects", "web", "tasks"])
+      File.mkdir_p!(tasks_dir)
+
+      # `kind: hire` but no `agent_slug` / `role` / `provider`.
+      File.write!(Path.join(tasks_dir, "hire-partial.md"), """
+      ---
+      title: hire something
+      status: pending
+      kind: hire
+      ---
+
+      incomplete.
+      """)
+
+      assert :ok =
+               Actions.set_approval("acme", "projects/web/tasks/hire-partial.md", :approved,
+                 base: base,
+                 audit: audit,
+                 scaffold_fun: scaffold_fun
+               )
+
+      refute_receive {^ref, :called}, 50
+    end
+
+    test "scaffold failure is captured via agent.scaffold_failed audit",
+         %{base: base, audit: audit, task_path: task_path} do
+      scaffold_fun = fn _argv -> {:new_agent, 1, "slug already exists"} end
+
+      assert :ok =
+               Actions.set_approval("acme", task_path, :approved,
+                 base: base,
+                 audit: audit,
+                 scaffold_fun: scaffold_fun
+               )
+
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "agent.scaffold_failed" in actions
+    end
+  end
 end

@@ -348,11 +348,90 @@ defmodule GlorboWeb.Actions do
 
           AuditLog.append(audit, entry)
 
+          # Scaffold-on-approve: if this was a `kind: hire` task and
+          # the decision was :approved, automatically run the agent
+          # scaffold. Director remains the approval authority
+          # (AGT-05 P15 preserved — agents never get agents:create);
+          # Glorbo only automates the mechanical scaffold step the
+          # Director would otherwise run via CLI.
+          if decision == :approved do
+            maybe_scaffold_hired_agent(company, abs, audit,
+              scaffold_fun: Keyword.get(opts, :scaffold_fun)
+            )
+          end
+
           :ok
 
         {:error, _} = err ->
           err
       end
+    end
+  end
+
+  # If the approved task frontmatter has `kind: hire` plus valid
+  # `agent_slug` + `role` + `provider` + `model`, scaffold the agent
+  # automatically and emit an `agent.scaffold` audit event. Opt-out:
+  # omit any required field → no scaffold (caller can still run
+  # `./glorbo new agent` manually).
+  defp maybe_scaffold_hired_agent(company, abs_path, audit, opts) do
+    scaffold = Keyword.get(opts, :scaffold_fun) || (&Glorbo.CLI.Scaffold.Agent.run/1)
+
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         :ok <- hire_task?(fm),
+         {:ok, args} <- hire_argv(company, fm) do
+      case scaffold.(args) do
+        {:new_agent, 0, msg} ->
+          AuditLog.append(audit, %{
+            company: company,
+            actor: "director",
+            action: "agent.scaffold",
+            target: "agents/#{Enum.at(args, 0) |> String.split("/") |> List.last()}",
+            source: "approval",
+            argv: args,
+            stdout: String.slice(msg, 0, 500)
+          })
+
+          :ok
+
+        {:new_agent, code, msg} ->
+          AuditLog.append(audit, %{
+            company: company,
+            actor: "director",
+            action: "agent.scaffold_failed",
+            target: abs_path,
+            source: "approval",
+            argv: args,
+            exit_code: code,
+            stdout: String.slice(msg, 0, 500)
+          })
+
+          :ok
+      end
+    else
+      _ -> :ok
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp hire_task?(%{"kind" => "hire"}), do: :ok
+  defp hire_task?(_), do: {:error, :not_a_hire}
+
+  defp hire_argv(company, fm) do
+    slug = to_string(fm["agent_slug"] || "")
+    role = to_string(fm["role"] || "")
+    provider = to_string(fm["provider"] || "")
+
+    cond do
+      slug == "" or role == "" or provider == "" ->
+        {:error, :missing_hire_fields}
+
+      not Regex.match?(~r/\A[a-z][a-z0-9_-]{0,63}\z/, slug) ->
+        {:error, :invalid_agent_slug}
+
+      true ->
+        {:ok, ["#{company}/#{slug}", "--role", role, "--provider", provider]}
     end
   end
 
