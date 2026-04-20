@@ -1972,6 +1972,13 @@ button { font-family: inherit; font-size: inherit; }
 .gl-slug-hint--taken { color: var(--gl-danger); }
 .gl-slug-hint--available { color: var(--gl-success); }
 
+/* Stuck agents on the InboxLive Mine tab — loop-detector sentinels. */
+.gl-danger { color: var(--gl-danger); }
+.gl-inbox__stuck {
+  border-left: 3px solid var(--gl-danger);
+  padding-left: var(--gl-space-sm);
+}
+
 /* Wizard progress strip (paperclip-ux-gaps §13). */
 .gl-wizard-steps {
   display: flex;

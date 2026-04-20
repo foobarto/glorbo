@@ -109,7 +109,8 @@ defmodule Glorbo.Agent.Dispatch do
          :ok <- record_usage(spec, task, usage, opts),
          merged_result <- Map.put(dispatcher_result, :usage, usage),
          :ok <-
-           emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts) do
+           emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
+         :ok <- maybe_check_loop(spec, opts) do
       {:ok,
        %{
          exit_status: dispatcher_result.exit_status,
@@ -529,6 +530,39 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp maybe_put_tool_calls(entry, calls) when is_map(calls),
     do: Map.put(entry, :tool_calls, calls)
+
+  # Post-dispatch loop check — reads this month's audit jsonl for
+  # consecutive failures on the same task_path and, on threshold,
+  # writes a director-actionable sentinel + emits
+  # `agent.loop_detected`. Best-effort; any error is logged but
+  # doesn't propagate into the dispatch result (detection failure
+  # must never mask a successful dispatch).
+  #
+  # Injection: `opts[:loop_check_fun]` overrides the real detector
+  # in tests — a zero-arity `fn -> :ok end` stub keeps the
+  # existing dispatch test harness working unchanged.
+  defp maybe_check_loop(spec, opts) do
+    fun =
+      Keyword.get_lazy(opts, :loop_check_fun, fn ->
+        base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+
+        fn ->
+          Glorbo.Agent.LoopDetector.check(spec.company, spec.slug,
+            base: base,
+            audit_fun: audit_fun(opts)
+          )
+
+          :ok
+        end
+      end)
+
+    fun.()
+    :ok
+  rescue
+    e ->
+      Logger.warning("loop-check skipped for #{spec.slug}: #{Exception.message(e)}")
+      :ok
+  end
 
   # First non-empty line of the reply, capped for audit storage.
   defp preview(nil), do: ""

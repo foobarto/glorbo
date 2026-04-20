@@ -54,6 +54,7 @@ defmodule GlorboWeb.InboxLive do
     end
 
     sentinels = load_sentinels(base, co)
+    stuck = load_stuck(base, co)
     audits = load_recent_audit(base, co)
     archived = Archive.list(base, co)
 
@@ -66,6 +67,7 @@ defmodule GlorboWeb.InboxLive do
      |> assign(:base, base)
      |> assign(:tab, :mine)
      |> assign(:sentinels, sentinels)
+     |> assign(:stuck, stuck)
      |> assign(:audit_rows, audits)
      |> assign(:archived, archived)
      |> assign(:deny_task_path, nil)
@@ -87,12 +89,14 @@ defmodule GlorboWeb.InboxLive do
   def handle_info({:file_event, rel, _events}, socket) do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel)
     sentinels = load_sentinels(socket.assigns.base, socket.assigns.company_slug)
+    stuck = load_stuck(socket.assigns.base, socket.assigns.company_slug)
     audits = load_recent_audit(socket.assigns.base, socket.assigns.company_slug)
     archived = Archive.list(socket.assigns.base, socket.assigns.company_slug)
 
     {:noreply,
      socket
      |> assign(:sentinels, sentinels)
+     |> assign(:stuck, stuck)
      |> assign(:audit_rows, audits)
      |> assign(:archived, archived)}
   end
@@ -176,6 +180,74 @@ defmodule GlorboWeb.InboxLive do
      |> put_flash(:info, "Unarchived.")}
   end
 
+  # Resolve a stuck-on sentinel. Three decisions:
+  #
+  # * `retry` — delete the sentinel only. Next dispatch cycle can
+  #   try again; the LoopDetector will re-flag if it keeps failing.
+  # * `skip`  — delete the sentinel + reassign task to `director`.
+  #   Director picks up the work themselves.
+  # * `stop`  — delete the sentinel + set task `status: denied`.
+  #   Work is abandoned.
+  def handle_event("stuck_resolve", %{"decision" => dec, "sentinel_path" => sp}, socket)
+      when dec in ["retry", "skip", "stop"] do
+    base = socket.assigns.base
+    co = socket.assigns.company_slug
+    abs_sentinel = Path.join([base, "companies", co, sp])
+
+    case resolve_stuck(abs_sentinel, dec, base, co) do
+      :ok ->
+        stuck = load_stuck(base, co)
+
+        flash_msg =
+          case dec do
+            "retry" -> "Stuck sentinel cleared — next dispatch will retry."
+            "skip" -> "Reassigned to director."
+            "stop" -> "Task marked denied."
+          end
+
+        {:noreply,
+         socket
+         |> assign(:stuck, stuck)
+         |> put_flash(:info, flash_msg)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Resolve failed: #{inspect(reason)}")}
+    end
+  end
+
+  # Resolution: delete sentinel + optionally mutate the task. Task
+  # mutation uses TaskDefinition.write/2 — same atomic path as
+  # kanban saves. Sentinel removal is best-effort; if TaskDefinition
+  # update fails the sentinel stays so the director still sees it.
+  defp resolve_stuck(abs_sentinel, decision, base, company) do
+    with {:ok, content} <- File.read(abs_sentinel),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      task_path = to_string(fm["task_path"] || "")
+      abs_task = Path.join([base, "companies", company, task_path])
+
+      case decision do
+        "retry" ->
+          _ = File.rm(abs_sentinel)
+          :ok
+
+        "skip" ->
+          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{assigned_to: "director"}) do
+            _ = File.rm(abs_sentinel)
+            :ok
+          end
+
+        "stop" ->
+          with :ok <-
+                 Glorbo.TaskDefinition.write(abs_task, %{status: "denied"}) do
+            _ = File.rm(abs_sentinel)
+            :ok
+          end
+      end
+    else
+      err -> err
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Data helpers
   # ---------------------------------------------------------------------------
@@ -184,6 +256,7 @@ defmodule GlorboWeb.InboxLive do
   # stays consistent across views. Kept local (not extracted) because
   # the approval UI component depends on the exact shape.
   @state_glob "agents/*/state/awaiting-approval-*.md"
+  @stuck_glob "agents/*/state/stuck-on-*.md"
 
   defp load_sentinels(base, company) do
     co_dir = Path.join([base, "companies", company])
@@ -194,6 +267,40 @@ defmodule GlorboWeb.InboxLive do
     |> Enum.sort()
     |> Enum.map(&sentinel_row(&1, co_dir, base, company))
     |> Enum.reject(&is_nil/1)
+  end
+
+  defp load_stuck(base, company) do
+    co_dir = Path.join([base, "companies", company])
+
+    co_dir
+    |> Path.join(@stuck_glob)
+    |> Path.wildcard()
+    |> Enum.sort()
+    |> Enum.map(&stuck_row(&1, co_dir))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp stuck_row(sentinel_path, co_dir) do
+    filename = Path.basename(sentinel_path, ".md")
+
+    with [_, task_id] when task_id != "" <- String.split(filename, "stuck-on-", parts: 2),
+         {:ok, content} <- File.read(sentinel_path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      # Sentinel carries agent + task_path in frontmatter.
+      agent = to_string(fm["agent"] || "")
+      task_path = to_string(fm["task_path"] || "")
+
+      %{
+        task_id: task_id,
+        task_path: task_path,
+        agent: agent,
+        failure_count: fm["failure_count"] || 0,
+        sentinel_path: Path.relative_to(sentinel_path, co_dir),
+        last_failure_ts: to_string(fm["last_failure_ts"] || "")
+      }
+    else
+      _ -> nil
+    end
   end
 
   defp sentinel_row(sentinel_path, co_dir, base, company) do
@@ -357,6 +464,57 @@ defmodule GlorboWeb.InboxLive do
                 title="Archive (hide without acting)"
               >
                 archive
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div :if={@tab in [:mine, :all] and @stuck != []} class="gl-inbox__section">
+        <h2 class="gl-heading gl-heading--heading">
+          Stuck agents <span class="gl-muted">({length(@stuck)})</span>
+        </h2>
+
+        <ul class="gl-inbox__list">
+          <li :for={s <- @stuck} class="gl-inbox__approval gl-inbox__stuck">
+            <div class="gl-inbox__approval-meta">
+              <span class="gl-tabular">{s.task_id}</span>
+              <span class="gl-muted">· @{s.agent}</span>
+              <span class="gl-danger">· {s.failure_count} consecutive failures</span>
+            </div>
+            <div class="gl-inbox__approval-title">
+              Agent is stuck — last failure {s.last_failure_ts}
+            </div>
+            <div class="gl-inbox__approval-actions">
+              <button
+                type="button"
+                class="gl-btn"
+                phx-click="stuck_resolve"
+                phx-value-decision="retry"
+                phx-value-sentinel_path={s.sentinel_path}
+                title="Keep retrying this task"
+              >
+                retry
+              </button>
+              <button
+                type="button"
+                class="gl-btn"
+                phx-click="stuck_resolve"
+                phx-value-decision="skip"
+                phx-value-sentinel_path={s.sentinel_path}
+                title="Reassign to director"
+              >
+                skip
+              </button>
+              <button
+                type="button"
+                class="gl-btn gl-btn--deny"
+                phx-click="stuck_resolve"
+                phx-value-decision="stop"
+                phx-value-sentinel_path={s.sentinel_path}
+                title="Mark task as denied"
+              >
+                stop
               </button>
             </div>
           </li>
