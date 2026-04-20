@@ -944,6 +944,8 @@ defmodule Glorbo.Agent.Server do
       messages / comments / task filing / hire requests). Other
       skills listed there are role-specific capabilities you may
       use.
+    - Permission-driven mounts visible to you this run:
+    #{permission_mount_summary(spec)}
 
     ## How to reply
 
@@ -989,6 +991,52 @@ defmodule Glorbo.Agent.Server do
         "Reply lands wherever the triggering message specifies."
     end
   end
+
+  # Summarise the agent's permissions as a bullet list of the
+  # mount paths the sandbox will expose. Agents need to know about
+  # `/projects/<name>` etc explicitly — running models ignore AGENT.md
+  # body if the Glorbo-composed system prompt doesn't name these
+  # paths alongside /workspace, /inbox, /outbox.
+  defp permission_mount_summary(spec) do
+    entries =
+      spec.permissions
+      |> Enum.map(&permission_to_bullet/1)
+      |> Enum.reject(&is_nil/1)
+
+    case entries do
+      [] -> "      (none — only /workspace /inbox /outbox /skills are mounted)"
+      list -> Enum.map_join(list, "\n", &("      " <> &1))
+    end
+  end
+
+  defp permission_to_bullet({"projects", "read", "*"}),
+    do: "- `/projects/` (ro) — all projects in this company"
+
+  defp permission_to_bullet({"projects", "read", name}),
+    do: "- `/projects/#{name}/` (ro) — only this project visible"
+
+  defp permission_to_bullet({"projects", "write", "*"}),
+    do: "- `/projects/` (rw) — full projects tree writable"
+
+  defp permission_to_bullet({"projects", "write", name}),
+    do: "- `/projects/#{name}/` (rw) — only this project writable"
+
+  defp permission_to_bullet({"chat", "read", _}),
+    do: "- `/chat/` (ro) — company channel logs"
+
+  defp permission_to_bullet({"chat", "write", _}),
+    do: "- `/chat/` (rw) — can post to channel logs via outbox routing"
+
+  defp permission_to_bullet({"tasks", "read", _}),
+    do: "- `/tasks/` (ro) — company task files"
+
+  defp permission_to_bullet({"tasks", "write", _}),
+    do: "- `/tasks/` (rw) — can mutate task files via outbox routing"
+
+  defp permission_to_bullet({"agents", "read", _}),
+    do: "- `/agents/` (ro) — sibling agents' public identity"
+
+  defp permission_to_bullet(_), do: nil
 
   defp format_reply_hint(%{"channel" => ch}) when is_binary(ch) and ch != "" do
     "Your reply posts to the `##{ch}` channel as a message."
