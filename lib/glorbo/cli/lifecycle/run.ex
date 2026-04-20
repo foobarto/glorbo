@@ -109,13 +109,17 @@ defmodule Glorbo.CLI.Lifecycle.Run do
   end
 
   # Shape the Dispatch.execute task map from a TaskDefinition struct.
+  # `model` / `provider` are threaded through when present so Dispatch
+  # can prefer task-level overrides over the agent spec (#235).
   defp task_from_def(%Glorbo.TaskDefinition{} = def, task_path) do
     %{
       task_id: def.task_id,
       task_path: def.task_path,
       prompt: def.prompt_body,
       trigger: :cli,
-      file_path: task_path
+      file_path: task_path,
+      model: def.model,
+      provider: def.provider
     }
   end
 

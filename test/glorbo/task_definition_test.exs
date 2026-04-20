@@ -415,4 +415,43 @@ defmodule Glorbo.TaskDefinitionTest do
     assert {:ok, %TaskDefinition{task_id: "web-redesign-07", project: "web-redesign"}} =
              TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
   end
+
+  # T23 — #235: optional per-task `model:` + `provider:` overrides
+  test "T23: parses optional model/provider override frontmatter", ctx do
+    content = """
+    ---
+    title: use cheaper model for this one
+    status: todo
+    model: claude-haiku-4-5
+    provider: codex
+    ---
+    body
+    """
+
+    path = write_task(ctx, "t-42.md", content)
+
+    assert {:ok, td} =
+             TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+    assert td.model == "claude-haiku-4-5"
+    assert td.provider == "codex"
+  end
+
+  test "T23b: model/provider are nil when absent (preserves existing behaviour)", ctx do
+    content = """
+    ---
+    title: default
+    status: todo
+    ---
+    body
+    """
+
+    path = write_task(ctx, "t-43.md", content)
+
+    assert {:ok, td} =
+             TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+    assert td.model == nil
+    assert td.provider == nil
+  end
 end

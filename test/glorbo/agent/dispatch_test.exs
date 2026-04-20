@@ -416,6 +416,86 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   # ---------------------------------------------------------------------------
+  # #235 — per-task model/provider override
+  # ---------------------------------------------------------------------------
+
+  describe "task-level overrides (#235)" do
+    test "task.model overrides spec.model in audit + usage", ctx do
+      task = Map.put(ctx.task, :model, "claude-haiku-4-5")
+      record_pid = self()
+
+      record_fun = fn _s, _t, u ->
+        send(record_pid, {:recorded, u})
+        :ok
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: fn "claude-code" -> stub_provider() end,
+                 audit_fun: ctx.audit_fun,
+                 record_usage_fun: record_fun
+               )
+
+      assert_received {:audit, %{action: "agent.dispatch", model: "claude-haiku-4-5"}}
+      assert_received {:recorded, %{model: "claude-haiku-4-5"}}
+    end
+
+    test "task.provider overrides spec.provider at resolution", ctx do
+      task = Map.put(ctx.task, :provider, "codex")
+      pid = self()
+
+      provider_fun = fn name ->
+        send(pid, {:resolved, name})
+        stub_provider(name: name)
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: provider_fun,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:resolved, "codex"}
+      assert_received {:audit, %{action: "agent.dispatch", provider: "codex"}}
+    end
+
+    test "blank task.model/provider falls back to spec", ctx do
+      task = Map.merge(ctx.task, %{model: "", provider: nil})
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: fn "claude-code" -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:audit,
+                       %{
+                         action: "agent.dispatch",
+                         model: "claude-opus-4-6",
+                         provider: "claude-code"
+                       }}
+    end
+
+    test "unknown task.provider surfaces {:unknown_provider, name}", ctx do
+      task = Map.put(ctx.task, :provider, "ghost")
+
+      assert {:error, :unknown_provider} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: fn _ -> nil end,
+                 audit_fun: ctx.audit_fun
+               )
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
 

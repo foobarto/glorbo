@@ -94,7 +94,7 @@ defmodule Glorbo.Agent.Dispatch do
 
     with :ok <- check_prompt_size(task.prompt),
          :ok <- check_budget(spec, opts),
-         {:ok, provider} <- resolve_provider(spec, opts),
+         {:ok, provider} <- resolve_provider(spec, task, opts),
          :ok <- check_untracked_allowed(spec, provider, opts),
          :ok <- verify_installed(spec, provider, opts),
          {:ok, workspace} <- ensure_workspace(spec, opts),
@@ -105,7 +105,7 @@ defmodule Glorbo.Agent.Dispatch do
          ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id),
          {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
          duration_ms <- compute_duration(start, opts),
-         usage <- finalize_usage(dispatcher_result, spec),
+         usage <- finalize_usage(dispatcher_result, spec, task),
          :ok <- record_usage(spec, task, usage, opts),
          merged_result <- Map.put(dispatcher_result, :usage, usage),
          :ok <-
@@ -161,14 +161,25 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp resolve_provider(spec, opts) do
+  # #235 per-task override: if the task map carries a non-empty
+  # :provider, prefer it over spec.provider. Falls back to spec on any
+  # miss (nil, blank). Unknown provider names surface as
+  # {:error, {:unknown_provider, name}} so misconfiguration is loud.
+  defp resolve_provider(spec, task, opts) do
     fun = Keyword.get(opts, :provider_fun, &Registry.get/1)
+    name = task_provider_override(task) || spec.provider
 
-    case fun.(spec.provider) do
-      nil -> {:error, {:unknown_provider, spec.provider}}
+    case fun.(name) do
+      nil -> {:error, {:unknown_provider, name}}
       %{} = provider -> {:ok, provider}
     end
   end
+
+  defp task_provider_override(%{provider: p}) when is_binary(p) and p != "", do: p
+  defp task_provider_override(_), do: nil
+
+  defp task_model_override(%{model: m}) when is_binary(m) and m != "", do: m
+  defp task_model_override(_), do: nil
 
   defp check_untracked_allowed(spec, %{usage_parser: "none"}, _opts) do
     if Map.get(spec, :allow_untracked_budget) == true do
@@ -247,9 +258,13 @@ defmodule Glorbo.Agent.Dispatch do
     # …/agents/outbox` → CLI exits 1 → :reply_file_missing).
     agent_root = Path.dirname(workspace)
 
+    # #235 per-task override: prefer task.model over spec.model when
+    # the task explicitly requests a specific model.
+    model = task_model_override(task) || spec.model
+
     %{
       task_id: task.task_id,
-      model: spec.model,
+      model: model,
       workspace: workspace,
       prompt: task.prompt,
       prompt_path: prompt_path(run_dir),
@@ -398,17 +413,19 @@ defmodule Glorbo.Agent.Dispatch do
     max(now - start, 0)
   end
 
-  defp finalize_usage(%{usage: nil}, spec) do
+  defp finalize_usage(%{usage: nil}, spec, task) do
     # Either :none parser (untracked), or a parse error that the
     # Dispatcher already recorded in :usage_error. Record zeros so
     # the budget ledger stays consistent (Pitfall 5).
-    %{prompt_tokens: 0, completion_tokens: 0, model: spec.model}
+    %{prompt_tokens: 0, completion_tokens: 0, model: effective_model(spec, task)}
   end
 
-  defp finalize_usage(%{usage: %{model: nil} = usage}, spec),
-    do: %{usage | model: spec.model}
+  defp finalize_usage(%{usage: %{model: nil} = usage}, spec, task),
+    do: %{usage | model: effective_model(spec, task)}
 
-  defp finalize_usage(%{usage: usage}, _spec), do: usage
+  defp finalize_usage(%{usage: usage}, _spec, _task), do: usage
+
+  defp effective_model(spec, task), do: task_model_override(task) || spec.model
 
   # Budget-ledger recording is load-bearing for "you always know what
   # each agent cost" — swallowing failures silently would let budget
@@ -476,7 +493,7 @@ defmodule Glorbo.Agent.Dispatch do
       agent: spec.slug,
       task_path: task.task_path,
       provider: provider.name,
-      model: spec.model,
+      model: effective_model(spec, task),
       container_id: "bwrap-inline",
       invocation_id: invocation_id,
       trigger: Map.get(task, :trigger, :unknown) |> to_string()

@@ -75,6 +75,8 @@ defmodule Glorbo.TaskDefinition do
           severity: severity(),
           project: String.t() | nil,
           goal: String.t() | nil,
+          model: String.t() | nil,
+          provider: String.t() | nil,
           prompt_body: String.t(),
           file_path: String.t()
         }
@@ -91,6 +93,8 @@ defmodule Glorbo.TaskDefinition do
     :severity,
     :project,
     :goal,
+    :model,
+    :provider,
     :prompt_body,
     :file_path
   ]
@@ -157,7 +161,9 @@ defmodule Glorbo.TaskDefinition do
          denial_reason: as_string(meta["denial_reason"]),
          priority: coerce_priority(meta["priority"]),
          severity: coerce_severity(meta["severity"]),
-         goal: as_string(meta["goal"])
+         goal: as_string(meta["goal"]),
+         model: as_string(meta["model"]),
+         provider: as_string(meta["provider"])
        }}
     end
   end
@@ -484,6 +490,8 @@ defmodule Glorbo.TaskDefinition do
        severity: partial.severity,
        project: derive_project(task_path),
        goal: partial.goal,
+       model: partial[:model],
+       provider: partial[:provider],
        prompt_body: body || "",
        file_path: file_path
      }}
