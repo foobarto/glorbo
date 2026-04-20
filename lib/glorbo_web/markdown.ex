@@ -49,6 +49,7 @@ defmodule GlorboWeb.Markdown do
     |> earmark_render()
     |> sanitize()
     |> detokenize_mentions(safe_company)
+    |> GlorboWeb.Markdown.Linkify.rewrite(safe_company)
     |> Phoenix.HTML.raw()
   end
 
