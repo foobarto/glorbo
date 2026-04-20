@@ -493,6 +493,47 @@ defmodule Glorbo.Agent.DispatchTest do
                  audit_fun: ctx.audit_fun
                )
     end
+
+    # ---------------------------------------------------------------------
+    # #236 — model aliases in spec.models
+    # ---------------------------------------------------------------------
+
+    test "#236: task.model matching a spec alias expands to the concrete model", ctx do
+      spec = %{
+        ctx.spec
+        | models: %{
+            "fast" => "claude-haiku-4-5",
+            "reasoning" => "claude-opus-4-7"
+          }
+      }
+
+      task = Map.put(ctx.task, :model, "fast")
+
+      assert {:ok, _} =
+               Dispatch.execute(spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:audit, %{action: "agent.dispatch", model: "claude-haiku-4-5"}}
+    end
+
+    test "#236: concrete model names still pass through when no alias matches", ctx do
+      spec = %{ctx.spec | models: %{"fast" => "claude-haiku-4-5"}}
+      task = Map.put(ctx.task, :model, "claude-sonnet-4-6")
+
+      assert {:ok, _} =
+               Dispatch.execute(spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:audit, %{action: "agent.dispatch", model: "claude-sonnet-4-6"}}
+    end
   end
 
   # ---------------------------------------------------------------------------

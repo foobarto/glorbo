@@ -34,12 +34,24 @@ defmodule Glorbo.Agent.Spec do
   """
   @type autonomy :: :manual | :supervised | :auto
 
+  @typedoc """
+  Optional map of named model aliases (#236). Keys are arbitrary labels
+  the author picks (`"fast"`, `"reasoning"`, `"cheap"`…); values are
+  concrete model strings the provider recognises. A task may set
+  `model: <alias>` to pick by capability rather than by exact name.
+
+  Empty map = no aliases; task-level overrides still work with concrete
+  model names, preserving the pre-#236 behaviour.
+  """
+  @type models_aliases :: %{optional(String.t()) => String.t()}
+
   @type t :: %__MODULE__{
           slug: String.t(),
           company: String.t(),
           role: String.t(),
           provider: String.t(),
           model: String.t(),
+          models: models_aliases(),
           permissions: [permission()],
           heartbeat: String.t() | nil,
           network: network_policy(),
@@ -78,6 +90,7 @@ defmodule Glorbo.Agent.Spec do
     :budget_usd_cents_month,
     :timeout_seconds,
     :file_path,
+    models: %{},
     allow_untracked_budget: false,
     autonomy: :supervised,
     reports_to: nil,

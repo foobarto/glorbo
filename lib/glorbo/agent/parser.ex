@@ -64,6 +64,7 @@ defmodule Glorbo.Agent.Parser do
           | {:invalid_autonomy, String.t()}
           | {:invalid_skill_name, String.t()}
           | {:invalid_slug, String.t()}
+          | {:invalid_models_aliases, term()}
           | :agents_create_forbidden
           | {:frontmatter, term()}
           | {:read_error, term()}
@@ -109,6 +110,7 @@ defmodule Glorbo.Agent.Parser do
     with :ok <- validate_slug(slug),
          {:ok, provider} <- validate_provider(meta["provider"]),
          {:ok, model} <- validate_model(meta["model"]),
+         {:ok, models} <- validate_models_aliases(meta["models"]),
          {:ok, permissions} <- validate_permissions(meta["permissions"] || []),
          :ok <- reject_agents_create(permissions),
          {:ok, network} <- validate_network(meta["network"]),
@@ -124,6 +126,7 @@ defmodule Glorbo.Agent.Parser do
          role: to_string(meta["role"] || ""),
          provider: provider,
          model: model,
+         models: models,
          permissions: permissions,
          heartbeat: heartbeat,
          network: network,
@@ -138,6 +141,40 @@ defmodule Glorbo.Agent.Parser do
        }}
     end
   end
+
+  # #236 — optional `models:` map of alias → concrete model name.
+  #
+  #   models:
+  #     fast: claude-haiku-4-5
+  #     reasoning: claude-opus-4-7
+  #
+  # All keys + values must be non-empty strings; keys must match the
+  # skill/slug regex (kebab-case ASCII) so tasks can reference them
+  # predictably. Missing / empty is an empty map — no aliases.
+  defp validate_models_aliases(nil), do: {:ok, %{}}
+  defp validate_models_aliases(map) when is_map(map) and map_size(map) == 0, do: {:ok, %{}}
+
+  defp validate_models_aliases(map) when is_map(map) do
+    map
+    |> Enum.reduce_while({:ok, %{}}, fn {k, v}, {:ok, acc} ->
+      ks = to_string(k)
+      vs = to_string(v)
+
+      cond do
+        not Regex.match?(@skill_name_regex, ks) ->
+          {:halt, {:error, {:invalid_models_aliases, {:bad_alias, ks}}}}
+
+        vs == "" ->
+          {:halt, {:error, {:invalid_models_aliases, {:blank_model_for, ks}}}}
+
+        true ->
+          {:cont, {:ok, Map.put(acc, ks, vs)}}
+      end
+    end)
+  end
+
+  defp validate_models_aliases(other),
+    do: {:error, {:invalid_models_aliases, other}}
 
   defp parse_untracked(true), do: true
   defp parse_untracked(_), do: false

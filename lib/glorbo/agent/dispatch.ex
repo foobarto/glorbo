@@ -178,8 +178,18 @@ defmodule Glorbo.Agent.Dispatch do
   defp task_provider_override(%{provider: p}) when is_binary(p) and p != "", do: p
   defp task_provider_override(_), do: nil
 
-  defp task_model_override(%{model: m}) when is_binary(m) and m != "", do: m
-  defp task_model_override(_), do: nil
+  # #236 — resolve task's `model:` value. If it matches a named alias
+  # in `spec.models`, expand to the concrete model name. Otherwise
+  # treat it as a literal model string. Concrete-name overrides still
+  # work, preserving #235 semantics.
+  defp task_model_override(%{model: m}, spec) when is_binary(m) and m != "" do
+    case Map.get(spec.models || %{}, m) do
+      nil -> m
+      concrete when is_binary(concrete) -> concrete
+    end
+  end
+
+  defp task_model_override(_task, _spec), do: nil
 
   defp check_untracked_allowed(spec, %{usage_parser: "none"}, _opts) do
     if Map.get(spec, :allow_untracked_budget) == true do
@@ -260,7 +270,7 @@ defmodule Glorbo.Agent.Dispatch do
 
     # #235 per-task override: prefer task.model over spec.model when
     # the task explicitly requests a specific model.
-    model = task_model_override(task) || spec.model
+    model = task_model_override(task, spec) || spec.model
 
     %{
       task_id: task.task_id,
@@ -425,7 +435,7 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp finalize_usage(%{usage: usage}, _spec, _task), do: usage
 
-  defp effective_model(spec, task), do: task_model_override(task) || spec.model
+  defp effective_model(spec, task), do: task_model_override(task, spec) || spec.model
 
   # Budget-ledger recording is load-bearing for "you always know what
   # each agent cost" — swallowing failures silently would let budget

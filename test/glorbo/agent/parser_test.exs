@@ -470,4 +470,69 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:invalid_autonomy, _}} = Parser.parse_file(path)
     end
   end
+
+  describe "model aliases (#236)" do
+    test "defaults to empty map when absent", ctx do
+      path =
+        write_agent(ctx, "no-aliases", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.models == %{}
+    end
+
+    test "parses a models: map with alias → concrete", ctx do
+      path =
+        write_agent(ctx, "with-aliases", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        models:
+          fast: claude-haiku-4-5
+          reasoning: claude-opus-4-7
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.models["fast"] == "claude-haiku-4-5"
+      assert spec.models["reasoning"] == "claude-opus-4-7"
+    end
+
+    test "rejects blank model values", ctx do
+      path =
+        write_agent(ctx, "blank-model", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        models:
+          fast: ""
+        ---
+        """)
+
+      assert {:error, {:invalid_models_aliases, {:blank_model_for, "fast"}}} =
+               Parser.parse_file(path)
+    end
+
+    test "rejects bad alias keys", ctx do
+      path =
+        write_agent(ctx, "bad-alias", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        models:
+          "Bad Alias!": claude-haiku-4-5
+        ---
+        """)
+
+      assert {:error, {:invalid_models_aliases, {:bad_alias, _}}} = Parser.parse_file(path)
+    end
+  end
 end
