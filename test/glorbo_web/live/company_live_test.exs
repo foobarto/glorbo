@@ -55,4 +55,29 @@ defmodule GlorboWeb.CompanyLiveTest do
     Process.sleep(50)
     refute render(view) =~ "projects/foo/tasks/bar.md"
   end
+
+  test "goals: frontmatter renders a goals panel with a tasks deep link",
+       %{conn: conn, base: base} do
+    # Overlay a company.md that has a goals list.
+    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    ---
+    slug: acme
+    name: Acme
+    mission: Test
+    goals:
+      - slug: q4-launch
+        title: Launch v2 by end of Q4
+        description: Ship the next major release
+        status: active
+    ---
+    # Acme
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme")
+    assert html =~ "goals/"
+    assert html =~ "Launch v2 by end of Q4"
+    assert html =~ "Ship the next major release"
+    # Deep link to kanban filtered by goal slug.
+    assert html =~ "kanban?goal=q4-launch"
+  end
 end

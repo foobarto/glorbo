@@ -338,6 +338,41 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ ~s(href="/companies/acme/tasks/demo-1")
   end
 
+  test "?goal=<slug> filters tasks by their frontmatter goal: field",
+       %{conn: conn, base: base} do
+    tasks_dir = Path.join([base, "companies/acme/projects/demo/tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    File.write!(Path.join([base, "companies/acme/projects/demo/project.md"]), """
+    ---
+    slug: demo
+    name: demo
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "demo-1.md"), """
+    ---
+    title: match the goal
+    status: todo
+    goal: q4-launch
+    ---
+    body
+    """)
+
+    File.write!(Path.join(tasks_dir, "demo-2.md"), """
+    ---
+    title: irrelevant task
+    status: todo
+    ---
+    body
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?goal=q4-launch")
+    assert html =~ "match the goal"
+    refute html =~ "irrelevant task"
+    assert html =~ "goal:q4-launch"
+  end
+
   test "?assignee=<slug> opens new-task modal with assignee prefilled",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?assignee=ceo")

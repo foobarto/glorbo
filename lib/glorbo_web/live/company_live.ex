@@ -377,6 +377,34 @@ defmodule GlorboWeb.CompanyLive do
         </section>
 
         <div class="gl-overview__side">
+          <section :if={@company.goals != []} class="gl-panel">
+            <header class="gl-panel__header">
+              <span>goals/</span>
+              <span class="gl-panel__hint">{length(@company.goals)} goals</span>
+            </header>
+            <div class="gl-panel__body">
+              <ul class="gl-goals-list">
+                <li :for={g <- @company.goals} class="gl-goals-row">
+                  <span class={["gl-goals-row__status", "gl-goals-row__status--" <> g.status]}>
+                    {g.status}
+                  </span>
+                  <div class="gl-goals-row__body">
+                    <div class="gl-goals-row__title">{g.title}</div>
+                    <div :if={g.description != ""} class="gl-muted gl-goals-row__desc">
+                      {g.description}
+                    </div>
+                  </div>
+                  <.link
+                    navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.slug}"}
+                    class="gl-btn gl-btn--sm gl-btn--ghost"
+                  >
+                    open tasks →
+                  </.link>
+                </li>
+              </ul>
+            </div>
+          </section>
+
           <section class="gl-panel">
             <header class="gl-panel__header">
               <span>projects/</span>
@@ -800,6 +828,7 @@ defmodule GlorboWeb.CompanyLive do
 
     %{
       company_name: company_name(co_path, slug),
+      goals: load_goals(co_path),
       agents: agents,
       agents_alive: Enum.count(agents, &(&1.pill_status == :alive)),
       agents_idle: Enum.count(agents, &(&1.pill_status == :idle)),
@@ -912,6 +941,44 @@ defmodule GlorboWeb.CompanyLive do
         slug
     end
   end
+
+  # `goals:` is a list of objects on `company.md`'s frontmatter.
+  # Each goal has `slug`, `title`, optional `description` + `status`.
+  # PLAN P2-2 — no sub-issues; tasks optionally reference a goal
+  # via `goal: <slug>`. Rendered on CompanyLive + available as a
+  # Kanban filter.
+  defp load_goals(co_path) do
+    case File.read(Path.join(co_path, "company.md")) do
+      {:ok, content} ->
+        case Frontmatter.parse(content) do
+          {:ok, %{"goals" => goals}, _} when is_list(goals) ->
+            goals |> Enum.map(&normalize_goal/1) |> Enum.reject(&is_nil/1)
+
+          _ ->
+            []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  defp normalize_goal(%{} = g) do
+    slug = to_string(Map.get(g, "slug", "") || "")
+
+    if slug == "" do
+      nil
+    else
+      %{
+        slug: slug,
+        title: to_string(Map.get(g, "title", slug)),
+        description: to_string(Map.get(g, "description", "") || ""),
+        status: to_string(Map.get(g, "status", "active") || "active")
+      }
+    end
+  end
+
+  defp normalize_goal(_), do: nil
 
   # For each agent directory, load agent.md and derive: status pill,
   # activity (one-liner from the most recent inbox task file if any),

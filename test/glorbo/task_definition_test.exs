@@ -49,6 +49,28 @@ defmodule Glorbo.TaskDefinitionTest do
     assert td.prompt_body =~ "Body text here."
   end
 
+  test "T1b: optional `goal:` frontmatter parses into td.goal", ctx do
+    content = """
+    ---
+    title: Weekly research
+    goal: weekly-digest
+    status: todo
+    ---
+    body
+    """
+
+    path = write_task(ctx, "t-gf.md", content)
+    assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+    assert td.goal == "weekly-digest"
+  end
+
+  test "T1c: missing goal: frontmatter leaves td.goal as nil", ctx do
+    content = "---\ntitle: no-goal\n---\nbody\n"
+    path = write_task(ctx, "t-ng.md", content)
+    assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+    assert td.goal == nil
+  end
+
   # T2 — requires_approval: false → nil
   test "T2: requires_approval false coerces to nil", ctx do
     content = """

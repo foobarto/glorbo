@@ -96,15 +96,25 @@ defmodule GlorboWeb.KanbanLive do
           nil
       end
 
+    # `?goal=<slug>` filters tasks by their frontmatter `goal:` field
+    # (PLAN P2-2). Not exclusive with `?project=` — directors can
+    # combine both. Invalid slugs pass through as nil (no filter).
+    goal_filter =
+      case Map.get(params, "goal") do
+        g when is_binary(g) and g != "" ->
+          if GlorboWeb.Slug.valid?(g), do: g, else: nil
+
+        _ ->
+          nil
+      end
+
     tasks =
       base
       |> load_tasks(slug)
       |> apply_project_filter(filter)
+      |> apply_goal_filter(goal_filter)
 
-    title =
-      if filter,
-        do: "Kanban · #{filter} — #{slug} — Glorbo",
-        else: "Kanban — #{slug} — Glorbo"
+    title = build_kanban_title(slug, filter, goal_filter)
 
     # `?assignee=<slug>` opens the new-task modal pre-filled with
     # this agent as the assignee — entry point from AgentLive's
@@ -969,6 +979,21 @@ defmodule GlorboWeb.KanbanLive do
   defp apply_project_filter(tasks, project) when is_binary(project) do
     Enum.filter(tasks, fn t -> t.project == project end)
   end
+
+  defp apply_goal_filter(tasks, nil), do: tasks
+
+  defp apply_goal_filter(tasks, goal) when is_binary(goal) do
+    Enum.filter(tasks, fn t -> Map.get(t, :goal) == goal end)
+  end
+
+  defp build_kanban_title(slug, nil, nil), do: "Kanban — #{slug} — Glorbo"
+
+  defp build_kanban_title(slug, project, nil), do: "Kanban · #{project} — #{slug} — Glorbo"
+
+  defp build_kanban_title(slug, nil, goal), do: "Kanban · goal:#{goal} — #{slug} — Glorbo"
+
+  defp build_kanban_title(slug, project, goal),
+    do: "Kanban · #{project} / goal:#{goal} — #{slug} — Glorbo"
 
   # Task body may contain a prompt (before any comment header) followed
   # by a thread of `## <iso8601-ts> | <author>\n<body>` comment blocks
