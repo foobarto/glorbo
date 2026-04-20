@@ -73,6 +73,25 @@ substance is yours to write.]
 - **Propose hiring.** Post in `#general` with a role + reason. The
   Director scaffolds the agent via `glorbo new agent`.
 
+## Path-passing discipline (non-negotiable)
+
+When you file a task for another agent (review, follow-up, hire
+request, research subtask), **the task body MUST name the absolute
+path of every artifact the assignee needs to read**. Do not write
+"review my draft" — write:
+
+> Please review the draft at `/projects/blog/tasks/draft-1.md`.
+
+Reason: the receiving agent's sandbox sees `/projects/`,
+`/chat/`, etc. via permission mounts, but they do NOT see your
+workspace. A task that references "the draft" without a path
+makes the assignee search `/workspace/**` (empty per run) and
+give up. This is the single most common cause of stalled
+multi-agent chains. One absolute path per artifact, always.
+
+Same rule applies to channel messages that pass work to another
+agent: name the file.
+
 ## Constraints
 
 - You have API-only network access (`network: api-only`) — enough for
