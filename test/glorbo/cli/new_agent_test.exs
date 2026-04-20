@@ -154,6 +154,40 @@ defmodule Glorbo.CLI.NewAgentTest do
       path = Path.join([home, "companies/acme/agents/rae/AGENT.md"])
       assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
       assert "web-search" in spec.skills
+
+      # Provenance rules baked in by PLAN P2-4 to address the
+      # paperclip-benchmark hallucination finding.
+      content = File.read!(path)
+      assert content =~ "Provenance rules"
+      assert content =~ "Every numeric claim cites a URL"
+      assert content =~ "Never query future dates"
+    end
+
+    test "editor template produces parseable AGENT.md", %{home: home} do
+      assert {:new_agent, 0, _} = Agent.run(["acme/red", "--template", "editor"])
+
+      path = Path.join([home, "companies/acme/agents/red/AGENT.md"])
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert spec.role == "Editor"
+
+      content = File.read!(path)
+      # Editor's core invariant — don't invent facts.
+      assert content =~ "Preserve every citation and URL"
+      assert content =~ "Do NOT fill with a plausible-sounding placeholder"
+    end
+
+    test "critiqueops template produces parseable AGENT.md", %{home: home} do
+      assert {:new_agent, 0, _} = Agent.run(["acme/crit", "--template", "critiqueops"])
+
+      path = Path.join([home, "companies/acme/agents/crit/AGENT.md"])
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert spec.role == "Critique Ops"
+
+      content = File.read!(path)
+      # The rubric surface — reviewer checks live citations before approving.
+      assert content =~ "APPROVE"
+      assert content =~ "BLOCK"
+      assert content =~ "REVISE"
     end
 
     test "--reports-to fills the template reports_to placeholder", %{home: home} do

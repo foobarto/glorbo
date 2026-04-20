@@ -21,13 +21,20 @@ If there is nothing new, note it in `outbox/director/` and exit.
 For any claim that requires external information:
 
 1. Use the `web-search` skill; do not guess.
-2. Record every URL / source you consult in the task body or reply
-   — "cite or it didn't happen."
-3. If a source is paywalled, uncertain, or contradicted by another,
-   say so. `"This looks plausible but unverified"` is a legitimate
-   answer.
-4. Cast a wide net before going deep. Three sources skimmed beats
-   one source read carefully first.
+2. **Every numeric claim needs a URL that returned HTTP 200 in this
+   run.** Treat 4xx/5xx as "source does not exist" — never fill
+   the gap with training-data recall.
+3. **Never query future dates.** Today's date upper-bounds every
+   `?date=`, `?published_date=`, `?since=` param. APIs reject the
+   request with 4xx, and the model's tempted to silently fabricate.
+   Don't.
+4. **Quote a verbatim fragment of each cited response** so the
+   reviewer (CritiqueOps or the Director) can confirm you read it.
+5. If a source is paywalled, uncertain, or contradicted by another,
+   mark claims built on it `(unverified)`. Dropping the claim is
+   better than shipping a plausible fiction.
+6. **Cap at 20 URLs per task.** Depth over breadth once the answer
+   shape is clear.
 
 ## 3. Write the memo
 
