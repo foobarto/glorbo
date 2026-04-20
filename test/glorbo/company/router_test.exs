@@ -410,4 +410,167 @@ defmodule Glorbo.Company.RouterTest do
     assert content =~ "rejection_reason: permission_denied"
     assert content =~ "original body here"
   end
+
+  # ---------------------------------------------------------------------------
+  # Outbox pickup (R-outbox-*) — file_event driven pipeline.
+  # ---------------------------------------------------------------------------
+
+  defp start_router_with_perms!(base, perms_fun) do
+    name = Glorbo.Test.UniqueName.gen("router")
+
+    pid =
+      start_supervised!(
+        {Router,
+         [
+           name: name,
+           company: @company,
+           base: base,
+           audit_fun: capturing_audit_fun(self()),
+           agent_permissions_fun: perms_fun
+         ]}
+      )
+
+    {name, pid}
+  end
+
+  defp seed_project!(base, project) do
+    dir = Path.join([base, "companies", @company, "projects", project])
+    File.mkdir_p!(Path.join(dir, "tasks"))
+
+    File.write!(Path.join(dir, "project.md"), """
+    ---
+    slug: #{project}
+    name: #{project}
+    ---
+    """)
+  end
+
+  test "R-outbox-1: tasks/<proj>/<id>.md is materialised into projects/<proj>/tasks/" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-1.md"), """
+    ---
+    title: hire researcher
+    status: todo
+    ---
+    Need a Researcher.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-1.md", [:created]})
+    _ = :sys.get_state(name)
+
+    dest = Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-1.md"])
+    assert File.exists?(dest)
+    content = File.read!(dest)
+    assert content =~ "hire researcher"
+    assert content =~ "Need a Researcher"
+
+    refute File.exists?(Path.join(src_dir, "blog-1.md"))
+    assert_receive {:audit, %{action: "task.create", target: "projects/blog/tasks/blog-1.md"}}
+  end
+
+  test "R-outbox-2: task filed to non-existent project is silently skipped" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "ghost"])
+
+    File.mkdir_p!(src_dir)
+    File.write!(Path.join(src_dir, "ghost-1.md"), "---\ntitle: ghost\n---\nbody\n")
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/ghost/ghost-1.md", [:created]})
+    _ = :sys.get_state(name)
+
+    dest = Path.join([base, "companies", @company, "projects", "ghost", "tasks", "ghost-1.md"])
+    refute File.exists?(dest)
+    assert File.exists?(Path.join(src_dir, "ghost-1.md"))
+  end
+
+  test "R-outbox-3: existing task-id collision leaves the original intact" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    existing = Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-5.md"])
+    File.write!(existing, "existing content")
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+    File.write!(Path.join(src_dir, "blog-5.md"), "---\ntitle: overwrite attempt\n---\nnew\n")
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-5.md", [:created]})
+    _ = :sys.get_state(name)
+
+    assert File.read!(existing) == "existing content"
+    assert File.exists?(Path.join(src_dir, "blog-5.md"))
+  end
+
+  test "R-outbox-4: missing projects:write permission skips (no silent write)" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, []} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+    File.write!(Path.join(src_dir, "blog-9.md"), "---\ntitle: unauthorized\n---\n")
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-9.md", [:created]})
+    _ = :sys.get_state(name)
+
+    dest = Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-9.md"])
+    refute File.exists?(dest)
+  end
+
+  test "R-outbox-5: comments/<task-id>.md appends to the matching task file" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    task_path = Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-2.md"])
+    File.write!(task_path, "---\ntitle: existing task\n---\nPrompt body\n")
+
+    comments_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "comments"])
+
+    File.mkdir_p!(comments_dir)
+
+    File.write!(Path.join(comments_dir, "blog-2.md"), """
+    ---
+    task_id: blog-2
+    ---
+    Researcher done — handoff to editor.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/comments/blog-2.md", [:created]})
+    _ = :sys.get_state(name)
+
+    content = File.read!(task_path)
+    assert content =~ ~r/^## \d{4}-\d{2}-\d{2}T.*\| ceo$/m
+    assert content =~ "Researcher done"
+
+    refute File.exists?(Path.join(comments_dir, "blog-2.md"))
+    assert_receive {:audit, %{action: "task.comment", target: "blog-2"}}
+  end
 end

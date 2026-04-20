@@ -609,7 +609,180 @@ defmodule Glorbo.Company.Router do
 
   defp parse_outbox_rel(_), do: {:error, :not_outbox}
 
+  # Dispatch outbox files by their path shape — the Router now handles
+  # three kinds (was one). Everything still flows through the sender-
+  # slug and permission checks below.
+  #
+  #   tasks/<project>/<id>.md → file a task into projects/<p>/tasks/
+  #   comments/<task-id>.md   → append a comment to projects/*/tasks/<id>.md
+  #   <file>.md               → classic message route (requires `to:`)
+  #
+  # The `tasks/` and `comments/` paths let agents file work for
+  # Director review without the Director having to hand-copy every
+  # file (see glorbo-vs-paperclip.md benchmark).
   defp read_and_route(abs_path, sender, state) do
+    case classify_outbox_file(abs_path, state, sender) do
+      {:task, project, task_id} ->
+        handle_outbox_task(abs_path, sender, project, task_id, state)
+
+      {:comment, task_id} ->
+        handle_outbox_comment(abs_path, sender, task_id, state)
+
+      :message ->
+        handle_outbox_message(abs_path, sender, state)
+    end
+  rescue
+    e ->
+      Logger.error(
+        "[router/#{state.company}] outbox file handler raised path=#{abs_path} err=#{Exception.message(e)}"
+      )
+
+      :ok
+  end
+
+  defp classify_outbox_file(abs_path, state, sender) do
+    outbox_root =
+      Path.join([state.base, "companies", state.company, "agents", sender, "outbox"])
+
+    rel = Path.relative_to(abs_path, outbox_root)
+
+    case Path.split(rel) do
+      ["tasks", project, <<_::binary>> = file] ->
+        task_id = Path.basename(file, ".md")
+
+        if GlorboWeb.Slug.valid?(project) and task_id_valid?(task_id),
+          do: {:task, project, task_id},
+          else: :message
+
+      ["comments", <<_::binary>> = file] ->
+        task_id = Path.basename(file, ".md")
+        if task_id_valid?(task_id), do: {:comment, task_id}, else: :message
+
+      _ ->
+        :message
+    end
+  end
+
+  defp task_id_valid?(task_id),
+    do: Regex.match?(~r/\A[a-z][a-z0-9_-]*-\d+\z/, task_id)
+
+  # Move an agent-authored task file into the project's tasks/ dir.
+  # Rejects on: invalid frontmatter, filename collision, missing
+  # project, missing permission. Audits every accept AND reject.
+  defp handle_outbox_task(abs_path, sender, project, task_id, state) do
+    project_tasks_dir =
+      Path.join([state.base, "companies", state.company, "projects", project, "tasks"])
+
+    dest_path = Path.join(project_tasks_dir, "#{task_id}.md")
+    project_md = Path.join([Path.dirname(project_tasks_dir), "project.md"])
+
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, _meta, _body} <- Frontmatter.parse(content),
+         {:ok, perms} <- lookup_permissions(sender, state),
+         :ok <- check_project_write_permission(perms, project),
+         :ok <- ensure_project_exists(project_md),
+         :ok <- refuse_if_exists(dest_path),
+         :ok <- File.mkdir_p(project_tasks_dir),
+         :ok <- File.write(dest_path, content, [:sync]),
+         :ok <- File.rm(abs_path) do
+      emit_task_route_audit(sender, project, task_id, state)
+      :ok
+    else
+      {:error, reason} ->
+        Logger.debug(
+          "[router/#{state.company}] outbox task skipped sender=#{sender} project=#{project} task=#{task_id} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp check_project_write_permission(perms, project) do
+    case ACLMapper.check_action(perms, {"projects", "write", project}) do
+      :ok -> :ok
+      {:error, _} -> ACLMapper.check_action(perms, {"projects", "write", "*"})
+    end
+  end
+
+  defp ensure_project_exists(project_md) do
+    if File.exists?(project_md), do: :ok, else: {:error, :project_not_found}
+  end
+
+  defp refuse_if_exists(dest_path) do
+    if File.exists?(dest_path), do: {:error, :task_id_collision}, else: :ok
+  end
+
+  defp emit_task_route_audit(sender, project, task_id, state) do
+    state.audit_fun.(state.company, %{
+      company: state.company,
+      actor: sender,
+      action: "task.create",
+      target: "projects/#{project}/tasks/#{task_id}.md",
+      source: "outbox"
+    })
+  rescue
+    _ -> :ok
+  end
+
+  # Append an agent-authored comment to a task. Looks for the task
+  # file across all projects under `companies/<co>/projects/*/tasks/`
+  # since the comment file only names the task-id.
+  defp handle_outbox_comment(abs_path, sender, task_id, state) do
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, body} <- strip_frontmatter(content),
+         {:ok, task_path} <- find_task_file(task_id, state),
+         :ok <- append_task_comment(task_path, sender, body),
+         :ok <- File.rm(abs_path) do
+      emit_comment_route_audit(sender, task_id, state)
+      :ok
+    else
+      {:error, reason} ->
+        Logger.debug(
+          "[router/#{state.company}] outbox comment skipped sender=#{sender} task=#{task_id} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp strip_frontmatter(content) do
+    case Frontmatter.parse(content) do
+      {:ok, _meta, body} -> {:ok, body}
+      {:error, _} -> {:ok, content}
+    end
+  end
+
+  defp find_task_file(task_id, state) do
+    projects_dir = Path.join([state.base, "companies", state.company, "projects"])
+
+    case Path.wildcard(Path.join([projects_dir, "*", "tasks", "#{task_id}.md"])) do
+      [match | _] -> {:ok, match}
+      [] -> {:error, :task_not_found}
+    end
+  end
+
+  defp append_task_comment(task_path, sender, body) do
+    ts = DateTime.utc_now() |> DateTime.to_iso8601()
+    entry = "\n## #{ts} | #{sender}\n#{String.trim(body)}\n"
+    File.write(task_path, entry, [:append, :sync])
+  end
+
+  defp emit_comment_route_audit(sender, task_id, state) do
+    state.audit_fun.(state.company, %{
+      company: state.company,
+      actor: sender,
+      action: "task.comment",
+      target: task_id,
+      source: "outbox"
+    })
+  rescue
+    _ -> :ok
+  end
+
+  # Classic message route — requires `to:` frontmatter pointing at a
+  # channel or agent slug. Rejected messages land in
+  # `history/<msg_id>.rejected.md` per the original pipeline.
+  defp handle_outbox_message(abs_path, sender, state) do
     with {:ok, content} <- File.read(abs_path),
          {:ok, meta, body} <- Frontmatter.parse(content),
          {:ok, to} <- extract_to(meta),
@@ -628,7 +801,7 @@ defmodule Glorbo.Company.Router do
     else
       {:error, reason} ->
         Logger.debug(
-          "[router/#{state.company}] outbox event skipped path=#{abs_path} reason=#{inspect(reason)}"
+          "[router/#{state.company}] outbox message skipped path=#{abs_path} reason=#{inspect(reason)}"
         )
 
         :ok
