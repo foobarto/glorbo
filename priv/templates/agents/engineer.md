@@ -10,6 +10,7 @@ heartbeat: null
 budget:
   monthly_usd: 30.00
 skills:
+  - glorbo
   - code-review
 permissions:
   - projects:read:*

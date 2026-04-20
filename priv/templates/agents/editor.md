@@ -9,7 +9,8 @@ network: api-only
 heartbeat: null
 budget:
   monthly_usd: 15.00
-skills: []
+skills:
+  - glorbo
 permissions:
   - projects:read:*
   - tasks:read:*

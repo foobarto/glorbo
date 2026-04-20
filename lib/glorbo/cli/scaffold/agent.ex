@@ -123,7 +123,8 @@ defmodule Glorbo.CLI.Scaffold.Agent do
       - chat:read:*
     budget:
       monthly_usd: 10.00
-    skills: []
+    skills:
+      - glorbo
     ---
 
     # #{String.upcase(agent)}
@@ -309,7 +310,13 @@ defmodule Glorbo.CLI.Scaffold.Agent do
           end
         end)
         |> Enum.reject(fn name ->
-          File.exists?(Path.join([co_path, "skills", "#{name}.md"]))
+          # Present if the Director has shadowed it under the company's
+          # own `skills/` dir, OR if we ship it as a builtin (matches
+          # `Glorbo.Skills.Resolver.resolve_skill_src/3`).
+          File.exists?(Path.join([co_path, "skills", "#{name}.md"])) or
+            File.exists?(
+              Path.join([Application.app_dir(:glorbo, "priv/templates/skills"), "#{name}.md"])
+            )
         end)
 
       _ ->

@@ -46,6 +46,32 @@ defmodule Glorbo.Skills.ResolverTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Builtin fallback — a skill not in the per-instance dir still
+  # resolves if `priv/templates/skills/<name>.md` ships it. Applied
+  # for the `glorbo` skill in PLAN P2-4 so every agent has the
+  # runtime contract available without manual scaffolding.
+  # ---------------------------------------------------------------------------
+
+  test "resolves a builtin skill from priv/templates/skills/ when user dir lacks it", ctx do
+    # `glorbo` isn't in ctx.skills_dir but ships under priv/.
+    assert {:ok, ["glorbo"]} = Resolver.materialize(["glorbo"], ctx.target, base: ctx.base)
+    assert File.exists?(Path.join(ctx.target, "glorbo.md"))
+
+    index = File.read!(Path.join(ctx.target, "INDEX.md"))
+    assert index =~ "glorbo"
+  end
+
+  test "per-instance skill shadows the builtin when both exist", ctx do
+    # User-defined `glorbo.md` takes precedence over the bundled one.
+    write_skill(ctx, "glorbo", "# Custom glorbo title\n\nbody\n")
+
+    assert {:ok, ["glorbo"]} = Resolver.materialize(["glorbo"], ctx.target, base: ctx.base)
+
+    copied = File.read!(Path.join(ctx.target, "glorbo.md"))
+    assert copied =~ "Custom glorbo title"
+  end
+
+  # ---------------------------------------------------------------------------
   # S3 — single missing skill emits audit, returns empty list
   # ---------------------------------------------------------------------------
 

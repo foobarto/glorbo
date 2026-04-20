@@ -119,21 +119,36 @@ defmodule Glorbo.Skills.Resolver do
     resolved =
       skills
       |> Enum.reduce([], fn name, acc ->
-        src = Path.join([base, "skills", "#{name}.md"])
+        case resolve_skill_src(name, base, fs_fun) do
+          nil ->
+            emit_missing_audit(audit_fun, company, agent_slug, name)
+            acc
 
-        if fs_fun.exists?.(src) do
-          dst = Path.join(target_dir, "#{name}.md")
-          fs_fun.cp!.(src, dst)
-          [{name, src} | acc]
-        else
-          emit_missing_audit(audit_fun, company, agent_slug, name)
-          acc
+          src when is_binary(src) ->
+            dst = Path.join(target_dir, "#{name}.md")
+            fs_fun.cp!.(src, dst)
+            [{name, src} | acc]
         end
       end)
       |> Enum.reverse()
 
     write_index!(target_dir, resolved, fs_fun)
     {:ok, Enum.map(resolved, fn {name, _src} -> name end)}
+  end
+
+  # Prefer per-instance skills under `<base>/skills/<name>.md` (the
+  # Director can override or shadow any builtin), then fall back to the
+  # bundled skill templates under `priv/templates/skills/`. Returns
+  # the resolved absolute path, or `nil` if neither exists.
+  defp resolve_skill_src(name, base, fs_fun) do
+    user = Path.join([base, "skills", "#{name}.md"])
+    builtin = Path.join([Application.app_dir(:glorbo, "priv/templates/skills"), "#{name}.md"])
+
+    cond do
+      fs_fun.exists?.(user) -> user
+      fs_fun.exists?.(builtin) -> builtin
+      true -> nil
+    end
   end
 
   defp write_index!(target_dir, resolved, fs_fun) do
