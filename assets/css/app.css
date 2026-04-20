@@ -2089,7 +2089,7 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-audit-row {
   display: grid;
-  grid-template-columns: 170px 110px 160px minmax(0, 1fr);
+  grid-template-columns: 170px 22px 1fr 110px 160px;
   gap: 10px;
   padding: 4px var(--gl-space-md);
   border-bottom: 1px solid var(--gl-border-faint);
@@ -2098,6 +2098,7 @@ button { font-family: inherit; font-size: inherit; }
   font-family: var(--gl-ff-mono);
   font-size: 12px;
 }
+.gl-audit-row__sentence { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gl-audit-row:hover { background: var(--gl-surface-raised); }
 .gl-audit-row--open { background: var(--gl-surface-raised); }
 .gl-audit-row:focus-visible {
@@ -2131,6 +2132,28 @@ button { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--gl-border-faint);
   border-radius: 2px;
 }
+
+/* Actor avatar — two-letter badge used in audit rows, channel, inbox.
+   System = muted grey; Director/Board = accent; Agent = cyan tint. */
+.gl-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--gl-fg);
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-faint);
+  flex-shrink: 0;
+}
+.gl-avatar--system { color: var(--gl-fg-muted); background: var(--gl-surface); }
+.gl-avatar--director { color: var(--gl-accent); border-color: var(--gl-accent-dim); }
+.gl-avatar--agent { color: var(--gl-cyan); border-color: var(--gl-cyan); }
 .gl-audit__load-older { align-self: flex-start; }
 .gl-audit__beginning {
   text-align: center;

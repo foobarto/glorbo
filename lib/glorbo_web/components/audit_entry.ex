@@ -31,7 +31,13 @@ defmodule GlorboWeb.Components.AuditEntry do
 
   def audit_entry(assigns) do
     sentence = to_sentence(assigns.entry)
-    assigns = assign(assigns, :sentence, sentence)
+    actor = to_string(assigns.entry["actor"] || "system")
+
+    assigns =
+      assigns
+      |> assign(:sentence, sentence)
+      |> assign(:actor_initials, actor_initials(actor))
+      |> assign(:actor_kind, actor_kind(actor))
 
     ~H"""
     <div
@@ -46,6 +52,13 @@ defmodule GlorboWeb.Components.AuditEntry do
       phx-key="Enter"
     >
       <time class="gl-audit-row__ts" datetime={@entry["ts"]}>{format_ts(@entry["ts"])}</time>
+      <span
+        class={["gl-avatar", "gl-avatar--" <> @actor_kind]}
+        aria-hidden="true"
+        title={@entry["actor"]}
+      >
+        {@actor_initials}
+      </span>
       <span class="gl-audit-row__sentence">{@sentence}</span>
       <span class={["gl-audit-row__actor gl-muted", actor_class(@entry["actor"])]}>
         {@entry["actor"]}
@@ -60,6 +73,33 @@ defmodule GlorboWeb.Components.AuditEntry do
     </div>
     """
   end
+
+  @doc """
+  Two-letter initials for an actor slug. `system` → `SY`, `director` → `DI`,
+  `ceo` → `CE`. For multi-word slugs (`content-writer`), take the first letter
+  of each word: `CW`. Kept in a public helper so other components (Channel,
+  Inbox) can reuse.
+  """
+  def actor_initials(actor) when is_binary(actor) do
+    actor
+    |> String.split(~r/[-_\s]+/, trim: true)
+    |> case do
+      [] -> "??"
+      [one] -> one |> String.slice(0, 2) |> String.upcase()
+      [a, b | _] -> String.upcase(String.first(a) <> String.first(b))
+    end
+  end
+
+  def actor_initials(_), do: "??"
+
+  @doc """
+  Coarse actor classification for avatar colouring.
+  `system` | `director` | `agent` — CSS uses these for background tint.
+  """
+  def actor_kind("system"), do: "system"
+  def actor_kind("director"), do: "director"
+  def actor_kind("board"), do: "director"
+  def actor_kind(_other), do: "agent"
 
   # Render `<ACTOR> <verb> <OBJECT>` — paperclip-ux-gaps §10. The
   # verb and object phrasing are derived from the audit action;

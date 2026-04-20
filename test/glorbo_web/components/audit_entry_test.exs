@@ -106,4 +106,44 @@ defmodule GlorboWeb.Components.AuditEntryTest do
 
     assert html =~ "system some.weird.event whatever"
   end
+
+  describe "actor_initials/1" do
+    test "`ceo` → `CE`", do: assert(AuditEntry.actor_initials("ceo") == "CE")
+    test "`director` → `DI`", do: assert(AuditEntry.actor_initials("director") == "DI")
+    test "`system` → `SY`", do: assert(AuditEntry.actor_initials("system") == "SY")
+
+    test "multi-word slug takes first letter of each word",
+      do: assert(AuditEntry.actor_initials("content-writer") == "CW")
+
+    test "triple underscore slug takes first two words",
+      do: assert(AuditEntry.actor_initials("seo_ops_analyst") == "SO")
+
+    test "single-char → pads with the same letter (or shows `?`)" do
+      # Deliberate: no padding. One-letter actor keeps only the letter upper-cased.
+      assert AuditEntry.actor_initials("x") == "X"
+    end
+
+    test "empty string → `??`", do: assert(AuditEntry.actor_initials("") == "??")
+    test "non-binary → `??`", do: assert(AuditEntry.actor_initials(nil) == "??")
+  end
+
+  describe "actor_kind/1" do
+    test "system", do: assert(AuditEntry.actor_kind("system") == "system")
+    test "director", do: assert(AuditEntry.actor_kind("director") == "director")
+    test "board", do: assert(AuditEntry.actor_kind("board") == "director")
+    test "agent slug", do: assert(AuditEntry.actor_kind("ceo") == "agent")
+  end
+
+  test "renders avatar element with initials + kind class" do
+    html =
+      render_row(%{
+        "ts" => "2026-04-20T10:00:00Z",
+        "actor" => "ceo",
+        "action" => "task.create",
+        "target" => "x"
+      })
+
+    assert html =~ ~s(class="gl-avatar gl-avatar--agent")
+    assert html =~ "CE"
+  end
 end
