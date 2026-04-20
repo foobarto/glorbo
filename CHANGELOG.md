@@ -68,14 +68,62 @@ change between minor versions. Pin exact versions in downstream usage.
   and decision log for this sweep. See `docs/geps/0020-round-2-
   3-ux-sweep.md`.
 
+### Added — loop-session ship list (#230, #232 – #242, T1-E / T1-F / T2-B / T2-C / T2-D / T3-A)
+
+- **Brain dump (`/companies/<co>/braindump`, `g b`)** — daily
+  append-only capture log at `companies/<co>/braindump/YYYY-MM-DD.md`.
+  Topbar "+ dump" button, convert-to-task action scaffolds into
+  `projects/inbox/tasks/` with `source: braindump` frontmatter.
+- **Per-task `model:` / `provider:` override (#235)** — task
+  frontmatter pins a specific LLM for that dispatch; blank / nil
+  falls back to the agent spec.
+- **Agent model aliases (#236)** — optional `models:` map in
+  AGENT.md (alias → concrete); tasks select by alias.
+- **Natural-language heartbeat (#233)** — `heartbeat: "every
+  morning at 9am"` compiles to cron at parse time. Literal cron
+  passes through.
+- **Ctrl+K content search (#232)** — `/api/search?co=&q=` JSON
+  endpoint backing the command palette with task-title matches;
+  ETS mtime cache skips re-parse on hot path.
+- **Recurring tasks (#237)** — task frontmatter `schedule:` + auto-
+  reset to `todo` when written `done`. Kanban card renders a `↻`
+  pill with the schedule string.
+- **Rolling-log rotation for channels (#238)** — oversized
+  channel files (512 KB / 1500 lines default) rotate into
+  `channels/archive/<channel>/<ts>.md` atomically.
+- **Archive browser in ChannelLive (#239)** — collapsible list of
+  rotated segments with inline viewer.
+- **Named autonomy tiers (#231)** — `autonomy: manual | supervised
+  | auto` on AGENT.md; metadata-only for now, runtime gate wiring
+  is a follow-up.
+- **Emergency stop (#241, T2-C)** — director-visible kill switch.
+  Writes `companies/<co>/state/emergency-stop.md`, stops every
+  running dispatch, refuses new ones until cleared. Pulsing red
+  topbar chip when engaged.
+- **Cost ledger page (`/costs`, #242, T2-D)** — per-agent monthly
+  spend matrix for the last 12 months, top-spender card, drill-in
+  link to AgentLive.
+
 ### Changed
 
 - AgentLive Runs tab + CompanyLive roster now include tool-call
   indicators when available; collapse gracefully when the
   provider doesn't emit tool telemetry.
-- Sidebar gains `Goals` and `Skills` nav entries.
+- Sidebar gains `Goals`, `Skills`, `Brain dump`, and `Costs` nav
+  entries.
 
 ### Fixed
+
+- **`PORT` env var now honoured by `mix phx.server`**. `config/
+  dev.exs` hardcoded port 4000; set `PORT=4001 mix phx.server` to
+  bind to an alternate port (UAT workflow).
+- **Search endpoint (`/api/search`) now piped through the
+  dashboard bearer-token gate.** On LAN exposure with
+  `dashboard_token:` set, the palette API was enumerable without
+  auth.
+- **Recurring-task loop-back covers `write_frontmatter/2`**, not
+  just `write/2`. The #237 commit missed a call site hit by agent
+  self-reports, kanban detail-modal save, and denial actions.
 
 ---
 

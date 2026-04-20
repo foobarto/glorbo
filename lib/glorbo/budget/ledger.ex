@@ -181,4 +181,37 @@ defmodule Glorbo.Budget.Ledger do
   def fetch(agent_slug, year_month) when is_binary(agent_slug) and is_binary(year_month) do
     Repo.get_by(Budget, agent_slug: agent_slug, year_month: year_month)
   end
+
+  @doc """
+  All ledger rows for `agent_slug`, newest month first. Returns
+  `[]` on DB error so callers can stay tolerant during boot /
+  test environments without a live repo.
+  """
+  @spec history(String.t()) :: [Budget.t()]
+  def history(agent_slug) when is_binary(agent_slug) do
+    import Ecto.Query
+
+    Budget
+    |> where([b], b.agent_slug == ^agent_slug)
+    |> order_by([b], desc: b.year_month)
+    |> Repo.all()
+  rescue
+    _ -> []
+  end
+
+  @doc """
+  All ledger rows matching any of `agent_slugs`, grouped by month
+  (most-recent first) then by agent alphabetically.
+  """
+  @spec history_for_agents([String.t()]) :: [Budget.t()]
+  def history_for_agents(agent_slugs) when is_list(agent_slugs) do
+    import Ecto.Query
+
+    Budget
+    |> where([b], b.agent_slug in ^agent_slugs)
+    |> order_by([b], desc: b.year_month, asc: b.agent_slug)
+    |> Repo.all()
+  rescue
+    _ -> []
+  end
 end

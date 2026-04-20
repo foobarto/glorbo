@@ -3160,3 +3160,36 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+/* Cost ledger page (T2-D, #242). */
+.gl-costs-page { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-costs__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gl-space-md);
+}
+.gl-costs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+}
+.gl-costs-table th {
+  text-align: left;
+  padding: 6px var(--gl-space-sm);
+  color: var(--gl-fg-subtle);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--gl-border-faint);
+  white-space: nowrap;
+}
+.gl-costs-table td {
+  padding: 6px var(--gl-space-sm);
+  border-bottom: 1px solid var(--gl-border-faint);
+  white-space: nowrap;
+}
+.gl-costs-table__slug a { color: var(--gl-fg); font-weight: 500; text-decoration: none; }
+.gl-costs-table__slug a:hover { text-decoration: underline; }
+.gl-costs-table__month, .gl-costs-table__cell { text-align: right; }
+.gl-costs-table__total { text-align: right; font-weight: 600; color: var(--gl-fg); }

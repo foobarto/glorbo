@@ -61,6 +61,8 @@ defmodule GlorboWeb.Router do
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive
+    # T2-D (#242) — cross-company monthly cost ledger.
+    live "/costs", CostsLive
   end
 
   # T2-B (#232) — Ctrl+K content search. JSON endpoint consumed by

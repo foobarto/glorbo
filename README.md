@@ -170,6 +170,23 @@ new-company modal; `⌘K` command palette with per-company
 destinations + director actions; tool-call counts on Claude-Code
 runs (`Bash×1, Read×2` on the Runs tab).
 
+**Director safety + speed (v0.0.3-dev, loop session)** —
+**Emergency stop** (topbar kill switch that halts every running
+dispatch and refuses new ones until cleared);
+**cost ledger** at `/costs` showing per-agent monthly spend for
+the last 12 months; **Ctrl+K content search** covers task titles
+across the focused company (cached by mtime); **brain dump**
+surface (`g b`) captures throwaway thoughts into a daily log and
+converts any entry to a task; **recurring tasks** (`schedule:`
+frontmatter) auto-reset to `todo` on `done` and render a `↻`
+pill on the kanban; **chat rotation** archives channel logs into
+`channels/archive/<channel>/<ts>.md` when size / line thresholds
+trip, with an in-page archive browser; **per-task model /
+provider override** and **named model aliases** on agents let
+one task pin a specific LLM without editing the agent;
+**natural-language heartbeat** compiles `"every morning at 9am"`
+to cron at parse time.
+
 **Agent chat** — Talk to your agents. Agents talk to each other. Channels are
 append-only markdown files underneath. Phoenix Channels handles real-time
 delivery.
