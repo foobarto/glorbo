@@ -17,9 +17,15 @@ binary = "opencode"
 # (`cli_binary_binds`) that mounts the found path into the sandbox.
 fallback_paths = ["~/.opencode/bin/opencode"]
 
+# `opencode run` takes the subcommand as the first positional arg.
+# `-m <provider/model>` routes to any configured opencode provider
+# (including `lmstudio/...` which points at a local LM Studio server).
+# `--format json` is omitted so the Dispatcher's stdout-as-reply
+# fallback sees a human-readable answer when no reply file is written
+# (opencode's untracked path; GEP-8 D15).
 args = [
-  "--print",
-  "--model", "{model}",
+  "run",
+  "-m", "{model}",
 ]
 prompt_mode = "stdin"
 
@@ -33,4 +39,18 @@ allow_version_probe = true
 
 usage_parser = "none"
 
+# Sandbox HOME is /workspace (see Bwrap.build_argv). opencode reads
+# its provider definitions from $HOME/.config/opencode/opencode.json —
+# the Director's real `~/.config/opencode/` is ro-mounted there so the
+# agent inherits the same `lmstudio`, `ollama`, etc. provider list
+# the user configured. State (sqlite db, session cache) is left to
+# opencode to create fresh under `$XDG_DATA_HOME`, pointed at a
+# workspace-local dir so the sandbox can write without touching the
+# Director's real `~/.local/share/opencode/`.
 [env]
+XDG_DATA_HOME = "{workspace}/.opencode-data"
+
+[[auth_binds]]
+host    = "~/.config/opencode"
+sandbox = "/workspace/.config/opencode"
+mode    = "ro"

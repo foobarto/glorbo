@@ -43,7 +43,13 @@ defmodule Glorbo.Agent.Parser do
   alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.Security.ACLMapper
 
-  @allowed_providers ["claude-code", "gemini-cli", "codex"]
+  # Pre-GEP-8 hardcoded shortlist. Kept as a fallback when the live
+  # registry isn't running (unit-test contexts) or hasn't loaded any
+  # provider TOMLs yet. At runtime the accepted provider set is
+  # whatever `Glorbo.CLI.Registry.list/0` reports — opencode, hermes,
+  # pi, etc., all qualify, matching what the director sees on
+  # `/providers`.
+  @fallback_providers ["claude-code", "gemini-cli", "codex"]
   @network_map %{"none" => :none, "api-only" => :api_only, "open" => :open}
   @default_timeout_seconds 300
   @slug_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
@@ -213,9 +219,11 @@ defmodule Glorbo.Agent.Parser do
   defp validate_provider(nil), do: {:error, {:invalid_provider, ""}}
 
   defp validate_provider(provider) when is_binary(provider) do
-    # Pattern-match against fixed allowlist — no String.to_atom on user input
-    # (T-03-15). Any string outside @allowed_providers is rejected verbatim.
-    if provider in @allowed_providers do
+    # Still string-compare (no `String.to_atom/1` on user input; T-03-15).
+    # The allowlist is the union of the live registry's provider names
+    # (config-driven via `priv/providers/*.toml` + `providers.toml`) and
+    # `@fallback_providers` for the no-registry-yet case.
+    if provider in known_providers() do
       {:ok, provider}
     else
       {:error, {:invalid_provider, provider}}
@@ -223,6 +231,21 @@ defmodule Glorbo.Agent.Parser do
   end
 
   defp validate_provider(other), do: {:error, {:invalid_provider, inspect(other)}}
+
+  # Union of registry-loaded provider names and the static fallback.
+  # If the registry Agent isn't running (common in unit tests) we fall
+  # back cleanly without raising; if it's running but empty we still
+  # accept the built-ins.
+  defp known_providers do
+    registry =
+      try do
+        Glorbo.CLI.Registry.list() |> Enum.map(& &1.name)
+      catch
+        :exit, _ -> []
+      end
+
+    Enum.uniq(registry ++ @fallback_providers)
+  end
 
   # LLM-04: model MUST be a single string. Missing → missing_model; list →
   # multiple_models_not_supported.
