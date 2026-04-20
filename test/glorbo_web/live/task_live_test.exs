@@ -71,4 +71,43 @@ defmodule GlorboWeb.TaskLiveTest do
     assert content =~ "ping"
     assert content =~ "| director"
   end
+
+  test "save_task rewrites frontmatter via shared TaskDetailForm",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    render_submit(view, "save_task", %{
+      "title" => "renamed task",
+      "status" => "in-progress",
+      "assigned_to" => "ceo",
+      "priority" => "low",
+      "severity" => ""
+    })
+
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+    content = File.read!(path)
+    assert content =~ ~r/title: "?renamed task"?/
+    assert content =~ "status: in-progress"
+    assert content =~ "priority: low"
+  end
+
+  test "delete_task moves file to history/deleted/",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    assert {:error, {:live_redirect, %{to: "/companies/acme/kanban"}}} =
+             render_click(view, "delete_task", %{
+               "path" => "projects/foo/tasks/foo-1.md"
+             })
+
+    refute File.exists?(Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"]))
+
+    deleted =
+      [base, "companies/acme/projects/foo/history/deleted"]
+      |> Path.join()
+      |> File.ls!()
+      |> Enum.filter(&String.contains?(&1, "foo-1.md"))
+
+    assert deleted != []
+  end
 end

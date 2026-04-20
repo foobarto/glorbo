@@ -27,6 +27,7 @@ defmodule GlorboWeb.KanbanLive do
 
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.TaskCard
+  alias GlorboWeb.Components.TaskDetailForm
 
   @task_path_re ~r{\Aprojects/.+/tasks/.+\.md\z}
 
@@ -792,153 +793,11 @@ defmodule GlorboWeb.KanbanLive do
             </button>
           </header>
 
-          <form phx-submit="save_task" class="gl-task-detail__save-form">
-            <div class="gl-task-detail__fields">
-              <label class="gl-task-detail__field">
-                <span class="gl-muted">title</span>
-                <input type="text" name="title" value={@open_task.title} class="gl-input" required />
-              </label>
-
-              <label class="gl-task-detail__field">
-                <span class="gl-muted">status</span>
-                <%!--
-              Six options map to four Kanban columns (see
-              kanban_live.ex:720 `column_key_to_status` +
-              `columns/1`):
-
-                  todo          → "todo"          column
-                  in-progress   → "in progress"   column
-                  pending, approved, denied → "review" column
-                  done          → "done"          column
-
-              UAT N3 was a false alarm — the extras aren't dead
-              values; the `review` column maps 3 statuses into one
-              lane. Keeping the dropdown honest: inline the mapping
-              as a group label so users don't wonder where a
-              "pending" task would appear.
-            --%>
-                <select name="status" class="gl-input">
-                  <option value="todo" selected={@open_task.status == "todo"}>todo</option>
-                  <option value="in-progress" selected={@open_task.status == "in-progress"}>
-                    in-progress
-                  </option>
-                  <optgroup label="review (approval gate)">
-                    <option value="pending" selected={@open_task.status == "pending"}>pending</option>
-                    <option value="approved" selected={@open_task.status == "approved"}>
-                      approved
-                    </option>
-                    <option value="denied" selected={@open_task.status == "denied"}>denied</option>
-                  </optgroup>
-                  <option value="done" selected={@open_task.status == "done"}>done</option>
-                </select>
-              </label>
-
-              <label class="gl-task-detail__field">
-                <span class="gl-muted">assigned_to</span>
-                <input
-                  type="text"
-                  name="assigned_to"
-                  value={@open_task.assigned_to}
-                  list="gl-assignee-options"
-                  class="gl-input"
-                  autocomplete="off"
-                />
-                <datalist id="gl-assignee-options">
-                  <option :for={slug <- @assignee_options} value={slug}></option>
-                </datalist>
-              </label>
-
-              <label class="gl-task-detail__field">
-                <span class="gl-muted">priority</span>
-                <select name="priority" class="gl-input">
-                  <option value="" selected={@open_task.priority == ""}>—</option>
-                  <option value="low" selected={@open_task.priority == "low"}>low</option>
-                  <option value="medium" selected={@open_task.priority == "medium"}>medium</option>
-                  <option value="high" selected={@open_task.priority == "high"}>high</option>
-                </select>
-              </label>
-
-              <label class="gl-task-detail__field">
-                <span class="gl-muted">severity</span>
-                <select name="severity" class="gl-input">
-                  <option value="" selected={@open_task.severity == ""}>—</option>
-                  <option value="info" selected={@open_task.severity == "info"}>info</option>
-                  <option value="minor" selected={@open_task.severity == "minor"}>minor</option>
-                  <option value="major" selected={@open_task.severity == "major"}>major</option>
-                  <option value="critical" selected={@open_task.severity == "critical"}>
-                    critical
-                  </option>
-                </select>
-              </label>
-
-              <label class="gl-task-detail__field gl-task-detail__field--check">
-                <input
-                  type="checkbox"
-                  name="requires_approval"
-                  value="director"
-                  checked={@open_task.requires_approval == "director"}
-                />
-                <span>requires Director approval</span>
-              </label>
-
-              <label class="gl-task-detail__field gl-task-detail__field--body">
-                <span class="gl-muted">body</span>
-                <textarea name="body" rows="8" class="gl-input">{@open_task.body}</textarea>
-              </label>
-
-              <div :if={@open_task.denial_reason != ""} class="gl-task-detail__field">
-                <span class="gl-muted">denial reason</span>
-                <div class="gl-approval-card__reason">{@open_task.denial_reason}</div>
-              </div>
-
-              <div :if={@open_task.attachments != []} class="gl-task-detail__field">
-                <span class="gl-muted">attachments</span>
-                <ul class="gl-upload-list">
-                  <li :for={a <- @open_task.attachments} class="gl-upload-list__row">
-                    <span class="gl-upload-list__name">{a.name}</span>
-                    <span class="gl-muted gl-upload-list__size">
-                      {Float.round(a.size / 1024, 1)} KB
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div class="gl-task-detail__field">
-                <span class="gl-muted">
-                  comments ({length(@open_task.comments)})
-                </span>
-                <ul :if={@open_task.comments != []} class="gl-task-comments">
-                  <li :for={c <- @open_task.comments} class="gl-task-comments__row">
-                    <span class="gl-task-comments__author">{c.author}</span>
-                    <span class="gl-muted gl-task-comments__ts">{c.timestamp}</span>
-                    <div class="gl-task-comments__body">{c.body}</div>
-                  </li>
-                </ul>
-                <p :if={@open_task.comments == []} class="gl-muted gl-task-comments__empty">
-                  No comments yet — use the field below to add one. @mentions wake the agent.
-                </p>
-              </div>
-            </div>
-
-            <footer class="gl-task-detail__footer">
-              <span class="gl-muted gl-task-detail__path">
-                ~/.glorbo/companies/{@company_slug}/{@open_task.task_path}
-              </span>
-              <div class="gl-task-detail__actions">
-                <button
-                  type="button"
-                  class="gl-btn gl-btn--deny"
-                  phx-click="delete_task"
-                  phx-value-path={@open_task.task_path}
-                  data-confirm="Delete this task? It'll move to projects/history/tasks/ (recoverable on disk)."
-                >
-                  ✕ delete
-                </button>
-                <button type="button" class="gl-btn" phx-click="close_task">cancel</button>
-                <button type="submit" class="gl-btn gl-btn--primary">save</button>
-              </div>
-            </footer>
-          </form>
+          <TaskDetailForm.task_detail_form
+            task={@open_task}
+            company_slug={@company_slug}
+            assignee_options={@assignee_options}
+          />
 
           <%!--
           Sibling form inside the overlay — can't be nested inside the

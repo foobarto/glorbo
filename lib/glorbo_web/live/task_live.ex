@@ -18,6 +18,7 @@ defmodule GlorboWeb.TaskLive do
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
   alias GlorboWeb.Components.ChatDrawer
+  alias GlorboWeb.Components.TaskDetailForm
 
   @impl true
   def mount(%{"company" => co, "task_id" => task_id}, _session, socket) do
@@ -119,6 +120,67 @@ defmodule GlorboWeb.TaskLive do
         {:error, reason} -> {:noreply, put_flash(socket, :error, format_error(reason))}
       end
     end
+  end
+
+  # PLAN item — shared-task-detail-component. The shared
+  # TaskDetailForm emits `save_task` / `delete_task` / `close_task`
+  # events; TaskLive handles them to keep parity with KanbanLive's
+  # shelf (without which the form would throw on submit).
+  # The shared TaskDetailForm emits save/delete/close events. Save
+  # writes frontmatter only (body editing remains KanbanLive-only
+  # for now — TaskLive's textarea is editable but the submit ignores
+  # the body field; users who need to rewrite the body open the
+  # shelf view from Kanban).
+  def handle_event("save_task", params, socket) do
+    abs =
+      Path.join([base_dir(), "companies", socket.assigns.company_slug, socket.assigns.rel_path])
+
+    updates =
+      %{
+        "title" => params["title"],
+        "status" => params["status"],
+        "assigned_to" => params["assigned_to"],
+        "priority" => params["priority"],
+        "severity" => params["severity"]
+      }
+      |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
+      |> Map.new()
+
+    updates =
+      case params["requires_approval"] do
+        "director" -> Map.put(updates, "requires_approval", "director")
+        _ -> updates
+      end
+
+    case Glorbo.TaskDefinition.write_frontmatter(abs, updates) do
+      :ok -> {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not save task.")}
+    end
+  end
+
+  def handle_event("delete_task", %{"path" => _path}, socket) do
+    abs =
+      Path.join([base_dir(), "companies", socket.assigns.company_slug, socket.assigns.rel_path])
+
+    trash_dir = Path.join([Path.dirname(Path.dirname(abs)), "history", "deleted"])
+    File.mkdir_p!(trash_dir)
+    ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
+    dest = Path.join(trash_dir, "#{ts}-#{Path.basename(abs)}")
+
+    case File.rename(abs, dest) do
+      :ok ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Moved #{socket.assigns.rel_path} to history/deleted/.")
+         |> push_navigate(to: ~p"/companies/#{socket.assigns.company_slug}/kanban")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("close_task", _params, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/companies/#{socket.assigns.company_slug}/kanban")}
   end
 
   defp format_error(:empty_body), do: "Comment is empty."
@@ -237,42 +299,20 @@ defmodule GlorboWeb.TaskLive do
           <header class="gl-panel__header">
             <span class="gl-panel__title">{@task.title}</span>
           </header>
-          <div class="gl-panel__body gl-task-page__meta">
-            <dl>
-              <dt>status</dt>
-              <dd>{@task.status}</dd>
-              <dt>assigned to</dt>
-              <dd>{@task.assigned_to || "—"}</dd>
-              <dt>priority</dt>
-              <dd>{@task.priority || "—"}</dd>
-              <dt>severity</dt>
-              <dd>{@task.severity || "—"}</dd>
-              <dt :if={@task.requires_approval != ""}>approval</dt>
-              <dd :if={@task.requires_approval != ""}>director</dd>
-            </dl>
-          </div>
-          <div class="gl-panel__body gl-task-page__body">
-            <h2 class="gl-heading gl-heading--heading">description</h2>
-            <pre class="gl-task-page__prompt">{@task.body}</pre>
+          <div class="gl-panel__body gl-task-page__form">
+            <TaskDetailForm.task_detail_form
+              task={Map.put(@task, :task_path, @rel_path)}
+              company_slug={@company_slug}
+              assignee_options={[]}
+            />
           </div>
         </section>
 
         <section class="gl-panel">
           <header class="gl-panel__header">
-            <span class="gl-panel__title">comments ({length(@task.comments)})</span>
+            <span class="gl-panel__title">add a comment</span>
           </header>
           <div class="gl-panel__body">
-            <ul :if={@task.comments != []} class="gl-task-comments">
-              <li :for={c <- @task.comments} class="gl-task-comments__row">
-                <span class="gl-task-comments__author">{c.author}</span>
-                <span class="gl-muted gl-task-comments__ts">{c.timestamp}</span>
-                <div class="gl-task-comments__body">{c.body}</div>
-              </li>
-            </ul>
-            <p :if={@task.comments == []} class="gl-muted gl-task-comments__empty">
-              No comments yet.
-            </p>
-
             <form
               phx-submit="comment_task"
               phx-hook="ResetOnSubmit"
