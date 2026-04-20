@@ -82,6 +82,11 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:new_project_open?, false)
        |> assign(:wizard_step, nil)
        |> assign(:provider_options, provider_options())
+       |> assign(:emergency_stopped?, Glorbo.EmergencyStop.engaged?(slug, base: base))
+       |> assign(
+         :emergency_meta,
+         Glorbo.EmergencyStop.read_sentinel(slug, base: base)
+       )
        |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -179,6 +184,33 @@ defmodule GlorboWeb.CompanyLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-overview">
+      <aside
+        :if={@emergency_stopped?}
+        class="gl-banner gl-banner--error gl-emergency-banner"
+        role="alert"
+      >
+        <span class="gl-banner__glyph" aria-hidden="true">⏹</span>
+        <div class="gl-emergency-banner__body">
+          <strong>Emergency stop engaged</strong>
+          <span :if={@emergency_meta["engaged_by"]} class="gl-muted">
+            by {@emergency_meta["engaged_by"]}
+          </span>
+          <span :if={@emergency_meta["engaged_at"]} class="gl-muted">
+            at {@emergency_meta["engaged_at"]}
+          </span>
+          <p :if={@emergency_meta["reason"] not in [nil, ""]} class="gl-emergency-banner__reason">
+            {@emergency_meta["reason"]}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="gl-btn gl-btn--sm"
+          phx-click="emergency_clear"
+          data-confirm="Clear the emergency stop? Agents will be able to dispatch again."
+        >
+          Clear
+        </button>
+      </aside>
       <header class="gl-view__header gl-overview__header">
         <div>
           <h1 class="gl-heading gl-heading--display">
@@ -232,6 +264,16 @@ defmodule GlorboWeb.CompanyLive do
             phx-click="new_agent"
           >
             + new agent
+          </button>
+          <button
+            :if={not @emergency_stopped?}
+            type="button"
+            class="gl-btn gl-btn--danger"
+            phx-click="emergency_engage"
+            data-confirm="Engage emergency stop? All running dispatches for this company will be killed and new dispatches refused until you clear."
+            title="Kill every running dispatch for this company and refuse new ones"
+          >
+            ⏹ emergency stop
           </button>
         </div>
       </header>
@@ -811,6 +853,36 @@ defmodule GlorboWeb.CompanyLive do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "backup failed: #{inspect(reason)}")}
     end
+  end
+
+  def handle_event("emergency_engage", _params, socket) do
+    co = socket.assigns.company_slug
+
+    case Glorbo.EmergencyStop.engage(co, base: base_dir(), actor: "director") do
+      :ok ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Emergency stop engaged. All running dispatch halted.")
+         |> assign(:emergency_stopped?, true)
+         |> assign(
+           :emergency_meta,
+           Glorbo.EmergencyStop.read_sentinel(co, base: base_dir())
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Engage failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("emergency_clear", _params, socket) do
+    co = socket.assigns.company_slug
+    :ok = Glorbo.EmergencyStop.clear(co, base: base_dir(), actor: "director")
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Emergency stop cleared.")
+     |> assign(:emergency_stopped?, false)
+     |> assign(:emergency_meta, %{})}
   end
 
   def handle_event("new_agent", _params, socket) do

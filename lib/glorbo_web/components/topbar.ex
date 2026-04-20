@@ -36,6 +36,7 @@ defmodule GlorboWeb.Components.Topbar do
       |> assign(:app_version, app_version())
       |> assign(:bwrap_version, bwrap_version())
       |> assign(:kernel_version, kernel_version())
+      |> assign(:emergency_stopped?, emergency_stopped?(assigns[:current_company]))
 
     ~H"""
     <header class="gl-topbar" role="banner">
@@ -78,6 +79,15 @@ defmodule GlorboWeb.Components.Topbar do
         title="Open brain dump (g b)"
       >
         <span class="gl-topbar__dump-glyph" aria-hidden="true">✎</span> dump
+      </.link>
+
+      <.link
+        :if={@current_company && @emergency_stopped?}
+        navigate={~p"/companies/#{@current_company}"}
+        class="gl-topbar__estop gl-topbar__estop--engaged"
+        title="Emergency stop engaged — all dispatch halted for this company. Click to manage."
+      >
+        <span aria-hidden="true">⏹</span> EMERGENCY STOP
       </.link>
 
       <span class="gl-topbar__kbd" aria-hidden="true">
@@ -179,5 +189,13 @@ defmodule GlorboWeb.Components.Topbar do
     end
   rescue
     _ -> ""
+  end
+
+  defp emergency_stopped?(nil), do: false
+
+  defp emergency_stopped?(co) when is_binary(co) do
+    Glorbo.EmergencyStop.engaged?(co)
+  rescue
+    _ -> false
   end
 end

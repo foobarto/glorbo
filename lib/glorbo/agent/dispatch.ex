@@ -92,7 +92,8 @@ defmodule Glorbo.Agent.Dispatch do
         fun when is_function(fun, 0) -> fun.()
       end
 
-    with :ok <- check_prompt_size(task.prompt),
+    with :ok <- check_emergency_stop(spec, opts),
+         :ok <- check_prompt_size(task.prompt),
          :ok <- check_budget(spec, opts),
          {:ok, provider} <- resolve_provider(spec, task, opts),
          :ok <- check_untracked_allowed(spec, provider, opts),
@@ -123,6 +124,10 @@ defmodule Glorbo.Agent.Dispatch do
       {:stop, _used, _cap} ->
         {:stopped, :budget_hard_stop}
 
+      {:error, :emergency_stopped} ->
+        Logger.info("dispatch refused: #{spec.company} is emergency-stopped")
+        {:error, :emergency_stopped}
+
       {:error, :prompt_too_large} ->
         {:error, :prompt_too_large}
 
@@ -148,6 +153,24 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp check_prompt_size(prompt) when is_binary(prompt) do
     if byte_size(prompt) > @prompt_max_bytes, do: {:error, :prompt_too_large}, else: :ok
+  end
+
+  # T2-C — refuse dispatch when the company's emergency-stop sentinel
+  # is present. Dep-injectable so tests can toggle the check without
+  # touching disk.
+  defp check_emergency_stop(spec, opts) do
+    fun =
+      Keyword.get(opts, :emergency_stop_fun, fn company ->
+        Glorbo.EmergencyStop.engaged?(company,
+          base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+        )
+      end)
+
+    if fun.(spec.company) do
+      {:error, :emergency_stopped}
+    else
+      :ok
+    end
   end
 
   defp check_budget(spec, opts) do

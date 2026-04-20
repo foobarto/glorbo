@@ -3108,3 +3108,55 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   margin-bottom: var(--gl-space-xs);
 }
 .gl-channel__messages--archive { padding: var(--gl-space-xs); }
+
+/* Emergency stop (T2-C, #241). */
+.gl-emergency-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gl-space-md);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border: 2px solid var(--gl-danger, #c14);
+  background: color-mix(in oklch, var(--gl-danger, #c14) 15%, transparent);
+  border-radius: 2px;
+  margin-bottom: var(--gl-space-md);
+}
+.gl-emergency-banner__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+.gl-emergency-banner__reason {
+  margin: 4px 0 0;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--gl-bg);
+  border-radius: 2px;
+}
+.gl-btn--danger {
+  color: var(--gl-danger, #c14);
+  border-color: var(--gl-danger, #c14);
+}
+.gl-btn--danger:hover {
+  background: color-mix(in oklch, var(--gl-danger, #c14) 15%, transparent);
+}
+
+/* Topbar emergency indicator — sticky-red so the director always sees it. */
+.gl-topbar__estop--engaged {
+  color: var(--gl-danger, #c14);
+  background: color-mix(in oklch, var(--gl-danger, #c14) 20%, transparent);
+  border: 1px solid var(--gl-danger, #c14);
+  padding: 2px 8px;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  text-decoration: none;
+  border-radius: 2px;
+  margin-right: var(--gl-space-sm);
+  animation: gl-estop-pulse 1.5s ease-in-out infinite;
+}
+@keyframes gl-estop-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
