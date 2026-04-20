@@ -71,12 +71,22 @@ defmodule GlorboWeb.Components.Topbar do
 
       <span class="gl-topbar__spacer"></span>
 
+      <.link
+        :if={@current_company}
+        navigate={~p"/companies/#{@current_company}/braindump"}
+        class="gl-topbar__dump"
+        title="Open brain dump (g b)"
+      >
+        <span class="gl-topbar__dump-glyph" aria-hidden="true">✎</span> dump
+      </.link>
+
       <span class="gl-topbar__kbd" aria-hidden="true">
         <kbd>g</kbd><kbd>o</kbd>
         overview · <kbd>g</kbd><kbd>c</kbd>
         chat · <kbd>g</kbd><kbd>k</kbd>
         kanban · <kbd>g</kbd><kbd>a</kbd>
-        audit
+        audit · <kbd>g</kbd><kbd>b</kbd>
+        dump
       </span>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
       <button

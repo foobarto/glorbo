@@ -85,6 +85,7 @@ const NAV_MAP = {
   a: (co) => co && `/companies/${co}/audit`,
   v: (co) => co && `/companies/${co}/approvals`,
   k: (co) => co && `/companies/${co}/kanban`,
+  b: (co) => co && `/companies/${co}/braindump`,
 }
 
 // Resolve current company from the URL first (most reliable), falling
@@ -177,6 +178,7 @@ function cheatsheetHtml() {
               <dt><kbd>g</kbd><kbd>a</kbd></dt><dd>audit log</dd>
               <dt><kbd>g</kbd><kbd>v</kbd></dt><dd>approvals queue</dd>
               <dt><kbd>g</kbd><kbd>k</kbd></dt><dd>kanban board</dd>
+              <dt><kbd>g</kbd><kbd>b</kbd></dt><dd>brain dump</dd>
             </dl>
           </section>
           <p class="gl-muted gl-cheatsheet__hint">
@@ -226,6 +228,7 @@ function collectCommands() {
       { label: `Kanban (${co})`, hint: "g k", href: `/companies/${co}/kanban` },
       { label: `Inbox (${co})`, hint: "", href: `/companies/${co}/inbox` },
       { label: `Skills (${co})`, hint: "", href: `/companies/${co}/skills` },
+      { label: `Brain dump (${co})`, hint: "g b", href: `/companies/${co}/braindump` },
     )
     // Director actions — open modals via the `?modal=` query param
     // that CompanyLive.handle_params already understands.

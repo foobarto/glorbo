@@ -56,6 +56,8 @@ defmodule GlorboWeb.Router do
     # "builtin" = ships with Glorbo under priv/templates/skills,
     # "custom" = `<base>/skills/<name>.md` user overrides.
     live "/companies/:company/skills", SkillsLive
+    # T1-E brain dump (#230) — daily append-only capture log.
+    live "/companies/:company/braindump", BrainDumpLive
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive
