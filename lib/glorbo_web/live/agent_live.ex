@@ -411,7 +411,8 @@ defmodule GlorboWeb.AgentLive do
         "model" => params["model"],
         "reports_to" => params["reports_to"],
         "heartbeat" => params["heartbeat"],
-        "network" => params["network"]
+        "network" => params["network"],
+        "autonomy" => params["autonomy"]
       }
       |> Enum.reject(fn {_, v} -> is_nil(v) end)
       |> Map.new()
@@ -1020,6 +1021,8 @@ defmodule GlorboWeb.AgentLive do
                 <dd>{@detail.heartbeat || "—"}</dd>
                 <dt>network</dt>
                 <dd><span class="gl-badge">{@detail.network}</span></dd>
+                <dt>autonomy</dt>
+                <dd><span class="gl-badge">{@detail.autonomy}</span></dd>
                 <dt>skills</dt>
                 <dd>{Enum.join(@detail.skills, ", ")}</dd>
               </dl>
@@ -1068,6 +1071,20 @@ defmodule GlorboWeb.AgentLive do
                     <option value="none" selected={@detail.network == "none"}>none</option>
                     <option value="outgoing" selected={@detail.network == "outgoing"}>
                       outgoing
+                    </option>
+                  </select>
+                </label>
+                <label class="gl-form__row">
+                  <span class="gl-form__label">autonomy</span>
+                  <select name="autonomy" class="gl-input">
+                    <option value="manual" selected={@detail.autonomy == "manual"}>
+                      manual — director approves every task
+                    </option>
+                    <option value="supervised" selected={@detail.autonomy == "supervised"}>
+                      supervised — gated by requires_approval flag
+                    </option>
+                    <option value="auto" selected={@detail.autonomy == "auto"}>
+                      auto — no approval gate (budget still applies)
                     </option>
                   </select>
                 </label>
@@ -1279,6 +1296,7 @@ defmodule GlorboWeb.AgentLive do
       reports_to: spec && spec.reports_to,
       heartbeat: spec && spec.heartbeat,
       network: (spec && to_string(spec.network)) || "none",
+      autonomy: (spec && to_string(spec.autonomy)) || "supervised",
       skills: (spec && spec.skills) || [],
       permissions: classify_permissions(spec),
       pill_status: agent_pill_status(pct, tracked?),

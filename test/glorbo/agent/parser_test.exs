@@ -423,4 +423,51 @@ defmodule Glorbo.Agent.ParserTest do
   test "parse_file/1 on non-existent path returns {:read_error, _}" do
     assert {:error, {:read_error, :enoent}} = Parser.parse_file("/nonexistent/agent.md")
   end
+
+  describe "autonomy tier (T1-F)" do
+    test "defaults to :supervised when absent", ctx do
+      path =
+        write_agent(ctx, "eng-default", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.autonomy == :supervised
+    end
+
+    test "accepts manual / supervised / auto", ctx do
+      for value <- ~w(manual supervised auto) do
+        path =
+          write_agent(ctx, "eng-#{value}", """
+          ---
+          role: x
+          provider: claude-code
+          model: claude-opus-4-6
+          autonomy: #{value}
+          ---
+          """)
+
+        assert {:ok, spec} = Parser.parse_file(path)
+        assert spec.autonomy == String.to_existing_atom(value)
+      end
+    end
+
+    test "rejects unknown autonomy values", ctx do
+      path =
+        write_agent(ctx, "eng-bad", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        autonomy: chaos
+        ---
+        """)
+
+      assert {:error, {:invalid_autonomy, _}} = Parser.parse_file(path)
+    end
+  end
 end

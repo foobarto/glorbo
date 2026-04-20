@@ -61,6 +61,7 @@ defmodule Glorbo.Agent.Parser do
           | :multiple_models_not_supported
           | {:invalid_permission, String.t()}
           | {:invalid_network, String.t()}
+          | {:invalid_autonomy, String.t()}
           | {:invalid_skill_name, String.t()}
           | {:invalid_slug, String.t()}
           | :agents_create_forbidden
@@ -114,7 +115,8 @@ defmodule Glorbo.Agent.Parser do
          {:ok, skills} <- validate_skills(meta["skills"]),
          {:ok, heartbeat} <- validate_heartbeat(meta["heartbeat"]),
          {:ok, budget} <- validate_budget(meta["budget_usd_cents_month"]),
-         {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]) do
+         {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]),
+         {:ok, autonomy} <- validate_autonomy(meta["autonomy"]) do
       {:ok,
        %Spec{
          slug: slug,
@@ -129,6 +131,7 @@ defmodule Glorbo.Agent.Parser do
          budget_usd_cents_month: budget,
          timeout_seconds: timeout,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
+         autonomy: autonomy,
          reports_to: parse_reports_to(meta["reports_to"]),
          icon: parse_icon(meta["icon"]),
          file_path: file_path
@@ -138,6 +141,16 @@ defmodule Glorbo.Agent.Parser do
 
   defp parse_untracked(true), do: true
   defp parse_untracked(_), do: false
+
+  # T1-F: autonomy tier mapping. Missing or unknown defaults to
+  # `:supervised` — preserving pre-T1-F behaviour (no gate unless
+  # declared at task level).
+  defp validate_autonomy(nil), do: {:ok, :supervised}
+  defp validate_autonomy(""), do: {:ok, :supervised}
+  defp validate_autonomy("manual"), do: {:ok, :manual}
+  defp validate_autonomy("supervised"), do: {:ok, :supervised}
+  defp validate_autonomy("auto"), do: {:ok, :auto}
+  defp validate_autonomy(raw), do: {:error, {:invalid_autonomy, inspect(raw)}}
 
   # Accepts a string (another agent's slug) or nil. No validation
   # against the existing agents list — the value is used at render-
