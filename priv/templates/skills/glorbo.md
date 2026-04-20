@@ -103,12 +103,56 @@ research caches, etc. The Director can browse it via the AgentLive
 file tree. Things you put here are visible but not "routed" —
 they just sit in your private area.
 
-### ✅ Writing to /outbox
+### ✅ Writing to /outbox (routed to the rest of the company)
 
-`/outbox/` is also rw but NOT currently routed — it's a staging
-area for files you'd like to share. Today the Director can only
-see them by opening your agent page. Future versions will route
-it; for now treat `/outbox/` and `/workspace/` as interchangeable.
+`/outbox/` is the integration point with Glorbo's Router. Files
+written here trigger an inotify event; the Router validates them
+and moves them into the appropriate place in the company tree.
+
+Three supported shapes:
+
+#### Filing a task — `/outbox/tasks/<project>/<task-id>.md`
+
+If you have `projects:write:<project>` (or `projects:write:*`),
+write a file with task frontmatter:
+
+```markdown
+---
+title: Research today's SaaS trends
+assigned_to: researcher
+status: todo
+priority: high
+---
+Body of the task. What you want the assignee to do.
+```
+
+On success the file moves to
+`companies/<co>/projects/<project>/tasks/<task-id>.md` and an
+audit event `task.create` fires. Collisions (task-id already
+exists) leave the outbox file in place so you can adjust.
+
+#### Commenting on a task — `/outbox/comments/<task-id>.md`
+
+Append a timestamped comment to an existing task:
+
+```markdown
+---
+task_id: blueprints-01
+---
+My comment body. Anything markdown works.
+```
+
+The Router appends a `## <ts> | <your-slug>\n<body>` block to
+`projects/<proj>/tasks/<task-id>.md`. The file is removed on
+success.
+
+#### Classic message/channel routing — `/outbox/<anything>.md`
+
+Top-level outbox files with a `to:` frontmatter go through the
+original message-routing pipeline (channel appends, agent-to-
+agent inbox writes, @-mention routing). Requires
+`chat:write:<channel>` or `agents:message:<slug>` in your
+permissions.
 
 ### ✅ ACTIONS DSL (embedded in reply body)
 
@@ -124,32 +168,38 @@ ACTIONS:
 Limited today — just status + reassign. Mostly useful when you're
 handed a task (`GLORBO_TASK_ID` set) and want to change its state.
 
-### ❌ Direct channel / task writes (not available to agents)
+### ❌ What agents still can't do
 
-You CANNOT directly:
-- Append to `companies/<co>/channels/<ch>.md`.
-- Create files under `projects/<proj>/tasks/`.
-- Create new agents.
-- Comment on other agents' tasks.
+- **Create agents.** `agents:create:*` is forbidden at the parser
+  layer (AGT-05 P15). If you need a new role, file a task with
+  title beginning `hire ` in a project you can write to. The
+  Director's UI surfaces those and they scaffold via `glorbo new
+  agent`.
+- **Write directly to `companies/<co>/` paths.** Your sandbox
+  doesn't mount them rw — route everything through `/outbox/`.
+- **Skip permission checks.** If you file a task into a project
+  you don't have `projects:write:<p>` for, the Router silently
+  skips and your outbox file stays in place. Check your AGENT.md
+  `permissions:` if things aren't routing.
 
-All of that happens through the Director — who reads your reply
-and takes action. Write clear, actionable replies.
+### How to request a hire (concrete example)
 
-### How to request a hire
+Write to `/outbox/tasks/<project>/<your-prefix>-<N>.md`:
 
-Include it in your reply:
+```markdown
+---
+title: hire researcher
+status: todo
+priority: high
+---
+Need a Researcher reporting to me. Role: scan HN/PH/Reddit for
+SaaS opportunities. Use adapter `opencode`, model
+`lmstudio/qwen/qwen3.6-35b-a3b`, heartbeat `"* * * * *"`.
+```
 
-> I need a Researcher reporting to me. Role: scan HN/PH/Reddit for
-> SaaS opportunities. Use adapter `opencode`, model
-> `lmstudio/qwen/qwen3.6-35b-a3b`, heartbeat `"* * * * *"`.
-
-The Director reads this and runs `glorbo new agent <co>/researcher`.
-
-### How to "message" another agent
-
-Write your message into the reply body and name the target agent.
-The Director will route it, or @-mention them from a channel. You
-cannot create mention files directly.
+The Router materialises it under `projects/<project>/tasks/`. The
+Director's Kanban shows it; they scaffold the agent with
+`glorbo new agent <co>/researcher --template researcher`.
 
 ## What NOT to do
 
