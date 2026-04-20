@@ -70,19 +70,35 @@ Back up with `tar`. Version-control with `git`. Move to another machine with
 <table>
   <tr>
     <td><img src="assets/screenshots/overview.png" alt="Overview: company cards + next-step hint" width="100%"></td>
-    <td><img src="assets/screenshots/company.png" alt="Company page: stat cards, agent roster, org chart, chat drawer" width="100%"></td>
+    <td><img src="assets/screenshots/company.png" alt="Company page: stat cards, 14-day rollup strip, agent roster, org chart" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><code>/companies</code> — overview grid</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;</code> — stats, roster, org chart, chat drawer</sub></td>
+    <td align="center"><sub><code>/companies</code> — overview grid with inline slug-availability probe</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;</code> — 14-day rollups: runs / success rate / tasks by status / by priority</sub></td>
   </tr>
   <tr>
-    <td><img src="assets/screenshots/kanban.png" alt="Kanban board with drag-drop lanes and a gated task" width="100%"></td>
-    <td><img src="assets/screenshots/agent.png" alt="Agent detail: identity, stdout tail, sandbox argv, permissions" width="100%"></td>
+    <td><img src="assets/screenshots/kanban.png" alt="Kanban board with goal filter and drag-drop lanes" width="100%"></td>
+    <td><img src="assets/screenshots/agent.png" alt="Agent detail: identity, stdout tail, sandbox argv, config edit form" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/kanban</code> — drag-drop writes <code>status:</code> frontmatter</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/agents/&lt;slug&gt;</code> — three-column agent detail</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/kanban?goal=&lt;slug&gt;</code> — goal-scoped board</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/agents/&lt;slug&gt;</code> — runs tab w/ tool-call counts, inline config edit</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/goals.png" alt="Goals page: per-goal roll-up with status breakdown" width="100%"></td>
+    <td><img src="assets/screenshots/skills.png" alt="Skills marketplace: builtin / custom / shadowed" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/goals</code> — goal-scoped task rollups (v0.0.3)</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/skills</code> — builtin + custom skills with used-by counts (v0.0.3)</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/inbox.png" alt="Unified director inbox with approve / deny / archive" width="100%"></td>
+    <td><img src="assets/screenshots/audit.png" alt="Audit feed with two-letter actor avatars" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/inbox</code> — Mine / Recent / All / Archive (v0.0.3)</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/audit</code> — <em>&lt;actor&gt; &lt;verb&gt; &lt;object&gt;</em> sentence rendering + avatars</sub></td>
   </tr>
   <tr>
     <td><img src="assets/screenshots/approvals.png" alt="Approval queue with prompt diff and j/k/y/n keyboard" width="100%"></td>
@@ -140,6 +156,19 @@ streaming, chat, approval queue, audit viewer, system health, and a
 provider-registry panel at `/providers` (v0.0.3). Inotify events
 repaint the UI in under a second with no polling. No JavaScript
 framework. No build step.
+
+**Director-centric surfaces (v0.0.3, GEP-20)** — Unified `/inbox`
+with Mine/Recent/All/Archive tabs aggregating approvals + audit
+activity; dedicated `/goals` page roll-up per company-declared
+goal; `/skills` bundle view listing builtin + user-override
+skills with used-by counts; inline AgentLive config edit form
+that writes AGENT.md frontmatter in place; 14-day rollup strip
+on every company dashboard (runs / success rate / tasks by
+status / by priority); two-letter actor avatars on audit,
+channel, and inbox rows; inline slug-availability probe on the
+new-company modal; `⌘K` command palette with per-company
+destinations + director actions; tool-call counts on Claude-Code
+runs (`Bash×1, Read×2` on the Runs tab).
 
 **Agent chat** — Talk to your agents. Agents talk to each other. Channels are
 append-only markdown files underneath. Phoenix Channels handles real-time

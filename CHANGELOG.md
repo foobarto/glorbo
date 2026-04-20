@@ -10,9 +10,70 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Added
+### Added — director dashboard UX sweep (rounds 2+3, GEP-20)
+
+- **Unified director inbox (`/companies/<co>/inbox`)** with Mine /
+  Recent / All / Archive tabs. Aggregates pending approvals + the
+  recent audit stream; inline approve / deny / archive actions on
+  each row. Archive state persists at
+  `audit/_inbox_archive.json` and survives reloads; Archive tab
+  lists handled rows with an Unarchive escape hatch.
+- **Dedicated goals view (`/companies/<co>/goals`)**. Reads
+  `company.md` frontmatter `goals:` list, buckets every task by
+  `goal:` reference, shows per-goal totals + status breakdown bar
+  + deep link into a Kanban filtered by goal slug. Unassigned
+  tasks roll up under a `(no goal)` card.
+- **Skills marketplace (`/companies/<co>/skills`)**. Enumerates
+  builtin skills under `priv/templates/skills/` alongside user
+  overrides; classifies each as `builtin | custom | shadowed`;
+  used-by counts per agent.
+- **Per-goal Kanban filter** (`?goal=<slug>`) from GoalsLive,
+  CompanyLive goals panel, or URL.
+- **Agent config edit form.** AgentLive's right-column `config`
+  panel gains an `edit` button that flips to a structured form
+  for provider / model / reports_to / heartbeat / network. Writes
+  allow-listed AGENT.md frontmatter keys via the new
+  `Glorbo.Filesystem.FrontmatterWriter.update_keys/3` (preserves
+  order, comments, indentation; atomic `.tmp` + rename).
+- **14-day rollup strip on CompanyLive** — runs per day, success
+  rate, tasks by status, tasks by priority. Data from
+  `Glorbo.Activity.Rollup` (scans current + previous monthly
+  audit JSONL; reads task frontmatter for status/priority
+  buckets). Reuses `Components.Spark` + new
+  `Components.StatBreakdown` (stacked segments + colour-coded
+  legend with curated palette for known statuses).
+- **Create-company wizard** chains the three existing modals
+  (new-company → new-agent → new-project) via URL params
+  (`?wizard=new_agent` → `?wizard=new_project`). 3-step
+  breadcrumb renders inside each modal while a chain is active.
+- **Two-letter actor avatars** on audit rows, channel messages,
+  and inbox activity feed. `AuditEntry.actor_initials/1` +
+  `actor_kind/1` public helpers; colour by kind (system /
+  director / agent).
+- **Inline slug-availability probe** on the new-company modal.
+  150 ms debounced `phx-change` checks `File.dir?`; inline hint
+  + green/red border + disabled submit when taken.
+- **Command palette additions.** `⌘K / Ctrl-K` overlay now
+  surfaces Inbox, Skills, projects from the sidebar, and
+  `+ new agent` / `+ new project` action shortcuts.
+- **Tool-call counts on agent.complete audit entries** (§2).
+  `ClaudeJsonl` parser counts `tool_use` blocks per assistant
+  message; Dispatch forwards `%{"Bash" => 1, "Read" => 2}` onto
+  the complete-audit detail; AgentLive Runs tab shows `N tools`
+  (collapsed) and `Bash×1, Read×2` (expanded). Opencode + Codex
+  + Gemini parsers keep `tool_calls: nil` for now.
+- **Activity sentences on audit rows** — `<actor> <verb> <object>`
+  framing with delta rendering for status changes.
+- **GEP-20** — Informational GEP retrofitting the scope, design,
+  and decision log for this sweep. See `docs/geps/0020-round-2-
+  3-ux-sweep.md`.
 
 ### Changed
+
+- AgentLive Runs tab + CompanyLive roster now include tool-call
+  indicators when available; collapse gracefully when the
+  provider doesn't emit tool telemetry.
+- Sidebar gains `Goals` and `Skills` nav entries.
 
 ### Fixed
 
