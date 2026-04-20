@@ -44,7 +44,13 @@ defmodule Glorbo.Activity.RollupTest do
 
     lines =
       [
-        %{ts: ts, actor: "x", action: "agent.complete", target: "t1", detail: %{exit_status: "0"}},
+        %{
+          ts: ts,
+          actor: "x",
+          action: "agent.complete",
+          target: "t1",
+          detail: %{exit_status: "0"}
+        },
         %{ts: ts, actor: "x", action: "agent.complete", target: "t2", detail: %{exit_status: "1"}}
       ]
       |> Enum.map_join("\n", &Jason.encode!/1)

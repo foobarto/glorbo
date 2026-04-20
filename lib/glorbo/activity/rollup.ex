@@ -177,34 +177,31 @@ defmodule Glorbo.Activity.Rollup do
     projects_dir = Path.join(company_path, "projects")
 
     case File.ls(projects_dir) do
-      {:ok, projects} ->
-        Enum.flat_map(projects, fn project ->
-          tasks_dir = Path.join([projects_dir, project, "tasks"])
+      {:ok, projects} -> Enum.flat_map(projects, &collect_project_fms(projects_dir, &1))
+      _ -> []
+    end
+  end
 
-          case File.ls(tasks_dir) do
-            {:ok, files} ->
-              files
-              |> Enum.filter(&String.ends_with?(&1, ".md"))
-              |> Enum.flat_map(fn filename ->
-                case File.read(Path.join(tasks_dir, filename)) do
-                  {:ok, content} ->
-                    case Glorbo.Filesystem.Frontmatter.parse(content) do
-                      {:ok, fm, _body} -> [fm]
-                      _ -> []
-                    end
+  defp collect_project_fms(projects_dir, project) do
+    tasks_dir = Path.join([projects_dir, project, "tasks"])
 
-                  _ ->
-                    []
-                end
-              end)
-
-            _ ->
-              []
-          end
-        end)
+    case File.ls(tasks_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.flat_map(&read_fm(Path.join(tasks_dir, &1)))
 
       _ ->
         []
+    end
+  end
+
+  defp read_fm(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      [fm]
+    else
+      _ -> []
     end
   end
 

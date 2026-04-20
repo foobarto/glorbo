@@ -26,15 +26,22 @@ defmodule GlorboWeb.SkillsLive do
 
   @impl true
   def mount(%{"company" => co}, _session, socket) do
-    if not GlorboWeb.Slug.valid?(co) do
-      {:ok,
-       socket
-       |> put_flash(:error, "Invalid company identifier.")
-       |> push_navigate(to: ~p"/companies")}
-    else
-      co_path = Path.join([base_dir(), "companies", co])
+    cond do
+      not GlorboWeb.Slug.valid?(co) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Invalid company identifier.")
+         |> push_navigate(to: ~p"/companies")}
 
-      if File.dir?(co_path) do
+      not File.dir?(Path.join([base_dir(), "companies", co])) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Company \"#{co}\" not found.")
+         |> push_navigate(to: ~p"/companies")}
+
+      true ->
+        co_path = Path.join([base_dir(), "companies", co])
+
         {:ok,
          socket
          |> assign(:page_title, "#{co} · skills — Glorbo")
@@ -44,12 +51,6 @@ defmodule GlorboWeb.SkillsLive do
          |> assign(:skills, load_skills(co_path))
          |> assign(:expanded, MapSet.new())
          |> ChatDrawer.State.wire_drawer()}
-      else
-        {:ok,
-         socket
-         |> put_flash(:error, "Company \"#{co}\" not found.")
-         |> push_navigate(to: ~p"/companies")}
-      end
     end
   end
 
@@ -79,8 +80,7 @@ defmodule GlorboWeb.SkillsLive do
           </h1>
           <p class="gl-overview__path">
             <span class="gl-muted">
-              builtins ship under <code>priv/templates/skills/</code>; overrides live under
-              <code>~/.glorbo/skills/</code>.
+              builtins ship under <code>priv/templates/skills/</code>; overrides live under <code>~/.glorbo/skills/</code>.
             </span>
           </p>
         </div>
@@ -102,7 +102,10 @@ defmodule GlorboWeb.SkillsLive do
             <tr
               phx-click="toggle"
               phx-value-name={skill.name}
-              class={["gl-skills-table__row", MapSet.member?(@expanded, skill.name) && "gl-skills-table__row--open"]}
+              class={[
+                "gl-skills-table__row",
+                MapSet.member?(@expanded, skill.name) && "gl-skills-table__row--open"
+              ]}
               role="button"
               tabindex="0"
             >
@@ -209,35 +212,27 @@ defmodule GlorboWeb.SkillsLive do
     agents_dir = Path.join(co_path, "agents")
 
     case File.ls(agents_dir) do
-      {:ok, slugs} ->
-        Enum.reduce(slugs, %{}, fn slug, acc ->
-          agent_md = Path.join([agents_dir, slug, "AGENT.md"])
+      {:ok, slugs} -> Enum.reduce(slugs, %{}, &merge_agent_skills(agents_dir, &1, &2))
+      _ -> %{}
+    end
+  end
 
-          case File.read(agent_md) do
-            {:ok, content} ->
-              case Glorbo.Filesystem.Frontmatter.parse(content) do
-                {:ok, fm, _} ->
-                  skills =
-                    fm
-                    |> Map.get("skills", [])
-                    |> List.wrap()
-                    |> Enum.map(&to_string/1)
+  defp merge_agent_skills(agents_dir, slug, acc) do
+    skills_for_agent(agents_dir, slug)
+    |> Enum.reduce(acc, fn name, a -> Map.update(a, name, [slug], &(&1 ++ [slug])) end)
+  end
 
-                  Enum.reduce(skills, acc, fn name, a ->
-                    Map.update(a, name, [slug], &(&1 ++ [slug]))
-                  end)
+  defp skills_for_agent(agents_dir, slug) do
+    agent_md = Path.join([agents_dir, slug, "AGENT.md"])
 
-                _ ->
-                  acc
-              end
-
-            _ ->
-              acc
-          end
-        end)
-
-      _ ->
-        %{}
+    with {:ok, content} <- File.read(agent_md),
+         {:ok, fm, _} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      fm
+      |> Map.get("skills", [])
+      |> List.wrap()
+      |> Enum.map(&to_string/1)
+    else
+      _ -> []
     end
   end
 end
