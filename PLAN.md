@@ -234,6 +234,22 @@ Each lands as its own commit, gated on `mix precommit` + CI green.
 | 6 | `96de769` | P2-4 — editor + critiqueops templates; researcher provenance rubric tightened |
 | 7 | `e452dac` | Ad-hoc — TaskLive dedicated page + Kanban right-shelf overlay (JIRA pattern) |
 | 8 | `8c4cf55` | Ad-hoc — every template (incl. default) requires tool-vs-memory provenance tagging |
+| 9 | `b3b608d` | P2-4 (continued) — builtin `glorbo` skill + every template auto-attaches it |
+| 10 | `503bf64` | GLORBO_AGENT/COMPANY/TIMESTAMP env vars populated (were empty) |
+| 11 | `16bc460` | skill doc walked back to match shipping features |
+| 12 | `d65d66c` | Router picks up agent-authored `/outbox/tasks/` + `/outbox/comments/` |
+| 13 | `0eef9da` | skill doc describes new outbox routes |
+| 14 | `7642ea3` | bwrap `/workspace/outbox` alias + opencode permission bypass + frontmatter validation |
+
+## Paperclip-baseline parity — MET 2026-04-20
+
+See `.reports/uat/glorbo-vs-paperclip.md`. Verified end-to-end:
+CEO on `opencode + lmstudio/qwen/qwen3.6-35b-a3b` autonomously
+reads the `glorbo` skill, files three hire-request tasks to
+`/outbox/tasks/blog/`, the Router materialises them under
+`projects/blog/tasks/`, the Kanban UI renders them ready for
+Director action. Same outcome shape paperclip produces via its
+HTTP `hire_agent` approval flow — just filesystem-first.
 
 ## Items still open
 
