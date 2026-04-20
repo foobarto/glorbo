@@ -307,6 +307,25 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert File.read!(abs) == before
   end
 
+  test "?assignee=<slug> opens new-task modal with assignee prefilled",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?assignee=ceo")
+    assert html =~ "gl-modal-scrim"
+    assert html =~ ~s(name="assigned_to") and html =~ "ceo"
+  end
+
+  test "?return_to=/path redirects on cancel when set",
+       %{conn: conn} do
+    {:ok, view, _} =
+      live(
+        conn,
+        ~p"/companies/acme/kanban?assignee=ceo&return_to=%2Fcompanies%2Facme%2Fagents%2Fceo"
+      )
+
+    assert {:error, {:live_redirect, %{to: "/companies/acme/agents/ceo"}}} =
+             render_click(view, "new_task_cancel")
+  end
+
   test ":agent_status PubSub broadcast triggers a re-render (pill color refresh)",
        %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")

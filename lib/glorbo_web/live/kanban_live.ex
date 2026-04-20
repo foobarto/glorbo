@@ -66,6 +66,7 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:open_task, nil)
        |> assign(:new_task_form, default_new_task_form())
        |> assign(:task_search, "")
+       |> assign(:return_to, nil)
        |> allow_upload(:new_task_attachments,
          accept: :any,
          max_entries: 8,
@@ -105,11 +106,32 @@ defmodule GlorboWeb.KanbanLive do
         do: "Kanban · #{filter} — #{slug} — Glorbo",
         else: "Kanban — #{slug} — Glorbo"
 
+    # `?assignee=<slug>` opens the new-task modal pre-filled with
+    # this agent as the assignee — entry point from AgentLive's
+    # "assign task" button (PLAN P1-3). `?return_to=<path>` remembers
+    # where cancel should navigate back to.
+    {new_task_form, new_task_open?} =
+      case Map.get(params, "assignee") do
+        slug_val when is_binary(slug_val) and slug_val != "" ->
+          if GlorboWeb.Slug.valid?(slug_val) do
+            form = socket.assigns.new_task_form |> Map.put(:assigned_to, slug_val)
+            {form, true}
+          else
+            {socket.assigns.new_task_form, socket.assigns.new_task_open?}
+          end
+
+        _ ->
+          {socket.assigns.new_task_form, socket.assigns.new_task_open?}
+      end
+
     socket =
       socket
       |> assign(:page_title, title)
       |> assign(:project_filter, filter)
       |> assign(:columns, group_by_column(tasks))
+      |> assign(:new_task_form, new_task_form)
+      |> assign(:new_task_open?, new_task_open?)
+      |> assign(:return_to, Map.get(params, "return_to"))
 
     # Deep-link: `?task=projects/<proj>/tasks/<id>.md` opens the task
     # detail overlay on mount. Falls through silently if the path is
@@ -398,10 +420,22 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   def handle_event("new_task_cancel", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:new_task_open?, false)
-     |> assign(:new_task_form, default_new_task_form())}
+    socket =
+      socket
+      |> assign(:new_task_open?, false)
+      |> assign(:new_task_form, default_new_task_form())
+
+    case socket.assigns[:return_to] do
+      path when is_binary(path) and path != "" ->
+        # Only honor same-origin paths — never navigate to an
+        # external URL supplied via query string.
+        if String.starts_with?(path, "/"),
+          do: {:noreply, push_navigate(socket, to: path)},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   # `phx-change` on the form keeps upload entries in sync AND

@@ -562,6 +562,13 @@ defmodule GlorboWeb.AgentLive do
           >
             ✉ send message
           </.link>
+          <.link
+            navigate={assign_task_url(@company_slug, @agent_slug)}
+            class="gl-btn"
+            title={"Open Kanban new-task modal with assignee preset to #{@agent_slug}"}
+          >
+            + assign task
+          </.link>
           <button
             type="button"
             class="gl-btn gl-btn--deny"
@@ -1580,6 +1587,13 @@ defmodule GlorboWeb.AgentLive do
   defp format_ts(nil), do: "—"
   defp format_ts(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_ts(_), do: "—"
+
+  defp assign_task_url(company_slug, agent_slug) do
+    return_to = "/companies/#{company_slug}/agents/#{agent_slug}"
+
+    "/companies/#{company_slug}/kanban?" <>
+      URI.encode_query(assignee: agent_slug, return_to: return_to)
+  end
 
   defp load_history(base, co, ag) do
     path =

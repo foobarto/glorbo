@@ -105,6 +105,16 @@ defmodule GlorboWeb.AgentLiveTest do
     assert html =~ "No runs yet"
   end
 
+  test "+ assign task button links to Kanban with assignee prefilled",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")
+    assert html =~ "+ assign task"
+    # Query string should carry both the assignee and the return-to
+    # target so Cancel bounces back here.
+    assert html =~ "assignee=ceo"
+    assert html =~ "return_to=%2Fcompanies%2Facme%2Fagents%2Fceo"
+  end
+
   # Regression (task #121, 2026-04-18): the inbox/outbox tab used
   # `:if={not @detail.inbox.latest}` where `latest` is a map, not a
   # boolean. `not map` raises ArgumentError, crashing the LiveView on
