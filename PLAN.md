@@ -1,281 +1,223 @@
-# Glorbo Web UI — Mockup Alignment Sprint
+# PLAN — Glorbo UX parity with paperclip
 
-Source mockup: `~/Pobrane/abc.zip` (7 views — terminal-TUI phosphor aesthetic,
-IBM Plex Mono + JetBrains Mono, OKLCH tokens, ASCII tree prefixes,
-lowercase-slash panel headers).
+_Written 2026-04-20 from the SoloSaaSHunter paperclip benchmark
+(`.reports/uat/paperclip-benchmark.md`,
+`.reports/uat/paperclip-ux-gaps.md`) and a fresh Glorbo scenario walk
+against `/tmp/glorbo-plan-*` (`screens/glorbo-plan/`). Supersedes
+the previous M-series PLAN — that work shipped through 6b8e602
+(M5.4) and is now in git history for reference._
 
-Driving goal: bring the LiveView dashboard in line with the mockup's visual
-language and feature surface without breaking the filesystem-first
-invariants in `DESIGN.md` / `CLAUDE.md`.
+## Vision delta
 
----
+The paperclip run proved that a local CEO on
+`opencode + lmstudio/qwen/qwen3.6-35b-a3b` with a ~60-sec heartbeat
+can bootstrap an org, self-recruit agents, deliver artifacts, and
+respond to director instructions within minutes. Glorbo's shape
+(filesystem-first, bwrap-sandboxed, LiveView dashboard) can reach
+the same outcome — today it can actually *run* that CEO (verified
+via our live integration test
+`test/integration/opencode_lmstudio_live_test.exs`) — but the
+**director experience of observing and directing agents** is thinner
+than paperclip's.
 
-## Milestone map
+Biggest missing pieces are **observability** (what is an agent
+actually doing right now, and what did it just do?) and **director
+ergonomics** (assign task, inbox, see recent activity at a glance).
+Schema + policy layers are close to parity; GEP-7 (SQLite derived)
+even side-steps the paperclip company-delete FK bug we documented
+in `paperclip-ux-gaps.md` §17b.
 
-| Milestone | Scope                                                 | Status          |
-| --------- | ----------------------------------------------------- | --------------- |
-| **M1**    | Shell & visual language (tokens, topbar, statusbar, pills) | ✅ shipped      |
-| **M2**    | Company overview rewrite (stats + roster + orgchart + audit) | ✅ shipped      |
-| **M3**    | Agent detail rewrite (3-column: identity / tabs / config) | ✅ shipped      |
-| **M4**    | Kanban drag-drop, Chat switcher+DMs, Approvals diff, Audit search, Providers grid | ✅ shipped      |
-| **M5**    | Keyboard shortcuts (`g` prefix), Tweaks drawer, new-X entry points | ✅ shipped      |
+This plan ranks work by (director-value ÷ build-cost) with five
+items ready to ship and four bigger pieces flagged for GEPs.
 
-## Prior P0/P1/P2/P3 tracks (completed ahead of M-series)
+## Scenario walk findings
 
-- **P0** — OverviewLive real stats, AgentLive placeholder removal, HealthLive
-  slug (not PID) strings, dead "Agents" tab removed, sidebar footer health
-  actually reflects Doctor state, shared `CompanyTabs` with active-state
-  persistence across sub-views. All shipped — see recent commit history
-  (c470e47 through 6b25e32).
-- **P1** — accessibility sweep (ARIA labels, keyboard nav on AuditEntry,
-  HealthDot reuse, skip-to-content, distinguishable flash variants). Shipped.
-- **P2** — polish (dead `AgentCard`, confirmation dialogs, denial reason,
-  Audit month selector, channel auto-scroll, capitalization fix, loading
-  states). Shipped.
-- **P3** — deferred; feature-scale work requiring own GEPs.
+| # | Scenario | Glorbo today | Paperclip bar | Gap |
+|---|----------|-------------|---------------|-----|
+| S1 | Bootstrap company + CEO in ≤5 min | `+new company` modal, `+new agent` modal; AGENT.md / HEARTBEAT.md / SOUL.md appear as `+ CREATE` placeholders | One 4-step wizard | Auto-scaffold the contract files on agent create |
+| S2 | Observability of a live run | AgentLive `stdout` tab tails stdout; no run-record, no tool-call summary, no token cost | Runs tab with pagination, tool-call group lines, token counts, Nice/Raw toggle | **Per-agent Runs tab** is #1 gap |
+| S3 | Approval / inbox loop | ApprovalQueueLive `/approvals`, text-only | Unified inbox (Mine/Recent/Unread/All/Archive) | Intermediate: rename to `InboxLive`, ship filter tabs |
+| S4 | ~~Cost / budget~~ | deferred | deferred | deferred |
+| S5 | Agent lifecycle mgmt | `edit AGENT.md`, `send message`, `stop`, `wake now` (reason modal) | `Assign Task / Run Heartbeat / Pause` top-of-page | Add `assign task` button on AgentLive |
+| S6 | Research-template sanity | No templates; every `agent.md` hand-written | BLA has Researcher / Editor / CritiqueOps patterns informally | Ship agent templates in `priv/templates/agents/` with provenance rules baked in |
+| S7 | Sub-task / blocker graph | Flat markdown, no parent/children | Sub-issues + blocked_by edges | Per steer: no sub-issues; autolinker for `PCY-7`-style references |
+| S8 | Agent detail summary of recent actions + tasks assigned | Config + files + stdout; **no recent-runs or current-assignment summary** | "AGENTS / Live now" card + running tasks | Prepend a recent-runs + assigned-tasks panel to AgentLive dashboard |
+| S9 | Goals | None | First-class `goals` | `company.md` frontmatter `goals:` list; tasks reference via `goal:` |
+| S10 | Wake semantics | `wake now` writes `state/wake-request.md` | `Run Heartbeat` fires immediately | Keep as-is — reason capture is good for audit |
 
----
+## Ranked items
 
-## M1 — shell & visual language (shipped)
+### Ship this round (single session)
 
-### M1.1 — OKLCH phosphor token set + font stack
-`assets/css/app.css` — base tokens (`--gl-bg`, `--gl-ink`, phosphor green,
-amber-warn, rose-stop, muted grays), `IBM Plex Mono` for text /
-`JetBrains Mono` for UI chrome.
+#### P1-1 — Per-agent Runs tab with transcript viewer (S2, S8)
 
-### M1.2 — `lib/glorbo_web/components/topbar.ex`
-Persistent top row. Brand + company picker (writes path from assigns),
-version strip: `Application.spec(:glorbo, :vsn)`, `bwrap --version` (shelled,
-cached), `uname -r`. Kbd hints, TWEAKS affordance.
+**Scope**
 
-### M1.3 — `lib/glorbo_web/components/statusbar.ex`
-Persistent bottom row: daemon state, live agent count
-(`Glorbo.Agent.Registry.count_match/3`), sqlite pidfile, inotify status,
-clock. Pulse animation on the alive dot.
+- New tab on AgentLive (`:runs`) that parses
+  `agents/<slug>/history/*.jsonl` (one file per run) into a paginated
+  list: run-id, trigger, start time, duration, exit status, reply
+  preview.
+- Row click expands the raw jsonl stream inline with a Nice/Raw
+  toggle.
+- Fallback copy when history is empty.
 
-### M1.4 — `lib/glorbo_web/components/status_pill.ex`
-Five variants: `:alive | :idle | :warn | :stop | :info`. Plus label+slot.
-Replaces scattered inline `<span class="…">` status markers.
+**Files**
 
-### M1 — layouts/app.html.heex
-Skip link, topbar above sidebar, statusbar at bottom. Flash variants get
-distinct classes (error = rose, info = phosphor).
+- `lib/glorbo_web/live/agent_live.ex` — add `:runs` tab handler +
+  render.
+- `lib/glorbo/agent/run_log.ex` (new) — `list/1` returns parsed runs.
+- `test/glorbo/agent/run_log_test.exs` (new).
+- `test/glorbo_web/live/agent_live_test.exs` — runs-tab assertions.
 
-### M1 — tests
-- `test/glorbo_web/components/topbar_test.exs` (5)
-- `test/glorbo_web/components/statusbar_test.exs` (6)
-- `test/glorbo_web/components/status_pill_test.exs` (7) — `render_pill/1`
-  helper to avoid collision with imported `Phoenix.LiveViewTest.render/1`
-- `test/glorbo_web/components/stat_card_test.exs` (7)
+**Acceptance**
 
----
+- AgentLive → Runs tab lists last N runs with summary line.
+- Clicking a run expands to show the raw jsonl steps.
+- When `history/` is empty, shows existing empty-copy.
 
-## M2 — company overview rewrite (shipped)
+**Effort**: ~half-session.
 
-### M2.1 — spark + stat_card components
-- `lib/glorbo_web/components/spark.ex` — inline SVG-less sparkline,
-  normalizes to 0..1, empty → renders nothing.
-- `lib/glorbo_web/components/stat_card.ex` — label/value/unit/sub/spark,
-  tone variants `default | accent | amber | rose`.
+#### P1-2 — "Working on" summary in CompanyLive roster + AgentLive dashboard (S2, S8)
 
-### M2.2 — CompanyLive rewrite
-`lib/glorbo_web/live/company_live.ex`:
+**Scope**
 
-- 4-card stat row (agents online / spend MTD / approvals / crashes) with
-  synthetic sparklines (`div(System.os_time(:second), 3600)` seed — will
-  swap to real audit-backed history in a later milestone).
-- Agents roster table: status pill | agent | activity | provider | net |
-  budget | last-wake — all pulled from live state.
-- ASCII org chart via `build_org_chart/1` walking `reports_to` fields in
-  `agent.md` frontmatter (added in M2.0 to `Glorbo.Agent.Spec` +
-  `Glorbo.Agent.Parser`).
-- Audit tail, projects burn bars (per-project in-progress / pending /
-  done), providers runtime summary.
+- Thread a `currently_working_on: String.t() | nil` through
+  `:agents:status` PubSub — populated by `Glorbo.Agent.Server` when
+  a dispatch starts, cleared when done.
+- Render as a second line in CompanyLive roster + top of AgentLive
+  dashboard.
 
-### M2 — css
-`.gl-stat-card__*`, `.gl-agent-table`, `.gl-budget-bar`, `.gl-activity`,
-`.gl-bar-list`, `.gl-overview__*`, `.gl-orgchart__*`.
+**Files**
 
-### M2 — tests
-CompanyLive tests updated for new markup; all green.
+- `lib/glorbo/agent/server.ex` — publish richer status messages.
+- `lib/glorbo_web/live/company_live.ex` — consume + render.
+- `lib/glorbo_web/live/agent_live.ex` — consume + render.
+- `test/glorbo/agent/server_test.exs` — extend coverage.
 
----
+**Acceptance**
 
-## M3 — agent detail rewrite (shipped)
+- When agent is dispatching, roster + dashboard show
+  `working on: projects/foo/tasks/PCY-7.md`.
+- Idle agents render nothing extra (not "idle" text).
 
-### M3.1 — three-column grid
-`lib/glorbo_web/live/agent_live.ex`: `gl-agent-detail__grid` with left
-(identity + workspace filetree + not-mounted list), center (tabbed
-stdout/sandbox-argv/inbox-outbox), right (config dl + budget meter +
-permissions).
+**Effort**: ~third-session.
 
-### M3.2 — workspace filetree (left column)
-ASCII tree prefixes walking `agents/<name>/` (agent.md, inbox/, outbox/,
-state/, stdout.log). Entries the agent *can't* see (because bwrap denies)
-listed below as "not mounted". Classification via
-`Glorbo.Permissions.Mount` vs router-only rules.
+#### P1-3 — Assign-task button on AgentLive (S5)
 
-### M3.3 — sandbox argv tab (center)
-Renders the exact `bwrap` argv that would launch this agent. Same source
-of truth as actual launch (`Glorbo.Agent.Sandbox.build_argv/1`). Empty if
-not bound to a runtime.
+**Scope**
 
-### M3.4 — inbox/outbox tab (center)
-Lists `inbox/*.md` and `outbox/*.md` with size / mtime. Filesystem-only —
-no SQLite read.
+- Add `assign task` button next to existing wake / send / stop.
+- Navigates to Kanban new-task modal with `assigned_to=<slug>`
+  pre-filled, cancel returns to agent page.
 
-### M3.5 — config / budget / permissions (right column)
-- `<dl class="gl-kv">` for config frontmatter.
-- `.gl-meter__*` budget meter; threshold-coloured at 80% and 100%.
-- `<ul class="gl-perms">` with `mount` vs `router` chips via
-  `permission_row/1` + `permission_sandbox_line/1` helpers classifying
-  each `resource:action:scope` triple.
-- Actions header: inline wake form (unchanged from P0), disabled
-  edit / send / stop buttons (P3 — visual completeness only, not wired).
+**Files**
 
-### M3 — css
-`.gl-agent-detail__*`, `.gl-agent-identity__*`, `.gl-filetree__*`,
-`.gl-sandbox__*`, `.gl-io-*`, `.gl-kv`, `.gl-meter__*`, `.gl-perms`,
-`.gl-perm__*`, `.gl-wake-inline__*`. Plus `.gl-perm__token` flex fix for
-inline-flex spacing of resource:action:scope segments.
+- `lib/glorbo_web/live/agent_live.ex` — button.
+- `lib/glorbo_web/live/kanban_live.ex` — accept `?assignee=<slug>`
+  + `?return_to=<url>` query params.
 
-### M3 — tests
-`test/glorbo_web/live/agent_live_test.exs`:
-- "renders agent header + stdout tab + wake CTA" — tab labels are
-  lowercase `stdout` (mockup-aligned).
-- "renders three-column layout (identity, center tabs, config)" —
-  asserts `gl-agent-detail__grid`, `gl-agent-identity`, `sandbox argv`,
-  `inbox/outbox`, `config`.
-- "unknown agent redirects to company view" — unchanged.
-- "wake button writes state/wake-request.md" — unchanged.
+**Acceptance**
 
-### M3 — gates (shipped)
-- `mix test` → green.
-- `mix credo --strict` → clean.
-- `mix format --check-formatted` → clean.
+- From agent page, click `assign task` → Kanban new-task modal
+  opens with assignee preset.
 
-The `stop` button moved from P3 placeholder to wired up
-(`Glorbo.Agent.Server.stop_inflight/1`).
+**Effort**: ~quarter-session.
 
----
+#### P1-4 — Auto-scaffold AGENT.md / HEARTBEAT.md / SOUL.md on agent create (S1)
 
-## M4 — feature surface per sub-view (shipped)
+**Scope**
 
-### M4.1 — Kanban drag-and-drop
-`kanban_live.ex`: HTML5 DnD (`phx-hook`) to move tasks between lanes.
-Writes the `status` frontmatter field of `projects/*/tasks/*.md` via
-`Glorbo.TaskDefinition.write_status/2` (new helper). File-system-first —
-the move is a file write; the UI refreshes from inotify.
+- When `new_agent_create` fires (CLI + LiveView), write the three
+  canonical contract files with starter content (templates referenced
+  by slug + role).
+- Templates at `priv/templates/agents/default/<NAME>.md.eex`,
+  rendered via tiny EEx pass.
 
-### M4.2 — Chat channel switcher + DMs
-`channel_live.ex`: left-column channel list (all `channels/*.md` +
-DM synthesised from pairs of `agents/<a>/outbox → agents/<b>/inbox`). URL
-param `?channel=` drives which messages render.
+**Files**
 
-### M4.3 — Approvals diff + keyboard
-`approval_queue_live.ex`: unified diff rendering of the pending change;
-`j` / `k` to step rows, `y` / `n` to approve/deny (still guarded by
-confirmation dialog from P2).
+- `lib/glorbo/cli/scaffold/agent.ex` — extend scaffold.
+- `priv/templates/agents/default/AGENT.md.eex`,
+  `priv/templates/agents/default/HEARTBEAT.md.eex`,
+  `priv/templates/agents/default/SOUL.md.eex`.
+- `test/glorbo/cli/scaffold/agent_test.exs`.
 
-### M4.4 — Audit unified search
-`audit_live.ex`: free-text search across the JSONL audit log (streamed,
-line-by-line grep — no schema). Query param `?q=…`.
+**Acceptance**
 
-### M4.5 — Providers grid + TOML snippet
-`providers_live.ex` (new route `/providers`): card grid of detected CLI
-providers from `Glorbo.Provider.Registry`, each card shows the TOML
-snippet from `priv/providers/*.toml` (GEP-8).
+- Agent scaffold writes all three files.
+- AgentLive shows them as existing files (no `+ CREATE`).
 
----
+**Effort**: ~third-session.
 
-## M5 — polish & shortcuts (shipped)
+#### P1-5 — Task-reference autolinking (S7)
 
-### M5.1 — keyboard shortcuts (`g` prefix) ✅
-Pure client-side JS in `assets/js/app.js`: two-key `g <x>` sequences
-map `o`→/companies, `h`→/health, `p`→/providers. 1s timeout resets the
-prefix; no-op when typing in inputs. Topbar kbd strip updated.
+**Scope**
 
-### M5.2 — TWEAKS drawer ✅
-TWEAKS button in topbar now opens a drawer with density (comfortable
-vs dense) and vocab (default vs crew) selectors. Settings persist in
-`localStorage` under key `glorbo.tweaks.v1` and apply via
-`data-density` / `data-vocab` attributes on `<html>` that CSS reads.
+- Post-render pass detects `[A-Z]+-\d+` or
+  `projects/<p>/tasks/<id>.md` tokens in markdown bodies and wraps
+  in `<.link navigate={...}>`.
+- Raw markdown unchanged (agents see original token); rendering is
+  UI-only.
 
-Scope-traded: cookie-based session persistence dropped in favour of
-localStorage — zero server round-trip, zero new plug infrastructure,
-and the settings never need to be readable server-side.
+**Files**
 
-### M5.3 — vocab toggle (deferred)
-The drawer persists a `data-vocab` attribute but string translation is
-not wired. Doing it right needs either a `GlorboWeb.Vocab` module
-(re-renders on every switch, needs cookie round-trip) or CSS-only
-alt-labels (duplicates strings in markup and loses copy editability).
-Neither is worth it for a cosmetic tweak in the first mockup pass —
-parking until there's a real reason to flip it.
+- `lib/glorbo_web/markdown/linkify.ex` (new).
+- Patches to ChannelLive, KanbanLive task-detail, AuditLive
+  renderings.
+- `test/glorbo_web/markdown/linkify_test.exs`.
 
-### M5.4 — "+ new agent / task / company" entry points ✅
-Entry points now present on OverviewLive (+ new company), CompanyLive
-(+ new agent, reindex, backup), and KanbanLive (+ new task). Each
-click flashes a CLI-fallback hint pointing at the filesystem workflow
-that already works. Actual creation UIs are P3 and each gets its own
-GEP.
+**Acceptance**
 
----
+- Channel message "blocked on PCY-7" renders PCY-7 as clickable
+  link to Kanban task overlay.
+- Unknown tokens don't crash or mangle.
 
-## Deferred (not in this sprint)
+**Effort**: ~quarter-session.
 
-- Real audit-backed sparkline history (M2 currently uses a synthetic
-  seed).
-- The P3 disabled buttons in M3.5 are now real: **edit AGENT.md**
-  (in-browser editor modal), **send message** (navigates to
-  Director ↔ agent DM), and **stop** (`Agent.Server.stop_inflight/1`
-  kills the in-flight dispatch Task).
-- Mobile breakpoints — explicit non-goal for the dashboard; it is a
-  desktop TUI-style tool.
+### Next round (distinct GEPs)
 
----
+#### P2-1 — Inbox view (S3)
 
-## Repo / env cheatsheet
+Rename `ApprovalQueueLive` → `InboxLive` at
+`/companies/<co>/inbox`; add Mine/Recent/Unread/All/Archive tabs.
+Start approvals-only, expand to @-mentions + task-assignments as
+GEP-17-style protocol matures.
 
-- Env: `eval "$(mise activate bash)" && export LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/lib:$LD_LIBRARY_PATH`
-- Test: `mix test`
-- Lint: `mix credo --strict`
-- Format: `mix format --check-formatted`
-- Full gate: `mix precommit`
-- Mockup source: `~/Pobrane/abc.zip`
+#### P2-2 — Goals as `company.md` frontmatter (S9)
 
-## Current progress snapshot
+Schema: `company.md` frontmatter gets `goals:` list of
+`{slug, title, description, status, created_at}`. Tasks reference
+via optional `goal: <slug>`. KanbanLive renders goals filter
+alongside existing project filter.
 
-Mockup-alignment sprint complete. M1 – M5 all shipped
-(`M5.3` vocab toggle deferred as noted above).
+Needs a GEP — schema extension + filesystem invariant change.
 
-Post-sprint work on `main` has focused on UAT-driven polish and
-feature completion:
+#### P2-3 — Activity feed with `<ACTOR> <verb> <OBJECT>` framing (S2)
 
-- **Accessibility** — keyboard activation + aria-labels on every
-  `role="button"` surface, file-tree actions as real `<button>`s.
-- **Chat UX** — Enter-to-send + Shift-Enter newline textarea with
-  autogrow, view fills viewport, messages auto-scroll + unpin on
-  scroll up.
-- **Stdout hardening** — mid-line `\r` / OSC / BEL stripping,
-  HEEX-whitespace fix that was the real ghost-gap source,
-  tail-pin autoscroll, backfill re-sanitizes stale payloads.
-- **Approval workflow** — director/agent `assigned_to` swap on
-  request/grant/deny (Gate + UI-direct parity), denial reason on
-  audit + frontmatter, Gate audit canonical `target:` key.
-  GEP-19 captures the protocol retroactively.
-- **CEO + role templates** — 5-step CEO company-stewardship
-  heartbeat, role-specific HEARTBEAT.md templates for engineer
-  and researcher, SOUL.md expansion to owner-vs-observer stance.
-- **Paperclip import** — `glorbo import paperclip <src>` scaffolds
-  an entire company from an agentcompanies tree, wraps each
-  paperclip AGENTS.md in Glorbo frontmatter, copies HEARTBEAT/
-  SOUL/TOOLS, prints a hint report of paperclip-isms to fix.
-- **Agent detail right-panel collapse** — thin toggle rail between
-  stdout and config columns, auto-collapses on viewports < 1200px,
-  persists in localStorage.
-- **Themed scrollbars** — Firefox + WebKit covered with phosphor
-  palette.
-- **Docs** — CHANGELOG + README + PLAN synced, six dashboard
-  screenshots embedded in README, GEP-19 shipped, DESIGN.md
-  GEP reference list current through GEP-19.
+Upgrade AuditLive to render the paperclip-style sentence pattern
+with delta rendering for status changes. Heavier than it looks
+because audit entries are shaped for `:action` + `:target` + blob
+today, not diffs.
+
+#### P2-4 — Built-in `glorbo` skill + agent templates (S6)
+
+Ship `priv/templates/skills/glorbo/SKILL.md` documenting `GLORBO_*`
+env-vars + ACTIONS DSL, auto-attached at dispatch. Plus
+`priv/templates/agents/researcher/`, `editor/`, `critiqueops/` with
+baked-in provenance rules (addresses `paperclip-benchmark.md` O6).
+
+## Items explicitly **not** in plan
+
+- Cost / budget page (deferred)
+- Per-agent Configuration tab (file-tree editor covers it)
+- Sub-issues / blocker graph (autolinker in P1-5 is sufficient)
+- Cross-company "live now" global view
+
+## Execution order (this session)
+
+1. **P1-1** Runs tab — highest director value.
+2. **P1-2** Working-on summary — smallest change with visible impact.
+3. **P1-3** Assign-task button — one small file per LV.
+4. **P1-4** Auto-scaffold contract files.
+5. **P1-5** Autolinker (if session-time allows).
+
+Each lands as its own commit, gated on `mix precommit` + CI green.
