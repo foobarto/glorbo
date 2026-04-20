@@ -179,6 +179,20 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert content =~ "Do NOT fill with a plausible-sounding placeholder"
     end
 
+    test "provenance-auditor template produces parseable AGENT.md", %{home: home} do
+      assert {:new_agent, 0, _} =
+               Agent.run(["acme/provenance", "--template", "provenance-auditor"])
+
+      path = Path.join([home, "companies/acme/agents/provenance/AGENT.md"])
+      assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
+      assert spec.role == "Provenance Auditor"
+
+      content = File.read!(path)
+      assert content =~ "PROVENANCE-CLEAN"
+      assert content =~ "PROVENANCE-ISSUES"
+      assert content =~ "narrow and mechanical"
+    end
+
     test "critiqueops template produces parseable AGENT.md", %{home: home} do
       assert {:new_agent, 0, _} = Agent.run(["acme/crit", "--template", "critiqueops"])
 
