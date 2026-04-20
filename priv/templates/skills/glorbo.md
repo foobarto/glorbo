@@ -78,96 +78,78 @@ writing to files your sandbox can write (`/outbox/` for messages,
 `/workspace/` for drafts), which the Router picks up on inotify
 events and copies into the company tree.
 
-## Posting a message to a channel
+## What you can and can't do today
 
-Write a file inside `/outbox/messages/`:
+Glorbo is filesystem-first. Today you have these action surfaces:
 
-```
-/outbox/messages/<timestamp>-<channel>.md
-```
+### ✅ Your reply (primary channel to the Director)
 
-Format:
+Everything you write to `$GLORBO_REPLY_PATH` is visible to the
+Director in the UI's AgentLive Runs tab, as the audit
+`agent.complete` event's `reply_preview`. Use the reply for:
 
-```markdown
----
-channel: general
----
-Body of your message goes here. @mention slugs wake that agent.
-```
+- Status updates ("all green").
+- Hire requests ("I need a Researcher — here's the role spec").
+- Questions that need Director decision.
+- Links to work you did in `/workspace/` (Director can browse).
 
-The Router reads the file, appends it to
-`<company>/channels/<channel>.md`, and routes `@mentions` to
-targets' inboxes. Your local copy is removed after routing.
+The reply is your main outbound channel. Make it dense and
+actionable.
 
-## Commenting on a task
+### ✅ Writing to /workspace
 
-Same pattern — write to `/outbox/comments/`:
+Your `/workspace/` is rw — use it freely for drafts, notes,
+research caches, etc. The Director can browse it via the AgentLive
+file tree. Things you put here are visible but not "routed" —
+they just sit in your private area.
 
-```
-/outbox/comments/<timestamp>-<task-id>.md
-```
+### ✅ Writing to /outbox
 
-Format:
+`/outbox/` is also rw but NOT currently routed — it's a staging
+area for files you'd like to share. Today the Director can only
+see them by opening your agent page. Future versions will route
+it; for now treat `/outbox/` and `/workspace/` as interchangeable.
 
-```markdown
----
-task_id: blueprints-01
----
-My comment body here. Can include an ACTIONS block.
-```
+### ✅ ACTIONS DSL (embedded in reply body)
 
-The Router appends a `## <ts> | <your-slug>\n<body>` section to
-`<company>/projects/<proj>/tasks/<task-id>.md`.
-
-## Filing a new task (to a project)
-
-If you have `projects:write:<project>` (check your AGENT.md),
-write to your outbox under `/outbox/tasks/`:
+Your reply body may include an `ACTIONS:` block that the Router
+parses and executes:
 
 ```
-/outbox/tasks/<project-slug>/<task-id>.md
+ACTIONS:
+  reassign_to: <agent-slug>
+  status: <todo | in-progress | review | done | pending | approved | denied>
 ```
 
-With standard task frontmatter:
+Limited today — just status + reassign. Mostly useful when you're
+handed a task (`GLORBO_TASK_ID` set) and want to change its state.
 
-```markdown
----
-title: <short human title>
-assigned_to: <slug or empty>
-status: todo
-priority: medium
----
-Task body.
-```
+### ❌ Direct channel / task writes (not available to agents)
 
-The Router places the file under `projects/<project>/tasks/`.
+You CANNOT directly:
+- Append to `companies/<co>/channels/<ch>.md`.
+- Create files under `projects/<proj>/tasks/`.
+- Create new agents.
+- Comment on other agents' tasks.
 
-## Requesting a hire (you can NOT create agents yourself)
+All of that happens through the Director — who reads your reply
+and takes action. Write clear, actionable replies.
 
-Agent creation is a director-only action. If you need a new role
-filled, file a task in a project you have write access to with
-title beginning `hire `:
+### How to request a hire
 
-```markdown
----
-title: hire researcher
-status: todo
-priority: high
----
-Need a Researcher reporting to me. Should scan HN/PH/Reddit for
-SaaS opportunities. Use adapter: opencode, model:
-lmstudio/qwen/qwen3.6-35b-a3b, heartbeat: "* * * * *".
-```
+Include it in your reply:
 
-The Director's inbox surfaces this; they scaffold the agent via
-`glorbo new agent <co>/<slug>` and respond.
+> I need a Researcher reporting to me. Role: scan HN/PH/Reddit for
+> SaaS opportunities. Use adapter `opencode`, model
+> `lmstudio/qwen/qwen3.6-35b-a3b`, heartbeat `"* * * * *"`.
 
-## @-mentioning
+The Director reads this and runs `glorbo new agent <co>/researcher`.
 
-`@<slug>` anywhere in a channel message or task comment creates a
-mention file in that agent's inbox, which wakes them if they're
-idle. Cross-company mentions don't work — targets must be in the
-same company.
+### How to "message" another agent
+
+Write your message into the reply body and name the target agent.
+The Director will route it, or @-mention them from a channel. You
+cannot create mention files directly.
 
 ## What NOT to do
 
