@@ -224,6 +224,22 @@ function collectCommands() {
       { label: `Audit (${co})`, hint: "g a", href: `/companies/${co}/audit` },
       { label: `Approvals (${co})`, hint: "g v", href: `/companies/${co}/approvals` },
       { label: `Kanban (${co})`, hint: "g k", href: `/companies/${co}/kanban` },
+      { label: `Inbox (${co})`, hint: "", href: `/companies/${co}/inbox` },
+      { label: `Skills (${co})`, hint: "", href: `/companies/${co}/skills` },
+    )
+    // Director actions — open modals via the `?modal=` query param
+    // that CompanyLive.handle_params already understands.
+    items.push(
+      {
+        label: `+ new agent (${co})`,
+        hint: "action",
+        href: `/companies/${co}?modal=new_agent`,
+      },
+      {
+        label: `+ new project (${co})`,
+        hint: "action",
+        href: `/companies/${co}?modal=new_project`,
+      },
     )
     // Agents read from the sidebar — one DOM query, no refresh cycle.
     const agentLinks = document.querySelectorAll(
@@ -232,6 +248,15 @@ function collectCommands() {
     agentLinks.forEach((a) => {
       const slug = a.getAttribute("href").split("/agents/")[1]
       if (slug) items.push({ label: `agent ${slug}`, hint: "", href: a.getAttribute("href") })
+    })
+    // Projects read from the sidebar too — the PROJECTS rail exposes
+    // one link per project.
+    const projectLinks = document.querySelectorAll(
+      '.gl-sidebar a[href^="/companies/"][href*="/projects/"]'
+    )
+    projectLinks.forEach((a) => {
+      const slug = a.getAttribute("href").split("/projects/")[1]
+      if (slug) items.push({ label: `project ${slug}`, hint: "", href: a.getAttribute("href") })
     })
   }
   return items
