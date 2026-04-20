@@ -49,6 +49,11 @@ defmodule GlorboWeb.Router do
     get "/companies/:company/dms/:agent", PageController, :redirect_to_dm
     # Plan 04-03 Task 3: audit viewer + system health.
     live "/companies/:company/audit", AuditLive
+    # paperclip-ux-gaps §9 — skills marketplace / bundle view.
+    # Read-only listing of skills available to this company's agents;
+    # "builtin" = ships with Glorbo under priv/templates/skills,
+    # "custom" = `<base>/skills/<name>.md` user overrides.
+    live "/companies/:company/skills", SkillsLive
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive

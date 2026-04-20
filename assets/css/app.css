@@ -1763,6 +1763,46 @@ button { font-family: inherit; font-size: inherit; }
   font-size: var(--gl-font-label);
   color: var(--gl-fg-muted);
 }
+.gl-badge--builtin { color: var(--gl-accent-dim); }
+.gl-badge--custom { color: var(--gl-cyan); }
+.gl-badge--shadowed { color: var(--gl-warning); }
+
+/* SkillsLive table (paperclip-ux-gaps §9). */
+.gl-skills-page { display: flex; flex-direction: column; gap: var(--gl-space-md); }
+.gl-skills-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+}
+.gl-skills-table th {
+  text-align: left;
+  padding: 4px var(--gl-space-sm);
+  color: var(--gl-fg-subtle);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--gl-border-faint);
+}
+.gl-skills-table td { padding: 6px var(--gl-space-sm); border-bottom: 1px solid var(--gl-border-faint); }
+.gl-skills-table__row { cursor: pointer; }
+.gl-skills-table__row:hover { background: var(--gl-surface-raised); }
+.gl-skills-table__row--open { background: var(--gl-surface-raised); }
+.gl-skills-table__name { color: var(--gl-fg); font-weight: 500; }
+.gl-skills-table__body-row td {
+  background: var(--gl-bg);
+  padding: 0;
+}
+.gl-skills-table__body {
+  margin: 0;
+  padding: var(--gl-space-md);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg-muted);
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
 
 /* ========== Budget ring ========== */
 .gl-budget-ring { display: inline-block; line-height: 0; }
