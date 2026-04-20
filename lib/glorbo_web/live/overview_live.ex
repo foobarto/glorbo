@@ -32,6 +32,7 @@ defmodule GlorboWeb.OverviewLive do
      |> assign(:sidebar_active, :overview)
      |> assign(:new_company_open?, false)
      |> assign(:new_company_slug, "")
+     |> assign(:new_company_slug_status, :empty)
      |> assign(:companies, load_companies())}
   end
 
@@ -52,11 +53,32 @@ defmodule GlorboWeb.OverviewLive do
     {:noreply,
      socket
      |> assign(:new_company_open?, true)
-     |> assign(:new_company_slug, "")}
+     |> assign(:new_company_slug, "")
+     |> assign(:new_company_slug_status, :empty)}
   end
 
   def handle_event("new_company_cancel", _params, socket) do
     {:noreply, assign(socket, :new_company_open?, false)}
+  end
+
+  # Slug availability probe (paperclip-ux-gaps §18 — inline "taken"
+  # marker instead of submit-then-flash). Checks the filesystem
+  # directly; no SQLite round-trip.
+  def handle_event("new_company_slug_input", %{"slug" => slug}, socket) do
+    trimmed = slug |> to_string() |> String.trim()
+
+    status =
+      cond do
+        trimmed == "" -> :empty
+        not GlorboWeb.Slug.valid?(trimmed) -> :invalid
+        File.dir?(Path.join([base_dir(), "companies", trimmed])) -> :taken
+        true -> :available
+      end
+
+    {:noreply,
+     socket
+     |> assign(:new_company_slug, trimmed)
+     |> assign(:new_company_slug_status, status)}
   end
 
   def handle_event("new_company_create", %{"slug" => slug}, socket) do
@@ -134,6 +156,7 @@ defmodule GlorboWeb.OverviewLive do
       <div :if={@new_company_open?} class="gl-modal-scrim" phx-click-away="new_company_cancel">
         <form
           phx-submit="new_company_create"
+          phx-change="new_company_slug_input"
           phx-window-keydown="new_company_cancel"
           phx-key="Escape"
           class="gl-modal"
@@ -159,7 +182,11 @@ defmodule GlorboWeb.OverviewLive do
               <input
                 type="text"
                 name="slug"
-                class="gl-input"
+                class={[
+                  "gl-input",
+                  @new_company_slug_status == :taken && "gl-input--invalid",
+                  @new_company_slug_status == :available && "gl-input--valid"
+                ]}
                 required
                 maxlength="64"
                 pattern="[a-z0-9][-a-z0-9]*"
@@ -167,7 +194,21 @@ defmodule GlorboWeb.OverviewLive do
                 title="Lowercase letters / digits / dashes"
                 autocomplete="off"
                 autofocus
+                value={@new_company_slug}
+                phx-debounce="150"
+                aria-describedby="gl-new-company-slug-hint"
               />
+              <span
+                id="gl-new-company-slug-hint"
+                class={[
+                  "gl-slug-hint",
+                  "gl-slug-hint--" <> Atom.to_string(@new_company_slug_status)
+                ]}
+                role="status"
+                aria-live="polite"
+              >
+                {slug_hint_text(@new_company_slug_status)}
+              </span>
             </label>
             <p class="gl-muted" style="font-size: 11px;">
               Creates <code>~/.glorbo/companies/&lt;slug&gt;/</code>
@@ -180,13 +221,24 @@ defmodule GlorboWeb.OverviewLive do
 
           <footer class="gl-modal__footer">
             <button type="button" class="gl-btn" phx-click="new_company_cancel">cancel</button>
-            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+            <button
+              type="submit"
+              class="gl-btn gl-btn--primary"
+              disabled={@new_company_slug_status == :taken}
+            >
+              create
+            </button>
           </footer>
         </form>
       </div>
     </section>
     """
   end
+
+  defp slug_hint_text(:empty), do: ""
+  defp slug_hint_text(:invalid), do: "Lowercase letters, digits, dashes only"
+  defp slug_hint_text(:taken), do: "✗ taken"
+  defp slug_hint_text(:available), do: "✓ available"
 
   # ---------------------------------------------------------------------------
   # Data loaders — pure filesystem reads, no GenServer state.

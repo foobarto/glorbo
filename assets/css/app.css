@@ -1823,6 +1823,21 @@ button { font-family: inherit; font-size: inherit; }
   font-size: inherit;
 }
 .gl-input::placeholder { color: var(--gl-fg-muted); }
+.gl-input--valid { border-color: var(--gl-success); }
+.gl-input--invalid { border-color: var(--gl-danger); }
+
+/* Slug availability hint — inline marker beside the input. */
+.gl-slug-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-family: var(--gl-ff-mono);
+  min-height: 1em;
+}
+.gl-slug-hint--empty { color: transparent; }
+.gl-slug-hint--invalid { color: var(--gl-warning); }
+.gl-slug-hint--taken { color: var(--gl-danger); }
+.gl-slug-hint--available { color: var(--gl-success); }
 
 /* ========== Dots ========== */
 .gl-dot {
