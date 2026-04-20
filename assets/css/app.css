@@ -1937,6 +1937,19 @@ button { font-family: inherit; font-size: inherit; }
 .gl-slug-hint--taken { color: var(--gl-danger); }
 .gl-slug-hint--available { color: var(--gl-success); }
 
+/* Wizard progress strip (paperclip-ux-gaps §13). */
+.gl-wizard-steps {
+  display: flex;
+  gap: var(--gl-space-md);
+  padding: var(--gl-space-xs) var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border-faint);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg-muted);
+}
+.gl-wizard-steps__step--done { color: var(--gl-success); }
+.gl-wizard-steps__step--current { color: var(--gl-accent); font-weight: 500; }
+
 /* AgentLive configuration edit form (paperclip-ux-gaps §5). */
 .gl-agent-config-form {
   display: flex;

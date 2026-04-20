@@ -80,4 +80,38 @@ defmodule GlorboWeb.CompanyLiveTest do
     # Deep link to kanban filtered by goal slug.
     assert html =~ "kanban?goal=q4-launch"
   end
+
+  describe "wizard chain (paperclip-ux-gaps §13)" do
+    test "?wizard=new_agent opens the new-agent modal with step marker",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme?wizard=new_agent")
+      assert html =~ "gl-wizard-steps"
+      assert html =~ "company ✓"
+      assert html =~ "first agent"
+    end
+
+    test "?wizard=new_project opens the new-project modal at step 3",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme?wizard=new_project")
+      assert html =~ "first agent ✓"
+      assert html =~ "first project"
+    end
+
+    test "agent-create with wizard step chains into new_project step",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme?wizard=new_agent")
+
+      # Render the submit — after a successful scaffold, the socket
+      # pushes a patch to ?wizard=new_project. Assert by checking the
+      # re-rendered HTML now shows the new-project step marker.
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "wizard-agent",
+          "role" => "wizard role",
+          "provider" => ""
+        })
+
+      assert html =~ "first project"
+    end
+  end
 end

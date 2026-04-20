@@ -81,7 +81,9 @@ defmodule GlorboWeb.OverviewLive do
      |> assign(:new_company_slug_status, status)}
   end
 
-  def handle_event("new_company_create", %{"slug" => slug}, socket) do
+  def handle_event("new_company_create", %{"slug" => slug} = params, socket) do
+    guided? = params["_guided"] == "1"
+
     case Glorbo.CLI.Scaffold.Company.run([slug]) do
       {:new_company, 0, msg} ->
         Phoenix.PubSub.broadcast(Glorbo.PubSub, "companies", {:company_added, slug})
@@ -91,11 +93,21 @@ defmodule GlorboWeb.OverviewLive do
             do: "Company #{slug} already exists — no change.",
             else: "Created company: #{slug}"
 
-        {:noreply,
-         socket
-         |> assign(:new_company_open?, false)
-         |> assign(:companies, load_companies())
-         |> put_flash(:info, flash_msg)}
+        if guided? do
+          # paperclip-ux-gaps §13 — chain into CompanyLive with
+          # `?wizard=new_agent`; CompanyLive opens the new-agent modal
+          # on mount and after save chains to `?wizard=new_project`.
+          {:noreply,
+           socket
+           |> put_flash(:info, flash_msg)
+           |> push_navigate(to: ~p"/companies/#{slug}?wizard=new_agent")}
+        else
+          {:noreply,
+           socket
+           |> assign(:new_company_open?, false)
+           |> assign(:companies, load_companies())
+           |> put_flash(:info, flash_msg)}
+        end
 
       {:new_company, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}
@@ -221,6 +233,16 @@ defmodule GlorboWeb.OverviewLive do
 
           <footer class="gl-modal__footer">
             <button type="button" class="gl-btn" phx-click="new_company_cancel">cancel</button>
+            <button
+              type="submit"
+              class="gl-btn"
+              name="_guided"
+              value="1"
+              disabled={@new_company_slug_status == :taken}
+              title="Create company, then scaffold an agent + project next (paperclip-style wizard)."
+            >
+              create + continue →
+            </button>
             <button
               type="submit"
               class="gl-btn gl-btn--primary"

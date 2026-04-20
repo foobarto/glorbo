@@ -60,4 +60,29 @@ defmodule GlorboWeb.OverviewLiveTest do
       assert html =~ ~r/<button[^>]+disabled[^>]+>\s*create/
     end
   end
+
+  describe "new-company wizard (paperclip-ux-gaps §13)" do
+    test "guided submit navigates into CompanyLive with ?wizard=new_agent",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/companies")
+      render_click(view, "new_company", %{})
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               render_submit(view, "new_company_create", %{
+                 "slug" => "wizard-target",
+                 "_guided" => "1"
+               })
+
+      assert to =~ "wizard=new_agent"
+    end
+
+    test "plain submit does NOT chain to the wizard", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/companies")
+      render_click(view, "new_company", %{})
+
+      html = render_submit(view, "new_company_create", %{"slug" => "plain-target"})
+      # Still on OverviewLive, flash shown
+      assert html =~ "Created company: plain-target"
+    end
+  end
 end

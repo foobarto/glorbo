@@ -80,6 +80,7 @@ defmodule GlorboWeb.CompanyLive do
        |> assign(:edit_company_md, nil)
        |> assign(:new_agent_open?, false)
        |> assign(:new_project_open?, false)
+       |> assign(:wizard_step, nil)
        |> assign(:provider_options, provider_options())
        |> ChatDrawer.State.wire_drawer()}
     else
@@ -95,11 +96,32 @@ defmodule GlorboWeb.CompanyLive do
     # `?modal=new_agent` / `?modal=new_project` opens the matching
     # modal on mount. Used by the sidebar's "+" section-label buttons
     # which don't have a direct phx-click path into CompanyLive.
+    #
+    # `?wizard=new_agent` / `?wizard=new_project` chain OverviewLive's
+    # "create + continue" flow — same modal open, plus a
+    # `wizard_step` assign so the modal footers know to offer a
+    # "continue to next step" action (paperclip-ux-gaps §13).
     socket =
       case Map.get(params, "modal") do
         "new_agent" -> assign(socket, :new_agent_open?, true)
         "new_project" -> assign(socket, :new_project_open?, true)
         _ -> socket
+      end
+
+    socket =
+      case Map.get(params, "wizard") do
+        "new_agent" ->
+          socket
+          |> assign(:new_agent_open?, true)
+          |> assign(:wizard_step, :new_agent)
+
+        "new_project" ->
+          socket
+          |> assign(:new_project_open?, true)
+          |> assign(:wizard_step, :new_project)
+
+        _ ->
+          assign(socket, :wizard_step, nil)
       end
 
     {:noreply, socket}
@@ -602,6 +624,15 @@ defmodule GlorboWeb.CompanyLive do
               ✕
             </button>
           </header>
+          <div :if={@wizard_step == :new_agent} class="gl-wizard-steps">
+            <span class="gl-wizard-steps__step gl-wizard-steps__step--done">
+              1. company ✓
+            </span>
+            <span class="gl-wizard-steps__step gl-wizard-steps__step--current">
+              2. first agent
+            </span>
+            <span class="gl-wizard-steps__step">3. first project</span>
+          </div>
 
           <div class="gl-company-md-form">
             <label class="gl-form__row">
@@ -676,6 +707,17 @@ defmodule GlorboWeb.CompanyLive do
               ✕
             </button>
           </header>
+          <div :if={@wizard_step == :new_project} class="gl-wizard-steps">
+            <span class="gl-wizard-steps__step gl-wizard-steps__step--done">
+              1. company ✓
+            </span>
+            <span class="gl-wizard-steps__step gl-wizard-steps__step--done">
+              2. first agent ✓
+            </span>
+            <span class="gl-wizard-steps__step gl-wizard-steps__step--current">
+              3. first project
+            </span>
+          </div>
 
           <div class="gl-company-md-form">
             <label class="gl-form__row">
@@ -800,11 +842,21 @@ defmodule GlorboWeb.CompanyLive do
             do: "Agent #{slug} already exists — no change.",
             else: "Created agent: #{slug}"
 
-        {:noreply,
-         socket
-         |> assign(:new_agent_open?, false)
-         |> assign(:company, data)
-         |> put_flash(:info, flash_msg)}
+        # §13 — when a wizard chain is active, hop to the next step.
+        if socket.assigns[:wizard_step] == :new_agent do
+          {:noreply,
+           socket
+           |> assign(:new_agent_open?, false)
+           |> assign(:company, data)
+           |> put_flash(:info, flash_msg)
+           |> push_patch(to: ~p"/companies/#{socket.assigns.company_slug}?wizard=new_project")}
+        else
+          {:noreply,
+           socket
+           |> assign(:new_agent_open?, false)
+           |> assign(:company, data)
+           |> put_flash(:info, flash_msg)}
+        end
 
       {:new_agent, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}
@@ -834,11 +886,23 @@ defmodule GlorboWeb.CompanyLive do
             do: "Project #{slug} already exists — no change.",
             else: "Created project: #{slug}"
 
-        {:noreply,
-         socket
-         |> assign(:new_project_open?, false)
-         |> assign(:company, data)
-         |> put_flash(:info, flash_msg)}
+        socket =
+          socket
+          |> assign(:new_project_open?, false)
+          |> assign(:company, data)
+          |> put_flash(:info, flash_msg)
+
+        # §13 — last wizard step; flash a summary, drop the query param,
+        # and land the director on the company dashboard.
+        if socket.assigns[:wizard_step] == :new_project do
+          {:noreply,
+           socket
+           |> assign(:wizard_step, nil)
+           |> put_flash(:info, "Wizard complete — company + first agent + first project ready.")
+           |> push_patch(to: ~p"/companies/#{socket.assigns.company_slug}")}
+        else
+          {:noreply, socket}
+        end
 
       {:new_project, _nonzero, msg} ->
         {:noreply, put_flash(socket, :error, String.trim(msg))}
