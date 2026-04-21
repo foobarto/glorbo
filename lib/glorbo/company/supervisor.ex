@@ -93,6 +93,8 @@ defmodule Glorbo.Company.Supervisor do
        [name: via(company, :file_watcher), company: company, base: base]},
       {Glorbo.Company.Router, [name: via(company, :router), company: company, base: base]},
       {Glorbo.Company.Scheduler, [name: via(company, :scheduler), company: company, base: base]},
+      {Glorbo.Company.TaskScheduler,
+       [name: via(company, :task_scheduler), company: company, base: base]},
       {Glorbo.Company.BudgetTracker,
        [name: via(company, :budget_tracker), company: company, base: base]},
       {Glorbo.Company.AgentSupervisor,

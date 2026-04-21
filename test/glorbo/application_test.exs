@@ -52,7 +52,7 @@ defmodule Glorbo.ApplicationTest do
     assert {:ok, pid} = DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec)
 
     children = Supervisor.which_children(pid)
-    assert length(children) == 8
+    assert length(children) == 9
 
     ids =
       children
@@ -64,6 +64,7 @@ defmodule Glorbo.ApplicationTest do
           Glorbo.Filesystem.Watcher,
           Glorbo.Company.Router,
           Glorbo.Company.Scheduler,
+          Glorbo.Company.TaskScheduler,
           Glorbo.Company.BudgetTracker,
           Glorbo.Company.AgentSupervisor,
           Glorbo.Approvals.Gate,

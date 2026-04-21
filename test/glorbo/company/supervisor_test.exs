@@ -48,11 +48,11 @@ defmodule Glorbo.Company.SupervisorTest do
     {sup_pid, company, base}
   end
 
-  describe "S1: 8-child base tree (6 Plan 03-05 + Approvals.Gate + AgentBoot)" do
-    test "CompanySupervisor starts 8 children by default (+ AgentBoot; no api-only agents → no Proxy)" do
+  describe "S1: 9-child base tree (incl. TaskScheduler; Plan 03-05 + Approvals.Gate + AgentBoot)" do
+    test "CompanySupervisor starts 9 children by default (no api-only agents → no Proxy)" do
       {sup_pid, _co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 8
+      assert length(children) == 9
 
       modules =
         children
@@ -63,6 +63,7 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(modules, Glorbo.Filesystem.Watcher)
       assert MapSet.member?(modules, Glorbo.Company.Router)
       assert MapSet.member?(modules, Glorbo.Company.Scheduler)
+      assert MapSet.member?(modules, Glorbo.Company.TaskScheduler)
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
       assert MapSet.member?(modules, Glorbo.Approvals.Gate)
@@ -72,11 +73,11 @@ defmodule Glorbo.Company.SupervisorTest do
     end
   end
 
-  describe "S1b: 9-child tree when an api-only agent is declared (GAP-4)" do
-    test "CompanySupervisor starts 9 children when api_only?: true" do
+  describe "S1b: 10-child tree when an api-only agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 10 children when api_only?: true" do
       {sup_pid, _co, _base} = start_company(api_only?: true)
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 9
+      assert length(children) == 10
 
       modules =
         children

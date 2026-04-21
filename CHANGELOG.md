@@ -169,6 +169,24 @@ change between minor versions. Pin exact versions in downstream usage.
   bare `task_id`, `detail.task_path`, or `detail.target`
   containing the id. Graceful on missing file / malformed
   JSON.
+- **Task scheduler (#268)** — `Glorbo.Company.TaskScheduler`
+  now actually fires dispatches from `schedule:` cron fields.
+  On boot + on each `projects/**/*.md` write event the
+  scheduler scans `projects/*/tasks/*.md`, parses each
+  task's schedule (5-field cron or keyword alias —
+  `hourly`/`daily`/`weekly`/`monthly` plus `@hourly` etc.),
+  and arms a one-shot `Process.send_after/3` timer. Firing
+  writes a synthetic `sched-<ts>-<task_id>.md` into the
+  assignee's inbox with the task body as the prompt;
+  Agent.Server's inotify watcher picks it up as a regular
+  `:inbox` wake. Every fire emits
+  `task.scheduled_dispatch` (appears in TaskLive history
+  panel #264). Malformed schedules log
+  `scheduler.invalid_task_cron` and are skipped — the
+  scheduler never crashes on a bad cron. Zero state file;
+  filesystem-is-truth invariant preserved. Until this
+  landed the `schedule:` frontmatter field was rendered
+  but never actually fired anything.
 
 ### Changed
 

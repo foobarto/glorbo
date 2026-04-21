@@ -244,8 +244,8 @@ defmodule Glorbo.Filesystem.WatcherTest do
     end
   end
 
-  describe "Company.Supervisor boot (Test 10; extended by Plan 03-05 + GAP-4/5 + AgentBoot)" do
-    test "Test 10: Company.Supervisor starts 8 children by default (6 Plan 03-05 + Gate + AgentBoot)" do
+  describe "Company.Supervisor boot (Test 10; extended by Plan 03-05 + GAP-4/5 + AgentBoot + TaskScheduler)" do
+    test "Test 10: Company.Supervisor starts 9 children by default (incl. TaskScheduler)" do
       base = TmpGlorboHome.setup()
       company = "sup_#{System.unique_integer([:positive])}"
       File.mkdir_p!(Path.join([base, "companies", company]))
@@ -277,7 +277,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       end)
 
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 8
+      assert length(children) == 9
 
       modules =
         children
