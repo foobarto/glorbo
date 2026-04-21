@@ -83,15 +83,14 @@ defmodule Glorbo.FileSpec.Validator do
     |> Enum.sort()
   end
 
-  # Skip derived artifacts: SQLite db, build outputs, git state.
-  @excluded_segments ~w(.git _build deps node_modules burrito_out)
+  # Skip derived artifacts: SQLite db, build outputs, git state, runtime logs.
+  @excluded_segments ~w(.git _build deps node_modules burrito_out logs)
+  @excluded_extensions ~w(.db .db-wal .db-shm .log .pid .lock .tmp)
   defp excluded?(path) do
     segs = Path.split(path)
 
     Enum.any?(@excluded_segments, &(&1 in segs)) or
-      String.ends_with?(path, ".db") or
-      String.ends_with?(path, ".db-wal") or
-      String.ends_with?(path, ".db-shm")
+      Enum.any?(@excluded_extensions, &String.ends_with?(path, &1))
   end
 
   # ------------------------------------------------------------------

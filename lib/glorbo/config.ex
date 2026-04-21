@@ -107,6 +107,7 @@ defmodule Glorbo.Config do
 
     body = """
     ---
+    kind: config/v1
     secret_key_base: #{secret}
     dashboard_token: null
     erl_cookie: #{cookie}

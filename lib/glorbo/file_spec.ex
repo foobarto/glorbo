@@ -85,7 +85,9 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.AuditMonthJsonl,
     Glorbo.FileSpec.InboxArchiveJson,
     Glorbo.FileSpec.EmergencyStopMd,
-    Glorbo.FileSpec.InboxMessageMd
+    Glorbo.FileSpec.InboxMessageMd,
+    Glorbo.FileSpec.GoalMd,
+    Glorbo.FileSpec.ConfigMd
   ]
 
   @doc """

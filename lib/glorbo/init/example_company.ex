@@ -92,7 +92,9 @@ defmodule Glorbo.Init.ExampleCompany do
 
   @goal_md ~s"""
   ---
+  kind: goal/v1
   id: q3-2026
+  name: Q3 2026
   status: active
   ---
   # Q3 2026
