@@ -24,8 +24,8 @@ defmodule GlorboWeb.Components.Sidebar do
 
     * `:current_company` — slug string or nil.
     * `:active` — one of `:overview | :kanban | :chat | :approvals |
-      :audit | :goals | :skills | :braindump | :providers | :costs |
-      nil`; drives the active-row highlight.
+      :inbox | :audit | :goals | :skills | :braindump | :providers |
+      :costs | nil`; drives the active-row highlight.
   """
   use Phoenix.Component
   use GlorboWeb, :verified_routes
@@ -38,6 +38,7 @@ defmodule GlorboWeb.Components.Sidebar do
     {:kanban, "▤", "Kanban", :company},
     {:chat, "◫", "Channels", :company},
     {:approvals, "✓", "Approvals", :company},
+    {:inbox, "☷", "Inbox", :company},
     {:audit, "≡", "Audit log", :company},
     {:goals, "◇", "Goals", :company},
     {:skills, "◉", "Skills", :company},
@@ -60,6 +61,7 @@ defmodule GlorboWeb.Components.Sidebar do
       |> assign(:agents, list_agents(focus))
       |> assign(:projects, list_projects(focus))
       |> assign(:approvals_pending, count_pending_approvals(focus))
+      |> assign(:inbox_stuck, count_stuck_sentinels(focus))
 
     ~H"""
     <aside class="gl-sidebar">
@@ -83,6 +85,13 @@ defmodule GlorboWeb.Components.Sidebar do
             aria-label={"#{@approvals_pending} pending approvals"}
           >
             {@approvals_pending}
+          </span>
+          <span
+            :if={id == :inbox and @inbox_stuck > 0}
+            class="gl-sidebar__badge gl-sidebar__badge--stuck"
+            aria-label={"#{@inbox_stuck} stuck agents"}
+          >
+            {@inbox_stuck}
           </span>
         </.link>
       </nav>
@@ -202,6 +211,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(:kanban, slug), do: ~p"/companies/#{slug}/kanban"
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
   defp nav_href(:approvals, slug), do: ~p"/companies/#{slug}/approvals"
+  defp nav_href(:inbox, slug), do: ~p"/companies/#{slug}/inbox"
   defp nav_href(:audit, slug), do: ~p"/companies/#{slug}/audit"
   defp nav_href(:goals, slug), do: ~p"/companies/#{slug}/goals"
   defp nav_href(:skills, slug), do: ~p"/companies/#{slug}/skills"
@@ -251,6 +261,37 @@ defmodule GlorboWeb.Components.Sidebar do
       {:ok, files} ->
         Enum.count(files, fn f ->
           String.starts_with?(f, "awaiting-approval-") and String.ends_with?(f, ".md")
+        end)
+
+      _ ->
+        0
+    end
+  end
+
+  # #260 — stuck-on sentinels emitted by the LoopDetector live at
+  # agents/<slug>/state/stuck-on-<task>.md. Count across all agents
+  # of the focused company for the Inbox badge.
+  defp count_stuck_sentinels(nil), do: 0
+
+  defp count_stuck_sentinels(company) when is_binary(company) do
+    base = Glorbo.Filesystem.Hierarchy.default_root()
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, agents} -> Enum.reduce(agents, 0, &(count_stuck_in(agents_dir, &1) + &2))
+      _ -> 0
+    end
+  rescue
+    _ -> 0
+  end
+
+  defp count_stuck_in(agents_dir, agent_slug) do
+    state_dir = Path.join([agents_dir, agent_slug, "state"])
+
+    case File.ls(state_dir) do
+      {:ok, files} ->
+        Enum.count(files, fn f ->
+          String.starts_with?(f, "stuck-on-") and String.ends_with?(f, ".md")
         end)
 
       _ ->

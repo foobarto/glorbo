@@ -3361,3 +3361,6 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   font-weight: 600;
   font-family: var(--gl-ff-mono);
 }
+.gl-sidebar__badge--stuck {
+  background: var(--gl-danger, #c14);
+}

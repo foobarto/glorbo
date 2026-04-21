@@ -61,7 +61,7 @@ defmodule GlorboWeb.InboxLive do
     {:ok,
      socket
      |> assign(:page_title, "Inbox — #{co} — Glorbo")
-     |> assign(:sidebar_active, :approvals)
+     |> assign(:sidebar_active, :inbox)
      |> assign(:company_slug, co)
      |> assign(:current_company, co)
      |> assign(:base, base)
