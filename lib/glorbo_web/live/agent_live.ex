@@ -764,7 +764,7 @@ defmodule GlorboWeb.AgentLive do
                   :for={entry <- @detail.not_mounted}
                   class="gl-filetree__node gl-filetree__node--hidden"
                 >
-                  <span class="gl-filetree__prefix">✕ </span>{entry}
+                  <span class="gl-filetree__prefix">× </span>{entry}
                 </div>
               </div>
             </div>
@@ -1232,7 +1232,7 @@ defmodule GlorboWeb.AgentLive do
               phx-click="wake_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
 

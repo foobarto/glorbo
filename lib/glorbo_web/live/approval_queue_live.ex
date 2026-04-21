@@ -264,7 +264,7 @@ defmodule GlorboWeb.ApprovalQueueLive do
               phx-click="deny_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
 

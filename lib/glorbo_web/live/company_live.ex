@@ -613,7 +613,7 @@ defmodule GlorboWeb.CompanyLive do
               phx-click="cancel_company_md"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
 
@@ -696,7 +696,7 @@ defmodule GlorboWeb.CompanyLive do
               phx-click="new_agent_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
           <div :if={@wizard_step == :new_agent} class="gl-wizard-steps">
@@ -779,7 +779,7 @@ defmodule GlorboWeb.CompanyLive do
               phx-click="new_project_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
           <div :if={@wizard_step == :new_project} class="gl-wizard-steps">
@@ -1798,7 +1798,7 @@ defmodule GlorboWeb.CompanyLive do
 
   defp org_state_glyph(:alive), do: "●"
   defp org_state_glyph(:warn), do: "⚠"
-  defp org_state_glyph(:stop), do: "✕"
+  defp org_state_glyph(:stop), do: "×"
   defp org_state_glyph(_), do: "○"
 
   # ---------------------------------------------------------------------------

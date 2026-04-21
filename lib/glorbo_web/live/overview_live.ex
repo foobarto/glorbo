@@ -184,7 +184,7 @@ defmodule GlorboWeb.OverviewLive do
               phx-click="new_company_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
 

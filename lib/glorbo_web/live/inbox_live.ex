@@ -630,7 +630,7 @@ defmodule GlorboWeb.InboxLive do
         >
           <header class="gl-modal__header">
             <strong>Deny {@deny_task_path}</strong>
-            <button type="button" class="gl-modal__close" phx-click="deny_cancel">✕</button>
+            <button type="button" class="gl-modal__close" phx-click="deny_cancel">×</button>
           </header>
           <div class="gl-modal__body">
             <label class="gl-form__row">

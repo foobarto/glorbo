@@ -81,3 +81,38 @@ Do not run `/gsd-*` commands — GSD is disabled at the Claude Code level.
 - `.agents/skills/` (symlinked from `.claude/skills/`) contains external skill plugins installed from GitHub (see `skills-lock.json`). These are **not Glorbo source code** — they are tooling for Claude Code itself. Don't edit or document them as part of Glorbo.
 - `assets/index.html` is the marketing/landing page, unrelated to the Phoenix app that will eventually live here.
 - `.bg-shell/` is gitignored Claude Code runtime state.
+
+## Browser UAT — the Bazzite workaround
+
+The Playwright MCP server can't find Chrome on Bazzite (looks for `/opt/google/chrome/chrome`, missing). The `agent-browser` daemon mode is also broken on this host — CDP channel closes the moment any real navigation starts. Use the **manual chrome launch + `--cdp` attach** pattern:
+
+```bash
+# Terminal A — launch headless chromium (agent-browser ships one)
+~/.agent-browser/browsers/chrome-*/chrome \
+  --headless --disable-gpu \
+  --remote-debugging-port=9222 \
+  --window-size=1400,900 \
+  about:blank \
+  >/tmp/chrome.log 2>&1 &
+disown; sleep 3
+curl -sS http://localhost:9222/json/version    # sanity check
+
+# Terminal B — every agent-browser command attaches via --cdp
+export AGENT_BROWSER_SCREENSHOT_DIR=$PWD/.reports/uat-modals
+mkdir -p "$AGENT_BROWSER_SCREENSHOT_DIR"
+
+npx agent-browser --cdp 9222 open http://localhost:4100/companies
+npx agent-browser --cdp 9222 snapshot                    # aria tree with refs
+npx agent-browser --cdp 9222 click "@e28"                # click by ref from snapshot
+npx agent-browser --cdp 9222 press Escape
+npx agent-browser --cdp 9222 screenshot 01-modal.png     # lands in AGENT_BROWSER_SCREENSHOT_DIR
+```
+
+Screenshots land at the absolute path in `AGENT_BROWSER_SCREENSHOT_DIR` (if set) or in `$CWD` (relative filenames always). After a screenshot, `Read` the PNG and iterate. For UI work, this is the golden path: snapshot → identify ref → click → screenshot → read.
+
+Notes:
+
+- `npm i -g agent-browser` is blocked by the Claude Code sandbox. Use `npx agent-browser` everywhere — it auto-installs once into the npm cache.
+- `npx playwright install chrome` fails on Bazzite (auto-deps uses `apt`). Setting `PLAYWRIGHT_SKIP_BROWSER_GC=1 npx playwright install chromium` works if you need Playwright's bundled binary, but the `agent-browser` bundled chromium is usually sufficient.
+- Daemon mode (`npx agent-browser open <url>` without `--cdp`) fails on this host — always pass `--cdp 9222` (or whatever port you chose) once you've launched chrome manually.
+- Starting a fresh `mix phx.server` on an **alternate port** (e.g. `PORT=4100`) keeps UAT sessions independent of the live `:4000` dev server. Pair with a `/tmp/glorbo-uat-<ts>` temp workspace (`GLORBO_HOME=...`) when the UAT mutates filesystem state.

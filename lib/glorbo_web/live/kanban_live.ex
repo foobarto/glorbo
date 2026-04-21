@@ -645,7 +645,7 @@ defmodule GlorboWeb.KanbanLive do
               phx-click="new_task_cancel"
               aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </header>
 

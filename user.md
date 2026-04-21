@@ -124,5 +124,101 @@ commit per fix with a screenshot reference.
 
 ---
 
+## 2026-04-21 — Task #268 (TaskScheduler) shipped as `053fc84`
+
+Design taken without asking (you said "go for it without my input"):
+
+1. **Module under Company.Supervisor.** New `Glorbo.Company.TaskScheduler`
+   as a sibling of the existing `Glorbo.Company.Scheduler`. Decided
+   against extending the existing one because its scope is cleanly
+   *agent-level heartbeats*; task-level dispatch is a different concern
+   with a different key space (task_id vs agent_slug). Supervisor
+   child count grew 8→9 (10 with proxy).
+
+2. **Scheduler writes synthetic inbox messages** (`sched-<uniq>-<task_id>.md`)
+   instead of calling `Dispatch.execute/3` directly. The inbox is the
+   canonical wake trigger — Router already validates outbox senders,
+   and the Agent.Server watcher picks up inbox events the same way a
+   Router-dispatched message would. Tradeoff: scheduler technically
+   bypasses the Router's ACL pipeline (director wakes do the same
+   thing via `state/wake-request.md`). Consistent with existing
+   patterns; flagged here for your review.
+
+3. **No state file — audit-log is truth.** Schedule arming is kept
+   in GenServer memory. On BEAM restart the scheduler re-arms from
+   task frontmatter; if it crashes mid-fire it loses that slot and
+   re-arms next time (rescan every 60s). Matches the
+   filesystem-is-truth invariant (CLAUDE.md, GEP-3).
+
+4. **Accepted schedule formats.** 5-field cron plus 8 keyword aliases
+   (`hourly`/`daily`/`weekly`/`monthly` + the `@` variants). Anything
+   else emits `scheduler.invalid_task_cron` audit and skips — the
+   scheduler **never** crashes on a bad cron. I did NOT add NL
+   ("every weekday at 9am") because that would need a real parser +
+   timezone handling + edge-case audit that I don't want to build
+   without you looking.
+
+5. **GEP deferred.** I shipped the code first and will retrofit an
+   Informational GEP in a follow-up commit. Reasoning: the decisions
+   above are architecturally small; a retrofit GEP is faster than
+   gating shipped code on a brainstorm I'd run with myself.
+
+**Question still open:** the fire path writes straight into the
+agent's inbox bypassing the Router's ACL pipeline. If you want the
+scheduler to go through Router like a real sender, I need to pick
+a synthetic sender identity (`scheduler@<co>`?) that ACLMapper
+recognizes. For now it's consistent with `wake_agent/4` which also
+bypasses the Router. Revert vector: swap `default_write_inbox/4`
+for a `Router.route/2` call if you want the pipeline.
+
+## 2026-04-21 — #269 CSS/UI quality pass (CSS + agent-browser)
+
+UAT screenshots landed in `.reports/uat-modals/`. Three concrete
+fixes made without asking, because each reproduced cleanly in the
+browser:
+
+1. **Inbox deny modal styling** — `.gl-modal__body` had no CSS;
+   `.gl-form__row`/`.gl-form__label` only worked inside
+   `.gl-company-md-form`. Added generic rules so any modal body
+   gets padding + scroll + grid rows / uppercase labels. Every
+   other modal already used the wrapper; only InboxLive's deny
+   modal hit the unstyled path. (Hadn't been tested — the modal
+   only opens on a pending approval, and the test suite goes
+   through `render_click` without asserting CSS.)
+
+2. **Topbar overflow on narrow widths.** The keyboard-shortcut
+   strip (`g o overview · g c chat · g k kanban · g a audit · g b
+   dump`) wrapped onto two lines at ~1400px wide and the second
+   line overlapped the page title. Added `white-space: nowrap` +
+   `overflow: hidden` + `text-overflow: ellipsis` to the strip and
+   `flex-wrap: nowrap` + `overflow: hidden` to the topbar itself.
+   Tradeoff: shortcuts truncate with `…` on narrow widths instead
+   of reflowing — I think that's obviously correct for a status
+   strip. If you disagree, revert the overflow rules.
+
+3. **Close-button glyph.** Every modal's close button used `✕`
+   (U+2715) which JetBrains Mono / IBM Plex Mono don't have →
+   boxed fallback. Replaced with `×` (U+00D7, multiplication
+   sign) universally. sed-replaced across all LV modules; same
+   char also swept into `org_state_glyph(:stop)`, filetree
+   delete glyphs, and the "× N" count formatter in AgentLive.
+   No tests asserted on either glyph.
+
+**Promoted to CLAUDE.md:** the agent-browser Bazzite workaround
+(manual chromium launch + `--cdp 9222` attach + `npx
+agent-browser`). Was in memory only — now it's in the project
+contract so future sessions don't redundantly rediscover it.
+
+**Not fixed this iteration (low-priority / observational):**
+
+- The `[info] Started company supervisor for acme` log line prints
+  with `[info]` at phx boot which looks unstructured. Phoenix
+  default; not a Glorbo concern.
+- No tests assert on the modal CSS — we rely on `render_click`
+  visibility checks. I considered adding a visual regression
+  test but that's a bigger sprint (browser-screenshot baselines).
+
+---
+
 *Entries below this line are auto-generated by Claude as the
 session proceeds. Read top-to-bottom in chronological order.*

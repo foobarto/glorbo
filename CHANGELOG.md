@@ -188,6 +188,32 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Fixed
+
+- **Inbox deny modal styling (#269).** The deny-prompt modal in
+  InboxLive used `gl-modal__body` + bare `gl-form__row` /
+  `gl-form__label` classes that had no CSS backing — rendering the
+  form unpadded and misaligned. Added generic rules for
+  `.gl-modal__body`, `.gl-modal__body .gl-form__row`, and
+  `.gl-modal__body .gl-form__label` matching the padding / grid
+  pattern used by the `.gl-company-md-form` wrapper other modals
+  share. Every modal with a form now renders consistently whether
+  it uses the shared wrapper or the bare `__body` container.
+- **Topbar shortcut strip overflow (#269).** The keyboard
+  shortcut strip (`g o overview · g c chat · …`) wrapped onto two
+  lines at ~1400 px wide and the second line overlapped the page
+  title below. Added `white-space: nowrap` + `overflow: hidden` +
+  `text-overflow: ellipsis` to the strip and `flex-wrap: nowrap`
+  + `overflow: hidden` to the topbar — shortcuts truncate with
+  `…` on narrow widths instead of reflowing into the content.
+- **Modal close-button glyph (#269).** The `✕` (U+2715) character
+  used on every modal close button rendered as a fallback boxed
+  "X" because neither JetBrains Mono nor IBM Plex Mono ship the
+  glyph. Replaced with `×` (U+00D7 multiplication sign) across
+  every LV + the filetree delete / `org_state_glyph` / tool-count
+  formatter — the multiplication sign is present in every mono
+  font and visually identical when rendered correctly.
+
 ### Changed
 
 - AgentLive Runs tab + CompanyLive roster now include tool-call

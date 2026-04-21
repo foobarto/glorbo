@@ -154,11 +154,14 @@ button { font-family: inherit; font-size: inherit; }
   border-bottom: 1px solid var(--gl-border);
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   padding: 0 var(--gl-space-md);
   gap: var(--gl-space-md);
   font-family: var(--gl-ff-mono);
   font-size: var(--gl-font-label);
   color: var(--gl-fg-muted);
+  overflow: hidden;
 }
 .gl-topbar__brand {
   font-weight: 700;
@@ -199,7 +202,13 @@ button { font-family: inherit; font-size: inherit; }
 .gl-topbar__picker-select:focus { outline: none; }
 .gl-topbar__version { color: var(--gl-fg-subtle); }
 .gl-topbar__spacer { flex: 1; }
-.gl-topbar__kbd { color: var(--gl-fg-subtle); }
+.gl-topbar__kbd {
+  color: var(--gl-fg-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .gl-topbar__kbd kbd {
   font-family: var(--gl-ff-mono);
   background: var(--gl-surface-raised);
@@ -2647,6 +2656,33 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   padding: var(--gl-space-md) var(--gl-space-lg);
   border-top: 1px solid var(--gl-border);
 }
+
+/* #269 — generic modal body. Used when a modal doesn't wrap its
+   inputs in `.gl-company-md-form` (inbox deny, etc.). Matches the
+   padding + scroll behaviour of the form wrapper so the body never
+   pushes footer below the 85vh cap. */
+.gl-modal__body {
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+  font-size: 12px;
+}
+.gl-modal__body .gl-form__row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: start;
+  gap: var(--gl-space-md);
+}
+.gl-modal__body .gl-form__label {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  padding-top: 6px;
+}
+
 .gl-file-editor__textarea {
   font-family: var(--gl-ff-mono);
   font-size: 12px;
