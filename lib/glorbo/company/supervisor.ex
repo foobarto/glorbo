@@ -139,13 +139,98 @@ defmodule Glorbo.Company.Supervisor do
              # proxy boot. Coarse-grained: proxy sees the union, so
              # any allowed host is reachable by any api-only agent
              # in the company. Per-requester gating is R19b.
-             allowlist_fun: fn _co -> company_allowlist(company, base) end
+             allowlist_fun: fn _co -> company_allowlist(company, base) end,
+             # GEP-23 Phase 3 (#321) — smart-mode classifier. Built
+             # once at supervisor boot from the company's agent
+             # `egress:` blocks. Nil when no agent opts into
+             # `mode: :smart` / `:strict` / `:deny` — keeps the
+             # historic allowlist-only path bit-for-bit.
+             classifier_fun: company_classifier_fun(company, base)
            ]}
         ]
     else
       children
     end
   end
+
+  # Read every agent.md under the company and pick the first with
+  # an egress block that requires a classifier (modes :strict or
+  # :smart). Delegates to
+  # `Glorbo.Network.SmartClassifier.smart_classify/3` with the
+  # agent's egress config. Returns nil when no agent opts in —
+  # which means the proxy stays in legacy allowlist-only mode.
+  #
+  # Coarse-grained on purpose: the proxy can't distinguish which
+  # agent opened the connection (Phase 4 plumbs an ephemeral
+  # per-dispatch token). So the first smart-mode agent's config
+  # dictates classifier behaviour for the whole company. Directors
+  # who want per-agent policies either stick to allow/deny lists
+  # (which compose) or wait for Phase 4.
+  defp company_classifier_fun(company, base) do
+    case pick_smart_agent(company, base) do
+      nil ->
+        nil
+
+      egress_config ->
+        fn host, _port ->
+          Glorbo.Network.SmartClassifier.smart_classify(host, egress_config)
+        end
+    end
+  end
+
+  defp pick_smart_agent(company, base) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.map(&Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, &1)))
+        |> Enum.filter(&File.regular?/1)
+        |> Enum.flat_map(&read_smart_egress/1)
+        |> List.first()
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  # Returns a single-element list when the agent opts into a mode
+  # that needs a classifier; empty list otherwise. Flat-mapped
+  # across all agents by pick_smart_agent/2.
+  defp read_smart_egress(agent_md_path) do
+    with {:ok, content} <- File.read(agent_md_path),
+         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         egress when is_map(egress) <- Map.get(meta, "egress"),
+         mode <- to_string(Map.get(egress, "mode", "allow")),
+         true <- mode in ["strict", "smart"] do
+      [
+        %{
+          # Mode validated against a closed ["strict", "smart"]
+          # list above. Hard-map to atoms so nothing relies on the
+          # atom table being warm at compile time (to_existing_atom
+          # can fail before the parser module has touched these
+          # atoms in some boot orders).
+          mode: mode_atom(mode),
+          allow: list_or_empty(Map.get(egress, "allow")),
+          deny: list_or_empty(Map.get(egress, "deny")),
+          smart_allow: to_string(Map.get(egress, "smart_allow", "")),
+          smart_deny: to_string(Map.get(egress, "smart_deny", "")),
+          smart_model: Map.get(egress, "smart_model")
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp list_or_empty(nil), do: []
+  defp list_or_empty(list) when is_list(list), do: Enum.map(list, &String.downcase/1)
+  defp list_or_empty(_), do: []
+
+  defp mode_atom("strict"), do: :strict
+  defp mode_atom("smart"), do: :smart
 
   defp company_allowlist(company, base) do
     agents_dir = Path.join([base, "companies", company, "agents"])

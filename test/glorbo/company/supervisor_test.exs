@@ -365,5 +365,125 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(state.policy.allowlist, "grafana.internal")
       assert MapSet.member?(state.policy.allowlist, "datadog.example.com")
     end
+
+    # GEP-23 smart-mode Phase 3 (#321). Supervisor composes a
+    # classifier_fun from agents' `egress:` blocks; nil when no
+    # agent opts into :strict or :smart mode.
+    test "no agent opts into smart-mode → proxy classifier_fun is nil",
+         %{base: base, company: company} do
+      seed_agent(base, company, "scout", "")
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_no_smart"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+      assert is_nil(state.policy.classifier_fun)
+    end
+
+    test "smart-mode agent wires classifier_fun that honours its egress block",
+         %{base: base, company: company} do
+      seed_agent(base, company, "researcher", """
+      egress:
+        mode: smart
+        allow:
+          - docs.python.org
+        deny:
+          - ads.tracker.example.com
+        smart_allow: language documentation
+        smart_deny: gambling, banking
+      """)
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_smart"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+      classifier = state.policy.classifier_fun
+      assert is_function(classifier, 2)
+
+      # Exact allow list hit → :allow
+      assert {:allow, :allowlist} = classifier.("docs.python.org", 443)
+
+      # Exact deny list hit → :deny
+      assert {:deny, :denylist} = classifier.("ads.tracker.example.com", 443)
+
+      # Unknown host + smart mode + stub LLM classifier returns
+      # :unknown → :unknown verdict. (Phase 3 keeps the stub;
+      # Phase 4 swaps in a real LLM dispatch.)
+      assert {:unknown, :smart_unknown} = classifier.("mystery.example.com", 443)
+    end
+
+    test "strict-mode agent also wires a classifier (returns :unknown instead of calling LLM)",
+         %{base: base, company: company} do
+      seed_agent(base, company, "auditor", """
+      egress:
+        mode: strict
+        allow:
+          - audit.example.com
+      """)
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_strict"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+      classifier = state.policy.classifier_fun
+      assert is_function(classifier, 2)
+
+      assert {:allow, :allowlist} = classifier.("audit.example.com", 443)
+      # Strict mode: unknown host never reaches LLM, returns
+      # :unknown → proxy sends 403 (director-sentinel path is
+      # Phase 4).
+      assert {:unknown, :no_rule_match} = classifier.("unknown.example.com", 443)
+    end
   end
 end

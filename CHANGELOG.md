@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-23 smart-mode Phase 3: supervisor composes classifier_fun (#321)
+
+- **`Glorbo.Company.Supervisor` now composes a per-company
+  `classifier_fun`** at proxy-boot time by scanning each agent's
+  `egress:` frontmatter block. The first agent with `mode:
+  :strict` or `:smart` drives classifier behaviour for the
+  whole company (coarse-grained — the proxy can't yet
+  distinguish which agent opened the connection; per-dispatch
+  token plumbing is the Phase 4 step).
+- **Legacy mode unchanged.** Agents with no `egress:` block or
+  `mode: :allow|:deny` don't trigger a classifier. Existing
+  `network: api-only` companies without any smart-mode opt-in
+  keep the allowlist-only path bit-for-bit.
+- **Wires directly to Phase 1's `SmartClassifier.smart_classify/
+  3`.** Mode `:smart` → rule layer first, then the current stub
+  LLM (`default_llm_classify/3`); mode `:strict` → rule layer
+  only, unknown returns `:unknown`.
+- 3 new regression tests: no-opt-in → nil classifier; smart
+  agent's allow list + deny list honoured in the composed fn;
+  strict agent returns `:unknown` on no-rule-match.
+
+1436 tests green; credo clean. Phase 4 (real LLM wiring +
+director-approval sentinel for `:unknown` verdicts +
+per-dispatch ephemeral tokens) is the remaining GEP-23 work.
+
 ### Added — GEP-23 smart-mode Phase 2: classifier hook in Network.Proxy (#320)
 
 - **`Glorbo.Network.Proxy` gains an optional `classifier_fun:`
