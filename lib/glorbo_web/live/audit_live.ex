@@ -156,6 +156,37 @@ defmodule GlorboWeb.AuditLive do
     {:noreply, assign(socket, :expanded, expanded)}
   end
 
+  # #254 — convert an audit entry to a task in projects/inbox/tasks/.
+  # Finds the entry by its id (ts+actor+action+target hash) from the
+  # currently-loaded window; if the lookup misses (e.g. the row just
+  # scrolled out), flashes an error rather than silently failing.
+  def handle_event("convert_to_task", %{"id" => id}, socket) do
+    # Match against the full loaded window (`:entries`), not the
+    # render-time `:filtered` (which is only computed inside render/1
+    # and not persisted). The id hash is stable across filter changes
+    # because it's derived from the entry's ts+actor+action+target.
+    entries = socket.assigns.entries
+
+    entry =
+      Enum.find(Enum.with_index(entries), fn {e, idx} ->
+        entry_id(e, idx) == id
+      end)
+
+    case entry do
+      {e, _idx} ->
+        case scaffold_audit_task(socket.assigns.company_slug, e) do
+          {:ok, rel_path} ->
+            {:noreply, put_flash(socket, :info, "Task scaffolded: #{rel_path}")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Conversion failed: #{inspect(reason)}")}
+        end
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Audit entry no longer in view.")}
+    end
+  end
+
   def handle_event("load_older", _params, socket) do
     {older, new_offset} = load_older(socket.assigns.path, socket.assigns.offset, @page)
 
@@ -352,4 +383,80 @@ defmodule GlorboWeb.AuditLive do
   defp detail_haystack(d) when is_binary(d), do: d
   defp detail_haystack(d) when is_map(d) or is_list(d), do: Jason.encode!(d)
   defp detail_haystack(d), do: to_string(d)
+
+  # #254 — scaffold a task from an audit entry. Lands in
+  # `projects/inbox/tasks/` with an audit-context footer so the
+  # director (or the agent that picks it up) has enough context to
+  # decide the follow-up.
+  defp scaffold_audit_task(company, entry) do
+    base = base_dir()
+    co_dir = Path.join([base, "companies", company])
+    tasks_dir = Path.join([co_dir, "projects", "inbox", "tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    ts = to_string(entry["ts"] || DateTime.to_iso8601(DateTime.utc_now()))
+    actor = to_string(entry["actor"] || "system")
+    action = to_string(entry["action"] || "unknown")
+    target = to_string(entry["target"] || "")
+
+    slug =
+      action
+      |> String.replace(~r/[^a-z0-9]+/i, "-")
+      |> String.downcase()
+      |> String.trim("-")
+
+    date = ts |> String.slice(0, 10) |> String.replace("-", "")
+    task_id = uniqify_audit_task_id(tasks_dir, "t-audit-#{date}-#{slug}", 0)
+    abs = Path.join(tasks_dir, "#{task_id}.md")
+    rel = Path.join(["projects", "inbox", "tasks", "#{task_id}.md"])
+
+    title = "Follow up on audit event: #{actor} · #{action}"
+
+    content = """
+    ---
+    title: #{yaml_escape(title)}
+    status: todo
+    source: audit
+    audit_ts: #{ts}
+    ---
+
+    Follow-up triggered by an audit event.
+
+    ## Context
+
+    - **Timestamp**: #{ts}
+    - **Actor**: #{actor}
+    - **Action**: #{action}
+    - **Target**: #{target}
+
+    ```json
+    #{Jason.encode!(entry, pretty: true)}
+    ```
+    """
+
+    tmp = abs <> ".tmp"
+    :ok = File.write!(tmp, content)
+    :ok = File.rename(tmp, abs)
+    {:ok, rel}
+  rescue
+    e -> {:error, e}
+  end
+
+  defp uniqify_audit_task_id(dir, base, n) do
+    candidate = if n == 0, do: base, else: "#{base}-#{n}"
+
+    if File.exists?(Path.join(dir, "#{candidate}.md")) do
+      uniqify_audit_task_id(dir, base, n + 1)
+    else
+      candidate
+    end
+  end
+
+  defp yaml_escape(s) when is_binary(s) do
+    if String.contains?(s, [":", "#", "\""]) do
+      "\"" <> String.replace(s, "\"", "\\\"") <> "\""
+    else
+      s
+    end
+  end
 end

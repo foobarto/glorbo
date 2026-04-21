@@ -141,6 +141,11 @@ change between minor versions. Pin exact versions in downstream usage.
   goal card now renders a coloured progress bar showing
   `done / total tasks · N%`. Colour state: muted (<50%),
   amber (50-99%), green (100%).
+- **Audit → task conversion (#254)** — one-click "convert to
+  task" on expanded audit rows. Scaffolds
+  `projects/inbox/tasks/t-audit-<date>-<slug>.md` with a
+  ```Context``` block containing the audit actor / action /
+  target + the raw JSON payload for reference.
 
 ### Changed
 

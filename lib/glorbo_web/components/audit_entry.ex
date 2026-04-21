@@ -70,6 +70,17 @@ defmodule GlorboWeb.Components.AuditEntry do
         {@entry["action"]}
       </span>
       <pre :if={@expanded} class="gl-audit-row__payload"><code>{Jason.encode!(@entry, pretty: true)}</code></pre>
+      <div :if={@expanded} class="gl-audit-row__actions">
+        <button
+          type="button"
+          class="gl-btn gl-btn--sm"
+          phx-click="convert_to_task"
+          phx-value-id={@id}
+          title="Scaffold a follow-up task under projects/inbox/ with this audit entry as context"
+        >
+          → convert to task
+        </button>
+      </div>
     </div>
     """
   end

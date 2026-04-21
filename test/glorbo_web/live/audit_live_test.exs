@@ -115,6 +115,39 @@ defmodule GlorboWeb.AuditLiveTest do
     refute html =~ "company.create"
   end
 
+  # #254 — convert audit row into a task under projects/inbox/tasks/.
+  test "convert_to_task scaffolds a task from an expanded row",
+       %{conn: conn, base: base} do
+    {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+    # Expand the first row so the convert button's id gets the same
+    # hash the handler computes.
+    html = render(view)
+    [_, id] = Regex.run(~r/phx-value-id="([^"]+)"/, html)
+
+    html =
+      render_click(view, "convert_to_task", %{"id" => id})
+
+    assert html =~ "Task scaffolded:"
+
+    files =
+      Path.wildcard(Path.join([base, "companies/acme/projects/inbox/tasks/t-audit-*.md"]))
+
+    assert [_ | _] = files
+
+    content = File.read!(hd(files))
+    assert content =~ "source: audit"
+    assert content =~ "## Context"
+    assert content =~ "status: todo"
+  end
+
+  test "convert_to_task with missing id flashes error", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+    html = render_click(view, "convert_to_task", %{"id" => "nope-not-real"})
+    assert html =~ "Audit entry no longer in view."
+  end
+
   defp current_year_month do
     d = Date.utc_today()
     "#{d.year}-#{String.pad_leading(Integer.to_string(d.month), 2, "0")}"
