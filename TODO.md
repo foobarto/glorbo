@@ -104,3 +104,5 @@ it's been in CHANGELOG for a cycle.
 - [x] #290 R22: sidebar memory badge — fa-brain icon + aria-label singular/plural + 3 regex test cases
 - [x] #291 R23: R21 audit-row regression fix (nil audit_fun coercion + catch :exit + per-company Registry resolution)
 - [x] #292 R24: truthful Inbox header ("N approval · M stuck" / "(empty)") + relative last-failure timestamp on stuck rows
+- [x] v0.0.4 shipped — release tagged, GitHub Release live with Burrito binaries
+- [x] #294 R25: goal `name:` accepts as title fallback (GoalsLive + CompanyLive); UAT pass on Skills/Costs/Goals/BrainDump clean

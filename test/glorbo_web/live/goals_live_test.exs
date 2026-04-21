@@ -110,4 +110,24 @@ defmodule GlorboWeb.GoalsLiveTest do
     assert html =~ "1 / 2 done"
     assert html =~ "50%"
   end
+
+  # R25 — directors frequently reach for `name:` rather than
+  # `title:` (muscle memory from the rest of company.md / agents).
+  # The normalizer accepts either.
+  test "accepts `name:` as a title fallback", %{conn: conn, base: base} do
+    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    ---
+    slug: acme
+    name: Acme
+    goals:
+      - slug: alt-schema
+        name: Goal With Name
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/goals")
+    assert html =~ "Goal With Name"
+    # Slug suffix still renders next to the title.
+    assert html =~ "alt-schema"
+  end
 end

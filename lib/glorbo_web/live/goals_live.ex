@@ -204,9 +204,14 @@ defmodule GlorboWeb.GoalsLive do
     if slug == "" do
       nil
     else
+      # R25 — also accept `name:` as a title fallback. Nothing else
+      # in company.md uses `title:` (top-level is `name:`) so directors
+      # reach for `name:` by muscle memory. Either key works.
+      title = Map.get(g, "title") || Map.get(g, "name") || slug
+
       %{
         slug: slug,
-        title: to_string(Map.get(g, "title", slug)),
+        title: to_string(title),
         description: to_string(Map.get(g, "description", "") || ""),
         status: to_string(Map.get(g, "status", "active") || "active")
       }

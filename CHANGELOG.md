@@ -10,6 +10,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — post-release polish (R25, browser UAT)
+
+- **Goal `name:` accepted as title fallback (#294).** GoalsLive
+  and CompanyLive's goals panel expected `title:` on every goal
+  entry under `goals:`. Directors reaching for the convention used
+  on every other `company.md` field (`name:` on company, agent,
+  project) got back `slug · slug` rendered with a muted separator
+  — the same slug twice. Now both keys work; `title:` still
+  preferred, `name:` falls back. Two new test cases cover the
+  fallback on both views.
+
 ## [0.0.4] — 2026-04-21
 
 Large release spanning browser-UAT rounds R14–R24 plus the GEP-20

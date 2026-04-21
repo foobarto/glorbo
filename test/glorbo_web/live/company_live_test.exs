@@ -81,6 +81,24 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert html =~ "kanban?goal=q4-launch"
   end
 
+  # R25 — goal normalizer accepts `name:` as a title fallback to
+  # match muscle memory from the rest of company.md.
+  test "goals panel accepts `name:` as title fallback",
+       %{conn: conn, base: base} do
+    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    ---
+    slug: acme
+    name: Acme
+    goals:
+      - slug: alt
+        name: Friendly Name
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme")
+    assert html =~ "Friendly Name"
+  end
+
   # #253 part 2 — goal progress mini-bar renders when tasks
   # reference the goal via `goal:` frontmatter.
   test "goals panel shows progress bar with done/total",
