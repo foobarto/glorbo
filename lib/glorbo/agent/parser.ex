@@ -119,7 +119,8 @@ defmodule Glorbo.Agent.Parser do
          {:ok, budget} <- validate_budget(meta["budget_usd_cents_month"]),
          {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]),
          {:ok, autonomy} <- validate_autonomy(meta["autonomy"]),
-         {:ok, max_retries} <- validate_max_retries(meta["max_retries"]) do
+         {:ok, max_retries} <- validate_max_retries(meta["max_retries"]),
+         {:ok, egress} <- validate_egress(meta["egress"]) do
       {:ok,
        %Spec{
          slug: slug,
@@ -139,10 +140,77 @@ defmodule Glorbo.Agent.Parser do
          max_retries: max_retries,
          reports_to: parse_reports_to(meta["reports_to"]),
          icon: parse_icon(meta["icon"]),
+         egress: egress,
          file_path: file_path
        }}
     end
   end
+
+  # GEP-23 egress block (Phase 1, #287). Map with optional
+  # `mode | allow | deny | smart_allow | smart_deny | smart_model`.
+  # Missing block or empty map normalises to the Spec default
+  # (mode: :allow, empty lists, empty smart strings). Invalid shape
+  # rejects the whole agent file so a typo doesn't silently fall back
+  # to a more permissive mode.
+  defp validate_egress(nil), do: {:ok, default_egress()}
+  defp validate_egress(map) when is_map(map) and map_size(map) == 0, do: {:ok, default_egress()}
+
+  defp validate_egress(map) when is_map(map) do
+    with {:ok, mode} <- parse_egress_mode(Map.get(map, "mode")),
+         {:ok, allow} <- parse_host_list(Map.get(map, "allow", []), :allow),
+         {:ok, deny} <- parse_host_list(Map.get(map, "deny", []), :deny) do
+      {:ok,
+       %{
+         mode: mode,
+         allow: allow,
+         deny: deny,
+         smart_allow: to_string(Map.get(map, "smart_allow", "")),
+         smart_deny: to_string(Map.get(map, "smart_deny", "")),
+         smart_model: parse_smart_model(Map.get(map, "smart_model"))
+       }}
+    end
+  end
+
+  defp validate_egress(other), do: {:error, {:invalid_egress, other}}
+
+  defp default_egress do
+    %{
+      mode: :allow,
+      allow: [],
+      deny: [],
+      smart_allow: "",
+      smart_deny: "",
+      smart_model: nil
+    }
+  end
+
+  defp parse_egress_mode(nil), do: {:ok, :allow}
+  defp parse_egress_mode("allow"), do: {:ok, :allow}
+  defp parse_egress_mode("deny"), do: {:ok, :deny}
+  defp parse_egress_mode("strict"), do: {:ok, :strict}
+  defp parse_egress_mode("smart"), do: {:ok, :smart}
+  defp parse_egress_mode(other), do: {:error, {:invalid_egress_mode, other}}
+
+  defp parse_host_list(list, field) when is_list(list) do
+    list
+    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
+      case to_string(entry) do
+        "" -> {:halt, {:error, {:invalid_egress_host, {field, :blank}}}}
+        host -> {:cont, {:ok, [String.downcase(host) | acc]}}
+      end
+    end)
+    |> case do
+      {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
+      err -> err
+    end
+  end
+
+  defp parse_host_list(other, field), do: {:error, {:invalid_egress_host, {field, other}}}
+
+  defp parse_smart_model(nil), do: nil
+  defp parse_smart_model(""), do: nil
+  defp parse_smart_model(model) when is_binary(model), do: model
+  defp parse_smart_model(_), do: nil
 
   # #236 — optional `models:` map of alias → concrete model name.
   #

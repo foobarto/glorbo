@@ -96,6 +96,18 @@ defmodule Glorbo.Agent.Spec do
     autonomy: :supervised,
     max_retries: 2,
     reports_to: nil,
-    icon: nil
+    icon: nil,
+    # GEP-23 smart mode (#287). Normalised egress config: both list
+    # fields default to []; `mode` to :allow (matches legacy allowlist
+    # behaviour when no egress block is declared); smart_* categories
+    # are free-form strings the classifier prompt renders verbatim.
+    egress: %{
+      mode: :allow,
+      allow: [],
+      deny: [],
+      smart_allow: "",
+      smart_deny: "",
+      smart_model: nil
+    }
   ]
 end

@@ -10,6 +10,52 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-23 smart-mode Phase 1 (#287)
+
+First slice of GEP-23 smart mode: the pure classifier module and
+AGENT.md parser support. Proxy wiring, per-company decision cache,
+budget accounting, and UI follow in later phases so each step has
+a small, auditable blast radius.
+
+- **`Glorbo.Network.SmartClassifier`** — rule-based classifier
+  (`classify/2`) + LLM-fallback orchestration (`smart_classify/3`)
+  with dep-injected `classify_fun:` so the real provider
+  integration lands later without churning this surface. Rules
+  cover: allow/deny exact + `*.suffix` wildcards, RFC1918 /
+  loopback / link-local private-IP rejection, ad-TLD rejection,
+  mode-aware fallthrough semantics. Never returns `:unknown` from
+  the rule layer unless `mode: :strict | :smart` with no rule
+  match.
+- **Prompt builder** (`build_prompt/3`) renders the classifier
+  prompt with director-declared `smart_allow:` / `smart_deny:`
+  category strings. Sanitises the host to alphanumeric + dot +
+  hyphen before substitution (prompt-injection defence per
+  GEP-23 §Smart mode). Caps to DNS max 253 chars.
+- **Response parser** (`parse_response/1`) requires the exact
+  `verdict|category|rationale` single-line format. Multi-line
+  responses, bad verdict tokens, and empty fields all reject to
+  `{:error, reason}` — fail-safe defence against a prompt-
+  injected classifier trying to tack on "SYSTEM: ignore
+  previous" lines.
+- **`default_llm_classify/3`** stub ships returning `:unknown` so
+  Phase 1 can land without a live LLM dep. Phase 2 swaps it for
+  a dispatch through `Glorbo.Agent.Dispatch` with per-request
+  budget accounting.
+- **AGENT.md `egress:` frontmatter** — new `Parser.validate_egress/1`
+  accepts `mode: allow|deny|strict|smart`, `allow:` list,
+  `deny:` list, `smart_allow:` string, `smart_deny:` string,
+  `smart_model:` override. Missing block defaults to
+  `mode: :allow` + empty lists (matches the legacy allowlist
+  behaviour the existing `Network.Proxy` enforces today — zero
+  behaviour change for agents that don't opt in).
+- `Glorbo.Agent.Spec` carries the parsed block as the new
+  `egress:` field.
+- 26 unit tests covering rule layer, LLM dispatch, prompt
+  rendering, response parsing, and the fail-safe paths.
+
+1428 tests green; credo clean; `mix glorbo.docs.file_formats
+--check` clean.
+
 ### Added — mix glorbo.docs.file_formats + precommit wiring (R26.2b)
 
 - **New mix task** `glorbo.docs.file_formats` generates one
