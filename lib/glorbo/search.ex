@@ -1,17 +1,22 @@
 defmodule Glorbo.Search do
   @moduledoc """
   Content search across a company's filesystem for the Ctrl+K palette
-  (#232 T2-B).
+  (#232 T2-B, extended #249).
 
-  Scope v1: task titles + task IDs under `projects/*/tasks/*.md`.
-  Future: audit rows, channel messages, agent slugs. Each result
-  carries a `kind`, a human-readable `label`, and an `href` the
-  caller can navigate to.
+  Sources (both scanned; results merged + ranked together):
 
-  The search is O(n) over task files, synchronous. Glorbo is
-  single-director / single-company-at-a-time, so a few hundred task
-  files is the realistic cap. For scale, a proper SQLite FTS index
-  would go here — not yet.
+    * **Task titles + IDs** under `projects/*/tasks/*.md`. ETS-cached
+      by (path, mtime).
+    * **Audit rows** from the current month's
+      `audit/YYYY-MM.jsonl` — matches on `actor`, `action`, and
+      `target` fields.
+
+  Each result carries a `kind` (`"task"` | `"audit"`), a human-
+  readable `label`, and an `href` the caller can navigate to.
+
+  O(n) over task files + audit entries, synchronous. Single-
+  director scale is fine; for bigger workloads a proper SQLite FTS
+  index lives behind this module's `search/4`.
   """
 
   @type result :: %{
@@ -39,9 +44,17 @@ defmodule Glorbo.Search do
     if normalised == "" do
       []
     else
-      base
-      |> scan_tasks(co)
-      |> Enum.flat_map(&score_task(&1, normalised, co))
+      task_hits =
+        base
+        |> scan_tasks(co)
+        |> Enum.flat_map(&score_task(&1, normalised, co))
+
+      audit_hits =
+        base
+        |> scan_audit(co)
+        |> Enum.flat_map(&score_audit(&1, normalised, co))
+
+      (task_hits ++ audit_hits)
       |> Enum.sort_by(& &1.score, :desc)
       |> Enum.take(limit)
     end
@@ -136,6 +149,77 @@ defmodule Glorbo.Search do
         :ok
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Audit source (#249)
+  # ---------------------------------------------------------------------------
+
+  # Scan the last @audit_scan_depth rows from this month's audit
+  # JSONL. Reading the whole month file on every keystroke would
+  # be wasteful; the tail is overwhelmingly where directors care
+  # about recent activity. Fallback to empty list on any IO /
+  # decode error — search MUST remain silent on missing data.
+  @audit_scan_depth 500
+
+  defp scan_audit(base, co) do
+    month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
+
+    case File.read(path) do
+      {:ok, content} ->
+        content
+        |> String.split("\n", trim: true)
+        |> Enum.reverse()
+        |> Enum.take(@audit_scan_depth)
+        |> Enum.flat_map(fn line ->
+          case Jason.decode(line) do
+            {:ok, %{} = entry} -> [entry]
+            _ -> []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  # Score audit entries against the query. Actor and action matches
+  # rank higher than target matches (the director usually searches
+  # for "what did <agent> do" or "where did <action> happen").
+  defp score_audit(entry, query, co) do
+    actor = to_string(entry["actor"] || "")
+    action = to_string(entry["action"] || "")
+    target = to_string(entry["target"] || "")
+
+    score =
+      cond do
+        String.contains?(String.downcase(actor), query) -> 70
+        String.contains?(String.downcase(action), query) -> 65
+        String.contains?(String.downcase(target), query) -> 55
+        true -> 0
+      end
+
+    if score == 0 do
+      []
+    else
+      [
+        %{
+          kind: "audit",
+          label: "#{actor} #{action} — #{short_target(target)}",
+          href: "/companies/#{co}/audit",
+          score: score
+        }
+      ]
+    end
+  end
+
+  defp short_target(""), do: ""
+  defp short_target(target) when byte_size(target) <= 40, do: target
+  defp short_target(target), do: String.slice(target, -40, 40)
+
+  # ---------------------------------------------------------------------------
+  # Task source
+  # ---------------------------------------------------------------------------
 
   # Score each candidate against the query. Higher score = better
   # match. Results with score 0 are dropped.

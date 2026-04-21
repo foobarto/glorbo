@@ -81,6 +81,70 @@ defmodule Glorbo.SearchTest do
     assert [] = Search.search(base, "ghost", "anything")
   end
 
+  describe "audit row search (#249)" do
+    setup %{base: base, company: co} do
+      audit_dir = Path.join([base, "companies", co, "audit"])
+      File.mkdir_p!(audit_dir)
+
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      lines = [
+        %{
+          "ts" => "2026-04-21T10:00:00Z",
+          "actor" => "ceo",
+          "action" => "agent.dispatch",
+          "target" => "projects/foo/tasks/t-01.md"
+        },
+        %{
+          "ts" => "2026-04-21T10:01:00Z",
+          "actor" => "director",
+          "action" => "approval.approved",
+          "target" => "projects/foo/tasks/t-42.md"
+        },
+        %{
+          "ts" => "2026-04-21T10:02:00Z",
+          "actor" => "system",
+          "action" => "channel.rotate",
+          "target" => "channels/general.md"
+        }
+      ]
+
+      content = lines |> Enum.map(&Jason.encode!/1) |> Enum.join("\n")
+      File.write!(path, content <> "\n")
+      :ok
+    end
+
+    test "matches on actor", %{base: base, company: co} do
+      results = Search.search(base, co, "ceo")
+      assert Enum.any?(results, &(&1.kind == "audit" and &1.label =~ "ceo"))
+    end
+
+    test "matches on action", %{base: base, company: co} do
+      results = Search.search(base, co, "approval")
+      assert Enum.any?(results, &(&1.kind == "audit" and &1.label =~ "approval.approved"))
+    end
+
+    test "matches on target", %{base: base, company: co} do
+      results = Search.search(base, co, "general.md")
+      assert Enum.any?(results, &(&1.kind == "audit" and &1.label =~ "channel.rotate"))
+    end
+
+    test "audit results href points to the audit page", %{base: base, company: co} do
+      [hit | _] = Search.search(base, co, "rotate")
+      assert hit.kind == "audit"
+      assert hit.href == "/companies/acme/audit"
+    end
+
+    test "task + audit results coexist in a single search", %{base: base, company: co} do
+      results = Search.search(base, co, "refactor")
+      assert Enum.any?(results, &(&1.kind == "task"))
+      # "refactor" won't be in audit seeds, but the search shouldn't
+      # crash on the audit-scan path.
+      assert is_list(results)
+    end
+  end
+
   # #240 — title cache skips reparse when mtime unchanged.
   test "caches titles by (path, mtime) so repeated searches skip File.read",
        %{base: base, company: co} do

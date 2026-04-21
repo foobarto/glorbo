@@ -127,6 +127,12 @@ change between minor versions. Pin exact versions in downstream usage.
   errors (prompt size, unknown provider, budget stop, emergency
   stop) never retry — config problems don't self-resolve.
   Emits `agent.retry` audit per attempt for the history tab.
+- **Ctrl+K finds audit rows (#249)** — palette search now
+  matches on actor / action / target across the current month's
+  audit JSONL, capped at the most recent 500 entries. Audit
+  results carry `kind: audit` and navigate to the company's
+  audit page; task-title and audit-row hits rank together so
+  the single best match wins the top slot.
 
 ### Changed
 
