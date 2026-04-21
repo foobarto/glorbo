@@ -301,12 +301,51 @@ function paletteHtml(items) {
 let paletteItems = []
 let paletteCursor = 0
 
+// #258 — recency. Last 5 palette picks persist in localStorage and
+// float to the top of the next open. De-duped by href.
+const PALETTE_RECENT_KEY = "glorbo.palette.recent.v1"
+const PALETTE_RECENT_LIMIT = 5
+
+function loadPaletteRecent() {
+  try {
+    return JSON.parse(localStorage.getItem(PALETTE_RECENT_KEY)) || []
+  } catch (_) {
+    return []
+  }
+}
+
+function recordPalettePick(item) {
+  const recent = loadPaletteRecent()
+  const filtered = recent.filter((r) => r.href !== item.href)
+  const next = [{ label: item.label, href: item.href, hint: item.hint || "" }]
+    .concat(filtered)
+    .slice(0, PALETTE_RECENT_LIMIT)
+  try {
+    localStorage.setItem(PALETTE_RECENT_KEY, JSON.stringify(next))
+  } catch (_) {}
+}
+
+function applyPaletteRecency(items) {
+  const recent = loadPaletteRecent()
+  if (recent.length === 0) return items
+
+  const recentHrefs = new Set(recent.map((r) => r.href))
+  // Pin recent items to the top (preserving recent order), then the
+  // remainder, excluding items already pinned. Recent entries that no
+  // longer resolve to any nav command still render with their stored
+  // label — harmless, and they'll drop out the next time the user
+  // picks something else.
+  const pinned = recent.map((r) => ({ ...r, hint: r.hint || "recent" }))
+  const tail = items.filter((it) => !recentHrefs.has(it.href))
+  return pinned.concat(tail)
+}
+
 function toggleCommandPalette() {
   if (document.getElementById("gl-palette-scrim")) {
     hideCommandPalette()
     return
   }
-  paletteItems = collectCommands()
+  paletteItems = applyPaletteRecency(collectCommands())
   paletteCursor = 0
   const host = document.createElement("div")
   host.innerHTML = paletteHtml(paletteItems)
@@ -387,6 +426,7 @@ function toggleCommandPalette() {
       e.preventDefault()
       const chosen = paletteItems[paletteCursor]
       if (chosen) {
+        recordPalettePick(chosen)
         hideCommandPalette()
         window.location.assign(chosen.href)
       }
@@ -399,6 +439,9 @@ function toggleCommandPalette() {
   list.addEventListener("click", (e) => {
     const row = e.target.closest(".gl-palette__row")
     if (row && row.dataset.href) {
+      const idx = parseInt(row.dataset.idx, 10)
+      const chosen = paletteItems[idx]
+      if (chosen) recordPalettePick(chosen)
       hideCommandPalette()
       window.location.assign(row.dataset.href)
     }
