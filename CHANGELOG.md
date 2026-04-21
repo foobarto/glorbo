@@ -137,6 +137,10 @@ change between minor versions. Pin exact versions in downstream usage.
   show aggregated tokens + cost + dispatch count across all
   this task's `agent.complete` audits for the current month.
   Follows the #246 rule: tokens always, cost `—` when zero.
+- **Goal progress bar (#253)** — `/companies/<co>/goals` each
+  goal card now renders a coloured progress bar showing
+  `done / total tasks · N%`. Colour state: muted (<50%),
+  amber (50-99%), green (100%).
 
 ### Changed
 

@@ -99,4 +99,15 @@ defmodule GlorboWeb.GoalsLiveTest do
     assert {:error, {:live_redirect, %{to: "/companies"}}} =
              live(conn, "/companies/bogus/goals")
   end
+
+  # #253 — goal progress bar based on done / total tasks per goal.
+  test "renders a progress bar with done/total ratio + %", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/goals")
+
+    # q4-launch has 2 tasks total, 1 done → 50% mid state.
+    assert html =~ "gl-goal-card__progress-fill"
+    assert html =~ "gl-goal-card__progress-fill--mid"
+    assert html =~ "1 / 2 done"
+    assert html =~ "50%"
+  end
 end

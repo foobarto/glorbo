@@ -3292,3 +3292,31 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   letter-spacing: 0.1em;
   font-size: 10px;
 }
+
+/* Goal progress bar (#253). */
+.gl-goal-card__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gl-goal-card__progress-bar {
+  height: 6px;
+  background: var(--gl-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gl-goal-card__progress-fill {
+  height: 100%;
+  background: var(--gl-accent);
+  transition: width 300ms ease-out;
+}
+.gl-goal-card__progress-fill--start { background: var(--gl-fg-subtle); }
+.gl-goal-card__progress-fill--mid   { background: var(--gl-warning); }
+.gl-goal-card__progress-fill--done  { background: var(--gl-accent); }
+.gl-goal-card__progress-label {
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}

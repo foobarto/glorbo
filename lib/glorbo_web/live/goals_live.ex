@@ -98,6 +98,24 @@ defmodule GlorboWeb.GoalsLive do
             </div>
           </header>
           <p :if={g.description != ""} class="gl-goal-card__desc gl-muted">{g.description}</p>
+          <div
+            :if={g.task_count > 0}
+            class="gl-goal-card__progress"
+            aria-label={"Goal progress: #{g.progress_pct}%"}
+          >
+            <div class="gl-goal-card__progress-bar">
+              <div
+                class={[
+                  "gl-goal-card__progress-fill",
+                  "gl-goal-card__progress-fill--" <> progress_state(g.progress_pct)
+                ]}
+                style={"width: #{g.progress_pct}%"}
+              />
+            </div>
+            <div class="gl-goal-card__progress-label gl-tabular">
+              {g.done_count} / {g.task_count} done · {g.progress_pct}%
+            </div>
+          </div>
           <div class="gl-goal-card__stats">
             <div>
               <span class="gl-muted">total</span>
@@ -243,16 +261,30 @@ defmodule GlorboWeb.GoalsLive do
     with_stats =
       Enum.map(goals, fn goal ->
         fms = Map.get(by_goal, goal.slug, [])
+        total = length(fms)
+        done = Enum.count(fms, &(to_string(&1["status"] || "todo") == "done"))
+        open = total - done
+
+        pct = if total == 0, do: 0, else: div(done * 100, total)
 
         Map.merge(goal, %{
-          task_count: length(fms),
-          open_count: Enum.count(fms, &(to_string(&1["status"] || "todo") != "done")),
+          task_count: total,
+          open_count: open,
+          done_count: done,
+          progress_pct: pct,
           breakdown: status_breakdown(fms)
         })
       end)
 
     {with_stats, unassigned}
   end
+
+  # Simple three-state bucketing for the progress bar colour —
+  # keeps the visual language consistent with CompanyCap + emergency
+  # stop strips. <50% "start", 50..99% "mid", 100% "done".
+  defp progress_state(pct) when pct >= 100, do: "done"
+  defp progress_state(pct) when pct >= 50, do: "mid"
+  defp progress_state(_), do: "start"
 
   defp status_breakdown(fms) do
     known = ["todo", "in-progress", "pending", "approved", "denied", "done"]
