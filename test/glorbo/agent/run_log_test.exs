@@ -154,6 +154,52 @@ defmodule Glorbo.Agent.RunLogTest do
       assert [run] = RunLog.group_runs(entries, "ceo")
       assert is_nil(run.tool_calls)
     end
+
+    # #246 — tokens always present on the complete-audit; cost is
+    # optional (only when pricing is known for the provider/model).
+    test "surfaces tokens + cost from complete-audit detail" do
+      entries = [
+        %{
+          "action" => "agent.complete",
+          "ts" => "2026-04-20T10:00:00Z",
+          "agent" => "ceo",
+          "invocation_id" => "tok-1",
+          "detail" => %{
+            "exit_status" => "0",
+            "prompt_tokens" => 1500,
+            "completion_tokens" => 250,
+            "cost_usd_cents" => 42
+          }
+        }
+      ]
+
+      assert [run] = RunLog.group_runs(entries, "ceo")
+      assert run.prompt_tokens == 1500
+      assert run.completion_tokens == 250
+      assert run.cost_usd_cents == 42
+    end
+
+    test "tokens can be present without cost (unknown pricing)" do
+      entries = [
+        %{
+          "action" => "agent.complete",
+          "ts" => "2026-04-20T10:00:00Z",
+          "agent" => "ceo",
+          "invocation_id" => "tok-2",
+          "detail" => %{
+            "exit_status" => "0",
+            "prompt_tokens" => 500,
+            "completion_tokens" => 50
+            # no cost_usd_cents key
+          }
+        }
+      ]
+
+      assert [run] = RunLog.group_runs(entries, "ceo")
+      assert run.prompt_tokens == 500
+      assert run.completion_tokens == 50
+      assert is_nil(run.cost_usd_cents)
+    end
   end
 
   describe "list/4" do

@@ -925,6 +925,12 @@ defmodule GlorboWeb.AgentLive do
                       <dd :if={run.tool_calls && run.tool_calls != %{}} class="gl-tabular">
                         {format_tool_calls(run.tool_calls)}
                       </dd>
+                      <dt>tokens</dt>
+                      <dd class="gl-tabular">
+                        {format_tokens(run.prompt_tokens, run.completion_tokens)}
+                      </dd>
+                      <dt>cost</dt>
+                      <dd class="gl-tabular">{format_cost(run.cost_usd_cents)}</dd>
                     </dl>
                     <div :if={run.reply_preview} class="gl-agent-runs__reply">
                       <div class="gl-muted">reply preview</div>
@@ -1751,6 +1757,24 @@ defmodule GlorboWeb.AgentLive do
     do: map |> Map.values() |> Enum.sum()
 
   defp tool_count_sum(_), do: 0
+
+  # #246 — always show tokens (even as "0 in / 0 out" for providers
+  # that don't expose usage — that's a correct "no data" signal).
+  defp format_tokens(nil, nil), do: "—"
+  defp format_tokens(p, c), do: "#{p || 0} in / #{c || 0} out"
+
+  # #246 — cost renders only when pricing is known for the
+  # provider+model pair. Nil = no pricing table match = "—".
+  defp format_cost(nil), do: "—"
+  defp format_cost(0), do: "—"
+
+  defp format_cost(cents) when is_integer(cents) do
+    whole = div(cents, 100)
+    cents_part = rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0")
+    "$#{whole}.#{cents_part}"
+  end
+
+  defp format_cost(_), do: "—"
 
   defp assign_task_url(company_slug, agent_slug) do
     return_to = "/companies/#{company_slug}/agents/#{agent_slug}"

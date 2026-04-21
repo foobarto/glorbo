@@ -25,6 +25,9 @@ defmodule Glorbo.Agent.RunLog do
           exit_status: String.t() | nil,
           reply_preview: String.t() | nil,
           tool_calls: %{String.t() => non_neg_integer()} | nil,
+          prompt_tokens: non_neg_integer() | nil,
+          completion_tokens: non_neg_integer() | nil,
+          cost_usd_cents: non_neg_integer() | nil,
           status: :complete | :running | :unknown
         }
 
@@ -113,6 +116,9 @@ defmodule Glorbo.Agent.RunLog do
       exit_status: nil,
       reply_preview: nil,
       tool_calls: nil,
+      prompt_tokens: nil,
+      completion_tokens: nil,
+      cost_usd_cents: nil,
       status: :unknown
     }
 
@@ -150,6 +156,9 @@ defmodule Glorbo.Agent.RunLog do
             exit_status: Map.get(detail, "exit_status") || run.exit_status,
             reply_preview: Map.get(detail, "reply_preview") || run.reply_preview,
             tool_calls: Map.get(detail, "tool_calls") || run.tool_calls,
+            prompt_tokens: Map.get(detail, "prompt_tokens") || run.prompt_tokens,
+            completion_tokens: Map.get(detail, "completion_tokens") || run.completion_tokens,
+            cost_usd_cents: Map.get(detail, "cost_usd_cents") || run.cost_usd_cents,
             status: :complete
         }
 

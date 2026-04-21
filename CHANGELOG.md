@@ -115,6 +115,11 @@ change between minor versions. Pin exact versions in downstream usage.
   when usage exceeded the cap; hard-stop enforcement
   (refuse the next re-dispatch if the prior one crossed the cap)
   is a follow-up.
+- **Tokens + cost on Runs tab (#246)** — `agent.complete` audit
+  events now carry `prompt_tokens`, `completion_tokens`, and
+  (when pricing is known) `cost_usd_cents`. AgentLive Runs tab
+  always shows `N in / M out` tokens; cost shows `$X.YY` when
+  pricing for the provider/model is available, `—` when not.
 
 ### Changed
 

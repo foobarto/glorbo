@@ -565,6 +565,7 @@ defmodule Glorbo.Agent.Dispatch do
   defp emit_complete_audit(spec, task, result, duration_ms, invocation_id, opts) do
     audit = audit_fun(opts)
     tool_calls = extract_tool_calls(result)
+    usage = Map.get(result, :usage) || %{}
 
     entry =
       %{
@@ -578,6 +579,8 @@ defmodule Glorbo.Agent.Dispatch do
         reply_preview: preview(result.reply)
       }
       |> maybe_put_tool_calls(tool_calls)
+      |> maybe_put_tokens(usage)
+      |> maybe_put_cost(usage, spec, task)
 
     audit.(spec.company, entry)
     :ok
@@ -585,6 +588,35 @@ defmodule Glorbo.Agent.Dispatch do
     e ->
       Logger.warning("dispatch complete audit emit failed: #{Exception.message(e)}")
       :ok
+  end
+
+  # #246 — surface tokens + cost on agent.complete so RunLog /
+  # AgentLive can render them. Always emit tokens (even as 0 — a
+  # non-usage-parsing provider will show `0 in / 0 out`, which is
+  # a correct "no data" signal). Emit cost ONLY when we can
+  # compute it from the model pricing table; absence = no price
+  # known, which the UI renders as "—".
+  defp maybe_put_tokens(entry, usage) do
+    prompt = Map.get(usage, :prompt_tokens) || 0
+    completion = Map.get(usage, :completion_tokens) || 0
+    Map.merge(entry, %{prompt_tokens: prompt, completion_tokens: completion})
+  end
+
+  defp maybe_put_cost(entry, usage, spec, task) do
+    cents = cost_cents_from_usage(usage, spec)
+    model = Map.get(usage, :model) || effective_model(spec, task)
+
+    if cents > 0 or pricing_known?(spec.provider, model) do
+      Map.put(entry, :cost_usd_cents, cents)
+    else
+      entry
+    end
+  end
+
+  defp pricing_known?(provider, model) do
+    Glorbo.Budget.Ledger.compute_cost_cents(provider, model, 1, 1) > 0
+  rescue
+    _ -> false
   end
 
   # paperclip-ux-gaps §2 — surface tool-call counts on agent.complete
