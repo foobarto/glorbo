@@ -1556,8 +1556,10 @@ button { font-family: inherit; font-size: inherit; }
 .gl-task-card__header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   font-size: 10px;
+  min-width: 0;
 }
 .gl-task-card__id { color: var(--gl-fg-subtle); }
 .gl-task-card__project { font-size: 10px; }
@@ -1579,6 +1581,17 @@ button { font-family: inherit; font-size: inherit; }
   background: color-mix(in oklch, var(--gl-accent) 15%, transparent);
   white-space: nowrap;
   font-family: var(--gl-ff-mono);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.gl-task-card__recurring-text {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
 }
 .gl-task-card__recurring ~ .gl-task-card__approval-tag { margin-left: 4px; }
 .gl-task-card__title {

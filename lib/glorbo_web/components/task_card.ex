@@ -81,7 +81,7 @@ defmodule GlorboWeb.Components.TaskCard do
           class="gl-task-card__recurring"
           title={"Recurring: " <> (Map.get(@task, :schedule) || "")}
         >
-          ↻ {Map.get(@task, :schedule)}
+          ↻ <span class="gl-task-card__recurring-text">{Map.get(@task, :schedule)}</span>
         </span>
       </header>
       <div class="gl-task-card__title">{@task.title || @task.task_id}</div>
