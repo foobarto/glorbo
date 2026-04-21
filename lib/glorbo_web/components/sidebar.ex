@@ -59,6 +59,7 @@ defmodule GlorboWeb.Components.Sidebar do
       |> assign(:focus, focus)
       |> assign(:agents, list_agents(focus))
       |> assign(:projects, list_projects(focus))
+      |> assign(:approvals_pending, count_pending_approvals(focus))
 
     ~H"""
     <aside class="gl-sidebar">
@@ -76,6 +77,13 @@ defmodule GlorboWeb.Components.Sidebar do
         >
           <span class="gl-sidebar__glyph" aria-hidden="true">{glyph}</span>
           <span class="gl-sidebar__label">{label}</span>
+          <span
+            :if={id == :approvals and @approvals_pending > 0}
+            class="gl-sidebar__badge"
+            aria-label={"#{@approvals_pending} pending approvals"}
+          >
+            {@approvals_pending}
+          </span>
         </.link>
       </nav>
 
@@ -215,6 +223,40 @@ defmodule GlorboWeb.Components.Sidebar do
   end
 
   defp short_provider(_), do: ""
+
+  # #256 — count awaiting-approval sentinels for the focused company.
+  # Cheap enough to run on every sidebar render (scans one glob per
+  # agent); returns 0 for any IO error so we stay silent on startup.
+  defp count_pending_approvals(nil), do: 0
+
+  defp count_pending_approvals(company) when is_binary(company) do
+    base = Glorbo.Filesystem.Hierarchy.default_root()
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, agents} ->
+        Enum.reduce(agents, 0, &(count_sentinels_in(agents_dir, &1) + &2))
+
+      _ ->
+        0
+    end
+  rescue
+    _ -> 0
+  end
+
+  defp count_sentinels_in(agents_dir, agent_slug) do
+    state_dir = Path.join([agents_dir, agent_slug, "state"])
+
+    case File.ls(state_dir) do
+      {:ok, files} ->
+        Enum.count(files, fn f ->
+          String.starts_with?(f, "awaiting-approval-") and String.ends_with?(f, ".md")
+        end)
+
+      _ ->
+        0
+    end
+  end
 
   defp first_company do
     base = Glorbo.Filesystem.Hierarchy.default_root()

@@ -3345,3 +3345,19 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-goals-row__progress-fill--start { background: var(--gl-fg-subtle); }
 .gl-goals-row__progress-fill--mid   { background: var(--gl-warning); }
 .gl-goals-row__progress-fill--done  { background: var(--gl-accent); }
+
+/* Sidebar pending-approval count badge (#256). */
+.gl-sidebar__badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  height: 16px;
+  text-align: center;
+  background: var(--gl-warning);
+  color: var(--gl-bg);
+  border-radius: 8px;
+  font-weight: 600;
+  font-family: var(--gl-ff-mono);
+}
