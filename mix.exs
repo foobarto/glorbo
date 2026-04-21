@@ -137,7 +137,13 @@ defmodule Glorbo.MixProject do
       "assets.setup": ["esbuild.install --if-missing"],
       "assets.build": ["esbuild glorbo"],
       "assets.deploy": ["esbuild glorbo --minify", "phx.digest"],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "glorbo.docs.file_formats --check",
+        "test"
+      ]
     ]
   end
 end

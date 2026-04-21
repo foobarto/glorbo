@@ -10,6 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — mix glorbo.docs.file_formats + precommit wiring (R26.2b)
+
+- **New mix task** `glorbo.docs.file_formats` generates one
+  `docs/file-formats/<kind>.md` page per registered
+  `Glorbo.FileSpec` module. Content is synthesised from each
+  spec's `docs/0` (title, summary, examples),
+  `frontmatter_schema/0` (required/optional keys, enums,
+  patterns, caps), and `canonical_key_order/0`. Plus an index
+  `docs/file-formats/README.md`.
+- **`--check` mode** lists any drift between the generator's
+  output and the committed tree, and raises `Mix.Error` when
+  drift is detected — wired into `mix precommit` so spec
+  changes must include regenerated docs in the same commit.
+- **21 generated pages** shipped (20 file-spec kinds + README).
+  Every page carries a machine-generated banner and links back
+  to its source `lib/glorbo/file_spec/<name>.ex`.
+- 3 new regression tests: every-kind coverage, generator
+  idempotence, `--check` drift detection.
+- Closes the GEP-25 R26.2 umbrella.
+
 ### Added — bench-softdev Python + Go fixtures (#309 partial)
 
 - `priv/templates/companies/bench-softdev/` now ships three
