@@ -1,3 +1,7 @@
+> **ARCHIVED — 2026-04-21.** This was the autonomous-session log for
+> the v0.0.4 development round. Decisions recorded here have either
+> shipped or been superseded by GEPs. Kept for historical reference.
+
 # user.md — autonomous-session log
 
 Per your instruction: "make autonomous design choices and proceed to

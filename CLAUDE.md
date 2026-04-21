@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Glorbo shipped **v0.0.2** (Milestone 01 — CLI-agent runtime): Phoenix/LiveView dashboard, SQLite-backed Ecto, `glorbo` CLI (`up`/`down`/`doctor`/`init`/backup/restore), and Burrito single-binary release. Source lives under `lib/` (`glorbo`, `glorbo_web`). Agents are CLI-tool subprocesses (`claude`, `gemini`, `codex`) run under `bwrap`; no Python runtime and no container runtime — see GEP-5 D6 for the Podman-dropped decision.
+Glorbo is at **v0.0.4** (pre-1.0). Milestone 01 (CLI-agent runtime) shipped in v0.0.2; v0.0.3 added the provider registry + dashboard UX sweep; v0.0.4 added agent memory (GEP-21), egress smart mode (GEP-23 Phases 1–3), file-format specs + validator + formatter (GEP-25), benchmark templates (GEP-26 Phase A), macOS support (R30), and sandbox path requests (GEP-27). Source lives under `lib/` (`glorbo`, `glorbo_web`). Agents are CLI-tool subprocesses (`claude`, `gemini`, `codex`) run under `bwrap` (Linux) or unsandboxed (macOS fallback); no Python runtime and no container runtime — see GEP-5 D6 for the Podman-dropped decision.
 
 `DESIGN.md` is the authoritative architectural spec; `README.md` is the user-facing pitch. When they disagree, `DESIGN.md` wins. `CHANGELOG.md` tracks what has actually shipped.
 

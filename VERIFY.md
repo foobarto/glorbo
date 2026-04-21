@@ -6,7 +6,7 @@ Every tagged release of Glorbo is signed with [Sigstore Cosign](https://www.sigs
 
 ```bash
 # 1. Download the binary, the checksums, and the signature bundle
-VERSION=v0.0.2
+VERSION=v0.0.4
 ARCH=x86_64   # or aarch64
 curl -LO https://github.com/foobarto/glorbo/releases/download/$VERSION/glorbo-linux-$ARCH
 curl -LO https://github.com/foobarto/glorbo/releases/download/$VERSION/SHA256SUMS

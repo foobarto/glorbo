@@ -260,10 +260,17 @@ chmod +x ~/.local/bin/glorbo
 glorbo init
 ```
 
-**macOS** builds are on the roadmap — bwrap + inotify don't map 1:1
-to macOS primitives, so early macOS support will degrade
-gracefully (unsandboxed agent execution) with explicit caveats.
-For now, Linux only.
+**macOS** (Intel + Apple Silicon) binaries ship alongside Linux
+builds since v0.0.4 (R30). `bwrap` is not available on macOS, so
+agent execution falls back to unsandboxed mode with a one-time
+`agent.sandbox_unavailable` audit warning per company boot. All
+other features (dashboard, routing, scheduling, approval gates)
+work unchanged. Install via the same Homebrew tap:
+
+```bash
+brew tap foobarto/tap
+brew install glorbo
+```
 
 **Windows** is supported via [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).
 The Linux binaries above run unchanged inside a WSL2 distro
@@ -417,7 +424,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `DESIGN.md` §10 are wired; the shipped surface as of v0.0.3:
+All verbs from `DESIGN.md` §10 are wired; the shipped surface as of v0.0.4:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -611,10 +618,62 @@ runtime):
 - Tests: 895/895 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
-Pending for a later release: `api-only` netns + nftables egress
-hardening; the wider GEP-9 (MCP/ACP protocol integration) and
-GEP-17 (cross-OS sandbox + watcher) design work; optional
-GEP-18 agentcompanies/v1 schema convergence.
+**v0.0.4** shipped 2026-04-21:
+
+- **GEP-20 — Director dashboard UX sweep** ✓ — unified `/inbox`
+  (Mine/Recent/All/Archive), `/goals` page with progress bars,
+  `/skills` marketplace, per-goal Kanban filter, agent config
+  edit form, 14-day rollup strip, create-company wizard, two-letter
+  actor avatars, inline slug-availability probe, `⌘K` command
+  palette, tool-call counts on Runs tab, activity sentences on
+  audit rows.
+- **GEP-21 — file-based agent memory** ✓ — `compose/3` reads
+  `memory/` into prompts; outbox → Router → atomic memory write
+  + MEMORY.md index upsert; Memory tab on AgentLive; E2E live-model
+  tests against LM Studio qwen.
+- **GEP-23 — egress proxy with smart mode** ✓ (Phases 1–3) —
+  `SmartClassifier` rule-based + LLM-fallback host classifier;
+  `egress:` frontmatter block on AGENT.md; per-agent `network_allow:`
+  extensions; Proxy `classifier_fun:` hook; supervisor composes
+  per-company classifier at boot.
+- **GEP-24 — task scheduler firing** ✓ — `schedule:` frontmatter
+  (cron or `hourly`/`daily`/`weekly`/`monthly`) actually fires
+  scheduled dispatches via per-company `TaskScheduler`.
+- **GEP-25 — file format specs + validator + formatter** ✓ —
+  22 `FileSpec` kinds, `glorbo validate`, `glorbo fmt`,
+  `mix glorbo.docs.file_formats` with `--check` wired into
+  `mix precommit`.
+- **GEP-26 — benchmark templates** ✓ (Phase A) — `bench-softdev`
+  (Elixir/Python/Go), `bench-tech-blog`, `bench-scifi-publisher`;
+  `glorbo new company --template`; `glorbo bench list`.
+- **GEP-27 — agent sandbox path requests** ✓ — agents request
+  external path access via outbox sentinel; director approves
+  with per-path mode downgrade; task-scoped bwrap mount under
+  `/external/`; revoked automatically after dispatch.
+- **R29 — Homebrew tap** ✓ — `brew install foobarto/tap/glorbo`
+  with Linux x86_64 + aarch64 binaries.
+- **R30 — macOS builds** ✓ — Burrito targets `macos_x86_64` +
+  `macos_arm64`; CI matrix on `macos-13` + `macos-latest`;
+  `Glorbo.Sandbox.Unsandboxed` fallback; `glorbo doctor` OS-aware
+  reclassification.
+- **Director safety + speed** — emergency stop, cost ledger
+  (`/costs`), per-company + per-task budget caps, session
+  resilience (auto-retry on timeout / missing reply), audit CSV
+  export, date-range filter, task history panel, goal progress
+  bar, audit → task conversion, scheduled-task "next fire"
+  indicator, natural-language heartbeat parser, `Ctrl+K` audit
+  search, per-task model/provider override, agent model aliases,
+  brain dump (`g b`), recurring tasks (`↻` pill), channel log
+  rotation + archive browser, named autonomy tiers.
+- Tests: 1436/1436 green · `mix credo --strict` clean ·
+  `mix gep.validate` clean
+
+Pending for a later release: GEP-23 Phase 4 (real LLM dispatch
+for smart-mode classifier + director-approval sentinels for
+`:unknown`); GEP-26 Phase B (multi-provider blind A/B scoring
+UI); `api-only` netns + nftables egress hardening; the wider
+GEP-9 (MCP/ACP protocol integration); optional GEP-18
+agentcompanies/v1 schema convergence.
 
 Active design work lives in `docs/geps/`. Historical phase plans
 are in `git log` for anyone who needs the archaeology.

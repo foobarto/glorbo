@@ -1,3 +1,10 @@
+> **ARCHIVED — 2026-04-21.** This plan captured the 2026-04-20 UX parity
+> sprint against paperclip. The work it described has either shipped
+> (GEP-20 dashboard sweep, GEP-21 memory, GEP-23 smart mode, GEP-25
+> file specs, GEP-26 benchmarks, GEP-27 path requests) or been
+> superseded by newer GEPs. Kept for historical reference; active
+> planning lives in `docs/geps/` and `CHANGELOG.md`.
+
 # PLAN — Glorbo UX parity with paperclip
 
 _Written 2026-04-20 from the SoloSaaSHunter paperclip benchmark
