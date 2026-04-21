@@ -10,6 +10,34 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-23 smart-mode Phase 2: classifier hook in Network.Proxy (#320)
+
+- **`Glorbo.Network.Proxy` gains an optional `classifier_fun:`
+  start-option.** Unlisted hosts — previously an unconditional
+  403 — now flow through the classifier when one is set. Allow
+  verdicts open the tunnel to upstream; deny and unknown both
+  respond 403 (Phase 3 will make `:unknown` surface a director-
+  approval sentinel instead).
+- **Fail-safe.** A classifier function that raises, exits, or
+  returns anything unexpected is treated as `:unknown` — a
+  broken classifier never silently allows unknown hosts.
+- **Backwards-compatible.** Existing callers that don't pass
+  `classifier_fun:` keep the legacy allowlist-only behaviour
+  bit-for-bit. `Glorbo.Company.Supervisor`'s proxy composition
+  untouched for now; wiring per-agent `egress:` blocks (from
+  Phase 1) into the supervisor's `classifier_fun` factory is the
+  Phase 3 step.
+- Proxy state map refactored: the `allowlist` MapSet is now
+  under `state.policy.allowlist` alongside
+  `state.policy.classifier_fun`; `Glorbo.Company.SupervisorTest`
+  updated accordingly (4 assertions renamed from
+  `state.allowlist` to `state.policy.allowlist`).
+- 5 new regression tests in `test/glorbo/network/proxy_test.exs`
+  covering: allow-verdict tunnel attempt, deny-verdict 403,
+  unknown-verdict 403, classifier-raise fail-safe, and that the
+  classifier is NOT consulted when the host is already in the
+  allowlist.
+
 ### Added — GEP-23 smart-mode Phase 1 (#287)
 
 First slice of GEP-23 smart mode: the pure classifier module and

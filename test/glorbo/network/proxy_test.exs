@@ -253,4 +253,118 @@ defmodule Glorbo.Network.ProxyTest do
       refute response =~ "403 Forbidden"
     end
   end
+
+  # GEP-23 Phase 2 (#320). Classifier runs only for hosts outside
+  # the company allowlist; allow/deny/unknown map to upstream/
+  # 403/403 respectively, and classifier crashes fail safe to 403.
+  describe "classifier fallthrough (GEP-23 Phase 2)" do
+    test "allow verdict opens tunnel attempt to upstream" do
+      classifier = fn host, 443 ->
+        if host == "docs.example.com", do: {:allow, :smart_allow}, else: {:deny, :smart_deny}
+      end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT docs.example.com:443 HTTP/1.1\r\n\r\n")
+
+      # Classifier said :allow, so the proxy tries upstream.
+      # docs.example.com isn't necessarily reachable from the test
+      # harness, so the likely outcome is 502 Bad Gateway — but
+      # NOT 403.
+      refute response =~ "403 Forbidden"
+    end
+
+    test "deny verdict returns 403" do
+      classifier = fn _host, _port -> {:deny, :smart_deny} end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT denied.example.com:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "403 Forbidden"
+    end
+
+    test "unknown verdict returns 403 (pending director-sentinel in Phase 3)" do
+      classifier = fn _host, _port -> {:unknown, :smart_unknown} end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT mystery.example.com:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "403 Forbidden"
+    end
+
+    test "classifier raising is treated as :unknown → 403" do
+      classifier = fn _host, _port -> raise "classifier bug" end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT broken.example.com:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "403 Forbidden"
+    end
+
+    test "classifier is NOT consulted for hosts already in the allowlist" do
+      # Classifier would raise, but the host is in the allowlist, so the
+      # classifier must never run.
+      classifier = fn _host, _port -> raise "should not be called" end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> ["trusted.example.com"] end,
+          classifier_fun: classifier
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT trusted.example.com:443 HTTP/1.1\r\n\r\n")
+
+      # Allowlist hit → upstream connect → 502 in the test harness.
+      refute response =~ "403 Forbidden"
+    end
+  end
 end

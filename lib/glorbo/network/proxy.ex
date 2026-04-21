@@ -63,7 +63,24 @@ defmodule Glorbo.Network.Proxy do
           company: String.t(),
           port: non_neg_integer(),
           allowlist_fun: (String.t() -> [String.t()]),
-          task_supervisor: GenServer.name() | pid()
+          task_supervisor: GenServer.name() | pid(),
+          # GEP-23 Phase 2: optional smart-mode fallthrough. When set,
+          # hosts outside the company allowlist are passed to this
+          # function for classification before the proxy responds.
+          # `classifier_fun` signature:
+          #
+          #   (host :: String.t(), port :: pos_integer()) ::
+          #     {:allow, reason :: atom()}
+          #     | {:deny, reason :: atom()}
+          #     | {:unknown, reason :: atom()}
+          #
+          # `:allow` verdicts open the tunnel; `:deny` and `:unknown`
+          # both respond 403 (Phase 3 adds director-approval sentinels
+          # for `:unknown`). Missing = legacy allowlist-only behaviour.
+          classifier_fun:
+            (String.t(), pos_integer() ->
+               {:allow, atom()} | {:deny, atom()} | {:unknown, atom()})
+            | nil
         ]
 
   # ---------------------------------------------------------------------------
@@ -103,6 +120,10 @@ defmodule Glorbo.Network.Proxy do
 
     allowlist = allowlist_fun.(company) |> Enum.map(&String.downcase/1) |> MapSet.new()
 
+    classifier_fun = Keyword.get(opts, :classifier_fun)
+
+    policy = %{allowlist: allowlist, classifier_fun: classifier_fun}
+
     {:ok, listen_sock} =
       :gen_tcp.listen(requested_port, [
         :binary,
@@ -129,14 +150,14 @@ defmodule Glorbo.Network.Proxy do
           {ts, false}
       end
 
-    acceptor_ref = start_acceptor(listen_sock, allowlist, task_sup)
+    acceptor_ref = start_acceptor(listen_sock, policy, task_sup)
 
     {:ok, bound_port} = :inet.port(listen_sock)
 
     {:ok,
      %{
        company: company,
-       allowlist: allowlist,
+       policy: policy,
        listen_sock: listen_sock,
        task_sup: task_sup,
        owns_task_sup?: owns_task_sup?,
@@ -177,7 +198,7 @@ defmodule Glorbo.Network.Proxy do
       Logger.warning("[network.proxy] acceptor died: #{inspect(reason)} — restarting acceptor")
     end
 
-    new_ref = start_acceptor(state.listen_sock, state.allowlist, state.task_sup)
+    new_ref = start_acceptor(state.listen_sock, state.policy, state.task_sup)
     {:noreply, %{state | acceptor_ref: new_ref}}
   end
 
@@ -197,10 +218,10 @@ defmodule Glorbo.Network.Proxy do
   # Spawn the acceptor task under the Task.Supervisor using async_nolink so a
   # crash reaches us as a :DOWN (instead of an EXIT that would kill the
   # GenServer). Returns the ref we monitor for re-arming.
-  defp start_acceptor(listen_sock, allowlist, task_sup) do
+  defp start_acceptor(listen_sock, policy, task_sup) do
     task =
       Task.Supervisor.async_nolink(task_sup, fn ->
-        accept_loop(listen_sock, allowlist, task_sup)
+        accept_loop(listen_sock, policy, task_sup)
       end)
 
     task.ref
@@ -210,7 +231,7 @@ defmodule Glorbo.Network.Proxy do
   # Acceptor loop
   # ---------------------------------------------------------------------------
 
-  defp accept_loop(listen_sock, allowlist, task_sup) do
+  defp accept_loop(listen_sock, policy, task_sup) do
     case :gen_tcp.accept(listen_sock) do
       {:ok, client_sock} ->
         # async_nolink — a crash in handle_connection reaches the Proxy as a
@@ -219,10 +240,10 @@ defmodule Glorbo.Network.Proxy do
         # acceptor and silently kill new-connection handling.
         _task =
           Task.Supervisor.async_nolink(task_sup, fn ->
-            handle_connection(client_sock, allowlist, task_sup)
+            handle_connection(client_sock, policy, task_sup)
           end)
 
-        accept_loop(listen_sock, allowlist, task_sup)
+        accept_loop(listen_sock, policy, task_sup)
 
       {:error, :closed} ->
         :ok
@@ -237,10 +258,10 @@ defmodule Glorbo.Network.Proxy do
   # Connection handler
   # ---------------------------------------------------------------------------
 
-  defp handle_connection(client_sock, allowlist, task_sup) do
+  defp handle_connection(client_sock, policy, task_sup) do
     case read_request_head(client_sock, <<>>) do
       {:ok, head} ->
-        dispatch_request(head, client_sock, allowlist, task_sup)
+        dispatch_request(head, client_sock, policy, task_sup)
 
       {:error, reason} ->
         Logger.debug("[network.proxy] read_request_head failed: #{inspect(reason)}")
@@ -274,12 +295,12 @@ defmodule Glorbo.Network.Proxy do
     end
   end
 
-  defp dispatch_request(head, client_sock, allowlist, task_sup) do
+  defp dispatch_request(head, client_sock, policy, task_sup) do
     [first_line | _rest] = String.split(head, "\r\n", parts: 2)
 
     case parse_connect_line(first_line) do
       {:ok, host, port} ->
-        evaluate_and_tunnel(host, port, client_sock, allowlist, task_sup)
+        evaluate_and_tunnel(host, port, client_sock, policy, task_sup)
 
       {:error, :not_connect} ->
         write_response(client_sock, "HTTP/1.1 405 Method Not Allowed\r\n\r\n")
@@ -304,21 +325,71 @@ defmodule Glorbo.Network.Proxy do
 
   defp parse_connect_line(_), do: {:error, :not_connect}
 
-  defp evaluate_and_tunnel(host, port, client_sock, allowlist, task_sup) do
+  defp evaluate_and_tunnel(host, port, client_sock, policy, task_sup) do
     cond do
       port != 443 ->
         Logger.info("[network.proxy] reject non-443 CONNECT host=#{host} port=#{port}")
         write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
         safe_close(client_sock)
 
-      not MapSet.member?(allowlist, host) ->
+      MapSet.member?(policy.allowlist, host) ->
+        open_and_splice(host, port, client_sock, task_sup)
+
+      true ->
+        classify_unlisted(host, port, client_sock, policy, task_sup)
+    end
+  end
+
+  # Host is not in the company allowlist. Without a classifier this
+  # is the historic behaviour — 403 Forbidden. With a classifier
+  # (GEP-23 Phase 2+), hand the decision off; allow opens the
+  # tunnel, deny/unknown both 403 for now. Phase 3 makes :unknown
+  # surface a director approval sentinel instead of an outright 403.
+  defp classify_unlisted(host, port, client_sock, policy, task_sup) do
+    case policy.classifier_fun do
+      nil ->
         Logger.info("[network.proxy] reject host-not-in-allowlist host=#{host}")
         write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
         safe_close(client_sock)
 
-      true ->
-        open_and_splice(host, port, client_sock, task_sup)
+      fun when is_function(fun, 2) ->
+        case safe_classify(fun, host, port) do
+          {:allow, reason} ->
+            Logger.info("[network.proxy] smart-allow host=#{host} reason=#{reason}")
+            open_and_splice(host, port, client_sock, task_sup)
+
+          {:deny, reason} ->
+            Logger.info("[network.proxy] smart-deny host=#{host} reason=#{reason}")
+            write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
+            safe_close(client_sock)
+
+          {:unknown, reason} ->
+            Logger.info(
+              "[network.proxy] smart-unknown host=#{host} reason=#{reason} (treated as deny pending director sentinel)"
+            )
+
+            write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
+            safe_close(client_sock)
+        end
     end
+  end
+
+  # Treat any classifier crash as `:unknown` — fail-safe so a broken
+  # classifier never results in silently allowing unknown hosts.
+  defp safe_classify(fun, host, port) do
+    fun.(host, port)
+  rescue
+    e ->
+      Logger.warning("[network.proxy] classifier raised: #{inspect(e)} — treating as :unknown")
+
+      {:unknown, :classifier_raised}
+  catch
+    :exit, reason ->
+      Logger.warning(
+        "[network.proxy] classifier exited: #{inspect(reason)} — treating as :unknown"
+      )
+
+      {:unknown, :classifier_exit}
   end
 
   defp open_and_splice(host, port, client_sock, task_sup) do

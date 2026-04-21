@@ -250,13 +250,13 @@ defmodule Glorbo.Company.SupervisorTest do
 
       state = :sys.get_state(proxy_pid)
 
-      assert MapSet.member?(state.allowlist, "grafana.internal"),
-             "expected grafana.internal in #{inspect(MapSet.to_list(state.allowlist))}"
+      assert MapSet.member?(state.policy.allowlist, "grafana.internal"),
+             "expected grafana.internal in #{inspect(MapSet.to_list(state.policy.allowlist))}"
 
-      assert MapSet.member?(state.allowlist, "ops.example.com")
+      assert MapSet.member?(state.policy.allowlist, "ops.example.com")
 
       # Base allowlist still present — api.anthropic.com comes with claude-code.
-      assert MapSet.member?(state.allowlist, "api.anthropic.com")
+      assert MapSet.member?(state.policy.allowlist, "api.anthropic.com")
     end
 
     test "invalid hosts silently filtered (empty strings, schemes, wildcards)",
@@ -290,7 +290,7 @@ defmodule Glorbo.Company.SupervisorTest do
         end)
 
       state = :sys.get_state(proxy_pid)
-      hosts = MapSet.to_list(state.allowlist)
+      hosts = MapSet.to_list(state.policy.allowlist)
 
       assert "valid.example.com" in hosts
       refute "" in hosts
@@ -325,7 +325,7 @@ defmodule Glorbo.Company.SupervisorTest do
       state = :sys.get_state(proxy_pid)
 
       # Base still present.
-      assert MapSet.member?(state.allowlist, "api.anthropic.com")
+      assert MapSet.member?(state.policy.allowlist, "api.anthropic.com")
     end
 
     test "multiple agents' network_allow unions into a single allowlist",
@@ -362,8 +362,8 @@ defmodule Glorbo.Company.SupervisorTest do
 
       state = :sys.get_state(proxy_pid)
 
-      assert MapSet.member?(state.allowlist, "grafana.internal")
-      assert MapSet.member?(state.allowlist, "datadog.example.com")
+      assert MapSet.member?(state.policy.allowlist, "grafana.internal")
+      assert MapSet.member?(state.policy.allowlist, "datadog.example.com")
     end
   end
 end
