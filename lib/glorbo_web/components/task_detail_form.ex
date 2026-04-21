@@ -136,7 +136,9 @@ defmodule GlorboWeb.Components.TaskDetailForm do
             <li :for={c <- @task.comments} class="gl-task-comments__row">
               <span class="gl-task-comments__author">{c.author}</span>
               <span class="gl-muted gl-task-comments__ts">{c.timestamp}</span>
-              <div class="gl-task-comments__body">{c.body}</div>
+              <div class="gl-task-comments__body">
+                {Phoenix.HTML.raw(linkify_body(c.body, @company_slug))}
+              </div>
             </li>
           </ul>
           <p :if={@task.comments == []} class="gl-muted gl-task-comments__empty">
@@ -166,4 +168,20 @@ defmodule GlorboWeb.Components.TaskDetailForm do
     </form>
     """
   end
+
+  # #276 — linkify comment body task-IDs. Escape first to prevent
+  # XSS from user-supplied comment text, then run the linkifier so
+  # `abc-02` becomes a clickable anchor to the kanban deep-link
+  # (consistent with how channel messages handle task-ID tokens).
+  # Returns a raw-safe string; callers wrap in `Phoenix.HTML.raw/1`.
+  defp linkify_body(body, company) when is_binary(body) and is_binary(company) do
+    escaped =
+      body
+      |> Phoenix.HTML.html_escape()
+      |> Phoenix.HTML.safe_to_string()
+
+    GlorboWeb.Markdown.Linkify.rewrite(escaped, company)
+  end
+
+  defp linkify_body(_, _), do: ""
 end

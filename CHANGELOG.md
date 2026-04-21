@@ -196,6 +196,20 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 12
+
+- **Task-ID autolinking in comments (#276).** Task-ID tokens
+  like `abc-02` / `glorbo-7` in TaskLive / Kanban-shelf comment
+  bodies now render as clickable anchors to the kanban
+  deep-link (`?task=projects/<proj>/tasks/<id>.md`), consistent
+  with how channel messages handle the same tokens via
+  `GlorboWeb.Markdown.Linkify`. XSS-safe: comment body is
+  HTML-escaped before the linkifier runs. Directors cross-
+  referencing tasks in review comments get one-click
+  navigation instead of having to type the URL. 4 new unit
+  tests on the shared TaskDetailForm component cover plain
+  text, single / multiple task-IDs, and HTML-escape behaviour.
+
 ### Added — round 11
 
 - **Kanban filter chip bar (#275).** When any of the kanban

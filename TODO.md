@@ -88,3 +88,4 @@ it's been in CHANGELOG for a cycle.
 - [x] Modal close-button hover affordance
 - [x] #274 Round 10: TaskLive stuck-on banner
 - [x] #275 Round 11: Kanban filter chip bar (project/goal/who)
+- [x] #276 Round 12: Task-ID autolinking in comments
