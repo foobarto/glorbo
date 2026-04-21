@@ -14,7 +14,7 @@ defmodule Glorbo.Security.ACLMapper do
   `String.to_atom` or `String.to_existing_atom` is ever called on user input.
   """
 
-  @whitelisted_resources ~w(projects chat agents tasks)
+  @whitelisted_resources ~w(projects chat agents tasks proposals)
 
   @type permission :: {resource :: String.t(), action :: String.t(), scope :: String.t()}
   @type acl_mode :: :rwx | :rx | :r
@@ -130,6 +130,12 @@ defmodule Glorbo.Security.ACLMapper do
 
   defp permission_to_acl(username, {"tasks", "update", scope}),
     do: [{username, :rwx, "projects/#{scope}/tasks"}]
+
+  defp permission_to_acl(username, {"proposals", "write", "*"}),
+    do: [{username, :rwx, "proposals"}]
+
+  defp permission_to_acl(username, {"proposals", "read", "*"}),
+    do: [{username, :rx, "proposals"}]
 
   # Catch-all for any other permission — no ACL entry
   defp permission_to_acl(_username, _perm), do: []

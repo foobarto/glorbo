@@ -823,7 +823,31 @@ defmodule Glorbo.Agent.Server do
   defp resolve_task(_state, _trigger, %{} = explicit_task), do: explicit_task
 
   defp resolve_task(state, trigger, nil) do
-    call_inbox_scan(state, trigger)
+    case call_inbox_scan(state, trigger) do
+      nil when trigger == :heartbeat ->
+        heartbeat_task(state)
+
+      task ->
+        task
+    end
+  end
+
+  # GEP-14: when inbox is empty on a heartbeat wake, synthesise a minimal
+  # task so the agent still dispatches.  HEARTBEAT.md lives in the system
+  # prompt (read_system_prompt), not the task body.
+  defp heartbeat_task(state) do
+    %{spec: spec, base: base} = state
+    company_root = Path.join([base, "companies", spec.company])
+    hb_path = Path.join([company_root, "agents", spec.slug, "HEARTBEAT.md"])
+
+    if File.exists?(hb_path) do
+      %{
+        task_id: "heartbeat",
+        task_path: nil,
+        prompt: compose_prompt(spec, base, nil, :heartbeat),
+        trigger: :heartbeat
+      }
+    end
   end
 
   # Call the inbox-scan fun compatibly with three signatures:
@@ -915,10 +939,19 @@ defmodule Glorbo.Agent.Server do
   # this, the agent only sees the raw inbox body ("Please respond to
   # chat!") with zero context about who it is or what it can do.
   defp compose_prompt(spec, base, inbox_path, trigger) do
-    body = read_or_empty(inbox_path)
+    body = if inbox_path, do: read_or_empty(inbox_path), else: ""
     system = read_system_prompt(spec, base)
-    source_rel = Path.relative_to(inbox_path, Path.join([base, "companies", spec.company]))
-    reply_hint = reply_routing_hint(inbox_path)
+
+    source_rel =
+      if inbox_path,
+        do: Path.relative_to(inbox_path, Path.join([base, "companies", spec.company])),
+        else: "heartbeat"
+
+    reply_hint =
+      if inbox_path,
+        do: reply_routing_hint(inbox_path),
+        else: "Reply lands wherever the triggering message specifies."
+
     memory = compose_memory_section(spec, base)
 
     """
@@ -1053,6 +1086,13 @@ defmodule Glorbo.Agent.Server do
   defp permission_to_bullet({"agents", "read", _}),
     do: "- `/agents/` (ro) — sibling agents' public identity"
 
+  defp permission_to_bullet({"proposals", "read", _}),
+    do: "- `/proposals/` (ro) — structural proposals visible to this agent (GEP-28)"
+
+  defp permission_to_bullet({"proposals", "write", _}),
+    do:
+      "- `/proposals/` (rw) — write `proposals/<id>.md` to request hiring/firing/budget/project changes (GEP-28)"
+
   defp permission_to_bullet(_), do: nil
 
   defp format_reply_hint(%{"channel" => ch}) when is_binary(ch) and ch != "" do
@@ -1089,13 +1129,33 @@ defmodule Glorbo.Agent.Server do
   defp format_reply_hint(_), do: "Reply lands wherever the triggering message specifies."
 
   defp read_system_prompt(spec, base) do
-    [base, "companies", spec.company, "agents", spec.slug, "AGENT.md"]
-    |> Path.join()
-    |> File.read()
-    |> case do
-      {:ok, content} -> strip_frontmatter(content)
-      _ -> "You are `#{spec.slug}` in company `#{spec.company}`."
-    end
+    agent_dir = Path.join([base, "companies", spec.company, "agents", spec.slug])
+
+    agent_md =
+      Path.join(agent_dir, "AGENT.md")
+      |> File.read()
+      |> case do
+        {:ok, content} -> strip_frontmatter(content)
+        _ -> "You are `#{spec.slug}` in company `#{spec.company}`."
+      end
+
+    soul_md =
+      Path.join(agent_dir, "SOUL.md")
+      |> File.read()
+      |> case do
+        {:ok, content} -> "\n\n---\n\n## Voice / character\n\n" <> strip_frontmatter(content)
+        _ -> ""
+      end
+
+    heartbeat_md =
+      Path.join(agent_dir, "HEARTBEAT.md")
+      |> File.read()
+      |> case do
+        {:ok, content} -> "\n\n---\n\n## Heartbeat checklist\n\n" <> strip_frontmatter(content)
+        _ -> ""
+      end
+
+    agent_md <> soul_md <> heartbeat_md
   end
 
   defp strip_frontmatter(content) do

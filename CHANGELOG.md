@@ -10,6 +10,66 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-28 scaffolding: agent-created proposals (spec + permissions)
+
+**Scope of this commit: spec, permissions, docs, CEO template.** Runtime
+wiring (Router classification of `proposals/*.md`, InboxLive surface,
+Reindex table, headcount-budget auto-approval enforcement) is
+**deferred to a follow-up** — see `user.md` for the split rationale.
+
+- **GEP-28 Draft** — design record for agent-initiated hiring, firing,
+  budget, and project proposals (`docs/geps/0028-agent-created-proposals.md`).
+  The filesystem contract, frontmatter schema, and permission namespace
+  land in this commit; Director-inbox flow and auto-approval land next.
+- **`Glorbo.FileSpec.ProposalMd`** — new `proposal/v1` FileSpec
+  implementation. Classifies `proposals/*.md` paths, validates
+  frontmatter (`kind: proposal/v1`, `id`, `subtype`, `status`,
+  `proposed_by`, `requires_approval`, `proposed_at`).
+- **`Glorbo.Security.ACLMapper`** — added `proposals` resource to
+  whitelist (`projects chat agents tasks proposals`). `proposals:write:*`
+  maps to `rwx` on `proposals/`; `proposals:read:*` maps to `rx`.
+  (Router-level enforcement that agents cannot flip their own
+  `status: approved` is a known gap — see GEP-28 Failure Modes.)
+- **`Glorbo.Sandbox.PermissionMapper`** — bwrap mount rules for
+  `proposals:{read,write}:*` → `/proposals` in the sandbox.
+- **`Glorbo.Agent.Server.permission_mount_summary/1`** — CEO runtime
+  prompt now lists `/proposals` in its mounted-paths bullets so the
+  agent discovers where to write.
+- **CEO template updates** (`priv/templates/agents/ceo.md`) — added
+  `proposals:write:*`, `allow_untracked_budget: true`, delegation
+  discipline, proactive planning discipline, and `chat:` routing hint.
+- **Company scaffold** (`lib/glorbo/cli/scaffold/company.ex`) — creates
+  `proposals/` directory and sets default `headcount_budget: 3`.
+
+### Fixed — Scheduler audit_fun arity + boot-time reindex
+
+- **`Glorbo.Company.Scheduler`** — fixed `default_audit_fun` arity
+  mismatch (was passing 2 args to a 1-arg closure). Added `catch :exit`
+  to prevent scheduler crash when AuditLog is down.
+- **`Glorbo.DB.Bootstrap`** — auto-migration child that runs on startup
+  when `schema_migrations` table is missing. Fixes `glorbo reindex`
+  chicken-and-egg on fresh workspaces.
+
+### Fixed — Heartbeat dispatch on empty inbox (GEP-14)
+
+- **`Glorbo.Agent.Server.resolve_task/3`** — when inbox scan returns
+  `nil` and trigger is `:heartbeat`, synthesise a minimal task so the
+  agent still dispatches. Previously, empty inbox → stay idle, which
+  meant heartbeat-only agents (like the CEO) never ran their checklist.
+- **`Glorbo.Agent.Server.read_system_prompt/2`** — concatenates
+  `AGENT.md` + `SOUL.md` + `HEARTBEAT.md` into the system prompt.
+  Previously, only `AGENT.md` was included; agents had no access to
+  their voice or tick-by-tick checklist unless they manually read files.
+- **`Glorbo.Sandbox.PermissionMapper`** — added `proposals:write:*` →
+  `--bind <co>/proposals /proposals` and `proposals:read:*` →
+  `--ro-bind <co>/proposals /proposals`. Previously, agents with
+  `proposals:write:*` could not see `/proposals` in the sandbox.
+- **CEO HEARTBEAT.md template** (`lib/glorbo/cli/scaffold/agent.ex`) —
+  added kanban board scanning instruction: "Scan `projects/*/tasks/*.md`
+  for tasks assigned to you that are not `done|closed|cancelled`".
+
+1437 tests green; `mix credo --strict` clean; `mix gep.validate` clean.
+
 ### Added — GEP-27: Agent sandbox path requests via director approval
 
 - **GEP-27 Draft** — design record for task-scoped external path access

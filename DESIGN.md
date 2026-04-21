@@ -502,6 +502,7 @@ permissions:
   - agents:message:cto
   - chat:write:engineering
   - chat:read:*
+  - proposals:write:*          # Can create hiring/budget/project proposals
   - tools:execute:code-runner
   - budget:read:self
 ---
@@ -542,8 +543,15 @@ Agents wake in response to:
 |--------------------|----------------------------------------------------|
 | New inbox item     | inotify on `agents/<name>/inbox/` → GenServer call |
 | Heartbeat schedule | Elixir `:timer` based on cron expression           |
-| Director request      | Dashboard action → GenServer call                  |
+| Director request   | Dashboard action → GenServer call                  |
 | Channel mention    | Elixir Router detects `@agent-name` in message     |
+
+**Heartbeat with empty inbox.** When a heartbeat fires and the inbox
+scanner finds no actionable file, the agent still dispatches. The
+task body is empty and the system prompt carries the agent's
+`HEARTBEAT.md` checklist — this lets heartbeat-only agents (like a
+CEO on a `*/5 * * * *` cron) run their tick-by-tick grooming loop even
+when no one has assigned them work.
 
 ### 5.3  Execution
 
@@ -551,8 +559,11 @@ The bwrap + CLI pipeline (GEP-4, GEP-8):
 
 1. **Elixir** prepares a task context: triggering event, agent identity,
    project/goal references, skill list.
-2. **Elixir** materialises the context onto disk inside the agent's
-   workspace: `.glorbo-run/<task-id>/task-prompt.md` (the prompt) and
+2. **Elixir** composes the system prompt from three contract files:
+   `AGENT.md` (role + permissions), `SOUL.md` (voice / character),
+   and `HEARTBEAT.md` (tick-by-tick checklist). The prompt is
+   materialised onto disk inside the agent's workspace as
+   `.glorbo-run/<task-id>/task-prompt.md`, alongside
    `.glorbo-skills/*.md` (the named skills, copied from
    `~/.glorbo/companies/<co>/skills/`).
 3. **`Glorbo.Agent.Dispatch`** resolves `agent.md`'s `provider:` through
@@ -715,6 +726,7 @@ permissions:
   - projects:read:*                          → --ro-bind <co>/projects /projects
   - projects:write:website-redesign          → --bind    <co>/projects/website-redesign /projects/website-redesign
   - chat:read:*                              → --ro-bind <co>/channels /channels
+  - proposals:write:*                        → --bind    <co>/proposals /proposals
   # (no agents:read:ceo)                     → <co>/agents/ceo NOT mounted — invisible
 ```
 

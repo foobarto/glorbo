@@ -73,6 +73,7 @@ defmodule Glorbo.Application do
 
     children = [
       Glorbo.Repo,
+      Glorbo.DB.Bootstrap,
       {DNSCluster, query: Application.get_env(:glorbo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Glorbo.PubSub},
       {Finch, name: Glorbo.Finch},

@@ -130,6 +130,16 @@ defmodule Glorbo.Sandbox.PermissionMapper do
     ["--bind", Path.join([co, "projects", project, "tasks"]), "/projects/#{project}/tasks"]
   end
 
+  # proposals:write:* → rw-bind whole proposals tree
+  defp permission_to_flags({"proposals", "write", "*"}, co) do
+    ["--bind", Path.join(co, "proposals"), "/proposals"]
+  end
+
+  # proposals:read:* → ro-bind whole proposals tree
+  defp permission_to_flags({"proposals", "read", "*"}, co) do
+    ["--ro-bind", Path.join(co, "proposals"), "/proposals"]
+  end
+
   # Unknown permission family → empty (no kernel mount)
   defp permission_to_flags({_resource, _action, _scope}, _co), do: []
 end

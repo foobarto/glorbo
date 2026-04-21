@@ -34,12 +34,13 @@ defmodule Glorbo.FileSpecTest do
     "inbox-message/v1",
     "goal/v1",
     "config/v1",
-    "path-request/v1"
+    "path-request/v1",
+    "proposal/v1"
   ]
 
   describe "registry" do
-    test "specs/0 returns all 21 per-kind modules" do
-      assert length(FileSpec.specs()) == 21
+    test "specs/0 returns all 22 per-kind modules" do
+      assert length(FileSpec.specs()) == 22
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do
@@ -225,6 +226,17 @@ defmodule Glorbo.FileSpecTest do
       assert {:error, :unknown} =
                FileSpec.classify_by_path("/home/u/.glorbo/companies/acme/projects/foo/t-01.md")
     end
+
+    test "classifies proposal/v1 by /proposals/ path segment" do
+      assert {:ok, Glorbo.FileSpec.ProposalMd} =
+               FileSpec.classify_by_path(
+                 "/home/u/.glorbo/companies/acme/proposals/hire-writer-2026-04-21.md"
+               )
+
+      # Files outside proposals/ do NOT classify as ProposalMd
+      assert {:error, :unknown} =
+               FileSpec.classify_by_path("/home/u/.glorbo/companies/acme/hire-writer.md")
+    end
   end
 
   describe "classify_by_kind/1" do
@@ -247,7 +259,7 @@ defmodule Glorbo.FileSpecTest do
                FileSpec.classify_by_kind(%{"kind" => "something/v99"})
     end
 
-    test "all 15 kinds classify to their spec module" do
+    test "all registered kinds classify to their spec module" do
       for mod <- FileSpec.specs() do
         kind_value = mod.kind()
 

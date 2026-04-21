@@ -400,9 +400,17 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
         Read `AGENT.md` first. Read `SOUL.md` for tone.
 
-        Check your inbox. Reply to anything that needs attention.
-        Otherwise write a one-line "no action" summary to
-        `$GLORBO_REPLY_PATH` and exit cleanly.
+        ## Tick-by-tick checklist
+
+        1. **Inbox.** Check `agents/#{agent}/inbox/`. Reply to anything
+           that needs attention.
+        2. **Kanban board.** Scan `projects/*/tasks/*.md` for tasks
+           assigned to you (`assigned_to: #{agent}`) or mentioning you
+           that are not `status: done|closed|cancelled`. Pick up work
+           that is `todo` or `in_progress`. Groom blocked tasks —
+           unblock them, reassign, or escalate.
+        3. **Reply.** Write a one-line summary to `$GLORBO_REPLY_PATH`
+           even if there is nothing to do.
 
         ## Self-improvement
 

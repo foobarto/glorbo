@@ -206,6 +206,150 @@ partial / flaky. Update inline as each case runs.
 
 ---
 
+## N. CEO heartbeat autonomy (CLI / headless)
+
+Reproduces the techblog CEO heartbeat UAT documented in
+`.reports/uat-ceo-heartbeat-2026-04-22.md`. This is a **headless**
+test — no browser, no dashboard — that verifies the CEO agent
+operates autonomously on a `* * * * *` cron even with an empty
+inbox.
+
+### Prerequisites
+
+- `lmstudio` running with `qwen/qwen3.6-35b-a3b` loaded (or edit
+  `AGENT.md` to use another provider).
+- `./glorbo` binary built from current source (`mix glorbo.build_local`).
+
+### One-shot setup
+
+```bash
+# 1. Pick a temp workspace (never use ~/.glorbo for tests)
+export GLORBO_HOME=/tmp/glorbo-e2e-heartbeat-$(date +%s)
+export GLORBO_DB_PATH=$GLORBO_HOME/glorbo.db
+mkdir -p "$GLORBO_HOME"
+
+# 2. Scaffold directory tree
+mkdir -p "$GLORBO_HOME/companies/techblog/agents/ceo"
+mkdir -p "$GLORBO_HOME/companies/techblog/projects/blog/tasks"
+mkdir -p "$GLORBO_HOME/companies/techblog/channels"
+mkdir -p "$GLORBO_HOME/companies/techblog/proposals"
+mkdir -p "$GLORBO_HOME/companies/techblog/goals"
+mkdir -p "$GLORBO_HOME/companies/techblog/audit"
+
+# 3. Write company.md
+cat > "$GLORBO_HOME/companies/techblog/company.md" <<'EOF'
+---
+kind: company/v1
+slug: techblog
+name: techblog
+mission: "Daily tech blog covering SaaS trends and opportunities"
+headcount_budget: 3
+---
+
+# techblog
+EOF
+
+# 4. Write goal
+cat > "$GLORBO_HOME/companies/techblog/goals/daily-content.md" <<'EOF'
+---
+kind: goal/v1
+id: daily-content
+title: Publish daily SaaS research content
+description: Every day, research trending topics and publish a summary with actionable SaaS opportunities.
+priority: high
+target_date: "2026-04-30"
+status: active
+---
+
+# Publish daily SaaS research content
+EOF
+
+# 5. Write CEO AGENT.md (copy from priv/templates/agents/ceo.md
+#    or use the version in .reports/uat-ceo-heartbeat-2026-04-22.md)
+# 6. Write CEO HEARTBEAT.md with kanban-scan instructions
+# 7. Write CEO SOUL.md
+# 8. Write the seed task
+cat > "$GLORBO_HOME/companies/techblog/projects/blog/tasks/research-today.md" <<'EOF'
+---
+kind: task/v1
+title: "Research and write daily SaaS trends blog post"
+status: todo
+assigned_to: ceo
+priority: high
+---
+
+Research today's trending topics across Hacker News, Product Hunt, Reddit (r/SaaS, r/startups, r/indiehackers), and general tech news.
+
+**Output:** Write a daily summary markdown file at YYYY/MM/YYYY-MM-DD.md with trends, SaaS opportunities, dark horse pick, and reflection.
+
+You have full authority to hire a Writer and Editor if workload justifies it. Create proposal/v1 files in proposals/ for hiring.
+EOF
+
+# 9. Seed channel
+cat > "$GLORBO_HOME/companies/techblog/channels/general.md" <<'EOF'
+# general
+
+Company announcements and light updates.
+EOF
+```
+
+### Bootstrap DB and start serve
+
+```bash
+export GLORBO_HOME=/tmp/glorbo-e2e-heartbeat-<TS>   # from step 1
+export GLORBO_DB_PATH=$GLORBO_HOME/glorbo.db
+
+# Bootstrap (creates schema_migrations + runs migrations)
+./glorbo serve --exit-after 10
+
+# Reindex disk → SQLite
+./glorbo reindex
+
+# Start daemon in background
+nohup ./glorbo serve > /tmp/glorbo-serve-4107.log 2>&1 &
+echo $! > /tmp/glorbo-serve-4107.pid
+sleep 5
+```
+
+### Observation checklist
+
+Wait **3–5 minutes** (3–5 heartbeats). Then verify:
+
+- [ ] **N1** — `agents/ceo/stdout.log` exists and contains multiple
+  `=== glorbo dispatch ===` blocks (one per heartbeat).
+- [ ] **N2** — `channels/general.md` has new entries appended by
+  the CEO (format: `## <ISO-ts> | ceo <message>`).
+- [ ] **N3** — `proposals/` has at least one `hire-*.md` file with
+  `kind: proposal/v1` frontmatter.
+- [ ] **N4** — `agents/ceo/outbox/` is empty (Router consumed all
+  outbox files) or contains only files from the most recent heartbeat.
+- [ ] **N5** — `audit/2026-04.jsonl` has `agent.wake`, `agent.dispatch`,
+  `agent.complete`, and `message.route` entries.
+- [ ] **N6** — No `inbox/rejections/` entries with reason
+  `invalid_message::unknown_to_scheme` (channel routing works).
+- [ ] **N7** — `projects/blog/tasks/research-today.md` status is
+  either still `todo` (CEO delegates) or changed to `done|in_progress`
+  (CEO executed or reassigned).
+
+### Teardown
+
+```bash
+kill $(cat /tmp/glorbo-serve-4107.pid) 2>/dev/null
+rm -rf /tmp/glorbo-e2e-heartbeat-*
+```
+
+### What to vary
+
+| Variable | How |
+|---|---|
+| CEO cron frequency | Edit `AGENT.md` `heartbeat:` field |
+| Model / provider | Edit `AGENT.md` `provider:` and `model:` |
+| Seed task | Edit `projects/blog/tasks/research-today.md` |
+| Permissions | Edit `AGENT.md` `permissions:` list |
+| Empty inbox | Delete `agents/ceo/inbox/` before start; verify heartbeat still dispatches |
+
+---
+
 ## Run log
 
 Rounds ordered newest-first. Each round records the commit under

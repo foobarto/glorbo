@@ -70,13 +70,15 @@ defmodule Glorbo.Company.Scheduler do
 
   @impl GenServer
   def init(opts) do
+    company = Keyword.fetch!(opts, :company)
+
     state = %{
-      company: Keyword.fetch!(opts, :company),
+      company: company,
       base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
       agents: %{},
       clock_fun: Keyword.get(opts, :clock_fun, &DateTime.utc_now/0),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after/3),
-      audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
+      audit_fun: Keyword.get(opts, :audit_fun, &default_audit_fun/2),
       heartbeat_file_fun:
         Keyword.get(
           opts,
@@ -244,6 +246,33 @@ defmodule Glorbo.Company.Scheduler do
     e ->
       Logger.error("scheduler audit emit failed: #{Exception.message(e)}")
       :error
+  catch
+    :exit, reason ->
+      Logger.error("scheduler audit emit exited: #{inspect(reason)}")
+      :error
+  end
+
+  # AuditLog.append/2 expects a GenServer.server reference, not a company
+  # slug string. Resolve via Registry and fall back to the default-named
+  # AuditLog (test mode / init orchestration edge cases).
+  # Mirrors Router.default_audit_fun/2 (R28 fix).
+  defp default_audit_fun(company, entry) when is_binary(company) do
+    server =
+      case resolve_audit_server(company) do
+        {:ok, via} -> via
+        :not_found -> AuditLog
+      end
+
+    AuditLog.append(server, Map.put(entry, :company, company))
+  end
+
+  defp resolve_audit_server(company) do
+    key = {:company_child, company, :audit_log}
+
+    case Elixir.Registry.lookup(Glorbo.Agent.Registry, key) do
+      [{_pid, _}] -> {:ok, {:via, Elixir.Registry, {Glorbo.Agent.Registry, key}}}
+      _ -> :not_found
+    end
   end
 
   # ---------------------------------------------------------------------------

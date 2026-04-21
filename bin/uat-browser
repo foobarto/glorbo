@@ -1,0 +1,266 @@
+#!/usr/bin/env node
+/**
+ * uat-browser — minimal Playwright-based replacement for agent-browser
+ * on Bazzite. Connects to a manually-launched Chrome via CDP.
+ *
+ * Usage (same pattern as agent-browser):
+ *   Terminal A: google-chrome --headless --disable-gpu --remote-debugging-port=9222 about:blank
+ *   Terminal B:
+ *     export AGENT_BROWSER_SCREENSHOT_DIR=$PWD/.reports/uat
+ *     node bin/uat-browser open http://localhost:4100/companies
+ *     node bin/uat-browser screenshot 01-home.png
+ *     node bin/uat-browser click "text=+ new company"
+ *     node bin/uat-browser wait 200
+ *     node bin/uat-browser screenshot 02-modal.png
+ *     node bin/uat-browser press Escape
+ *     node bin/uat-browser type "input[placeholder='Slug']" "testco"
+ *     node bin/uat-browser scroll 0 300
+ *     node bin/uat-browser snapshot
+ *
+ * Selectors are Playwright selectors:
+ *   css=#id, text=Submit, [role=button], etc.
+ */
+
+const path = require("path");
+const fs = require("fs");
+const { createRequire } = require("module");
+
+function findPlaywrightCore() {
+  try {
+    return require("playwright-core");
+  } catch {
+    const homedir = require("os").homedir();
+    const cacheDir = path.join(homedir, ".npm", "_npx");
+    if (fs.existsSync(cacheDir)) {
+      for (const entry of fs.readdirSync(cacheDir)) {
+        const modPath = path.join(cacheDir, entry, "node_modules", "playwright-core");
+        if (fs.existsSync(path.join(modPath, "package.json"))) {
+          const req = createRequire(path.join(modPath, "package.json"));
+          return req("playwright-core");
+        }
+      }
+    }
+    throw new Error(
+      "playwright-core not found. Cache it first:\n" +
+      "  npx --yes playwright-core --version\n" +
+      "Or install globally:\n" +
+      "  npm install -g playwright-core"
+    );
+  }
+}
+
+const { chromium } = findPlaywrightCore();
+
+const CDP_URL = process.env.CDP_URL || "http://127.0.0.1:9222";
+const SCREENSHOT_DIR = process.env.AGENT_BROWSER_SCREENSHOT_DIR || process.cwd();
+
+let browser = null;
+let page = null;
+
+async function ensurePage() {
+  if (page && !page.isClosed()) return page;
+  if (!browser || browser.isConnected() === false) {
+    try {
+      browser = await chromium.connectOverCDP(CDP_URL);
+    } catch (err) {
+      console.error(`Failed to connect to Chrome at ${CDP_URL}. Is it running with --remote-debugging-port?`);
+      console.error(err.message);
+      process.exit(1);
+    }
+  }
+  const context = browser.contexts()[0];
+  page = context.pages()[0];
+  if (!page) {
+    page = await context.newPage();
+  }
+  return page;
+}
+
+function screenshotPath(filename) {
+  if (path.isAbsolute(filename)) return filename;
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  return path.join(SCREENSHOT_DIR, filename);
+}
+
+function prettySnapshot(node, depth = 0) {
+  const indent = "  ".repeat(depth);
+  const name = node.name || "";
+  const role = node.role || "";
+  const value = node.value ? `="${node.value}"` : "";
+  const line = `${indent}[${role}]${name ? " " + name : ""}${value}`;
+  console.log(line);
+  if (node.children) {
+    for (const child of node.children) {
+      prettySnapshot(child, depth + 1);
+    }
+  }
+}
+
+async function cmdOpen(url) {
+  const p = await ensurePage();
+  await p.goto(url, { waitUntil: "networkidle" });
+  console.log(`Opened ${url}`);
+}
+
+async function cmdScreenshot(filename) {
+  const p = await ensurePage();
+  const out = screenshotPath(filename);
+  await p.screenshot({ path: out, fullPage: false });
+  console.log(`Screenshot: ${out}`);
+}
+
+async function cmdClick(selector) {
+  const p = await ensurePage();
+  await p.locator(selector).first().click();
+  console.log(`Clicked: ${selector}`);
+}
+
+async function cmdType(selector, text) {
+  const p = await ensurePage();
+  await p.locator(selector).first().fill(text);
+  console.log(`Typed into ${selector}: ${text}`);
+}
+
+async function cmdPress(key) {
+  const p = await ensurePage();
+  await p.keyboard.press(key);
+  console.log(`Pressed: ${key}`);
+}
+
+async function cmdScroll(selector, x, y) {
+  const p = await ensurePage();
+  const xn = Number.isFinite(Number(x)) ? Number(x) : 0;
+  const yn = Number.isFinite(Number(y)) ? Number(y) : 0;
+  const hasSelector = selector && !Number.isFinite(Number(selector));
+
+  if (hasSelector) {
+    const el = p.locator(selector).first();
+    if (xn === 0 && yn === 0) {
+      await el.evaluate((node) => node.scrollIntoView({ behavior: "smooth", block: "center" }));
+      console.log(`Scrolled ${selector} into view`);
+    } else {
+      await el.evaluate((node, args) => {
+        node.scrollBy(args.x, args.y);
+        return { scrollLeft: node.scrollLeft, scrollTop: node.scrollTop };
+      }, { x: xn, y: yn });
+      console.log(`Scrolled ${selector} by (${xn}, ${yn})`);
+    }
+  } else {
+    // No selector: scroll page. If only one number given, treat as y.
+    const sx = Number.isFinite(Number(selector)) ? Number(selector) : xn;
+    const sy = Number.isFinite(Number(x)) ? Number(x) : yn;
+    await p.evaluate((args) => window.scrollBy(args.x, args.y), { x: sx, y: sy });
+    console.log(`Scrolled page by (${sx}, ${sy})`);
+  }
+}
+
+async function cmdWait(ms) {
+  const delay = Number(ms) || 1000;
+  await new Promise((r) => setTimeout(r, delay));
+  console.log(`Waited ${delay}ms`);
+}
+
+async function cmdSnapshot() {
+  const p = await ensurePage();
+  const tree = await p.accessibility.snapshot();
+  console.log(`--- Accessibility snapshot for ${p.url()} ---`);
+  if (tree) prettySnapshot(tree);
+  else console.log("(empty tree)");
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const cmd = args[0];
+
+  if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
+    console.log(`uat-browser — Playwright-based browser automation via CDP
+
+Usage: node bin/uat-browser <command> [args...]
+
+Commands:
+  open <url>                     Navigate to URL
+  screenshot <file.png>          Save viewport screenshot
+  click <selector>               Click first matching element
+  type <selector> <text>         Fill input (clears first)
+  press <key>                    Press key (Escape, Enter, etc.)
+  scroll [selector] <x> <y>      Scroll element or page
+  wait <ms>                      Sleep
+  snapshot                       Print accessibility tree
+
+Environment:
+  CDP_URL                        Chrome DevTools Protocol URL
+                                 default: http://127.0.0.1:9222
+  AGENT_BROWSER_SCREENSHOT_DIR   Screenshot output directory
+                                 default: cwd
+
+Selectors are Playwright selectors:
+  text=Submit        css=#my-id        [role=button]       input[name='email']
+`);
+    process.exit(0);
+  }
+
+  try {
+    switch (cmd) {
+      case "open":
+        await cmdOpen(args[1]);
+        break;
+      case "screenshot":
+        await cmdScreenshot(args[1]);
+        break;
+      case "click":
+        await cmdClick(args[1]);
+        break;
+      case "type":
+        await cmdType(args[1], args.slice(2).join(" "));
+        break;
+      case "press":
+        await cmdPress(args[1]);
+        break;
+      case "scroll": {
+        const a1 = args[1];
+        const a2 = args[2];
+        const a3 = args[3];
+        if (a3 !== undefined) {
+          await cmdScroll(a1, a2, a3);
+        } else if (a2 !== undefined) {
+          // Could be "scroll 0 300" (page) or "scroll selector 0" (element y=0)
+          // If a1 parses as a number, it's page scroll (x, y)
+          if (Number.isFinite(Number(a1))) {
+            await cmdScroll(null, a1, a2);
+          } else {
+            await cmdScroll(a1, a2, 0);
+          }
+        } else if (a1 !== undefined) {
+          // "scroll 300" => page y=300, or "scroll selector" => element into view
+          if (Number.isFinite(Number(a1))) {
+            await cmdScroll(null, 0, a1);
+          } else {
+            await cmdScroll(a1, 0, 0);
+          }
+        } else {
+          await cmdScroll(null, 0, 0);
+        }
+        break;
+      }
+      case "wait":
+        await cmdWait(args[1]);
+        break;
+      case "snapshot":
+        await cmdSnapshot();
+        break;
+      default:
+        console.error(`Unknown command: ${cmd}`);
+        process.exit(1);
+    }
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  } finally {
+    // Keep browser alive for next command; process exits cleanly.
+    if (browser && browser.isConnected()) {
+      // Intentionally do not close browser — it belongs to the manually-launched Chrome.
+    }
+  }
+}
+
+main();
