@@ -180,4 +180,190 @@ defmodule Glorbo.Company.SupervisorTest do
       assert Process.alive?(b_audit_pid)
     end
   end
+
+  # R19a (#283) — agent `network_allow:` frontmatter extends the
+  # base proxy allowlist. Directors declare additional hosts an
+  # agent needs (e.g. an ops dashboard) without patching the global
+  # config.
+  describe "per-agent network_allow extends proxy allowlist" do
+    setup do
+      base = Path.join(System.tmp_dir!(), "glorbo-netallow-#{System.unique_integer([:positive])}")
+      company = "acme"
+      File.mkdir_p!(Path.join([base, "companies", company, "agents/scout/state"]))
+
+      on_exit(fn -> File.rm_rf!(base) end)
+      {:ok, base: base, company: company}
+    end
+
+    defp seed_agent(base, company, slug, extra_opts) do
+      File.mkdir_p!(Path.join([base, "companies", company, "agents", slug, "state"]))
+
+      frontmatter = """
+      slug: #{slug}
+      role: Scout
+      provider: claude-code
+      network: api-only
+      #{extra_opts}
+      """
+
+      File.write!(
+        Path.join([base, "companies", company, "agents", slug, "AGENT.md"]),
+        """
+        ---
+        #{frontmatter}---
+
+        scout body
+        """
+      )
+    end
+
+    test "frontmatter `network_allow:` hosts added to the allowlist",
+         %{base: base, company: company} do
+      seed_agent(base, company, "scout", """
+      network_allow:
+        - grafana.internal
+        - ops.example.com
+      """)
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_allow_sup"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      # Find the Network.Proxy and inspect its state.
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      assert is_pid(proxy_pid)
+
+      state = :sys.get_state(proxy_pid)
+
+      assert MapSet.member?(state.allowlist, "grafana.internal"),
+             "expected grafana.internal in #{inspect(MapSet.to_list(state.allowlist))}"
+
+      assert MapSet.member?(state.allowlist, "ops.example.com")
+
+      # Base allowlist still present — api.anthropic.com comes with claude-code.
+      assert MapSet.member?(state.allowlist, "api.anthropic.com")
+    end
+
+    test "invalid hosts silently filtered (empty strings, schemes, wildcards)",
+         %{base: base, company: company} do
+      seed_agent(base, company, "scout", """
+      network_allow:
+        - ""
+        - "https://ok.example.com"
+        - "*.wildcard.com"
+        - "valid.example.com"
+      """)
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_allow_invalid"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+      hosts = MapSet.to_list(state.allowlist)
+
+      assert "valid.example.com" in hosts
+      refute "" in hosts
+      refute "*.wildcard.com" in hosts
+      refute "https://ok.example.com" in hosts
+    end
+
+    test "agent without `network_allow` inherits base allowlist only",
+         %{base: base, company: company} do
+      seed_agent(base, company, "scout", "")
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_allow_empty"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+
+      # Base still present.
+      assert MapSet.member?(state.allowlist, "api.anthropic.com")
+    end
+
+    test "multiple agents' network_allow unions into a single allowlist",
+         %{base: base, company: company} do
+      seed_agent(base, company, "scout", """
+      network_allow:
+        - grafana.internal
+      """)
+
+      seed_agent(base, company, "analyst", """
+      network_allow:
+        - datadog.example.com
+      """)
+
+      {:ok, sup_pid} =
+        Glorbo.Company.Supervisor.start_link(
+          name: Glorbo.Test.UniqueName.gen("company_allow_union"),
+          company: company,
+          base: base,
+          api_only?: true
+        )
+
+      on_exit(fn ->
+        if Process.alive?(sup_pid), do: Supervisor.stop(sup_pid, :shutdown)
+      end)
+
+      proxy_pid =
+        sup_pid
+        |> Supervisor.which_children()
+        |> Enum.find_value(fn
+          {Glorbo.Network.Proxy, pid, _, _} -> pid
+          _ -> nil
+        end)
+
+      state = :sys.get_state(proxy_pid)
+
+      assert MapSet.member?(state.allowlist, "grafana.internal")
+      assert MapSet.member?(state.allowlist, "datadog.example.com")
+    end
+  end
 end

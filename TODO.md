@@ -98,6 +98,7 @@ it's been in CHANGELOG for a cycle.
 - [x] #284 R17b UI: Memory tab on AgentLive detail page
 - [x] #285 R17c: E2E memory — real qwen agent reads AND writes memory via live opencode dispatch
 - [x] #286 E2E backfill: NL schedule fire + kanban chips navigate + task-ID autolink resolve
+- [x] #283 R19a: GEP-23 per-agent network_allow extensions (company-coarsened; per-requester is R19b)
 - [ ] **Sentinel resolution contract mismatch** (new P2 finding)
   LoopDetector sentinel body documents the resolution
   mechanism as "write `resolved-retry-<task>.md` in this dir

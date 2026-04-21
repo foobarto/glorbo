@@ -196,6 +196,46 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 19a
+
+- **Per-agent `network_allow:` proxy extensions (GEP-23, #283).**
+  Agents whose AGENT.md carries `network: api-only` can now
+  declare additional hosts in a `network_allow:` frontmatter
+  list. Company.Supervisor unions those into the proxy's
+  allowlist at boot, so directors can grant access to an
+  internal dashboard or vendor API without touching the
+  global `config :glorbo, :network_policy` base.
+
+  ```yaml
+  # agents/scout/AGENT.md
+  ---
+  slug: scout
+  provider: claude-code
+  network: api-only
+  network_allow:
+    - grafana.internal
+    - ops.example.com
+  ---
+  ```
+
+  Validation: hostnames must match `[a-z0-9]([a-z0-9-]*[a-z0-9])
+  ?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+` — no schemes, no
+  wildcards, no whitespace, no empty strings. Invalid entries
+  are silently filtered so one typo doesn't poison the
+  allowlist. Failures in `File.read` / `Frontmatter.parse`
+  fall through to the base allowlist.
+
+  Scope: coarse-grained per-company. Any api-only agent in the
+  company can reach any host any sibling declared. Per-
+  requester gating (distinct allowlists per agent identity)
+  is tracked as R19b along with smart-mode LLM filtering.
+
+  Tests: 4 new cases on `Glorbo.Company.SupervisorTest` cover
+  frontmatter unions into proxy state; invalid hosts filtered;
+  no-frontmatter agent inherits base only; multiple agents
+  union. `Glorbo.Network.Proxy.default_allowlist/0` is now
+  public so callers can compose the base.
+
 ### Added — round 18a (E2E backfill)
 
 Per new feedback rule "ship E2E tests alongside features" — back-

@@ -129,12 +129,66 @@ defmodule Glorbo.Company.Supervisor do
     if api_only? do
       children ++
         [
-          {Glorbo.Network.Proxy, [name: via(company, :network_proxy), company: company, port: 0]}
+          {Glorbo.Network.Proxy,
+           [
+             name: via(company, :network_proxy),
+             company: company,
+             port: 0,
+             # GEP-23 R19a (#283) — compose base allowlist + any
+             # per-agent `network_allow:` frontmatter extensions at
+             # proxy boot. Coarse-grained: proxy sees the union, so
+             # any allowed host is reachable by any api-only agent
+             # in the company. Per-requester gating is R19b.
+             allowlist_fun: fn _co -> company_allowlist(company, base) end
+           ]}
         ]
     else
       children
     end
   end
+
+  defp company_allowlist(company, base) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+    base_hosts = Glorbo.Network.Proxy.default_allowlist()
+
+    extra =
+      case File.ls(agents_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.map(&Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, &1)))
+          |> Enum.filter(&File.regular?/1)
+          |> Enum.flat_map(&agent_network_allow_list/1)
+
+        _ ->
+          []
+      end
+
+    Enum.uniq(base_hosts ++ extra)
+  rescue
+    _ -> Glorbo.Network.Proxy.default_allowlist()
+  end
+
+  defp agent_network_allow_list(agent_md_path) do
+    with {:ok, content} <- File.read(agent_md_path),
+         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         list when is_list(list) <- Map.get(meta, "network_allow") do
+      list
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&String.downcase/1)
+      |> Enum.filter(&valid_hostname?/1)
+    else
+      _ -> []
+    end
+  end
+
+  # Simple hostname validation — ASCII, no whitespace, no control
+  # chars, no wildcards, no URL scheme. Rejects obvious garbage so
+  # an agent with a typo doesn't pollute the allowlist.
+  defp valid_hostname?(host) when is_binary(host) do
+    Regex.match?(~r/\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/, host)
+  end
+
+  defp valid_hostname?(_), do: false
 
   defp company_has_api_only_agent?(company, base) do
     agents_dir = Path.join([base, "companies", company, "agents"])

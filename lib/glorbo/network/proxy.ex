@@ -393,7 +393,14 @@ defmodule Glorbo.Network.Proxy do
   # Allowlist default
   # ---------------------------------------------------------------------------
 
-  defp default_allowlist do
+  @doc """
+  Base api-only allowlist derived from `config :glorbo,
+  :network_policy`. Public so `Glorbo.Company.Supervisor` can
+  compose it with per-agent `network_allow:` extensions before
+  passing the union to the Proxy init.
+  """
+  @spec default_allowlist() :: [String.t()]
+  def default_allowlist do
     config = Application.get_env(:glorbo, :network_policy, %{})
 
     base =
