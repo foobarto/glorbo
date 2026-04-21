@@ -196,6 +196,21 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 15
+
+- **E2E LoopDetector sentinel emission test (#279).**
+  `LoopDetectorTest` covered the pure detection logic +
+  filesystem writes via stubbed fs_fun; this new integration
+  test closes the loop by exercising `LoopDetector.check/3`
+  against real disk I/O, seeding 3 prior failure audit rows
+  and asserting the sentinel file lands at
+  `agents/<slug>/state/stuck-on-<task>.md` with correct
+  frontmatter + director-resolution instructions. Idempotency
+  case confirms a second check doesn't overwrite. Second test
+  case proves a clean audit leaves no sentinel. Was partial —
+  unit tests mocked the fs, so nobody had confirmed production
+  wiring writes a real file. Now proven.
+
 ### Added — round 14
 
 - **E2E scheduled-task dispatch test (#278).** New integration

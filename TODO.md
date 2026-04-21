@@ -91,3 +91,16 @@ it's been in CHANGELOG for a cycle.
 - [x] #276 Round 12: Task-ID autolinking in comments
 - [x] #277 Round 13: Heartbeat cron validation on agent config save
 - [x] #278 Round 14: E2E scheduled-task dispatch test (was partial — lacked live E2E proof)
+- [x] #279 Round 15: E2E LoopDetector sentinel emission test (was partial — fs_fun stubbed)
+- [ ] **Sentinel resolution contract mismatch** (new P2 finding)
+  LoopDetector sentinel body documents the resolution
+  mechanism as "write `resolved-retry-<task>.md` in this dir
+  to retry / `resolved-skip-<task>.md` / `resolved-stop-<task>.md`".
+  InboxLive + TaskLive `stuck_resolve` just delete the sentinel
+  directly. The file-based contract works (agents can drop
+  resolution files too) but InboxLive's buttons bypass it.
+  Either wire InboxLive/TaskLive to write `resolved-*-<task>.md`
+  and let a watcher apply the resolution, OR update the sentinel
+  body to reflect that the buttons directly mutate the task file.
+  Current behaviour is correct end-to-end, just the sentinel copy
+  is misleading.
