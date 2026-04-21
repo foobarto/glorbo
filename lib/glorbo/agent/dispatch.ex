@@ -500,7 +500,53 @@ defmodule Glorbo.Agent.Dispatch do
       stdout_log: stdout_log_path
     ]
 
-    Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
+    # R30.2: on macOS / bwrap-absent hosts, fall back to the
+    # unsandboxed runner. For unsandboxed runs we must use the
+    # HOST env (not the sandbox-rewritten one) — there's no
+    # /workspace mount, the CLI sees the real host paths.
+    case Glorbo.Sandbox.Bwrap.availability() do
+      :ok ->
+        Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
+
+      {:error, :unavailable} ->
+        host_invocation_opts =
+          Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
+
+        emit_sandbox_unavailable_audit_once(bwrap_opts)
+        Glorbo.Sandbox.Unsandboxed.start(host_invocation_opts, run_opts)
+    end
+  end
+
+  # R30.2: per-company once-per-BEAM-boot audit for unsandboxed
+  # execution. Uses `:persistent_term` to flag the company so we
+  # don't spam the audit log on every dispatch. Directors see
+  # exactly one `agent.sandbox_unavailable` row per company boot
+  # signalling "agents run outside the kernel sandbox on this host".
+  defp emit_sandbox_unavailable_audit_once(%{} = bwrap_opts) do
+    company = Map.get(bwrap_opts, :company) || "_system"
+    key = {__MODULE__, :sandbox_unavailable_notified, company}
+
+    unless :persistent_term.get(key, false) do
+      :persistent_term.put(key, true)
+
+      entry = %{
+        action: "agent.sandbox_unavailable",
+        actor: "system",
+        target: nil,
+        detail: %{
+          os: to_string(:os.type() |> elem(1)),
+          note: "bwrap not on PATH; agents running unsandboxed (pre-1.0 macOS fallback)"
+        }
+      }
+
+      try do
+        audit_fun(base: nil).(company, entry)
+      rescue
+        _ -> :ok
+      catch
+        :exit, _ -> :ok
+      end
+    end
   end
 
   defp rewrite_env_to_sandbox(env, host_workspace) when is_map(env) do

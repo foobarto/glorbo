@@ -53,19 +53,48 @@ defmodule Glorbo.Doctor do
 
   @spec run_checks(keyword()) :: [check()]
   def run_checks(deps) when is_list(deps) do
+    # R30.2: on darwin, the linux-only kernel / namespace / bwrap
+    # checks can't pass meaningfully. We keep the check list length
+    # stable (10) but reclassify them to `:info` severity with a
+    # `skipped_on: <os>` detail so:
+    #   * existing tests asserting length == 10 still pass
+    #   * macOS directors see which checks were skipped + why
+    #   * exit-code math is unaffected (info passes are not blockers)
+    linux_only =
+      if linux?(),
+        do: &run/3,
+        else: &run_skipped_on_non_linux/3
+
     [
-      run(:linux_kernel, :blocker, fn -> check_linux_kernel(deps) end),
-      run(:uidmap, :blocker, fn -> check_uidmap(deps) end),
+      linux_only.(:linux_kernel, :blocker, fn -> check_linux_kernel(deps) end),
+      linux_only.(:uidmap, :blocker, fn -> check_uidmap(deps) end),
       run(:disk_space, :warning, fn -> check_disk_space(deps) end),
       run(:glorbo_dir, :blocker, fn -> check_glorbo_dir(deps) end),
       run(:erts_version, :blocker, fn -> check_erts_version(deps) end),
       run(:audit_dir, :blocker, fn -> check_audit_dir(deps) end),
       run(:sockets_dir, :warning, fn -> check_sockets_dir(deps) end),
       run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end),
-      run(:bwrap, :blocker, fn -> check_bwrap(deps) end),
-      run(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
+      linux_only.(:bwrap, :blocker, fn -> check_bwrap(deps) end),
+      linux_only.(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
     ]
   end
+
+  # Synthesise a `pass: true` entry with `:info` severity on non-
+  # Linux hosts so the check list length + structure stay stable.
+  # Real check body never runs.
+  defp run_skipped_on_non_linux(name, _severity, _fun) do
+    os = to_string(:os.type() |> elem(1))
+
+    %{
+      name: Atom.to_string(name),
+      pass: true,
+      detail: "skipped on #{os} (linux-only prerequisite; agent runtime runs unsandboxed here)",
+      required: "linux",
+      severity: :info
+    }
+  end
+
+  defp linux?, do: match?({_, :linux}, :os.type())
 
   @doc """
   Severity-weighted exit code (D-45).

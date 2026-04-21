@@ -10,6 +10,32 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — R30.2: dispatch fallback + Doctor OS split
+
+- **`Glorbo.Sandbox.Unsandboxed.start/2`** — sibling runner to
+  `Glorbo.Sandbox.Bwrap.start/2` that skips every isolation flag
+  and invokes the CLI directly via the same sh-wrapper + prompt-
+  tempfile pattern. Tees stdout into `agents/<slug>/stdout.log`
+  so the dashboard still sees output.
+- **`Agent.Dispatch.default_run_fun/4`** now probes
+  `Glorbo.Sandbox.Bwrap.availability/0` per invocation. On
+  `{:error, :unavailable}` (macOS, bwrap-less Linux hosts) it
+  emits `agent.sandbox_unavailable` audit ONCE per company per
+  BEAM boot and runs via `Unsandboxed.start/2`.
+- **`Glorbo.Doctor.run_checks/1` OS-aware reclassification.**
+  On darwin, the four Linux-only probes (`linux_kernel`,
+  `uidmap`, `bwrap`, `user_namespaces`) return synthetic
+  `pass: true` with severity `:info` and detail
+  "skipped on <os> (linux-only prerequisite; agent runtime runs
+  unsandboxed here)". Check-list length stays 10 so existing
+  tests don't churn; exit code math unaffected since `:info`
+  entries aren't blockers.
+
+macOS binaries now start + run `glorbo doctor` honestly + dispatch
+agents without raising. Directors see exactly one
+`agent.sandbox_unavailable` row per company boot making the
+degraded-mode explicit.
+
 ### Added — R30.1: macOS build plumbing
 
 - **Burrito targets gain `macos_x86_64` + `macos_arm64`** in

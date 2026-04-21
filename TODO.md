@@ -112,5 +112,6 @@ it's been in CHANGELOG for a cycle.
 - [x] #299 R28: TaskMd regex widened (now matches `*.md` under `tasks/` like the real parser) + `skill/v1` FileSpec module + `:non_canonical_task_filename` info finding; 16 kinds total
 - [x] #300 R29: Homebrew tap at foobarto/homebrew-tap (`brew install foobarto/tap/glorbo`) + `mix glorbo.release_formula` auto-regen task
 - [x] R30.1: macOS build plumbing — Burrito darwin targets + GHA `build-macos` matrix job + `Sandbox.Bwrap.availability/0` probe + formula renders `on_macos do` block
-- [ ] R30.2: wire availability probe into `Agent.Dispatch` (skip bwrap wrapping on `{:error, :unavailable}`, emit one-time `agent.sandbox_unavailable` warning audit per company); reclassify Doctor checks by host OS (linux-only checks → skipped on darwin)
+- [x] #302 R30.2: `Glorbo.Sandbox.Unsandboxed.start/2` + Dispatch fallback + per-company once `agent.sandbox_unavailable` audit + Doctor reclassification (linux-only checks → `:info` severity on darwin); macOS binaries now functional in degraded mode
+- [ ] After R30.2 ships green: full browser E2E functionality test (new chore from user)
 - [ ] #297 R26.2b: atomic `kind:` cut — add `kind:` to every writer + fixture + template; parser enforcement; delete soft-migration readers; ship FileSpec.Formatter + `glorbo fmt` + `mix glorbo.docs.file_formats`; precommit wiring. Estimated 50+ files; best done in a fresh focused session
