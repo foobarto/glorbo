@@ -1,20 +1,42 @@
 defmodule Glorbo.FileSpec.TaskMd do
   @moduledoc """
-  Spec for `companies/<co>/projects/<project>/tasks/<project>-NN.md`
-  — individual task files. Per GEP-13, filename shape is
-  `<project-slug>-<NN>.md`; soft-migration windows accepting
-  `t-NN.md` are closed by GEP-25 D9.
+  Spec for `companies/<co>/projects/<project>/tasks/*.md` —
+  individual task files.
+
+  **Path match** is permissive: any `.md` under `projects/<proj>/
+  tasks/` is a task (matches what `Glorbo.TaskDefinition.parse_file`
+  actually accepts — R28 finding from the validator UAT).
+
+  **Canonical filename** per GEP-13 is `<project-slug>-<NN>.md`
+  (e.g. `release-01.md`). Non-canonical names (descriptive slugs
+  directors write by hand) are valid but flagged at info severity
+  via a check the Validator runs using `canonical_filename?/1`.
   """
   @behaviour Glorbo.FileSpec
 
-  @task_filename_regex ~r{/projects/[^/]+/tasks/[a-z][a-z0-9-]*-\d+\.md\z}
+  # Permissive path match: any .md under projects/<proj>/tasks/.
+  @task_path_regex ~r{/projects/[^/]+/tasks/[^/]+\.md\z}
+
+  # Canonical shape per GEP-13. Used by the validator to surface
+  # non-canonical-but-valid task filenames as info-level findings.
+  @canonical_filename_regex ~r{/projects/[^/]+/tasks/[a-z][a-z0-9-]*-\d+\.md\z}
+
+  @doc """
+  True when the path matches the GEP-13 canonical `<project>-NN.md`
+  shape. Exposed so the Validator can emit info findings for
+  non-canonical names.
+  """
+  @spec canonical_filename?(Path.t()) :: boolean()
+  def canonical_filename?(path) when is_binary(path) do
+    Regex.match?(@canonical_filename_regex, path)
+  end
 
   @impl true
   def kind, do: "task/v1"
 
   @impl true
   def path_match?(path) when is_binary(path) do
-    Regex.match?(@task_filename_regex, path)
+    Regex.match?(@task_path_regex, path)
   end
 
   @impl true

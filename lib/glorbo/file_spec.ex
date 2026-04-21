@@ -63,11 +63,16 @@ defmodule Glorbo.FileSpec do
             }
 
   # Spec registry — ordered, first-match wins on path classification.
+  # Ordering matters only where regexes overlap; e.g. SkillMd
+  # matches `/skills/<n>.md` distinctly from any other kind so its
+  # position is flexible. Memory/index + sentinel specs have mutually
+  # disjoint regexes.
   @specs [
     Glorbo.FileSpec.CompanyMd,
     Glorbo.FileSpec.AgentMd,
     Glorbo.FileSpec.ProjectMd,
     Glorbo.FileSpec.TaskMd,
+    Glorbo.FileSpec.SkillMd,
     Glorbo.FileSpec.HeartbeatMd,
     Glorbo.FileSpec.SoulMd,
     Glorbo.FileSpec.MemoryIndexMd,

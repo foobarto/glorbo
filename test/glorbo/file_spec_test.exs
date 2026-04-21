@@ -18,6 +18,7 @@ defmodule Glorbo.FileSpecTest do
     "agent/v1",
     "project/v1",
     "task/v1",
+    "skill/v1",
     "agent-heartbeat/v1",
     "agent-soul/v1",
     "agent-memory-index/v1",
@@ -32,8 +33,8 @@ defmodule Glorbo.FileSpecTest do
   ]
 
   describe "registry" do
-    test "specs/0 returns all 15 per-kind modules" do
-      assert length(FileSpec.specs()) == 15
+    test "specs/0 returns all 16 per-kind modules" do
+      assert length(FileSpec.specs()) == 16
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do
@@ -110,11 +111,28 @@ defmodule Glorbo.FileSpecTest do
                )
     end
 
-    test "classifies task files by <project>-NN.md pattern" do
+    test "classifies task files by /tasks/ path segment (R28 widened)" do
       assert {:ok, Glorbo.FileSpec.TaskMd} =
                FileSpec.classify_by_path(
                  "/home/u/.glorbo/companies/acme/projects/release/tasks/release-01.md"
                )
+
+      # Non-canonical filename still classifies as TaskMd — any *.md
+      # under projects/<proj>/tasks/ is a task. The Validator
+      # separately emits an info-level finding for non-canonical
+      # filenames (see Glorbo.FileSpec.Validator tests).
+      assert {:ok, Glorbo.FileSpec.TaskMd} =
+               FileSpec.classify_by_path(
+                 "/home/u/.glorbo/companies/acme/projects/release/tasks/cut-release.md"
+               )
+    end
+
+    test "classifies skills (builtin + user override)" do
+      assert {:ok, Glorbo.FileSpec.SkillMd} =
+               FileSpec.classify_by_path("/opt/glorbo/priv/templates/skills/code-review.md")
+
+      assert {:ok, Glorbo.FileSpec.SkillMd} =
+               FileSpec.classify_by_path("/home/u/.glorbo/skills/code-review.md")
     end
 
     test "classifies HEARTBEAT.md + SOUL.md" do

@@ -286,6 +286,43 @@ defmodule Glorbo.FileSpec.ValidatorTest do
     end
   end
 
+  describe "non-canonical task filename (R28)" do
+    test "info-level finding for hand-written task slugs", %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/cut-release.md", """
+      ---
+      kind: task/v1
+      id: cut-release
+      title: Cut release
+      status: todo
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+
+      assert Enum.any?(
+               findings,
+               &(&1.code == :non_canonical_task_filename and &1.severity == :info)
+             )
+
+      # Info findings don't change exit code.
+      assert Validator.exit_code(findings) == 0
+    end
+
+    test "canonical <project>-NN.md files pass silently", %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/release-01.md", """
+      ---
+      kind: task/v1
+      id: release-01
+      title: Release task
+      status: todo
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :non_canonical_task_filename))
+    end
+  end
+
   describe "stats" do
     test "stats count files_examined and severity buckets", %{base: base} do
       seed(base, "companies/acme/company.md", """

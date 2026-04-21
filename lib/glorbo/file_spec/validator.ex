@@ -125,6 +125,7 @@ defmodule Glorbo.FileSpec.Validator do
             |> check_patterns(path, fm, schema)
             |> check_caps(path, fm, body, schema)
             |> check_unknown_keys(path, fm, schema)
+            |> check_kind_specific(path, mod)
 
           {:error, :missing_kind_wrapper_json} ->
             [error(path, :missing_kind, "top-level `kind` field missing")]
@@ -322,6 +323,24 @@ defmodule Glorbo.FileSpec.Validator do
       [warning(path, :unknown_key, "key `#{key}` not declared in schema") | acc]
     end)
   end
+
+  # Per-kind extras the generic schema can't express (R28).
+  defp check_kind_specific(acc, path, Glorbo.FileSpec.TaskMd) do
+    if Glorbo.FileSpec.TaskMd.canonical_filename?(path) do
+      acc
+    else
+      [
+        info(
+          path,
+          :non_canonical_task_filename,
+          "task filename doesn't match GEP-13 `<project>-NN.md` convention"
+        )
+        | acc
+      ]
+    end
+  end
+
+  defp check_kind_specific(acc, _path, _mod), do: acc
 
   # ------------------------------------------------------------------
   # Finding builders
