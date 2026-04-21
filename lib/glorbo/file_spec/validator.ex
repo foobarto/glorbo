@@ -83,8 +83,10 @@ defmodule Glorbo.FileSpec.Validator do
     |> Enum.sort()
   end
 
-  # Skip derived artifacts: SQLite db, build outputs, git state, runtime logs.
-  @excluded_segments ~w(.git _build deps node_modules burrito_out logs)
+  # Skip derived artifacts: SQLite db, build outputs, git state, runtime
+  # logs, and bench-template fixture source trees (fixtures/ is read-only
+  # ground truth the agent works against — not a Glorbo-owned format).
+  @excluded_segments ~w(.git _build deps node_modules burrito_out logs fixtures)
   @excluded_extensions ~w(.db .db-wal .db-shm .log .pid .lock .tmp)
   defp excluded?(path) do
     segs = Path.split(path)

@@ -19,8 +19,8 @@ defmodule Glorbo.FileSpec.ProjectMd do
   def frontmatter_schema do
     %{
       required: [:kind, :slug, :name],
-      optional: [:description, :icon, :created_at, :goal],
-      enums: %{},
+      optional: [:status, :description, :icon, :created_at, :goal],
+      enums: %{status: ["active", "paused", "done", "archived"]},
       patterns: %{slug: @project_slug_regex},
       caps: %{}
     }
@@ -28,7 +28,7 @@ defmodule Glorbo.FileSpec.ProjectMd do
 
   @impl true
   def canonical_key_order do
-    [:kind, :slug, :name, :description, :icon, :goal, :created_at]
+    [:kind, :slug, :name, :status, :description, :icon, :goal, :created_at]
   end
 
   @impl true

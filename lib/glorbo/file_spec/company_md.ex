@@ -22,7 +22,18 @@ defmodule Glorbo.FileSpec.CompanyMd do
   def frontmatter_schema do
     %{
       required: [:kind, :slug, :name],
-      optional: [:description, :mission, :created_at, :goals],
+      optional: [
+        :description,
+        :mission,
+        :created_at,
+        :goals,
+        :icon,
+        :budget,
+        :template,
+        :template_version,
+        :provider_pin,
+        :model_pin
+      ],
       enums: %{},
       patterns: %{
         slug: @slug_regex
@@ -33,7 +44,21 @@ defmodule Glorbo.FileSpec.CompanyMd do
 
   @impl true
   def canonical_key_order do
-    [:kind, :slug, :name, :description, :mission, :created_at, :goals]
+    [
+      :kind,
+      :slug,
+      :name,
+      :description,
+      :mission,
+      :icon,
+      :budget,
+      :template,
+      :template_version,
+      :provider_pin,
+      :model_pin,
+      :created_at,
+      :goals
+    ]
   end
 
   @impl true

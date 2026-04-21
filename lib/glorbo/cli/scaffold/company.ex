@@ -27,12 +27,71 @@ defmodule Glorbo.CLI.Scaffold.Company do
   def run(["--help" | _]), do: {:new_company, 0, help_text()}
   def run(["-h" | _]), do: {:new_company, 0, help_text()}
 
-  def run([slug | _rest]) do
-    if slug =~ @slug_re do
-      scaffold(slug)
+  def run(argv) do
+    {opts, rest} = parse_opts(argv)
+
+    case rest do
+      [] ->
+        usage()
+
+      [slug | _] ->
+        cond do
+          not (slug =~ @slug_re) ->
+            {:new_company, 1,
+             "Invalid slug: '#{slug}'. Use lowercase letters, numbers, and hyphens only.\n"}
+
+          opts[:template] ->
+            scaffold_from_template(slug, opts)
+
+          true ->
+            scaffold(slug)
+        end
+    end
+  end
+
+  # OptionParser with strict switches for clarity; unknown flags error.
+  defp parse_opts(argv) do
+    {parsed, rest, invalid} =
+      OptionParser.parse(argv,
+        strict: [template: :string, provider: :string, model: :string]
+      )
+
+    if invalid != [] do
+      {%{}, rest ++ Enum.map(invalid, fn {k, _} -> k end)}
     else
-      {:new_company, 1,
-       "Invalid slug: '#{slug}'. Use lowercase letters, numbers, and hyphens only.\n"}
+      {Map.new(parsed), rest}
+    end
+  end
+
+  defp scaffold_from_template(slug, opts) do
+    template = opts[:template]
+
+    case Glorbo.CLI.Scaffold.CompanyTemplate.run(slug, template,
+           provider: opts[:provider],
+           model: opts[:model]
+         ) do
+      {:ok, path} ->
+        {:new_company, 0, "✓ scaffolded #{slug} from template #{template} at #{path}\n"}
+
+      {:error, :exists} ->
+        {:new_company, 0, "⏭ already exists: #{slug}\n"}
+
+      {:error, :invalid_slug} ->
+        {:new_company, 1, "Invalid slug: '#{slug}'.\n"}
+
+      {:error, :template_not_found} ->
+        {:new_company, 1,
+         "Template not found: '#{template}'. Run `glorbo bench list` to see available templates.\n"}
+
+      {:error, {:glorbo_too_old, declared, current}} ->
+        {:new_company, 1,
+         "Template '#{template}' requires Glorbo #{declared}; installed #{current}. Upgrade.\n"}
+
+      {:error, {:bad_manifest, reason}} ->
+        {:new_company, 1, "Template '#{template}' manifest invalid: #{inspect(reason)}\n"}
+
+      {:error, reason} ->
+        {:new_company, 1, "Scaffold failed: #{inspect(reason)}\n"}
     end
   end
 
@@ -79,11 +138,21 @@ defmodule Glorbo.CLI.Scaffold.Company do
 
     USAGE
       glorbo new company <slug>
+      glorbo new company <slug> --template <name>
+      glorbo new company <slug> --template <name> --provider <p> --model <m>
 
     SLUG
       Lowercase letters, digits, and hyphens only (regex: #{inspect(@slug_re)}).
 
-    BEHAVIOR
+    OPTIONS
+      --template NAME   Scaffold from a company template (see GEP-26).
+                        List available templates with `glorbo bench list`.
+      --provider P      Override template's default provider. Ignored
+                        when --template is absent.
+      --model M         Override template's default model. Ignored
+                        when --template is absent.
+
+    BEHAVIOR (no template)
       Creates ~/.glorbo/companies/<slug>/ with:
         company.md   (frontmatter + markdown body)
         agents/      (empty)
@@ -91,7 +160,14 @@ defmodule Glorbo.CLI.Scaffold.Company do
         channels/    (empty)
         audit/       (empty)
 
-      Idempotent — re-running on an existing slug is a no-op.
+    BEHAVIOR (--template)
+      Copies the template's agents/, projects/, and tasks/ into the
+      new company. Tasks are routed to their project by filename
+      prefix (e.g. `bugs-1-*.md` → `projects/bugs/tasks/`).
+      Fixtures are symlinked read-only (or copied RO if the
+      platform disallows symlinks).
+
+    Idempotent — re-running on an existing slug is a no-op.
     """
   end
 end

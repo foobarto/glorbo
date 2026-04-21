@@ -66,7 +66,7 @@ defmodule Glorbo.FileSpec.TaskMd do
           "denied",
           "done"
         ],
-        priority: ["p0", "p1", "p2", "p3"],
+        priority: ["low", "medium", "high", "critical"],
         requires_approval: ["director"]
       },
       patterns: %{},

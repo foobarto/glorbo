@@ -10,6 +10,51 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-26 Draft + benchmark templates Phase A
+
+- **GEP-26** — benchmark company templates + provider A/B comparison
+  (`docs/geps/0026-benchmark-templates-and-ab-comparison.md`). Draft
+  status. Scope: cross-provider blind A/B scoring; two-phase
+  implementation shipped back-to-back (Phase A templates now, Phase
+  B scoring UI immediately after). 10 decision-log entries.
+- **`company-template/v1` kind** — new FileSpec module registered.
+  Total spec count now 20+ (goal/v1, config/v1, emergency-stop/v1,
+  inbox-message/v1 shipped in preceding UAT-finding commits;
+  bench-template follow-on spec shipped in Phase B).
+- **3 bench templates under `priv/templates/companies/`**:
+  - `bench-softdev` — engineer + reviewer agents working on a
+    frozen Elixir codebase (`fixtures/repo/`). 3 tasks (1
+    in-progress: dark-mode toggle): timeout constant fix, dark
+    mode, XSS sanitizer.
+  - `bench-tech-blog` — researcher + editor drafting posts from a
+    frozen news archive (`fixtures/news/`). 2 tasks, 1
+    in-progress.
+  - `bench-scifi-publisher` — worldbuilder + writer against a
+    static canon bible (`fixtures/canon/`). 2 tasks.
+- **`Glorbo.CLI.Scaffold.CompanyTemplate`** — scaffolder that
+  renders template frontmatter placeholders (`{{ slug }}`,
+  `{{ provider }}`, `{{ model }}`), routes tasks by filename
+  prefix to the right project, and symlinks `fixtures/` read-only
+  (RO copy fallback if symlinks fail).
+- **CLI**: `glorbo new company <slug> --template <name>` and
+  `glorbo bench list`. Template version is checked against
+  installed Glorbo via `min_glorbo_version:`.
+- **Task priority schema changed** — `p0..p3` → `low | medium |
+  high | critical`. (Zero users pre-1.0; atomic cut per the
+  "no kid gloves" rule.)
+- **ProjectMd gains `status: active|paused|done|archived`** — was
+  previously in writer output but not in schema.
+- **CompanyMd schema gains** `template`, `template_version`,
+  `provider_pin`, `model_pin`, `icon`, `budget` keys — covers
+  both bench-scaffolded companies and the CompanyLive editor's
+  existing emissions.
+- **Validator excludes `fixtures/`** — bench-template fixture
+  trees are agent inputs, not Glorbo-owned data.
+
+1394/1394 tests green. `glorbo validate` yields 0 errors / 0
+warnings / 0 info on a scaffolded bench company. `mix gep.validate`
+green with GEP-26 registered.
+
 ### Changed — GEP-25 atomic `kind:` cut, writers (R26.2a)
 
 Per GEP-25 D9 + the pre-1.0 "no kid gloves" rule, every file Glorbo

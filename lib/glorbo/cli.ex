@@ -40,6 +40,7 @@ defmodule Glorbo.CLI do
           | :import_paperclip
           | :validate
           | :fmt
+          | :bench
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -115,6 +116,9 @@ defmodule Glorbo.CLI do
   end
 
   def dispatch(["templates" | rest]), do: Scaffold.TemplatesVerb.run(rest)
+
+  # GEP-26: benchmark company templates + A/B dispatch.
+  def dispatch(["bench" | rest]), do: Glorbo.CLI.Bench.run(rest)
 
   # `glorbo import paperclip <src>` — import an agentcompanies tree.
   def dispatch(["import", "paperclip" | rest]), do: ImportPaperclip.run(rest)
