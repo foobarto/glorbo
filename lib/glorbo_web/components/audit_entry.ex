@@ -51,7 +51,13 @@ defmodule GlorboWeb.Components.AuditEntry do
       phx-keydown="toggle"
       phx-key="Enter"
     >
-      <time class="gl-audit-row__ts" datetime={@entry["ts"]}>{format_ts(@entry["ts"])}</time>
+      <time
+        class="gl-audit-row__ts"
+        datetime={@entry["ts"]}
+        title={format_ts(@entry["ts"])}
+      >
+        {format_relative(@entry["ts"])}
+      </time>
       <span
         class={["gl-avatar", "gl-avatar--" <> @actor_kind]}
         aria-hidden="true"
@@ -247,6 +253,17 @@ defmodule GlorboWeb.Components.AuditEntry do
     do: ts |> String.replace("T", " ") |> String.replace("Z", "")
 
   defp format_ts(_), do: ""
+
+  # Relative "2 min ago" rendering for the collapsed row. Fallback to
+  # the absolute timestamp string if the value isn't ISO-parseable.
+  defp format_relative(ts) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> GlorboWeb.TimeFormat.relative(dt)
+      _ -> format_ts(ts)
+    end
+  end
+
+  defp format_relative(_), do: ""
 
   defp actor_class("system"), do: "gl-audit-row__actor--system"
   defp actor_class(_), do: nil

@@ -237,18 +237,25 @@ defmodule GlorboWeb.Components.Sidebar do
   # #256 — count awaiting-approval sentinels for the focused company.
   # Cheap enough to run on every sidebar render (scans one glob per
   # agent); returns 0 for any IO error so we stay silent on startup.
-  defp count_pending_approvals(nil), do: 0
+  @doc false
+  # Test-only: injected `base` so unit tests can seed a tmpdir.
+  # Production mount flow calls `count_pending_approvals/1` which
+  # resolves the base from `Glorbo.Filesystem.Hierarchy`.
+  @spec count_pending_approvals_for_test(String.t() | nil, Path.t()) :: non_neg_integer()
+  def count_pending_approvals_for_test(company, base),
+    do: do_count_pending(company, base)
 
-  defp count_pending_approvals(company) when is_binary(company) do
-    base = Glorbo.Filesystem.Hierarchy.default_root()
+  defp count_pending_approvals(company),
+    do: do_count_pending(company, Glorbo.Filesystem.Hierarchy.default_root())
+
+  defp do_count_pending(nil, _base), do: 0
+
+  defp do_count_pending(company, base) when is_binary(company) do
     agents_dir = Path.join([base, "companies", company, "agents"])
 
     case File.ls(agents_dir) do
-      {:ok, agents} ->
-        Enum.reduce(agents, 0, &(count_sentinels_in(agents_dir, &1) + &2))
-
-      _ ->
-        0
+      {:ok, agents} -> Enum.reduce(agents, 0, &(count_sentinels_in(agents_dir, &1) + &2))
+      _ -> 0
     end
   rescue
     _ -> 0
@@ -256,15 +263,43 @@ defmodule GlorboWeb.Components.Sidebar do
 
   defp count_sentinels_in(agents_dir, agent_slug) do
     state_dir = Path.join([agents_dir, agent_slug, "state"])
+    # base = agents_dir's parent (.../companies/<co>) — needed to
+    # resolve each sentinel's task_id back to projects/*/tasks/<id>.md.
+    # Only count sentinels whose task file still exists on disk, so
+    # the badge matches what ApprovalQueueLive/InboxLive actually
+    # render. Stale orphan sentinels (task deleted, sentinel left
+    # behind) don't deserve a badge that leads to an empty page.
+    co_dir = Path.dirname(agents_dir)
 
     case File.ls(state_dir) do
       {:ok, files} ->
         Enum.count(files, fn f ->
-          String.starts_with?(f, "awaiting-approval-") and String.ends_with?(f, ".md")
+          String.starts_with?(f, "awaiting-approval-") and
+            String.ends_with?(f, ".md") and
+            sentinel_task_exists?(co_dir, f)
         end)
 
       _ ->
         0
+    end
+  end
+
+  # A sentinel `awaiting-approval-<task_id>.md` is "live" iff the
+  # matching task file exists under `projects/*/tasks/<task_id>.md`.
+  # Derive the project from the task_id (prefix before the final
+  # `-<digits>`) so we don't have to Path.wildcard.
+  defp sentinel_task_exists?(co_dir, filename) do
+    task_id =
+      filename
+      |> String.replace_prefix("awaiting-approval-", "")
+      |> String.replace_suffix(".md", "")
+
+    case Regex.run(~r/\A([a-z][a-z0-9_-]*?)-(\d+)\z/, task_id) do
+      [_, project, _num] ->
+        File.exists?(Path.join([co_dir, "projects", project, "tasks", "#{task_id}.md"]))
+
+      _ ->
+        false
     end
   end
 

@@ -146,4 +146,38 @@ defmodule GlorboWeb.Components.AuditEntryTest do
     assert html =~ ~s(class="gl-avatar gl-avatar--agent")
     assert html =~ "CE"
   end
+
+  # Round 8 — timestamps render as relative ("2 min ago") with the
+  # absolute timestamp preserved in the `title=` tooltip + `datetime=`
+  # attribute for screen readers.
+  describe "relative timestamps" do
+    test "recent entry renders `ago` label" do
+      now = DateTime.utc_now() |> DateTime.add(-120, :second) |> DateTime.to_iso8601()
+
+      html =
+        render_row(%{
+          "ts" => now,
+          "actor" => "director",
+          "action" => "task.create",
+          "target" => "x"
+        })
+
+      assert html =~ "min ago"
+      # Absolute datetime preserved for a11y + tooltip.
+      assert html =~ ~s(datetime=")
+      assert html =~ ~s(title=")
+    end
+
+    test "malformed timestamp falls back to the raw string" do
+      html =
+        render_row(%{
+          "ts" => "not-a-date",
+          "actor" => "director",
+          "action" => "task.create",
+          "target" => "x"
+        })
+
+      assert html =~ "not-a-date"
+    end
+  end
 end

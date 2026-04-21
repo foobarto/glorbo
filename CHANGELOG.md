@@ -198,6 +198,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Sidebar Approvals badge/list mismatch (#272, UAT round 8).**
+  Previously the badge counted every `awaiting-approval-*.md`
+  sentinel including orphans (matching task file absent), while
+  ApprovalQueueLive and InboxLive filtered them out. Directors
+  could see "1 pending" and click through to an empty list. Fix:
+  the badge counter now validates each sentinel's `<task_id>`
+  resolves to a real file under `projects/<proj>/tasks/<id>.md`,
+  matching the view's filter. 6 new unit tests cover orphan /
+  live / mixed / malformed-id cases.
+- **Audit log ISO timestamps → relative `N min ago` (#272, UAT
+  round 8).** The collapsed audit row rendered
+  `2026-04-21 03:50:42.555059` which scans poorly in a
+  fast-scrolling log. Now shows `"7 min ago"` / `"yesterday"` /
+  etc. via the existing `GlorboWeb.TimeFormat.relative/1`
+  helper; the absolute timestamp is preserved on hover (`title=`)
+  and in the `datetime=` attribute for screen readers.
+  Malformed timestamps fall back to the raw string — nothing
+  crashes.
+- **ESC key now closes the ApprovalQueueLive deny modal (#272).**
+  Every other modal already wired `phx-window-keydown="<cancel>"
+  phx-key="Escape"`; the approval-queue deny modal was the only
+  holdout, so keyboard users had to click the `×` to dismiss.
+  Now ESC universally closes modals.
 - **`glorbo up` crash when EPMD not running (#271).** Cold-boot
   timing: `glorbo doctor` 145ms, `glorbo status` 141ms, warm
   `glorbo up → running` 417ms. Cold `glorbo up` on a host with

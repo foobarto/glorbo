@@ -251,6 +251,8 @@ defmodule GlorboWeb.ApprovalQueueLive do
       <div :if={@deny_task_path} class="gl-modal-scrim" phx-click-away="deny_cancel">
         <form
           phx-submit="deny_confirm"
+          phx-window-keydown="deny_cancel"
+          phx-key="Escape"
           class="gl-modal"
           role="dialog"
           aria-modal="true"

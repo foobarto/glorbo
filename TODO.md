@@ -31,10 +31,9 @@ it's been in CHANGELOG for a cycle.
   record}` on `company:<co>:audit`, and TaskScheduler routes
   through it via `audit_via_registry/2`. End-to-end chain
   intact; TaskLive history panel refreshes live.
-- [ ] **Modal ESC close consistency.** Most modals wire `phx-window-
-  keydown="<cancel>" phx-key="Escape"`; a couple (verify
-  agent file-edit, company.md edit) use click-away only. Make ESC
-  universal so keyboard users never lose state.
+- [x] **Modal ESC close consistency.** Fixed this cycle — every
+  `.gl-modal` now wires `phx-window-keydown=<cancel> phx-key=Escape`;
+  the ApprovalQueueLive deny modal was the only holdout.
 - [ ] **Scheduler rescan is O(projects × tasks) every 60s.** Fine for
   v0.0.3's single-digit task counts, but watch it past 1000 tasks.
   If it becomes hot, cache mtime like Search.scan_tasks already
@@ -81,3 +80,7 @@ it's been in CHANGELOG for a cycle.
 - [x] GEP-24 retrofit + TaskLive next-fire indicator (#270)
 - [x] UAT Round 7 — 23 cases green via browser (UAT.md)
 - [x] #271 Fix `glorbo up` crash on hosts without EPMD daemon
+- [x] #272 UAT Round 8 — interactive (C2/C3/C6, D2/D5, G1–G3, M4) + 3 ships
+- [x] Fix sidebar Approvals badge/list parity bug (UAT finding)
+- [x] Audit log relative timestamps ("7 min ago" + title tooltip)
+- [x] ESC key closes every modal
