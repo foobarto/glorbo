@@ -50,8 +50,23 @@ change between minor versions. Pin exact versions in downstream usage.
   `Company.SupervisorTest`, `ApplicationTest`, `WatcherTest` updated
   for new child counts. `DispatchTest` and `EmergencyStopTest`
   initialise `PathGrantStore` ETS in setup.
+- **UI surfaces** — InboxLive renders pending path requests with
+  approve/deny/archive actions; AgentLive gains a "path requests"
+  tab listing pending requests; TaskLive shows active external path
+  grants in the usage strip.
+- **Bug fixes (discovered during UAT)** —
+  - Router `forward_to_path_request_gate/4` used atom-key access
+    (`meta.paths`) on a string-key Map from `Frontmatter.parse`;
+    fixed to `Map.get(meta, "paths")` / `Map.get(meta, "reason")`.
+  - `PathRequestGate.build_pending_sentinel_path/3` generated
+    `path-pending-<seq>.md` which did not match `@pending_regex`
+    (`path-pending-<task_id>-<seq>.md`); fixed filename format.
+  - `PathGrantStore.revoke/3` crashed with `ArgumentError` when the
+    ETS table was missing (e.g. in isolated test contexts); added
+    `:ets.info/1` guard. Same guard added to `lookup_by_task_id/2`.
 - **Docs** — `docs/file-formats/path-request_v1.md` generated;
-  `docs/file-formats/README.md` index updated.
+  `docs/file-formats/README.md` index updated. GEP-27 status
+  updated to `Implemented`.
 
 1436 tests green; `mix credo --strict` clean; `mix gep.validate` clean.
 

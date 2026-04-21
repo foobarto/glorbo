@@ -57,6 +57,7 @@ defmodule GlorboWeb.InboxLive do
     stuck = load_stuck(base, co)
     audits = load_recent_audit(base, co)
     archived = Archive.list(base, co)
+    path_requests = load_path_requests(base, co)
 
     {:ok,
      socket
@@ -70,6 +71,7 @@ defmodule GlorboWeb.InboxLive do
      |> assign(:stuck, stuck)
      |> assign(:audit_rows, audits)
      |> assign(:archived, archived)
+     |> assign(:path_requests, path_requests)
      |> assign(:deny_task_path, nil)
      |> ChatDrawer.State.wire_drawer()}
   end
@@ -92,13 +94,15 @@ defmodule GlorboWeb.InboxLive do
     stuck = load_stuck(socket.assigns.base, socket.assigns.company_slug)
     audits = load_recent_audit(socket.assigns.base, socket.assigns.company_slug)
     archived = Archive.list(socket.assigns.base, socket.assigns.company_slug)
+    path_requests = load_path_requests(socket.assigns.base, socket.assigns.company_slug)
 
     {:noreply,
      socket
      |> assign(:sentinels, sentinels)
      |> assign(:stuck, stuck)
      |> assign(:audit_rows, audits)
-     |> assign(:archived, archived)}
+     |> assign(:archived, archived)
+     |> assign(:path_requests, path_requests)}
   end
 
   def handle_info({:audit_append, _row}, socket) do
@@ -221,6 +225,67 @@ defmodule GlorboWeb.InboxLive do
     end
   end
 
+  # GEP-27 — path request approval / denial.
+  def handle_event(
+        "approve_path",
+        %{
+          "agent" => agent,
+          "task_id" => task_id,
+          "paths" => paths_json
+        },
+        socket
+      ) do
+    co = socket.assigns.company_slug
+
+    granted_paths =
+      case Jason.decode(paths_json) do
+        {:ok, paths} ->
+          Enum.map(paths, fn %{"path" => p, "mode" => m} ->
+            %{path: p, mode: String.to_existing_atom(m)}
+          end)
+
+        _ ->
+          []
+      end
+
+    case Glorbo.PathRequestGate.approve(co, agent, task_id, granted_paths) do
+      :ok ->
+        path_requests = load_path_requests(socket.assigns.base, co)
+
+        {:noreply,
+         socket
+         |> assign(:path_requests, path_requests)
+         |> put_flash(:info, "Approved path request for #{agent}/#{task_id}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Approve failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event(
+        "deny_path",
+        %{
+          "agent" => agent,
+          "task_id" => task_id
+        },
+        socket
+      ) do
+    co = socket.assigns.company_slug
+
+    case Glorbo.PathRequestGate.deny(co, agent, task_id) do
+      :ok ->
+        path_requests = load_path_requests(socket.assigns.base, co)
+
+        {:noreply,
+         socket
+         |> assign(:path_requests, path_requests)
+         |> put_flash(:info, "Denied path request for #{agent}/#{task_id}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Deny failed: #{inspect(reason)}")}
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Data helpers
   # ---------------------------------------------------------------------------
@@ -318,6 +383,28 @@ defmodule GlorboWeb.InboxLive do
     end
   end
 
+  # GEP-27 — load pending path requests from PathRequestGate.
+  defp load_path_requests(_base, company) do
+    case Glorbo.PathRequestGate.list_all_pending(company) do
+      [] ->
+        []
+
+      requests when is_list(requests) ->
+        Enum.map(requests, fn req ->
+          %{
+            agent: req.agent || req.agent_slug || "",
+            task_id: req.task_id || "",
+            paths: req.paths || [],
+            reason: req.reason || "",
+            requested_at: req.requested_at || "",
+            sentinel_file: req.sentinel_file || ""
+          }
+        end)
+    end
+  catch
+    _, _ -> []
+  end
+
   @audit_limit 50
   @audit_noise_actions ~w(stdout_line heartbeat_skipped)
 
@@ -354,6 +441,8 @@ defmodule GlorboWeb.InboxLive do
   # built from on-disk identifiers (task path or audit row coords).
   defp approval_key(%{task_path: tp}), do: "approval:" <> tp
 
+  defp path_request_key(%{agent: ag, task_id: tid}), do: "path_request:" <> ag <> ":" <> tid
+
   defp audit_key(row) do
     ts = to_string(row["ts"] || "")
     action = to_string(row["action"] || "")
@@ -365,13 +454,23 @@ defmodule GlorboWeb.InboxLive do
   # contradicted a non-empty stuck-agents list below when
   # approvals = 0. Show both categories honestly so the heading
   # matches what's on screen.
-  defp inbox_header_counts(approvals, stuck) do
-    case {length(approvals), length(stuck)} do
-      {0, 0} -> "(empty)"
-      {a, 0} -> "(#{a} #{pluralise(a, "approval", "approvals")})"
-      {0, s} -> "(#{s} stuck)"
-      {a, s} -> "(#{a} #{pluralise(a, "approval", "approvals")} · #{s} stuck)"
+  defp inbox_header_counts(approvals, stuck, path_requests) do
+    parts = []
+    parts = prepend_if_non_empty(approvals, "approval", parts)
+    parts = prepend_if_non_empty(path_requests, "path req", parts)
+    parts = prepend_if_non_empty(stuck, "stuck", parts)
+
+    case parts do
+      [] -> "(empty)"
+      _ -> "(#{Enum.join(parts, " · ")})"
     end
+  end
+
+  defp prepend_if_non_empty([], _label, parts), do: parts
+
+  defp prepend_if_non_empty(items, label, parts) do
+    count = length(items)
+    ["#{count} #{pluralise(count, label, label <> "s")}" | parts]
   end
 
   defp pluralise(1, singular, _plural), do: singular
@@ -409,12 +508,29 @@ defmodule GlorboWeb.InboxLive do
         :archived_audits,
         Enum.filter(assigns.audit_rows, &MapSet.member?(assigns.archived, audit_key(&1)))
       )
+      |> assign(
+        :visible_path_requests,
+        Enum.reject(
+          assigns.path_requests,
+          &MapSet.member?(assigns.archived, path_request_key(&1))
+        )
+      )
+      |> assign(
+        :archived_path_requests,
+        Enum.filter(
+          assigns.path_requests,
+          &MapSet.member?(assigns.archived, path_request_key(&1))
+        )
+      )
 
     ~H"""
     <section class="gl-view gl-inbox">
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">
-          Inbox <span class="gl-muted">{inbox_header_counts(@visible_sentinels, @stuck)}</span>
+          Inbox
+          <span class="gl-muted">
+            {inbox_header_counts(@visible_sentinels, @stuck, @visible_path_requests)}
+          </span>
         </h1>
       </header>
 
@@ -469,6 +585,63 @@ defmodule GlorboWeb.InboxLive do
                 class="gl-btn gl-btn--sm"
                 phx-click="archive"
                 phx-value-key={approval_key(s)}
+                title="Archive (hide without acting)"
+              >
+                archive
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div :if={@tab in [:mine, :all]} class="gl-inbox__section">
+        <h2 class="gl-heading gl-heading--heading">
+          Path requests <span class="gl-muted">({length(@visible_path_requests)})</span>
+        </h2>
+
+        <div :if={@visible_path_requests == []} class="gl-muted gl-inbox__empty">
+          No path requests pending. Agents write <code>path-request-&lt;task_id&gt;.md</code>
+          to their outbox to
+          request temporary access to external paths.
+        </div>
+
+        <ul :if={@visible_path_requests != []} class="gl-inbox__list">
+          <li :for={pr <- @visible_path_requests} class="gl-inbox__approval gl-inbox__path-req">
+            <div class="gl-inbox__approval-meta">
+              <span class="gl-tabular">{pr.task_id}</span>
+              <span class="gl-muted">· @{pr.agent}</span>
+            </div>
+            <div class="gl-inbox__approval-title">{pr.reason}</div>
+            <div class="gl-inbox__path-req-paths">
+              <span :for={p <- pr.paths} class="gl-inbox__path-req-tag">
+                {p["path"]} <span class="gl-muted">({p["mode"]})</span>
+              </span>
+            </div>
+            <div class="gl-inbox__approval-actions">
+              <button
+                type="button"
+                class="gl-btn gl-btn--primary"
+                phx-click="approve_path"
+                phx-value-agent={pr.agent}
+                phx-value-task_id={pr.task_id}
+                phx-value-paths={Jason.encode!(pr.paths)}
+              >
+                approve
+              </button>
+              <button
+                type="button"
+                class="gl-btn gl-btn--deny"
+                phx-click="deny_path"
+                phx-value-agent={pr.agent}
+                phx-value-task_id={pr.task_id}
+              >
+                deny
+              </button>
+              <button
+                type="button"
+                class="gl-btn gl-btn--sm"
+                phx-click="archive"
+                phx-value-key={path_request_key(pr)}
                 title="Archive (hide without acting)"
               >
                 archive
@@ -572,7 +745,7 @@ defmodule GlorboWeb.InboxLive do
         <h2 class="gl-heading gl-heading--heading">Archived</h2>
 
         <div
-          :if={@archived_sentinels == [] and @archived_audits == []}
+          :if={@archived_sentinels == [] and @archived_audits == [] and @archived_path_requests == []}
           class="gl-muted gl-inbox__empty"
         >
           Nothing archived yet. Use the <strong>archive</strong>
@@ -626,6 +799,29 @@ defmodule GlorboWeb.InboxLive do
             >
               unarchive
             </button>
+          </li>
+        </ul>
+
+        <ul :if={@archived_path_requests != []} class="gl-inbox__list">
+          <li
+            :for={pr <- @archived_path_requests}
+            class="gl-inbox__approval gl-inbox__approval--archived"
+          >
+            <div class="gl-inbox__approval-meta">
+              <span class="gl-tabular">{pr.task_id}</span>
+              <span class="gl-muted">· @{pr.agent}</span>
+            </div>
+            <div class="gl-inbox__approval-title">{pr.reason}</div>
+            <div class="gl-inbox__approval-actions">
+              <button
+                type="button"
+                class="gl-btn gl-btn--sm"
+                phx-click="unarchive"
+                phx-value-key={path_request_key(pr)}
+              >
+                unarchive
+              </button>
+            </div>
           </li>
         </ul>
       </div>

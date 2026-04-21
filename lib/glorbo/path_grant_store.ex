@@ -82,7 +82,12 @@ defmodule Glorbo.PathGrantStore do
   @spec revoke(String.t(), String.t(), String.t()) :: :ok
   def revoke(company, agent, task_id) do
     key = {company, agent, task_id}
-    :ets.delete(@table, key)
+
+    case :ets.info(@table) do
+      :undefined -> :ok
+      _ -> :ets.delete(@table, key)
+    end
+
     :ok
   end
 
@@ -121,5 +126,21 @@ defmodule Glorbo.PathGrantStore do
   def list_for_agent(company, agent) do
     match_key = {{company, agent, :_}, :"$1"}
     :ets.select(@table, [{match_key, [], [:"$1"]}])
+  end
+
+  @doc """
+  Look up active grants by task_id across all agents in a company.
+  Returns a list of grant values (each containing agent, paths, etc.).
+  """
+  @spec lookup_by_task_id(String.t(), String.t()) :: [map()]
+  def lookup_by_task_id(company, task_id) do
+    case :ets.info(@table) do
+      :undefined ->
+        []
+
+      _ ->
+        match_key = {{company, :"$1", task_id}, :"$2"}
+        :ets.select(@table, [{match_key, [], [:"$2"]}])
+    end
   end
 end

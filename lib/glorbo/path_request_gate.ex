@@ -165,7 +165,7 @@ defmodule Glorbo.PathRequestGate do
   defp do_handle_request(agent_slug, meta, state) do
     with :ok <- validate_request(meta),
          :ok <- ensure_state_dir(agent_slug, state),
-         sentinel_path <- build_pending_sentinel_path(agent_slug, state),
+         sentinel_path <- build_pending_sentinel_path(agent_slug, meta.task_id, state),
          :ok <- write_pending_sentinel(sentinel_path, meta, agent_slug, state) do
       emit_audit(state, "path_access.requested", "agent:#{agent_slug}", %{
         task_id: meta.task_id,
@@ -290,10 +290,10 @@ defmodule Glorbo.PathRequestGate do
     File.mkdir_p(dir)
   end
 
-  defp build_pending_sentinel_path(agent_slug, state) do
+  defp build_pending_sentinel_path(agent_slug, task_id, state) do
     state_dir = Path.join([state.base, "companies", state.company, "agents", agent_slug, "state"])
     seq = System.unique_integer([:positive, :monotonic])
-    Path.join(state_dir, "path-pending-#{seq}.md")
+    Path.join(state_dir, "path-pending-#{task_id}-#{seq}.md")
   end
 
   defp write_pending_sentinel(path, meta, agent_slug, _state) do

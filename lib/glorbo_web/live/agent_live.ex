@@ -189,13 +189,14 @@ defmodule GlorboWeb.AgentLive do
     do: ChatDrawer.State.post(socket, body)
 
   def handle_event("tab", %{"tab" => tab}, socket)
-      when tab in ~w(stdout sandbox inbox history runs memory) do
+      when tab in ~w(stdout sandbox inbox history runs memory path_requests) do
     socket = assign(socket, :tab, String.to_existing_atom(tab))
 
     socket =
       cond do
         tab == "runs" -> assign(socket, :runs, load_runs(socket))
         tab == "memory" -> assign(socket, :memory, load_memory_files(socket))
+        tab == "path_requests" -> assign(socket, :path_requests, load_path_requests(socket))
         true -> socket
       end
 
@@ -569,6 +570,20 @@ defmodule GlorboWeb.AgentLive do
     ])
   end
 
+  # GEP-27 — load pending path requests for this agent.
+  defp load_path_requests(socket) do
+    co = socket.assigns.company_slug
+    ag = socket.assigns.agent_slug
+
+    case Glorbo.PathRequestGate.list_pending(co, ag) do
+      [] -> []
+      reqs when is_list(reqs) -> reqs
+      _ -> []
+    end
+  catch
+    _, _ -> []
+  end
+
   # The CEO is load-bearing in the company heartbeat contract (see
   # priv/templates/heartbeats/ceo.md + GEP-19 "assigned_to swap").
   # Retiring it breaks everything; force a Director rename/reassign
@@ -865,6 +880,18 @@ defmodule GlorboWeb.AgentLive do
                 >
                   memory
                 </button>
+                <button
+                  type="button"
+                  class={[
+                    "gl-agent-detail__tab",
+                    @tab == :path_requests && "gl-agent-detail__tab--active"
+                  ]}
+                  phx-click="tab"
+                  phx-value-tab="path_requests"
+                  title="Sandbox path requests (GEP-27)"
+                >
+                  path requests
+                </button>
               </div>
             </header>
 
@@ -1043,6 +1070,30 @@ defmodule GlorboWeb.AgentLive do
                     {m.description}
                   </p>
                   <pre class="gl-agent-memory__body">{m.body}</pre>
+                </li>
+              </ul>
+            </div>
+
+            <div :if={@tab == :path_requests} class="gl-panel__body gl-agent-path-reqs">
+              <div :if={@path_requests == []} class="gl-muted">
+                No path requests pending. Agents request temporary
+                sandbox access by writing <code>path-request-&lt;task_id&gt;.md</code>
+                to their outbox.
+              </div>
+              <ul :if={@path_requests != []} class="gl-agent-path-reqs__list">
+                <li :for={pr <- @path_requests} class="gl-agent-path-reqs__row">
+                  <div class="gl-agent-path-reqs__meta">
+                    <span class="gl-tabular">{pr.task_id}</span>
+                    <span :if={pr.requested_at} class="gl-muted">
+                      · {pr.requested_at}
+                    </span>
+                  </div>
+                  <div class="gl-agent-path-reqs__reason">{pr.reason}</div>
+                  <div class="gl-agent-path-reqs__paths">
+                    <span :for={p <- pr.paths} class="gl-agent-path-reqs__tag">
+                      {p["path"]} <span class="gl-muted">({p["mode"]})</span>
+                    </span>
+                  </div>
                 </li>
               </ul>
             </div>

@@ -2,13 +2,16 @@
 gep: 27
 title: Agent sandbox path requests via director approval
 author: Glorbo Maintainers <noreply@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft.
+  - date: 2026-04-21
+    status: Implemented
+    note: Backend + UI shipped. Router, PathRequestGate, PathGrantStore, bwrap integration, and LiveView surfaces (InboxLive, AgentLive, TaskLive) all complete.
 requires: [2, 5, 19]
 see-also: [23]
 ---

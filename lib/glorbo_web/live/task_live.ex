@@ -68,6 +68,7 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:history_expanded, MapSet.new())
        |> assign(:next_fire_at, next_fire_at(co, task_id))
        |> assign(:stuck, load_stuck_for_task(base, co, task_id))
+       |> assign(:path_grants, load_path_grants(co, task_id))
        |> ChatDrawer.State.wire_drawer()}
     else
       {:error, {:ambiguous, matches}} ->
@@ -494,6 +495,17 @@ defmodule GlorboWeb.TaskLive do
           <span class="gl-task-page__usage-label">cost</span>
           <span class="gl-tabular">{format_cost(@usage_totals.cost_usd_cents)}</span>
         </div>
+        <div :if={@path_grants != []} class="gl-task-page__usage-row">
+          <span class="gl-task-page__usage-label">external paths</span>
+          <span class="gl-tabular gl-task-page__grants">
+            <span :for={g <- @path_grants} class="gl-task-page__grant">
+              @{g.agent}:
+              <span :for={p <- g.paths} class="gl-task-page__grant-path">
+                {p.sandbox_path} <span class="gl-muted">({p.mode})</span>
+              </span>
+            </span>
+          </span>
+        </div>
       </aside>
 
       <div class="gl-task-page__grid">
@@ -612,6 +624,11 @@ defmodule GlorboWeb.TaskLive do
     Glorbo.Company.TaskScheduler.next_fire_at(server, task_id)
   rescue
     _ -> nil
+  end
+
+  # GEP-27 — load active path grants for this task from ETS.
+  defp load_path_grants(co, task_id) do
+    Glorbo.PathGrantStore.lookup_by_task_id(co, task_id)
   end
 
   # #274 — load any `stuck-on-<this-task>.md` sentinels under

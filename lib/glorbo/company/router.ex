@@ -1008,8 +1008,8 @@ defmodule Glorbo.Company.Router do
 
     request_meta = %{
       task_id: task_id,
-      paths: meta.paths,
-      reason: meta.reason
+      paths: Map.get(meta, "paths"),
+      reason: Map.get(meta, "reason")
     }
 
     try do
