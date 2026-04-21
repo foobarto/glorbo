@@ -638,3 +638,7 @@ codebase is intentionally straightforward.
 ---
 
 <sub>*You take the whole Glorbo. You put it on another machine. It's still a Glorbo. What part of this is complicated?*</sub>
+
+<p align="center">
+  <img src="assets/glorbo_tv.png" alt="Glorbo and his pet robot watching Rick and Morty on TV — the show where Glorbo (the name) comes from" width="560">
+</p>
