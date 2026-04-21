@@ -114,4 +114,31 @@ defmodule GlorboWeb.CompanyLiveTest do
       assert html =~ "first project"
     end
   end
+
+  # #247 — company budget cap status strip at top of CompanyLive.
+  describe "budget cap strip (#247)" do
+    test "renders a progress bar when company.md declares a cap",
+         %{conn: conn, base: base} do
+      File.write!(Path.join([base, "companies/acme/company.md"]), """
+      ---
+      slug: acme
+      budget_usd_cents_month: 10000
+      ---
+      """)
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ "budget (month)"
+      assert html =~ "gl-budget-strip"
+      # Cap is $100 ($10000 cents); used is $0. Both values appear
+      # somewhere in the rendered strip, separated by whitespace /
+      # markup, so test for them independently.
+      assert html =~ "100.00"
+      assert html =~ "0%"
+    end
+
+    test "omits the strip when no cap is declared", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      refute html =~ "gl-budget-strip"
+    end
+  end
 end

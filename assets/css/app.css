@@ -3230,3 +3230,28 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-costs__cap-label--ok    { color: var(--gl-accent); }
 .gl-costs__cap-label--alert { color: var(--gl-warning); }
 .gl-costs__cap-label--stop  { color: var(--gl-danger, #c14); font-weight: 600; }
+
+/* Company budget strip at top of CompanyLive (#247). */
+.gl-budget-strip {
+  display: grid;
+  grid-template-columns: 140px 1fr 280px;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  padding: 6px var(--gl-space-sm);
+  margin-bottom: var(--gl-space-md);
+  border: 1px solid var(--gl-border-faint);
+  border-left-width: 3px;
+  border-radius: 2px;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  background: var(--gl-surface);
+}
+.gl-budget-strip--ok    { border-left-color: var(--gl-accent); }
+.gl-budget-strip--alert { border-left-color: var(--gl-warning); }
+.gl-budget-strip--stop  { border-left-color: var(--gl-danger, #c14); background: color-mix(in oklch, var(--gl-danger, #c14) 10%, var(--gl-surface)); }
+.gl-budget-strip__label { color: var(--gl-fg-subtle); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
+.gl-budget-strip__bar   { display: block; height: 6px; background: var(--gl-surface-raised); border-radius: 2px; overflow: hidden; }
+.gl-budget-strip__fill  { display: block; height: 100%; background: var(--gl-accent); }
+.gl-budget-strip__fill--alert { background: var(--gl-warning); }
+.gl-budget-strip__fill--stop  { background: var(--gl-danger, #c14); }
+.gl-budget-strip__text  { text-align: right; color: var(--gl-fg); }

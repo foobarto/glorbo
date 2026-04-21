@@ -87,6 +87,7 @@ defmodule GlorboWeb.CompanyLive do
          :emergency_meta,
          Glorbo.EmergencyStop.read_sentinel(slug, base: base)
        )
+       |> assign(:budget_cap_state, load_budget_cap_state(base, slug))
        |> ChatDrawer.State.wire_drawer()}
     else
       {:ok,
@@ -184,6 +185,24 @@ defmodule GlorboWeb.CompanyLive do
   def render(assigns) do
     ~H"""
     <section class="gl-view gl-overview">
+      <aside
+        :if={@budget_cap_state}
+        class={["gl-budget-strip", "gl-budget-strip--" <> @budget_cap_state.state]}
+        aria-label="Company budget this month"
+      >
+        <span class="gl-budget-strip__label">budget (month)</span>
+        <span class="gl-budget-strip__bar" aria-hidden="true">
+          <span
+            class={["gl-budget-strip__fill", "gl-budget-strip__fill--" <> @budget_cap_state.state]}
+            style={"width: #{@budget_cap_state.pct}%"}
+          />
+        </span>
+        <span class="gl-budget-strip__text gl-tabular">
+          ${format_cost_cents(@budget_cap_state.used_cents)} / ${format_cost_cents(
+            @budget_cap_state.cap_cents
+          )} · {@budget_cap_state.pct}%
+        </span>
+      </aside>
       <aside
         :if={@emergency_stopped?}
         class="gl-banner gl-banner--error gl-emergency-banner"
@@ -1834,5 +1853,38 @@ defmodule GlorboWeb.CompanyLive do
     |> Enum.sort()
   rescue
     _ -> ~w(claude-code codex gemini-cli hermes opencode pi)
+  end
+
+  defp format_cost_cents(cents) when is_integer(cents) do
+    whole = div(cents, 100)
+    cents_part = rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0")
+    "#{whole}.#{cents_part}"
+  end
+
+  defp format_cost_cents(_), do: "0.00"
+
+  # #247 — company cap status for the header strip. Returns either
+  # `nil` (no cap configured — we just don't render a progress bar)
+  # or a %{cap_cents, used_cents, pct, state, label} map.
+  defp load_budget_cap_state(base, slug) do
+    case Glorbo.Budget.CompanyCap.read_cap(base, slug) do
+      nil ->
+        nil
+
+      cap ->
+        used = Glorbo.Budget.CompanyCap.used_this_month(base, slug)
+        pct = if cap > 0, do: min(div(used * 100, cap), 100), else: 0
+
+        state =
+          cond do
+            used >= cap -> "stop"
+            used * 100 >= cap * 80 -> "alert"
+            true -> "ok"
+          end
+
+        %{cap_cents: cap, used_cents: used, pct: pct, state: state}
+    end
+  rescue
+    _ -> nil
   end
 end
