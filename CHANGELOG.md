@@ -10,6 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-25 TaskMd widen + skill/v1 (R28)
+
+- **TaskMd regex widened (#299).** UAT ran the R27 validator
+  against a real workspace and found that descriptive-slug tasks
+  (`cut-release.md`, `drop-s3.md`) were reported as `unknown_file`
+  — TaskMd's regex required the GEP-13 canonical
+  `<project>-NN.md` form, but `Glorbo.TaskDefinition.parse_file`
+  accepts any `*.md` under `projects/<p>/tasks/`. Spec now
+  matches reality; a new info-level finding
+  `:non_canonical_task_filename` surfaces non-canonical names
+  without blocking CI.
+- **`skill/v1` FileSpec module added.** Covers
+  `priv/templates/skills/*.md` (builtin) and
+  `~/.glorbo/skills/*.md` (user override); registry grows to
+  16 kinds.
+
 ### Added — GEP-25 validator + `glorbo validate` (R27)
 
 - **`Glorbo.FileSpec.Validator` + `glorbo validate` CLI (#298).**

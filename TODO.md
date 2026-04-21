@@ -109,4 +109,5 @@ it's been in CHANGELOG for a cycle.
 - [x] #295 GEP-25 drafted: file format specs + `glorbo validate` + `glorbo fmt` + `kind:` discriminator (k8s-inspired) + atomic cut plan
 - [x] #296 R26.1: FileSpec behaviour + 15 per-kind spec modules (company/agent/project/task/heartbeat/soul/memory-index/memory-entry/sentinel-approval/sentinel-stuck/sentinel-resolution/braindump/channel-log/audit-event/inbox-archive — all `/v1`); 28 tests; no writer changes yet
 - [x] #298 R27: FileSpec.Validator + `glorbo validate` CLI (read-only; 10 check codes; NDJSON output; verified 27 missing_kind errors against pre-cut r22 workspace)
+- [x] #299 R28: TaskMd regex widened (now matches `*.md` under `tasks/` like the real parser) + `skill/v1` FileSpec module + `:non_canonical_task_filename` info finding; 16 kinds total
 - [ ] #297 R26.2b: atomic `kind:` cut — add `kind:` to every writer + fixture + template; parser enforcement; delete soft-migration readers; ship FileSpec.Formatter + `glorbo fmt` + `mix glorbo.docs.file_formats`; precommit wiring. Estimated 50+ files; best done in a fresh focused session
