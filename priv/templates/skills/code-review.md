@@ -1,9 +1,11 @@
 ---
+kind: skill/v1
 name: code-review
 description: Structured code review — flag bugs, security issues, and style deviations.
-tags: [engineering, review]
+tags:
+  - engineering
+  - review
 ---
-
 # code-review
 
 ## Purpose

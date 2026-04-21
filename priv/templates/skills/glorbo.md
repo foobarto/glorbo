@@ -1,9 +1,9 @@
 ---
+kind: skill/v1
 name: glorbo
-title: Glorbo agent runtime contract
 version: 1
+title: Glorbo agent runtime contract
 ---
-
 # Skill — glorbo
 
 Read this first. It documents the environment, filesystem shape, and

@@ -1,3 +1,6 @@
+---
+kind: agent-heartbeat/v1
+---
 # HEARTBEAT — {{ name }}
 
 Every heartbeat your job is to keep {{ company_upper }} running. You

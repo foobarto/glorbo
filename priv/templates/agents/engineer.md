@@ -1,4 +1,5 @@
 ---
+kind: agent/v1
 name: {{ name }}
 slug: {{ slug }}
 role: "Software Engineer"

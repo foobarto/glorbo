@@ -1,3 +1,6 @@
+---
+kind: agent-heartbeat/v1
+---
 # HEARTBEAT — {{ name }}
 
 You're on demand — `heartbeat: null` — so this file runs when an

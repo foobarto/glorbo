@@ -1,9 +1,11 @@
 ---
+kind: skill/v1
 name: web-search
 description: External information retrieval with mandatory source attribution.
-tags: [research, retrieval]
+tags:
+  - research
+  - retrieval
 ---
-
 # web-search
 
 ## Purpose

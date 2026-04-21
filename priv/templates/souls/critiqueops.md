@@ -1,4 +1,5 @@
 ---
+kind: agent-soul/v1
 role: "Critique Ops"
 ---
 

@@ -1,3 +1,6 @@
+---
+kind: agent-heartbeat/v1
+---
 # HEARTBEAT — {{ name }}
 
 You're on demand. This file runs when a CritiqueOps, Editor, or
