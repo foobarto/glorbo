@@ -52,6 +52,7 @@ defmodule GlorboWeb.TaskLive do
          {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: co) do
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
       end
 
       {:ok,
@@ -65,6 +66,8 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:project, project)
        |> assign(:task, to_detail(task))
        |> assign(:usage_totals, load_usage_totals(base, co, rel_path))
+       |> assign(:history, Glorbo.Audit.Query.for_task(base, co, rel_path, limit: 25))
+       |> assign(:history_expanded, MapSet.new())
        |> ChatDrawer.State.wire_drawer()}
     else
       _ ->
@@ -99,11 +102,50 @@ defmodule GlorboWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # #264 — refresh task-scoped history on any audit append. Cheap
+  # to re-scan the month's JSONL when anything changes; for a real
+  # scaling problem we'd push-filter on target first.
+  def handle_info({:audit_append, _record}, socket) do
+    history =
+      Glorbo.Audit.Query.for_task(
+        base_dir(),
+        socket.assigns.company_slug,
+        socket.assigns.rel_path,
+        limit: 25
+      )
+
+    {:noreply, assign(socket, :history, history)}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: ChatDrawer.State.post(socket, body)
+
+  # AuditEntry emits phx-click="toggle"; TaskLive receives it for
+  # any expanded row of the task-history panel.
+  def handle_event("toggle", %{"id" => id}, socket) do
+    expanded =
+      if MapSet.member?(socket.assigns.history_expanded, id) do
+        MapSet.delete(socket.assigns.history_expanded, id)
+      else
+        MapSet.put(socket.assigns.history_expanded, id)
+      end
+
+    {:noreply, assign(socket, :history_expanded, expanded)}
+  end
+
+  def handle_event("convert_to_task", _params, socket) do
+    # No-op on TaskLive; directors use this only from AuditLive.
+    # Surface a helpful flash rather than silently ignoring.
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Open the full audit log and expand the row there to convert."
+     )}
+  end
 
   def handle_event("comment_task", %{"comment" => comment}, socket) do
     trimmed = String.trim(comment)
@@ -353,8 +395,49 @@ defmodule GlorboWeb.TaskLive do
           </div>
         </section>
       </div>
+
+      <section class="gl-panel gl-task-page__history">
+        <header class="gl-panel__header gl-panel__header--split">
+          <span class="gl-panel__title">history · this task</span>
+          <.link
+            navigate={~p"/companies/#{@company_slug}/audit?q=#{@task_id}"}
+            class="gl-btn gl-btn--sm gl-btn--ghost"
+            title="Open the full audit log pre-filtered by this task"
+          >
+            view full audit →
+          </.link>
+        </header>
+        <div :if={@history == []} class="gl-panel__body gl-muted">
+          No audit events yet for this task.
+        </div>
+        <div :if={@history != []} class="gl-panel__body gl-task-page__history-body">
+          <GlorboWeb.Components.AuditEntry.audit_entry
+            :for={{entry, idx} <- Enum.with_index(@history)}
+            id={history_entry_id(entry, idx)}
+            entry={entry}
+            expanded={MapSet.member?(@history_expanded, history_entry_id(entry, idx))}
+          />
+        </div>
+      </section>
     </section>
     """
+  end
+
+  # #264 — stable per-row id (ts + action hash) so toggling
+  # expansion persists across audit appends.
+  defp history_entry_id(entry, fallback_idx) do
+    ts = to_string(entry["ts"] || "")
+    action = to_string(entry["action"] || "")
+
+    case {ts, action} do
+      {"", ""} ->
+        "task-history-#{fallback_idx}"
+
+      _ ->
+        :crypto.hash(:sha256, ts <> "\0" <> action)
+        |> Base.url_encode64(padding: false)
+        |> binary_part(0, 16)
+    end
   end
 
   # #252 — aggregate tokens + cost for this specific task across

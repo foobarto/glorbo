@@ -154,6 +154,21 @@ change between minor versions. Pin exact versions in downstream usage.
   inputs on the filter bar narrow the visible rows by timestamp.
   Both bounds inclusive (00:00:00Z → 23:59:59Z). Composes with
   the actor / action / free-text filters.
+- **Task history panel (#264)** — TaskLive renders a
+  task-scoped slice of the audit log under the Sugar grid:
+  every `agent.dispatch` / `agent.complete` / `agent.retry` /
+  `task.update` row that targets this task. Expandable via
+  the shared `AuditEntry` component, live-refreshing via the
+  `company:<co>:audit` PubSub topic, capped at 25 entries.
+  Deep-link "view full audit →" navigates to AuditLive with
+  the task id pre-filled (`?q=<task-id>`). AuditLive now
+  honours `?q=&actor=&action=&since=&until=` URL params so
+  deep-links survive copy-paste.
+- **`Glorbo.Audit.Query.for_task/4`** — tiny pure reader over
+  the current-month JSONL; matches `target == task_path`,
+  bare `task_id`, `detail.task_path`, or `detail.target`
+  containing the id. Graceful on missing file / malformed
+  JSON.
 
 ### Changed
 

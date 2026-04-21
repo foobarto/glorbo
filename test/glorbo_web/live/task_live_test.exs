@@ -178,4 +178,65 @@ defmodule GlorboWeb.TaskLiveTest do
     assert html =~ "0 in / 0 out"
     assert html =~ "—"
   end
+
+  # #264 — task-scoped history panel reading from Audit.Query.for_task/4.
+  describe "history panel (#264)" do
+    setup %{base: base} do
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      File.mkdir_p!(audit_dir)
+
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      lines = [
+        %{
+          "ts" => "2026-04-20T09:00:00Z",
+          "actor" => "ceo",
+          "action" => "agent.dispatch",
+          "target" => "projects/foo/tasks/foo-1.md",
+          "detail" => %{"prompt" => "go do the thing"}
+        },
+        %{
+          "ts" => "2026-04-20T09:05:00Z",
+          "actor" => "ceo",
+          "action" => "agent.complete",
+          "target" => "projects/foo/tasks/foo-1.md",
+          "detail" => %{"prompt_tokens" => 100, "completion_tokens" => 50}
+        },
+        # Different task — must NOT appear in the panel.
+        %{
+          "ts" => "2026-04-20T10:00:00Z",
+          "actor" => "editor",
+          "action" => "agent.dispatch",
+          "target" => "projects/foo/tasks/other-1.md",
+          "detail" => %{}
+        }
+      ]
+
+      File.write!(path, Enum.map_join(lines, "\n", &Jason.encode!/1) <> "\n")
+      :ok
+    end
+
+    test "renders history entries for this task only", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+      assert html =~ "history · this task"
+      assert html =~ "agent.dispatch"
+      assert html =~ "agent.complete"
+      # Other task's row must not appear.
+      refute html =~ "other-1"
+      # Deep-link to AuditLive carries ?q= task id.
+      assert html =~ ~s(/companies/acme/audit?q=foo-1)
+    end
+
+    test "shows empty state when no audit entries for this task",
+         %{conn: conn, base: base} do
+      # Clear the audit for the second task so the panel is empty.
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      File.rm!(Path.join(audit_dir, "#{month}.jsonl"))
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+      assert html =~ "No audit events yet for this task"
+    end
+  end
 end

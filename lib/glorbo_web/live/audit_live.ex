@@ -78,6 +78,21 @@ defmodule GlorboWeb.AuditLive do
      |> ChatDrawer.State.wire_drawer()}
   end
 
+  # #264 — URL params let other views deep-link with a pre-filled
+  # filter. `?q=<task-path>` is the main use case (TaskLive's "view
+  # full audit" link). Also accepts `?actor=`, `?action=`, `?since=`,
+  # `?until=` for completeness.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:q, Map.get(params, "q", socket.assigns.q))
+     |> assign(:actor_filter, Map.get(params, "actor", socket.assigns.actor_filter))
+     |> assign(:action_filter, Map.get(params, "action", socket.assigns.action_filter))
+     |> assign(:since_filter, Map.get(params, "since", socket.assigns.since_filter))
+     |> assign(:until_filter, Map.get(params, "until", socket.assigns.until_filter))}
+  end
+
   @impl true
   def handle_info(:poll, socket) do
     Process.send_after(self(), :poll, @poll_ms)
