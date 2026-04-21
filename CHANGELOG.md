@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — HEARTBEAT + bench SOUL self-improvement and anti-AI-tells
+
+- **Every HEARTBEAT.md template now includes a "Self-improvement"
+  section** (priv/templates/heartbeats/*, bench-template
+  heartbeats, the default scaffold fallback, and the acme CEO
+  heartbeat in Init.ExampleCompany). The block tells the agent
+  their instructions, soul, and memory are editable; defines
+  triggers (own work, director correction, peer insight, research);
+  points at the GEP-21 memory-write protocol.
+- **Bench-template writer + editor SOUL.md gain "red flags I cut"
+  sections** listing common LLM-output tells: Rule-of-Three robot
+  cadence, signposted structure, empty intensifiers, hedge stacks,
+  "it's not X, it's Y", symmetric parallel structures, circular
+  conclusions. Applies to bench-scifi-publisher/writer and
+  bench-tech-blog/editor — the two roles actually producing
+  reader-facing prose.
+
 ### Added — GEP-26 Draft + benchmark templates Phase A
 
 - **GEP-26** — benchmark company templates + provider A/B comparison

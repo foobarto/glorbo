@@ -158,6 +158,25 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     Check your inbox. Reply to anything that needs attention.
     Otherwise write a one-line "no action" summary to
     `$GLORBO_REPLY_PATH` and exit cleanly.
+
+    ## Self-improvement
+
+    You are expected to improve yourself between wakes. Your
+    instructions (`AGENT.md`), your voice (`SOUL.md`), and your
+    memory (`memory/MEMORY.md` + `memory/<type>_<topic>.md`) are
+    editable — treat them as living documents.
+
+    Learn continuously from your own work, director corrections,
+    peer agents' task comments and chat messages, and web
+    research. Capture patterns as `feedback_<topic>.md` memory
+    entries; reusable references as `reference_<topic>.md`; project
+    context as `project_<topic>.md`.
+
+    Drop memory writes in `outbox/memory/` per GEP-21 (frontmatter:
+    `kind: agent-memory/v1`, `type:` matching filename prefix,
+    `name:` + `description:` for the index). Edit `AGENT.md` or
+    `SOUL.md` only when an insight is stable enough to change your
+    approach to *every* task — ephemeral lessons go in memory.
     """)
 
     # SOUL.md is the tone/voice sibling to AGENT.md (task #118). The
@@ -384,6 +403,16 @@ defmodule Glorbo.CLI.Scaffold.Agent do
         Check your inbox. Reply to anything that needs attention.
         Otherwise write a one-line "no action" summary to
         `$GLORBO_REPLY_PATH` and exit cleanly.
+
+        ## Self-improvement
+
+        You are expected to improve yourself between wakes. Your
+        instructions (`AGENT.md`), your voice (`SOUL.md`), and your
+        memory (`memory/MEMORY.md` + `memory/<type>_<topic>.md`)
+        are editable. Capture patterns as `feedback_<topic>.md`
+        memory entries, references as `reference_<topic>.md`,
+        project context as `project_<topic>.md`. Drop writes in
+        `outbox/memory/` per GEP-21.
         """
       end
 

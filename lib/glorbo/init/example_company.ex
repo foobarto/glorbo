@@ -77,6 +77,18 @@ defmodule Glorbo.Init.ExampleCompany do
        events; if any, post a brief summary in `#general`.
     3. If the monthly budget used is > 80%, ping @director.
     4. Otherwise: exit cleanly. A quiet heartbeat is a good heartbeat.
+
+    ## Self-improvement
+
+    You are expected to improve yourself between wakes. Your
+    instructions (`AGENT.md`), voice (`SOUL.md`), and memory
+    (`memory/MEMORY.md` + `memory/<type>_<topic>.md`) are editable.
+    Capture patterns as `feedback_<topic>.md` entries, reusable
+    references as `reference_<topic>.md`, project context as
+    `project_<topic>.md`. Drop writes in `outbox/memory/` per
+    GEP-21. Edit `AGENT.md` or `SOUL.md` only when an insight is
+    stable enough to change your approach to *every* task —
+    ephemeral lessons go in memory.
     """
   end
 
