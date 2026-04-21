@@ -459,6 +459,7 @@ defmodule Glorbo.Company.RouterTest do
 
     File.write!(Path.join(src_dir, "blog-1.md"), """
     ---
+    kind: task/v1
     title: hire researcher
     status: todo
     ---
@@ -492,6 +493,7 @@ defmodule Glorbo.Company.RouterTest do
 
     File.write!(Path.join(src_dir, "blog-42.md"), """
     ---
+    kind: task/v1
     title: review draft-1
     status: pending
     ---
@@ -628,6 +630,7 @@ defmodule Glorbo.Company.RouterTest do
          %{base: base, router: router, outbox: outbox} do
       File.write!(Path.join(outbox, "feedback_commit_style.md"), """
       ---
+      kind: agent-memory/v1
       name: Commit messages lead with why
       description: one-line-hook
       type: feedback
@@ -659,6 +662,7 @@ defmodule Glorbo.Company.RouterTest do
       for body <- ["first draft body", "second draft body"] do
         File.write!(Path.join(outbox, "project_glorbo.md"), """
         ---
+        kind: agent-memory/v1
         name: Glorbo project state
         type: project
         ---
@@ -688,6 +692,7 @@ defmodule Glorbo.Company.RouterTest do
          %{base: base, router: router, outbox: outbox} do
       File.write!(Path.join(outbox, "feedback_x.md"), """
       ---
+      kind: agent-memory/v1
       name: Wrong type
       type: user
       ---
@@ -709,6 +714,7 @@ defmodule Glorbo.Company.RouterTest do
 
       File.write!(Path.join(outbox, "project_big.md"), """
       ---
+      kind: agent-memory/v1
       type: project
       ---
 
@@ -726,6 +732,7 @@ defmodule Glorbo.Company.RouterTest do
          %{base: base, router: router, outbox: outbox} do
       File.write!(Path.join(outbox, "feedback_tone.md"), """
       ---
+      kind: agent-memory/v1
       name: Director tone
       type: feedback
       ---

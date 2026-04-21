@@ -66,6 +66,8 @@ defmodule Glorbo.CLI.Scaffold.Project do
 
     File.write!(Path.join(proj_path, "project.md"), """
     ---
+    kind: project/v1
+    slug: #{slug}
     name: #{slug}
     status: active
     ---

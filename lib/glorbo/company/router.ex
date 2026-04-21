@@ -701,6 +701,7 @@ defmodule Glorbo.Company.Router do
 
     with {:ok, content} <- File.read(abs_path),
          {:ok, meta, _body} <- Frontmatter.parse(content),
+         :ok <- require_task_kind(meta),
          :ok <- require_task_title(meta),
          {:ok, perms} <- lookup_permissions(sender, state),
          :ok <- check_project_write_permission(perms, project),
@@ -749,6 +750,16 @@ defmodule Glorbo.Company.Router do
     case Map.get(meta, "title") do
       t when is_binary(t) and byte_size(t) > 0 -> :ok
       _ -> {:error, :missing_title_frontmatter}
+    end
+  end
+
+  # GEP-25 D9: every task file must carry `kind: task/v1`. Agents that
+  # file tasks via outbox are responsible for supplying it; missing
+  # kind → rejected and left in outbox for director intervention.
+  defp require_task_kind(meta) do
+    case Map.get(meta, "kind") do
+      "task/v1" -> :ok
+      other -> {:error, {:bad_kind, other}}
     end
   end
 
@@ -859,6 +870,7 @@ defmodule Glorbo.Company.Router do
     with {:ok, content} <- File.read(abs_path),
          :ok <- check_memory_body_size(content),
          {:ok, meta, _body} <- Frontmatter.parse(content),
+         :ok <- check_memory_kind(meta),
          :ok <- check_memory_type_matches_filename(meta, filename),
          :ok <- File.mkdir_p(memory_dir),
          :ok <- atomic_write(dest_path, content),
@@ -928,6 +940,13 @@ defmodule Glorbo.Company.Router do
     end
   end
 
+  defp check_memory_kind(meta) do
+    case Map.get(meta, "kind") do
+      "agent-memory/v1" -> :ok
+      other -> {:error, {:memory_bad_kind, other}}
+    end
+  end
+
   defp check_memory_type_matches_filename(meta, filename) do
     declared = meta |> Map.get("type") |> to_string()
 
@@ -978,8 +997,11 @@ defmodule Glorbo.Company.Router do
         idx -> List.replace_at(existing, idx, new_line)
       end
 
-    body = Enum.join(updated, "\n") <> "\n"
-    atomic_write(index_path, body)
+    atomic_write(index_path, render_memory_index(updated))
+  end
+
+  defp render_memory_index(lines) do
+    "---\nkind: agent-memory-index/v1\n---\n" <> Enum.join(lines, "\n") <> "\n"
   end
 
   defp remove_memory_index_line(memory_dir, filename) do
@@ -1001,15 +1023,21 @@ defmodule Glorbo.Company.Router do
         end
 
       true ->
-        body = Enum.join(filtered, "\n") <> "\n"
-        atomic_write(index_path, body)
+        atomic_write(index_path, render_memory_index(filtered))
     end
   end
 
   defp existing_index_lines(index_path) do
     case File.read(index_path) do
       {:ok, content} ->
-        content
+        # Skip frontmatter block; only entry lines remain.
+        body =
+          case Frontmatter.parse(content) do
+            {:ok, _fm, body} -> body
+            _ -> content
+          end
+
+        body
         |> String.split("\n", trim: false)
         |> Enum.reject(&(String.trim(&1) == ""))
 

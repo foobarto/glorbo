@@ -40,7 +40,7 @@ defmodule Glorbo.Agent.LoopDetector do
   Frontmatter:
 
       ---
-      kind: loop_detected
+      kind: sentinel-stuck/v1
       agent: <slug>
       task_id: <id>
       task_path: <path>
@@ -264,7 +264,7 @@ defmodule Glorbo.Agent.LoopDetector do
 
     body = """
     ---
-    kind: loop_detected
+    kind: sentinel-stuck/v1
     agent: #{agent_slug}
     task_id: #{task_id}
     task_path: #{task_path}

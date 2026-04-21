@@ -314,7 +314,8 @@ defmodule GlorboWeb.ProjectLive do
     path = Path.join(proj_dir, "project.md")
 
     unless File.exists?(path) do
-      File.write!(path, "---\n---\n")
+      slug = proj_dir |> Path.basename()
+      File.write!(path, "---\nkind: project/v1\nslug: #{slug}\n---\n")
     end
 
     case File.read(path) do

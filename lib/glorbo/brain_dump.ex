@@ -61,7 +61,20 @@ defmodule Glorbo.BrainDump do
 
     section = "\n## #{ts} — #{title}\n\n#{body}\n"
     existing? = File.exists?(path)
-    header = if existing?, do: "", else: "# Brain dump · #{day}\n"
+
+    header =
+      if existing? do
+        ""
+      else
+        """
+        ---
+        kind: braindump/v1
+        created_at: #{DateTime.to_iso8601(DateTime.truncate(now, :second))}
+        ---
+        # Brain dump · #{day}
+        """
+      end
+
     :ok = File.write!(path, header <> section, [:append])
 
     {:ok,
@@ -221,6 +234,7 @@ defmodule Glorbo.BrainDump do
   defp render_task(_task_id, entry) do
     """
     ---
+    kind: task/v1
     title: #{escape(entry.title)}
     status: todo
     source: braindump

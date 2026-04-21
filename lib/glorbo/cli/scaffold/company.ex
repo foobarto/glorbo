@@ -50,6 +50,8 @@ defmodule Glorbo.CLI.Scaffold.Company do
 
       File.write!(Path.join(co, "company.md"), """
       ---
+      kind: company/v1
+      slug: #{slug}
       name: #{slug}
       mission: ""
       ---

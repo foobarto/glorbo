@@ -1115,9 +1115,10 @@ defmodule GlorboWeb.KanbanLive do
 
       content = """
       ---
+      kind: inbox-message/v1
       from: director
       task_id: "#{task_id}"
-      kind: task_assignment
+      subkind: task_assignment
       delivered_at: "#{DateTime.to_iso8601(DateTime.utc_now())}"
       ---
 
@@ -1339,13 +1340,14 @@ defmodule GlorboWeb.KanbanLive do
 
     frontmatter_lines =
       [
+        {"kind", "task/v1"},
         {"title", title},
         {"status", "todo"},
         {"assigned_to", assigned_to},
         {"priority", priority},
         {"severity", severity}
       ]
-      |> Enum.reject(fn {k, v} -> k != "status" and v in ["", nil] end)
+      |> Enum.reject(fn {k, v} -> k != "status" and k != "kind" and v in ["", nil] end)
       |> Enum.map(fn {k, v} -> "#{k}: #{yaml_scalar(v)}\n" end)
 
     body =

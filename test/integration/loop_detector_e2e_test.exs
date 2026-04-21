@@ -111,7 +111,7 @@ defmodule Glorbo.Integration.LoopDetectorE2ETest do
     content = File.read!(sentinel_path)
     assert content =~ "task_id: foo-1"
     assert content =~ "task_path: #{task_path}"
-    assert content =~ "kind: loop_detected"
+    assert content =~ "kind: sentinel-stuck/v1"
     assert content =~ "failure_count: 3"
     # Sentinel lists the three director-resolution filenames.
     assert content =~ "resolved-retry-foo-1.md"

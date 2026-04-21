@@ -10,6 +10,68 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-25 atomic `kind:` cut, writers (R26.2a)
+
+Per GEP-25 D9 + the pre-1.0 "no kid gloves" rule, every file Glorbo
+writes now carries a `kind: <name>/v1` discriminator in its frontmatter
+(or top-level JSON/JSONL object). No soft-migration fallback — readers
+that care about kind (router's memory-write path, task outbox route)
+reject files without it.
+
+Writers updated:
+
+- Scaffolders: `glorbo new {company,project,agent,skill}` emit the
+  correct `kind:` line before anything else; templates that back agent
+  scaffolds (HEARTBEAT.md, SOUL.md default bodies) include `kind:` too.
+- `Glorbo.Init.ExampleCompany` — `glorbo init` acme seed now stamps
+  `kind:` on company.md / AGENT.md / HEARTBEAT.md / general channel.
+- `Glorbo.Company.AuditLog` — every JSONL line carries
+  `"kind": "audit-event/v1"` as its first key.
+- `Glorbo.Inbox.Archive` — `_inbox_archive.json` is now an object
+  `{ "kind": "inbox-archive/v1", "keys": [...], "updated_at": "..." }`
+  instead of a bare array.
+- `Glorbo.Approvals.Gate` — awaiting-approval sentinel gains
+  `kind: sentinel-approval/v1`.
+- `Glorbo.Agent.LoopDetector` — stuck sentinel now uses the canonical
+  `kind: sentinel-stuck/v1` (was `kind: loop_detected`).
+- `Glorbo.Company.TaskScheduler` — scheduled inbox messages get
+  `kind: inbox-message/v1`.
+- `Glorbo.Company.Router` — memory-index upserts emit a kind-bearing
+  frontmatter block; memory writes now REJECT incoming files missing
+  `kind: agent-memory/v1`; outbox-filed tasks now REJECT files missing
+  `kind: task/v1`.
+- `Glorbo.BrainDump` — first write of the day wraps the section in a
+  `kind: braindump/v1` frontmatter; brain-dump → task conversion
+  stamps `kind: task/v1`.
+- `Glorbo.EmergencyStop` — company stop sentinel carries
+  `kind: emergency-stop/v1`.
+- `Glorbo.TaskDefinition.write_frontmatter/2` — the editor-allowlist
+  rewriter now preserves the file's original `kind:` line (or falls
+  back to `task/v1`) instead of dropping it.
+- `Glorbo.Chat.Rotation` — archive segments include
+  `kind: channel-log/v1` + `archive_of:` / `rotated_from:`.
+- `GlorboWeb.ChannelLive` / `PageController` — new channel creation +
+  director/agent DM channels stamp `kind: channel-log/v1`.
+- `GlorboWeb.CompanyLive` — company editor rebuilds frontmatter with
+  `kind` + `slug` at the top.
+- `GlorboWeb.KanbanLive` — task creation injects `kind: task/v1`;
+  assignment inbox notify now uses canonical
+  `kind: inbox-message/v1`.
+- `GlorboWeb.ProjectLive` — bootstrap `project.md` seed now
+  contains `kind: project/v1` + slug.
+
+Router parser enforcement (load-bearing per D9):
+
+- `task/v1` required on outbox-filed task.md — missing kind rejects
+  the route + audits.
+- `agent-memory/v1` required on memory-outbox file — missing kind
+  rejects the write + audits `memory.rejected`.
+
+Fixtures + tests: 6 router-test fixtures and 4 stuck-sentinel tests
+updated to the new `kind:` shape; full suite green (1394 tests,
+0 failures, 1 skipped). R26.2b (templates + per-kind golden fixtures
++ parser enforcement beyond router) follows.
+
 ### Added — GEP-25 formatter + `glorbo fmt` (R33)
 
 - **`Glorbo.FileSpec.Formatter`** — canonical-form rewriter for

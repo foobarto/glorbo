@@ -1852,8 +1852,11 @@ defmodule GlorboWeb.CompanyLive do
     else
       monthly = parse_monthly(monthly_raw)
 
+      slug = Path.basename(co_path)
+
       yaml =
         render_company_yaml(%{
+          slug: slug,
           name: name,
           description: description,
           icon: icon,
@@ -1886,9 +1889,17 @@ defmodule GlorboWeb.CompanyLive do
   # Build YAML frontmatter deterministically. We control every
   # string, so quoting is hand-rolled rather than dragging in a YAML
   # encoder — same pattern as TaskDefinition.write_frontmatter.
-  defp render_company_yaml(%{name: name, description: desc, icon: icon, monthly_usd: monthly}) do
+  defp render_company_yaml(%{
+         slug: slug,
+         name: name,
+         description: desc,
+         icon: icon,
+         monthly_usd: monthly
+       }) do
     lines =
       [
+        {"kind", "company/v1"},
+        {"slug", slug},
         {"name", name},
         {"description", desc},
         {"icon", icon}

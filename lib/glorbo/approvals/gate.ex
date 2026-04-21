@@ -226,6 +226,7 @@ defmodule Glorbo.Approvals.Gate do
 
     body = """
     ---
+    kind: sentinel-approval/v1
     agent: #{agent}
     task_path: #{td.task_path}
     task_id: #{td.task_id}

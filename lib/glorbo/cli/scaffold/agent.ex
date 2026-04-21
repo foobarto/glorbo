@@ -111,8 +111,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
-    name: #{String.upcase(agent)}
+    kind: agent/v1
     slug: #{agent}
+    name: #{String.upcase(agent)}
     role: "#{role}"
     provider: #{provider}
     model: claude-sonnet-4-5
@@ -147,6 +148,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     """)
 
     File.write!(Path.join(ag_path, "HEARTBEAT.md"), """
+    ---
+    kind: agent-heartbeat/v1
+    ---
     # HEARTBEAT — #{agent}
 
     Read `AGENT.md` first. Read `SOUL.md` for tone.
@@ -164,6 +168,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     # so the three canonical files (AGENT / HEARTBEAT / SOUL) are always
     # present after scaffold (PLAN P1-4).
     File.write!(Path.join(ag_path, "SOUL.md"), """
+    ---
+    kind: agent-soul/v1
+    ---
     # SOUL — #{agent}
 
     Tone and voice for #{String.upcase(agent)}. Keep it short, direct,
@@ -367,6 +374,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
         |> Renderer.render(vars)
       else
         """
+        ---
+        kind: agent-heartbeat/v1
+        ---
         # HEARTBEAT — #{agent}
 
         Read `AGENT.md` first. Read `SOUL.md` for tone.

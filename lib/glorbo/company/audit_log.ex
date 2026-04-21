@@ -67,6 +67,7 @@ defmodule Glorbo.Company.AuditLog do
     detail_map = drop_known_keys(entry)
 
     record = %{
+      kind: "audit-event/v1",
       ts: ts_iso,
       actor: actor,
       action: action,

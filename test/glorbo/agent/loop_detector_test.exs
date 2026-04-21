@@ -123,7 +123,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
       sentinel = Path.join([base, "companies/acme/agents/ceo/state/stuck-on-b-1.md"])
       assert File.exists?(sentinel)
       content = File.read!(sentinel)
-      assert content =~ "kind: loop_detected"
+      assert content =~ "kind: sentinel-stuck/v1"
       assert content =~ "task_id: b-1"
       assert content =~ "failure_count: 3"
       assert content =~ "resolved-retry-b-1.md"
@@ -240,7 +240,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(sentinel, """
       ---
-      kind: loop_detected
+      kind: sentinel-stuck/v1
       agent: #{agent}
       task_id: #{task_id}
       task_path: #{rel_task_path}
@@ -422,7 +422,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(sentinel, """
       ---
-      kind: loop_detected
+      kind: sentinel-stuck/v1
       agent: #{agent}
       task_id: #{task_id}
       task_path: #{rel_task_path}
@@ -527,7 +527,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(sentinel_2, """
       ---
-      kind: loop_detected
+      kind: sentinel-stuck/v1
       agent: #{agent2}
       task_id: #{task_id_2}
       task_path: #{rel_path_2}

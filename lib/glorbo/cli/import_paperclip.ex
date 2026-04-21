@@ -176,6 +176,8 @@ defmodule Glorbo.CLI.ImportPaperclip do
     else
       File.write!(path, """
       ---
+      kind: company/v1
+      slug: #{slug}
       name: #{slug}
       mission: ""
       imported_from: paperclip
@@ -241,8 +243,9 @@ defmodule Glorbo.CLI.ImportPaperclip do
   defp wrap_agent_md(agent_slug, co_slug, body) do
     """
     ---
-    name: #{agent_slug}
+    kind: agent/v1
     slug: #{agent_slug}
+    name: #{agent_slug}
     role: "(imported — edit me)"
     reports_to: director
     provider: claude-code

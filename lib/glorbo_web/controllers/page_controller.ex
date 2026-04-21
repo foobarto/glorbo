@@ -51,7 +51,13 @@ defmodule GlorboWeb.PageController do
     path = Path.join(channels_dir, "#{dm_slug(agent)}.md")
 
     unless File.exists?(path) do
-      File.write!(path, "# DM · director ↔ #{agent}\n")
+      File.write!(path, """
+      ---
+      kind: channel-log/v1
+      channel: #{dm_slug(agent)}
+      ---
+      # DM · director ↔ #{agent}
+      """)
     end
 
     :ok

@@ -112,7 +112,7 @@ defmodule GlorboWeb.InboxLiveTest do
 
       File.write!(Path.join(state_dir, "stuck-on-demo-1.md"), """
       ---
-      kind: loop_detected
+      kind: sentinel-stuck/v1
       agent: ceo
       task_id: demo-1
       task_path: projects/demo/tasks/demo-1.md

@@ -19,6 +19,8 @@ defmodule Glorbo.Init.ExampleCompany do
 
   @company_md ~s"""
   ---
+  kind: company/v1
+  slug: acme
   name: acme
   mission: Ship small useful things; learn what Glorbo makes easy.
   created_at: 2026-04-16
@@ -34,6 +36,8 @@ defmodule Glorbo.Init.ExampleCompany do
   defp ceo_agent_md do
     """
     ---
+    kind: agent/v1
+    slug: ceo
     name: ceo
     role: Chief Executive Officer
     reports_to: director
@@ -61,6 +65,9 @@ defmodule Glorbo.Init.ExampleCompany do
 
   defp ceo_heartbeat_md do
     ~s"""
+    ---
+    kind: agent-heartbeat/v1
+    ---
     # Heartbeat — ceo
 
     Every 30 minutes:
@@ -74,6 +81,10 @@ defmodule Glorbo.Init.ExampleCompany do
   end
 
   @general_channel_md ~s"""
+  ---
+  kind: channel-log/v1
+  channel: general
+  ---
   # general
 
   Default company-wide channel. Append-only; Elixir is the sole writer.

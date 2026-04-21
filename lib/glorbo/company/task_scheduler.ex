@@ -318,6 +318,7 @@ defmodule Glorbo.Company.TaskScheduler do
         msg_body =
           """
           ---
+          kind: inbox-message/v1
           from: scheduler
           task_path: #{entry.rel_path}
           scheduled_at: "#{ts}"

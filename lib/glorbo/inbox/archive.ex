@@ -25,7 +25,7 @@ defmodule Glorbo.Inbox.Archive do
     case File.read(path(base, company)) do
       {:ok, content} ->
         case Jason.decode(content) do
-          {:ok, keys} when is_list(keys) -> MapSet.new(keys, &to_string/1)
+          {:ok, %{"keys" => keys}} when is_list(keys) -> MapSet.new(keys, &to_string/1)
           _ -> MapSet.new()
         end
 
@@ -52,7 +52,14 @@ defmodule Glorbo.Inbox.Archive do
   defp write(base, company, set) do
     path = path(base, company)
     File.mkdir_p!(Path.dirname(path))
-    File.write!(path, Jason.encode!(MapSet.to_list(set)))
+
+    record = %{
+      "kind" => "inbox-archive/v1",
+      "keys" => MapSet.to_list(set),
+      "updated_at" => DateTime.to_iso8601(DateTime.utc_now())
+    }
+
+    File.write!(path, Jason.encode!(record))
     :ok
   end
 

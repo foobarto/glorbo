@@ -162,6 +162,12 @@ defmodule Glorbo.Chat.Rotation do
 
   defp archive_header(channel, ts) do
     """
+    ---
+    kind: channel-log/v1
+    channel: #{channel}
+    archive_of: #{channel}.md
+    rotated_from: #{ts}
+    ---
     # #{channel} · archive segment
 
     Rotated from `channels/#{channel}.md` at #{ts}. Archive files

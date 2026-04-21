@@ -337,14 +337,23 @@ defmodule Glorbo.TaskDefinition do
 
   defp replace_frontmatter(content, updates) do
     case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
-      ["", _old_fm, body] ->
+      ["", old_fm, body] ->
+        # Preserve kind: from original frontmatter (GEP-25 D9). Always
+        # first line in canonical order. If the existing file predates
+        # R26.2 and lacks kind:, inject the default.
+        kind_line =
+          case Regex.run(~r/^kind:\s*\S.*$/m, old_fm) do
+            [line] -> line
+            _ -> "kind: task/v1"
+          end
+
         fm_lines =
           @editor_keys
           |> Enum.map(fn k -> {k, lookup_key(updates, k)} end)
           |> Enum.reject(fn {_, v} -> v in [nil, ""] end)
           |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{yaml_scalar(v)}" end)
 
-        {:ok, "---\n" <> fm_lines <> "\n---\n" <> body}
+        {:ok, "---\n" <> kind_line <> "\n" <> fm_lines <> "\n---\n" <> body}
 
       _ ->
         {:error, :no_frontmatter}

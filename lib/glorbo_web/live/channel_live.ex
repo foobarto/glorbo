@@ -133,7 +133,16 @@ defmodule GlorboWeb.ChannelLive do
 
       true ->
         path = channel_path(socket.assigns.base, socket.assigns.company_slug, normalized)
-        content = "# #" <> normalized <> "\n\n"
+
+        content =
+          """
+          ---
+          kind: channel-log/v1
+          channel: #{normalized}
+          ---
+          # ##{normalized}
+
+          """
 
         with :ok <- File.mkdir_p(Path.dirname(path)),
              :ok <- File.write(path, content) do

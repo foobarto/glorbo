@@ -80,6 +80,7 @@ defmodule Glorbo.CLI.Scaffold.Skill do
 
     File.write!(skill_path, """
     ---
+    kind: skill/v1
     name: #{name}
     description: "[EDIT: one-line description]"
     tags: []

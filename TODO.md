@@ -114,5 +114,12 @@ it's been in CHANGELOG for a cycle.
 - [x] R30.1: macOS build plumbing — Burrito darwin targets + GHA `build-macos` matrix job + `Sandbox.Bwrap.availability/0` probe + formula renders `on_macos do` block
 - [x] #302 R30.2: `Glorbo.Sandbox.Unsandboxed.start/2` + Dispatch fallback + per-company once `agent.sandbox_unavailable` audit + Doctor reclassification (linux-only checks → `:info` severity on darwin); macOS binaries now functional in degraded mode
 - [ ] After R30.2 ships green: full browser E2E functionality test (new chore from user)
-- [ ] #297 R26.2b: atomic `kind:` cut — add `kind:` to every writer + fixture + template; parser enforcement; delete soft-migration readers; `mix glorbo.docs.file_formats`; precommit wiring. Estimated 50+ files; best done in a fresh focused session. FileSpec.Formatter + `glorbo fmt` shipped in R33 — can be used for the sweep.
+- [x] #297 R26.2a: atomic `kind:` cut — writers. Every writer emits
+  `kind: <name>/v1` (scaffolders, init, router, audit, memory, sentinels,
+  brain-dump, chat rotation, kanban/company/project/channel editors,
+  task scheduler, DM channel). Router rejects missing `kind:` on task
+  + memory outbox. 1394/1394 green.
+- [ ] R26.2b: atomic `kind:` cut — templates + per-kind golden fixtures;
+  precommit wiring for `mix glorbo.docs.file_formats` + `glorbo fmt
+  --check`. Scope shrank considerably with R26.2a done.
 - [x] #306 R33: FileSpec.Formatter + `glorbo fmt [--check|--write]` — canonical YAML key ordering, fence normalisation, idempotent, atomic writes; 14 unit tests + 2 CLI smoke tests

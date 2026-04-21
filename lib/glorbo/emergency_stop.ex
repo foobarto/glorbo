@@ -135,6 +135,7 @@ defmodule Glorbo.EmergencyStop do
 
     """
     ---
+    kind: emergency-stop/v1
     engaged_by: #{actor}
     engaged_at: #{ts}
     #{reason_line}---
