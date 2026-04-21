@@ -10,6 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — "Wake all" director-origin heartbeat broadcast (#315)
+
+- **CompanyLive header "♻ wake all" button** — dispatches
+  `:director` wake to every `{:agent_server, <co>, <slug>}` pid
+  registered for the company. Emits
+  `director.heartbeat_broadcast` audit with `agents_woken` and
+  `errors` detail. Disabled when emergency stop engaged (with
+  a tooltip explaining why) since wakes would be no-ops. Flash
+  surfaces "Woke N agents.", "No running agents to wake.", or
+  partial-failure counts.
+- 3 regression tests: button renders, zero-agent click surfaces
+  the correct flash, emergency-stop state disables the button.
+- Uses `Registry.select/2` with an `{{{:agent_server, co, :"$1"}
+  :"$2", :_}, [], [{{:"$1", :"$2"}}]}` match spec; mirrors the
+  pattern already used for audit-log lookups in the same module.
+
 ### Changed — HEARTBEAT + bench SOUL self-improvement and anti-AI-tells
 
 - **Every HEARTBEAT.md template now includes a "Self-improvement"

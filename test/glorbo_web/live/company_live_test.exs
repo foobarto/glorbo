@@ -207,4 +207,43 @@ defmodule GlorboWeb.CompanyLiveTest do
       refute html =~ "gl-budget-strip"
     end
   end
+
+  # #315 — "wake all" director-origin heartbeat broadcast.
+  describe "wake all (#315)" do
+    test "button renders in header", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ "wake all"
+      assert html =~ ~s(phx-click="wake_all")
+    end
+
+    test "click emits flash even with no running agents", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+      html = render_click(view, "wake_all", %{})
+      assert html =~ "No running agents to wake."
+    end
+
+    test "button disabled when emergency stop engaged", %{conn: conn, base: base} do
+      # Engage emergency stop first
+      :ok =
+        Glorbo.EmergencyStop.engage("acme",
+          base: base,
+          actor: "director",
+          audit_fun: fn _, _ -> :ok end,
+          kill_fun: fn _ -> :ok end
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ ~s(phx-click="wake_all")
+      assert html =~ "disabled"
+      assert html =~ "Emergency stop engaged"
+
+      # Cleanup
+      :ok =
+        Glorbo.EmergencyStop.clear("acme",
+          base: base,
+          actor: "director",
+          audit_fun: fn _, _ -> :ok end
+        )
+    end
+  end
 end

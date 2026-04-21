@@ -285,6 +285,19 @@ defmodule GlorboWeb.CompanyLive do
             + new agent
           </button>
           <button
+            type="button"
+            class="gl-btn"
+            phx-click="wake_all"
+            disabled={@emergency_stopped?}
+            title={
+              if @emergency_stopped?,
+                do: "Emergency stop engaged — wake disabled",
+                else: "Send a director-origin heartbeat to every running agent in this company"
+            }
+          >
+            ♻ wake all
+          </button>
+          <button
             :if={not @emergency_stopped?}
             type="button"
             class="gl-btn gl-btn--danger"
@@ -888,6 +901,18 @@ defmodule GlorboWeb.CompanyLive do
     end
   end
 
+  # Trigger a director-origin heartbeat wake on every live Agent.Server
+  # for this company. Uses the same Registry.select idiom as the
+  # company-scoped supervisor lookup; refuses with a flash if emergency
+  # stop is engaged (wakes would be no-ops anyway).
+  def handle_event("wake_all", _params, socket) do
+    if socket.assigns.emergency_stopped? do
+      {:noreply, put_flash(socket, :error, "Emergency stop engaged — wake-all disabled.")}
+    else
+      do_wake_all(socket)
+    end
+  end
+
   def handle_event("emergency_engage", _params, socket) do
     co = socket.assigns.company_slug
 
@@ -1016,6 +1041,56 @@ defmodule GlorboWeb.CompanyLive do
 
   defp append_if_nonempty(argv, [_flag, ""]), do: argv
   defp append_if_nonempty(argv, extra), do: argv ++ extra
+
+  # Wake every agent under this company with the :director trigger.
+  # Audit + flash the outcome. Extracted so the handle_event clauses
+  # stay grouped together per credo. Called from the "wake all"
+  # button (#315).
+  defp do_wake_all(socket) do
+    co = socket.assigns.company_slug
+    {count, errors} = broadcast_wake_all(co)
+
+    Glorbo.Company.AuditLog.append(%{
+      company: co,
+      actor: "director",
+      action: "director.heartbeat_broadcast",
+      target: co,
+      detail: %{agents_woken: count, errors: length(errors)}
+    })
+
+    msg =
+      case {count, errors} do
+        {0, _} -> "No running agents to wake."
+        {n, []} -> "Woke #{n} agent#{if n == 1, do: "", else: "s"}."
+        {n, errs} -> "Woke #{n}; #{length(errs)} wake call(s) errored."
+      end
+
+    {:noreply, put_flash(socket, :info, msg)}
+  end
+
+  # Enumerate every {:agent_server, company, slug} pid registered for
+  # this company and wake each with the :director trigger. Returns
+  # {ok_count, [errors]}. Used by the "wake all" button (#315).
+  defp broadcast_wake_all(company) do
+    Glorbo.Agent.Registry
+    |> Elixir.Registry.select([
+      {
+        {{:agent_server, company, :"$1"}, :"$2", :_},
+        [],
+        [{{:"$1", :"$2"}}]
+      }
+    ])
+    |> Enum.reduce({0, []}, fn {_slug, pid}, {ok, errs} ->
+      try do
+        :ok = Glorbo.Agent.Server.wake(pid, :director, nil)
+        {ok + 1, errs}
+      rescue
+        e -> {ok, [e | errs]}
+      catch
+        :exit, reason -> {ok, [reason | errs]}
+      end
+    end)
+  end
 
   # ---------------------------------------------------------------------------
   # Data loaders
