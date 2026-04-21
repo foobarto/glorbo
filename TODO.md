@@ -106,3 +106,6 @@ it's been in CHANGELOG for a cycle.
 - [x] #292 R24: truthful Inbox header ("N approval · M stuck" / "(empty)") + relative last-failure timestamp on stuck rows
 - [x] v0.0.4 shipped — release tagged, GitHub Release live with Burrito binaries
 - [x] #294 R25: goal `name:` accepts as title fallback (GoalsLive + CompanyLive); UAT pass on Skills/Costs/Goals/BrainDump clean
+- [x] #295 GEP-25 drafted: file format specs + `glorbo validate` + `glorbo fmt` + `kind:` discriminator (k8s-inspired) + atomic cut plan
+- [x] #296 R26.1: FileSpec behaviour + 15 per-kind spec modules (company/agent/project/task/heartbeat/soul/memory-index/memory-entry/sentinel-approval/sentinel-stuck/sentinel-resolution/braindump/channel-log/audit-event/inbox-archive — all `/v1`); 28 tests; no writer changes yet
+- [ ] #297 R26.2: atomic `kind:` cut — add `kind:` to every writer + fixture + template; parser enforcement; delete soft-migration readers; ship FileSpec.Validator + FileSpec.Formatter + `glorbo validate` + `glorbo fmt` + `mix glorbo.docs.file_formats`; precommit wiring. Estimated 60+ files; best done in a fresh focused session

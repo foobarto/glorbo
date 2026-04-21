@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-25 scaffolding (R26.1)
+
+- **`Glorbo.FileSpec` registry + 15 per-kind spec modules.** Pure
+  catalogue of every markdown-with-frontmatter or JSONL/JSON file
+  Glorbo reads or writes (`company/v1`, `agent/v1`, `project/v1`,
+  `task/v1`, `agent-heartbeat/v1`, `agent-soul/v1`,
+  `agent-memory-index/v1`, `agent-memory/v1`,
+  `sentinel-approval/v1`, `sentinel-stuck/v1`,
+  `sentinel-resolution/v1`, `braindump/v1`, `channel-log/v1`,
+  `audit-event/v1`, `inbox-archive/v1`). Each module declares
+  its `kind:` discriminator, frontmatter schema
+  (required/optional/enums/patterns/caps), canonical key order,
+  and docs. `classify_by_path/1` + `classify_by_kind/1` for
+  lookup. No writer/CLI changes yet — the atomic `kind:` sweep
+  across every writer + fixture + the validator/formatter land
+  as R26.2.
+
 ### Fixed — post-release polish (R25, browser UAT)
 
 - **Goal `name:` accepted as title fallback (#294).** GoalsLive
