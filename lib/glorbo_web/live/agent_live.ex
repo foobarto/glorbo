@@ -1870,6 +1870,7 @@ defmodule GlorboWeb.AgentLive do
   defp action_class("agent.wake" <> _), do: "wake"
   defp action_class("agent.dispatch" <> _), do: "wake"
   defp action_class("agent.complete" <> _), do: "wake"
+  defp action_class("agent.retry"), do: "retry"
   defp action_class("agent.heartbeat_skipped"), do: "wake"
   defp action_class("agent.wake_request"), do: "wake"
   defp action_class("budget" <> _), do: "budget"
@@ -1879,6 +1880,7 @@ defmodule GlorboWeb.AgentLive do
   defp kind_for("agent.heartbeat_skipped"), do: "skipped"
   defp kind_for("agent.complete"), do: "complete"
   defp kind_for("agent.dispatch"), do: "dispatch"
+  defp kind_for("agent.retry"), do: "retry"
   defp kind_for("agent.wake" <> _), do: "wake"
   defp kind_for(_), do: "default"
 
@@ -1896,6 +1898,9 @@ defmodule GlorboWeb.AgentLive do
 
       {"agent.complete", d} when is_map(d) ->
         "exit #{d["exit_status"] || "?"} · #{d["duration_ms"] || "?"}ms"
+
+      {"agent.retry", d} when is_map(d) ->
+        "attempt #{d["attempt"] || "?"} · reason: #{d["reason"] || "?"}"
 
       {"agent.wake_request", d} when is_map(d) ->
         reason = d["reason"] || ""
