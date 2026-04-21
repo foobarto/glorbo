@@ -595,13 +595,6 @@ defmodule GlorboWeb.KanbanLive do
           >
             ⚙ {@project_filter} config
           </.link>
-          <.link
-            :if={@project_filter}
-            navigate={~p"/companies/#{@company_slug}/kanban"}
-            class="gl-btn gl-btn--sm"
-          >
-            × all projects
-          </.link>
           <form phx-change="search_task" class="gl-kanban__search">
             <input
               type="search"
@@ -615,6 +608,61 @@ defmodule GlorboWeb.KanbanLive do
           <button type="button" class="gl-btn" phx-click="new_task">+ new task</button>
         </div>
       </header>
+
+      <div
+        :if={@project_filter || @goal_filter || @who_filter}
+        class="gl-kanban__filters"
+        aria-label="Active filters"
+      >
+        <span class="gl-kanban__filters-label">filters:</span>
+        <.link
+          :if={@project_filter}
+          navigate={
+            kanban_path_without(@company_slug, @project_filter, @goal_filter, @who_filter,
+              drop: :project
+            )
+          }
+          class="gl-chip gl-chip--filter"
+          title={"Clear project filter · " <> @project_filter}
+        >
+          <span class="gl-chip__label">project</span>
+          <span class="gl-chip__value">{@project_filter}</span>
+          <span class="gl-chip__close" aria-hidden="true">×</span>
+        </.link>
+        <.link
+          :if={@goal_filter}
+          navigate={
+            kanban_path_without(@company_slug, @project_filter, @goal_filter, @who_filter,
+              drop: :goal
+            )
+          }
+          class="gl-chip gl-chip--filter"
+          title={"Clear goal filter · " <> @goal_filter}
+        >
+          <span class="gl-chip__label">goal</span>
+          <span class="gl-chip__value">{@goal_filter}</span>
+          <span class="gl-chip__close" aria-hidden="true">×</span>
+        </.link>
+        <.link
+          :if={@who_filter}
+          navigate={
+            kanban_path_without(@company_slug, @project_filter, @goal_filter, @who_filter, drop: :who)
+          }
+          class="gl-chip gl-chip--filter"
+          title={"Clear assignee filter · " <> @who_filter}
+        >
+          <span class="gl-chip__label">assignee</span>
+          <span class="gl-chip__value">{@who_filter}</span>
+          <span class="gl-chip__close" aria-hidden="true">×</span>
+        </.link>
+        <.link
+          navigate={~p"/companies/#{@company_slug}/kanban"}
+          class="gl-kanban__filters-clear"
+          title="Clear all filters"
+        >
+          clear all
+        </.link>
+      </div>
 
       <p class="gl-banner gl-banner--muted">
         Drag a card to move between lanes. Status writes back to the task's <code>status:</code>
@@ -890,6 +938,26 @@ defmodule GlorboWeb.KanbanLive do
 
   defp build_kanban_title(slug, project, goal),
     do: "Kanban · #{project} / goal:#{goal} — #{slug} — Glorbo"
+
+  # #275 — build the kanban URL with one filter removed. Used by
+  # the chip bar so each chip's × link drops only that filter,
+  # preserving others. Empty/nil filters are omitted from the
+  # querystring; if nothing is left, returns the bare kanban path.
+  defp kanban_path_without(slug, project, goal, who, drop: field) do
+    project = if field == :project, do: nil, else: project
+    goal = if field == :goal, do: nil, else: goal
+    who = if field == :who, do: nil, else: who
+
+    query =
+      [project: project, goal: goal, who: who]
+      |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
+
+    if query == [] do
+      ~p"/companies/#{slug}/kanban"
+    else
+      ~p"/companies/#{slug}/kanban?#{query}"
+    end
+  end
 
   # Task body may contain a prompt (before any comment header) followed
   # by a thread of `## <iso8601-ts> | <author>\n<body>` comment blocks

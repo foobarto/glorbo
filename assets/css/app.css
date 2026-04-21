@@ -2994,6 +2994,68 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   width: 220px;
 }
 
+/* #275 — kanban filter chip bar. Shown below the header when any
+   of ?project, ?goal, ?who are active. Each chip is a nav link
+   that drops just that filter; "clear all" nukes them. */
+.gl-kanban__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 var(--gl-space-sm);
+  font-size: 11px;
+}
+.gl-kanban__filters-label {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: var(--gl-ff-mono);
+}
+.gl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--gl-border-strong);
+  border-radius: 999px;
+  background: var(--gl-surface-raised);
+  color: var(--gl-fg);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.gl-chip:hover {
+  border-color: var(--gl-accent);
+  background: color-mix(in oklch, var(--gl-accent) 8%, var(--gl-surface-raised));
+}
+.gl-chip__label {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+.gl-chip__value {
+  color: var(--gl-fg);
+}
+.gl-chip__close {
+  color: var(--gl-fg-subtle);
+  font-size: 12px;
+  line-height: 1;
+}
+.gl-chip:hover .gl-chip__close {
+  color: var(--gl-danger, #c14);
+}
+.gl-kanban__filters-clear {
+  color: var(--gl-fg-subtle);
+  font-size: 11px;
+  text-decoration: underline dotted;
+  margin-left: auto;
+}
+.gl-kanban__filters-clear:hover {
+  color: var(--gl-accent);
+}
+
 .gl-channel-create {
   padding: 4px 0;
 }

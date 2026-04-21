@@ -196,6 +196,21 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 11
+
+- **Kanban filter chip bar (#275).** When any of the kanban
+  filters (`?project=` / `?goal=` / `?who=`) is active, a row of
+  pill-shaped chips now renders below the page header listing
+  the active filters with an `×` that drops just that filter
+  while preserving the others. A "clear all" link on the right
+  nukes every filter. Previously only `?project=` had any
+  visible-clear affordance (the "× all projects" button); the
+  goal and assignee filters were silently applied with no way
+  to tell they were even on. Replaces that one button with a
+  more discoverable, composable UI pattern. 3 new regression
+  tests cover no-chips, single-chip, and multi-chip URL
+  construction.
+
 ### Added — round 10
 
 - **TaskLive stuck-on banner (#274).** When an agent gets

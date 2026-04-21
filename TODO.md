@@ -87,3 +87,4 @@ it's been in CHANGELOG for a cycle.
 - [x] Fix scheduler.invalid_task_cron audit flood (UAT finding)
 - [x] Modal close-button hover affordance
 - [x] #274 Round 10: TaskLive stuck-on banner
+- [x] #275 Round 11: Kanban filter chip bar (project/goal/who)

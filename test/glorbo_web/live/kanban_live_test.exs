@@ -98,7 +98,10 @@ defmodule GlorboWeb.KanbanLiveTest do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?project=website")
     assert html =~ "Deploy landing page"
     refute html =~ "Other project task"
-    assert html =~ "× all projects"
+    # #275 — filter chip bar replaces the old "× all projects"
+    # button with a chip that clears the project filter.
+    assert html =~ ~s(class="gl-kanban__filters")
+    assert html =~ "clear all"
   end
 
   test "seeded t-01 task with requires_approval: director renders the approval tag + modifier",
@@ -571,5 +574,39 @@ defmodule GlorboWeb.KanbanLiveTest do
     # "director" always present; "ceo" comes from the acme fixture.
     assert html =~ ~s(<option value="director")
     assert html =~ ~s(<option value="ceo")
+  end
+
+  # #275 — kanban filter chip bar. Each active filter renders as a
+  # chip whose × link drops only that filter, preserving the
+  # others. "clear all" drops everything.
+  describe "filter chips (#275)" do
+    test "no chips when no filters active", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
+      refute html =~ ~s(class="gl-kanban__filters")
+    end
+
+    test "?who=ceo renders a single ASSIGNEE chip", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?who=ceo")
+      assert html =~ ~s(class="gl-kanban__filters")
+      assert html =~ "assignee"
+      assert html =~ ">ceo<"
+      assert html =~ "clear all"
+    end
+
+    test "combining project+who renders two chips; each chip links to a URL that drops only itself",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?project=website&who=ceo")
+      # Both chips present.
+      assert html =~ "project"
+      assert html =~ ">website<"
+      assert html =~ "assignee"
+      assert html =~ ">ceo<"
+      # Project chip's link drops project, keeps who=ceo.
+      assert html =~ ~r|/companies/acme/kanban\?who=ceo"[^>]*title="Clear project filter|
+      # Assignee chip's link drops who, keeps project=website.
+      assert html =~ ~r|/companies/acme/kanban\?project=website"[^>]*title="Clear assignee filter|
+      # Clear-all link is bare.
+      assert html =~ ~s(href="/companies/acme/kanban" data-phx-link="redirect")
+    end
   end
 end
