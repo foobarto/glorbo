@@ -110,6 +110,37 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     refute_receive {:armed, {:fire, "foo-3"}, _}, 50
   end
 
+  # UAT round 9 — repeated rescans of a task with an unchanged
+  # malformed schedule must NOT flood the audit log. Only emit on
+  # schedule change (or first sight).
+  test "scheduler.invalid_task_cron dedups across repeated scans",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-3b", schedule: "wutang-clan")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:audit, %{action: "scheduler.invalid_task_cron"}}
+
+    # Three more scans with the same invalid schedule — no further
+    # audit events should fire.
+    :ok = TaskScheduler.scan(sched)
+    :ok = TaskScheduler.scan(sched)
+    :ok = TaskScheduler.scan(sched)
+    refute_receive {:audit, %{action: "scheduler.invalid_task_cron"}}, 50
+  end
+
+  test "scheduler.invalid_task_cron re-emits when schedule changes",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-3c", schedule: "wutang-clan")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:audit, %{action: "scheduler.invalid_task_cron", cron: "wutang-clan"}}
+
+    # Rewrite with a different (still-invalid) schedule — fresh audit.
+    write_task(tasks_dir, "foo-3c", schedule: "flip-diesel")
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:audit, %{action: "scheduler.invalid_task_cron", cron: "flip-diesel"}}
+  end
+
   test "honours keyword aliases (daily / @hourly / weekly)",
        %{base: base, company: company, tasks_dir: tasks_dir} do
     write_task(tasks_dir, "foo-4", schedule: "daily")

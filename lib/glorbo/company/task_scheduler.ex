@@ -154,6 +154,12 @@ defmodule Glorbo.Company.TaskScheduler do
 
   def handle_info({:fire, task_id}, state) do
     case Map.fetch(state.tasks, task_id) do
+      {:ok, %{invalid?: true}} ->
+        # Invalid-cron entries are stashed only for dedup bookkeeping —
+        # no timer was armed for them. A :fire message here would mean
+        # a bug elsewhere; drop it silently.
+        {:noreply, state}
+
       {:ok, entry} ->
         {:noreply, fire(state, task_id, entry)}
 
@@ -243,7 +249,6 @@ defmodule Glorbo.Company.TaskScheduler do
 
       {:error, reason} ->
         maybe_emit_invalid(state, task_id, rel, schedule, reason)
-        state
     end
   end
 
@@ -405,7 +410,9 @@ defmodule Glorbo.Company.TaskScheduler do
   defp maybe_emit_invalid(state, task_id, rel, schedule, reason) do
     prev = Map.get(state.tasks, task_id, %{})
 
-    if prev[:schedule] != schedule do
+    if prev[:schedule] == schedule do
+      state
+    else
       emit_audit(state, %{
         action: "scheduler.invalid_task_cron",
         actor: "system",
@@ -414,6 +421,19 @@ defmodule Glorbo.Company.TaskScheduler do
         cron: schedule,
         reason: inspect(reason)
       })
+
+      # Stash the invalid schedule so the next rescan sees the
+      # same value via `prev[:schedule]` and skips re-emitting.
+      # Keep only what dedup needs — no timer, no arming — so
+      # `fire` / `re_arm` don't treat this as live state.
+      tasks =
+        Map.put(state.tasks, task_id, %{
+          schedule: schedule,
+          rel_path: rel,
+          invalid?: true
+        })
+
+      %{state | tasks: tasks}
     end
   end
 

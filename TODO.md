@@ -46,10 +46,9 @@ it's been in CHANGELOG for a cycle.
   labels wrap above the input below some breakpoint, (b) cap label
   width by `ch` instead of `px`. Revisit once the UI gets real
   narrow-screen testing.
-- [ ] **Close button `×` hover affordance.** Subtle — nothing
-  indicates the glyph is a button. Consider a tiny
-  background-on-hover or a box so first-time users see it as
-  clickable.
+- [x] **Close button `×` hover affordance.** Fixed in round 9 —
+  hover shows a raised-surface background + border; focus-visible
+  adds a 2px accent outline.
 - [ ] **Scheduler aliases list is closed.** `hourly`/`daily`/...
   cover 90% but not `every 5 minutes` or `Mon-Fri 9am`. Can add a
   naive-language parser if users ask — not yet.
@@ -84,3 +83,6 @@ it's been in CHANGELOG for a cycle.
 - [x] Fix sidebar Approvals badge/list parity bug (UAT finding)
 - [x] Audit log relative timestamps ("7 min ago" + title tooltip)
 - [x] ESC key closes every modal
+- [x] #273 UAT Round 9 — E3/E4/L1/L2/L3 green + 2 ships
+- [x] Fix scheduler.invalid_task_cron audit flood (UAT finding)
+- [x] Modal close-button hover affordance

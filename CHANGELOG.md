@@ -198,6 +198,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Scheduler.invalid_task_cron audit flood (#273, UAT round 9).**
+  A task with an unparseable `schedule:` field was re-emitting
+  `scheduler.invalid_task_cron` on every 60-second rescan
+  because the dedup logic looked up the previous value from
+  `state.tasks[task_id]` — but the error branch was never
+  writing back to state. Fix: threading the state through the
+  error branch so a stub entry (`%{schedule: ..., invalid?:
+  true}`) is stashed, making the next rescan's `prev[:schedule]
+  == schedule` short-circuit work. `{:fire, task_id}` for
+  stashed-invalid entries is guarded (should never arrive;
+  defensive) so a scheduler bug can't dispatch an unparseable
+  task. 2 new regression tests — repeated-scan no-flood and
+  re-emit-on-change — cover the behaviour.
+- **Close-button hover affordance (#273).** The `×` glyph on
+  every modal looked like static text because it had no hover
+  state. Added a subtle border + surface-raised background on
+  `:hover`, plus a `:focus-visible` outline for keyboard
+  navigation. No text-size change; the button reveals itself
+  as interactive on hover.
 - **Sidebar Approvals badge/list mismatch (#272, UAT round 8).**
   Previously the badge counted every `awaiting-approval-*.md`
   sentinel including orphans (matching task file absent), while

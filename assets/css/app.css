@@ -2647,7 +2647,23 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-modal__close {
   font-size: 18px;
   line-height: 1;
-  padding: 0 var(--gl-space-sm);
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--gl-fg-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.gl-modal__close:hover {
+  background: var(--gl-surface-raised);
+  color: var(--gl-fg);
+  border-color: var(--gl-border);
+}
+.gl-modal__close:focus-visible {
+  outline: 2px solid var(--gl-accent);
+  outline-offset: 1px;
 }
 .gl-modal__footer {
   display: flex;
