@@ -260,10 +260,18 @@ chmod +x ~/.local/bin/glorbo
 glorbo init
 ```
 
-macOS builds are on the roadmap — bwrap + inotify don't map 1:1
+**macOS** builds are on the roadmap — bwrap + inotify don't map 1:1
 to macOS primitives, so early macOS support will degrade
-gracefully (unsandboxed agent execution + polling filesystem
-watcher) with explicit caveats. For now, Linux only.
+gracefully (unsandboxed agent execution) with explicit caveats.
+For now, Linux only.
+
+**Windows** is supported via [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).
+The Linux binaries above run unchanged inside a WSL2 distro
+(Ubuntu, Fedora, etc.) — that's the supported way to run Glorbo
+on a Windows host. There are no native Windows builds and none
+are planned; the agent runtime depends on Linux kernel primitives
+(bwrap sandboxing, inotify, user namespaces) that don't have
+useful Windows equivalents.
 
 `glorbo init` creates the directory hierarchy, verifies prerequisites via
 `glorbo doctor`, and optionally scaffolds an example company.
