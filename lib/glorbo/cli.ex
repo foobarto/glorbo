@@ -150,6 +150,46 @@ defmodule Glorbo.CLI do
     end
   end
 
+  # GEP-25 R27 — read-only schema validator. Walks a path (default:
+  # GLORBO_HOME), classifies every file via Glorbo.FileSpec, emits
+  # findings. `--json` → NDJSON for CI; `--summary` → one-line count;
+  # otherwise human-readable text.
+  @validate_switches [json: :boolean, summary: :boolean, severity: :string, kind: :string]
+  def dispatch(["validate" | rest]) do
+    {opts, argv, _invalid} = OptionParser.parse(rest, strict: @validate_switches)
+
+    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    path = List.first(argv) || base
+
+    findings_opts = []
+
+    findings_opts =
+      if opts[:kind], do: Keyword.put(findings_opts, :kind, opts[:kind]), else: findings_opts
+
+    findings_opts =
+      case opts[:severity] do
+        nil -> findings_opts
+        "error" -> Keyword.put(findings_opts, :severity, :error)
+        "warning" -> Keyword.put(findings_opts, :severity, :warning)
+        "info" -> Keyword.put(findings_opts, :severity, :info)
+        _ -> findings_opts
+      end
+
+    %{findings: findings, stats: stats} =
+      Glorbo.FileSpec.Validator.validate_path(path, findings_opts)
+
+    mode =
+      cond do
+        opts[:json] -> :json
+        opts[:summary] -> :summary
+        true -> :human
+      end
+
+    output = Glorbo.FileSpec.Formatter.render(mode, findings, stats)
+    exit_code = Glorbo.FileSpec.Validator.exit_code(findings)
+    {:validate, exit_code, IO.iodata_to_binary(output)}
+  end
+
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
@@ -193,6 +233,8 @@ defmodule Glorbo.CLI do
       restore <archive>        Extract, migrate, reindex, doctor --fix
       doctor [--json] [--fix]  Verify host prerequisites; --fix repairs what it can
       reindex                  Rebuild ~/.glorbo/glorbo.db from disk
+      validate [PATH]          Check on-disk files against file-format specs (GEP-25)
+                               Flags: --json, --summary, --severity lvl, --kind kind
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 

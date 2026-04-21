@@ -17,6 +17,55 @@ defmodule Glorbo.CLITest do
     assert code == 0
     assert output =~ "USAGE"
     assert output =~ "doctor"
+    # GEP-25 R27: validate verb must appear in the help.
+    assert output =~ "validate"
+  end
+
+  test "dispatch([\"validate\", PATH]) runs FileSpec validator (R27)" do
+    base =
+      Path.join(System.tmp_dir!(), "glorbo-cli-validate-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(base, "companies/acme"))
+    # Seed a well-formed company.md — validator should return exit 0.
+    File.write!(Path.join(base, "companies/acme/company.md"), """
+    ---
+    kind: company/v1
+    slug: acme
+    name: Acme
+    ---
+    """)
+
+    on_exit(fn -> File.rm_rf!(base) end)
+
+    {verb, code, output} = CLI.dispatch(["validate", base])
+    assert verb == :validate
+    assert code == 0
+    assert output =~ "0 error"
+  end
+
+  test ~S|dispatch(["validate", PATH, "--json"]) emits NDJSON summary| do
+    base =
+      Path.join(
+        System.tmp_dir!(),
+        "glorbo-cli-validate-json-#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(Path.join(base, "companies/acme"))
+    # Seed a broken company.md — expect an error.
+    File.write!(Path.join(base, "companies/acme/company.md"), """
+    ---
+    slug: acme
+    name: Acme
+    ---
+    """)
+
+    on_exit(fn -> File.rm_rf!(base) end)
+
+    {:validate, code, output} = CLI.dispatch(["validate", base, "--json"])
+    assert code == 1
+    assert output =~ ~s("type":"finding")
+    assert output =~ ~s("type":"summary")
+    assert output =~ ~s("code":"missing_kind")
   end
 
   test "dispatch([\"--help\"]) returns :help" do
