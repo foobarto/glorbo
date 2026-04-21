@@ -200,8 +200,10 @@ layers by design: the Elixir Router (application) and the Linux kernel
 via `bwrap` mount namespaces. An agent without `projects:write:foo`
 literally cannot write there.
 
-**Budget governance** — Per-agent monthly budgets with alerts and hard stops.
-No runaway API bills at 3 AM.
+**Budget governance** — Per-agent AND per-company monthly budgets
+declared in markdown frontmatter (`budget_usd_cents_month:` on
+`AGENT.md` or `company.md`). Dispatch refuses new work at 100%,
+warns at 80%. No runaway API bills at 3 AM.
 
 **Approval gates** — Tasks can require Director approval before execution.
 The agent pauses, you review, one click to approve.

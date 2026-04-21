@@ -103,6 +103,12 @@ change between minor versions. Pin exact versions in downstream usage.
 - **Cost ledger page (`/costs`, #242, T2-D)** — per-agent monthly
   spend matrix for the last 12 months, top-spender card, drill-in
   link to AgentLive.
+- **Per-company budget cap (#245)** — `company.md` frontmatter
+  `budget_usd_cents_month:`. Dispatch refuses new work when the
+  sum of every agent's month-to-date spend reaches the cap; an
+  alert state fires between 80% and 100%. Complements the
+  existing per-agent `budget_usd_cents_month:` on AGENT.md; both
+  caps are independent — whichever hits first stops dispatch.
 
 ### Changed
 

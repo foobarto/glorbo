@@ -7,6 +7,7 @@ defmodule GlorboWeb.CostsLiveTest do
     # Seed an agent dir so list_all_agents finds something.
     agent_dir = Path.join([base, "companies/acme/agents/engineer"])
     File.mkdir_p!(agent_dir)
+
     File.write!(Path.join(agent_dir, "AGENT.md"), """
     ---
     role: engineering

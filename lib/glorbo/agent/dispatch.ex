@@ -95,6 +95,7 @@ defmodule Glorbo.Agent.Dispatch do
     with :ok <- check_emergency_stop(spec, opts),
          :ok <- check_prompt_size(task.prompt),
          :ok <- check_budget(spec, opts),
+         :ok <- check_company_budget(spec, opts),
          {:ok, provider} <- resolve_provider(spec, task, opts),
          :ok <- check_untracked_allowed(spec, provider, opts),
          :ok <- verify_installed(spec, provider, opts),
@@ -177,6 +178,26 @@ defmodule Glorbo.Agent.Dispatch do
     fun = Keyword.get(opts, :budget_tracker_fun, fn _ -> :ok end)
 
     case fun.(spec) do
+      :ok -> :ok
+      {:alert, _used, _cap} -> :ok
+      {:stop, used, cap} -> {:stop, used, cap}
+      other -> other
+    end
+  end
+
+  # #245 per-company cap check. Fires after per-agent `check_budget`
+  # so agent-level `{:stop, ...}` keeps its existing contract. On
+  # company-level overshoot we return the same shape so the outer
+  # `with` converts it to {:stopped, :budget_hard_stop}.
+  defp check_company_budget(spec, opts) do
+    fun =
+      Keyword.get(opts, :company_budget_fun, fn company ->
+        Glorbo.Budget.CompanyCap.check(company,
+          base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+        )
+      end)
+
+    case fun.(spec.company) do
       :ok -> :ok
       {:alert, _used, _cap} -> :ok
       {:stop, used, cap} -> {:stop, used, cap}
