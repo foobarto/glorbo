@@ -219,10 +219,20 @@ defmodule GlorboWeb.AuditLive do
 
     ~H"""
     <section class="gl-view gl-audit">
-      <header class="gl-view__header">
+      <header class="gl-view__header gl-view__header--split">
         <h1 class="gl-heading gl-heading--display">
           Audit log <span class="gl-muted">{@year_month}</span>
         </h1>
+        <div class="gl-audit__header-actions">
+          <a
+            href={~p"/companies/#{@company_slug}/audit.csv"}
+            class="gl-btn gl-btn--sm"
+            title="Download the current month's audit log as CSV"
+            download
+          >
+            ⇩ export CSV
+          </a>
+        </div>
       </header>
 
       <form phx-change="filter" class="gl-audit__filters" role="search" aria-label="Audit filters">

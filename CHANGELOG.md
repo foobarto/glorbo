@@ -146,6 +146,10 @@ change between minor versions. Pin exact versions in downstream usage.
   `projects/inbox/tasks/t-audit-<date>-<slug>.md` with a
   ```Context``` block containing the audit actor / action /
   target + the raw JSON payload for reference.
+- **Audit CSV export (#259)** — `/companies/<co>/audit.csv`
+  downloads the current month's audit log as CSV with columns
+  `ts, actor, action, target, detail`. RFC 4180-compliant
+  quoting. "⇩ export CSV" button on AuditLive header.
 
 ### Changed
 

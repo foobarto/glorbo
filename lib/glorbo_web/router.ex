@@ -58,6 +58,8 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/skills", SkillsLive
     # T1-E brain dump (#230) — daily append-only capture log.
     live "/companies/:company/braindump", BrainDumpLive
+    # #259 — CSV export of the current month's audit log.
+    get "/companies/:company/audit.csv", AuditExportController, :export
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive
