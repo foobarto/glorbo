@@ -120,6 +120,13 @@ change between minor versions. Pin exact versions in downstream usage.
   (when pricing is known) `cost_usd_cents`. AgentLive Runs tab
   always shows `N in / M out` tokens; cost shows `$X.YY` when
   pricing for the provider/model is available, `—` when not.
+- **Session resilience (#248, T1-A)** — dispatch now auto-retries
+  on `:timeout` and `:reply_file_missing` with the prior attempt's
+  summary appended to the prompt. Retry count caps at
+  `AGENT.md` `max_retries:` (default 2, max 5). Non-recoverable
+  errors (prompt size, unknown provider, budget stop, emergency
+  stop) never retry — config problems don't self-resolve.
+  Emits `agent.retry` audit per attempt for the history tab.
 
 ### Changed
 

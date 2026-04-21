@@ -60,6 +60,7 @@ defmodule Glorbo.Agent.Spec do
           timeout_seconds: pos_integer(),
           allow_untracked_budget: boolean(),
           autonomy: autonomy(),
+          max_retries: non_neg_integer(),
           reports_to: String.t() | nil,
           icon: String.t() | nil,
           file_path: String.t()
@@ -93,6 +94,7 @@ defmodule Glorbo.Agent.Spec do
     models: %{},
     allow_untracked_budget: false,
     autonomy: :supervised,
+    max_retries: 2,
     reports_to: nil,
     icon: nil
   ]

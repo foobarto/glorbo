@@ -537,6 +537,127 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   # ---------------------------------------------------------------------------
+  # #248 T1-A — session resilience (auto-continue on timeout)
+  # ---------------------------------------------------------------------------
+
+  describe "retry-on-timeout (#248)" do
+    test "retries :timeout failure up to max_retries, then surfaces the error",
+         ctx do
+      pid = self()
+
+      # run_fun raises `:timeout` style error: stdout empty + no reply
+      # file. Dispatcher sees `reply_file_missing`; that's retryable.
+      silent = fn _a, _e, _b, _r ->
+        send(pid, :attempted)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      spec = %{ctx.spec | max_retries: 2}
+
+      assert {:error, :reply_file_missing} =
+               Dispatch.execute(spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: silent,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      # Initial + 2 retries = 3 attempts.
+      assert_received :attempted
+      assert_received :attempted
+      assert_received :attempted
+      refute_received :attempted
+    end
+
+    test "max_retries: 0 means no retry", ctx do
+      pid = self()
+
+      silent = fn _a, _e, _b, _r ->
+        send(pid, :attempted)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      spec = %{ctx.spec | max_retries: 0}
+
+      assert {:error, :reply_file_missing} =
+               Dispatch.execute(spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: silent,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received :attempted
+      refute_received :attempted
+    end
+
+    test "non-retryable errors bubble up immediately without retry", ctx do
+      pid = self()
+
+      spec = %{ctx.spec | max_retries: 3}
+
+      _result =
+        Dispatch.execute(spec, ctx.task,
+          base: ctx.base,
+          provider_fun: fn _ ->
+            send(pid, :provider_checked)
+            nil
+          end,
+          audit_fun: ctx.audit_fun
+        )
+
+      # Only one provider check: unknown_provider is not retryable.
+      assert_received :provider_checked
+      refute_received :provider_checked
+    end
+
+    test "emits agent.retry audit per retry attempt", ctx do
+      silent = fn _a, _e, _b, _r ->
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      spec = %{ctx.spec | max_retries: 2}
+
+      Dispatch.execute(spec, ctx.task,
+        base: ctx.base,
+        run_fun: silent,
+        provider_fun: fn _ -> stub_provider() end,
+        audit_fun: ctx.audit_fun
+      )
+
+      # 2 retries = 2 `agent.retry` audit entries, each with a
+      # growing `attempt` counter.
+      assert_received {:audit, %{action: "agent.retry", attempt: 1}}
+      assert_received {:audit, %{action: "agent.retry", attempt: 2}}
+    end
+
+    test "successful dispatch with no retry doesn't emit agent.retry", ctx do
+      parent = self()
+
+      writer_fun = fn _a, env, _b, _r ->
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      audit_fun = fn _company, entry ->
+        if Map.get(entry, :action) == "agent.retry" do
+          send(parent, :retry_audit)
+        end
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: writer_fun,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: audit_fun
+               )
+
+      refute_received :retry_audit
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
 

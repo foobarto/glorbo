@@ -118,7 +118,8 @@ defmodule Glorbo.Agent.Parser do
          {:ok, heartbeat} <- validate_heartbeat(meta["heartbeat"]),
          {:ok, budget} <- validate_budget(meta["budget_usd_cents_month"]),
          {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]),
-         {:ok, autonomy} <- validate_autonomy(meta["autonomy"]) do
+         {:ok, autonomy} <- validate_autonomy(meta["autonomy"]),
+         {:ok, max_retries} <- validate_max_retries(meta["max_retries"]) do
       {:ok,
        %Spec{
          slug: slug,
@@ -135,6 +136,7 @@ defmodule Glorbo.Agent.Parser do
          timeout_seconds: timeout,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
          autonomy: autonomy,
+         max_retries: max_retries,
          reports_to: parse_reports_to(meta["reports_to"]),
          icon: parse_icon(meta["icon"]),
          file_path: file_path
@@ -420,4 +422,11 @@ defmodule Glorbo.Agent.Parser do
   defp validate_timeout(nil), do: {:ok, @default_timeout_seconds}
   defp validate_timeout(v) when is_integer(v) and v > 0, do: {:ok, v}
   defp validate_timeout(_), do: {:ok, @default_timeout_seconds}
+
+  # #248 T1-A — max_retries: non-negative integer. Default 2
+  # (1 initial + 2 retries = 3 total attempts). Capped at 5 to
+  # prevent runaway retry budgets; higher values get clamped.
+  defp validate_max_retries(nil), do: {:ok, 2}
+  defp validate_max_retries(n) when is_integer(n) and n >= 0, do: {:ok, min(n, 5)}
+  defp validate_max_retries(_), do: {:ok, 2}
 end

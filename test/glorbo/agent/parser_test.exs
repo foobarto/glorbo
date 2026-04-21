@@ -519,6 +519,69 @@ defmodule Glorbo.Agent.ParserTest do
     end
   end
 
+  describe "max_retries (#248 T1-A)" do
+    test "defaults to 2 when absent", ctx do
+      path =
+        write_agent(ctx, "no-mr", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.max_retries == 2
+    end
+
+    test "accepts 0..5", ctx do
+      for n <- 0..5 do
+        path =
+          write_agent(ctx, "mr-#{n}", """
+          ---
+          role: x
+          provider: claude-code
+          model: claude-opus-4-6
+          max_retries: #{n}
+          ---
+          """)
+
+        assert {:ok, spec} = Parser.parse_file(path)
+        assert spec.max_retries == n
+      end
+    end
+
+    test "clamps values >5 down to 5", ctx do
+      path =
+        write_agent(ctx, "mr-big", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        max_retries: 50
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.max_retries == 5
+    end
+
+    test "garbage values fall back to default", ctx do
+      path =
+        write_agent(ctx, "mr-bad", """
+        ---
+        role: x
+        provider: claude-code
+        model: claude-opus-4-6
+        max_retries: sometimes
+        ---
+        """)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.max_retries == 2
+    end
+  end
+
   describe "model aliases (#236)" do
     test "defaults to empty map when absent", ctx do
       path =

@@ -67,12 +67,67 @@ defmodule Glorbo.Agent.Dispatch do
   """
   @spec execute(Glorbo.Agent.Spec.t(), task(), keyword()) :: dispatch_result()
   def execute(%_{} = spec, %{} = task, opts \\ []) do
+    # #248 T1-A — session resilience: retry on recoverable failures
+    # (:timeout, :reply_file_missing) up to `spec.max_retries` times.
+    # Other errors don't retry — config failures don't self-resolve.
+    attempt_with_retries(spec, task, opts, 0)
+  end
+
+  defp attempt_with_retries(spec, task, opts, attempt) do
     run_dir = prepare_run_dir_path(spec, task, opts)
 
+    result =
+      try do
+        do_execute(spec, task, run_dir, opts)
+      after
+        cleanup_run_dir(run_dir, opts)
+      end
+
+    max = Map.get(spec, :max_retries, 2)
+
+    if retryable?(result) and attempt < max do
+      emit_retry_audit(spec, task, result, attempt + 1, opts)
+      retry_task = build_retry_task(task, result, attempt + 1)
+      attempt_with_retries(spec, retry_task, opts, attempt + 1)
+    else
+      result
+    end
+  end
+
+  defp retryable?({:error, :timeout}), do: true
+  defp retryable?({:error, :reply_file_missing}), do: true
+  defp retryable?(_), do: false
+
+  defp build_retry_task(task, {:error, reason}, attempt) do
+    note =
+      """
+
+      ---
+      ## Retry ##{attempt}
+
+      The previous attempt ended with #{inspect(reason)}. Try again —
+      be more conservative with tool use, and write the reply file
+      before wrapping up.
+      """
+
+    Map.update(task, :prompt, note, &(&1 <> note))
+  end
+
+  defp emit_retry_audit(spec, task, {:error, reason}, attempt, opts) do
+    audit = audit_fun(opts)
+
     try do
-      do_execute(spec, task, run_dir, opts)
-    after
-      cleanup_run_dir(run_dir, opts)
+      audit.(spec.company, %{
+        company: spec.company,
+        actor: "system",
+        action: "agent.retry",
+        target: task.task_path,
+        agent: spec.slug,
+        attempt: attempt,
+        reason: inspect(reason)
+      })
+    rescue
+      _ -> :ok
     end
   end
 
