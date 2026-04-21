@@ -168,7 +168,13 @@ defmodule GlorboWeb.TaskLive do
     co = socket.assigns.company_slug
     abs_sentinel = Path.join([base, "companies", co, sp])
 
-    case resolve_stuck(abs_sentinel, dec, base, co) do
+    case Glorbo.Agent.LoopDetector.resolve(
+           abs_sentinel,
+           String.to_existing_atom(dec),
+           base,
+           co,
+           actor: "director"
+         ) do
       :ok ->
         flash_msg =
           case dec do
@@ -568,6 +574,10 @@ defmodule GlorboWeb.TaskLive do
   # on the same task is allowed (shouldn't happen in practice but
   # we render all of them).
   defp load_stuck_for_task(base, co, task_id) do
+    # R21: apply agent-dropped resolution files before listing. Keeps
+    # TaskLive and InboxLive behaviourally identical.
+    _ = Glorbo.Agent.LoopDetector.apply_resolution_files(base, co)
+
     co_dir = Path.join([base, "companies", co])
 
     co_dir
@@ -605,35 +615,6 @@ defmodule GlorboWeb.TaskLive do
       ["agents", slug, "state"] -> slug
       _ -> false
     end)
-  end
-
-  # Symmetric with InboxLive.resolve_stuck/4.
-  defp resolve_stuck(abs_sentinel, decision, base, company) do
-    with {:ok, content} <- File.read(abs_sentinel),
-         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
-      task_path = to_string(fm["task_path"] || "")
-      abs_task = Path.join([base, "companies", company, task_path])
-
-      case decision do
-        "retry" ->
-          _ = File.rm(abs_sentinel)
-          :ok
-
-        "skip" ->
-          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{assigned_to: "director"}) do
-            _ = File.rm(abs_sentinel)
-            :ok
-          end
-
-        "stop" ->
-          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{status: "denied"}) do
-            _ = File.rm(abs_sentinel)
-            :ok
-          end
-      end
-    else
-      err -> err
-    end
   end
 
   # every `agent.complete` in the current month's audit. Audit is

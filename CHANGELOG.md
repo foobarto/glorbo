@@ -196,6 +196,42 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added / Changed — round 21
+
+- **Unified loop-detector resolution contract (#289).** The
+  stuck-on sentinel body documented three resolution paths via
+  `resolved-<decision>-<task-id>.md` file drops, but
+  InboxLive/TaskLive buttons bypassed that contract entirely —
+  they mutated the task frontmatter in-process and deleted the
+  sentinel directly, so agents who followed the documented
+  protocol were ignored.
+
+  Both views now call a single `Glorbo.Agent.LoopDetector.resolve/5`
+  entry point. The module also exposes `apply_resolution_files/3`,
+  which scans `agents/*/state/resolved-{retry,skip,stop}-<task>.md`
+  on every InboxLive/TaskLive render, applies any matching
+  resolution, and deletes both the resolution file and the
+  sentinel. Orphan resolution files (no matching sentinel) are
+  cleaned up silently.
+
+  Consequences:
+  - **One code path**, not two. Retry/skip/stop semantics match
+    whether the decision came from the UI button or a CLI agent
+    dropping a file.
+  - **Truthful sentinel body.** The documented file-drop protocol
+    now actually works end-to-end.
+  - **Single audit row per resolution** (`agent.loop_resolved`)
+    with `actor` set to `"director"` (button) or `"agent:<slug>"`
+    (file-drop). Replaces the previous implicit behaviour where
+    only task mutations + sentinel deletion were recorded.
+  - Director and agent can no longer race: each resolution file
+    is keyed by `task_id`, and InboxLive applies them on render.
+
+  Tests: 8 new cases on `Glorbo.Agent.LoopDetectorTest` cover
+  retry/skip/stop mutation + sentinel cleanup + audit emission +
+  custom actor propagation + file-drop application + orphan
+  cleanup + malformed-filename tolerance + multi-agent batching.
+
 ### Added — round 20
 
 - **Memory count badge on sidebar agent rows (GEP-21, #288).** Each

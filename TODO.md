@@ -100,15 +100,4 @@ it's been in CHANGELOG for a cycle.
 - [x] #286 E2E backfill: NL schedule fire + kanban chips navigate + task-ID autolink resolve
 - [x] #283 R19a: GEP-23 per-agent network_allow extensions (company-coarsened; per-requester is R19b)
 - [x] #288 R20: memory-count sidebar badge (✎ N next to slug when ≥1 memory file)
-- [ ] **Sentinel resolution contract mismatch** (new P2 finding)
-  LoopDetector sentinel body documents the resolution
-  mechanism as "write `resolved-retry-<task>.md` in this dir
-  to retry / `resolved-skip-<task>.md` / `resolved-stop-<task>.md`".
-  InboxLive + TaskLive `stuck_resolve` just delete the sentinel
-  directly. The file-based contract works (agents can drop
-  resolution files too) but InboxLive's buttons bypass it.
-  Either wire InboxLive/TaskLive to write `resolved-*-<task>.md`
-  and let a watcher apply the resolution, OR update the sentinel
-  body to reflect that the buttons directly mutate the task file.
-  Current behaviour is correct end-to-end, just the sentinel copy
-  is misleading.
+- [x] #289 R21: unified loop-detector resolution (single LoopDetector.resolve/5 entry; apply_resolution_files/3 honours documented file-drop protocol)

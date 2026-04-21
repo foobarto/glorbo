@@ -194,7 +194,13 @@ defmodule GlorboWeb.InboxLive do
     co = socket.assigns.company_slug
     abs_sentinel = Path.join([base, "companies", co, sp])
 
-    case resolve_stuck(abs_sentinel, dec, base, co) do
+    case Glorbo.Agent.LoopDetector.resolve(
+           abs_sentinel,
+           String.to_existing_atom(dec),
+           base,
+           co,
+           actor: "director"
+         ) do
       :ok ->
         stuck = load_stuck(base, co)
 
@@ -212,39 +218,6 @@ defmodule GlorboWeb.InboxLive do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Resolve failed: #{inspect(reason)}")}
-    end
-  end
-
-  # Resolution: delete sentinel + optionally mutate the task. Task
-  # mutation uses TaskDefinition.write/2 — same atomic path as
-  # kanban saves. Sentinel removal is best-effort; if TaskDefinition
-  # update fails the sentinel stays so the director still sees it.
-  defp resolve_stuck(abs_sentinel, decision, base, company) do
-    with {:ok, content} <- File.read(abs_sentinel),
-         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
-      task_path = to_string(fm["task_path"] || "")
-      abs_task = Path.join([base, "companies", company, task_path])
-
-      case decision do
-        "retry" ->
-          _ = File.rm(abs_sentinel)
-          :ok
-
-        "skip" ->
-          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{assigned_to: "director"}) do
-            _ = File.rm(abs_sentinel)
-            :ok
-          end
-
-        "stop" ->
-          with :ok <-
-                 Glorbo.TaskDefinition.write(abs_task, %{status: "denied"}) do
-            _ = File.rm(abs_sentinel)
-            :ok
-          end
-      end
-    else
-      err -> err
     end
   end
 
@@ -270,6 +243,13 @@ defmodule GlorboWeb.InboxLive do
   end
 
   defp load_stuck(base, company) do
+    # R21: before listing sentinels, apply any resolution files that
+    # were dropped on disk (either by CLI agents or by a director
+    # using the file-based contract documented in the sentinel body).
+    # This unifies the button-driven path with the file-drop path so
+    # there is exactly one resolution flow.
+    _ = Glorbo.Agent.LoopDetector.apply_resolution_files(base, company)
+
     co_dir = Path.join([base, "companies", company])
 
     co_dir

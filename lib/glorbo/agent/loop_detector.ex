@@ -276,14 +276,19 @@ defmodule Glorbo.Agent.LoopDetector do
     Agent `@#{agent_slug}` has failed #{length(chain)} consecutive
     dispatches on task `#{task_id}` (`#{task_path}`).
 
-    Director action required. Write one of:
+    Director action required. Two equivalent ways to resolve:
 
-    - `resolved-retry-#{task_id}.md` in this directory to keep retrying.
-    - `resolved-skip-#{task_id}.md`  to reassign the task to the director.
-    - `resolved-stop-#{task_id}.md`  to mark the task as `denied`.
+    * Click one of the three buttons in InboxLive
+      (`/companies/<co>/inbox`) or on the task page.
+    * Drop a file next to this sentinel in the same directory:
+      - `resolved-retry-#{task_id}.md` → clear sentinel, keep retrying.
+      - `resolved-skip-#{task_id}.md`  → reassign task to the director.
+      - `resolved-stop-#{task_id}.md`  → mark task as `denied`.
 
-    Reading this sentinel from InboxLive (`/companies/<co>/inbox`)
-    shows three action buttons matching the above.
+    Both paths apply the same mutation and emit a single
+    `agent.loop_resolved` audit entry. File-drop resolutions are
+    picked up on the next InboxLive / TaskLive render; resolution
+    files are deleted after being applied.
     """
 
     dir = Path.dirname(path)
@@ -299,6 +304,152 @@ defmodule Glorbo.Agent.LoopDetector do
       agent: agent_slug,
       target: task_path,
       failure_count: count
+    })
+
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  # ---------------------------------------------------------------------------
+  # Resolution API (R21)
+  #
+  # Unifies InboxLive + TaskLive button handlers with the file-drop
+  # protocol documented in the sentinel body. One code path:
+  #
+  #   * Button click → writes resolved-<decision>-<task-id>.md next
+  #     to the sentinel, then `apply_resolution/4` picks it up.
+  #   * Agent or CLI drop → same resolved-*.md file; scan_resolutions
+  #     picks it up on the next InboxLive mount or render.
+  #   * Both flows emit exactly one `agent.loop_resolved` audit row.
+  # ---------------------------------------------------------------------------
+
+  @resolution_decisions ~w(retry skip stop)a
+
+  @doc """
+  Apply a resolution decision to a stuck sentinel.
+
+  * Mutates the task (skip → reassign to director; stop → status
+    denied; retry → no-op)
+  * Deletes the sentinel
+  * Emits `agent.loop_resolved` audit with `{actor, decision,
+    agent, task_path, task_id}`
+
+  Called from InboxLive/TaskLive button handlers and from
+  `apply_resolution_files/3` when a resolved-*.md file is
+  observed on disk.
+  """
+  @spec resolve(Path.t(), :retry | :skip | :stop, Path.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
+  def resolve(abs_sentinel, decision, base, company, opts \\ [])
+      when decision in @resolution_decisions do
+    actor = Keyword.get(opts, :actor, "director")
+    audit_fun = Keyword.get_lazy(opts, :audit_fun, fn -> default_audit_fun() end)
+
+    with {:ok, content} <- File.read(abs_sentinel),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      task_path = to_string(fm["task_path"] || "")
+      agent_slug = to_string(fm["agent"] || "")
+      task_id = to_string(fm["task_id"] || Path.basename(task_path, ".md"))
+      abs_task = Path.join([base, "companies", company, task_path])
+
+      with :ok <- apply_task_mutation(decision, abs_task) do
+        _ = File.rm(abs_sentinel)
+
+        emit_resolved_audit(audit_fun, company, %{
+          actor: actor,
+          decision: to_string(decision),
+          agent: agent_slug,
+          task_path: task_path,
+          task_id: task_id
+        })
+
+        :ok
+      end
+    else
+      err -> err
+    end
+  end
+
+  @doc """
+  Scan a company's agent state dirs for `resolved-<decision>-<task>.md`
+  files. For each resolution file that has a matching
+  `stuck-on-<task>.md` sibling, apply it and remove the resolution
+  file. Actor defaults to `"agent:<slug>"` since director-origin
+  resolutions pass through `resolve/5` directly.
+
+  Returns `[{decision, task_id, result}]` for observability; the
+  caller (InboxLive) ignores this and just re-reads the sentinel
+  list afterwards.
+  """
+  @spec apply_resolution_files(Path.t(), String.t(), keyword()) ::
+          [{atom(), String.t(), :ok | {:error, term()}}]
+  def apply_resolution_files(base, company, opts \\ []) do
+    co_dir = Path.join([base, "companies", company])
+
+    co_dir
+    |> Path.join("agents/*/state/resolved-*-*.md")
+    |> Path.wildcard()
+    |> Enum.map(&apply_one_resolution(&1, base, company, opts))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp apply_one_resolution(res_path, base, company, opts) do
+    filename = Path.basename(res_path, ".md")
+
+    with [_, decision, task_id] when decision in ["retry", "skip", "stop"] and task_id != "" <-
+           Regex.run(~r/^resolved-(retry|skip|stop)-(.+)$/, filename),
+         sentinel_path = Path.join(Path.dirname(res_path), "stuck-on-#{task_id}.md"),
+         true <- File.exists?(sentinel_path) do
+      agent_slug = agent_slug_from_state_path(res_path)
+      actor = Keyword.get(opts, :actor, "agent:#{agent_slug}")
+
+      decision_atom = String.to_existing_atom(decision)
+
+      result =
+        resolve(sentinel_path, decision_atom, base, company,
+          actor: actor,
+          audit_fun: Keyword.get(opts, :audit_fun)
+        )
+
+      _ = File.rm(res_path)
+      {decision_atom, task_id, result}
+    else
+      _ ->
+        # Orphan resolution file (no matching sentinel) — remove so
+        # it doesn't accumulate. This happens if the director clicks
+        # a button while an agent has already dropped a file.
+        _ = File.rm(res_path)
+        nil
+    end
+  end
+
+  defp agent_slug_from_state_path(path) do
+    path
+    |> Path.split()
+    |> Enum.chunk_every(3, 1, :discard)
+    |> Enum.find_value("unknown", fn
+      ["agents", slug, "state"] -> slug
+      _ -> false
+    end)
+  end
+
+  defp apply_task_mutation(:retry, _abs_task), do: :ok
+
+  defp apply_task_mutation(:skip, abs_task),
+    do: Glorbo.TaskDefinition.write(abs_task, %{assigned_to: "director"})
+
+  defp apply_task_mutation(:stop, abs_task),
+    do: Glorbo.TaskDefinition.write(abs_task, %{status: "denied"})
+
+  defp emit_resolved_audit(audit_fun, company, detail) do
+    audit_fun.(company, %{
+      action: "agent.loop_resolved",
+      actor: detail.actor,
+      agent: detail.agent,
+      target: detail.task_path,
+      decision: detail.decision,
+      task_id: detail.task_id
     })
 
     :ok
