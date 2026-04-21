@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-25 validator + `glorbo validate` (R27)
+
+- **`Glorbo.FileSpec.Validator` + `glorbo validate` CLI (#298).**
+  Read-only workspace health check driven by the R26.1 FileSpec
+  registry. Walks a path, classifies every file, parses frontmatter
+  (via `Glorbo.Filesystem.Frontmatter` for markdown, `Jason` for
+  JSON/JSONL), and emits structured findings against each spec's
+  declared schema. Ten check codes covering missing `kind:`,
+  kind/path mismatch, YAML parse errors, missing-required-key,
+  enum-out-of-range, pattern-mismatch, cap-exceeded, unknown-key,
+  unknown-file, IO errors.
+
+  Output modes: `:human` (one line per finding), `:json` (NDJSON
+  per GEP-25 D6 — one finding per line + trailing `type:summary`),
+  `:summary` (count-line only). Flags: `--json`, `--summary`,
+  `--severity lvl`, `--kind kind`. Exit code 1 on any error-level
+  finding, else 0.
+
+  Verified end-to-end against a pre-cut workspace — reports 27
+  `missing_kind` errors on the R22 UAT tree, exactly the diagnostic
+  the atomic cut needs.
+
+  Tests: 14 validator unit cases covering every check code + 2
+  CLI smoke tests + a help-text regression.
+
 ### Added — GEP-25 scaffolding (R26.1)
 
 - **`Glorbo.FileSpec` registry + 15 per-kind spec modules.** Pure
