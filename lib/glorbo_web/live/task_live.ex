@@ -46,9 +46,7 @@ defmodule GlorboWeb.TaskLive do
 
     with true <- File.dir?(co_path),
          {:ok, project} <- derive_project(task_id),
-         rel_path = "projects/#{project}/tasks/#{task_id}.md",
-         abs_path = Path.join(co_path, rel_path),
-         true <- File.regular?(abs_path),
+         {:ok, rel_path, abs_path} <- resolve_task_file(co_path, project, task_id, socket),
          {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: co) do
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
@@ -72,6 +70,14 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:stuck, load_stuck_for_task(base, co, task_id))
        |> ChatDrawer.State.wire_drawer()}
     else
+      {:error, {:ambiguous, matches}} ->
+        names = Enum.map_join(matches, ", ", &Path.basename/1)
+
+        {:ok,
+         socket
+         |> put_flash(:error, "Task id \"#{task_id}\" matches multiple files: #{names}")
+         |> push_navigate(to: ~p"/companies/#{co}/kanban")}
+
       _ ->
         {:ok,
          socket
@@ -291,6 +297,44 @@ defmodule GlorboWeb.TaskLive do
   end
 
   defp valid_task_id?(task_id), do: Regex.match?(~r/\A[a-z][a-z0-9_-]*-\d+\z/, task_id)
+
+  # Resolve the on-disk task file for a canonical id. Two shapes are
+  # supported (#314):
+  #
+  #   1. Canonical `<project>-<NN>.md` — used verbatim.
+  #   2. Descriptive `<project>-<NN>-<slug>.md` — resolved when the
+  #      canonical file doesn't exist and exactly one descriptive
+  #      sibling matches the `<project>-<NN>` prefix. Two or more
+  #      matches is ambiguous; the LiveView flashes an error and
+  #      sends the director to the kanban where they can see all
+  #      tasks in the project.
+  @spec resolve_task_file(Path.t(), String.t(), String.t(), Phoenix.LiveView.Socket.t()) ::
+          {:ok, String.t(), Path.t()}
+          | {:error, :not_found}
+          | {:error, {:ambiguous, [Path.t()]}}
+  defp resolve_task_file(co_path, project, task_id, _socket) do
+    rel_canonical = "projects/#{project}/tasks/#{task_id}.md"
+    abs_canonical = Path.join(co_path, rel_canonical)
+
+    if File.regular?(abs_canonical) do
+      {:ok, rel_canonical, abs_canonical}
+    else
+      tasks_dir = Path.join([co_path, "projects", project, "tasks"])
+      matches = Path.wildcard(Path.join(tasks_dir, "#{task_id}-*.md"))
+
+      case matches do
+        [] ->
+          {:error, :not_found}
+
+        [abs_match] ->
+          rel = Path.relative_to(abs_match, co_path)
+          {:ok, rel, abs_match}
+
+        many ->
+          {:error, {:ambiguous, many}}
+      end
+    end
+  end
 
   defp to_detail(task) do
     {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")

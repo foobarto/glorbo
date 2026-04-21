@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — descriptive-filename task resolver (#314)
+
+- `GlorboWeb.TaskLive` now resolves `<project>-<NN>` URL shapes
+  against both canonical `<project>-<NN>.md` and descriptive
+  `<project>-<NN>-<slug>.md` filenames on disk. Exactly one
+  match serves; zero → flash + redirect to kanban; two or more
+  → flash with the list of ambiguous filenames. Directors can
+  keep descriptive suffixes in hand-authored tasks while links
+  use the canonical id shape everywhere else.
+- 2 regression tests cover the one-match and ambiguous-match
+  paths.
+
 ### Added — "Wake all" director-origin heartbeat broadcast (#315)
 
 - **CompanyLive header "♻ wake all" button** — dispatches

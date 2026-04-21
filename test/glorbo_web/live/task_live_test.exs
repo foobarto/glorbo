@@ -56,6 +56,49 @@ defmodule GlorboWeb.TaskLiveTest do
              live(conn, "/companies/acme/tasks/ghost-1")
   end
 
+  # #314 — descriptive filename resolver.
+  test "resolves <project>-<NN> to <project>-<NN>-<desc>.md when canonical absent",
+       %{conn: conn, base: base} do
+    # Add a descriptive-suffix task (no canonical foo-2.md sibling).
+    File.write!(
+      Path.join([base, "companies/acme/projects/foo/tasks/foo-2-descriptive-slug.md"]),
+      """
+      ---
+      kind: task/v1
+      id: foo-2
+      title: descriptive file
+      status: todo
+      ---
+      body of descriptive task
+      """
+    )
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-2")
+    assert html =~ "descriptive file"
+    assert html =~ "body of descriptive task"
+  end
+
+  test "ambiguous <project>-<NN> matches flash an error", %{conn: conn, base: base} do
+    # Two descriptive files with the same numeric id — ambiguous.
+    for slug <- ["foo-3-alpha.md", "foo-3-beta.md"] do
+      File.write!(Path.join([base, "companies/acme/projects/foo/tasks", slug]), """
+      ---
+      kind: task/v1
+      id: foo-3
+      title: dup #{slug}
+      status: todo
+      ---
+      """)
+    end
+
+    assert {:error, {:live_redirect, %{to: "/companies/acme/kanban", flash: flash}}} =
+             live(conn, "/companies/acme/tasks/foo-3")
+
+    assert flash["error"] =~ "multiple files"
+    assert flash["error"] =~ "foo-3-alpha.md"
+    assert flash["error"] =~ "foo-3-beta.md"
+  end
+
   test "empty comment flashes error", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
     html = render_submit(view, "comment_task", %{"comment" => ""})
