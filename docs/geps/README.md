@@ -47,6 +47,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0021 | [File-based Agent Memory](./0021-file-based-agent-memory.md)                             | Standards     | Draft       |
 | 0022 | [skills.sh Registry — Browse and Install Skills](./0022-skills-registry-browse-install.md) | Standards     | Draft       |
 | 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Draft       |
+| 0024 | [Task Scheduler — Firing Scheduled Dispatches](./0024-task-scheduler.md)                 | Informational | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

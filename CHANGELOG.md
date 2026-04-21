@@ -169,6 +169,14 @@ change between minor versions. Pin exact versions in downstream usage.
   bare `task_id`, `detail.task_path`, or `detail.target`
   containing the id. Graceful on missing file / malformed
   JSON.
+- **Scheduled-task "next fire" indicator (GEP-24).** TaskLive's
+  usage strip now renders a `schedule · ↻ <cron> · next fire in
+  2h 15m` row for tasks with a `schedule:`. New
+  `Glorbo.Company.TaskScheduler.next_fire_at/2` soft API returns
+  the armed `DateTime` or `nil` (tolerates a stopped scheduler
+  via `catch :exit`). Relative formatter falls back to ISO
+  timestamp for fires more than 7 days out so monthly crons
+  don't render "in 720h". Docs retrofit in `GEP-0024`.
 - **Task scheduler (#268)** — `Glorbo.Company.TaskScheduler`
   now actually fires dispatches from `schedule:` cron fields.
   On boot + on each `projects/**/*.md` write event the

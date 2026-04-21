@@ -70,6 +70,21 @@ defmodule Glorbo.Company.TaskScheduler do
   @spec scan(GenServer.server()) :: :ok
   def scan(server), do: GenServer.call(server, :scan)
 
+  @doc """
+  Return the next armed fire time for `task_id`, or `nil` if the
+  task isn't scheduled (no `schedule:` field, unparseable cron, or
+  simply unknown to this scheduler).
+
+  Soft API — callers should tolerate `nil` and a not-running
+  server. TaskLive uses this to render a "next fire at ___" hint.
+  """
+  @spec next_fire_at(GenServer.server(), String.t()) :: DateTime.t() | nil
+  def next_fire_at(server, task_id) when is_binary(task_id) do
+    GenServer.call(server, {:next_fire_at, task_id})
+  catch
+    :exit, _ -> nil
+  end
+
   # ---------------------------------------------------------------------------
   # GenServer callbacks
   # ---------------------------------------------------------------------------
@@ -106,6 +121,10 @@ defmodule Glorbo.Company.TaskScheduler do
   @impl GenServer
   def handle_call(:scan, _from, state) do
     {:reply, :ok, do_scan(state)}
+  end
+
+  def handle_call({:next_fire_at, task_id}, _from, state) do
+    {:reply, get_in(state, [:tasks, task_id, :next_at]), state}
   end
 
   @impl GenServer

@@ -239,4 +239,34 @@ defmodule GlorboWeb.TaskLiveTest do
       assert html =~ "No audit events yet for this task"
     end
   end
+
+  # GEP-24 — TaskLive renders a "schedule · ↻ <cron>" row on the
+  # usage strip for recurring tasks. The scheduler isn't running in
+  # the test harness so the "next fire" suffix is absent; we just
+  # check the row itself appears.
+  describe "scheduled-task indicator (#268, GEP-24)" do
+    setup %{base: base} do
+      tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+
+      File.write!(Path.join(tasks_dir, "foo-1.md"), """
+      ---
+      title: recurring task
+      assigned_to: ceo
+      status: todo
+      schedule: "0 * * * *"
+      ---
+
+      hourly body
+      """)
+
+      :ok
+    end
+
+    test "renders schedule row on the usage strip for recurring tasks",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+      assert html =~ "schedule"
+      assert html =~ "↻ 0 * * * *"
+    end
+  end
 end

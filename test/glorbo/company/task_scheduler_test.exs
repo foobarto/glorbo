@@ -179,4 +179,39 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     send(sched, {:fire, "foo-8"})
     refute_receive {:inbox_write, _, _, _}, 50
   end
+
+  # GEP-24 — TaskLive reads the armed fire time for its
+  # "next fire at ___" hint via this API. Must return a DateTime
+  # for armed tasks and nil otherwise.
+  test "next_fire_at/2 returns a DateTime for armed tasks",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-9", schedule: "0 * * * *")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-9"}, _}
+
+    assert %DateTime{} = TaskScheduler.next_fire_at(sched, "foo-9")
+  end
+
+  test "next_fire_at/2 returns nil for unknown tasks",
+       %{base: base, company: company} do
+    sched = start_sched(base, company)
+    assert nil == TaskScheduler.next_fire_at(sched, "never-heard-of-it")
+  end
+
+  test "next_fire_at/2 tolerates a stopped server",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-10", schedule: "0 * * * *")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert %DateTime{} = TaskScheduler.next_fire_at(sched, "foo-10")
+
+    # Kill the scheduler to simulate a crash / not-running case —
+    # TaskLive should get nil, not an exception.
+    ref = Process.monitor(sched)
+    GenServer.stop(sched, :shutdown)
+    assert_receive {:DOWN, ^ref, :process, ^sched, _}
+
+    assert nil == TaskScheduler.next_fire_at(sched, "foo-10")
+  end
 end

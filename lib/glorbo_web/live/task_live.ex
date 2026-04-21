@@ -68,6 +68,7 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:usage_totals, load_usage_totals(base, co, rel_path))
        |> assign(:history, Glorbo.Audit.Query.for_task(base, co, rel_path, limit: 25))
        |> assign(:history_expanded, MapSet.new())
+       |> assign(:next_fire_at, next_fire_at(co, task_id))
        |> ChatDrawer.State.wire_drawer()}
     else
       _ ->
@@ -90,8 +91,17 @@ defmodule GlorboWeb.TaskLive do
              base: base,
              company: socket.assigns.company_slug
            ) do
-        {:ok, task} -> {:noreply, assign(socket, :task, to_detail(task))}
-        _ -> {:noreply, socket}
+        {:ok, task} ->
+          {:noreply,
+           socket
+           |> assign(:task, to_detail(task))
+           |> assign(
+             :next_fire_at,
+             next_fire_at(socket.assigns.company_slug, socket.assigns.task_id)
+           )}
+
+        _ ->
+          {:noreply, socket}
       end
     else
       {:noreply, socket}
@@ -258,6 +268,7 @@ defmodule GlorboWeb.TaskLive do
       severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
       requires_approval: if(task.requires_approval == :director, do: "director", else: ""),
       denial_reason: task.denial_reason || "",
+      schedule: task.schedule || "",
       body: prompt,
       comments: comments
     }
@@ -346,6 +357,14 @@ defmodule GlorboWeb.TaskLive do
           <span class="gl-task-page__usage-label">tokens</span>
           <span class="gl-tabular">
             {@usage_totals.prompt_tokens} in / {@usage_totals.completion_tokens} out
+          </span>
+        </div>
+        <div :if={@task.schedule != ""} class="gl-task-page__usage-row">
+          <span class="gl-task-page__usage-label">schedule</span>
+          <span class="gl-tabular" title={@task.schedule}>
+            ↻ {@task.schedule}<span :if={@next_fire_at} class="gl-muted">
+              &nbsp;· next fire {format_next_fire(@next_fire_at)}
+            </span>
           </span>
         </div>
         <div class="gl-task-page__usage-row">
@@ -441,6 +460,37 @@ defmodule GlorboWeb.TaskLive do
   end
 
   # #252 — aggregate tokens + cost for this specific task across
+  # GEP-24 — format the next fire time as a compact "in 2h 15m" /
+  # "in 30s" hint. For far-future fires we fall back to ISO so
+  # a monthly cron doesn't render "in 720h".
+  defp format_next_fire(%DateTime{} = dt) do
+    secs = DateTime.diff(dt, DateTime.utc_now(), :second)
+
+    cond do
+      secs <= 0 -> "imminent"
+      secs < 60 -> "in #{secs}s"
+      secs < 3600 -> "in #{div(secs, 60)}m"
+      secs < 86_400 -> "in #{div(secs, 3600)}h #{rem(div(secs, 60), 60)}m"
+      secs < 7 * 86_400 -> "in #{div(secs, 86_400)}d"
+      true -> String.slice(DateTime.to_iso8601(dt), 0, 16) <> "Z"
+    end
+  end
+
+  defp format_next_fire(_), do: ""
+
+  # GEP-24 — next armed fire time from the per-company
+  # `TaskScheduler` process, or `nil` when the task isn't armed
+  # (no schedule, unparseable cron, or scheduler not running in
+  # this context — e.g. a test that boots TaskLive without the
+  # full Company.Supervisor). Tolerates the "not running" case
+  # via the scheduler's own `catch :exit`.
+  defp next_fire_at(co, task_id) do
+    server = Glorbo.Company.Supervisor.via(co, :task_scheduler)
+    Glorbo.Company.TaskScheduler.next_fire_at(server, task_id)
+  rescue
+    _ -> nil
+  end
+
   # every `agent.complete` in the current month's audit. Audit is
   # append-only so one pass is cheap; older months are reachable
   # via AuditLive.

@@ -20,19 +20,17 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **TaskScheduler retrofit GEP (Informational).** Part A shipped
-  as `053fc84` without a GEP; worth a short Informational GEP
-  capturing the design decisions (inbox-write vs Router.route,
-  no-state-file, alias table, audit-log-is-truth). Matches the
-  decision I recorded in user.md.
-- [ ] **Visual "next fire at" indicator on TaskLive** for tasks with
-  a `schedule:`. Scheduler has the data — just needs rendering. Pairs
-  nicely with the history panel #264 already shows.
-- [ ] **Scheduler fire audit needs a PubSub broadcast.** Today the
-  `task.scheduled_dispatch` event hits the audit JSONL but TaskLive
-  only refreshes on `company:<co>:audit` if the audit log also
-  broadcasts. Verify the path end-to-end with a seeded task; if the
-  broadcast is missing, add it in AuditLog.append.
+- [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
+  `GEP-0024` with 7-entry decision log; bidirectional links added
+  to GEP-2 + GEP-3.
+- [x] **Visual "next fire at" indicator on TaskLive** — shipped
+  on the usage strip with relative formatter (s / m / h m / d →
+  ISO for far-future).
+- [x] **Scheduler fire audit PubSub broadcast** — verified:
+  `AuditLog.append/2` always broadcasts `{:audit_append,
+  record}` on `company:<co>:audit`, and TaskScheduler routes
+  through it via `audit_via_registry/2`. End-to-end chain
+  intact; TaskLive history panel refreshes live.
 - [ ] **Modal ESC close consistency.** Most modals wire `phx-window-
   keydown="<cancel>" phx-key="Escape"`; a couple (verify
   agent file-edit, company.md edit) use click-away only. Make ESC
