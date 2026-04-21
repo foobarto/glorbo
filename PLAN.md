@@ -301,3 +301,37 @@ session:
   runs tab shipped, dashboard-level tool-count summary not).
 - Actor avatars on channel / inbox rows (partial — only audit
   rows carry them today).
+
+## Round 6 — 2026-04-21 (autonomous /loop)
+
+Task-history visibility + scheduled-task firing + UI polish. Spun
+out of the hourly `/loop` autonomous cadence; decisions captured
+in `user.md` for review.
+
+| #   | Commit    | Gap / trigger            | Item                                                      |
+|-----|-----------|--------------------------|-----------------------------------------------------------|
+| 30  | `d57c3e2` | Task history hidden in audit wall | TaskLive **history panel** — live slice of `company:<co>:audit` filtered to this task; deep-link `?q=<task_id>` into AuditLive that now honours `?q=&actor=&action=&since=&until=` for shareable filters. New `Glorbo.Audit.Query.for_task/4` reader. (#264) |
+| 31  | `053fc84` | `schedule:` cosmetic until now | **TaskScheduler** (`Glorbo.Company.TaskScheduler`) fires scheduled dispatches from `schedule:` cron / keyword aliases. New child under `Company.Supervisor` (8→9 base, 9→10 with proxy). Emits `task.scheduled_dispatch` audit; malformed crons log + skip without crashing. (#268) |
+| 32  | `201ac4f` | UAT found three render bugs | UI polish: generic `.gl-modal__body` CSS so InboxLive deny modal stops rendering unpadded; topbar `flex-wrap: nowrap` + `text-overflow: ellipsis` so shortcut strip doesn't wrap into the page title; `✕ → ×` universally so the close glyph stops rendering as a missing-font box. (#269) |
+
+Also promoted to project contract: the **agent-browser Bazzite
+workaround** (manual chromium launch + `--cdp 9222` attach) moved
+from session memory into `CLAUDE.md` so future UAT sessions don't
+rediscover the daemon-mode failure.
+
+## Items queued post-Round 6 (see TODO.md)
+
+- Retrofit Informational GEP for TaskScheduler (#268 shipped
+  without one; decisions captured inline + in user.md).
+- "Next fire at __" indicator on TaskLive for tasks with
+  `schedule:`.
+- Verify `task.scheduled_dispatch` broadcasts on
+  `company:<co>:audit` PubSub (TaskLive history-panel live
+  refresh depends on it).
+- Scheduler rescan is O(projects × tasks) every 60s. Fine for
+  dozens; cache mtime past 1000 tasks.
+- Visual-regression test harness — the topbar-overflow and
+  modal-unstyled bugs both slipped past the test suite because
+  tests go through `render_click` / HTML assertions, never
+  rendered pixels. Candidate for a follow-up sprint using the
+  CDP pattern now documented in CLAUDE.md.

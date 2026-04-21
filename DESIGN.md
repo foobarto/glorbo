@@ -251,7 +251,7 @@ The core process.  Runs on the host (not in a container).
 | Concern              | Solution                                                   |
 |----------------------|------------------------------------------------------------|
 | Orchestration        | OTP GenServers, one per agent lifecycle                    |
-| Scheduling           | Per-company `Scheduler` GenServer + `crontab` for heartbeats |
+| Scheduling           | Per-company `Scheduler` (agent heartbeats) + `TaskScheduler` (`schedule:` on task frontmatter fires dispatches via assignee inbox) — both built on `crontab` |
 | File watching        | `file_system` hex package (inotify)                        |
 | Dashboard            | Phoenix LiveView                                           |
 | Agent chat / streaming | Phoenix Channels + PubSub                                |
@@ -274,7 +274,8 @@ Glorbo.Application
 │   └── Glorbo.Company.Supervisor (acme) # Per-company supervisor
 │       ├── Glorbo.Company.FileWatcher   # inotify on company dir
 │       ├── Glorbo.Company.Router        # Routes outbox → inbox/channels
-│       ├── Glorbo.Company.Scheduler     # Heartbeats, cron triggers
+│       ├── Glorbo.Company.Scheduler     # Per-agent heartbeats (AGENT.md `heartbeat:` cron)
+│       ├── Glorbo.Company.TaskScheduler # Per-task `schedule:` dispatch firing
 │       ├── Glorbo.Company.BudgetTracker # Token/cost accounting
 │       ├── Glorbo.Approvals.Gate        # Approval-queue gate
 │       ├── Glorbo.Network.Proxy         # Hostname-allowlist HTTPS proxy

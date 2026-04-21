@@ -178,14 +178,19 @@ the last 12 months; **Ctrl+K content search** covers task titles
 across the focused company (cached by mtime); **brain dump**
 surface (`g b`) captures throwaway thoughts into a daily log and
 converts any entry to a task; **recurring tasks** (`schedule:`
-frontmatter) auto-reset to `todo` on `done` and render a `↻`
-pill on the kanban; **chat rotation** archives channel logs into
+frontmatter with cron or `hourly`/`daily`/`weekly`/`monthly`
+aliases) fire scheduled dispatches via a per-company
+`TaskScheduler`, auto-reset to `todo` on `done`, and render a
+`↻` pill on the kanban; **chat rotation** archives channel logs into
 `channels/archive/<channel>/<ts>.md` when size / line thresholds
 trip, with an in-page archive browser; **per-task model /
 provider override** and **named model aliases** on agents let
 one task pin a specific LLM without editing the agent;
 **natural-language heartbeat** compiles `"every morning at 9am"`
-to cron at parse time.
+to cron at parse time; **per-task audit history panel** on every
+task page shows a live-refreshing slice of the audit log scoped
+to that task (dispatch / retry / scheduled-fire / update) with a
+deep-link into the full audit view pre-filtered to the task id.
 
 **Agent chat** — Talk to your agents. Agents talk to each other. Channels are
 append-only markdown files underneath. Phoenix Channels handles real-time
