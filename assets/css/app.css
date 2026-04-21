@@ -3193,3 +3193,40 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-costs-table__slug a:hover { text-decoration: underline; }
 .gl-costs-table__month, .gl-costs-table__cell { text-align: right; }
 .gl-costs-table__total { text-align: right; font-weight: 600; color: var(--gl-fg); }
+
+/* Company cap rows on CostsLive (#247). */
+.gl-costs__company-caps { display: flex; flex-direction: column; gap: var(--gl-space-sm); }
+.gl-costs__caps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gl-space-xs); }
+.gl-costs__cap-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 140px 60px;
+  gap: var(--gl-space-sm);
+  align-items: center;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  padding: 4px var(--gl-space-sm);
+  border-bottom: 1px dashed var(--gl-border-faint);
+}
+.gl-costs__cap-slug { color: var(--gl-fg); text-decoration: none; font-weight: 500; }
+.gl-costs__cap-slug:hover { text-decoration: underline; }
+.gl-costs__cap-bar {
+  display: block;
+  height: 8px;
+  background: var(--gl-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.gl-costs__cap-fill {
+  display: block;
+  height: 100%;
+  background: var(--gl-accent);
+  transition: width 300ms ease-out;
+}
+.gl-costs__cap-fill--alert { background: var(--gl-warning); }
+.gl-costs__cap-fill--stop  { background: var(--gl-danger, #c14); }
+.gl-costs__cap-text { text-align: right; color: var(--gl-fg-subtle); }
+.gl-costs__cap-label { text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+.gl-costs__cap-label--ok    { color: var(--gl-accent); }
+.gl-costs__cap-label--alert { color: var(--gl-warning); }
+.gl-costs__cap-label--stop  { color: var(--gl-danger, #c14); font-weight: 600; }

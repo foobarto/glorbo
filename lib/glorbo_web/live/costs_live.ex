@@ -21,6 +21,7 @@ defmodule GlorboWeb.CostsLive do
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
+  alias Glorbo.Budget.CompanyCap
   alias Glorbo.Budget.Ledger
   alias GlorboWeb.Components.ChatDrawer
 
@@ -78,6 +79,32 @@ defmodule GlorboWeb.CostsLive do
         </article>
       </div>
 
+      <section :if={@company_caps != []} class="gl-panel gl-costs__company-caps">
+        <h2 class="gl-panel__header">company caps</h2>
+        <ul class="gl-costs__caps-list">
+          <li
+            :for={c <- @company_caps}
+            class={["gl-costs__cap-row", "gl-costs__cap-row--" <> c.state]}
+          >
+            <.link navigate={~p"/companies/#{c.company}"} class="gl-costs__cap-slug">
+              {c.company}
+            </.link>
+            <span class="gl-costs__cap-bar" aria-hidden="true">
+              <span
+                class={["gl-costs__cap-fill", "gl-costs__cap-fill--" <> c.state]}
+                style={"width: #{c.pct}%"}
+              />
+            </span>
+            <span class="gl-costs__cap-text gl-tabular">
+              ${format_cents(c.used_cents)} / ${format_cents(c.cap_cents)}
+            </span>
+            <span class={["gl-costs__cap-label", "gl-costs__cap-label--" <> c.state]}>
+              {c.label}
+            </span>
+          </li>
+        </ul>
+      </section>
+
       <p :if={@rows == []} class="gl-muted">
         No ledger rows yet. Every dispatch with a usage-parsed provider writes
         a row; spin an agent up and come back.
@@ -129,6 +156,8 @@ defmodule GlorboWeb.CostsLive do
     current_ym = hd(months)
 
     rows = build_rows(agents, ledger, months)
+    companies = agents |> Enum.map(& &1.company) |> Enum.uniq()
+    company_caps = build_company_caps(base, companies)
 
     socket
     |> assign(:rows, rows)
@@ -137,6 +166,50 @@ defmodule GlorboWeb.CostsLive do
     |> assign(:this_month_cents, sum_month(rows, current_ym))
     |> assign(:last_12mo_cents, sum_all(rows))
     |> assign(:top_spender, top_spender(rows))
+    |> assign(:company_caps, company_caps)
+  end
+
+  # #247 — render one row per company that has declared a cap.
+  # Companies without `budget_usd_cents_month:` are omitted (no
+  # point in showing "0 / —" filler).
+  defp build_company_caps(base, companies) do
+    companies
+    |> Enum.flat_map(fn co ->
+      case CompanyCap.read_cap(base, co) do
+        nil ->
+          []
+
+        cap ->
+          used = CompanyCap.used_this_month(base, co)
+          pct = if cap > 0, do: min(div(used * 100, cap), 100), else: 0
+
+          state =
+            cond do
+              used >= cap -> "stop"
+              used * 100 >= cap * 80 -> "alert"
+              true -> "ok"
+            end
+
+          label =
+            case state do
+              "stop" -> "at cap"
+              "alert" -> "#{pct}%"
+              _ -> "#{pct}%"
+            end
+
+          [
+            %{
+              company: co,
+              cap_cents: cap,
+              used_cents: used,
+              pct: pct,
+              state: state,
+              label: label
+            }
+          ]
+      end
+    end)
+    |> Enum.sort_by(& &1.pct, :desc)
   end
 
   defp list_all_agents(base) do

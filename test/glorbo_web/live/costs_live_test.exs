@@ -73,4 +73,27 @@ defmodule GlorboWeb.CostsLiveTest do
     {:ok, _view, html} = live(conn, "/costs")
     assert html =~ ~s(href="/companies/acme/agents/engineer")
   end
+
+  test "shows per-company cap progress when cap is declared (#247)",
+       %{conn: conn, base: base} do
+    File.write!(Path.join([base, "companies/acme/company.md"]), """
+    ---
+    slug: acme
+    budget_usd_cents_month: 1000
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, "/costs")
+    assert html =~ "company caps"
+    assert html =~ "acme"
+    assert html =~ "10.00"
+    # Over cap ($5.43 on a $10 cap — under 80% → ok state label).
+    assert html =~ "gl-costs__cap-row"
+  end
+
+  test "omits company caps section when no company has a cap",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/costs")
+    refute html =~ "company caps"
+  end
 end
