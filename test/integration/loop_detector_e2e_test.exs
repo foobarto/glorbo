@@ -20,9 +20,7 @@ defmodule Glorbo.Integration.LoopDetectorE2ETest do
 
   @moduletag :integration
 
-  alias Glorbo.Agent.Dispatch
   alias Glorbo.Agent.Spec
-  alias Glorbo.Company.AuditLog
 
   setup do
     base =
