@@ -119,7 +119,8 @@ defmodule Glorbo.CLI.Lifecycle.Run do
       trigger: :cli,
       file_path: task_path,
       model: def.model,
-      provider: def.provider
+      provider: def.provider,
+      budget_usd_cents: def.budget_usd_cents
     }
   end
 

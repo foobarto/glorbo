@@ -455,6 +455,50 @@ defmodule Glorbo.TaskDefinitionTest do
     assert td.provider == nil
   end
 
+  # T25 — #243: per-task budget cap
+  test "T25: parses optional budget_usd_cents cap", ctx do
+    content = """
+    ---
+    title: expensive research
+    status: todo
+    budget_usd_cents: 2500
+    ---
+    body
+    """
+
+    path = write_task(ctx, "t-b1.md", content)
+    assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+    assert td.budget_usd_cents == 2500
+  end
+
+  test "T25b: string values parse too", ctx do
+    content = """
+    ---
+    title: quoted
+    status: todo
+    budget_usd_cents: "750"
+    ---
+    """
+
+    path = write_task(ctx, "t-b2.md", content)
+    assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+    assert td.budget_usd_cents == 750
+  end
+
+  test "T25c: malformed budget → nil", ctx do
+    content = """
+    ---
+    title: bad
+    status: todo
+    budget_usd_cents: abc
+    ---
+    """
+
+    path = write_task(ctx, "t-b3.md", content)
+    assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+    assert td.budget_usd_cents == nil
+  end
+
   # T24 — #237: recurring tasks
   describe "recurring tasks (#237)" do
     test "T24a: schedule field parses into td.schedule", ctx do

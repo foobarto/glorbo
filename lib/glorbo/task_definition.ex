@@ -78,6 +78,7 @@ defmodule Glorbo.TaskDefinition do
           model: String.t() | nil,
           provider: String.t() | nil,
           schedule: String.t() | nil,
+          budget_usd_cents: non_neg_integer() | nil,
           prompt_body: String.t(),
           file_path: String.t()
         }
@@ -97,6 +98,7 @@ defmodule Glorbo.TaskDefinition do
     :model,
     :provider,
     :schedule,
+    :budget_usd_cents,
     :prompt_body,
     :file_path
   ]
@@ -166,7 +168,8 @@ defmodule Glorbo.TaskDefinition do
          goal: as_string(meta["goal"]),
          model: as_string(meta["model"]),
          provider: as_string(meta["provider"]),
-         schedule: as_string(meta["schedule"])
+         schedule: as_string(meta["schedule"]),
+         budget_usd_cents: coerce_budget(meta["budget_usd_cents"])
        }}
     end
   end
@@ -182,6 +185,19 @@ defmodule Glorbo.TaskDefinition do
   defp coerce_priority("low"), do: :low
   defp coerce_priority(p) when p in [:high, :medium, :low], do: p
   defp coerce_priority(_), do: nil
+
+  # #243 — per-task budget cap. Accepts int / numeric string. Missing
+  # / non-numeric → nil (unlimited, same default as agent + company).
+  defp coerce_budget(n) when is_integer(n) and n >= 0, do: n
+
+  defp coerce_budget(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} when n >= 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp coerce_budget(_), do: nil
 
   @doc """
   Whether the task requires Director approval before an agent may execute
@@ -528,6 +544,7 @@ defmodule Glorbo.TaskDefinition do
        model: partial[:model],
        provider: partial[:provider],
        schedule: partial[:schedule],
+       budget_usd_cents: partial[:budget_usd_cents],
        prompt_body: body || "",
        file_path: file_path
      }}

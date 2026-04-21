@@ -109,6 +109,12 @@ change between minor versions. Pin exact versions in downstream usage.
   alert state fires between 80% and 100%. Complements the
   existing per-agent `budget_usd_cents_month:` on AGENT.md; both
   caps are independent — whichever hits first stops dispatch.
+- **Per-task budget cap (#243)** — task frontmatter
+  `budget_usd_cents:` caps what a single dispatch may cost.
+  Post-dispatch check emits a `task.budget_exceeded` audit event
+  when usage exceeded the cap; hard-stop enforcement
+  (refuse the next re-dispatch if the prior one crossed the cap)
+  is a follow-up.
 
 ### Changed
 

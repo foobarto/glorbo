@@ -112,7 +112,8 @@ defmodule Glorbo.Agent.Dispatch do
          merged_result <- Map.put(dispatcher_result, :usage, usage),
          :ok <-
            emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
-         :ok <- maybe_check_loop(spec, opts) do
+         :ok <- maybe_check_loop(spec, opts),
+         :ok <- maybe_check_task_budget(spec, task, usage, opts) do
       {:ok,
        %{
          exit_status: dispatcher_result.exit_status,
@@ -612,6 +613,55 @@ defmodule Glorbo.Agent.Dispatch do
   # Injection: `opts[:loop_check_fun]` overrides the real detector
   # in tests — a zero-arity `fn -> :ok end` stub keeps the
   # existing dispatch test harness working unchanged.
+  # #243 — per-task budget cap. Post-dispatch only: we don't know the
+  # cost until usage is parsed. If the dispatch exceeded the cap we
+  # emit `task.budget_exceeded` audit so the director sees it in the
+  # audit stream. Hard-stop enforcement (refuse the NEXT dispatch of
+  # the same task when prior ones already crossed the cap) is a
+  # follow-up: that wants a pre-check that looks up prior spend for
+  # `task.task_path`.
+  defp maybe_check_task_budget(spec, task, usage, opts) do
+    cap = Map.get(task, :budget_usd_cents)
+
+    if is_integer(cap) and cap > 0 do
+      cost = cost_cents_from_usage(usage, spec)
+
+      if cost > cap do
+        emit_task_overspend(spec, task, cost, cap, opts)
+      end
+    end
+
+    :ok
+  end
+
+  defp cost_cents_from_usage(%{cost_usd_cents: c}, _spec) when is_integer(c), do: c
+
+  defp cost_cents_from_usage(%{prompt_tokens: p, completion_tokens: c, model: model}, spec) do
+    Glorbo.Budget.Ledger.compute_cost_cents(spec.provider, model, p || 0, c || 0)
+  rescue
+    _ -> 0
+  end
+
+  defp cost_cents_from_usage(_, _), do: 0
+
+  defp emit_task_overspend(spec, task, cost, cap, opts) do
+    audit = audit_fun(opts)
+
+    try do
+      audit.(spec.company, %{
+        company: spec.company,
+        actor: "system",
+        action: "task.budget_exceeded",
+        target: task.task_path,
+        agent: spec.slug,
+        cost_usd_cents: cost,
+        cap_usd_cents: cap
+      })
+    rescue
+      _ -> :ok
+    end
+  end
+
   defp maybe_check_loop(spec, opts) do
     fun =
       Keyword.get_lazy(opts, :loop_check_fun, fn ->
