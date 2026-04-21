@@ -124,28 +124,76 @@ defmodule GlorboWeb.Components.AuditEntry do
     action = to_string(entry["action"] || "")
     target = to_string(entry["target"] || "")
     detail = entry["detail"] || %{}
-
-    phrase =
-      case action do
-        "task.create" -> "created " <> target_label(target)
-        "task.comment" -> "commented on " <> target_label(target)
-        "task.update" -> describe_update(detail, target_label(target))
-        "agent.dispatch" -> "dispatched " <> dispatch_target(entry, detail)
-        "agent.complete" -> describe_complete(detail, target_label(target))
-        "agent.wake_request" -> "requested wake of " <> target_label(target)
-        "message.route" -> "routed a message to " <> target_label(target)
-        "message.reject" -> "had a message rejected: " <> target_label(target)
-        "approval.granted" -> "approved " <> target_label(target)
-        "approval.denied" -> "denied " <> target_label(target)
-        "new_company" -> "created company " <> target_label(target)
-        "new_agent" -> "created agent " <> target_label(target)
-        "new_project" -> "created project " <> target_label(target)
-        "" -> "did nothing (empty event)"
-        other -> other <> " " <> target_label(target)
-      end
+    phrase = action_phrase(action, target, detail, entry)
 
     "#{actor} #{phrase}"
   end
+
+  defp action_phrase("task.create", target, _detail, _entry),
+    do: "created " <> target_label(target)
+
+  defp action_phrase("task.comment", target, _detail, _entry),
+    do: "commented on " <> target_label(target)
+
+  defp action_phrase("task.update", target, detail, _entry),
+    do: describe_update(detail, target_label(target))
+
+  defp action_phrase("agent.dispatch", _target, detail, entry),
+    do: "dispatched " <> dispatch_target(entry, detail)
+
+  defp action_phrase("agent.complete", target, detail, _entry),
+    do: describe_complete(detail, target_label(target))
+
+  defp action_phrase("agent.wake_request", target, _detail, _entry),
+    do: "requested wake of " <> target_label(target)
+
+  defp action_phrase("agent.retry", target, detail, _entry),
+    do: describe_retry(detail, target)
+
+  defp action_phrase("message.route", target, _detail, _entry),
+    do: "routed a message to " <> target_label(target)
+
+  defp action_phrase("message.reject", target, _detail, _entry),
+    do: "had a message rejected: " <> target_label(target)
+
+  defp action_phrase("approval.granted", target, _detail, _entry),
+    do: "approved " <> target_label(target)
+
+  defp action_phrase("approval.denied", target, _detail, _entry),
+    do: "denied " <> target_label(target)
+
+  defp action_phrase("new_company", target, _detail, _entry),
+    do: "created company " <> target_label(target)
+
+  defp action_phrase("new_agent", target, _detail, _entry),
+    do: "created agent " <> target_label(target)
+
+  defp action_phrase("new_project", target, _detail, _entry),
+    do: "created project " <> target_label(target)
+
+  defp action_phrase("channel.rotate", target, _detail, _entry),
+    do: "rotated " <> target_label(target)
+
+  defp action_phrase("emergency.engage", target, _detail, _entry),
+    do: "engaged emergency stop on " <> target_label(target)
+
+  defp action_phrase("emergency.clear", target, _detail, _entry),
+    do: "cleared emergency stop on " <> target_label(target)
+
+  defp action_phrase("braindump.capture", target, _detail, _entry),
+    do: "captured a brain dump at " <> target_label(target)
+
+  defp action_phrase("braindump.convert_to_task", target, _detail, _entry),
+    do: "converted a brain dump to " <> target_label(target)
+
+  defp action_phrase("task.budget_exceeded", target, _detail, _entry),
+    do: "flagged budget overrun on " <> target_label(target)
+
+  defp action_phrase("", _target, _detail, _entry),
+    do: "did nothing (empty event)"
+
+  defp action_phrase(other, target, _detail, _entry),
+    do: other <> " " <> target_label(target)
 
   defp target_label(""), do: "(no target)"
   defp target_label(t) when is_binary(t), do: t
@@ -157,6 +205,14 @@ defmodule GlorboWeb.Components.AuditEntry do
     base = if is_binary(task) and task != "", do: task, else: "(no task)"
     if is_binary(trigger) and trigger != "", do: base <> " (" <> trigger <> ")", else: base
   end
+
+  defp describe_retry(%{"attempt" => n, "reason" => r}, target),
+    do: "retried #{target} (attempt #{n}, #{r})"
+
+  defp describe_retry(%{"attempt" => n}, target),
+    do: "retried #{target} (attempt #{n})"
+
+  defp describe_retry(_detail, target), do: "retried " <> target
 
   defp describe_complete(%{} = detail, target) do
     exit_s = detail["exit_status"]
