@@ -25,13 +25,17 @@ defmodule GlorboWeb.CostsLiveTest do
     Repo.insert!(%Budget{
       agent_slug: "engineer",
       year_month: this_month,
-      cost_usd_cents: 543
+      cost_usd_cents: 543,
+      prompt_tokens: 1200,
+      completion_tokens: 180
     })
 
     Repo.insert!(%Budget{
       agent_slug: "engineer",
       year_month: prev_month,
-      cost_usd_cents: 221
+      cost_usd_cents: 221,
+      prompt_tokens: 800,
+      completion_tokens: 120
     })
 
     {:ok, this_month: this_month, prev_month: prev_month}
@@ -50,6 +54,13 @@ defmodule GlorboWeb.CostsLiveTest do
     assert html =~ "5.43"
     # Month header is present.
     assert html =~ ym
+  end
+
+  test "shows token totals alongside cost (#246)", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/costs")
+    # Aggregated across both months: 2000 in / 300 out.
+    assert html =~ "2000 / 300"
+    assert html =~ "tokens (in / out)"
   end
 
   test "empty state when no ledger rows", %{conn: conn} do

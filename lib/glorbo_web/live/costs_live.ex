@@ -88,6 +88,7 @@ defmodule GlorboWeb.CostsLive do
           <tr>
             <th>agent</th>
             <th>company</th>
+            <th class="gl-costs-table__tokens">tokens (in / out)</th>
             <th :for={ym <- @months} class="gl-costs-table__month">{ym}</th>
             <th class="gl-costs-table__total">total</th>
           </tr>
@@ -100,10 +101,13 @@ defmodule GlorboWeb.CostsLive do
               </.link>
             </td>
             <td class="gl-muted">{row.company}</td>
+            <td class="gl-costs-table__tokens gl-tabular">
+              {row.prompt_tokens} / {row.completion_tokens}
+            </td>
             <td :for={ym <- @months} class="gl-costs-table__cell gl-tabular">
               {cell_text(Map.get(row.by_month, ym))}
             </td>
-            <td class="gl-costs-table__total gl-tabular">${format_cents(row.total_cents)}</td>
+            <td class="gl-costs-table__total gl-tabular">{cost_total_text(row.total_cents)}</td>
           </tr>
         </tbody>
       </table>
@@ -159,7 +163,11 @@ defmodule GlorboWeb.CostsLive do
     end
   end
 
-  # Build per-agent rows with a by_month map + total.
+  # Build per-agent rows with a by_month map + totals. #246 adds
+  # token aggregates alongside the cost aggregate — tokens are
+  # always captured by the Budget schema even when pricing is
+  # unknown, so the Costs page surfaces usage activity for
+  # providers that don't have cost telemetry.
   defp build_rows(agents, ledger, months) do
     by_slug = Enum.group_by(ledger, & &1.agent_slug)
 
@@ -174,11 +182,36 @@ defmodule GlorboWeb.CostsLive do
 
       total_cents = by_month |> Map.values() |> Enum.sum()
 
-      %{slug: slug, company: co, by_month: by_month, total_cents: total_cents}
+      months_set = MapSet.new(months)
+      in_range = Enum.filter(rows_for_slug, &MapSet.member?(months_set, &1.year_month))
+
+      prompt_tokens = Enum.reduce(in_range, 0, &(&1.prompt_tokens + &2))
+      completion_tokens = Enum.reduce(in_range, 0, &(&1.completion_tokens + &2))
+
+      %{
+        slug: slug,
+        company: co,
+        by_month: by_month,
+        total_cents: total_cents,
+        prompt_tokens: prompt_tokens,
+        completion_tokens: completion_tokens
+      }
     end)
-    |> Enum.filter(&(&1.total_cents > 0 or &1.by_month != %{}))
+    |> Enum.filter(&row_visible?/1)
     |> Enum.sort_by(& &1.total_cents, :desc)
   end
+
+  defp row_visible?(row) do
+    row.total_cents > 0 or row.by_month != %{} or row.prompt_tokens > 0 or
+      row.completion_tokens > 0
+  end
+
+  # Cost totals display matches #246 rule — show "$X.YY" only when
+  # we have non-zero cost data (meaning pricing was known for at
+  # least one run); otherwise "—" so the director knows "we have
+  # token activity but no priced spend" for this provider/model.
+  defp cost_total_text(0), do: "—"
+  defp cost_total_text(cents), do: "$" <> format_cents(cents)
 
   defp recent_months(n) do
     {{y, m, _}, _} = :calendar.universal_time()
