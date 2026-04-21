@@ -124,6 +124,18 @@ partial / flaky. Update inline as each case runs.
   restores under Archive.
 - [ ] **G5** — Stuck-sentinel agents surface in inbox with
   retry/skip/stop controls (regression for #228).
+- [ ] **G6** — Header count is truthful: `Inbox (N approval[s] ·
+  M stuck)` when both are non-zero; `(empty)` when both are zero
+  (regression for #292 / R24 — previously said `(0 pending)`
+  alongside a non-empty stuck list).
+- [ ] **G7** — Stuck-row last-failure timestamp renders as
+  relative ("3 min ago" / "2 hr ago") with the ISO string in
+  the tooltip (regression for R24).
+- [ ] **G8** — File-drop resolution: create
+  `agents/<slug>/state/resolved-retry-<task>.md` next to a
+  sentinel → reload inbox → both files removed + one
+  `agent.loop_resolved` audit row written with
+  actor=`agent:<slug>`, decision=`retry` (regression for R23).
 
 ## H. Chat + channels (paperclip §3 · §15)
 

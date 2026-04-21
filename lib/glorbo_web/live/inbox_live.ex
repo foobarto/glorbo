@@ -361,6 +361,34 @@ defmodule GlorboWeb.InboxLive do
     "audit:" <> ts <> "|" <> action <> "|" <> target
   end
 
+  # R24 — header count was just `N pending` (approvals only), which
+  # contradicted a non-empty stuck-agents list below when
+  # approvals = 0. Show both categories honestly so the heading
+  # matches what's on screen.
+  defp inbox_header_counts(approvals, stuck) do
+    case {length(approvals), length(stuck)} do
+      {0, 0} -> "(empty)"
+      {a, 0} -> "(#{a} #{pluralise(a, "approval", "approvals")})"
+      {0, s} -> "(#{s} stuck)"
+      {a, s} -> "(#{a} #{pluralise(a, "approval", "approvals")} · #{s} stuck)"
+    end
+  end
+
+  defp pluralise(1, singular, _plural), do: singular
+  defp pluralise(_, _singular, plural), do: plural
+
+  # R24 — stuck rows previously rendered raw ISO. Use the same
+  # relative formatter audit rows do so "2 min ago" / "3 hr ago"
+  # reads at a glance. Fallback to the raw value if it won't parse.
+  defp format_stuck_ts(ts) when is_binary(ts) and ts != "" do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> GlorboWeb.TimeFormat.relative(dt)
+      _ -> ts
+    end
+  end
+
+  defp format_stuck_ts(_), do: "—"
+
   @impl true
   def render(assigns) do
     assigns =
@@ -386,7 +414,7 @@ defmodule GlorboWeb.InboxLive do
     <section class="gl-view gl-inbox">
       <header class="gl-view__header">
         <h1 class="gl-heading gl-heading--display">
-          Inbox <span class="gl-muted">({length(@visible_sentinels)} pending)</span>
+          Inbox <span class="gl-muted">{inbox_header_counts(@visible_sentinels, @stuck)}</span>
         </h1>
       </header>
 
@@ -463,7 +491,8 @@ defmodule GlorboWeb.InboxLive do
               <span class="gl-danger">· {s.failure_count} consecutive failures</span>
             </div>
             <div class="gl-inbox__approval-title">
-              Agent is stuck — last failure {s.last_failure_ts}
+              Agent is stuck — last failure
+              <span title={s.last_failure_ts}>{format_stuck_ts(s.last_failure_ts)}</span>
             </div>
             <div class="gl-inbox__approval-actions">
               <button

@@ -139,6 +139,18 @@ defmodule GlorboWeb.InboxLiveTest do
       assert html =~ ~s(phx-value-decision="stop")
     end
 
+    # R24 — header should NOT say "(0 pending)" when the
+    # stuck list below is non-empty. Previously director saw
+    # "Inbox (0 pending)" alongside a stuck row — contradictory.
+    # Fixture has 1 approval (demo-1) + 1 stuck (stuck-on-demo-1).
+    test "header reflects stuck count alongside approvals",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/inbox")
+      refute html =~ "(0 pending)"
+      assert html =~ "1 approval"
+      assert html =~ "1 stuck"
+    end
+
     test "retry deletes the sentinel only", %{conn: conn, base: base} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/inbox")
 

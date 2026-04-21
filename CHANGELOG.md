@@ -196,6 +196,27 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Fixed — round 24 (browser UAT polish)
+
+- **Truthful Inbox header (#292).** `/companies/<co>/inbox` used
+  to say `Inbox (0 pending)` while a non-empty "Stuck agents"
+  list rendered below — the count referenced only approval
+  sentinels. Header now composes both counts:
+  `(N approval[s] · M stuck)` when both present, `(N approvals)`
+  or `(M stuck)` when only one, `(empty)` when neither. +1 test
+  case asserting the header text for a seed with 1 approval + 1
+  stuck.
+- **Relative last-failure timestamp on stuck rows (#292).**
+  Stuck-agent rows in InboxLive rendered raw ISO timestamps for
+  `last_failure_ts`. Switched to `GlorboWeb.TimeFormat.relative/1`
+  (same formatter audit rows use) so the row reads "3 min ago"
+  / "2 hr ago" at a glance; ISO string kept in the title tooltip
+  for precise auditing. Matches the TaskLive stuck-banner
+  treatment.
+- **UAT.md additions.** G6 (truthful inbox header), G7 (relative
+  stuck timestamp), G8 (file-drop resolution path — R23
+  regression) added under section G.
+
 ### Fixed — round 23 (browser UAT regression)
 
 - **`agent.loop_resolved` audit row was missing in production
