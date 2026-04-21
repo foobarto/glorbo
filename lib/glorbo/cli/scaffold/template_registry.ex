@@ -70,8 +70,11 @@ defmodule Glorbo.CLI.Scaffold.TemplateRegistry do
 
   @doc false
   @spec user_dir(kind()) :: Path.t()
-  def user_dir(:agent), do: Path.expand("~/.glorbo/templates/agents")
-  def user_dir(:skill), do: Path.expand("~/.glorbo/templates/skills")
+  def user_dir(:agent),
+    do: Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "templates/agents")
+
+  def user_dir(:skill),
+    do: Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "templates/skills")
 
   defp scan(dir, kind, source) do
     case File.ls(dir) do

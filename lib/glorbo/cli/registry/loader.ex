@@ -433,7 +433,7 @@ defmodule Glorbo.CLI.Registry.Loader do
   end
 
   defp default_user_file do
-    path = Path.expand("~/.glorbo/providers.toml")
+    path = Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "providers.toml")
     if File.exists?(path), do: path, else: nil
   end
 
