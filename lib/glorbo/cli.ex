@@ -38,6 +38,8 @@ defmodule Glorbo.CLI do
           | :console
           | :reindex
           | :import_paperclip
+          | :validate
+          | :fmt
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -185,15 +187,58 @@ defmodule Glorbo.CLI do
         true -> :human
       end
 
-    output = Glorbo.FileSpec.Formatter.render(mode, findings, stats)
+    output = Glorbo.FileSpec.FindingsFormatter.render(mode, findings, stats)
     exit_code = Glorbo.FileSpec.Validator.exit_code(findings)
     {:validate, exit_code, IO.iodata_to_binary(output)}
+  end
+
+  # GEP-25 R33 — syntactic formatter. Default `--check` (read-only,
+  # reports drift, exits 1 if any file would change). `--write`
+  # applies via atomic tmp+rename. Body prose untouched.
+  @fmt_switches [check: :boolean, write: :boolean]
+  def dispatch(["fmt" | rest]) do
+    {opts, argv, _invalid} = OptionParser.parse(rest, strict: @fmt_switches)
+
+    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    path = List.first(argv) || base
+
+    result =
+      if opts[:write] do
+        Glorbo.FileSpec.Formatter.write_path(path)
+      else
+        Glorbo.FileSpec.Formatter.check_path(path)
+      end
+
+    %{changed: changed, stats: stats} = result
+
+    output = render_fmt_output(opts, changed, stats)
+    write? = !!opts[:write]
+    exit_code = if stats.changed > 0 and not write?, do: 1, else: 0
+    {:fmt, exit_code, output}
   end
 
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
     {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
+  end
+
+  defp render_fmt_output(opts, changed, stats) do
+    mode = if opts[:write], do: "write", else: "check"
+
+    header =
+      "glorbo fmt (#{mode}) — #{stats.files_examined} files · " <>
+        "#{stats.changed} changed · #{stats.unchanged} unchanged · #{stats.skipped} skipped\n"
+
+    drift =
+      if changed == [] do
+        ""
+      else
+        verb = if opts[:write], do: "rewrote", else: "would rewrite"
+        "\n#{verb}:\n" <> Enum.map_join(changed, "\n", fn p -> "  " <> p end) <> "\n"
+      end
+
+    header <> drift
   end
 
   defp ensure_repo_started do
@@ -235,6 +280,8 @@ defmodule Glorbo.CLI do
       reindex                  Rebuild ~/.glorbo/glorbo.db from disk
       validate [PATH]          Check on-disk files against file-format specs (GEP-25)
                                Flags: --json, --summary, --severity lvl, --kind kind
+      fmt [PATH]               Normalise YAML frontmatter key order + fences (GEP-25)
+                               Flags: --check (default, exits 1 on drift), --write
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 

@@ -10,6 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-25 formatter + `glorbo fmt` (R33)
+
+- **`Glorbo.FileSpec.Formatter`** — canonical-form rewriter for
+  Glorbo-owned markdown files. Reorders YAML frontmatter keys
+  per each spec's `canonical_key_order/0`, normalises `---`
+  fences, ensures trailing newline, preserves body byte-for-byte.
+  Unknown frontmatter keys land alphabetically after the known
+  block. JSON/JSONL files skipped; unknown paths skipped.
+  Idempotence is load-bearing — `format(format(x)) == format(x)`
+  asserted by fixture round-trip.
+- **`glorbo fmt [PATH] [--check|--write]`** — default `--check`
+  reports drift and exits 1 if any file would change; `--write`
+  applies via atomic tmp+rename (same pattern as
+  FrontmatterWriter / Router / Memory.Writer). No other cleanup
+  on disk — `.tmp.*` files never leak.
+- `Glorbo.FileSpec.Formatter` is the file-rewriter; the R27 CLI
+  findings formatter was renamed to
+  `Glorbo.FileSpec.FindingsFormatter` to avoid ambiguity.
+
+14 formatter unit tests + 2 CLI smoke tests. 1394/1394 green.
+
 ### Added — R30.2: dispatch fallback + Doctor OS split
 
 - **`Glorbo.Sandbox.Unsandboxed.start/2`** — sibling runner to

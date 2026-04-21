@@ -43,6 +43,56 @@ defmodule Glorbo.CLITest do
     assert output =~ "0 error"
   end
 
+  test ~S|dispatch(["fmt", PATH]) — R33 default --check reports drift + exit 1| do
+    base =
+      Path.join(System.tmp_dir!(), "glorbo-cli-fmt-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(base, "companies/acme"))
+    # Non-canonical key order — formatter should want to rewrite.
+    File.write!(Path.join(base, "companies/acme/company.md"), """
+    ---
+    name: Acme
+    slug: acme
+    kind: company/v1
+    ---
+    """)
+
+    on_exit(fn -> File.rm_rf!(base) end)
+
+    {verb, code, output} = CLI.dispatch(["fmt", base])
+    assert verb == :fmt
+    assert code == 1
+    assert output =~ "would rewrite"
+    assert output =~ "company.md"
+  end
+
+  test ~S|dispatch(["fmt", PATH, "--write"]) applies drift + exits 0| do
+    base =
+      Path.join(System.tmp_dir!(), "glorbo-cli-fmt-write-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(base, "companies/acme"))
+
+    File.write!(Path.join(base, "companies/acme/company.md"), """
+    ---
+    name: Acme
+    slug: acme
+    kind: company/v1
+    ---
+    """)
+
+    on_exit(fn -> File.rm_rf!(base) end)
+
+    {verb, code, output} = CLI.dispatch(["fmt", base, "--write"])
+    assert verb == :fmt
+    assert code == 0
+    assert output =~ "rewrote"
+
+    # Second pass should be clean.
+    {_, code2, output2} = CLI.dispatch(["fmt", base])
+    assert code2 == 0
+    assert output2 =~ "0 changed"
+  end
+
   test ~S|dispatch(["validate", PATH, "--json"]) emits NDJSON summary| do
     base =
       Path.join(
