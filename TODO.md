@@ -93,6 +93,11 @@ it's been in CHANGELOG for a cycle.
 - [x] #278 Round 14: E2E scheduled-task dispatch test (was partial — lacked live E2E proof)
 - [x] #279 Round 15: E2E LoopDetector sentinel emission test (was partial — fs_fun stubbed)
 - [x] #280 Round 16: NL schedule parser (was partial — display accepted NL but firing needed cron)
+- [x] #281 Round 17: GEP-21 memory reading MVP (read path only; write path is R17b)
+- [ ] **R17b: GEP-21 memory write path** — outbox routing for memory
+  writes (`agents/<slug>/outbox/memory/<type>_<topic>.md` → atomic
+  write + MEMORY.md upsert + memory.write audit). Reading
+  validated in production before the write contract ships.
 - [ ] **Sentinel resolution contract mismatch** (new P2 finding)
   LoopDetector sentinel body documents the resolution
   mechanism as "write `resolved-retry-<task>.md` in this dir

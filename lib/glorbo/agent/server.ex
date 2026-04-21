@@ -919,6 +919,7 @@ defmodule Glorbo.Agent.Server do
     system = read_system_prompt(spec, base)
     source_rel = Path.relative_to(inbox_path, Path.join([base, "companies", spec.company]))
     reply_hint = reply_routing_hint(inbox_path)
+    memory = compose_memory_section(spec, base)
 
     """
     #{system}
@@ -946,6 +947,7 @@ defmodule Glorbo.Agent.Server do
       use.
     - Permission-driven mounts visible to you this run:
     #{permission_mount_summary(spec)}
+    #{memory}
 
     ## How to reply
 
@@ -973,6 +975,17 @@ defmodule Glorbo.Agent.Server do
 
     #{body}
     """
+  end
+
+  # GEP-21 / #281 — compose the agent's memory section from
+  # `agents/<slug>/memory/` if present. Returns empty string when
+  # there's no memory dir or every read fails. Rendered as a
+  # `## Memory` section following the permission mount summary.
+  defp compose_memory_section(spec, base) do
+    case Glorbo.Agent.Memory.compose(base, spec.company, spec.slug) do
+      {:ok, ""} -> ""
+      {:ok, content} -> "\n## Memory\n\n#{content}"
+    end
   end
 
   # Tell the agent in one line where their stdout text will land, based

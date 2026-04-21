@@ -196,6 +196,33 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 17
+
+- **Agent memory reading (GEP-21 / #281 MVP).** New
+  `Glorbo.Agent.Memory.compose/3` reads `agents/<slug>/memory/` —
+  `MEMORY.md` index + `<type>_<topic>.md` body files with
+  `type` ∈ `user|feedback|project|reference` — and returns a
+  single string capped at 20 KB suitable for prompt
+  composition. `Agent.Server.compose_prompt/4` splices the
+  result into the system prompt as a `## Memory` section
+  between the permission-mount summary and the reply-hint.
+  Bodies are sorted newest-first by mtime; overflow appends a
+  `[N older memories not shown]` notice.
+
+  This is the **reading half** of GEP-21. The writing path
+  (agent outbox → Router classify → atomic write → MEMORY.md
+  upsert + `memory.write` audit) ships next iteration as #17b.
+  Validates the prompt-composition contract in production
+  before the write contract is sealed — partials-first
+  discipline per memory feedback.
+
+  9 unit tests on the Memory module cover: missing dir → empty,
+  empty dir → empty, index verbatim, newest-first ordering,
+  filename filter (invalid types + slugs rejected), all 4
+  valid type prefixes, 20 KB cap with truncation notice,
+  malformed binary index graceful handling, empty index
+  skipped.
+
 ### Added — round 16
 
 - **NL schedule parser (#280).** Tasks can now use English
