@@ -3345,6 +3345,46 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   font-size: 10px;
 }
 
+/* Task stuck-on banner (#274) — replicates the inbox stuck-sentinel
+   affordance at the point where a director is most likely to notice
+   (viewing the stuck task). Warning-tinted border with retry/skip/
+   stop actions symmetric with InboxLive. */
+.gl-task-page__stuck {
+  border: 1px solid var(--gl-warning);
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--gl-warning) 8%, var(--gl-surface));
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  margin-bottom: var(--gl-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-xs);
+}
+.gl-task-page__stuck-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gl-task-page__stuck-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.gl-task-page__stuck-glyph {
+  color: var(--gl-warning);
+  font-size: 14px;
+}
+.gl-task-page__stuck-reason {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  padding-left: 22px;
+}
+.gl-task-page__stuck-actions {
+  display: flex;
+  gap: 6px;
+  padding-left: 22px;
+}
+
 /* Task history panel (#264) — scoped slice of the audit log. */
 .gl-task-page__history { margin-top: var(--gl-space-lg); }
 .gl-panel__header--split { justify-content: space-between; }

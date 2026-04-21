@@ -196,6 +196,20 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 10
+
+- **TaskLive stuck-on banner (#274).** When an agent gets
+  flagged by the LoopDetector as stuck on a specific task, the
+  sentinel now surfaces on the task page itself — not just in
+  the inbox. Warning-tinted banner above the usage strip shows
+  the stuck agent + detected-at timestamp + reason, with
+  symmetric retry / skip (reassign to director) / stop (deny
+  task) buttons. Clicking any action resolves immediately and
+  refreshes the banner in place. The inbox still lists
+  everything; this just puts the controls where the director
+  is already looking. 4 new regression tests cover render +
+  all three resolve paths.
+
 ### Fixed
 
 - **Scheduler.invalid_task_cron audit flood (#273, UAT round 9).**

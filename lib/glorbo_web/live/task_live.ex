@@ -69,6 +69,7 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:history, Glorbo.Audit.Query.for_task(base, co, rel_path, limit: 25))
        |> assign(:history_expanded, MapSet.new())
        |> assign(:next_fire_at, next_fire_at(co, task_id))
+       |> assign(:stuck, load_stuck_for_task(base, co, task_id))
        |> ChatDrawer.State.wire_drawer()}
     else
       _ ->
@@ -155,6 +156,35 @@ defmodule GlorboWeb.TaskLive do
        :info,
        "Open the full audit log and expand the row there to convert."
      )}
+  end
+
+  # #274 — stuck-on sentinels for this task. Retry deletes the
+  # sentinel only; skip reassigns to director; stop marks denied.
+  # Matches InboxLive's `stuck_resolve` handler semantics so the
+  # two views stay behaviourally identical.
+  def handle_event("stuck_resolve", %{"decision" => dec, "sentinel_path" => sp}, socket)
+      when dec in ["retry", "skip", "stop"] do
+    base = base_dir()
+    co = socket.assigns.company_slug
+    abs_sentinel = Path.join([base, "companies", co, sp])
+
+    case resolve_stuck(abs_sentinel, dec, base, co) do
+      :ok ->
+        flash_msg =
+          case dec do
+            "retry" -> "Stuck sentinel cleared — next dispatch will retry."
+            "skip" -> "Reassigned to director."
+            "stop" -> "Task marked denied."
+          end
+
+        {:noreply,
+         socket
+         |> assign(:stuck, load_stuck_for_task(base, co, socket.assigns.task_id))
+         |> put_flash(:info, flash_msg)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Resolve failed: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("comment_task", %{"comment" => comment}, socket) do
@@ -348,6 +378,47 @@ defmodule GlorboWeb.TaskLive do
         </div>
       </header>
 
+      <aside :if={@stuck != []} class="gl-task-page__stuck" aria-live="polite">
+        <div :for={s <- @stuck} class="gl-task-page__stuck-row">
+          <div class="gl-task-page__stuck-head">
+            <span class="gl-task-page__stuck-glyph" aria-hidden="true">⚠</span>
+            <strong>{s.agent}</strong>
+            <span class="gl-muted">· stuck on this task</span>
+            <span :if={s.stuck_at != ""} class="gl-muted">· {s.stuck_at}</span>
+          </div>
+          <div class="gl-task-page__stuck-reason gl-muted">{s.reason}</div>
+          <div class="gl-task-page__stuck-actions">
+            <button
+              type="button"
+              class="gl-btn gl-btn--sm"
+              phx-click="stuck_resolve"
+              phx-value-decision="retry"
+              phx-value-sentinel_path={s.sentinel_path}
+            >
+              ↻ retry
+            </button>
+            <button
+              type="button"
+              class="gl-btn gl-btn--sm"
+              phx-click="stuck_resolve"
+              phx-value-decision="skip"
+              phx-value-sentinel_path={s.sentinel_path}
+            >
+              ⏭ skip (reassign to me)
+            </button>
+            <button
+              type="button"
+              class="gl-btn gl-btn--sm gl-btn--deny"
+              phx-click="stuck_resolve"
+              phx-value-decision="stop"
+              phx-value-sentinel_path={s.sentinel_path}
+            >
+              × stop (deny task)
+            </button>
+          </div>
+        </div>
+      </aside>
+
       <aside class="gl-task-page__usage" aria-label="Usage totals across dispatches">
         <div class="gl-task-page__usage-row">
           <span class="gl-task-page__usage-label">dispatches</span>
@@ -489,6 +560,80 @@ defmodule GlorboWeb.TaskLive do
     Glorbo.Company.TaskScheduler.next_fire_at(server, task_id)
   rescue
     _ -> nil
+  end
+
+  # #274 — load any `stuck-on-<this-task>.md` sentinels under
+  # agents/*/state. Mirrors InboxLive.load_stuck/2 but filtered to
+  # this task_id. Returns at most one row; multiple agents stuck
+  # on the same task is allowed (shouldn't happen in practice but
+  # we render all of them).
+  defp load_stuck_for_task(base, co, task_id) do
+    co_dir = Path.join([base, "companies", co])
+
+    co_dir
+    |> Path.join("agents/*/state/stuck-on-#{task_id}.md")
+    |> Path.wildcard()
+    |> Enum.sort()
+    |> Enum.map(&stuck_row(&1, co_dir))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp stuck_row(sentinel_path, co_dir) do
+    with {:ok, content} <- File.read(sentinel_path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      rel_sentinel = Path.relative_to(sentinel_path, co_dir) |> to_string()
+      agent = agent_from_sentinel_path(sentinel_path)
+
+      %{
+        sentinel_path: rel_sentinel,
+        agent: agent,
+        stuck_at: to_string(fm["detected_at"] || fm["stuck_at"] || ""),
+        reason: to_string(fm["reason"] || fm["signature"] || "repeated identical outputs")
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  # Extract the agent slug from a sentinel absolute path:
+  # `.../agents/<slug>/state/stuck-on-...` → `<slug>`.
+  defp agent_from_sentinel_path(path) do
+    path
+    |> Path.split()
+    |> Enum.chunk_every(3, 1, :discard)
+    |> Enum.find_value("", fn
+      ["agents", slug, "state"] -> slug
+      _ -> false
+    end)
+  end
+
+  # Symmetric with InboxLive.resolve_stuck/4.
+  defp resolve_stuck(abs_sentinel, decision, base, company) do
+    with {:ok, content} <- File.read(abs_sentinel),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      task_path = to_string(fm["task_path"] || "")
+      abs_task = Path.join([base, "companies", company, task_path])
+
+      case decision do
+        "retry" ->
+          _ = File.rm(abs_sentinel)
+          :ok
+
+        "skip" ->
+          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{assigned_to: "director"}) do
+            _ = File.rm(abs_sentinel)
+            :ok
+          end
+
+        "stop" ->
+          with :ok <- Glorbo.TaskDefinition.write(abs_task, %{status: "denied"}) do
+            _ = File.rm(abs_sentinel)
+            :ok
+          end
+      end
+    else
+      err -> err
+    end
   end
 
   # every `agent.complete` in the current month's audit. Audit is

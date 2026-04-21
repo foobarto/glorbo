@@ -86,3 +86,4 @@ it's been in CHANGELOG for a cycle.
 - [x] #273 UAT Round 9 — E3/E4/L1/L2/L3 green + 2 ships
 - [x] Fix scheduler.invalid_task_cron audit flood (UAT finding)
 - [x] Modal close-button hover affordance
+- [x] #274 Round 10: TaskLive stuck-on banner

@@ -269,4 +269,80 @@ defmodule GlorboWeb.TaskLiveTest do
       assert html =~ "↻ 0 * * * *"
     end
   end
+
+  # #274 — stuck-on sentinel surfaces on the task page with
+  # retry/skip/stop affordances symmetric to InboxLive.
+  describe "stuck-on sentinel (#274)" do
+    setup %{base: base} do
+      agent_state = Path.join([base, "companies/acme/agents/ceo/state"])
+      File.mkdir_p!(agent_state)
+
+      File.write!(Path.join(agent_state, "stuck-on-foo-1.md"), """
+      ---
+      task_path: projects/foo/tasks/foo-1.md
+      agent: ceo
+      detected_at: "2026-04-21T04:00:00Z"
+      reason: "3 identical outputs in 5m window"
+      ---
+
+      stuck body
+      """)
+
+      :ok
+    end
+
+    test "renders stuck banner with retry/skip/stop actions for this task",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+      assert html =~ "stuck on this task"
+      assert html =~ "ceo"
+      assert html =~ "3 identical outputs"
+      # Three action buttons wired to stuck_resolve with distinct decisions.
+      assert html =~ ~s(phx-value-decision="retry")
+      assert html =~ ~s(phx-value-decision="skip")
+      assert html =~ ~s(phx-value-decision="stop")
+    end
+
+    test "retry deletes the sentinel and refreshes the banner",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+      html =
+        render_click(view, "stuck_resolve", %{
+          "decision" => "retry",
+          "sentinel_path" => "agents/ceo/state/stuck-on-foo-1.md"
+        })
+
+      refute html =~ "stuck on this task"
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/state/stuck-on-foo-1.md"]))
+    end
+
+    test "skip reassigns the task to director and clears the sentinel",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+      render_click(view, "stuck_resolve", %{
+        "decision" => "skip",
+        "sentinel_path" => "agents/ceo/state/stuck-on-foo-1.md"
+      })
+
+      task_md = File.read!(Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"]))
+      assert task_md =~ "assigned_to: director"
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/state/stuck-on-foo-1.md"]))
+    end
+
+    test "stop marks the task denied and clears the sentinel",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+      render_click(view, "stuck_resolve", %{
+        "decision" => "stop",
+        "sentinel_path" => "agents/ceo/state/stuck-on-foo-1.md"
+      })
+
+      task_md = File.read!(Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"]))
+      assert task_md =~ "status: denied"
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/state/stuck-on-foo-1.md"]))
+    end
+  end
 end
