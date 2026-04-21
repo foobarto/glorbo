@@ -196,6 +196,25 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 16
+
+- **NL schedule parser (#280).** Tasks can now use English
+  phrases like `every morning at 9am` / `every weekday` /
+  `every 5 minutes` / `every Monday at 6pm` in their `schedule:`
+  frontmatter and the scheduler will actually fire them. The
+  display layer has shown these since v0.0.3 but they used to
+  fall through the 5-field cron parser into
+  `scheduler.invalid_task_cron` oblivion. New
+  `Glorbo.ScheduleNL.parse/1` converts NL → cron; TaskScheduler
+  calls it before the Crontab.Parser fallback so 5-field crons
+  still work unchanged. Grammar covers time-of-day
+  (morning/evening/night/noon/midnight with default hours +
+  optional `at <time>`), weekdays (Monday-Sunday + weekday /
+  weekend buckets), and intervals (every minute / N minutes /
+  N hours / hour / day / week). Closes the gap between #237
+  display and #268 firing. 30 unit tests on the parser + 2
+  scheduler-integration tests.
+
 ### Added — round 15
 
 - **E2E LoopDetector sentinel emission test (#279).**

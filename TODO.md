@@ -49,9 +49,9 @@ it's been in CHANGELOG for a cycle.
 - [x] **Close button `×` hover affordance.** Fixed in round 9 —
   hover shows a raised-surface background + border; focus-visible
   adds a 2px accent outline.
-- [ ] **Scheduler aliases list is closed.** `hourly`/`daily`/...
-  cover 90% but not `every 5 minutes` or `Mon-Fri 9am`. Can add a
-  naive-language parser if users ask — not yet.
+- [x] **Scheduler aliases list is closed.** Shipped `Glorbo.ScheduleNL`
+  (#280) — handles `every morning`, `every weekday at 9am`,
+  `every 5 minutes`, weekday names, etc.
 - [ ] **Topbar shortcuts truncate on narrow windows.** Current
   behaviour: `g k kanban · …`. Consider collapsing to a single
   "⌨ shortcuts" popover below some breakpoint instead of
@@ -92,6 +92,7 @@ it's been in CHANGELOG for a cycle.
 - [x] #277 Round 13: Heartbeat cron validation on agent config save
 - [x] #278 Round 14: E2E scheduled-task dispatch test (was partial — lacked live E2E proof)
 - [x] #279 Round 15: E2E LoopDetector sentinel emission test (was partial — fs_fun stubbed)
+- [x] #280 Round 16: NL schedule parser (was partial — display accepted NL but firing needed cron)
 - [ ] **Sentinel resolution contract mismatch** (new P2 finding)
   LoopDetector sentinel body documents the resolution
   mechanism as "write `resolved-retry-<task>.md` in this dir

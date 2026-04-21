@@ -150,6 +150,27 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     assert_receive {:armed, {:fire, "foo-4"}, _}
   end
 
+  # R16 / #280 — NL phrases fire too. The display layer (#237) had
+  # accepted these since v0.0.3 but they fell through the scheduler
+  # parser. Closes the gap.
+  test "honours English NL schedule phrases",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-4a", schedule: "every morning at 9am")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+
+    assert_receive {:armed, {:fire, "foo-4a"}, _}
+  end
+
+  test "NL phrase 'every weekday' arms like the cron it resolves to",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-4b", schedule: "every weekday")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+
+    assert_receive {:armed, {:fire, "foo-4b"}, _}
+  end
+
   test "fire writes to the assignee's inbox + emits task.scheduled_dispatch audit",
        %{base: base, company: company, tasks_dir: tasks_dir} do
     write_task(tasks_dir, "foo-5", schedule: "0 * * * *", body: "write the quarterly report")

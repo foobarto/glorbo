@@ -370,8 +370,26 @@ defmodule Glorbo.Company.TaskScheduler do
 
   defp parse_cron(schedule) when is_binary(schedule) do
     cleaned = String.trim(schedule)
-    canonical = Map.get(@aliases, String.downcase(cleaned), cleaned)
+    lowered = String.downcase(cleaned)
+
+    # 1. Keyword alias table (hourly/daily/weekly/monthly).
+    # 2. English NL (#280) — "every morning at 9am", "every 5 minutes".
+    # 3. 5-field crontab — direct parse.
+    canonical =
+      cond do
+        Map.has_key?(@aliases, lowered) -> Map.fetch!(@aliases, lowered)
+        match = match_nl(cleaned) -> match
+        true -> cleaned
+      end
+
     CronParser.parse(canonical)
+  end
+
+  defp match_nl(phrase) do
+    case Glorbo.ScheduleNL.parse(phrase) do
+      {:ok, cron} -> cron
+      _ -> nil
+    end
   end
 
   defp next_ms_from_now(expr, %DateTime{} = now) do
