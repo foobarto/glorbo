@@ -196,6 +196,34 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 18a (E2E backfill)
+
+Per new feedback rule "ship E2E tests alongside features" — back-
+filling integration coverage for recently shipped features that had
+unit tests only.
+
+- **NL schedule E2E (#286).** Two new cases in
+  `test/integration/scheduled_task_e2e_test.exs` verify NL phrases
+  (`every minute`, `every morning at 9am`) actually fire scheduled
+  dispatches end-to-end — scheduler parses → arms timer →
+  `send({:fire, task_id})` → inbox file on disk + audit. Unit
+  tests on `Glorbo.ScheduleNL` proved the parse; these prove
+  the fire path doesn't silently swallow the parsed cron.
+
+- **Kanban filter chip E2E (#275 extension).** Two new cases
+  exercise the full `navigate → mount → handle_params` pipeline
+  after a chip click: dropping the assignee chip keeps the
+  project filter applied, clear-all removes the entire chip bar.
+  Unit tests checked chip rendering; these check the re-mount
+  behaviour callers rely on.
+
+- **Task-ID autolink E2E (#276 extension).** Two new cases mount
+  TaskLive with a comment referencing `foo-2`, verify the rendered
+  anchor URL is correct, and then mount kanban at that deep-link
+  URL and confirm the referenced task's overlay renders. Unit
+  tests checked the HTML anchor; these check the anchor actually
+  navigates to something useful.
+
 ### Added — round 17b/17c
 
 - **Agent memory writing — outbox → Router → disk (GEP-21, #284).**

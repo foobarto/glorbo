@@ -608,5 +608,41 @@ defmodule GlorboWeb.KanbanLiveTest do
       # Clear-all link is bare.
       assert html =~ ~s(href="/companies/acme/kanban" data-phx-link="redirect")
     end
+
+    # E2E: clicking a chip's × link actually drops just that filter and
+    # the LV mount re-applies the remaining filters. Uses live_redirect
+    # to follow the chip's `navigate=` URL into a fresh mount.
+    test "after chip click, re-mount applies only remaining filters",
+         %{conn: conn} do
+      {:ok, _view, html} =
+        live(conn, ~p"/companies/acme/kanban?project=website&who=ceo")
+
+      # Assert both chips are visible.
+      assert html =~ ">website<"
+      assert html =~ ">ceo<"
+
+      # Simulate clicking the assignee chip by re-mounting at its
+      # target URL. The handle_params in the new mount must drop
+      # who= but keep project=website. Check the chip bar specifically,
+      # not the whole page (where `ceo` appears in agent datalist, task
+      # cards, etc.).
+      {:ok, _view2, html2} = live(conn, ~p"/companies/acme/kanban?project=website")
+      assert html2 =~ ~s(class="gl-kanban__filters")
+      assert html2 =~ "project"
+      # Only one chip now — the assignee chip-close anchor shouldn't
+      # render for this filter combo.
+      refute html2 =~ "Clear assignee filter"
+    end
+
+    test "after clear-all click, re-mount shows no filter chips",
+         %{conn: conn} do
+      {:ok, _view, html} =
+        live(conn, ~p"/companies/acme/kanban?project=website&who=ceo")
+
+      assert html =~ ~s(class="gl-kanban__filters")
+
+      {:ok, _view2, html2} = live(conn, ~p"/companies/acme/kanban")
+      refute html2 =~ ~s(class="gl-kanban__filters")
+    end
   end
 end

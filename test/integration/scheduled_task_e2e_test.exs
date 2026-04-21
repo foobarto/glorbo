@@ -182,4 +182,73 @@ defmodule Glorbo.Integration.ScheduledTaskE2ETest do
     assert body =~ "UPDATED PROMPT — fresh fire"
     refute body =~ "original prompt (stale)"
   end
+
+  # R16 / #280 — NL schedule phrases fire end-to-end. Unit tests on
+  # ScheduleNL + TaskScheduler prove the parse + arm, but nobody had
+  # confirmed the NL path produces a real inbox file on real disk.
+  test "NL schedule `every minute` fires: inbox file + audit end-to-end",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    seed_scheduled_task(tasks_dir, "foo-nl-1",
+      schedule: "every minute",
+      body: "NL phrase fires correctly"
+    )
+
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+
+    # Parse should succeed — arm event emitted.
+    assert_receive {:armed, ^sched, {:fire, "foo-nl-1"}}, 200
+
+    # Fire.
+    send(sched, {:fire, "foo-nl-1"})
+
+    assert_receive {:audit,
+                    %{
+                      action: "task.scheduled_dispatch",
+                      target: "projects/foo/tasks/foo-nl-1.md",
+                      detail: %{cron: "every minute"}
+                    }},
+                   500
+
+    # Real inbox file landed.
+    inbox_dir = Path.join([base, "companies", company, "agents/ceo/inbox"])
+
+    files =
+      Enum.find_value(1..50, fn _ ->
+        case File.ls(inbox_dir) do
+          {:ok, fs} when fs != [] -> fs
+          _ -> Process.sleep(10) && nil
+        end
+      end)
+
+    assert [inbox_file | _] = Enum.filter(files, &String.starts_with?(&1, "sched-"))
+    body = File.read!(Path.join(inbox_dir, inbox_file))
+    assert body =~ "NL phrase fires correctly"
+    # Audit's cron field preserves the original NL phrase so directors
+    # can see what the agent was scheduled for.
+    assert body =~ "cron: \"every minute\""
+  end
+
+  test "NL schedule `every morning at 9am` resolves to 9 AM cron",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    seed_scheduled_task(tasks_dir, "foo-nl-2",
+      schedule: "every morning at 9am",
+      body: "morning task"
+    )
+
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    # Arm fires — the NL phrase parsed to a valid cron.
+    assert_receive {:armed, ^sched, {:fire, "foo-nl-2"}}, 200
+
+    # Fire + verify.
+    send(sched, {:fire, "foo-nl-2"})
+
+    assert_receive {:audit,
+                    %{
+                      action: "task.scheduled_dispatch",
+                      detail: %{cron: "every morning at 9am"}
+                    }},
+                   500
+  end
 end

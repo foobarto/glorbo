@@ -345,4 +345,67 @@ defmodule GlorboWeb.TaskLiveTest do
       refute File.exists?(Path.join([base, "companies/acme/agents/ceo/state/stuck-on-foo-1.md"]))
     end
   end
+
+  # R12 (#276) E2E — task-ID autolinking in comments. Unit tests on
+  # TaskDetailForm cover the render; this test rounds the trip by
+  # asserting the TaskLive mount produces a live anchor the director
+  # can click, and the kanban deep-link the anchor points at actually
+  # opens the referenced task overlay.
+  describe "task-ID autolink in comments (#276 E2E)" do
+    setup %{base: base} do
+      tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+
+      # Second task so foo-2 references are valid.
+      File.write!(Path.join(tasks_dir, "foo-2.md"), """
+      ---
+      title: second task
+      assigned_to: ceo
+      status: todo
+      ---
+
+      body of foo-2
+      """)
+
+      # Append a comment on foo-1 that references foo-2.
+      File.write!(
+        Path.join(tasks_dir, "foo-1.md"),
+        """
+        ---
+        title: first task
+        assigned_to: ceo
+        status: todo
+        ---
+
+        original prompt
+
+        ## 2026-04-21T05:00:00Z | director
+        please sync with foo-2 before starting
+        """
+      )
+
+      :ok
+    end
+
+    test "TaskLive render shows a working anchor to the referenced task's kanban deep-link",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+      # Anchor rendered with the expected class.
+      assert html =~ ~s(<a class="gl-task-ref")
+      # Target is the kanban deep-link that opens the referenced task overlay.
+      assert html =~ ~s(href="/companies/acme/kanban?task=projects/foo/tasks/foo-2.md")
+    end
+
+    test "following the anchor's kanban deep-link resolves to a page that shows foo-2",
+         %{conn: conn} do
+      # Simulate clicking the autolink — mount kanban at the deep-link URL.
+      {:ok, _view, html} =
+        live(conn, "/companies/acme/kanban?task=projects/foo/tasks/foo-2.md")
+
+      # Kanban renders the referenced task's overlay (open_task assign
+      # populated from the ?task= deep-link param).
+      assert html =~ "second task"
+      assert html =~ "body of foo-2"
+    end
+  end
 end
