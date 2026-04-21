@@ -638,6 +638,9 @@ defmodule Glorbo.Company.Router do
       {:memory_delete, filename} ->
         handle_outbox_memory_delete(abs_path, sender, filename, state)
 
+      {:path_request, task_id} ->
+        handle_outbox_path_request(abs_path, sender, task_id, state)
+
       :message ->
         handle_outbox_message(abs_path, sender, state)
     end
@@ -677,6 +680,17 @@ defmodule Glorbo.Company.Router do
       # agents/<sender>/outbox/memory/delete/<type>_<topic>.md
       ["memory", "delete", <<_::binary>> = file] ->
         if memory_filename_valid?(file), do: {:memory_delete, file}, else: :message
+
+      # GEP-27 — agent sandbox path request
+      # agents/<sender>/outbox/path-request-<task_id>.md
+      [<<"path-request-", _rest::binary>> = file] ->
+        task_id = Path.basename(file, ".md")
+        # task_id is "path-request-<actual-id>", extract the actual id
+        actual_task_id = String.replace_prefix(task_id, "path-request-", "")
+
+        if task_id_valid?(actual_task_id),
+          do: {:path_request, actual_task_id},
+          else: :message
 
       _ ->
         :message
@@ -930,6 +944,79 @@ defmodule Glorbo.Company.Router do
 
       _ = File.rm(abs_path)
       :ok
+    end
+  end
+
+  # GEP-27 — agent sandbox path request.
+  #
+  # Agent writes `outbox/path-request-<task_id>.md`. Router reads,
+  # validates, and forwards to PathRequestGate. The outbox file is
+  # archived on accept, dropped on reject.
+  defp handle_outbox_path_request(abs_path, sender, task_id, state) do
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, meta, _body} <- Frontmatter.parse(content),
+         :ok <- require_path_request_kind(meta),
+         :ok <- require_path_request_paths(meta),
+         :ok <- require_path_request_reason(meta),
+         :ok <- forward_to_path_request_gate(sender, task_id, meta, state) do
+      _ = File.rm(abs_path)
+      :ok
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "[router/#{state.company}] path request rejected sender=#{sender} task=#{task_id} reason=#{inspect(reason)}"
+        )
+
+        _ =
+          state.audit_fun.(state.company, %{
+            actor: sender,
+            action: "path_access.rejected",
+            target: task_id,
+            detail: %{reason: inspect(reason), agent: sender}
+          })
+
+        _ = File.rm(abs_path)
+        :ok
+    end
+  end
+
+  defp require_path_request_kind(meta) do
+    case Map.get(meta, "kind") do
+      "path-request/v1" -> :ok
+      other -> {:error, {:path_request_bad_kind, other}}
+    end
+  end
+
+  defp require_path_request_paths(meta) do
+    case Map.get(meta, "paths") do
+      paths when is_list(paths) and paths != [] -> :ok
+      _ -> {:error, :path_request_missing_paths}
+    end
+  end
+
+  defp require_path_request_reason(meta) do
+    case Map.get(meta, "reason") do
+      reason when is_binary(reason) and byte_size(reason) >= 10 -> :ok
+      _ -> {:error, :path_request_missing_reason}
+    end
+  end
+
+  defp forward_to_path_request_gate(sender, task_id, meta, state) do
+    gate_server =
+      {:via, Registry,
+       {Glorbo.Agent.Registry, {:company_child, state.company, :path_request_gate}}}
+
+    request_meta = %{
+      task_id: task_id,
+      paths: meta.paths,
+      reason: meta.reason
+    }
+
+    try do
+      GenServer.call(gate_server, {:handle_request, sender, request_meta, []})
+    catch
+      _, _ ->
+        {:error, :path_request_gate_unavailable}
     end
   end
 

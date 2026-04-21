@@ -147,61 +147,68 @@ defmodule Glorbo.Agent.Dispatch do
         fun when is_function(fun, 0) -> fun.()
       end
 
-    with :ok <- check_emergency_stop(spec, opts),
-         :ok <- check_prompt_size(task.prompt),
-         :ok <- check_budget(spec, opts),
-         :ok <- check_company_budget(spec, opts),
-         {:ok, provider} <- resolve_provider(spec, task, opts),
-         :ok <- check_untracked_allowed(spec, provider, opts),
-         :ok <- verify_installed(spec, provider, opts),
-         {:ok, workspace} <- ensure_workspace(spec, opts),
-         :ok <- materialize_skills(spec, run_dir, opts),
-         :ok <- write_prompt(run_dir, task.prompt, opts),
-         :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
-         start <- clock(opts),
-         ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id),
-         {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
-         duration_ms <- compute_duration(start, opts),
-         usage <- finalize_usage(dispatcher_result, spec, task),
-         :ok <- record_usage(spec, task, usage, opts),
-         merged_result <- Map.put(dispatcher_result, :usage, usage),
-         :ok <-
-           emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
-         :ok <- maybe_check_loop(spec, opts),
-         :ok <- maybe_check_task_budget(spec, task, usage, opts) do
-      {:ok,
-       %{
-         exit_status: dispatcher_result.exit_status,
-         usage: usage,
-         duration_ms: duration_ms,
-         reply: dispatcher_result.reply,
-         reply_path: dispatcher_result.reply_path
-       }}
-    else
-      {:stop, _used, _cap} ->
-        {:stopped, :budget_hard_stop}
+    result =
+      with :ok <- check_emergency_stop(spec, opts),
+           :ok <- check_prompt_size(task.prompt),
+           :ok <- check_budget(spec, opts),
+           :ok <- check_company_budget(spec, opts),
+           {:ok, provider} <- resolve_provider(spec, task, opts),
+           :ok <- check_untracked_allowed(spec, provider, opts),
+           :ok <- verify_installed(spec, provider, opts),
+           {:ok, workspace} <- ensure_workspace(spec, opts),
+           :ok <- materialize_skills(spec, run_dir, opts),
+           :ok <- write_prompt(run_dir, task.prompt, opts),
+           :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
+           start <- clock(opts),
+           ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id),
+           {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
+           duration_ms <- compute_duration(start, opts),
+           usage <- finalize_usage(dispatcher_result, spec, task),
+           :ok <- record_usage(spec, task, usage, opts),
+           merged_result <- Map.put(dispatcher_result, :usage, usage),
+           :ok <-
+             emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
+           :ok <- maybe_check_loop(spec, opts),
+           :ok <- maybe_check_task_budget(spec, task, usage, opts) do
+        {:ok,
+         %{
+           exit_status: dispatcher_result.exit_status,
+           usage: usage,
+           duration_ms: duration_ms,
+           reply: dispatcher_result.reply,
+           reply_path: dispatcher_result.reply_path
+         }}
+      else
+        {:stop, _used, _cap} ->
+          {:stopped, :budget_hard_stop}
 
-      {:error, :emergency_stopped} ->
-        Logger.info("dispatch refused: #{spec.company} is emergency-stopped")
-        {:error, :emergency_stopped}
+        {:error, :emergency_stopped} ->
+          Logger.info("dispatch refused: #{spec.company} is emergency-stopped")
+          {:error, :emergency_stopped}
 
-      {:error, :prompt_too_large} ->
-        {:error, :prompt_too_large}
+        {:error, :prompt_too_large} ->
+          {:error, :prompt_too_large}
 
-      {:error, :provider_unavailable} ->
-        {:error, :provider_unavailable}
+        {:error, :provider_unavailable} ->
+          {:error, :provider_unavailable}
 
-      {:error, {:unknown_provider, _} = reason} ->
-        Logger.warning("dispatch: unknown provider for #{spec.slug}: #{inspect(reason)}")
-        {:error, :unknown_provider}
+        {:error, {:unknown_provider, _} = reason} ->
+          Logger.warning("dispatch: unknown provider for #{spec.slug}: #{inspect(reason)}")
+          {:error, :unknown_provider}
 
-      {:error, :untracked_disallowed} = err ->
-        err
+        {:error, :untracked_disallowed} = err ->
+          err
 
-      {:error, reason} ->
-        Logger.warning("dispatch failed for #{spec.slug}: #{inspect(reason)}")
-        {:error, reason}
-    end
+        {:error, reason} ->
+          Logger.warning("dispatch failed for #{spec.slug}: #{inspect(reason)}")
+          {:error, reason}
+      end
+
+    # GEP-27: revoke any approved external paths after dispatch completes
+    # (success or failure). Grants are task-scoped and ephemeral.
+    _ = Glorbo.PathGrantStore.revoke(spec.company, spec.slug, task.task_id)
+
+    result
   end
 
   # ---------------------------------------------------------------------------
@@ -372,6 +379,13 @@ defmodule Glorbo.Agent.Dispatch do
     # the task explicitly requests a specific model.
     model = task_model_override(task, spec) || spec.model
 
+    # GEP-27: look up any approved external paths for this dispatch.
+    approved_paths =
+      case Glorbo.PathGrantStore.lookup(spec.company, spec.slug, task.task_id) do
+        {:ok, paths} -> paths
+        :not_found -> []
+      end
+
     %{
       task_id: task.task_id,
       model: model,
@@ -389,7 +403,8 @@ defmodule Glorbo.Agent.Dispatch do
         permissions: spec.permissions,
         network_policy: spec.network,
         timeout_seconds: spec.timeout_seconds,
-        cli_auth_binds: resolve_auth_binds(provider) ++ cli_binary_binds(provider)
+        cli_auth_binds: resolve_auth_binds(provider) ++ cli_binary_binds(provider),
+        approved_paths: approved_paths
       }
     }
   end
@@ -484,7 +499,10 @@ defmodule Glorbo.Agent.Dispatch do
     host_workspace = Map.fetch!(bwrap_opts, :agent_workspace)
     sandbox_env = rewrite_env_to_sandbox(env, host_workspace)
 
-    invocation_opts = Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, sandbox_env))
+    invocation_opts =
+      bwrap_opts
+      |> Map.put(:cli_env, merge_cli_env(bwrap_opts, sandbox_env))
+      |> Map.put_new(:approved_paths, [])
 
     # Tee stdout into agents/<slug>/stdout.log so the dashboard's
     # STDOUT tab + `glorbo logs` CLI see real output. agent_workspace

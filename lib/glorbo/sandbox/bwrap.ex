@@ -136,6 +136,7 @@ defmodule Glorbo.Sandbox.Bwrap do
       agent_owned_flags(opts),
       cli_auth_bind_flags(Map.get(opts, :cli_auth_binds, [])),
       PermissionMapper.to_argv(opts.permissions, opts.company_path),
+      approved_path_flags(Map.get(opts, :approved_paths, [])),
       working_dir_flags(),
       env_flags(opts)
     ]
@@ -308,6 +309,29 @@ defmodule Glorbo.Sandbox.Bwrap do
       ["--ro-bind", host_path, sandbox_path]
     end)
   end
+
+  # ---------------------------------------------------------------------------
+  # GEP-27: approved external path mounts
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Generate bwrap mount flags for approved external paths (GEP-27).
+
+  Each approved path is mounted under `/external/<basename>`:
+    - read mode → `--ro-bind`
+    - write mode → `--bind`
+
+  Returns a flat list of strings for splicing into `build_argv/1`.
+  """
+  @spec approved_path_flags([map()]) :: [String.t()]
+  def approved_path_flags(paths) when is_list(paths) do
+    Enum.flat_map(paths, fn %{host_path: host, sandbox_path: sandbox, mode: mode} ->
+      flag = if mode == :write, do: "--bind", else: "--ro-bind"
+      [flag, host, sandbox]
+    end)
+  end
+
+  def approved_path_flags(_), do: []
 
   # ---------------------------------------------------------------------------
   # Working dir + env

@@ -25,6 +25,7 @@ key order, and at least one worked example.
 - [`goal/v1`](./goal_v1.md)
 - [`inbox-archive/v1`](./inbox-archive_v1.md)
 - [`inbox-message/v1`](./inbox-message_v1.md)
+- [`path-request/v1`](./path-request_v1.md)
 - [`project/v1`](./project_v1.md)
 - [`sentinel-approval/v1`](./sentinel-approval_v1.md)
 - [`sentinel-resolution/v1`](./sentinel-resolution_v1.md)

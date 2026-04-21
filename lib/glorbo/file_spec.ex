@@ -87,7 +87,8 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.EmergencyStopMd,
     Glorbo.FileSpec.InboxMessageMd,
     Glorbo.FileSpec.GoalMd,
-    Glorbo.FileSpec.ConfigMd
+    Glorbo.FileSpec.ConfigMd,
+    Glorbo.FileSpec.PathRequestMd
   ]
 
   @doc """

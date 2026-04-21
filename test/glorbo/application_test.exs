@@ -52,7 +52,7 @@ defmodule Glorbo.ApplicationTest do
     assert {:ok, pid} = DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec)
 
     children = Supervisor.which_children(pid)
-    assert length(children) == 9
+    assert length(children) == 10
 
     ids =
       children
@@ -68,6 +68,7 @@ defmodule Glorbo.ApplicationTest do
           Glorbo.Company.BudgetTracker,
           Glorbo.Company.AgentSupervisor,
           Glorbo.Approvals.Gate,
+          Glorbo.PathRequestGate,
           Glorbo.Company.AgentBoot
         ] do
       assert MapSet.member?(ids, expected), "missing child #{inspect(expected)}"

@@ -277,7 +277,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       end)
 
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 9
+      assert length(children) == 10
 
       modules =
         children
@@ -291,6 +291,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
       assert MapSet.member?(modules, Glorbo.Approvals.Gate)
+      assert MapSet.member?(modules, Glorbo.PathRequestGate)
       assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
       # GAP-4: no api-only agent on disk → Network.Proxy NOT started
       refute MapSet.member?(modules, Glorbo.Network.Proxy)

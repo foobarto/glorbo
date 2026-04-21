@@ -50,6 +50,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0024 | [Task Scheduler — Firing Scheduled Dispatches](./0024-task-scheduler.md)                 | Informational | Implemented |
 | 0025 | [On-disk File Format Specs, `glorbo validate`, `glorbo fmt`](./0025-file-format-spec-and-tooling.md) | Standards     | Draft       |
 | 0026 | [Benchmark Templates and Provider A/B Comparison](./0026-benchmark-templates-and-ab-comparison.md) | Standards     | Draft       |
+| 0027 | [Agent Sandbox Path Requests via Director Approval](./0027-agent-sandbox-path-requests.md) | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

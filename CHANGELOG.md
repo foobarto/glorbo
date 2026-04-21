@@ -10,6 +10,51 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-27: Agent sandbox path requests via director approval
+
+- **GEP-27 Draft** — design record for task-scoped external path access
+  (`docs/geps/0027-agent-sandbox-path-requests.md`). Agents can request
+  access to host paths outside their company sandbox; the director
+  approves/denies each request and can downgrade write→read or trim
+  individual paths. Access is ephemeral (task-scoped, revoked after
+  dispatch).
+- **`Glorbo.FileSpec.PathRequestMd`** — new `path-request/v1` sentinel
+  spec. Agent writes `agents/<slug>/outbox/path-request-<task_id>.md`
+  with a `paths:` list (`path` + `mode: read|write`) and a `reason:`.
+- **`Glorbo.PathGrantStore`** — ETS-backed ephemeral grant registry.
+  Keys are `{company, agent, task_id}`. Grants auto-clear on BEAM
+  restart (correct for task-scoped semantics). Provides
+  `grant/5`, `lookup/3`, `revoke/3`, `revoke_all/1`.
+- **`Glorbo.PathRequestGate`** — per-company GenServer managing the
+  request lifecycle: validate → pending sentinel → approve/deny →
+  ETS grant → revoke. Validates paths (absolute, no traversal, no
+  `/proc`/`/sys`/`/dev`), limits to 5 paths per request, requires
+  reason ≥ 10 chars. Cross-company paths are forced read-only.
+  Archives processed sentinels under `state/path-request-archive/`.
+- **Router integration** — `classify_outbox_file/3` now recognises
+  `path-request-<task_id>.md` outbox files and routes them through
+  `handle_outbox_path_request/4`. Validates `kind: path-request/v1`,
+  `paths` list, and `reason` before forwarding to the Gate.
+- **Dispatch integration** — `build_ctx/6` queries `PathGrantStore`
+  for active grants at dispatch time and injects them into
+  `bwrap_opts.approved_paths`. `do_execute/4` revokes the grant
+  after dispatch completes (success or failure).
+- **Bwrap mount flags** — `Glorbo.Sandbox.Bwrap` now accepts
+  `approved_paths` in invocation opts. Each path is mounted under
+  `/external/<basename>` with `--ro-bind` (read) or `--bind`
+  (write), spliced after permission-derived mounts.
+- **Company Supervisor** — starts `PathRequestGate` as a child
+  (10 children base, 11 with api-only + Proxy). ETS table
+  initialised at supervisor boot.
+- **Tests** — `FileSpecTest` updated for 21 specs (was 20).
+  `Company.SupervisorTest`, `ApplicationTest`, `WatcherTest` updated
+  for new child counts. `DispatchTest` and `EmergencyStopTest`
+  initialise `PathGrantStore` ETS in setup.
+- **Docs** — `docs/file-formats/path-request_v1.md` generated;
+  `docs/file-formats/README.md` index updated.
+
+1436 tests green; `mix credo --strict` clean; `mix gep.validate` clean.
+
 ### Added — GEP-23 smart-mode Phase 3: supervisor composes classifier_fun (#321)
 
 - **`Glorbo.Company.Supervisor` now composes a per-company

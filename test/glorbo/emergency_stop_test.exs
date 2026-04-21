@@ -8,6 +8,9 @@ defmodule Glorbo.EmergencyStopTest do
     File.mkdir_p!(Path.join([base, "companies", "acme"]))
     on_exit(fn -> File.rm_rf!(base) end)
 
+    # GEP-27: ensure ETS grant store exists for dispatch tests
+    Glorbo.PathGrantStore.ensure_started()
+
     {:ok, base: base, company: "acme"}
   end
 

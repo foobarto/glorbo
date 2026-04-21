@@ -48,11 +48,11 @@ defmodule Glorbo.Company.SupervisorTest do
     {sup_pid, company, base}
   end
 
-  describe "S1: 9-child base tree (incl. TaskScheduler; Plan 03-05 + Approvals.Gate + AgentBoot)" do
-    test "CompanySupervisor starts 9 children by default (no api-only agents → no Proxy)" do
+  describe "S1: 10-child base tree (incl. TaskScheduler; Plan 03-05 + Approvals.Gate + PathRequestGate + AgentBoot)" do
+    test "CompanySupervisor starts 10 children by default (no api-only agents → no Proxy)" do
       {sup_pid, _co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 9
+      assert length(children) == 10
 
       modules =
         children
@@ -67,17 +67,18 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
       assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
       assert MapSet.member?(modules, Glorbo.Approvals.Gate)
+      assert MapSet.member?(modules, Glorbo.PathRequestGate)
       assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
       # GAP-4: no api-only agent on disk → Network.Proxy is NOT started
       refute MapSet.member?(modules, Glorbo.Network.Proxy)
     end
   end
 
-  describe "S1b: 10-child tree when an api-only agent is declared (GAP-4)" do
-    test "CompanySupervisor starts 10 children when api_only?: true" do
+  describe "S1b: 11-child tree when an api-only agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 11 children when api_only?: true" do
       {sup_pid, _co, _base} = start_company(api_only?: true)
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 10
+      assert length(children) == 11
 
       modules =
         children

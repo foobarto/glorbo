@@ -15,6 +15,9 @@ defmodule Glorbo.Agent.DispatchTest do
     base = TmpGlorboHome.setup()
     pid = self()
 
+    # GEP-27: ensure the ETS grant store exists for dispatch tests
+    Glorbo.PathGrantStore.ensure_started()
+
     spec = %Spec{
       slug: "engineer",
       company: "acme",

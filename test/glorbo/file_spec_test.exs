@@ -33,12 +33,13 @@ defmodule Glorbo.FileSpecTest do
     "emergency-stop/v1",
     "inbox-message/v1",
     "goal/v1",
-    "config/v1"
+    "config/v1",
+    "path-request/v1"
   ]
 
   describe "registry" do
-    test "specs/0 returns all 20 per-kind modules" do
-      assert length(FileSpec.specs()) == 20
+    test "specs/0 returns all 21 per-kind modules" do
+      assert length(FileSpec.specs()) == 21
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do
