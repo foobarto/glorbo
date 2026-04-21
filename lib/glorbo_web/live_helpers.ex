@@ -19,6 +19,26 @@ defmodule GlorboWeb.LiveHelpers do
   def base_dir, do: Hierarchy.default_root()
 
   @doc """
+  Pretty-print the base dir for UI labels. When the base is the
+  default `~/.glorbo/` under the director's home, render that
+  literally (shorter, recognisable). Otherwise render the real
+  absolute path — directors running with a `GLORBO_HOME` override
+  (UAT workspaces, multi-instance dev setups) must not see a
+  label that lies about where their data lives.
+
+  Examples:
+    * `~/.glorbo` default → `"~/.glorbo"`
+    * `/tmp/glorbo-uat-xxx` override → `"/tmp/glorbo-uat-xxx"`
+  """
+  @spec display_base() :: String.t()
+  def display_base do
+    base = base_dir()
+    default = Path.expand("~/.glorbo")
+
+    if base == default, do: "~/.glorbo", else: base
+  end
+
+  @doc """
   Current UTC year-month as `"YYYY-MM"` — the bucket key used by
   `Glorbo.Budget.Ledger` and `Glorbo.Company.AuditLog` month files.
   """

@@ -45,8 +45,12 @@ defmodule GlorboWeb.Components.Topbar do
       </.link>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
 
-      <.link navigate={~p"/companies"} class="gl-topbar__path" title="All companies">
-        ~/.glorbo/companies/
+      <.link
+        navigate={~p"/companies"}
+        class="gl-topbar__path"
+        title={"All companies · base=#{GlorboWeb.LiveHelpers.display_base()}"}
+      >
+        {GlorboWeb.LiveHelpers.display_base()}/companies/
       </.link>
       <label :if={@companies != []} class="gl-topbar__picker">
         <select
