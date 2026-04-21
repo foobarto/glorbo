@@ -60,6 +60,8 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:company_slug, slug)
        |> assign(:current_company, slug)
        |> assign(:project_filter, nil)
+       |> assign(:goal_filter, nil)
+       |> assign(:who_filter, nil)
        |> assign(:columns, group_by_column([]))
        |> assign(:new_task_open?, false)
        |> assign(:new_task_projects, list_projects(base, slug))
@@ -109,11 +111,23 @@ defmodule GlorboWeb.KanbanLive do
           nil
       end
 
+    # `?who=<slug>` filters tasks by their `assigned_to:` agent
+    # (#261). Composes with `?project=` and `?goal=`.
+    who_filter =
+      case Map.get(params, "who") do
+        w when is_binary(w) and w != "" ->
+          if GlorboWeb.Slug.valid?(w), do: w, else: nil
+
+        _ ->
+          nil
+      end
+
     tasks =
       base
       |> load_tasks(slug)
       |> apply_project_filter(filter)
       |> apply_goal_filter(goal_filter)
+      |> apply_who_filter(who_filter)
 
     title = build_kanban_title(slug, filter, goal_filter)
 
@@ -139,6 +153,8 @@ defmodule GlorboWeb.KanbanLive do
       socket
       |> assign(:page_title, title)
       |> assign(:project_filter, filter)
+      |> assign(:goal_filter, goal_filter)
+      |> assign(:who_filter, who_filter)
       |> assign(:columns, group_by_column(tasks))
       |> assign(:new_task_form, new_task_form)
       |> assign(:new_task_open?, new_task_open?)
@@ -214,6 +230,8 @@ defmodule GlorboWeb.KanbanLive do
           base
           |> load_tasks(slug)
           |> apply_project_filter(socket.assigns.project_filter)
+          |> apply_goal_filter(socket.assigns.goal_filter)
+          |> apply_who_filter(socket.assigns.who_filter)
           |> apply_search_filter(socket.assigns.task_search)
 
         socket =
@@ -311,6 +329,8 @@ defmodule GlorboWeb.KanbanLive do
       base
       |> load_tasks(socket.assigns.company_slug)
       |> apply_project_filter(socket.assigns.project_filter)
+      |> apply_goal_filter(socket.assigns.goal_filter)
+      |> apply_who_filter(socket.assigns.who_filter)
       |> apply_search_filter(q)
 
     {:noreply,
@@ -356,6 +376,8 @@ defmodule GlorboWeb.KanbanLive do
           base_dir()
           |> load_tasks(company)
           |> apply_project_filter(socket.assigns.project_filter)
+          |> apply_goal_filter(socket.assigns.goal_filter)
+          |> apply_who_filter(socket.assigns.who_filter)
           |> apply_search_filter(socket.assigns.task_search)
 
         emit_task_delete_audit(company, path)
@@ -410,6 +432,8 @@ defmodule GlorboWeb.KanbanLive do
             base_dir()
             |> load_tasks(socket.assigns.company_slug)
             |> apply_project_filter(socket.assigns.project_filter)
+            |> apply_goal_filter(socket.assigns.goal_filter)
+            |> apply_who_filter(socket.assigns.who_filter)
             |> apply_search_filter(socket.assigns.task_search)
 
           {:noreply,
@@ -503,6 +527,8 @@ defmodule GlorboWeb.KanbanLive do
         base
         |> load_tasks(company)
         |> apply_project_filter(socket.assigns.project_filter)
+        |> apply_goal_filter(socket.assigns.goal_filter)
+        |> apply_who_filter(socket.assigns.who_filter)
         |> apply_search_filter(socket.assigns.task_search)
 
       summary =
@@ -540,6 +566,8 @@ defmodule GlorboWeb.KanbanLive do
         base
         |> load_tasks(socket.assigns.company_slug)
         |> apply_project_filter(socket.assigns.project_filter)
+        |> apply_goal_filter(socket.assigns.goal_filter)
+        |> apply_who_filter(socket.assigns.who_filter)
         |> apply_search_filter(socket.assigns.task_search)
 
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
@@ -843,6 +871,15 @@ defmodule GlorboWeb.KanbanLive do
 
   defp apply_goal_filter(tasks, goal) when is_binary(goal) do
     Enum.filter(tasks, fn t -> Map.get(t, :goal) == goal end)
+  end
+
+  # #261 — filter by assigned_to agent slug. Separate from the
+  # existing `?assignee=` query param which pre-fills the
+  # new-task modal; this one narrows the *displayed* list.
+  defp apply_who_filter(tasks, nil), do: tasks
+
+  defp apply_who_filter(tasks, who) when is_binary(who) do
+    Enum.filter(tasks, fn t -> to_string(Map.get(t, :assigned_to) || "") == who end)
   end
 
   defp build_kanban_title(slug, nil, nil), do: "Kanban — #{slug} — Glorbo"

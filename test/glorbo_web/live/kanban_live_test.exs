@@ -373,6 +373,40 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "goal:q4-launch"
   end
 
+  # #261 — ?who=<slug> filters displayed tasks by `assigned_to`.
+  test "?who=<slug> filters displayed tasks by assigned_to",
+       %{conn: conn, base: base} do
+    tasks_dir = Path.join([base, "companies/acme/projects/wfilter/tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    File.write!(Path.join([base, "companies/acme/projects/wfilter/project.md"]), """
+    ---
+    slug: wfilter
+    name: wfilter
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "wfilter-1.md"), """
+    ---
+    title: engineer task
+    status: todo
+    assigned_to: engineer
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "wfilter-2.md"), """
+    ---
+    title: ceo task
+    status: todo
+    assigned_to: ceo
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?who=engineer")
+    assert html =~ "engineer task"
+    refute html =~ "ceo task"
+  end
+
   test "?assignee=<slug> opens new-task modal with assignee prefilled",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?assignee=ceo")
