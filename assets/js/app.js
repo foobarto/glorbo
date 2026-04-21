@@ -86,6 +86,7 @@ const NAV_MAP = {
   v: (co) => co && `/companies/${co}/approvals`,
   k: (co) => co && `/companies/${co}/kanban`,
   b: (co) => co && `/companies/${co}/braindump`,
+  d: "/costs",
 }
 
 // Resolve current company from the URL first (most reliable), falling
@@ -167,6 +168,7 @@ function cheatsheetHtml() {
               <dt><kbd>g</kbd><kbd>o</kbd></dt><dd>companies overview</dd>
               <dt><kbd>g</kbd><kbd>h</kbd></dt><dd>system health</dd>
               <dt><kbd>g</kbd><kbd>p</kbd></dt><dd>providers</dd>
+              <dt><kbd>g</kbd><kbd>d</kbd></dt><dd>costs (dollars)</dd>
               <dt><kbd>⌘</kbd><kbd>K</kbd> / <kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>command palette</dd>
               <dt><kbd>?</kbd></dt><dd>this cheatsheet</dd>
             </dl>
@@ -219,6 +221,7 @@ function collectCommands() {
     { label: "Companies", hint: "g o", href: "/companies" },
     { label: "System health", hint: "g h", href: "/health" },
     { label: "Providers", hint: "g p", href: "/providers" },
+    { label: "Costs", hint: "g d", href: "/costs" },
   ]
   if (co) {
     items.push(
