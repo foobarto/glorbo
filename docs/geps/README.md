@@ -44,6 +44,9 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0018 | [agentcompanies/v1 interop — adopt paperclip.ai schema?](./0018-agentcompanies-v1-interop.md) | Informational | Placeholder |
 | 0019 | [Director Approval Workflow Protocol](./0019-director-approval-workflow.md)              | Informational | Implemented |
 | 0020 | [Director Dashboard UX Sweep — Rounds 2+3](./0020-round-2-3-ux-sweep.md)                  | Informational | Implemented |
+| 0021 | [File-based Agent Memory](./0021-file-based-agent-memory.md)                             | Standards     | Draft       |
+| 0022 | [skills.sh Registry — Browse and Install Skills](./0022-skills-registry-browse-install.md) | Standards     | Draft       |
+| 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

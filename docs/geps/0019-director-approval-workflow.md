@@ -13,6 +13,7 @@ history:
     status: Implemented
     note: Protocol has been live since v0.0.3 (GEP-8 milestone).
 see-also: [3, 6, 14, 16]
+extended-by: [23]
 implemented-in: v0.0.3
 ---
 

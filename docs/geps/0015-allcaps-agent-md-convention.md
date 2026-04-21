@@ -5,6 +5,7 @@ author: Glorbo Maintainers <security@example.invalid>
 status: Accepted
 type: Informational
 created: 2026-04-17
+extended-by: [21]
 history:
   - date: 2026-04-17
     status: Accepted

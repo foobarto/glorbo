@@ -2,13 +2,16 @@
 gep: 0020
 title: Director dashboard UX sweep — rounds 2+3
 author: Glorbo Maintainers <security@example.invalid>
-status: Informational
+status: Implemented
 type: Informational
 created: 2026-04-20
 history:
   - date: 2026-04-20
-    status: Informational
+    status: Draft
     note: Retrofit GEP capturing the rounds-2+3 paperclip-gap sweep.
+  - date: 2026-04-20
+    status: Implemented
+    note: All items documented here shipped in v0.0.3-dev by commit e8b6639.
 see-also: [0003, 0006, 0007, 0008, 0010, 0018, 0019]
 implemented-in: v0.0.3-dev
 ---
