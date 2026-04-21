@@ -110,7 +110,14 @@ defmodule Glorbo.MixProject do
         burrito: [
           targets: [
             linux_x86_64: [os: :linux, cpu: :x86_64],
-            linux_aarch64: [os: :linux, cpu: :aarch64]
+            linux_aarch64: [os: :linux, cpu: :aarch64],
+            # R30: macOS support. Degraded runtime on macOS —
+            # bwrap has no macOS equivalent, so agents run
+            # unsandboxed with a one-time warning audit. The
+            # filesystem watcher uses FSEvents (push-based,
+            # transparent via the file_system package).
+            macos_x86_64: [os: :darwin, cpu: :x86_64],
+            macos_arm64: [os: :darwin, cpu: :aarch64]
           ]
         ]
       ]

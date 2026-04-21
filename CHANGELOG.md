@@ -10,6 +10,34 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — R30.1: macOS build plumbing
+
+- **Burrito targets gain `macos_x86_64` + `macos_arm64`** in
+  `mix.exs`. `mix release` on macOS runners emits the darwin
+  binaries the release workflow packages.
+- **CI workflow adds a parallel `build-macos` matrix job** running
+  on `macos-13` (Intel) and `macos-latest` (Apple Silicon).
+  Compiles, builds the Burrito release, runs the smoke suite
+  (`glorbo doctor --json` version check, help exit code, unknown-
+  verb exit 1), and uploads the binary as an artifact alongside
+  the Linux builds. `release` job now also signs and publishes
+  the two darwin binaries + their `.sig` cosign bundles.
+- **`Glorbo.Sandbox.Bwrap.availability/0`** returns
+  `{:error, :unavailable}` on hosts without bwrap instead of
+  raising. Callers that want to degrade gracefully (macOS) use
+  this probe; callers that require sandboxing (Linux) keep
+  calling `default_binary/0` which still raises on absence.
+- **Homebrew formula generator** now expects 4 release assets
+  (both linux + both darwin) and renders an `on_macos do` block
+  alongside `on_linux do`. `depends_on "bubblewrap"` scoped to
+  `on_linux do`; caveats explain macOS runs unsandboxed.
+
+The Elixir runtime fallback (dispatch honours the availability
+probe + emits a one-time `agent.sandbox_unavailable` warning
+audit) and Doctor OS reclassification are R30.2. Until those
+land, a macOS binary starts and `glorbo doctor` runs, but agent
+dispatches will raise on bwrap absence.
+
 ### Added — Homebrew tap (R29)
 
 - **`brew install foobarto/tap/glorbo` works end-to-end (#300).**

@@ -166,10 +166,102 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  # R30 — macOS builds. Agents run unsandboxed here (bwrap has no
+  # macOS equivalent pre-1.0); Glorbo.Sandbox.Bwrap.availability/0
+  # returns {:error, :unavailable} and dispatches warn via audit.
+  # Filesystem watcher uses FSEvents via the file_system package —
+  # transparent.
+  build-macos:
+    name: ${{ matrix.arch }} macOS build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            arch: x86_64
+            binary_name: glorbo-darwin-x86_64
+            burrito_out: glorbo_macos_x86_64
+          - runner: macos-latest
+            arch: arm64
+            binary_name: glorbo-darwin-arm64
+            burrito_out: glorbo_macos_arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Erlang + Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.4'
+          otp-version: '28.0.2'
+
+      - name: Cache mix deps + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-macos-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-macos-${{ matrix.arch }}-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      # No `mix test` on macOS yet — the test suite seeds bwrap-gated
+      # integration tests that need a Linux kernel. R30.2 will split
+      # tests by tag so a macOS-safe subset runs here.
+
+      - name: Install Zig 0.15.2
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build release (prod)
+        env:
+          MIX_ENV: prod
+        run: |
+          mix deps.get --only prod
+          mix compile --warnings-as-errors
+          mix release --overwrite
+
+      - name: Rename binary to release convention
+        env:
+          BURRITO_OUT: ${{ matrix.burrito_out }}
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          test -f "burrito_out/$BURRITO_OUT"
+          mv "burrito_out/$BURRITO_OUT" "burrito_out/$BINARY_NAME"
+          test -x "burrito_out/$BINARY_NAME"
+
+      - name: Smoke-test binary
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          expected_version=$(grep -E '^\s*version:' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Expected version: $expected_version"
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e --arg v "$expected_version" '.version == $v'
+          out=$("./burrito_out/$BINARY_NAME") && echo "$out" | grep -q USAGE
+          set +e
+          "./burrito_out/$BINARY_NAME" bogus >/dev/null 2>&1
+          ec=$?
+          set -e
+          test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: burrito_out/${{ matrix.binary_name }}
+          retention-days: 30
+          if-no-files-found: error
+
   release:
     name: Publish signed release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-and-test
+    needs: [build-and-test, build-macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write   # create the GitHub Release
@@ -186,7 +278,9 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: artifacts/
         run: |
-          sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 > SHA256SUMS
+          sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 \
+                    glorbo-darwin-x86_64 glorbo-darwin-arm64 \
+                    > SHA256SUMS
           cat SHA256SUMS
 
       - name: Install Cosign
@@ -203,6 +297,8 @@ jobs:
         run: |
           cosign sign-blob --yes --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64
           cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
+          cosign sign-blob --yes --bundle glorbo-darwin-x86_64.sig glorbo-darwin-x86_64
+          cosign sign-blob --yes --bundle glorbo-darwin-arm64.sig glorbo-darwin-arm64
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -212,6 +308,10 @@ jobs:
             artifacts/glorbo-linux-x86_64.sig
             artifacts/glorbo-linux-aarch64
             artifacts/glorbo-linux-aarch64.sig
+            artifacts/glorbo-darwin-x86_64
+            artifacts/glorbo-darwin-x86_64.sig
+            artifacts/glorbo-darwin-arm64
+            artifacts/glorbo-darwin-arm64.sig
             artifacts/SHA256SUMS
             artifacts/SHA256SUMS.sig
           generate_release_notes: true

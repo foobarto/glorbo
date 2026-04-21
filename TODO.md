@@ -111,5 +111,6 @@ it's been in CHANGELOG for a cycle.
 - [x] #298 R27: FileSpec.Validator + `glorbo validate` CLI (read-only; 10 check codes; NDJSON output; verified 27 missing_kind errors against pre-cut r22 workspace)
 - [x] #299 R28: TaskMd regex widened (now matches `*.md` under `tasks/` like the real parser) + `skill/v1` FileSpec module + `:non_canonical_task_filename` info finding; 16 kinds total
 - [x] #300 R29: Homebrew tap at foobarto/homebrew-tap (`brew install foobarto/tap/glorbo`) + `mix glorbo.release_formula` auto-regen task
-- [ ] R30: macOS builds via GitHub macos-latest/macos-13 runners; graceful degradation on bwrap absence (unsandboxed fallback + audit warning) and inotify→FSEvents polling; formula adds `on_macos do` block
+- [x] R30.1: macOS build plumbing — Burrito darwin targets + GHA `build-macos` matrix job + `Sandbox.Bwrap.availability/0` probe + formula renders `on_macos do` block
+- [ ] R30.2: wire availability probe into `Agent.Dispatch` (skip bwrap wrapping on `{:error, :unavailable}`, emit one-time `agent.sandbox_unavailable` warning audit per company); reclassify Doctor checks by host OS (linux-only checks → skipped on darwin)
 - [ ] #297 R26.2b: atomic `kind:` cut — add `kind:` to every writer + fixture + template; parser enforcement; delete soft-migration readers; ship FileSpec.Formatter + `glorbo fmt` + `mix glorbo.docs.file_formats`; precommit wiring. Estimated 50+ files; best done in a fresh focused session

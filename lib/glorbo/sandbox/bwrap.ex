@@ -151,6 +151,26 @@ defmodule Glorbo.Sandbox.Bwrap do
       raise "bwrap not found in PATH — install the `bubblewrap` package"
   end
 
+  @doc """
+  Non-raising probe for bwrap availability (R30).
+
+  Returns `:ok` when bwrap is on PATH, `{:error, :unavailable}`
+  otherwise. Callers that want to degrade gracefully (e.g. macOS
+  hosts in pre-1.0) use this instead of `default_binary/0` — they
+  run the command unsandboxed + emit a one-time warning audit.
+
+  **This is a narrow escape hatch, not a general policy.** The
+  CLAUDE.md invariant "the kernel is the policy engine" still
+  holds on every host where bwrap *is* available. On macOS there
+  is no kernel equivalent yet (see GEP-5 / GEP-17); unsandboxed
+  execution is explicitly a pre-1.0 degradation, load-bearing on
+  the warning audit so directors know.
+  """
+  @spec availability() :: :ok | {:error, :unavailable}
+  def availability do
+    if System.find_executable("bwrap"), do: :ok, else: {:error, :unavailable}
+  end
+
   # ---------------------------------------------------------------------------
   # Baseline flags (D-08)
   # ---------------------------------------------------------------------------
