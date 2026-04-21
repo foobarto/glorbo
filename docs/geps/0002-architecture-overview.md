@@ -5,7 +5,7 @@ author: Glorbo Maintainers <security@example.invalid>
 status: Accepted
 type: Informational
 created: 2026-04-17
-extended-by: [3, 4, 5, 6, 7, 8, 12, 21, 22, 23]
+extended-by: [3, 4, 5, 6, 7, 8, 12, 21, 22, 23, 25]
 see-also: []
 history:
   - date: 2026-04-17

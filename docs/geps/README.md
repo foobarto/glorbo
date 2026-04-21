@@ -48,6 +48,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0022 | [skills.sh Registry — Browse and Install Skills](./0022-skills-registry-browse-install.md) | Standards     | Draft       |
 | 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Draft       |
 | 0024 | [Task Scheduler — Firing Scheduled Dispatches](./0024-task-scheduler.md)                 | Informational | Implemented |
+| 0025 | [On-disk File Format Specs, `glorbo validate`, `glorbo fmt`](./0025-file-format-spec-and-tooling.md) | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
