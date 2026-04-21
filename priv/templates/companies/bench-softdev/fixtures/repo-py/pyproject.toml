@@ -1,0 +1,9 @@
+[project]
+name = "bench-fixture"
+version = "0.1.0"
+description = "bench-softdev Python fixture"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

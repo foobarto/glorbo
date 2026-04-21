@@ -194,17 +194,19 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
   end
 
   # Tasks under template/tasks/*.md land at
-  # companies/<slug>/projects/<project-slug-derived-from-filename-prefix>
-  # /tasks/<task-id>.md. Convention: a task filename `bugs-1-fix.md`
-  # routes to project `bugs`.
+  # companies/<slug>/projects/<proj>/tasks/<task-id>.md. Routing
+  # uses longest-prefix match against the template's existing
+  # `projects/<name>/` dirs so filenames like `bugs-py-1.md` land
+  # in project `bugs-py`, not project `bugs`.
   defp place_task_files(template_dir, co, vars) do
     tasks_dir = Path.join(template_dir, "tasks")
+    projects = known_projects(template_dir)
 
     case File.ls(tasks_dir) do
       {:ok, entries} ->
         Enum.each(entries, fn fname ->
           src = Path.join(tasks_dir, fname)
-          place_one_task(src, co, vars)
+          place_one_task(src, co, vars, projects)
         end)
 
       _ ->
@@ -212,10 +214,26 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
     end
   end
 
-  defp place_one_task(src, co, vars) do
+  # List project slugs from the template's projects/ tree. Sorted by
+  # length desc so longest-prefix matches win during routing.
+  defp known_projects(template_dir) do
+    projects_dir = Path.join(template_dir, "projects")
+
+    case File.ls(projects_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&File.dir?(Path.join(projects_dir, &1)))
+        |> Enum.sort_by(&(-String.length(&1)))
+
+      _ ->
+        []
+    end
+  end
+
+  defp place_one_task(src, co, vars, projects) do
     if File.regular?(src) and String.ends_with?(src, ".md") do
       fname = Path.basename(src)
-      project = fname |> String.split("-", parts: 2) |> List.first() || "general"
+      project = route_task_to_project(fname, projects)
       dst_dir = Path.join([co, "projects", project, "tasks"])
       File.mkdir_p!(dst_dir)
 
@@ -226,6 +244,16 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
 
       File.write!(Path.join(dst_dir, fname), content)
     end
+  end
+
+  # Pick the longest project slug that's a prefix of the task
+  # filename's stem. Fallback to the pre-first-dash slice for
+  # templates that don't declare projects/.
+  defp route_task_to_project(fname, projects) do
+    stem = Path.rootname(fname, ".md")
+
+    Enum.find(projects, fn p -> stem == p or String.starts_with?(stem, p <> "-") end) ||
+      stem |> String.split("-", parts: 2) |> List.first() || "general"
   end
 
   # Fixtures: try symlink first (bind-mount-friendly, repeatable);

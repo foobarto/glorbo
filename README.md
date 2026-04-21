@@ -22,8 +22,8 @@ Glorbo is a self-hosted agent orchestration platform that models companies as
 real organisations — with org charts, goals, budgets, governance, and
 communication — and runs AI agents as employees inside kernel-level sandboxes.
 
-Everything is markdown. Everything is a file. Everyone has a Glorbo in their
-home directory.
+**Like Obsidian, but for your agents.** Everything is markdown. Everything is a
+file. Everyone has a Glorbo in their home directory.
 
 ---
 

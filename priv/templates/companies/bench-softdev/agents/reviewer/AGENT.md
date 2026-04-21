@@ -11,6 +11,8 @@ heartbeat: null
 permissions:
   - projects:read:*
   - tasks:write:bugs
+  - tasks:write:bugs-py
+  - tasks:write:bugs-go
   - chat:read:*
   - chat:write:general
 budget:

@@ -10,6 +10,36 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — bench-softdev Python + Go fixtures (#309 partial)
+
+- `priv/templates/companies/bench-softdev/` now ships three
+  language analogs of the same three-bug shape:
+  - **Elixir** (existing) — `projects/bugs/` + `fixtures/repo/`.
+  - **Python** (new) — `projects/bugs-py/` + `fixtures/repo-py/`.
+  - **Go** (new) — `projects/bugs-go/` + `fixtures/repo-go/`.
+- Each language exposes the same bug triad: session-timeout
+  constant (`bugs-*-1`), state-toggle extension with error path
+  (`bugs-*-2`), HTML XSS sanitiser (`bugs-*-3`). Nine tasks total;
+  all start `status: todo`.
+- Engineer + reviewer `AGENT.md` permissions widened to
+  `projects:write:bugs`, `bugs-py`, `bugs-go`; `AGENT.md` prose
+  updated to name the three fixture dirs and explain routing
+  (task id prefix → codebase).
+- **CompanyTemplate scaffolder routing fix.** Filename → project
+  resolution now uses a longest-prefix match against the
+  template's `projects/<name>/` dirs (was: blind split on first
+  `-`). Required for `bugs-py-1.md` → `projects/bugs-py/`, not
+  `projects/bugs/`.
+- js/ts, c++, java variants remain queued as follow-up subtasks.
+
+### Changed — README tagline
+
+Added "Like Obsidian, but for your agents." inline with the
+existing "Everything is markdown. Everything is a file..." mantra
+paragraph. Opening positioning is now the Obsidian analogy for
+readers who click through from HN/GitHub; the filesystem-as-truth
+line anchors the rest.
+
 ### Added — descriptive-filename task resolver (#314)
 
 - `GlorboWeb.TaskLive` now resolves `<project>-<NN>` URL shapes

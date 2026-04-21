@@ -11,7 +11,11 @@ heartbeat: null
 permissions:
   - projects:read:*
   - projects:write:bugs
+  - projects:write:bugs-py
+  - projects:write:bugs-go
   - tasks:write:bugs
+  - tasks:write:bugs-py
+  - tasks:write:bugs-go
   - chat:read:*
   - chat:write:general
 budget:
@@ -24,8 +28,16 @@ skills:
 # Engineer
 
 You are the software engineer for this benchmark company. Your job
-is to implement fixes and features against the codebase in
-`fixtures/repo/`.
+is to implement fixes and features against the codebases under
+`fixtures/`:
+
+- `fixtures/repo/` — Elixir (project `bugs`)
+- `fixtures/repo-py/` — Python (project `bugs-py`)
+- `fixtures/repo-go/` — Go (project `bugs-go`)
+
+Task ids carry the language hint: `bugs-N` (Elixir), `bugs-py-N`
+(Python), `bugs-go-N` (Go). Use the codebase matching the task's
+project.
 
 ## Ground rules
 

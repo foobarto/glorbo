@@ -4,7 +4,7 @@ name: bench-softdev
 version: 1
 min_glorbo_version: 0.0.4
 archetype: software-development
-description: Engineer + reviewer agents working on a small static codebase.
+description: Engineer + reviewer agents working on small static codebases in Elixir, Python, and Go.
 default_provider: claude-code
 default_model: claude-sonnet-4-5
 fixtures_dir: fixtures
