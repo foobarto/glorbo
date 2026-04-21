@@ -83,7 +83,9 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.BraindumpMd,
     Glorbo.FileSpec.ChannelLogMd,
     Glorbo.FileSpec.AuditMonthJsonl,
-    Glorbo.FileSpec.InboxArchiveJson
+    Glorbo.FileSpec.InboxArchiveJson,
+    Glorbo.FileSpec.EmergencyStopMd,
+    Glorbo.FileSpec.InboxMessageMd
   ]
 
   @doc """

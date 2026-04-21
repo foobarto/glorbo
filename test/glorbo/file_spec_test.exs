@@ -29,12 +29,14 @@ defmodule Glorbo.FileSpecTest do
     "braindump/v1",
     "channel-log/v1",
     "audit-event/v1",
-    "inbox-archive/v1"
+    "inbox-archive/v1",
+    "emergency-stop/v1",
+    "inbox-message/v1"
   ]
 
   describe "registry" do
-    test "specs/0 returns all 16 per-kind modules" do
-      assert length(FileSpec.specs()) == 16
+    test "specs/0 returns all 18 per-kind modules" do
+      assert length(FileSpec.specs()) == 18
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do
