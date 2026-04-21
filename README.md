@@ -242,6 +242,16 @@ bootstraps `~/.glorbo/`.
 
 ### Install
 
+**Homebrew (Linux — x86_64 and aarch64):**
+
+```bash
+brew tap foobarto/tap
+brew install glorbo
+glorbo init
+```
+
+**Manual (direct binary):**
+
 ```bash
 curl -L https://github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m) \
   -o ~/.local/bin/glorbo
@@ -249,6 +259,11 @@ chmod +x ~/.local/bin/glorbo
 
 glorbo init
 ```
+
+macOS builds are on the roadmap — bwrap + inotify don't map 1:1
+to macOS primitives, so early macOS support will degrade
+gracefully (unsandboxed agent execution + polling filesystem
+watcher) with explicit caveats. For now, Linux only.
 
 `glorbo init` creates the directory hierarchy, verifies prerequisites via
 `glorbo doctor`, and optionally scaffolds an example company.

@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — Homebrew tap (R29)
+
+- **`brew install foobarto/tap/glorbo` works end-to-end (#300).**
+  The tap repo at <https://github.com/foobarto/homebrew-tap> now
+  ships `Formula/glorbo.rb` pinning v0.0.4 Linux x86_64 + aarch64
+  binaries + SHA256s. `depends_on :linux` guards macOS for now;
+  `depends_on "bubblewrap"` wires the kernel-sandbox prerequisite.
+  `brew audit --new` clean; `brew test` runs `glorbo doctor --json`.
+- **`mix glorbo.release_formula [--tap-path PATH] [--write]`** —
+  new Mix task that regenerates the tap formula from the current
+  `mix.exs` version by fetching `SHA256SUMS` from the corresponding
+  GitHub release and rendering the formula template. Run after
+  each `gh release create`. Prints to stdout by default; pass
+  `--write` to overwrite `<tap>/Formula/glorbo.rb` in place.
+
 ### Changed — GEP-25 TaskMd widen + skill/v1 (R28)
 
 - **TaskMd regex widened (#299).** UAT ran the R27 validator
