@@ -196,6 +196,20 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 14
+
+- **E2E scheduled-task dispatch test (#278).** New integration
+  test at `test/integration/scheduled_task_e2e_test.exs`
+  exercises the TaskScheduler fire path against the real
+  `default_write_inbox` (no test stub for the write): drives
+  `:fire` directly so it's fast, but verifies inbox file lands
+  on disk + audit event emitted. Second case confirms the
+  fire-time re-read works — arming with body A then rewriting
+  the task to body B before firing produces inbox body B. The
+  `inotify → Agent.Server wake` half of the chain is already
+  covered by `AgentWakeInboxTest`; between the two, scheduled
+  dispatch is end-to-end proven.
+
 ### Added — round 13
 
 - **Heartbeat cron validation on AgentLive config save (#277).**

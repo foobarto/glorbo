@@ -90,3 +90,4 @@ it's been in CHANGELOG for a cycle.
 - [x] #275 Round 11: Kanban filter chip bar (project/goal/who)
 - [x] #276 Round 12: Task-ID autolinking in comments
 - [x] #277 Round 13: Heartbeat cron validation on agent config save
+- [x] #278 Round 14: E2E scheduled-task dispatch test (was partial — lacked live E2E proof)
