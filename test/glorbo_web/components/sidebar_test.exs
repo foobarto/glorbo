@@ -71,4 +71,40 @@ defmodule GlorboWeb.Components.SidebarTest do
   test "missing company dir → 0", %{base: base} do
     assert 0 == Sidebar.count_pending_approvals_for_test("never-existed", base)
   end
+
+  # R22 — memory count helper used by the sidebar `fa-brain` badge.
+  # Filename filter must mirror `Glorbo.Agent.Memory` so invalid
+  # files never inflate the count shown to the director.
+  describe "count_memory_files_for_test/2 — R22 badge count" do
+    setup %{base: base} do
+      agents_dir = Path.join([base, "companies", "acme", "agents"])
+      File.mkdir_p!(Path.join([agents_dir, "ceo", "memory"]))
+      {:ok, agents_dir: agents_dir}
+    end
+
+    test "counts only valid memory filenames", %{agents_dir: agents_dir} do
+      File.write!(Path.join([agents_dir, "ceo", "memory", "user_role.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "feedback_tests.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "project_layout.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "reference_prs.md"]), "")
+
+      # These must be ignored:
+      File.write!(Path.join([agents_dir, "ceo", "memory", "MEMORY.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "stray.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "other_type.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "user_UPPERCASE.md"]), "")
+      File.write!(Path.join([agents_dir, "ceo", "memory", "user_role.txt"]), "")
+
+      assert 4 == Sidebar.count_memory_files_for_test(agents_dir, "ceo")
+    end
+
+    test "no memory dir → 0", %{agents_dir: agents_dir} do
+      assert 0 == Sidebar.count_memory_files_for_test(agents_dir, "no-memory-yet")
+    end
+
+    test "empty memory dir → 0", %{agents_dir: agents_dir} do
+      File.mkdir_p!(Path.join([agents_dir, "lonely", "memory"]))
+      assert 0 == Sidebar.count_memory_files_for_test(agents_dir, "lonely")
+    end
+  end
 end

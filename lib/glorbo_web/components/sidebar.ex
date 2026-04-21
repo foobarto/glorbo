@@ -173,10 +173,10 @@ defmodule GlorboWeb.Components.Sidebar do
       <span
         :if={(@agent[:memory_count] || 0) > 0}
         class="gl-sidebar__memory-badge"
-        title={"#{@agent.memory_count} memory #{if @agent.memory_count == 1, do: "file", else: "files"}"}
-        aria-label={"#{@agent.memory_count} memory files"}
+        title={"#{@agent.memory_count} memory #{pluralise_files(@agent.memory_count)}"}
+        aria-label={"#{@agent.memory_count} memory #{pluralise_files(@agent.memory_count)}"}
       >
-        ✎ {@agent.memory_count}
+        <i class="fa-solid fa-brain" aria-hidden="true"></i> {@agent.memory_count}
       </span>
       <span class="gl-sidebar__meta">{short_provider(@agent.provider)}</span>
     </.link>
@@ -397,6 +397,14 @@ defmodule GlorboWeb.Components.Sidebar do
   # is O(dir-entries), cheap enough to run on every sidebar render.
   # Rescue → 0 so a permission error never blanks the whole sidebar.
   @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
+
+  defp pluralise_files(1), do: "file"
+  defp pluralise_files(_), do: "files"
+
+  @doc false
+  @spec count_memory_files_for_test(Path.t(), String.t()) :: non_neg_integer()
+  def count_memory_files_for_test(agents_dir, slug),
+    do: count_memory_files(agents_dir, slug)
 
   defp count_memory_files(agents_dir, slug) do
     case File.ls(Path.join([agents_dir, slug, "memory"])) do

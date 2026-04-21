@@ -101,3 +101,4 @@ it's been in CHANGELOG for a cycle.
 - [x] #283 R19a: GEP-23 per-agent network_allow extensions (company-coarsened; per-requester is R19b)
 - [x] #288 R20: memory-count sidebar badge (✎ N next to slug when ≥1 memory file)
 - [x] #289 R21: unified loop-detector resolution (single LoopDetector.resolve/5 entry; apply_resolution_files/3 honours documented file-drop protocol)
+- [x] #290 R22: sidebar memory badge — fa-brain icon + aria-label singular/plural + 3 regex test cases

@@ -196,6 +196,25 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Fixed — round 22 (browser UAT)
+
+- **Sidebar memory badge glyph (#290).** R20 used `✎` (U+270E) as
+  the memory-count icon; it didn't render in the sidebar's
+  monospace font (JetBrains Mono / Fira Code don't carry that
+  codepoint) and fell back to a tofu box. Swapped to
+  `<i class="fa-solid fa-brain">` — FontAwesome 6.5.2 is already
+  loaded in the root layout, renders crisply, and is semantically
+  closer to "memory" than the pen glyph. Badge layout switched to
+  `inline-flex` + 3px gap so the icon and count sit cleanly
+  together.
+- **Sidebar memory badge aria-label plural fix.** Badge title +
+  aria-label both said "memory files" regardless of count;
+  singular-count rows now read "1 memory file". Extracted
+  `pluralise_files/1` helper. +3 test cases on
+  `GlorboWeb.Components.SidebarTest` cover the filename filter
+  (valid types, wrong case, wrong extension, `MEMORY.md` index
+  excluded) via a new `count_memory_files_for_test/2` helper.
+
 ### Added / Changed — round 21
 
 - **Unified loop-detector resolution contract (#289).** The
