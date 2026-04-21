@@ -150,6 +150,10 @@ change between minor versions. Pin exact versions in downstream usage.
   downloads the current month's audit log as CSV with columns
   `ts, actor, action, target, detail`. RFC 4180-compliant
   quoting. "⇩ export CSV" button on AuditLive header.
+- **Audit date-range filter (#263)** — `since` and `until` date
+  inputs on the filter bar narrow the visible rows by timestamp.
+  Both bounds inclusive (00:00:00Z → 23:59:59Z). Composes with
+  the actor / action / free-text filters.
 
 ### Changed
 

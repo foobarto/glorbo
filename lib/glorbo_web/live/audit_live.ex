@@ -68,6 +68,8 @@ defmodule GlorboWeb.AuditLive do
      |> assign(:actor_filter, "")
      |> assign(:action_filter, "")
      |> assign(:q, "")
+     |> assign(:since_filter, "")
+     |> assign(:until_filter, "")
      |> assign(:offset, offset)
      |> assign(:total_lines, total)
      |> assign(:beginning, offset == 0)
@@ -142,7 +144,9 @@ defmodule GlorboWeb.AuditLive do
      socket
      |> assign(:actor_filter, Map.get(params, "actor", ""))
      |> assign(:action_filter, Map.get(params, "action", ""))
-     |> assign(:q, Map.get(params, "q", ""))}
+     |> assign(:q, Map.get(params, "q", ""))
+     |> assign(:since_filter, Map.get(params, "since", ""))
+     |> assign(:until_filter, Map.get(params, "until", ""))}
   end
 
   def handle_event("toggle", %{"id" => id}, socket) do
@@ -213,6 +217,7 @@ defmodule GlorboWeb.AuditLive do
     filtered =
       assigns.entries
       |> filter_entries(assigns.actor_filter, assigns.action_filter, assigns.q)
+      |> filter_date_range(assigns.since_filter, assigns.until_filter)
       |> Enum.reverse()
 
     assigns = assign(assigns, :filtered, filtered)
@@ -262,6 +267,24 @@ defmodule GlorboWeb.AuditLive do
           value={@action_filter}
           class="gl-input"
           placeholder="action"
+        />
+        <label for="audit-filter-since" class="gl-sr-only">Since date</label>
+        <input
+          type="date"
+          id="audit-filter-since"
+          name="since"
+          value={@since_filter}
+          class="gl-input gl-audit__date"
+          title="Show events on or after this date (UTC)"
+        />
+        <label for="audit-filter-until" class="gl-sr-only">Until date</label>
+        <input
+          type="date"
+          id="audit-filter-until"
+          name="until"
+          value={@until_filter}
+          class="gl-input gl-audit__date"
+          title="Show events on or before this date (UTC)"
         />
       </form>
 
@@ -393,6 +416,62 @@ defmodule GlorboWeb.AuditLive do
   defp detail_haystack(d) when is_binary(d), do: d
   defp detail_haystack(d) when is_map(d) or is_list(d), do: Jason.encode!(d)
   defp detail_haystack(d), do: to_string(d)
+
+  # #263 — date range filter. Accepts `"YYYY-MM-DD"` strings for
+  # `since` (inclusive, 00:00:00Z) and `until` (inclusive, 23:59:59Z).
+  # Empty strings skip the bound. Malformed dates skip silently so
+  # mid-typing (e.g. "2026-04-" in a date input) doesn't blank the
+  # list.
+  defp filter_date_range(entries, "", ""), do: entries
+
+  defp filter_date_range(entries, since, until) do
+    since_dt = parse_date_bound(since, :start)
+    until_dt = parse_date_bound(until, :end)
+
+    Enum.filter(entries, fn e ->
+      case parse_entry_ts(e["ts"]) do
+        nil -> true
+        dt -> in_range?(dt, since_dt, until_dt)
+      end
+    end)
+  end
+
+  defp in_range?(_dt, nil, nil), do: true
+  defp in_range?(dt, nil, until_dt), do: DateTime.compare(dt, until_dt) != :gt
+  defp in_range?(dt, since_dt, nil), do: DateTime.compare(dt, since_dt) != :lt
+
+  defp in_range?(dt, since_dt, until_dt) do
+    DateTime.compare(dt, since_dt) != :lt and DateTime.compare(dt, until_dt) != :gt
+  end
+
+  defp parse_date_bound("", _), do: nil
+
+  defp parse_date_bound(s, :start) when is_binary(s) do
+    case Date.from_iso8601(s) do
+      {:ok, d} -> DateTime.new!(d, ~T[00:00:00], "Etc/UTC")
+      _ -> nil
+    end
+  end
+
+  defp parse_date_bound(s, :end) when is_binary(s) do
+    case Date.from_iso8601(s) do
+      {:ok, d} -> DateTime.new!(d, ~T[23:59:59], "Etc/UTC")
+      _ -> nil
+    end
+  end
+
+  defp parse_date_bound(_, _), do: nil
+
+  defp parse_entry_ts(nil), do: nil
+
+  defp parse_entry_ts(ts) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> dt
+      _ -> nil
+    end
+  end
+
+  defp parse_entry_ts(_), do: nil
 
   # #254 — scaffold a task from an audit entry. Lands in
   # `projects/inbox/tasks/` with an audit-context footer so the

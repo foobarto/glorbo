@@ -3364,3 +3364,4 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-sidebar__badge--stuck {
   background: var(--gl-danger, #c14);
 }
+.gl-audit__date { font-family: var(--gl-ff-mono); font-size: 12px; max-width: 150px; }

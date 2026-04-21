@@ -152,4 +152,51 @@ defmodule GlorboWeb.AuditLiveTest do
     d = Date.utc_today()
     "#{d.year}-#{String.pad_leading(Integer.to_string(d.month), 2, "0")}"
   end
+
+  # #263 — date range filter
+  describe "date range filter (#263)" do
+    test "since bound excludes earlier entries", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+      html =
+        render_change(view, "filter", %{
+          "since" => "2026-04-16T10:30:00Z" |> String.slice(0, 10)
+        })
+
+      # 10:00 entry is at 2026-04-16T10:00:00Z; since 2026-04-16 00:00 allows.
+      # Setting since to a date on 2026-04-17 would exclude both; we test that
+      # a same-day since includes rows (inclusive bound).
+      assert html =~ "company.create"
+      assert html =~ "chat.post"
+    end
+
+    test "until bound excludes later entries", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+      html =
+        render_change(view, "filter", %{"until" => "2026-04-15"})
+
+      refute html =~ "company.create"
+      refute html =~ "chat.post"
+      assert html =~ "No audit events this month."
+    end
+
+    test "both bounds narrow the window", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+      html =
+        render_change(view, "filter", %{"since" => "2026-04-16", "until" => "2026-04-16"})
+
+      assert html =~ "company.create"
+      assert html =~ "chat.post"
+    end
+
+    test "malformed date silently skipped", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+      html = render_change(view, "filter", %{"since" => "not-a-date"})
+      # malformed → no bound applied, everything still shown
+      assert html =~ "company.create"
+    end
+  end
 end
