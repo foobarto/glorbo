@@ -196,6 +196,19 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 20
+
+- **Memory count badge on sidebar agent rows (GEP-21, #288).** Each
+  agent row in the company sidebar now shows a subtle `✎ N` badge
+  next to the slug when the agent has one or more memory files on
+  disk. Directors can scan memory activity across the whole roster
+  without clicking into each AgentLive Memory tab. Badge is hidden
+  for agents with no memory directory or zero matching files; count
+  uses the same filename regex as `Glorbo.Agent.Memory`
+  (`^(user|feedback|project|reference)_...\.md$`) so invalid files
+  never inflate the count. `File.ls` errors rescue to 0 — a
+  permission glitch on one agent's dir never blanks the sidebar.
+
 ### Added — round 19a
 
 - **Per-agent `network_allow:` proxy extensions (GEP-23, #283).**

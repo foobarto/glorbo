@@ -170,6 +170,14 @@ defmodule GlorboWeb.Components.Sidebar do
         aria-hidden="true"
       />
       <span class="gl-sidebar__label">{@agent.slug}</span>
+      <span
+        :if={(@agent[:memory_count] || 0) > 0}
+        class="gl-sidebar__memory-badge"
+        title={"#{@agent.memory_count} memory #{if @agent.memory_count == 1, do: "file", else: "files"}"}
+        aria-label={"#{@agent.memory_count} memory files"}
+      >
+        ✎ {@agent.memory_count}
+      </span>
       <span class="gl-sidebar__meta">{short_provider(@agent.provider)}</span>
     </.link>
     """
@@ -373,13 +381,33 @@ defmodule GlorboWeb.Components.Sidebar do
     {provider, icon} = scan_agent_md(md)
 
     company = infer_company_from_path(agents_dir)
+    memory_count = count_memory_files(agents_dir, slug)
 
     %{
       slug: slug,
       status: live_status(company, slug),
       provider: provider,
-      icon: icon
+      icon: icon,
+      memory_count: memory_count
     }
+  end
+
+  # GEP-21 (#281) — quick memory file count for the sidebar badge.
+  # Matches the filename regex used by Glorbo.Agent.Memory; File.ls
+  # is O(dir-entries), cheap enough to run on every sidebar render.
+  # Rescue → 0 so a permission error never blanks the whole sidebar.
+  @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
+
+  defp count_memory_files(agents_dir, slug) do
+    case File.ls(Path.join([agents_dir, slug, "memory"])) do
+      {:ok, entries} ->
+        Enum.count(entries, &Regex.match?(@memory_filename_re, &1))
+
+      _ ->
+        0
+    end
+  rescue
+    _ -> 0
   end
 
   # Light-weight agent.md skim — pulls `provider:` + `icon:` without

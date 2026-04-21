@@ -1122,6 +1122,17 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-subtle);
   font-size: 10px;
 }
+/* GEP-21 — memory count badge on agent sidebar row. Only shown
+   when the agent has ≥1 memory file; ✎ glyph + count. Subtle
+   accent tint so it reads as a secondary badge, not primary. */
+.gl-sidebar__memory-badge {
+  color: var(--gl-accent);
+  font-size: 10px;
+  padding: 0 4px;
+  margin-left: 4px;
+  font-family: var(--gl-ff-mono);
+  white-space: nowrap;
+}
 .gl-sidebar__nav-item--tree {
   padding-left: 14px;
   min-height: 22px;
