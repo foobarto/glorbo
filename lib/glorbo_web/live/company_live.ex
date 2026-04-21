@@ -514,6 +514,20 @@ defmodule GlorboWeb.CompanyLive do
                     <div :if={g.description != ""} class="gl-muted gl-goals-row__desc">
                       {g.description}
                     </div>
+                    <div :if={Map.get(g, :task_count, 0) > 0} class="gl-goals-row__progress">
+                      <div class="gl-goals-row__progress-bar">
+                        <div
+                          class={[
+                            "gl-goals-row__progress-fill",
+                            "gl-goals-row__progress-fill--" <> goal_progress_state(g.progress_pct)
+                          ]}
+                          style={"width: #{g.progress_pct}%"}
+                        />
+                      </div>
+                      <span class="gl-muted gl-tabular">
+                        {g.done_count} / {g.task_count} · {g.progress_pct}%
+                      </span>
+                    </div>
                   </div>
                   <.link
                     navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.slug}"}
@@ -1145,18 +1159,68 @@ defmodule GlorboWeb.CompanyLive do
   # via `goal: <slug>`. Rendered on CompanyLive + available as a
   # Kanban filter.
   defp load_goals(co_path) do
-    case File.read(Path.join(co_path, "company.md")) do
-      {:ok, content} ->
-        case Frontmatter.parse(content) do
-          {:ok, %{"goals" => goals}, _} when is_list(goals) ->
-            goals |> Enum.map(&normalize_goal/1) |> Enum.reject(&is_nil/1)
+    raw_goals =
+      case File.read(Path.join(co_path, "company.md")) do
+        {:ok, content} ->
+          case Frontmatter.parse(content) do
+            {:ok, %{"goals" => goals}, _} when is_list(goals) ->
+              goals |> Enum.map(&normalize_goal/1) |> Enum.reject(&is_nil/1)
 
-          _ ->
-            []
-        end
+            _ ->
+              []
+          end
+
+        _ ->
+          []
+      end
+
+    if raw_goals == [] do
+      []
+    else
+      task_counts = collect_goal_task_counts(co_path)
+
+      Enum.map(raw_goals, fn goal ->
+        {total, done} = Map.get(task_counts, goal.slug, {0, 0})
+        pct = if total == 0, do: 0, else: div(done * 100, total)
+        Map.merge(goal, %{task_count: total, done_count: done, progress_pct: pct})
+      end)
+    end
+  end
+
+  # Walk every project's tasks once, counting total + done per goal
+  # slug. Returns %{goal_slug => {total, done}}.
+  defp collect_goal_task_counts(co_path) do
+    projects_dir = Path.join(co_path, "projects")
+
+    case File.ls(projects_dir) do
+      {:ok, projects} -> Enum.reduce(projects, %{}, &fold_project(&1, projects_dir, &2))
+      _ -> %{}
+    end
+  end
+
+  defp fold_project(project, projects_dir, acc) do
+    tasks_dir = Path.join([projects_dir, project, "tasks"])
+
+    case File.ls(tasks_dir) do
+      {:ok, files} ->
+        Enum.reduce(files, acc, fn file, inner ->
+          fold_task(Path.join(tasks_dir, file), inner)
+        end)
 
       _ ->
-        []
+        acc
+    end
+  end
+
+  defp fold_task(path, acc) do
+    with {:ok, content} <- File.read(path),
+         {:ok, fm, _body} <- Frontmatter.parse(content),
+         goal when is_binary(goal) and goal != "" <- fm["goal"] do
+      status = to_string(fm["status"] || "todo")
+      delta = if status == "done", do: {1, 1}, else: {1, 0}
+      Map.update(acc, goal, delta, fn {t, d} -> {t + elem(delta, 0), d + elem(delta, 1)} end)
+    else
+      _ -> acc
     end
   end
 
@@ -1854,6 +1918,13 @@ defmodule GlorboWeb.CompanyLive do
   rescue
     _ -> ~w(claude-code codex gemini-cli hermes opencode pi)
   end
+
+  # Mirrors GoalsLive.progress_state/1 (kept duplicated rather than
+  # imported to avoid coupling two LiveViews across their helper
+  # modules).
+  defp goal_progress_state(pct) when pct >= 100, do: "done"
+  defp goal_progress_state(pct) when pct >= 50, do: "mid"
+  defp goal_progress_state(_), do: "start"
 
   defp format_cost_cents(cents) when is_integer(cents) do
     whole = div(cents, 100)

@@ -81,6 +81,54 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert html =~ "kanban?goal=q4-launch"
   end
 
+  # #253 part 2 — goal progress mini-bar renders when tasks
+  # reference the goal via `goal:` frontmatter.
+  test "goals panel shows progress bar with done/total",
+       %{conn: conn, base: base} do
+    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    ---
+    slug: acme
+    name: Acme
+    goals:
+      - slug: q4-launch
+        title: Launch v2
+        status: active
+    ---
+    """)
+
+    tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    File.write!(Path.join([base, "companies/acme/projects/foo/project.md"]), """
+    ---
+    slug: foo
+    name: foo
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "foo-1.md"), """
+    ---
+    title: task-1
+    status: done
+    goal: q4-launch
+    ---
+    """)
+
+    File.write!(Path.join(tasks_dir, "foo-2.md"), """
+    ---
+    title: task-2
+    status: todo
+    goal: q4-launch
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme")
+    assert html =~ "gl-goals-row__progress"
+    assert html =~ "gl-goals-row__progress-fill--mid"
+    assert html =~ "1 / 2"
+    assert html =~ "50%"
+  end
+
   describe "wizard chain (paperclip-ux-gaps §13)" do
     test "?wizard=new_agent opens the new-agent modal with step marker",
          %{conn: conn} do

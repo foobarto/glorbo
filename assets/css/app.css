@@ -3320,3 +3320,28 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
+
+/* Goals progress mini-bar on CompanyLive goals panel (#253 part 2). */
+.gl-goals-row__progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: var(--gl-ff-mono);
+}
+.gl-goals-row__progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--gl-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 200px;
+}
+.gl-goals-row__progress-fill {
+  height: 100%;
+  background: var(--gl-accent);
+}
+.gl-goals-row__progress-fill--start { background: var(--gl-fg-subtle); }
+.gl-goals-row__progress-fill--mid   { background: var(--gl-warning); }
+.gl-goals-row__progress-fill--done  { background: var(--gl-accent); }
