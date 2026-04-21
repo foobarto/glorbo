@@ -64,6 +64,7 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:rel_path, rel_path)
        |> assign(:project, project)
        |> assign(:task, to_detail(task))
+       |> assign(:usage_totals, load_usage_totals(base, co, rel_path))
        |> ChatDrawer.State.wire_drawer()}
     else
       _ ->
@@ -294,6 +295,23 @@ defmodule GlorboWeb.TaskLive do
         </div>
       </header>
 
+      <aside class="gl-task-page__usage" aria-label="Usage totals across dispatches">
+        <div class="gl-task-page__usage-row">
+          <span class="gl-task-page__usage-label">dispatches</span>
+          <span class="gl-tabular">{@usage_totals.dispatch_count}</span>
+        </div>
+        <div class="gl-task-page__usage-row">
+          <span class="gl-task-page__usage-label">tokens</span>
+          <span class="gl-tabular">
+            {@usage_totals.prompt_tokens} in / {@usage_totals.completion_tokens} out
+          </span>
+        </div>
+        <div class="gl-task-page__usage-row">
+          <span class="gl-task-page__usage-label">cost</span>
+          <span class="gl-tabular">{format_cost(@usage_totals.cost_usd_cents)}</span>
+        </div>
+      </aside>
+
       <div class="gl-task-page__grid">
         <section class="gl-panel">
           <header class="gl-panel__header">
@@ -338,4 +356,56 @@ defmodule GlorboWeb.TaskLive do
     </section>
     """
   end
+
+  # #252 — aggregate tokens + cost for this specific task across
+  # every `agent.complete` in the current month's audit. Audit is
+  # append-only so one pass is cheap; older months are reachable
+  # via AuditLive.
+  defp load_usage_totals(base, co, rel_path) do
+    month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
+
+    case File.read(path) do
+      {:ok, content} ->
+        content
+        |> String.split("\n", trim: true)
+        |> Enum.reduce(
+          %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0},
+          fn line, acc -> accumulate_usage(line, rel_path, acc) end
+        )
+
+      _ ->
+        %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
+    end
+  rescue
+    _ -> %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
+  end
+
+  defp accumulate_usage(line, rel_path, acc) do
+    case Jason.decode(line) do
+      {:ok, %{"action" => "agent.complete", "target" => ^rel_path, "detail" => detail}}
+      when is_map(detail) ->
+        %{
+          prompt_tokens: acc.prompt_tokens + (detail["prompt_tokens"] || 0),
+          completion_tokens: acc.completion_tokens + (detail["completion_tokens"] || 0),
+          cost_usd_cents: acc.cost_usd_cents + (detail["cost_usd_cents"] || 0),
+          dispatch_count: acc.dispatch_count + 1
+        }
+
+      _ ->
+        acc
+    end
+  end
+
+  # #246 rule — tokens always, cost only when pricing known
+  # (non-zero total means at least one dispatch had cost data).
+  defp format_cost(0), do: "—"
+
+  defp format_cost(cents) when is_integer(cents) do
+    whole = div(cents, 100)
+    cents_part = rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0")
+    "$#{whole}.#{cents_part}"
+  end
+
+  defp format_cost(_), do: "—"
 end

@@ -3268,3 +3268,27 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-budget-strip__fill--alert { background: var(--gl-warning); }
 .gl-budget-strip__fill--stop  { background: var(--gl-danger, #c14); }
 .gl-budget-strip__text  { text-align: right; color: var(--gl-fg); }
+
+/* Task detail usage strip (#252). */
+.gl-task-page__usage {
+  display: flex;
+  gap: var(--gl-space-lg);
+  padding: 8px var(--gl-space-md);
+  margin-bottom: var(--gl-space-md);
+  border: 1px solid var(--gl-border-faint);
+  border-radius: 2px;
+  background: var(--gl-surface);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-task-page__usage-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.gl-task-page__usage-label {
+  color: var(--gl-fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 10px;
+}

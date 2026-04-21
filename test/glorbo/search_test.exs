@@ -110,7 +110,7 @@ defmodule Glorbo.SearchTest do
         }
       ]
 
-      content = lines |> Enum.map(&Jason.encode!/1) |> Enum.join("\n")
+      content = Enum.map_join(lines, "\n", &Jason.encode!/1)
       File.write!(path, content <> "\n")
       :ok
     end

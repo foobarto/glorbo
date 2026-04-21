@@ -110,4 +110,72 @@ defmodule GlorboWeb.TaskLiveTest do
 
     assert deleted != []
   end
+
+  # #252 — TaskLive renders a usage strip showing aggregated
+  # tokens + cost + dispatch count for this task across the
+  # current month's audit.
+  describe "usage totals (#252)" do
+    setup %{base: base} do
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      File.mkdir_p!(audit_dir)
+
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      lines = [
+        %{
+          "action" => "agent.complete",
+          "target" => "projects/foo/tasks/foo-1.md",
+          "detail" => %{
+            "prompt_tokens" => 100,
+            "completion_tokens" => 50,
+            "cost_usd_cents" => 25
+          }
+        },
+        %{
+          "action" => "agent.complete",
+          "target" => "projects/foo/tasks/foo-1.md",
+          "detail" => %{
+            "prompt_tokens" => 200,
+            "completion_tokens" => 80,
+            "cost_usd_cents" => 44
+          }
+        },
+        # Different task — should NOT count.
+        %{
+          "action" => "agent.complete",
+          "target" => "projects/foo/tasks/other-1.md",
+          "detail" => %{
+            "prompt_tokens" => 999,
+            "completion_tokens" => 999,
+            "cost_usd_cents" => 999
+          }
+        }
+      ]
+
+      content = Enum.map_join(lines, "\n", &Jason.encode!/1)
+      File.write!(path, content <> "\n")
+      :ok
+    end
+
+    test "sums tokens + cost for matching target", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+      assert html =~ "dispatches"
+      assert html =~ "tokens"
+      assert html =~ "cost"
+      # Aggregated: 300 in, 130 out, $0.69 (69 cents).
+      assert html =~ "300 in / 130 out"
+      assert html =~ "0.69"
+      # Dispatch count should be 2.
+      assert html =~ ">2<"
+    end
+  end
+
+  test "renders usage strip with zeros when no audit entries",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-1")
+    assert html =~ "dispatches"
+    assert html =~ "0 in / 0 out"
+    assert html =~ "—"
+  end
 end

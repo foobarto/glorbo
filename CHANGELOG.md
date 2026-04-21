@@ -133,6 +133,10 @@ change between minor versions. Pin exact versions in downstream usage.
   results carry `kind: audit` and navigate to the company's
   audit page; task-title and audit-row hits rank together so
   the single best match wins the top slot.
+- **TaskLive usage strip (#252)** — dedicated task pages now
+  show aggregated tokens + cost + dispatch count across all
+  this task's `agent.complete` audits for the current month.
+  Follows the #246 rule: tokens always, cost `—` when zero.
 
 ### Changed
 
