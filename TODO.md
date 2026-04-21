@@ -78,3 +78,6 @@ it's been in CHANGELOG for a cycle.
 - [x] #268 TaskScheduler fires scheduled dispatches
 - [x] #269 UI pass: modal __body CSS, topbar overflow, `×` glyph
 - [x] CLAUDE.md: agent-browser Bazzite workaround documented
+- [x] GEP-24 retrofit + TaskLive next-fire indicator (#270)
+- [x] UAT Round 7 — 23 cases green via browser (UAT.md)
+- [x] #271 Fix `glorbo up` crash on hosts without EPMD daemon

@@ -198,6 +198,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **`glorbo up` crash when EPMD not running (#271).** Cold-boot
+  timing: `glorbo doctor` 145ms, `glorbo status` 141ms, warm
+  `glorbo up → running` 417ms. Cold `glorbo up` on a host with
+  no EPMD crashed immediately with `econnrefused` on port 4369
+  (Burrito ships ERTS but not a running EPMD; `Node.start/2`
+  with `:longnames` needs one). `Glorbo.CLI.Lifecycle.
+  Distribution.start/0` now spawns `epmd -daemon` itself before
+  the first `Node.start`. The call is idempotent (epmd refuses
+  to double-bind). Prefer the `epmd` shipped with the current
+  ERTS release (via `:code.root_dir/0`) over `$PATH` so the
+  Burrito binary always gets a matching version.
 - **Inbox deny modal styling (#269).** The deny-prompt modal in
   InboxLive used `gl-modal__body` + bare `gl-form__row` /
   `gl-form__label` classes that had no CSS backing — rendering the

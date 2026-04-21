@@ -47,6 +47,8 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
   end
 
   defp do_start do
+    ensure_epmd()
+
     case Node.start(@canonical_node, :longnames) do
       {:ok, _pid} ->
         :ok
@@ -57,6 +59,26 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Burrito ships ERTS but not a running EPMD. If none is listening on
+  # port 4369 yet, `Node.start(_, :longnames)` crashes with
+  # `econnrefused` ~100ms after start. Spawn the daemon ourselves —
+  # epmd refuses to double-bind, so this is idempotent. No PATH search
+  # drama needed: Erlang ships `epmd` next to the current ERTS binary,
+  # same dir as `erl`.
+  defp ensure_epmd do
+    epmd =
+      Path.join(
+        :code.root_dir() |> to_string() |> Path.join("erts-#{:erlang.system_info(:version)}"),
+        "bin/epmd"
+      )
+
+    epmd = if File.exists?(epmd), do: epmd, else: "epmd"
+    _ = System.cmd(epmd, ["-daemon"], stderr_to_stdout: true)
+    :ok
+  rescue
+    _ -> :ok
   end
 
   @spec canonical_node() :: atom()
