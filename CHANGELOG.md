@@ -10,6 +10,14 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.0.4] — 2026-04-21
+
+Large release spanning browser-UAT rounds R14–R24 plus the GEP-20
+director-dashboard UX sweep. Headline additions: file-based agent
+memory (GEP-21) end-to-end, natural-language scheduler parser, per-
+agent proxy allowlist extensions (GEP-23), loop-detector sentinel
+resolution contract unification, and the unified Inbox.
+
 ### Added — director dashboard UX sweep (rounds 2+3, GEP-20)
 
 - **Unified director inbox (`/companies/<co>/inbox`)** with Mine /
@@ -1088,7 +1096,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/foobarto/glorbo/releases/tag/v0.0.4
 [0.0.3]: https://github.com/foobarto/glorbo/releases/tag/v0.0.3
 [0.0.2]: https://github.com/foobarto/glorbo/releases/tag/v0.0.2
 [0.0.1]: https://github.com/foobarto/glorbo/releases/tag/v0.0.1
