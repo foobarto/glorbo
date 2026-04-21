@@ -196,6 +196,21 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 13
+
+- **Heartbeat cron validation on AgentLive config save (#277).**
+  The AGENT.md edit form used to accept any string for the
+  `heartbeat:` field — malformed crons saved silently and the
+  scheduler would log `scheduler.invalid_cron` and skip forever,
+  leaving directors puzzled about why the agent never woke.
+  Save now validates via the same Crontab parser the scheduler
+  uses, failing inline with a concrete error (`"Invalid
+  heartbeat cron: <reason>. Expected a 5-field cron (e.g. \"0
+  * * * *\") or blank for no heartbeat."`). Blank = no-heartbeat
+  agent, still valid. Form stays in edit mode on failure so the
+  fix doesn't lose the director's typed state. 2 new regression
+  tests cover the invalid and blank paths.
+
 ### Added — round 12
 
 - **Task-ID autolinking in comments (#276).** Task-ID tokens

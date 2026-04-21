@@ -74,6 +74,53 @@ defmodule GlorboWeb.AgentLiveTest do
       assert content =~ "network: outgoing"
     end
 
+    # #277 — reject an invalid heartbeat cron before it reaches disk.
+    # Malformed cron used to save silently and the heartbeat scheduler
+    # would log-and-skip forever; directors had no feedback.
+    test "config_save rejects invalid heartbeat cron with inline error",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "claude-code",
+          "model" => "claude-sonnet-4-5",
+          "reports_to" => "",
+          "heartbeat" => "wutang-clan",
+          "network" => "outgoing"
+        })
+
+      assert html =~ "Invalid heartbeat cron"
+      # Still in edit mode — nothing saved yet.
+      assert html =~ ~s(phx-submit="config_save")
+
+      # AGENT.md untouched (no "wutang-clan" present).
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      refute agent_md =~ "wutang-clan"
+    end
+
+    test "config_save accepts blank heartbeat (no-heartbeat agent)",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      render_submit(view, "config_save", %{
+        "provider" => "claude-code",
+        "model" => "claude-sonnet-4-5",
+        "reports_to" => "",
+        "heartbeat" => "",
+        "network" => "outgoing"
+      })
+
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      assert agent_md =~ "provider: claude-code"
+    end
+
     test "cancel returns to read-only view without writing", %{conn: conn, base: base} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
       render_click(view, "config_edit", %{})

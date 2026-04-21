@@ -394,6 +394,26 @@ defmodule GlorboWeb.AgentLive do
     do: {:noreply, assign(socket, :config_editing?, false)}
 
   def handle_event("config_save", params, socket) do
+    # #277 — validate heartbeat cron before touching disk. A
+    # malformed cron used to save silently and the heartbeat
+    # scheduler would just log + skip forever; directors saw no
+    # reason the agent wasn't waking. Now the save fails inline
+    # with a concrete parser error.
+    case validate_heartbeat(params["heartbeat"]) do
+      :ok ->
+        do_config_save(params, socket)
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Invalid heartbeat cron: #{reason}. Expected a 5-field cron (e.g. \"0 * * * *\") or blank for no heartbeat."
+         )}
+    end
+  end
+
+  defp do_config_save(params, socket) do
     agent_md =
       Glorbo.Agent.FileLayout.agent_md(
         Path.join([
@@ -433,6 +453,21 @@ defmodule GlorboWeb.AgentLive do
         {:noreply, put_flash(socket, :error, "Could not save config: #{inspect(reason)}")}
     end
   end
+
+  # Blank / nil heartbeat = no-heartbeat agent (valid). Otherwise
+  # delegate to Crontab.CronExpression.Parser so any 5-field cron
+  # the scheduler accepts is allowed here.
+  defp validate_heartbeat(nil), do: :ok
+  defp validate_heartbeat(""), do: :ok
+
+  defp validate_heartbeat(cron) when is_binary(cron) do
+    case Crontab.CronExpression.Parser.parse(String.trim(cron)) do
+      {:ok, _expr} -> :ok
+      {:error, reason} -> {:error, to_string(reason)}
+    end
+  end
+
+  defp validate_heartbeat(_), do: {:error, "not a string"}
 
   defp soft_delete(socket, rel) do
     with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
