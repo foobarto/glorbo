@@ -630,7 +630,7 @@ defmodule GlorboWeb.AgentLive do
             <StatusPill.status_pill status={@detail.pill_status} label={@detail.pill_label} />
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">~/.glorbo/companies/{@company_slug}/agents/</span>{@agent_slug}<span class="gl-muted">/AGENT.md</span>
+            <span class="gl-muted">{GlorboWeb.LiveHelpers.display_base()}/companies/{@company_slug}/agents/</span>{@agent_slug}<span class="gl-muted">/AGENT.md</span>
           </p>
           <p :if={@working_on} class="gl-agent-detail__working-on gl-muted">
             working on <span class="gl-tabular">{@working_on}</span>

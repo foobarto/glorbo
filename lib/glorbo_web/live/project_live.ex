@@ -157,7 +157,7 @@ defmodule GlorboWeb.ProjectLive do
             <span class="gl-muted">· {@project_slug}</span>
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">~/.glorbo/companies/{@company_slug}/projects/</span>{@project_slug}<span class="gl-muted">/project.md</span>
+            <span class="gl-muted">{GlorboWeb.LiveHelpers.display_base()}/companies/{@company_slug}/projects/</span>{@project_slug}<span class="gl-muted">/project.md</span>
           </p>
         </div>
         <div class="gl-overview__actions">

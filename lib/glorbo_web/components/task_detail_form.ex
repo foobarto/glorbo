@@ -149,7 +149,7 @@ defmodule GlorboWeb.Components.TaskDetailForm do
 
       <footer :if={@include_footer} class="gl-task-detail__footer">
         <span class="gl-muted gl-task-detail__path">
-          ~/.glorbo/companies/{@company_slug}/{@task.task_path}
+          {GlorboWeb.LiveHelpers.display_base()}/companies/{@company_slug}/{@task.task_path}
         </span>
         <div class="gl-task-detail__actions">
           <button

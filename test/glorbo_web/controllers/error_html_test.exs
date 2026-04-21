@@ -5,18 +5,20 @@ defmodule GlorboWeb.ErrorHTMLTest do
   import Phoenix.Template, only: [render_to_string: 4]
 
   test "renders 404.html" do
-    # Plan 04-03: 404 template carries 04-UI-SPEC §Error states copy.
+    # R32: path labels route through display_base() — resolves to
+    # `~/.glorbo` for default home, absolute override otherwise
+    # (tests typically set GLORBO_HOME to /tmp/...). Assert the
+    # suffix rather than the base.
     html = render_to_string(GlorboWeb.ErrorHTML, "404", "html", [])
     assert html =~ "Not found."
-    assert html =~ "~/.glorbo/companies/"
+    assert html =~ "/companies/"
     assert html =~ "glorbo reindex"
   end
 
   test "renders 500.html" do
-    # Plan 04-03: 500 template carries 04-UI-SPEC §Error states copy.
     html = render_to_string(GlorboWeb.ErrorHTML, "500", "html", [])
     assert html =~ "Something broke."
-    assert html =~ "~/.glorbo/logs/"
+    assert html =~ "/logs/"
   end
 
   test "falls back to Phoenix status-message for other templates" do

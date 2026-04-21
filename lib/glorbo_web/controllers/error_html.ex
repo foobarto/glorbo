@@ -23,7 +23,8 @@ defmodule GlorboWeb.ErrorHTML do
     <section class="gl-view">
       <h1 class="gl-heading gl-heading--display">Not found.</h1>
       <p class="gl-muted">
-        Check <code>~/.glorbo/companies/</code> or run <code>glorbo reindex</code>.
+        Check <code>{GlorboWeb.LiveHelpers.display_base()}/companies/</code>
+        or run <code>glorbo reindex</code>.
       </p>
     </section>
     """
@@ -34,7 +35,8 @@ defmodule GlorboWeb.ErrorHTML do
     <section class="gl-view">
       <h1 class="gl-heading gl-heading--display">Something broke.</h1>
       <p class="gl-muted">
-        Check <code>~/.glorbo/logs/</code> and report at github.com/foobarto/glorbo.
+        Check <code>{GlorboWeb.LiveHelpers.display_base()}/logs/</code>
+        and report at github.com/foobarto/glorbo.
       </p>
     </section>
     """

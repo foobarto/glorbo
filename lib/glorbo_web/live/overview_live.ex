@@ -128,7 +128,7 @@ defmodule GlorboWeb.OverviewLive do
       <div :if={@companies == []} class="gl-empty">
         <p>No companies yet.</p>
         <p class="gl-muted">
-          A company is a directory under <code>~/.glorbo/companies/</code>.
+          A company is a directory under <code>{GlorboWeb.LiveHelpers.display_base()}/companies/</code>.
           Run <code>glorbo new company acme</code> then refresh.
         </p>
         <p class="gl-muted">
@@ -223,7 +223,7 @@ defmodule GlorboWeb.OverviewLive do
               </span>
             </label>
             <p class="gl-muted" style="font-size: 11px;">
-              Creates <code>~/.glorbo/companies/&lt;slug&gt;/</code>
+              Creates <code>{GlorboWeb.LiveHelpers.display_base()}/companies/&lt;slug&gt;/</code>
               with <code>company.md</code>, <code>agents/</code>, <code>projects/</code>, <code>channels/</code>,
               <code>audit/</code>
               scaffolding. You can edit <code>company.md</code>

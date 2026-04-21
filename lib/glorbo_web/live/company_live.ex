@@ -236,7 +236,7 @@ defmodule GlorboWeb.CompanyLive do
             {@company_name} <span class="gl-muted">/ overview</span>
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">~/.glorbo/companies/</span>{@company_slug}<span class="gl-muted">/company.md</span>
+            <span class="gl-muted">{GlorboWeb.LiveHelpers.display_base()}/companies/</span>{@company_slug}<span class="gl-muted">/company.md</span>
           </p>
           <p class="gl-overview__quote">
             // Company status at a glance: agents, projects, budget, activity.
@@ -265,7 +265,7 @@ defmodule GlorboWeb.CompanyLive do
             class="gl-btn"
             phx-click="backup"
             phx-disable-with="⇩ archiving…"
-            title="Create ~/.glorbo/backups/YYYY-MM-DD.tar.zst snapshot (live)"
+            title={"Create #{GlorboWeb.LiveHelpers.display_base()}/backups/YYYY-MM-DD.tar.zst snapshot (live)"}
             data-confirm="Create a backup archive now? This reads the live WAL while agents run — safe for snapshots but not for byte-exact restore testing."
           >
             ⇩ backup

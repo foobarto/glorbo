@@ -64,7 +64,7 @@ defmodule GlorboWeb.ProvidersLive do
             <span class="gl-muted">providers /</span> registry
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">priv/providers/*.toml · </span>~/.glorbo/providers.toml
+            <span class="gl-muted">priv/providers/*.toml · </span>{GlorboWeb.LiveHelpers.display_base()}/providers.toml
           </p>
           <p class="gl-overview__quote">
             // Config-driven, not code-driven. Add a TOML file, get a new provider.
@@ -131,7 +131,7 @@ defmodule GlorboWeb.ProvidersLive do
 
       <p :if={@providers == []} class="gl-muted">
         No providers declared. Ship built-ins via <code>priv/providers/*.toml</code>
-        or drop user-declared entries at <code>~/.glorbo/providers.toml</code>.
+        or drop user-declared entries at <code>{GlorboWeb.LiveHelpers.display_base()}/providers.toml</code>.
       </p>
     </section>
     """

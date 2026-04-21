@@ -374,7 +374,9 @@ defmodule GlorboWeb.TaskLive do
             <span class="gl-muted">task /</span> {@task.task_id}
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">~/.glorbo/companies/{@company_slug}/{@rel_path}</span>
+            <span class="gl-muted">
+              {GlorboWeb.LiveHelpers.display_base()}/companies/{@company_slug}/{@rel_path}
+            </span>
           </p>
         </div>
         <div class="gl-overview__actions">

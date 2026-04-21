@@ -80,7 +80,7 @@ defmodule GlorboWeb.SkillsLive do
           </h1>
           <p class="gl-overview__path">
             <span class="gl-muted">
-              builtins ship under <code>priv/templates/skills/</code>; overrides live under <code>~/.glorbo/skills/</code>.
+              builtins ship under <code>priv/templates/skills/</code>; overrides live under <code>{GlorboWeb.LiveHelpers.display_base()}/skills/</code>.
             </span>
           </p>
         </div>
