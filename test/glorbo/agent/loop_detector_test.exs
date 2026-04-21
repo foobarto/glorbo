@@ -351,6 +351,29 @@ defmodule Glorbo.Agent.LoopDetectorTest do
                )
     end
 
+    test "explicit nil audit_fun falls back to default (R23 regression)", ctx do
+      # apply_one_resolution forwards Keyword.get(opts, :audit_fun),
+      # which returns nil when the key is absent upstream. resolve/5
+      # must coerce nil to the default rather than trying to call it
+      # as a function. Default routes to Glorbo.Company.AuditLog via
+      # the per-company Registry; with no company supervisor running,
+      # the call exits, but `emit_resolved_audit` catches that.
+      # Assertion: resolve returns :ok (no propagating crash) and
+      # the sentinel gets deleted.
+
+      assert :ok =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :retry,
+                 ctx.base,
+                 ctx.company,
+                 actor: "director",
+                 audit_fun: nil
+               )
+
+      refute File.exists?(ctx.sentinel)
+    end
+
     test "custom actor propagates to audit", ctx do
       me = self()
       audit_fun = fn co, entry -> send(me, {:audit, co, entry}) end

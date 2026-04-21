@@ -196,6 +196,41 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Fixed — round 23 (browser UAT regression)
+
+- **`agent.loop_resolved` audit row was missing in production
+  (#291).** Browser UAT of the R21 file-drop resolution flow
+  found that resolution files were being cleaned up, but no
+  `agent.loop_resolved` audit row ever landed on disk. Three
+  bugs compounded:
+
+  1. `apply_one_resolution` always forwards
+     `audit_fun: Keyword.get(opts, :audit_fun)` — nil when the
+     caller (InboxLive/TaskLive load_stuck) didn't pass one.
+     `resolve/5` used `Keyword.get_lazy`, which only fires when
+     the key is *absent*, not when the value is nil — so
+     `audit_fun` was `nil` and `nil.(company, entry)` raised.
+  2. `emit_resolved_audit`'s rescue clause caught exceptions but
+     not `:exit` signals; the compounding `GenServer.call` to a
+     non-registered process raised exit, not a rescuable error.
+  3. The default audit_fun called `AuditLog.append/1` (singleton),
+     but AuditLog is started *per-company* under
+     `Glorbo.Agent.Registry` — there is no singleton. The audit
+     sink was therefore pointed at a non-existent process.
+
+  Fixes: (a) coerce nil → default in `resolve/5`, (b) add
+  `catch :exit, _ -> :ok` to `emit_resolved_audit`, (c) rewrite
+  `default_audit_fun` to resolve the per-company audit server
+  via Registry (same pattern as
+  `Glorbo.Agent.Dispatch.default_audit_fun/2`). R23 verified
+  end-to-end: file-drop → resolve → audit row written to
+  `companies/acme/audit/2026-04.jsonl` with actor
+  `agent:engineer` + decision `retry`.
+
+  Test: +1 regression case asserting `resolve/5` with
+  `audit_fun: nil` returns `:ok` and removes the sentinel,
+  without propagating a crash.
+
 ### Fixed — round 22 (browser UAT)
 
 - **Sidebar memory badge glyph (#290).** R20 used `✎` (U+270E) as

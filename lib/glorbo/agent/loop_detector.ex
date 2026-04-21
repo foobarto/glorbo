@@ -344,7 +344,16 @@ defmodule Glorbo.Agent.LoopDetector do
   def resolve(abs_sentinel, decision, base, company, opts \\ [])
       when decision in @resolution_decisions do
     actor = Keyword.get(opts, :actor, "director")
-    audit_fun = Keyword.get_lazy(opts, :audit_fun, fn -> default_audit_fun() end)
+    # Coerce a nil `:audit_fun` to the default: get_lazy only fires
+    # when the key is ABSENT, and apply_one_resolution forwards the
+    # key whether or not the caller provided one. Without this,
+    # button-driven resolutions silently miss the audit row. (R23
+    # UAT found this.)
+    audit_fun =
+      case Keyword.get(opts, :audit_fun) do
+        nil -> default_audit_fun()
+        fun when is_function(fun, 2) -> fun
+      end
 
     with {:ok, content} <- File.read(abs_sentinel),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
@@ -455,6 +464,13 @@ defmodule Glorbo.Agent.LoopDetector do
     :ok
   rescue
     _ -> :ok
+  catch
+    # `GenServer.call` to a non-existent named process raises an
+    # `:exit`, not an exception — `rescue` wouldn't catch it. Audit
+    # logging failing should never propagate: the sentinel is
+    # already cleared, and forcing a retry on an audit-only error
+    # would create a resolution loop.
+    :exit, _ -> :ok
   end
 
   defp default_fs_fun do
@@ -465,8 +481,26 @@ defmodule Glorbo.Agent.LoopDetector do
     }
   end
 
+  # AuditLog is per-company under Glorbo.Agent.Registry —
+  # not a global singleton. Resolve the {:via, Registry, ...} name
+  # from the company slug, falling back to the bare module name
+  # (the `_system` audit log, if one is running). Same pattern as
+  # `Glorbo.Agent.Dispatch.default_audit_fun/2`.
   defp default_audit_fun,
     do: fn company, entry ->
-      AuditLog.append(Map.put(entry, :company, company))
+      server =
+        case Elixir.Registry.lookup(
+               Glorbo.Agent.Registry,
+               {:company_child, company, :audit_log}
+             ) do
+          [{_pid, _}] ->
+            {:via, Elixir.Registry,
+             {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
+
+          _ ->
+            AuditLog
+        end
+
+      AuditLog.append(server, Map.put(entry, :company, company))
     end
 end
