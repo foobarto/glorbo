@@ -194,6 +194,73 @@ defmodule GlorboWeb.AgentLiveTest do
     assert html =~ "No runs yet"
   end
 
+  # R17b — Memory tab on agent detail. Surfaces agent memory files
+  # (GEP-21) so directors can read what the agent has remembered
+  # without shelling into the filesystem.
+  describe "memory tab (GEP-21, R17b)" do
+    test "empty state when no memory dir", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "tab", %{"tab" => "memory"})
+      assert html =~ "No memories yet"
+    end
+
+    test "lists memory files with frontmatter", %{conn: conn, base: base} do
+      memory_dir = Path.join([base, "companies/acme/agents/ceo/memory"])
+      File.mkdir_p!(memory_dir)
+
+      File.write!(Path.join(memory_dir, "feedback_tone.md"), """
+      ---
+      name: Director tone
+      description: concise, dry, no emoji
+      type: feedback
+      ---
+
+      Rule: keep replies short.
+      """)
+
+      File.write!(Path.join(memory_dir, "MEMORY.md"), """
+      - [Director tone](feedback_tone.md) — concise, dry, no emoji
+      """)
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "tab", %{"tab" => "memory"})
+
+      # Index section.
+      assert html =~ "MEMORY.md"
+      assert html =~ "Director tone"
+      # Individual entry.
+      assert html =~ "feedback_tone.md"
+      assert html =~ "concise, dry, no emoji"
+      assert html =~ "Rule: keep replies short"
+      # Type pill.
+      assert html =~ "gl-pill--feedback"
+    end
+
+    test "filters out invalid filenames", %{conn: conn, base: base} do
+      memory_dir = Path.join([base, "companies/acme/agents/ceo/memory"])
+      File.mkdir_p!(memory_dir)
+
+      File.write!(Path.join(memory_dir, "feedback_ok.md"), """
+      ---
+      name: valid memory
+      type: feedback
+      ---
+
+      keep me
+      """)
+
+      File.write!(Path.join(memory_dir, "random_nope.md"), "invalid type prefix")
+      File.write!(Path.join(memory_dir, "not_markdown.txt"), "ignored")
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "tab", %{"tab" => "memory"})
+
+      assert html =~ "valid memory"
+      refute html =~ "invalid type prefix"
+      refute html =~ "not_markdown.txt"
+    end
+  end
+
   test "+ assign task button links to Kanban with assignee prefilled",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/ceo")

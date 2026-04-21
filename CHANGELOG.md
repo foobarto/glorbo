@@ -196,6 +196,51 @@ change between minor versions. Pin exact versions in downstream usage.
   landed the `schedule:` frontmatter field was rendered
   but never actually fired anything.
 
+### Added — round 17b/17c
+
+- **Agent memory writing — outbox → Router → disk (GEP-21, #284).**
+  `Glorbo.Company.Router` now classifies two new outbox paths:
+  - `agents/<slug>/outbox/memory/<type>_<topic>.md` → atomic
+    write to `memory/<type>_<topic>.md` + upsert MEMORY.md index
+    line + `memory.write` audit.
+  - `agents/<slug>/outbox/memory/delete/<type>_<topic>.md` →
+    delete the memory file + remove index line +
+    `memory.delete` audit.
+
+  Validation: filename matches `<type>_<topic>.md` (type ∈
+  user|feedback|project|reference); body ≤ 8 KB; frontmatter
+  `type:` matches filename prefix. On any failure, a
+  `memory.rejected` audit lands and the outbox file is dropped
+  so the agent doesn't retry forever on bad input.
+
+  Atomic: tmp+rename on each write. Index uses match-by-
+  filename dedup so repeat writes to the same memory replace
+  a single line, not append duplicates. When the last memory
+  goes, MEMORY.md is removed entirely.
+
+  6 new unit tests on Router (write, replace, type-mismatch,
+  oversize, invalid-filename fall-through, delete). Full suite
+  1309/1309 green.
+
+- **Memory tab on AgentLive (#284 UI).** New tab next to
+  `history` surfaces MEMORY.md + each memory file's frontmatter
+  name/description + body, sorted newest-first with relative
+  mtime (`3 h ago`, `yesterday`). Type pill colours the row.
+  Directors read agent memory without shell access. 3 new unit
+  tests cover empty state, populated list, filename filter.
+
+- **E2E memory with real CLI agent (#285).** Two new
+  `:live_model` tests in `test/integration/opencode_lmstudio_
+  live_test.exs` — skipped when LM Studio isn't serving qwen.
+  (1) Seeds a unique token in memory, asks the model to
+  recall, asserts the reply contains it (memory read path
+  proven end-to-end with a real model). (2) Asks the model to
+  write a memory via the outbox routing contract, pokes the
+  Router with a simulated inotify event, asserts the file
+  landed in `memory/` with correct content + index upserted +
+  `memory.write` audit emitted. Both pass against live qwen
+  3.6-35b on LM Studio.
+
 ### Added — round 17
 
 - **Agent memory reading (GEP-21 / #281 MVP).** New

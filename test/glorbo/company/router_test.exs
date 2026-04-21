@@ -609,4 +609,154 @@ defmodule Glorbo.Company.RouterTest do
     refute File.exists?(Path.join(comments_dir, "blog-2.md"))
     assert_receive {:audit, %{action: "task.comment", target: "blog-2"}}
   end
+
+  # GEP-21 (#17b) — agent memory write path. Agent drops
+  # `agents/<sender>/outbox/memory/<type>_<topic>.md`; Router
+  # validates + atomic-writes to `memory/<type>_<topic>.md` +
+  # upserts MEMORY.md + emits `memory.write`.
+  describe "memory write routing (GEP-21)" do
+    setup do
+      base = TmpGlorboHome.setup()
+      scaffold_company(base, ["ceo"])
+      {name, _pid} = start_router!(base)
+      memory_outbox = Path.join([base, "companies", @company, "agents/ceo/outbox/memory"])
+      File.mkdir_p!(memory_outbox)
+      {:ok, base: base, router: name, outbox: memory_outbox}
+    end
+
+    test "accepted write lands at agents/ceo/memory/ + MEMORY.md upserted + audit emitted",
+         %{base: base, router: router, outbox: outbox} do
+      File.write!(Path.join(outbox, "feedback_commit_style.md"), """
+      ---
+      name: Commit messages lead with why
+      description: one-line-hook
+      type: feedback
+      ---
+
+      Lead with why, not what.
+      """)
+
+      send(router, {:file_event, "agents/ceo/outbox/memory/feedback_commit_style.md", [:created]})
+      _ = :sys.get_state(router)
+
+      memory_file =
+        Path.join([base, "companies/acme/agents/ceo/memory/feedback_commit_style.md"])
+
+      assert File.exists?(memory_file)
+      assert File.read!(memory_file) =~ "Lead with why"
+
+      index = File.read!(Path.join([base, "companies/acme/agents/ceo/memory/MEMORY.md"]))
+      assert index =~ "feedback_commit_style.md"
+      assert index =~ "Commit messages lead with why"
+      assert index =~ "one-line-hook"
+
+      refute File.exists?(Path.join(outbox, "feedback_commit_style.md"))
+      assert_receive {:audit, %{action: "memory.write"}}
+    end
+
+    test "second write replaces the content + keeps a single index line",
+         %{base: base, router: router, outbox: outbox} do
+      for body <- ["first draft body", "second draft body"] do
+        File.write!(Path.join(outbox, "project_glorbo.md"), """
+        ---
+        name: Glorbo project state
+        type: project
+        ---
+
+        #{body}
+        """)
+
+        send(router, {:file_event, "agents/ceo/outbox/memory/project_glorbo.md", [:created]})
+        _ = :sys.get_state(router)
+      end
+
+      memory_file = Path.join([base, "companies/acme/agents/ceo/memory/project_glorbo.md"])
+      assert File.read!(memory_file) =~ "second draft body"
+      refute File.read!(memory_file) =~ "first draft body"
+
+      index = File.read!(Path.join([base, "companies/acme/agents/ceo/memory/MEMORY.md"]))
+
+      matching =
+        index
+        |> String.split("\n", trim: true)
+        |> Enum.filter(&String.contains?(&1, "(project_glorbo.md)"))
+
+      assert length(matching) == 1
+    end
+
+    test "type mismatch between filename prefix and frontmatter is rejected",
+         %{base: base, router: router, outbox: outbox} do
+      File.write!(Path.join(outbox, "feedback_x.md"), """
+      ---
+      name: Wrong type
+      type: user
+      ---
+
+      body
+      """)
+
+      send(router, {:file_event, "agents/ceo/outbox/memory/feedback_x.md", [:created]})
+      _ = :sys.get_state(router)
+
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/memory/feedback_x.md"]))
+      refute File.exists?(Path.join(outbox, "feedback_x.md"))
+      assert_receive {:audit, %{action: "memory.rejected"}}
+    end
+
+    test "oversized body (>8 KB) rejected",
+         %{base: base, router: router, outbox: outbox} do
+      big = String.duplicate("x", 8 * 1024 + 10)
+
+      File.write!(Path.join(outbox, "project_big.md"), """
+      ---
+      type: project
+      ---
+
+      #{big}
+      """)
+
+      send(router, {:file_event, "agents/ceo/outbox/memory/project_big.md", [:created]})
+      _ = :sys.get_state(router)
+
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/memory/project_big.md"]))
+      assert_receive {:audit, %{action: "memory.rejected"}}
+    end
+
+    test "delete marker removes memory file + index line + emits memory.delete",
+         %{base: base, router: router, outbox: outbox} do
+      File.write!(Path.join(outbox, "feedback_tone.md"), """
+      ---
+      name: Director tone
+      type: feedback
+      ---
+
+      Keep it dry.
+      """)
+
+      send(router, {:file_event, "agents/ceo/outbox/memory/feedback_tone.md", [:created]})
+      _ = :sys.get_state(router)
+
+      assert File.exists?(Path.join([base, "companies/acme/agents/ceo/memory/feedback_tone.md"]))
+
+      delete_dir = Path.join(outbox, "delete")
+      File.mkdir_p!(delete_dir)
+      File.write!(Path.join(delete_dir, "feedback_tone.md"), "")
+
+      send(router, {:file_event, "agents/ceo/outbox/memory/delete/feedback_tone.md", [:created]})
+      _ = :sys.get_state(router)
+
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo/memory/feedback_tone.md"]))
+
+      # When the last memory goes, MEMORY.md is removed entirely
+      # (no point keeping an empty index file around).
+      index_path = Path.join([base, "companies/acme/agents/ceo/memory/MEMORY.md"])
+
+      case File.read(index_path) do
+        {:ok, content} -> refute content =~ "feedback_tone.md"
+        {:error, :enoent} -> :ok
+      end
+
+      assert_receive {:audit, %{action: "memory.delete"}}
+    end
+  end
 end

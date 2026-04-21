@@ -632,6 +632,12 @@ defmodule Glorbo.Company.Router do
       {:comment, task_id} ->
         handle_outbox_comment(abs_path, sender, task_id, state)
 
+      {:memory_write, filename} ->
+        handle_outbox_memory_write(abs_path, sender, filename, state)
+
+      {:memory_delete, filename} ->
+        handle_outbox_memory_delete(abs_path, sender, filename, state)
+
       :message ->
         handle_outbox_message(abs_path, sender, state)
     end
@@ -662,10 +668,23 @@ defmodule Glorbo.Company.Router do
         task_id = Path.basename(file, ".md")
         if task_id_valid?(task_id), do: {:comment, task_id}, else: :message
 
+      # GEP-21 (#17b) — agent memory write
+      # agents/<sender>/outbox/memory/<type>_<topic>.md
+      ["memory", <<_::binary>> = file] ->
+        if memory_filename_valid?(file), do: {:memory_write, file}, else: :message
+
+      # GEP-21 (#17b) — agent memory delete marker
+      # agents/<sender>/outbox/memory/delete/<type>_<topic>.md
+      ["memory", "delete", <<_::binary>> = file] ->
+        if memory_filename_valid?(file), do: {:memory_delete, file}, else: :message
+
       _ ->
         :message
     end
   end
+
+  @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
+  defp memory_filename_valid?(name), do: Regex.match?(@memory_filename_re, name)
 
   defp task_id_valid?(task_id),
     do: Regex.match?(~r/\A[a-z][a-z0-9_-]*-\d+\z/, task_id)
@@ -810,6 +829,233 @@ defmodule Glorbo.Company.Router do
       action: "task.comment",
       target: task_id,
       source: "outbox"
+    })
+  rescue
+    _ -> :ok
+  end
+
+  # GEP-21 (#17b) — agent memory write.
+  #
+  # Filename is already validated by `classify_outbox_file/3` against
+  # `memory_filename_valid?/1` (4-type prefix + slug). Remaining
+  # validations happen here:
+  #
+  #   1. Body size ≤ 8 KB (per-memory cap — keeps total under the 20
+  #      KB read cap even with many files).
+  #   2. Frontmatter `type:` matches the filename prefix.
+  #
+  # Atomic write: sender owns their memory dir, so we write to
+  # `agents/<sender>/memory/<filename>` with a tmp+rename dance, then
+  # upsert the matching line in `memory/MEMORY.md`, then delete the
+  # outbox source + emit `memory.write` audit.
+  @memory_max_bytes 8 * 1024
+
+  defp handle_outbox_memory_write(abs_path, sender, filename, state) do
+    memory_dir =
+      Path.join([state.base, "companies", state.company, "agents", sender, "memory"])
+
+    dest_path = Path.join(memory_dir, filename)
+
+    with {:ok, content} <- File.read(abs_path),
+         :ok <- check_memory_body_size(content),
+         {:ok, meta, _body} <- Frontmatter.parse(content),
+         :ok <- check_memory_type_matches_filename(meta, filename),
+         :ok <- File.mkdir_p(memory_dir),
+         :ok <- atomic_write(dest_path, content),
+         :ok <- upsert_memory_index(memory_dir, filename, meta),
+         :ok <- File.rm(abs_path) do
+      emit_memory_audit(sender, "memory.write", filename, byte_size(content), state)
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "[router/#{state.company}] memory write rejected sender=#{sender} file=#{filename} reason=#{inspect(reason)}"
+        )
+
+        # Audit the rejection so directors can spot persistent failures;
+        # drop the outbox file so the agent doesn't retry forever on
+        # the same bad input.
+        _ =
+          state.audit_fun.(state.company, %{
+            actor: sender,
+            action: "memory.rejected",
+            target: "agents/#{sender}/memory/#{filename}",
+            detail: %{reason: inspect(reason)}
+          })
+
+        _ = File.rm(abs_path)
+        :ok
+    end
+  end
+
+  # GEP-21 (#17b) — agent memory delete. Source is an empty marker
+  # file at `agents/<sender>/outbox/memory/delete/<filename>`. Body is
+  # ignored. We remove the matching memory file + index line + emit
+  # `memory.delete`.
+  defp handle_outbox_memory_delete(abs_path, sender, filename, state) do
+    memory_dir =
+      Path.join([state.base, "companies", state.company, "agents", sender, "memory"])
+
+    target_path = Path.join(memory_dir, filename)
+
+    if File.exists?(target_path) do
+      case File.rm(target_path) do
+        :ok ->
+          :ok = remove_memory_index_line(memory_dir, filename)
+          _ = File.rm(abs_path)
+          emit_memory_audit(sender, "memory.delete", filename, 0, state)
+
+        {:error, reason} ->
+          Logger.warning(
+            "[router/#{state.company}] memory delete failed sender=#{sender} file=#{filename} reason=#{inspect(reason)}"
+          )
+
+          :ok
+      end
+    else
+      Logger.info(
+        "[router/#{state.company}] memory delete no-op sender=#{sender} file=#{filename} (target missing)"
+      )
+
+      _ = File.rm(abs_path)
+      :ok
+    end
+  end
+
+  defp check_memory_body_size(content) do
+    case byte_size(content) <= @memory_max_bytes do
+      true -> :ok
+      false -> {:error, {:memory_too_large, byte_size(content), @memory_max_bytes}}
+    end
+  end
+
+  defp check_memory_type_matches_filename(meta, filename) do
+    declared = meta |> Map.get("type") |> to_string()
+
+    filename_prefix =
+      filename
+      |> String.split("_", parts: 2)
+      |> List.first()
+      |> to_string()
+
+    case declared == filename_prefix do
+      true -> :ok
+      false -> {:error, {:memory_type_mismatch, declared, filename_prefix}}
+    end
+  end
+
+  # Write with tmp+rename so a partial write never leaves a
+  # half-written memory file for the reader. Same pattern as
+  # `FrontmatterWriter` + other atomic disk writers in this tree.
+  defp atomic_write(dest_path, content) do
+    tmp = dest_path <> ".tmp"
+
+    with :ok <- File.write(tmp, content, [:sync]) do
+      case File.rename(tmp, dest_path) do
+        :ok -> :ok
+        {:error, reason} -> {:error, {:rename_failed, reason}}
+      end
+    end
+  end
+
+  # Rewrite MEMORY.md: replace an existing line for this filename
+  # (matched by the `(filename)` marker in the markdown link), or
+  # append a new line at the end. All other lines preserved verbatim.
+  #
+  # Line format (per GEP-21):
+  #   - [<name>](<filename>) — <description>
+  #
+  # `<name>` and `<description>` come from memory frontmatter;
+  # fall back to filename-derived defaults if either is missing.
+  defp upsert_memory_index(memory_dir, filename, meta) do
+    index_path = Path.join(memory_dir, "MEMORY.md")
+    existing = existing_index_lines(index_path)
+    new_line = index_line_for(filename, meta)
+    match_marker = "(#{filename})"
+
+    updated =
+      case Enum.find_index(existing, &String.contains?(&1, match_marker)) do
+        nil -> existing ++ [new_line]
+        idx -> List.replace_at(existing, idx, new_line)
+      end
+
+    body = Enum.join(updated, "\n") <> "\n"
+    atomic_write(index_path, body)
+  end
+
+  defp remove_memory_index_line(memory_dir, filename) do
+    index_path = Path.join(memory_dir, "MEMORY.md")
+    existing = existing_index_lines(index_path)
+    match_marker = "(#{filename})"
+    filtered = Enum.reject(existing, &String.contains?(&1, match_marker))
+
+    cond do
+      filtered == existing ->
+        :ok
+
+      filtered == [] ->
+        File.rm(index_path)
+        |> case do
+          :ok -> :ok
+          {:error, :enoent} -> :ok
+          err -> err
+        end
+
+      true ->
+        body = Enum.join(filtered, "\n") <> "\n"
+        atomic_write(index_path, body)
+    end
+  end
+
+  defp existing_index_lines(index_path) do
+    case File.read(index_path) do
+      {:ok, content} ->
+        content
+        |> String.split("\n", trim: false)
+        |> Enum.reject(&(String.trim(&1) == ""))
+
+      _ ->
+        []
+    end
+  end
+
+  defp index_line_for(filename, meta) do
+    name =
+      (Map.get(meta, "name") || filename_default_name(filename))
+      |> to_string()
+      |> String.trim()
+      |> cap_line(100)
+
+    description =
+      (Map.get(meta, "description") || "")
+      |> to_string()
+      |> String.trim()
+      |> cap_line(120)
+
+    case description do
+      "" -> "- [#{name}](#{filename})"
+      d -> "- [#{name}](#{filename}) — #{d}"
+    end
+  end
+
+  defp filename_default_name(filename) do
+    filename
+    |> Path.rootname(".md")
+    |> String.replace("_", " ")
+  end
+
+  defp cap_line(s, max) do
+    case byte_size(s) > max do
+      true -> binary_part(s, 0, max) <> "…"
+      false -> s
+    end
+  end
+
+  defp emit_memory_audit(sender, action, filename, bytes, state) do
+    state.audit_fun.(state.company, %{
+      actor: sender,
+      action: action,
+      target: "agents/#{sender}/memory/#{filename}",
+      detail: %{bytes: bytes}
     })
   rescue
     _ -> :ok

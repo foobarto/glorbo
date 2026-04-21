@@ -1718,6 +1718,84 @@ button { font-family: inherit; font-size: inherit; }
   max-height: 400px;
   overflow-y: auto;
 }
+
+/* GEP-21 / R17b — agent memory tab (file-based agent memory). */
+.gl-agent-memory {
+  padding: var(--gl-space-sm);
+  max-height: 520px;
+  overflow-y: auto;
+}
+.gl-agent-memory__hint {
+  font-size: 11px;
+  margin: 0 0 var(--gl-space-sm);
+}
+.gl-agent-memory__empty {
+  padding: var(--gl-space-md);
+  font-size: 12px;
+  text-align: center;
+}
+.gl-agent-memory__index {
+  margin-bottom: var(--gl-space-md);
+  border-left: 2px solid var(--gl-border);
+  padding: 4px 8px;
+}
+.gl-agent-memory__section-head {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-bottom: 2px;
+}
+.gl-agent-memory__index-body {
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.gl-agent-memory__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-space-sm);
+}
+.gl-agent-memory__row {
+  border: 1px solid var(--gl-border);
+  border-radius: 2px;
+  padding: 6px 8px;
+  background: var(--gl-surface);
+}
+.gl-agent-memory__row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.gl-agent-memory__name { font-weight: 600; }
+.gl-agent-memory__filename {
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+}
+.gl-agent-memory__mtime {
+  margin-left: auto;
+  font-size: 10px;
+}
+.gl-agent-memory__desc {
+  margin: 4px 0;
+  font-size: 11px;
+  font-style: italic;
+}
+.gl-agent-memory__body {
+  margin: 4px 0 0;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--gl-fg);
+}
+.gl-pill--user      { background: color-mix(in oklch, var(--gl-accent) 15%, var(--gl-surface)); }
+.gl-pill--feedback  { background: color-mix(in oklch, var(--gl-warning) 15%, var(--gl-surface)); }
+.gl-pill--project   { background: color-mix(in oklch, var(--gl-accent-dim, var(--gl-fg-muted)) 15%, var(--gl-surface)); }
+.gl-pill--reference { background: color-mix(in oklch, var(--gl-fg-subtle) 15%, var(--gl-surface)); }
 .gl-agent-history__list { list-style: none; padding: 0; margin: 0; }
 .gl-agent-history__row {
   display: grid;

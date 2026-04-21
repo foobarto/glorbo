@@ -84,6 +84,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:history, history)
         |> assign(:runs, [])
         |> assign(:runs_expanded, MapSet.new())
+        |> assign(:memory, %{index: "", files: []})
         |> assign(:working_on, nil)
         |> assign(:open_file, nil)
         |> assign(:wake_open?, false)
@@ -188,13 +189,15 @@ defmodule GlorboWeb.AgentLive do
     do: ChatDrawer.State.post(socket, body)
 
   def handle_event("tab", %{"tab" => tab}, socket)
-      when tab in ~w(stdout sandbox inbox history runs) do
+      when tab in ~w(stdout sandbox inbox history runs memory) do
     socket = assign(socket, :tab, String.to_existing_atom(tab))
 
     socket =
-      if tab == "runs",
-        do: assign(socket, :runs, load_runs(socket)),
-        else: socket
+      cond do
+        tab == "runs" -> assign(socket, :runs, load_runs(socket))
+        tab == "memory" -> assign(socket, :memory, load_memory_files(socket))
+        true -> socket
+      end
 
     {:noreply, socket}
   end
@@ -853,6 +856,15 @@ defmodule GlorboWeb.AgentLive do
                 >
                   history
                 </button>
+                <button
+                  type="button"
+                  class={["gl-agent-detail__tab", @tab == :memory && "gl-agent-detail__tab--active"]}
+                  phx-click="tab"
+                  phx-value-tab="memory"
+                  title="File-based agent memory (GEP-21)"
+                >
+                  memory
+                </button>
               </div>
             </header>
 
@@ -993,6 +1005,44 @@ defmodule GlorboWeb.AgentLive do
                   <span :if={row.detail} class="gl-agent-history__detail gl-muted">
                     {row.detail}
                   </span>
+                </li>
+              </ul>
+            </div>
+
+            <div :if={@tab == :memory} class="gl-panel__body gl-agent-memory">
+              <p class="gl-muted gl-agent-memory__hint">
+                File-based agent memory (GEP-21). Each <code>&lt;type&gt;_&lt;topic&gt;.md</code>
+                file is composed into the system prompt on every wake, newest-first, capped at 20 KB total.
+                Agents write via <code>outbox/memory/</code>; directors can edit the files directly.
+              </p>
+
+              <p :if={@memory.files == []} class="gl-agent-memory__empty gl-muted">
+                No memories yet. The agent writes them by dropping
+                <code>&lt;type&gt;_&lt;topic&gt;.md</code>
+                files into its outbox.
+              </p>
+
+              <div :if={@memory.index && @memory.index != ""} class="gl-agent-memory__index">
+                <header class="gl-agent-memory__section-head">
+                  <span class="gl-muted">MEMORY.md · index</span>
+                </header>
+                <pre class="gl-agent-memory__index-body">{@memory.index}</pre>
+              </div>
+
+              <ul :if={@memory.files != []} class="gl-agent-memory__list">
+                <li :for={m <- @memory.files} class="gl-agent-memory__row">
+                  <header class="gl-agent-memory__row-head">
+                    <span class={["gl-pill", "gl-pill--" <> m.type]}>{m.type}</span>
+                    <span class="gl-agent-memory__name">{m.name}</span>
+                    <span class="gl-muted gl-agent-memory__filename">{m.filename}</span>
+                    <span class="gl-muted gl-agent-memory__mtime" title={m.mtime_iso}>
+                      {m.mtime_rel}
+                    </span>
+                  </header>
+                  <p :if={m.description != ""} class="gl-muted gl-agent-memory__desc">
+                    {m.description}
+                  </p>
+                  <pre class="gl-agent-memory__body">{m.body}</pre>
                 </li>
               </ul>
             </div>
@@ -1762,6 +1812,77 @@ defmodule GlorboWeb.AgentLive do
   defp load_runs(%{assigns: %{company_slug: co, agent_slug: ag}}) do
     Glorbo.Agent.RunLog.list(base_dir(), co, ag, limit: 50)
   end
+
+  # GEP-21 / R17b — read agent's memory directory for the Memory tab.
+  # Returns `%{index: <MEMORY.md body>, files: [%{…}]}` with entries
+  # sorted newest-first by mtime. Filesystem-is-truth: every tab
+  # click re-reads; no cache.
+  defp load_memory_files(%{assigns: %{company_slug: co, agent_slug: ag}}) do
+    base = base_dir()
+    dir = Path.join([base, "companies", co, "agents", ag, "memory"])
+
+    index =
+      case File.read(Path.join(dir, "MEMORY.md")) do
+        {:ok, content} -> String.trim(content)
+        _ -> ""
+      end
+
+    files =
+      case File.ls(dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(&valid_memory_file?/1)
+          |> Enum.map(&parse_memory_file(&1, dir))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.sort_by(& &1.mtime, :desc)
+
+        _ ->
+          []
+      end
+
+    %{index: index, files: files}
+  end
+
+  @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
+
+  defp valid_memory_file?(name), do: Regex.match?(@memory_filename_re, name)
+
+  defp parse_memory_file(filename, dir) do
+    path = Path.join(dir, filename)
+
+    with {:ok, content} <- File.read(path),
+         {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         {:ok, stat} <- File.stat(path, time: :posix) do
+      type = filename |> String.split("_", parts: 2) |> List.first() || "?"
+
+      %{
+        filename: filename,
+        type: type,
+        name: to_string(Map.get(meta, "name") || filename),
+        description: to_string(Map.get(meta, "description") || ""),
+        body: String.trim(body),
+        mtime: stat.mtime,
+        mtime_iso: DateTime.from_unix!(stat.mtime) |> DateTime.to_iso8601(),
+        mtime_rel: format_relative_mtime(stat.mtime)
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  defp format_relative_mtime(unix_ts) when is_integer(unix_ts) do
+    diff = System.os_time(:second) - unix_ts
+
+    cond do
+      diff < 60 -> "just now"
+      diff < 3600 -> "#{div(diff, 60)} min ago"
+      diff < 86_400 -> "#{div(diff, 3600)} h ago"
+      diff < 7 * 86_400 -> "#{div(diff, 86_400)} d ago"
+      true -> DateTime.from_unix!(unix_ts) |> DateTime.to_date() |> Date.to_string()
+    end
+  end
+
+  defp format_relative_mtime(_), do: "—"
 
   defp format_duration(nil), do: "—"
   defp format_duration(ms) when is_integer(ms) and ms < 1000, do: "#{ms}ms"

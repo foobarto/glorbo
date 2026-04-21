@@ -87,6 +87,39 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
           IO.puts(:stderr, "skipping opencode_lmstudio_live_test: #{reason}")
       end
     end
+
+    # R17c (#285) — end-to-end agent memory read. Seed a feedback
+    # memory with a specific token the agent couldn't guess, ask it
+    # to repeat that token, confirm the reply contains it. Proves
+    # the full chain — Memory.compose → compose_prompt → bwrap →
+    # opencode prompt → model → reply — works live.
+    test "agent memory is composed into prompt and referenced by the model" do
+      case preflight_skip_reason() do
+        nil ->
+          run_memory_e2e_and_assert()
+
+        reason ->
+          IO.puts(:stderr, "skipping memory e2e: #{reason}")
+      end
+    end
+
+    # R17c (#285) — end-to-end agent memory write. Dispatch a task
+    # that instructs the agent to write a memory via the outbox
+    # routing contract (`outbox/memory/<type>_<topic>.md`). After
+    # dispatch, confirm the memory file landed at
+    # `agents/<slug>/memory/<type>_<topic>.md` via the Router, that
+    # `MEMORY.md` was upserted, and that a `memory.write` audit was
+    # emitted. Proves the full write chain works under a real
+    # model's output.
+    test "agent writes a memory via outbox → Router persists it" do
+      case preflight_skip_reason() do
+        nil ->
+          run_memory_write_e2e_and_assert()
+
+        reason ->
+          IO.puts(:stderr, "skipping memory-write e2e: #{reason}")
+      end
+    end
   end
 
   # Extracted so the test body stays terse. Everything past this point
@@ -128,6 +161,198 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
     # qwen often wraps in a leading newline — match substring.
     assert reply =~ "smoke-ok-",
            "expected reply to contain 'smoke-ok-...', got: #{inspect(reply)}"
+  end
+
+  defp run_memory_e2e_and_assert do
+    base = TmpGlorboHome.setup()
+    Application.put_env(:glorbo, :glorbo_base, base)
+    on_exit(fn -> Application.delete_env(:glorbo, :glorbo_base) end)
+
+    company = "mem#{System.unique_integer([:positive])}"
+    slug = "mem-1"
+
+    agent_md = seed_workspace(base, company, slug)
+
+    # Seed the memory directory with a feedback entry containing a
+    # high-entropy token the model cannot guess. Memory.compose
+    # picks it up on the next dispatch; the model's reply must
+    # contain the exact token for the test to pass.
+    token = "mem-token-#{:rand.uniform(9_999_999)}"
+    memory_dir = Path.join([base, "companies", company, "agents", slug, "memory"])
+    File.mkdir_p!(memory_dir)
+
+    File.write!(Path.join(memory_dir, "feedback_secret.md"), """
+    ---
+    name: Director secret token
+    description: unique one-shot token for R17c e2e memory test
+    type: feedback
+    ---
+
+    The director's secret token is: #{token}
+
+    When asked to recall the secret token, reply with exactly that
+    string and nothing else.
+    """)
+
+    File.write!(Path.join(memory_dir, "MEMORY.md"), """
+    - [Director secret token](feedback_secret.md) — e2e test token
+    """)
+
+    {:ok, spec} = Parser.parse_file(agent_md)
+
+    # Simulate what Agent.Server.compose_prompt does — prepend the
+    # memory section. Dispatch.execute itself doesn't compose;
+    # composition is Agent.Server's job, and this E2E calls Dispatch
+    # directly to keep the test narrow. What we're verifying is:
+    # given a prompt with memory composed, the model reads it and
+    # can reference its contents.
+    {:ok, memory_section} = Glorbo.Agent.Memory.compose(base, company, slug)
+
+    task = %{
+      task_id: "mem-e2e-1",
+      task_path: "mem-e2e-1.md",
+      prompt: """
+      ## Memory
+
+      #{memory_section}
+
+      ---
+
+      Reply with exactly the director's secret token and nothing else
+      (no prefix, no punctuation, no explanation).
+      """,
+      trigger: :director
+    }
+
+    result =
+      Dispatch.execute(spec, task,
+        audit_fun: fn _company, _entry -> :ok end,
+        record_usage_fun: fn _spec, _task, _usage -> :ok end
+      )
+
+    assert {:ok, %{reply: reply, exit_status: 0}} = result,
+           "Dispatch failed: #{inspect(result)}"
+
+    assert is_binary(reply) and byte_size(reply) > 0
+
+    # The token is the proof — if the model reads memory, it can
+    # produce this. If not (memory not composed, or model ignored),
+    # the token will be missing.
+    assert reply =~ token,
+           "expected memory-sourced token #{inspect(token)} in reply, got: #{inspect(reply)}"
+  end
+
+  defp run_memory_write_e2e_and_assert do
+    base = TmpGlorboHome.setup()
+    Application.put_env(:glorbo, :glorbo_base, base)
+    on_exit(fn -> Application.delete_env(:glorbo, :glorbo_base) end)
+
+    company = "memw#{System.unique_integer([:positive])}"
+    slug = "mem-writer"
+
+    agent_md = seed_workspace(base, company, slug)
+
+    # Start a Router against this tmp base so the agent's outbox
+    # writes get processed. Capture audits to a test mailbox.
+    test_pid = self()
+    audit_fun = fn _co, entry -> send(test_pid, {:audit, entry}) end
+
+    router_name = Glorbo.Test.UniqueName.gen("router_memw_e2e")
+
+    {:ok, _router} =
+      Glorbo.Company.Router.start_link(
+        name: router_name,
+        company: company,
+        base: base,
+        audit_fun: audit_fun,
+        # Tests drive via file-event messages; no need for PubSub.
+        subscribe?: false
+      )
+
+    on_exit(fn ->
+      case Process.whereis(router_name) do
+        pid when is_pid(pid) -> if Process.alive?(pid), do: GenServer.stop(pid)
+        _ -> :ok
+      end
+    end)
+
+    {:ok, spec} = Parser.parse_file(agent_md)
+
+    # The prompt deliberately instructs the agent to drop an exact
+    # filename with exact frontmatter so success is deterministic.
+    # Real-world agents learn this pattern from the glorbo.md
+    # skill; for this test we inline it in the task prompt.
+    filename = "feedback_ship_on_friday.md"
+
+    task = %{
+      task_id: "mem-write-1",
+      task_path: "mem-write-1.md",
+      prompt: """
+      Write a memory file to /outbox/memory/#{filename} with EXACTLY these contents:
+
+      ---
+      name: No Friday ships
+      description: Director policy on deployment timing
+      type: feedback
+      ---
+
+      Rule: never ship to prod on Fridays. Roll changes Monday-Thursday.
+
+      Use the Write tool. Do not print the file contents as your
+      reply — your reply should just be a short confirmation like
+      "done".
+      """,
+      trigger: :director
+    }
+
+    result =
+      Dispatch.execute(spec, task,
+        audit_fun: audit_fun,
+        record_usage_fun: fn _spec, _task, _usage -> :ok end
+      )
+
+    assert {:ok, %{exit_status: 0}} = result, "Dispatch failed: #{inspect(result)}"
+
+    # Router processes file events on inotify. Our tmp base has no
+    # running FileSystem watcher, so poke the router directly to
+    # simulate the event that inotify would fire.
+    outbox_path = "agents/#{slug}/outbox/memory/#{filename}"
+
+    # Wait up to 3s for the agent to actually write to outbox.
+    _ =
+      Enum.reduce_while(1..60, nil, fn _, _ ->
+        abs = Path.join([base, "companies", company, outbox_path])
+
+        if File.exists?(abs) do
+          {:halt, :ok}
+        else
+          Process.sleep(50)
+          {:cont, nil}
+        end
+      end)
+
+    send(Process.whereis(router_name), {:file_event, outbox_path, [:created]})
+    _ = :sys.get_state(router_name)
+
+    # Memory file now in the canonical location.
+    memory_file =
+      Path.join([base, "companies", company, "agents", slug, "memory", filename])
+
+    assert File.exists?(memory_file),
+           "expected memory at #{memory_file}, not found — model likely didn't write outbox"
+
+    content = File.read!(memory_file)
+    assert content =~ "No Friday ships"
+    assert content =~ "never ship to prod on Fridays"
+
+    # MEMORY.md index upserted.
+    index =
+      File.read!(Path.join([base, "companies", company, "agents", slug, "memory", "MEMORY.md"]))
+
+    assert index =~ filename
+
+    # Audit emitted.
+    assert_receive {:audit, %{action: "memory.write"}}, 500
   end
 
   defp seed_workspace(base, company, slug) do
