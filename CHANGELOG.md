@@ -10,6 +10,37 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-29 wave (e): MCP-Protocol-Version header validation
+
+Spec-compliance fix for the Streamable HTTP transport. Previously
+the `MCP-Protocol-Version` header was ignored and `initialize`
+always returned our internal protocol version regardless of what
+the client requested. Two issues fixed in one pass:
+
+- **Header validation** (`GlorboWeb.MCP.Plug.validate_protocol_version/2`):
+  every POST except `initialize` now checks the
+  `MCP-Protocol-Version` header against
+  `Server.supported_protocol_versions/0` (currently
+  `["2025-06-18", "2025-03-26"]`). Missing header defaults to
+  `2025-03-26` per the spec's backwards-compat clause; unsupported
+  version returns 400 + JSON-RPC -32600 with a structured `data`
+  payload naming the sent and supported versions.
+- **Lifecycle version negotiation** (`Server.handle_initialize/1`):
+  reads `params.protocolVersion`; echoes it back if supported,
+  otherwise replies with `@protocol_version`. Previously hardcoded
+  to `@protocol_version` regardless of what the client asked for,
+  which silently broke clients on older supported specs.
+
+Codex-reviewed; the version-negotiation bug was flagged as
+must-fix and addressed inline with two regression tests
+(`initialize echoes a supported older protocolVersion from the
+client` + `initialize replies with our latest when client requests
+unsupported version`). Also added a regression test pinning
+`notifications/initialized` through the exempt path.
+
+8 new tests (5 header + 3 negotiation). 1565 tests green; mix
+credo --strict clean.
+
 ### Added — GEP-29 wave (c.2): creation + dispatch tools (19 tools total)
 
 Wave (c.2) completes the core MCP write surface. External clients

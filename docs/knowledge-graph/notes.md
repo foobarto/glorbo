@@ -111,6 +111,39 @@ accumulating behaviour.
 
 ---
 
+## 2026-04-22 — Wave (e) finding: MCP version negotiation is two-sided
+
+Learned while wiring `MCP-Protocol-Version` header validation
+(GEP-29 wave e). The MCP lifecycle has **two** version hooks that
+must agree, not one:
+
+1. Transport-level: `MCP-Protocol-Version` HTTP header on every
+   request after `initialize` (spec §"Protocol Version Header").
+2. Lifecycle-level: `initialize.params.protocolVersion` in the
+   JSON body, which the server MUST echo back in the response so
+   the client can confirm the negotiated version.
+
+Adding the header validator without also making the `initialize`
+reply echo the client's requested version (when supported) breaks
+negotiation for older clients: they send `2025-03-26` in the
+body, the server validates their later `MCP-Protocol-Version:
+2025-03-26` header as supported, but the `initialize` response
+comes back as `2025-06-18` (our internal latest). Client sees a
+version mismatch and disconnects.
+
+**Fix:** `Server.handle_initialize/1` now reads
+`params["protocolVersion"]` and echoes it back if it's in
+`@supported_protocol_versions`; otherwise falls back to
+`@protocol_version`. Codex caught this in review — would've
+slipped through otherwise because all existing tests had
+clients requesting the current version.
+
+Takeaway for the next time we add spec-compliance features:
+check for *pairs* of hooks. Transport-layer handshake + payload-
+layer negotiation are frequently linked in network protocols,
+and each half is independently testable but needs the other to
+actually work.
+
 ## How to use `graphify query` effectively
 
 - Phrase questions in graph-y terms: "where is X defined?",

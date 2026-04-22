@@ -202,6 +202,121 @@ defmodule GlorboWeb.MCP.PlugTest do
     end
   end
 
+  describe "MCP-Protocol-Version header (GEP-29 wave e)" do
+    test "missing header on non-initialize request → defaults to 2025-03-26 (backwards compat)" do
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "id" => 1, "method" => "ping"})
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+    end
+
+    test "supported current version (2025-06-18) passes" do
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "id" => 1, "method" => "ping"})
+        |> put_req_header("mcp-protocol-version", "2025-06-18")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+    end
+
+    test "supported prior version (2025-03-26) passes" do
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "id" => 1, "method" => "ping"})
+        |> put_req_header("mcp-protocol-version", "2025-03-26")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+    end
+
+    test "unsupported version → 400 with reason + supported list" do
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "id" => 1, "method" => "ping"})
+        |> put_req_header("mcp-protocol-version", "1999-01-01")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 400
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"]["code"] == -32_600
+      assert body["error"]["data"]["reason"] =~ "unsupported"
+      assert body["error"]["data"]["sent"] == "1999-01-01"
+      assert is_list(body["error"]["data"]["supported"])
+      assert "2025-06-18" in body["error"]["data"]["supported"]
+    end
+
+    test "initialize is exempt from the header check (version negotiated in body)" do
+      # Initialize is the first message and carries the version in
+      # `params.protocolVersion`; the header requirement only applies
+      # from the next request onward. Even with a bogus header,
+      # initialize must succeed — otherwise clients can't bootstrap.
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "2025-06-18"}
+        })
+        |> put_req_header("mcp-protocol-version", "1999-01-01")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      assert body["result"]["protocolVersion"] == "2025-06-18"
+    end
+
+    test "initialize echoes a supported older protocolVersion from the client" do
+      # MCP lifecycle version negotiation: if the client requests
+      # 2025-03-26 and we support it, the response MUST echo that
+      # version (not our internal @protocol_version). Otherwise a
+      # client on an older spec sees a response it can't handle.
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "2025-03-26"}
+        })
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      assert body["result"]["protocolVersion"] == "2025-03-26"
+    end
+
+    test "initialize replies with our latest when client requests unsupported version" do
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "1999-01-01"}
+        })
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      # Client can inspect + disconnect if incompatible; we always
+      # advertise our current version for unknown requests.
+      assert body["result"]["protocolVersion"] == "2025-06-18"
+    end
+
+    test "notifications/initialized is exempt from the header check" do
+      # Nice-to-have pinned here: `notifications/initialized` is the
+      # ambiguous post-initialize boundary. Our plug only exempts
+      # `"initialize"` specifically — this regression locks that
+      # `notifications/initialized` succeeds whether or not the
+      # header is set, because it's a notification (no id → 202)
+      # and the header check fires BEFORE the notification branch.
+      # Missing header defaults to 2025-03-26 (supported) so this
+      # passes.
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "method" => "notifications/initialized"})
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 202
+    end
+  end
+
   describe "method routing" do
     test "GET returns 405 (SSE not offered in wave a)" do
       conn =

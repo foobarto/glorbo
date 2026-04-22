@@ -47,6 +47,18 @@ defmodule GlorboWeb.MCP.Server do
   alias GlorboWeb.MCP.Tools
 
   @protocol_version "2025-06-18"
+
+  # Versions we accept on the `MCP-Protocol-Version` header. Always
+  # includes `@protocol_version`. Prior versions stay here for
+  # backwards compat with older clients that haven't caught up.
+  @supported_protocol_versions ["2025-06-18", "2025-03-26"]
+
+  # Per spec §"Protocol Version Header": when the header is absent
+  # (and no other version-negotiation signal exists), assume
+  # `2025-03-26`. Clients on the current version MUST send the
+  # header explicitly.
+  @default_protocol_version_when_missing "2025-03-26"
+
   @server_name "glorbo"
   @server_version "0.0.4"
 
@@ -111,10 +123,30 @@ defmodule GlorboWeb.MCP.Server do
   end
 
   @doc """
-  The server's declared protocol version.
+  The server's declared protocol version. This is what the
+  `initialize` response advertises; it's also the version we
+  expect clients to send on the `MCP-Protocol-Version` header
+  for post-initialize traffic.
   """
   @spec protocol_version() :: String.t()
   def protocol_version, do: @protocol_version
+
+  @doc """
+  Every protocol version we'll accept on the
+  `MCP-Protocol-Version` header. Includes older revisions for
+  backwards compatibility with clients that haven't caught up.
+  """
+  @spec supported_protocol_versions() :: [String.t()]
+  def supported_protocol_versions, do: @supported_protocol_versions
+
+  @doc """
+  Version to assume when the `MCP-Protocol-Version` header is
+  absent. Per spec §"Protocol Version Header", older clients
+  that don't know about the header default to `2025-03-26`.
+  """
+  @spec default_protocol_version_when_missing() :: String.t()
+  def default_protocol_version_when_missing,
+    do: @default_protocol_version_when_missing
 
   @doc """
   The compiled-in list of registered tool modules.
@@ -126,10 +158,21 @@ defmodule GlorboWeb.MCP.Server do
   # MCP protocol methods
   # ---------------------------------------------------------------------------
 
-  defp handle_initialize(_params) do
+  # MCP lifecycle §"Version Negotiation": the server echoes the
+  # client's requested version if it's supported, otherwise replies
+  # with our latest supported version. The client is free to
+  # disconnect if it can't speak the returned version.
+  defp handle_initialize(params) do
+    requested = Map.get(params || %{}, "protocolVersion")
+
+    negotiated =
+      if is_binary(requested) and requested in @supported_protocol_versions,
+        do: requested,
+        else: @protocol_version
+
     {:reply,
      %{
-       "protocolVersion" => @protocol_version,
+       "protocolVersion" => negotiated,
        "capabilities" => %{
          "tools" => %{"listChanged" => false}
        },

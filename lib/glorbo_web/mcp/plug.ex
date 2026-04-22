@@ -116,7 +116,8 @@ defmodule GlorboWeb.MCP.Plug do
 
   defp handle_post(conn) do
     with {:ok, envelope, conn} <- read_envelope(conn),
-         {:ok, method, params, id} <- extract_request(envelope) do
+         {:ok, method, params, id} <- extract_request(envelope),
+         :ok <- validate_protocol_version(conn, method) do
       context = build_context(conn)
 
       if is_nil(id) do
@@ -139,6 +140,25 @@ defmodule GlorboWeb.MCP.Plug do
         |> put_resp_content_type("application/json")
         |> send_resp(400, Jason.encode!(rpc_error(id, -32_600, "Invalid Request", nil)))
 
+      {:error, {:unsupported_protocol_version, version}} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          400,
+          Jason.encode!(
+            rpc_error(
+              nil,
+              -32_600,
+              "Invalid Request",
+              %{
+                reason: "unsupported MCP-Protocol-Version",
+                sent: version,
+                supported: Server.supported_protocol_versions()
+              }
+            )
+          )
+        )
+
       {:error, :batch_unsupported} ->
         conn
         |> put_resp_content_type("application/json")
@@ -156,6 +176,35 @@ defmodule GlorboWeb.MCP.Plug do
 
       {:error, :read_body_failed} ->
         send_resp(conn, 400, "failed to read request body")
+    end
+  end
+
+  # MCP spec 2025-06-18 §"Protocol Version Header":
+  #   * The client MUST include `MCP-Protocol-Version` on every
+  #     request after `initialize`.
+  #   * If missing (and the version can't be inferred some other way),
+  #     the server SHOULD assume `2025-03-26` for backwards compat.
+  #   * Invalid/unsupported version → 400.
+  #
+  # `initialize` itself carries the version in the JSON body, not the
+  # header, so we skip the header check for that method.
+  defp validate_protocol_version(_conn, "initialize"), do: :ok
+
+  defp validate_protocol_version(conn, _method) do
+    supported = Server.supported_protocol_versions()
+    default = Server.default_protocol_version_when_missing()
+
+    case get_req_header(conn, "mcp-protocol-version") do
+      [] ->
+        # Missing header — apply the backwards-compat default. If the
+        # default itself isn't in the supported list (shouldn't
+        # happen), fall through to the supported-version check.
+        if default in supported, do: :ok, else: {:error, {:unsupported_protocol_version, nil}}
+
+      [version | _] ->
+        if version in supported,
+          do: :ok,
+          else: {:error, {:unsupported_protocol_version, version}}
     end
   end
 
