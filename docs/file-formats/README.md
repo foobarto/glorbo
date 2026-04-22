@@ -32,6 +32,7 @@ key order, and at least one worked example.
 - [`sentinel-resolution/v1`](./sentinel-resolution_v1.md)
 - [`sentinel-stuck/v1`](./sentinel-stuck_v1.md)
 - [`skill/v1`](./skill_v1.md)
+- [`task-comments/v1`](./task-comments_v1.md)
 - [`task/v1`](./task_v1.md)
 
 ## See also

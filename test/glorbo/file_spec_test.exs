@@ -18,6 +18,7 @@ defmodule Glorbo.FileSpecTest do
     "agent/v1",
     "project/v1",
     "task/v1",
+    "task-comments/v1",
     "skill/v1",
     "agent-heartbeat/v1",
     "agent-soul/v1",
@@ -39,8 +40,8 @@ defmodule Glorbo.FileSpecTest do
   ]
 
   describe "registry" do
-    test "specs/0 returns all 22 per-kind modules" do
-      assert length(FileSpec.specs()) == 22
+    test "specs/0 returns all 23 per-kind modules" do
+      assert length(FileSpec.specs()) == 23
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do
@@ -130,6 +131,15 @@ defmodule Glorbo.FileSpecTest do
       assert {:ok, Glorbo.FileSpec.TaskMd} =
                FileSpec.classify_by_path(
                  "/home/u/.glorbo/companies/acme/projects/release/tasks/cut-release.md"
+               )
+    end
+
+    test "classifies sibling `<task>.comments.md` as TaskCommentsMd (GEP-30 D8)" do
+      # Must classify BEFORE TaskMd — both match `.md` under
+      # projects/<proj>/tasks/ but `.comments.md` is more specific.
+      assert {:ok, Glorbo.FileSpec.TaskCommentsMd} =
+               FileSpec.classify_by_path(
+                 "/home/u/.glorbo/companies/acme/projects/blog/tasks/blog-2.comments.md"
                )
     end
 

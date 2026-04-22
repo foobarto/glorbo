@@ -71,6 +71,10 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.CompanyMd,
     Glorbo.FileSpec.AgentMd,
     Glorbo.FileSpec.ProjectMd,
+    # TaskCommentsMd must precede TaskMd — both match `.md` under
+    # `/projects/.../tasks/`, and `<task>.comments.md` is the more
+    # specific kind.
+    Glorbo.FileSpec.TaskCommentsMd,
     Glorbo.FileSpec.TaskMd,
     Glorbo.FileSpec.SkillMd,
     Glorbo.FileSpec.HeartbeatMd,
