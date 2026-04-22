@@ -10,6 +10,43 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-29 wave (b.1): six read-only MCP tools
+
+Expand the MCP tool catalog from 1 to 7. External MCP clients can
+now browse the filesystem-as-source-of-truth data structure without
+scraping LiveView HTML.
+
+- `glorbo.get_company(company)` — company.md frontmatter + counts
+  (agents, projects, proposals).
+- `glorbo.list_agents(company)` — every agent in the company with
+  parsed AGENT.md summary (slug, role, provider, model, network,
+  permissions). Unparseable AGENT.md entries are surfaced as
+  `{slug, error}` rather than silently dropped.
+- `glorbo.get_agent(company, agent)` — full AGENT.md spec incl.
+  heartbeat, budget, autonomy, and canonical wire-format network
+  value (`api-only` rather than the internal `:api_only` atom).
+- `glorbo.list_tasks(company, project?, status?, assigned_to?)` —
+  every task under `projects/*/tasks/*.md` with optional filters.
+- `glorbo.get_task(company, project, task_id)` — full task
+  frontmatter + body (agent prompt).
+- `glorbo.list_proposals(company, status?)` — GEP-28 proposals
+  with optional status filter.
+- **`GlorboWeb.MCP.Args`** — shared slug-gate helper. Every tool
+  argument that lands in a filesystem path runs through
+  `require_slug/2` (alnum + hyphens only, same regex as the
+  LiveView WR-02 defense). Rejects `"acme/../other"`, `"*"`,
+  uppercase slugs, whitespace, and other traversal vectors with a
+  `CallToolResult isError=true` response.
+- 21 new tests (happy + filter + traversal-defense + malformed-
+  entry branches).
+
+Codex-reviewed; one must-fix applied: path-traversal /
+wildcard-expansion defense via the shared slug gate. Nice-to-haves
+(wire-format cleanup of `inspect/1` error payloads) deferred to a
+follow-up.
+
+1504 tests green; `mix credo --strict` clean.
+
 ### Added — GEP-29 wave (a): MCP server scaffolding (localhost HTTP-SSE)
 
 Glorbo now exposes an MCP server at `POST /mcp` via the existing

@@ -50,9 +50,17 @@ defmodule GlorboWeb.MCP.Server do
   @server_name "glorbo"
   @server_version "0.0.4"
 
-  # Tool registry — one module per tool. Wave (a) ships just one.
+  # Tool registry — one module per tool.
   @tools [
-    Tools.ListCompanies
+    # Wave (a): scaffolding + first read tool
+    Tools.ListCompanies,
+    # Wave (b.1): core read tools
+    Tools.GetCompany,
+    Tools.ListAgents,
+    Tools.GetAgent,
+    Tools.ListTasks,
+    Tools.GetTask,
+    Tools.ListProposals
   ]
 
   @type request :: %{

@@ -119,16 +119,14 @@ defmodule GlorboWeb.MCP.Plug do
          {:ok, method, params, id} <- extract_request(envelope) do
       context = build_context(conn)
 
-      cond do
+      if is_nil(id) do
         # Notification per JSON-RPC 2.0: request with no `id` field
         # (or an explicit `null` id). Server MUST NOT return a
         # response body. Dispatch for side effects, then 202.
-        is_nil(id) ->
-          _ = Server.dispatch(method, params, context)
-          send_resp(conn, 202, "")
-
-        true ->
-          dispatch_request(conn, method, params, id, context)
+        _ = Server.dispatch(method, params, context)
+        send_resp(conn, 202, "")
+      else
+        dispatch_request(conn, method, params, id, context)
       end
     else
       {:error, :invalid_json} ->
