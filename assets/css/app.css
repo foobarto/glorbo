@@ -1466,8 +1466,9 @@ button { font-family: inherit; font-size: inherit; }
 .gl-task-detail {
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border-strong);
-  border-radius: 4px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  /* GEP-30: sharp, shadow-free detail overlay. */
+  border-radius: 0;
+  box-shadow: none;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -2860,8 +2861,9 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-modal {
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border-strong);
-  border-radius: 4px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  /* GEP-30: sharp-cornered modals, no drop shadow. */
+  border-radius: 0;
+  box-shadow: none;
   min-width: 560px;
   max-width: min(90vw, 960px);
   max-height: 85vh;
