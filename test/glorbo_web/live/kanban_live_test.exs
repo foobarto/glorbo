@@ -437,6 +437,31 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "gl-new-task-drawer"
   end
 
+  test "sidebar exposes `+ new task` link pointing at ?new_task=1 (feature #59)",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
+    assert html =~ "gl-sidebar__new-task"
+    assert html =~ ~s(href="/companies/acme/kanban?new_task=1")
+    assert html =~ "+ new task"
+  end
+
+  test "drawer closes after a successful new_task_create (E2E round-trip)",
+       %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?new_task=1")
+    # Drawer is initially open.
+    assert render(view) =~ "gl-new-task-drawer"
+
+    html =
+      render_submit(view, "new_task_create", %{
+        "project" => "website",
+        "title" => "Drawer round-trip"
+      })
+
+    # After success the drawer markup is gone and the flash confirms.
+    refute html =~ "gl-new-task-drawer"
+    assert html =~ "Created website-"
+  end
+
   test "?return_to=/path redirects on cancel when set",
        %{conn: conn} do
     {:ok, view, _} =
