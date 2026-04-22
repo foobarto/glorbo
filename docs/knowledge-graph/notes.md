@@ -319,6 +319,19 @@ re-flagged against old commit hashes. Systematic approach:
 Wave-5 discovered 6 false-positives this way (rows 24, 27, 31,
 41, 42, 46). Don't blanket-trust Codex's "new" status.
 
+### Threatmodel wave 6 — stale open rows can lag HEAD
+
+Wave 6 closed 4 real mediums (`ACLMapper` scope slug gate,
+`Skills.Resolver` lstat-before-copy, `Reindex.process_file/1`
+lstat, `Hierarchy` 0600 private files + doctor warning) BUT 3
+queued "open" rows were already fixed before the session started:
+`glorbo.create_agent` YAML scalar validation landed in `7948a55`,
+proposal extra-key filtering in `Company.Router.serialize_proposal/2`
+landed with `@proposal_extra_key_re`, and restore symlink-target
+rejection landed in `ae7e3fc` / `b5fa9f8`. For future threatmodel
+waves, grep HEAD for the named fix pattern and existing regression
+test before assuming the row still needs code.
+
 ---
 
 ## What belongs in this file vs elsewhere

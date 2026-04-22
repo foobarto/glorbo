@@ -158,16 +158,21 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **85 open** ·
-41 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **78 open** ·
+48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
 closed 3 mediums (Kanban list_projects lstat+slug, AgentLive io
-preview lstat, TaskDefinition.write regular-file guard) and
-discovered 6 more mediums were already fixed by earlier waves
+preview lstat, TaskDefinition.write regular-file guard); wave 6 on
+2026-04-23 closed 4 mediums (ACLMapper scope validation, skills
+resolver lstat, watcher/reindex lstat, config/log 0600 + doctor
+warning) and verified 3 more mediums were already fixed at HEAD
+(MCP create_agent YAML injection, proposal key injection, restore
+symlink-target guard); wave 5 also discovered 6 more mediums were
+already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 22 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 15 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
@@ -176,10 +181,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 
 - **Unbounded MCP sessions/subscriptions allow resource exhaustion DoS** — The commit introduces per-session GenServers and resource subscriptions for MCP. `initialize` now calls `Session.start_session/1` to spawn a new process for every request, but there is no cap, TTL, or cleanup unless the client sends DELETE. Additionally,…
   *Paths:* `lib/glorbo_web/mcp/plug.ex, lib/glorbo_web/mcp/session.ex`
-- **MCP create_agent allows YAML injection in AGENT.md** — The new MCP tool `glorbo.create_agent` accepts free-form `role`, `provider`, `model`, `reports_to`, and `template` strings from RPC clients and passes them directly into the agent scaffold. The scaffold writes these values into YAML frontmatter with no…
-  *Paths:* `lib/glorbo_web/mcp/tools/create_agent.ex, lib/glorbo/cli/scaffold/agent.ex`
-- **Proposal YAML key injection can forge approval fields** — The new proposal outbox handler preserves all agent-supplied frontmatter keys and then re-serializes them to YAML with raw key interpolation. Because keys are not quoted or validated, a malicious agent can craft a YAML key containing newline/colon sequences…
-  *Paths:* `lib/glorbo/company/router.ex`
 - **Release formula task trusts remote SHA256SUMS input** — The newly added Mix task fetches SHA256SUMS over HTTPS via :httpc using default options and parses each line into a map without enforcing that the "sha" tokens are valid hex digests. Those untrusted values are then embedded verbatim in the Ruby formula…
   *Paths:* `lib/mix/tasks/glorbo.release_formula.ex`
 - **Company cap sums global agent slugs, enabling cross-company DoS** — The new CompanyCap module computes company usage by listing agent directory names and summing Budget rows where agent_slug is in that list. The budgets table is keyed only by agent_slug and year_month, with no company field. If two companies share an agent…
@@ -196,8 +197,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/kanban_live.ex`
 - **Erlang cookie exposed via console command-line arguments** — `Glorbo.CLI.Console.launch/2` builds an argv list that embeds the Erlang distribution cookie and spawns `iex` with those arguments. On many systems, command-line arguments are visible to other local users via `ps`/`/proc`, so a different OS user can read the…
   *Paths:* `lib/glorbo/cli/console.ex`
-- **Restore tar guard ignores symlink targets, enabling path escape** — `Glorbo.Restore.run/2` introduces a traversal guard that rejects absolute paths or `..` segments by inspecting entry names returned from `:erl_tar.table/2`. This does not validate symlink or hardlink targets, and `:erl_tar.extract/2` is then invoked directly…
-  *Paths:* `lib/glorbo/restore.ex`
 - **Backup archive permissions set after creation allow local read race** — Glorbo.Backup creates the archive via :erl_tar.create, which uses the process umask (often 0644) when creating the file. The code only applies chmod 0600 after successful creation. This leaves a race window where a local user with access to the output…
   *Paths:* `lib/glorbo/backup.ex`
 - **Agent scaffold writes unsupported budget key, cap ignored** — The new `glorbo new agent` scaffold writes `budget:\n monthly_usd: 10.00` into `agent.md`. The runtime parser and budget tracker only look for `budget_usd_cents_month`, so the cap is parsed as `nil` and enforcement is skipped. This means freshly scaffolded…
@@ -208,14 +207,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/approvals/gate.ex, lib/glorbo/security/acl_mapper.ex`
 - **Proxy connection tasks leak mailbox messages causing DoS** — The commit switches per-connection handling from Task.Supervisor.start_child/2 to Task.Supervisor.async_nolink/2 inside the accept loop. async_nolink delivers {ref, result} and :DOWN messages to its caller (the acceptor task), but the acceptor never receives…
   *Paths:* `lib/glorbo/network/proxy.ex`
-- **Permission scopes allow path traversal in bwrap mounts** — The new PermissionMapper maps permission tuples directly into bwrap --bind/--ro-bind arguments using Path.join with the raw scope value. ACLMapper.parse_permission only validates that the string has three parts and that the resource is whitelisted; it does…
-  *Paths:* `lib/glorbo/sandbox/permission_mapper.ex, lib/glorbo/security/acl_mapper.ex`
-- **Skills resolver follows symlinks when copying skill files** — Glorbo.Skills.Resolver builds the source path under "~/.glorbo/skills" and uses File.cp!/2 (via fs_fun) to copy the file into the per-task run directory. File.cp!/2 dereferences symlinks, but the resolver never checks whether the source is a regular file…
-  *Paths:* `lib/glorbo/skills/resolver.ex`
-- **Watcher reindex reads unvalidated paths via symlinks** — Filesystem.Watcher now calls mark_dirty/2 for any file event that is not under inbox/outbox/audit/channels. mark_dirty/2 and process_path/2 simply invoke process_file/1, which unconditionally reads the provided path. There is no check that the path is within…
-  *Paths:* `lib/glorbo/filesystem/watcher.ex, lib/glorbo/filesystem/reindex.ex`
-- **Config file created without restrictive permissions** — The new filesystem hierarchy initializer writes config.md and logs/glorbo.log using File.write! and creates directories with File.mkdir_p! but never sets restrictive permissions on those paths. Only runtime/sockets is chmod’d to 0700. On typical umask 022…
-  *Paths:* `lib/glorbo/filesystem/hierarchy.ex`
 - **CI workflow uses unpinned GitHub Action tags** — The added workflow uses multiple `uses: ...@vX` references to third‑party actions without pinning them to commit SHAs. GitHub Action tags are mutable; if any upstream action is compromised or retagged, the workflow will execute attacker‑controlled code. This…
   *Paths:* `github/workflows/ci.yml`
 
@@ -350,4 +341,3 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/cli/logs.ex`
 - **TaskDefinition prefix check allows traversal outside company** — `relative_task_path/3` trusts `String.starts_with?/2` on the raw `file_path` to decide if a task lives under the target company. Because the path is not normalized or resolved, an attacker who can influence the task path (or place a symlink in the tasks…
   *Paths:* `lib/glorbo/task_definition.ex`
-

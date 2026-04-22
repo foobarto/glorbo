@@ -134,3 +134,9 @@ it's been in CHANGELOG for a cycle.
   Codex scan; wave-3 M02–M21 (isolation + secure defaults + input
   hardening). 51 lower-severity findings remain open under
   `docs/testing/threatmodel.md`.
+- [x] **Threatmodel wave 6 (2026-04-23).** Shipped 4 medium
+  closures across ACLMapper scope validation, Skills resolver
+  regular-file checks, watcher/reindex lstat discipline, and
+  config/log 0600 + doctor warning; also dropped 3 stale medium
+  rows that were already fixed at HEAD (`create_agent` YAML guard,
+  proposal extra-key filter, restore symlink-target guard).
