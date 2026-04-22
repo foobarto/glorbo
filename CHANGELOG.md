@@ -10,6 +10,110 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — Threat-model pass (2026-04-22)
+
+Fifteen findings from `docs/testing/threatmodel.md` triaged and
+addressed in a single security pass. Every fix lands with a unit
+or regression test; threatmodel.md statuses updated in-place.
+
+High-severity:
+- **T1** — `Glorbo.TaskComments.append/4` wrote to the comments
+  file via `File.exists?` + `File.write`, following symlinks. An
+  agent with `tasks:update` could pre-create `<task-id>.comments.md`
+  as a symlink to `~/.glorbo/config.md` and have the host append to
+  it. Added `ensure_regular_file/1` lstat check.
+- **T2** — MCP `glorbo.create_agent` forwarded
+  role/provider/model/reports_to/template verbatim into AGENT.md
+  YAML. Newlines / `---` / `"` let a caller inject extra frontmatter
+  keys (permissions, network, heartbeat) to scaffold a privileged
+  agent. New `Args.require_safe_yaml_scalar/3` + `require_safe_identifier/2`.
+- **T3** — `Dispatch.write_prompt/3` did `mkdir_p! + write!` on a
+  path derived from the constant task_id `"heartbeat"`. An agent
+  could pre-create `.glorbo-run/heartbeat/` (or the inner
+  `task-prompt.md`) as a symlink. Added `ensure_safe_run_dir!/1`
+  + `ensure_safe_prompt_path!/1`.
+- **T4** — `PathRequestGate.write_grant/4` stored director-supplied
+  `:write` verbatim; cross-company paths became `--bind` (RW) under
+  bwrap. New `resolve_cross_company_mode/4` downgrades anything
+  under `companies/<other>/` to `:read` (per GEP-27 §151-161).
+
+Medium-severity:
+- **T5** — Unbounded MCP sessions + subscriptions. Added
+  `max_children: 256` to `SessionSupervisor` and
+  `max_subscriptions_per_session: 64` guard in `Session.handle_call/2`.
+- **T6** — Mention fanout hardcoded `from: "director"`; an MCP
+  caller could spoof director provenance. Threaded the caller's
+  actor through `write_mention/8`; sanitized via `safe_actor_tag/1`.
+- **T7** — `Router.serialize_proposal/2` wrote extra keys verbatim.
+  A crafted key with `\n` produced a second `status:`/`approved_by:`
+  line that overrode Router-stamped fields on re-parse. Extras now
+  filtered to `[a-z][a-z0-9_]{0,63}`.
+- **T8** — `SmartClassifier.classify/2` checked allowlist before
+  private-IP, so an allowlisted `127.0.0.1` bypassed the invariant.
+  Reorder: private-IP now outranks allowlist.
+
+Low-severity / crash-hardening:
+- **T9** — `OverviewLive.company_goals/1` crashed /companies on
+  non-string `goal.slug`. New `safe_goal_slug/1`.
+- **T10** — `handle_initialize/1` raised `BadMapError` on `params:
+  []` (valid JSON-RPC). Coerce non-map params to `%{}`.
+- **T11** — `/mcp` now sits behind the `:dashboard` pipeline;
+  `DashboardToken` plug extended to accept `Authorization: Bearer
+  <token>` (MCP-friendly) alongside `?token=<value>`.
+- **T12** — `ProposalsSink` lifted frontmatter `approved_by` into
+  the audit `actor` field — an agent with `proposals:write:*` could
+  forge a director-signed `proposal.approved`. Renamed actions to
+  `proposal.file_*`; actor always `"proposal-file"`; claimed
+  proposer/approver preserved in `detail.claimed_*`.
+- **T13** — `InboxLive` `approve_path` raised on malformed payload.
+  `Enum.flat_map` + whitelist of `read`/`write` atoms.
+- **T14** — `Network.Proxy.safe_classify/3` returned the classifier's
+  raw value; non-matching tuples raised `CaseClauseError`. New
+  `normalise_classifier_result/1` coerces malformed returns to
+  `{:unknown, :classifier_malformed}`.
+- **T15** — Invalid (false positive). `Regex.scan :all_names`
+  returns captures alphabetically; existing destructure is correct.
+
+### Fixed — UAT bugs surfaced during the bench-tech-blog walkthrough
+
+- **B1** — `AuditLog.append/1` calls from `BrainDumpLive.emit_audit/4`
+  + `CompanyLive.do_wake_all/1` silently dropped every audit event
+  in production because the bare `Glorbo.Company.AuditLog` is only
+  registered per-company. Verified against live acme
+  (`grep -c braindump` → 0 since #230 shipped). New
+  `AuditLog.append_for/2` resolves the per-company via-tuple in
+  prod and falls back to the bare module in the unit-LV test harness.
+- **B2** — Sidebar "Chat" link 404'd on every freshly-scaffolded
+  company. Both scaffolders (plain + template-based) now write a
+  minimal `channels/general.md` stub.
+- **B3** — `g v` shortcut + palette "Approvals" entry pointed at
+  the since-deleted `/approvals` route (folded into `/inbox`).
+  Rewired to `/inbox?tab=mine`; added `g i` for Inbox root.
+- **U1** — Brain-dump `ctrl+enter to submit` hint wasn't wired to
+  any keybinding. New `SubmitOnCtrlEnter` JS hook.
+
+### Changed — `:api_only` renamed to `:proxy` (breaking)
+
+Pre-1.0 atomic cut, no deprecation alias. The old name suggested
+"only allows API traffic" but the runtime behavior is "inherits
+host netns, env-var hint that a proxy exists". `:proxy` names what
+it does. 45 files touched: atoms, frontmatter strings, function
+names, config key `api_only_base_allowlist` → `proxy_base_allowlist`,
+integration test filename, every GEP and design doc. Motivates
+**GEP-31 (Draft)** which will make `:proxy` mean *"only the proxy
+is reachable"* at the kernel level via per-agent network namespaces
++ `pasta`.
+
+### Added — GEP-31 (Draft): netns isolation for `:proxy` agents
+
+Draft GEP landed in `docs/geps/0031-netns-isolation-for-proxy-agents.md`.
+Identifies the loopback-escape gap surfaced during the threatmodel
+pass — an agent on `:proxy` can still reach `127.0.0.1:4000`
+(Glorbo web/MCP) or any RFC1918 host because it shares the host
+netns. Proposes per-dispatch netns + `pasta` userspace forwarding
+that only exposes the proxy port. No implementation yet; phased
+rollout documented in the GEP (Phase A plumbing → Phase D default).
+
 ### Added — New-task drawer + sidebar quick-action + palette shortcut
 
 The "+ new task" button on Kanban now opens a right-side shelf
