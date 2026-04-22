@@ -2178,7 +2178,8 @@ button { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--gl-border);
   padding: var(--gl-space-sm);
   color: inherit;
-  border-radius: 6px;
+  /* GEP-30: radius 1 for TUI sharpness (was 6). */
+  border-radius: 1px;
   width: 100%;
   font-family: inherit;
   font-size: inherit;
@@ -2530,7 +2531,8 @@ button { font-family: inherit; font-size: inherit; }
   grid-template-columns: 170px 22px 1fr 110px 160px;
   gap: 10px;
   padding: 4px var(--gl-space-md);
-  border-bottom: 1px solid var(--gl-border-faint);
+  /* GEP-30: dashed hairline between rows matches the TUI prototype. */
+  border-bottom: 1px dashed var(--gl-border-faint);
   align-items: center;
   cursor: pointer;
   font-family: var(--gl-ff-mono);
@@ -2568,7 +2570,7 @@ button { font-family: inherit; font-size: inherit; }
   font-size: 11px;
   white-space: pre-wrap;
   border: 1px solid var(--gl-border-faint);
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 /* Actor avatar — two-letter badge used in audit rows, channel, inbox.
