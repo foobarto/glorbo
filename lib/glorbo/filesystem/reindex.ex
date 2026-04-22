@@ -183,10 +183,15 @@ defmodule Glorbo.Filesystem.Reindex do
   # B4 CONTRACT: process_file/1 is PRIVATE. Plan 04 will wrap it via a
   # public process_path/2 — do NOT promote this to `def`.
   defp process_file(path) do
-    # WR-14: stat-check first so an oversize file never gets slurped into
+    # Threatmodel wave 6: watcher-delivered paths are untrusted filesystem
+    # inputs. `File.stat/1` follows the final symlink, so a symlinked
+    # `company.md` or `agent.md` would be read and hashed as if it were a
+    # real in-tree markdown file. Reject non-regular leaves at the outer seam.
+    #
+    # WR-14: lstat-check first so an oversize file never gets slurped into
     # memory. Frontmatter.parse/1 has its own cap but only after the full
     # read. Streaming the MD5 for under-cap files keeps memory bounded.
-    case File.stat(path) do
+    case File.lstat(path) do
       {:ok, %File.Stat{type: type}} when type != :regular ->
         # Watcher fires on directory creation too (e.g. workspace/.glorbo-run/
         # scaffolding). Reindex is a markdown indexer — anything that isn't

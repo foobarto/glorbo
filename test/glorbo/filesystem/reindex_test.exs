@@ -141,6 +141,25 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert length(Repo.all(Company)) == 1
       assert Repo.all(Agent) == []
     end
+
+    test "symlinked markdown file is skipped during full reindex" do
+      base = TmpGlorboHome.setup()
+      external = write!(base, "outside/company.md", "---\nname: leak\n---\n")
+      company_dir = Path.join(base, "companies/acme")
+      File.mkdir_p!(company_dir)
+      File.ln_s!(external, Path.join(company_dir, "company.md"))
+
+      import ExUnit.CaptureLog
+
+      {result, log} =
+        with_log(fn ->
+          Reindex.run(base: base)
+        end)
+
+      assert {:ok, %{indexed: 0, skipped: 1, deleted: 0}} = result
+      assert log =~ "not_regular_file"
+      assert Repo.all(Company) == []
+    end
   end
 
   describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do
@@ -175,6 +194,18 @@ defmodule Glorbo.Filesystem.ReindexTest do
 
       # Second call on an unchanged file should still return :ok.
       assert :ok = Reindex.mark_dirty("acme", path)
+    end
+
+    test "process_path/2 skips a symlinked markdown leaf" do
+      base = TmpGlorboHome.setup()
+      external = write!(base, "outside/company.md", "---\nname: leak\n---\n")
+      company_dir = Path.join(base, "companies/acme")
+      File.mkdir_p!(company_dir)
+      path = Path.join(company_dir, "company.md")
+      File.ln_s!(external, path)
+
+      assert {:skip, {:not_regular_file, :symlink}} = Reindex.process_path("acme", path)
+      assert Repo.all(Company) == []
     end
   end
 end
