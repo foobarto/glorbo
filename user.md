@@ -485,3 +485,76 @@ Codex second-opinion review (3 risks I flagged):
 
 Net: no must-fix, one nice-to-have applied. Committing.
 
+### Post-commit status
+
+- Commit: `1de4e4b feat(proposals): GEP-28 wave 2a — ProposalsSink
+  audit observer`, pushed to `origin/main`.
+- Pre-existing flaky test in `Glorbo.Agent.DispatchTest` D5 —
+  `:glorbo_path_grants` ETS table missing when run after a specific
+  prior test. Passes in isolation and on a second suite run. Not
+  caused by wave 2a. **Follow-up queued:** diagnose ETS-table
+  teardown ordering in the Dispatch tests. Low priority, no CI
+  impact.
+- `mix glorbo.build_local` still broken environmentally — same
+  failure the prior session hit. Burrito's `recompile_nifs` step
+  fails compiling `exqlite` because `erl_nif.h` is not on the
+  include path during its sub-make. Nothing to do with my commits.
+  Burrito symlink is stale (points at b18dfab era). **Follow-up
+  queued:** investigate why burrito's zig/clang can't find the
+  Erlang NIF headers; possibly `.tool-versions` / OTP 28 vs
+  burrito 1.5.0 compatibility.
+- CI armed on run 24770395664.
+
+## 2026-04-22 — GEP-28 wave 2b pause: design question
+
+The user.md wave 2b plan is "Router-level status-flip enforcement".
+Reading the existing Router, two viable architectures surface and
+they're materially different:
+
+**Option A — Outbox indirection (cleaner, bigger).**
+
+Agents can no longer write `proposals/<id>.md` directly. Instead
+they write `agents/<sender>/outbox/proposals/<id>.md`. Router's
+`classify_outbox_file/3` gains a `{:proposal, id}` branch.
+Router stamps `proposed_by: <sender>` on initial writes (forge-
+proof — sender is the outbox owner). For status flips, Router
+checks: sender ∈ {director, system}, approved_by matches sender,
+and approved_by ≠ proposed_by. This mirrors existing tasks /
+comments / memory / path-request flows.
+
+Requires: drop `proposals:write:*` from CEO's AGENT.md; remove
+the `proposals/` RW bwrap mount; add outbox RW access for
+`outbox/proposals/`; new Router classify branch + handler (~150
+LoC); GEP-28 revision; CEO template update; tests.
+
+**Option B — Detect-and-reject (simpler, looser).**
+
+Keep the current direct-write model. ProposalsSink gains a
+"prior state" cache and on each event: parse new frontmatter,
+compare to prior, detect illegal status transitions (flip to
+approved/denied where approved_by ∉ {director, system} or
+approved_by == proposed_by), emit `proposal.flip_rejected`
+audit. Does NOT physically prevent the bad write — relies on
+downstream auto-approval evaluator to filter trustable vs
+rejected transitions via audit walk.
+
+Requires: ProposalsSink cache + rule engine (~80 LoC); audit
+event type; tests. No GEP revision, no ACL changes.
+
+**My recommendation: Option A.** It's more code now, but it
+matches every other write-path-that-needs-validation in the
+system (tasks / comments / memory / path-request — all via
+outbox). Option B leaves a known loophole where a compromised
+agent can emit bad state that subsequent processes have to
+filter around. With glorbo still pre-1.0 (feedback #pre-1-0
+in memory: "atomic cuts, no backwards-compat shims"), this
+is the cheapest time to restructure.
+
+**Blocking question for you:** pick A or B. Until you decide,
+wave 2b stays paused. I won't guess on this one — the
+decision shapes GEP-28 and the on-disk layout.
+
+While you decide, I'm /clear-ing to free context; next loop
+iteration (or a fresh `/loop 1h …`) will read this entry and
+proceed on your choice.
+
