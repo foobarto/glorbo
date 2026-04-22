@@ -3,7 +3,7 @@
 Glorbo is a multi-agent AI orchestration platform with a
 sandbox-as-trust-boundary architecture. Changes that touch that boundary
 (permissions, bwrap, audit log, company isolation) need extra care —
-see [`DESIGN.md`](./DESIGN.md) for the load-bearing invariants. This
+see [`docs/DESIGN.md`](./docs/DESIGN.md) for the load-bearing invariants. This
 document describes how to get set up, the workflow we use, and what we
 look for in code review.
 
@@ -13,7 +13,7 @@ look for in code review.
 
 ## Before you start
 
-- Read [`DESIGN.md`](./DESIGN.md) — it is authoritative when it
+- Read [`docs/DESIGN.md`](./docs/DESIGN.md) — it is authoritative when it
   conflicts with `README.md`.
 - Read [`CLAUDE.md`](./CLAUDE.md) for the architectural guardrails.
 - For security-sensitive reports, use [`SECURITY.md`](./SECURITY.md)
@@ -71,7 +71,7 @@ for the full process, and
 
 - Introduces a new public contract — CLI flag, config schema, on-disk
   layout, API surface, `agent.md` field.
-- Touches a load-bearing invariant documented in `DESIGN.md` or an
+- Touches a load-bearing invariant documented in `docs/DESIGN.md` or an
   existing GEP.
 - Reverses, supersedes, or materially extends a prior decision.
 - Spans multiple modules or milestones and benefits from a shared
@@ -228,7 +228,7 @@ Before requesting review, self-check:
 - [ ] Scope is clear from the PR title + description.
 - [ ] `mix compile --warnings-as-errors && mix test && mix credo
       --strict && mix format --check-formatted` all pass.
-- [ ] Touched `DESIGN.md` invariants? Explained why in the PR body.
+- [ ] Touched `docs/DESIGN.md` invariants? Explained why in the PR body.
 - [ ] Added/updated tests for the behaviour change.
 - [ ] No new top-level deps without discussion.
 - [ ] No secrets, API keys, or personal paths in diffs, logs, or test

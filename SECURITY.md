@@ -48,7 +48,7 @@ The following are **high-severity** by default and warrant immediate triage:
   host-visible paths, acquire capabilities, or emit network traffic in
   `network: none` mode.
 - **Policy-engine bypass.** Agent performs a read/write that violates its
-  `agent.md` frontmatter permissions. Per `DESIGN.md`, permissions must be
+  `agent.md` frontmatter permissions. Per `docs/DESIGN.md`, permissions must be
   enforced at **two** layers (Elixir Router *and* POSIX ACLs inside the
   container) — a break in either layer is a bug, even if the other
   layer would have caught it.
@@ -69,7 +69,7 @@ The following are **high-severity** by default and warrant immediate triage:
   output, error messages, crash dumps, or telemetry.
 - **Kernel / OTP crash path** that a non-privileged agent can
   deterministically trigger to take down the whole dashboard or another
-  company's agents (crash-isolation invariant from `DESIGN.md`).
+  company's agents (crash-isolation invariant from `docs/DESIGN.md`).
 
 ## Out of Scope
 

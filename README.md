@@ -424,7 +424,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `DESIGN.md` §10 are wired; the shipped surface as of v0.0.4:
+All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.0.4:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -547,8 +547,8 @@ transfers as belt-and-braces above the kernel.
 
 ## Design Documents
 
-For the full living architecture, see [DESIGN.md](DESIGN.md). When
-`DESIGN.md` and this README disagree, `DESIGN.md` wins.
+For the full living architecture, see [docs/DESIGN.md](docs/DESIGN.md). When
+`docs/DESIGN.md` and this README disagree, `docs/DESIGN.md` wins.
 
 For the *why* behind major design decisions, see the **Glorbo
 Enhancement Proposals** under [`docs/geps/`](docs/geps/) — numbered,
