@@ -212,6 +212,115 @@ Codex scan. A few load-bearing patterns worth keeping in mind:
 
 ---
 
+## 2026-04-23 — threatmodel waves 4 + 5 + GEP-32
+
+### Approvals.Gate invariant — Director writes MUST mark first
+
+`Glorbo.Approvals.Gate` keeps a short-lived `director_pending` map
+(10 s TTL) of task_paths that the Director has just flipped through
+`GlorboWeb.Actions.set_approval`. The watcher-driven resolver
+consults this before advancing an awaiting row to approved/denied
+— **unmarked transitions are treated as agent self-approval
+attempts, reverted to `awaiting`, and audited as
+`approval.self_approval_rejected`**.
+
+Call-site rule: any new code path that writes `status: approved` /
+`status: denied` to a task file **must** call
+`Glorbo.Approvals.Gate.mark_director_decision/2` first. This
+includes tests — `test/support/gate_helpers.ex`
+`resolve_approval/3` marks automatically; bare
+`send(pid, {:file_event, ...})` does not.
+
+Why it exists: wave 4 threatmodel row 16 — `tasks:update`
+permission grants rwx on `projects/<scope>/tasks`, so an agent can
+edit its own task frontmatter. Before this gate, the file-watcher
+resolver trusted `status: approved` regardless of who wrote it.
+
+### `File.lstat` vs `File.stat` — consistent discipline across all
+write-path seams
+
+Wave 4 added two more lstat guards on the host-write seams of
+agent-reachable files:
+
+- `Glorbo.CLI.Dispatcher.read_reply/3` — lstat the reply path
+  before `fs.stat/fs.read`; refuse non-regular.
+- `Glorbo.TaskDefinition.write/atomic_write` — lstat the target
+  AND the `<file>.tmp` side before write; refuse non-regular on
+  either.
+
+Plus wave 5:
+
+- `GlorboWeb.KanbanLive.list_projects` — lstat replaces `File.dir?`
+  (which follows symlinks) when enumerating the project picker.
+- `GlorboWeb.AgentLive.io_card_from_file` — lstat before
+  `File.read` of inbox/outbox previews.
+
+Pattern across the code: **`File.lstat` is the default for any path
+that crosses the agent-writable → host-read / host-write boundary.**
+Use `File.stat` only when you specifically want symlink-following
+semantics (rare).
+
+### Router slug discipline — chat + agent targets are Path.join fuel
+
+`Glorbo.Company.Router.parse_to/1` now validates both `chat:<name>`
+and `agent:<slug>` segments through `GlorboWeb.Slug.valid?/1`
+(canonical `\A[a-z0-9-]+\z`) before the strings reach `Path.join`
+for channel / inbox writes. Wave 4 threatmodel rows 15 & 18 —
+the outbox `to` field had only a control-char filter, so
+`to: chat:../../otherco/channels/general` or
+`to: agent:../audit` flowed through as path-traversal.
+
+Rule: every Router-facing slug-shaped input must clear
+`Slug.valid?` before joining a filesystem path. The previous
+control-char filter was necessary but insufficient.
+
+### task_id validation in Dispatch
+
+`Glorbo.Agent.Dispatch.prepare_run_dir_path/3` now raises if
+`task.task_id` doesn't match `\A[a-z0-9][a-z0-9._-]*\z`. The
+existing `ensure_safe_run_dir!` lstat check is defense-in-depth,
+but `..` would have slipped past it (lstat resolves the dotdot,
+sees a legit directory). Both layers are kept.
+
+### GEP-32 — native OpenAI-v1 harness runs inside bwrap
+
+Accepted 2026-04-23. Key invariant added: the `glorbo harness`
+subcommand is a **first-party wrapped CLI** bind-mounted as
+`/usr/bin/glorbo-harness` into the same bwrap tree CLI agents
+use. It is NOT an in-process SDK client — that would collapse
+GEP-5 two-layer enforcement. Adding native agents extends
+GEP-2 pillar 5 rather than softening it.
+
+Credentials live at `~/.local/etc/glorbo/credentials/<provider>.toml`
+— deliberately **outside** `~/.glorbo/` so a naïve
+`tar cf backup.tgz ~/.glorbo` does not sweep API keys into the
+backup.
+
+The model catalog is file-backed at
+`~/.glorbo/cache/providers/<alias>.json` with a SQLite
+`provider_models` projection. `glorbo reindex` rebuilds the
+SQLite table from the cache files without network traffic —
+same GEP-7 D6 discipline as every other SQLite projection.
+
+### Codex threat-model scan noise ratio
+
+The fresh 126-finding Codex sweep against `cc99146` contained
+many false positives — code was fixed in waves 1–3 but Codex
+re-flagged against old commit hashes. Systematic approach:
+
+1. `git log --oneline` the named file to see if it was touched
+   in wave-1/2/3 commits (`27f2118`, `d6aaec5`, `d8d1e90`).
+2. Grep HEAD for the fix pattern named in the finding
+   description (`ensure_regular_file_lstat`, `Slug.valid?`,
+   `@contract_files`, `sanitize_yaml_scalar`, etc.).
+3. If the fix is present at HEAD, mark as false-positive and
+   drop from the list.
+
+Wave-5 discovered 6 false-positives this way (rows 24, 27, 31,
+41, 42, 46). Don't blanket-trust Codex's "new" status.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |
