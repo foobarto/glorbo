@@ -374,10 +374,12 @@ defmodule Glorbo.Network.Proxy do
     end
   end
 
-  # Treat any classifier crash as `:unknown` — fail-safe so a broken
-  # classifier never results in silently allowing unknown hosts.
+  # Treat any classifier crash OR malformed return as `:unknown` —
+  # fail-safe so a broken classifier never results in silently allowing
+  # unknown hosts, AND never crashes `classify_unlisted/5` with a
+  # CaseClauseError (threatmodel T14).
   defp safe_classify(fun, host, port) do
-    fun.(host, port)
+    fun.(host, port) |> normalise_classifier_result()
   rescue
     e ->
       Logger.warning("[network.proxy] classifier raised: #{inspect(e)} — treating as :unknown")
@@ -390,6 +392,18 @@ defmodule Glorbo.Network.Proxy do
       )
 
       {:unknown, :classifier_exit}
+  end
+
+  defp normalise_classifier_result({verdict, _reason} = ok)
+       when verdict in [:allow, :deny, :unknown],
+       do: ok
+
+  defp normalise_classifier_result(other) do
+    Logger.warning(
+      "[network.proxy] classifier returned malformed value: #{inspect(other)} — treating as :unknown"
+    )
+
+    {:unknown, :classifier_malformed}
   end
 
   defp open_and_splice(host, port, client_sock, task_sup) do

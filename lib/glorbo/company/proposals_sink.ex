@@ -110,15 +110,26 @@ defmodule Glorbo.Company.ProposalsSink do
 
     with {:ok, content} <- state.read_fun.(abs_path),
          {:ok, meta, _body} <- Frontmatter.parse(content),
-         {:ok, action, actor} <- classify(meta) do
+         {:ok, action} <- classify(meta) do
+      # Threatmodel T12: the sink is a filesystem observer, not an
+      # authorization oracle. Do not trust `approved_by`/`proposed_by`
+      # from frontmatter — an agent with `proposals:write:*` can set
+      # any value there and forge an apparently-director-signed audit
+      # entry. The Router's separate audit emit (when it handles an
+      # outbox proposal) is the authoritative record; this sink just
+      # captures that the proposal file changed. Always use the
+      # sentinel `"proposal-file"` actor and preserve the claimed
+      # values inside `detail` for investigators.
       entry = %{
         company: state.company,
-        actor: actor,
+        actor: "proposal-file",
         action: action,
         target: rel,
         detail: %{
           subtype: Map.get(meta, "subtype"),
-          id: Map.get(meta, "id")
+          id: Map.get(meta, "id"),
+          claimed_proposed_by: Map.get(meta, "proposed_by"),
+          claimed_approved_by: Map.get(meta, "approved_by")
         }
       }
 
@@ -142,33 +153,18 @@ defmodule Glorbo.Company.ProposalsSink do
       :ok
   end
 
-  # Returns {:ok, action, actor} or {:error, reason}. Unknown status
-  # values are a skip, not a crash — the watcher sees every write and
-  # many will be in-flight edits (e.g. a Director saving a half-typed
-  # status field).
+  # Returns {:ok, action} or {:error, reason}. Unknown status values
+  # are a skip, not a crash — the watcher sees every write and many
+  # will be in-flight edits (e.g. a Director saving a half-typed
+  # status field). T12: the action name signals "file was seen in
+  # status X", not "X was authorized" — the sink is an observer.
   defp classify(meta) do
     case Map.get(meta, "status") do
-      "pending-approval" ->
-        {:ok, "proposal.requested", actor_or(meta, "proposed_by", "system")}
-
-      "approved" ->
-        {:ok, "proposal.approved", actor_or(meta, "approved_by", "director")}
-
-      "denied" ->
-        {:ok, "proposal.denied", actor_or(meta, "approved_by", "director")}
-
-      "superseded" ->
-        {:ok, "proposal.superseded", "system"}
-
-      other ->
-        {:error, {:unknown_status, other}}
-    end
-  end
-
-  defp actor_or(meta, key, fallback) do
-    case Map.get(meta, key) do
-      v when is_binary(v) and v != "" -> v
-      _ -> fallback
+      "pending-approval" -> {:ok, "proposal.file_pending"}
+      "approved" -> {:ok, "proposal.file_approved"}
+      "denied" -> {:ok, "proposal.file_denied"}
+      "superseded" -> {:ok, "proposal.file_superseded"}
+      other -> {:error, {:unknown_status, other}}
     end
   end
 

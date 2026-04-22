@@ -239,9 +239,23 @@ defmodule GlorboWeb.InboxLive do
 
     granted_paths =
       case Jason.decode(paths_json) do
-        {:ok, paths} ->
-          Enum.map(paths, fn %{"path" => p, "mode" => m} ->
-            %{path: p, mode: String.to_existing_atom(m)}
+        {:ok, paths} when is_list(paths) ->
+          # Threatmodel T13: the client can send any JSON shape through
+          # the LV event. Filter aggressively so a crafted payload
+          # (non-map entries, missing keys, unknown `mode` atom) can't
+          # raise `FunctionClauseError` / `ArgumentError` and crash the
+          # InboxLive process. Any malformed entry is silently dropped;
+          # the gate re-validates the remainder.
+          Enum.flat_map(paths, fn
+            %{"path" => p, "mode" => m} when is_binary(p) and is_binary(m) ->
+              case m do
+                "read" -> [%{path: p, mode: :read}]
+                "write" -> [%{path: p, mode: :write}]
+                _ -> []
+              end
+
+            _ ->
+              []
           end)
 
         _ ->

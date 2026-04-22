@@ -170,7 +170,12 @@ defmodule GlorboWeb.MCP.Server do
   # with our latest supported version. The client is free to
   # disconnect if it can't speak the returned version.
   defp handle_initialize(params) do
-    requested = Map.get(params || %{}, "protocolVersion")
+    # Threatmodel T10: MCP.Plug.extract_request/1 allows JSON-RPC
+    # params to be a list too, per spec. `Map.get/2` on a list raises
+    # BadMapError and crashed the request process. Coerce any
+    # non-map params to an empty map so negotiation returns defaults.
+    params_map = if is_map(params), do: params, else: %{}
+    requested = Map.get(params_map, "protocolVersion")
 
     negotiated =
       if is_binary(requested) and requested in @supported_protocol_versions,
