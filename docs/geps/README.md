@@ -52,7 +52,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0026 | [Benchmark Templates and Provider A/B Comparison](./0026-benchmark-templates-and-ab-comparison.md) | Standards     | Draft       |
 | 0027 | [Agent Sandbox Path Requests via Director Approval](./0027-agent-sandbox-path-requests.md) | Standards     | Implemented |
 | 0028 | [Agent-Created Proposals via Director Approval](./0028-agent-created-proposals.md)        | Standards     | Draft       |
-| 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Draft       |
+| 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

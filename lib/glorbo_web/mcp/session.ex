@@ -46,7 +46,13 @@ defmodule GlorboWeb.MCP.Session do
   push `notifications/resources/updated` so the client re-reads the
   snapshot.
   """
-  use GenServer
+  # `restart: :temporary` is load-bearing. DynamicSupervisor's default
+  # is `:permanent`, which restarts the child on *any* exit — including
+  # the `:normal` one we send from `terminate_session/1`. A restarted
+  # session would be a zombie: same Mcp-Session-Id, no client ever
+  # knew about it. MCP sessions are strictly client-owned; once the
+  # client DELETEs, the session stays gone.
+  use GenServer, restart: :temporary
 
   require Logger
 

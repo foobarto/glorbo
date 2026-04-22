@@ -2,13 +2,22 @@
 gep: 0029
 title: Glorbo as MCP Server (Localhost HTTP-SSE, R/W)
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-22
 history:
   - date: 2026-04-22
     status: Draft
     note: Initial draft. Concrete implementation of the direction sketched in GEP-9.
+  - date: 2026-04-22
+    status: Implemented
+    note: |
+      All waves shipped. (a) transport scaffolding; (b.1/b.2) 13
+      read-only tools; (c.1/c.2) 10 write/creation tools; (d.1)
+      resources/list + resources/read; (d.2) resources/subscribe
+      + SSE streaming with SessionSupervisor; (e) MCP-Protocol-Version
+      header validation; (f) end-to-end smoke (scripts/mcp-smoke.sh)
+      + client setup doc (docs/mcp-client-setup.md).
 requires: [2, 6, 9, 19, 28]
 see-also: [4, 10]
 ---

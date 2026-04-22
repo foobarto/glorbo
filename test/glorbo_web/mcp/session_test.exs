@@ -328,6 +328,29 @@ defmodule GlorboWeb.MCP.SessionTest do
     end
   end
 
+  describe "supervisor restart policy (regression — wave f smoke)" do
+    test "DynamicSupervisor does NOT resurrect the Session after terminate_session" do
+      # Regression: DynamicSupervisor's default restart is `:permanent`,
+      # which restarts the child on every exit including `:normal`.
+      # A resurrected session would be a zombie with the old id but
+      # no client aware of it. Session uses `restart: :temporary`
+      # explicitly to prevent this.
+      base = TmpGlorboHome.setup()
+      {:ok, session_id} = Session.start_session(%{client: "test", base: base})
+      assert Session.exists?(session_id)
+
+      :ok = Session.terminate_session(session_id)
+
+      # Give the supervisor ample time to do the wrong thing if it's
+      # going to. 50ms is much longer than a DynamicSupervisor's
+      # restart latency.
+      :timer.sleep(50)
+
+      refute Session.exists?(session_id),
+             "session was resurrected by the supervisor — child_spec restart strategy broken"
+    end
+  end
+
   describe "terminate_session" do
     test "unsubscribes PubSub topics so later broadcasts don't reach the dead pid" do
       base = TmpGlorboHome.setup()

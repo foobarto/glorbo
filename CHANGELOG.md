@@ -84,6 +84,52 @@ prompt preview to Inbox Mine tab" as a separate follow-up.
 
 1559 tests green; mix credo --strict clean.
 
+### Added — GEP-29 wave (f): end-to-end smoke test + client setup doc
+
+Closes out GEP-29. Status flipped to **Implemented**.
+
+**`scripts/mcp-smoke.sh`** exercises the entire MCP protocol against
+a running `phx.server`: initialize → tools/list → tools/call →
+resources/list → resources/templates/list → resources/subscribe
+→ GET /mcp (SSE in background) → trigger a channel broadcast →
+assert `notifications/resources/updated` frame arrived → DELETE
+→ assert stale session is rejected with -32002. Prints a per-step
+✓ / ✗ line; exits non-zero on any protocol failure. Runs against
+localhost:4000 by default; override with `MCP_URL=...`.
+
+**`docs/mcp-client-setup.md`** documents how to plug external MCP
+clients — Claude Code (via `claude mcp add --transport http`),
+Cursor, and hand-crafted HTTP clients — into a running Glorbo.
+Covers security posture, the `Mcp-Client-Name` actor-tagging
+header, troubleshooting, and the smoke test's prerequisites.
+
+**Regression fix surfaced by the smoke:** `use GenServer,
+restart: :temporary` on `GlorboWeb.MCP.Session`. The
+`DynamicSupervisor` default is `:permanent`, which restarted
+sessions on every exit — including the `:normal` exit sent from
+`terminate_session/1`. Result: DELETE /mcp appeared to succeed,
+but a zombie session kept running under the same `Mcp-Session-Id`,
+allowing subsequent POSTs to bypass the stale-session check. Added
+a regression test that recreates the DELETE → exists? flow.
+
+Codex review caught and we fixed: subscription and trigger
+targeting different companies in multi-company installs (smoke now
+derives the company from the chosen URI), missing
+`MCP-Protocol-Version` header on non-initialize POSTs (smoke now
+sends it on every request), obsolete Claude Code config paths
+(doc now points at `claude mcp add` and `.mcp.json` / `~/.claude.json`),
+wrong GEP filename in the doc, and undocumented smoke prerequisites.
+
+- `scripts/mcp-smoke.sh` — new (~180 lines shell)
+- `docs/mcp-client-setup.md` — new (~120 lines)
+- `lib/glorbo_web/mcp/session.ex` — `restart: :temporary` +
+  regression test
+- `docs/geps/0029-mcp-server-for-glorbo.md` — status flipped to
+  Implemented
+- `docs/geps/README.md` — index updated to match
+
+151 MCP tests; 1604 total green.
+
 ### Added — GEP-29 wave (d.2): MCP resources/subscribe + SSE streaming
 
 Closes out the MCP resources surface with server-initiated
