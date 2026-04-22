@@ -159,6 +159,59 @@ actually work.
 
 ---
 
+## 2026-04-22 — threatmodel waves 2 + 3 gotchas
+
+Three security waves in one session closed 30 findings from the
+Codex scan. A few load-bearing patterns worth keeping in mind:
+
+- **Agent-writable → lstat or die.** Anything under
+  `agents/<slug>/{outbox,workspace,state,memory}` is
+  agent-controlled. Before `File.read` / `File.write` /
+  `File.rename` on a path inside that tree (or *derived from a
+  file inside that tree* — M02/M11 sentinel `task_path` is the
+  canonical example), the caller must `File.lstat` and refuse
+  anything that isn't a regular file or `:enoent`. We now have
+  `ensure_regular_file/1`-style helpers in at least 7 modules;
+  when adding a new write path inside an agent-writable tree,
+  reach for lstat first.
+- **ACL check lives at the Router, not the outbox scanner.**
+  `handle_outbox_comment/4` (M14) was the exception that proved
+  the rule — it bypassed `ACLMapper.check_action/2` because the
+  author thought "it's just appending to a task, not creating
+  one". Every outbox classifier branch in `Company.Router` must
+  check permissions before writing. When adding a new outbox
+  subkind, search existing `ACLMapper.check_action` call sites
+  and mirror the pattern.
+- **Default network is `:none`, not `:proxy`.** M16 flipped the
+  `validate_network/1` default because `:proxy` is advisory
+  until GEP-31 lands netns+pasta enforcement. Templates that
+  need egress set `network: proxy` explicitly. CLI-backed
+  templates (claude-code, codex, gemini, opencode) + editor /
+  researcher / provenance-auditor / ceo / critiqueops already
+  declare it.
+- **Task frontmatter is agent-authored — provider overrides are
+  an escalation vector.** M10: `task.provider` cannot pin a
+  different provider than the agent's spec, because doing so
+  would swap in that provider's `auth_binds` (which may mount
+  host secrets). `reconcile_task_provider/2` enforces equality.
+  Same pattern to consider for any future per-task override that
+  touches bwrap mount flags.
+- **Command palette is a stored-XSS magnet.** M06/M25:
+  `assets/js/app.js` `paletteHtml` + `renderList` use `innerHTML`
+  with escaped interpolations (`escapeHtml/1`). Any new palette
+  source — search hits from a new API, recent items, etc. —
+  must flow through `escapeHtml` for label/hint/href. Task
+  titles and audit fields are agent-authored.
+- **Sentinel path regex is the isolation boundary for
+  loop-detector.** `@sentinel_task_path_re` in LoopDetector +
+  `@sentinel_path_re` in TaskLive + InboxLive — three copies of
+  the same regex. If you edit one, edit all three (or extract
+  to a shared module; intentionally not done yet because the
+  regex is small and divergence is flagged loudly by negative
+  tests).
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

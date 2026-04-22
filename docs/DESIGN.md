@@ -442,13 +442,19 @@ Sibling agents and other companies are **not mounted** — company
 isolation is therefore absolute by construction: there is no path
 inside the sandbox that could reach another company's data.
 
-**Planned hardening:** `network: proxy` currently inherits the host
-netns plus a `HTTPS_PROXY` env var pointing at the per-company
-hostname-allowlist proxy. This is advisory — a determined agent could
-ignore the env vars. A future iteration will move `proxy` agents
-into a dedicated netns with `nftables` rules forcing all egress
-through the proxy, making the allowlist kernel-enforced like `none`
-already is.
+**Planned hardening (GEP-31, Draft):** `network: proxy` currently
+inherits the host netns plus a `HTTPS_PROXY` env var pointing at
+the per-company hostname-allowlist proxy. This is advisory — a
+determined agent could ignore the env vars. GEP-31 will move
+`proxy` agents into a per-dispatch netns with `pasta` forwarding
+only the proxy port, making the allowlist kernel-enforced like
+`none` already is.
+
+Until that ships, a missing `network:` field in AGENT.md defaults
+to `:none` (kernel-enforced) rather than `:proxy` (advisory) —
+see threatmodel wave-3 M16. Templates that legitimately need
+egress (CLI providers, editor agents) declare `network: proxy`
+explicitly.
 
 ### 4.5  SQLite — The Index
 

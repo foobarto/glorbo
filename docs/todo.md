@@ -128,3 +128,9 @@ it's been in CHANGELOG for a cycle.
   precommit wiring for `mix glorbo.docs.file_formats` + `glorbo fmt
   --check`. Scope shrank considerably with R26.2a done.
 - [x] #306 R33: FileSpec.Formatter + `glorbo fmt [--check|--write]` — canonical YAML key ordering, fence normalisation, idempotent, atomic writes; 14 unit tests + 2 CLI smoke tests
+- [x] **Threatmodel waves 1–3 (2026-04-22).** Shipped across 3
+  commits: wave-1 T1–T15 + UAT B1–U1 + `:api_only → :proxy`
+  rename + GEP-31 draft; wave-2 H4–H12 + M25/M35/M36/M40/M41 from
+  Codex scan; wave-3 M02–M21 (isolation + secure defaults + input
+  hardening). 51 lower-severity findings remain open under
+  `docs/testing/threatmodel.md`.
