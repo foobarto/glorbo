@@ -10,6 +10,44 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-29 wave (b.2): read-catalog completed (13 tools total)
+
+Six more read-only MCP tools land, finishing the read side of the
+catalog. External MCP clients now have full browse parity with the
+Director dashboard.
+
+- `glorbo.get_proposal(company, id)` — one proposal's frontmatter
+  + markdown body.
+- `glorbo.list_channels(company, include_dms?)` — enumerate chat
+  channels. DMs excluded by default.
+- `glorbo.get_channel(company, channel, since?, limit?)` — message
+  stream, newest-first. `since` uses proper DateTime comparison.
+- `glorbo.list_pending_approvals(company)` — walks
+  `agents/*/state/awaiting-approval-*.md` sentinels; pairs each
+  with its task title. Filesystem-first, no Ecto / supervisor
+  dependency.
+- `glorbo.query_audit(company, actor?, action?, since?, until?,
+  q?, limit?)` — general audit log reader across multiple
+  `audit/YYYY-MM.jsonl` months. Correctly walks year boundaries.
+- `glorbo.get_company_health(company)` — aggregate counts
+  (agents, projects, channels, proposals, tasks-by-status),
+  pending-approval count, latest audit timestamp.
+
+Codex-reviewed; two must-fix items applied inline:
+
+1. Audit rows canonicalize on `"ts"` (per GEP-7 /
+   `FileSpec.AuditMonthJsonl`), not `"timestamp"`. Prior revision
+   would have silently returned empty time-filtered queries
+   against real audit files.
+2. ISO8601 timestamp comparison now goes through `DateTime.compare/2`
+   for both `query_audit` and `get_channel`. Naive string `>=`
+   was dropping fractional-second entries at boundaries because
+   `"10:00:00.123Z" < "10:00:00Z"` lexicographically. Regression
+   tests added for both tools.
+
+21 new tests (happy + traversal + regression + malformed).
+1528 tests green; `mix credo --strict` clean.
+
 ### Added — GEP-29 wave (b.1): six read-only MCP tools
 
 Expand the MCP tool catalog from 1 to 7. External MCP clients can

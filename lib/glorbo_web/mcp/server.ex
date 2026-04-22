@@ -60,7 +60,14 @@ defmodule GlorboWeb.MCP.Server do
     Tools.GetAgent,
     Tools.ListTasks,
     Tools.GetTask,
-    Tools.ListProposals
+    Tools.ListProposals,
+    # Wave (b.2): rest of the read catalog
+    Tools.GetProposal,
+    Tools.ListChannels,
+    Tools.GetChannel,
+    Tools.ListPendingApprovals,
+    Tools.QueryAudit,
+    Tools.GetCompanyHealth
   ]
 
   @type request :: %{
