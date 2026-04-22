@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — Goals-progress row on OverviewLive company cards (backlog #13)
+
+Each company card on `/companies` now surfaces an aggregate
+goals-progress indicator: goal count, completion percentage, and
+a thin progress bar colored by tier (cold → warm → good → done).
+Companies with no `goals:` on their `company.md` omit the row
+entirely — zero visual noise for companies that don't use the
+feature.
+
+Data source reuses the same `goal:` task-frontmatter rollup
+`CompanyLive` already uses: walks `projects/*/tasks/*.md`,
+buckets by goal slug, counts `status: done` against the total.
+No new on-disk shape, no new supervisor dependency, no
+`company.md` schema change.
+
+- `OverviewLive.goals_summary/3` returns
+  `%{count, total_tasks, done_tasks, pct}` or nil.
+- `CompanyCard` renders a footer row + bar with 4 tier
+  classes (cold / warm / good / done) — CSS added under
+  `gl-company-card__goals*` in `assets/css/app.css`.
+- 2 new tests: no-goals company hides the row; seeded goals +
+  tagged tasks produce a bar with the right percentage.
+
+1561 tests green.
+
 ### Changed — Channels → Chat label + DM list cleanup (backlog #15)
 
 UI-only. Three cosmetic nudges:

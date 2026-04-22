@@ -3605,6 +3605,36 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-goals-row__progress-fill--mid   { background: var(--gl-warning); }
 .gl-goals-row__progress-fill--done  { background: var(--gl-accent); }
 
+/* Backlog #13: goals-progress row on company overview cards.
+   Mirrors the bar style from gl-goals-row__progress-* but scaled
+   down for the card footer. */
+.gl-company-card__goals {
+  padding: 6px 10px 10px;
+  border-top: 1px solid var(--gl-border);
+  font-size: 10px;
+  font-family: var(--gl-ff-mono);
+}
+.gl-company-card__goals-label {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.gl-company-card__goals-bar {
+  height: 4px;
+  background: var(--gl-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gl-company-card__goals-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.gl-company-card__goals-fill--cold { background: var(--gl-fg-subtle); }
+.gl-company-card__goals-fill--warm { background: var(--gl-warning); }
+.gl-company-card__goals-fill--good { background: var(--gl-accent); }
+.gl-company-card__goals-fill--done { background: var(--gl-success, var(--gl-accent)); }
+
 /* Sidebar pending-approval count badge (#256). */
 .gl-sidebar__badge {
   margin-left: auto;

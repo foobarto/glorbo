@@ -20,6 +20,82 @@ defmodule GlorboWeb.OverviewLiveTest do
     assert html =~ "No companies yet"
   end
 
+  describe "goals-progress card (backlog #13)" do
+    test "no-goals company omits the goals row entirely", %{conn: conn} do
+      # Seeded acme has no `goals:` on company.md. Expect no
+      # goals-progress row rendered at all.
+      {:ok, _view, html} = live(conn, ~p"/companies")
+      refute html =~ "gl-company-card__goals"
+    end
+
+    test "goals defined + tasks referencing them render a progress bar with pct",
+         %{conn: conn, base: base} do
+      co_dir = Path.join([base, "companies", "acme"])
+
+      # Seed goals on company.md and a project with tasks tagged
+      # to those goals — one done, one in-progress. Expected
+      # rollup: 2 goals, 3 tasks total, 1 done → 33%.
+      File.write!(Path.join(co_dir, "company.md"), """
+      ---
+      kind: company/v1
+      slug: acme
+      name: acme
+      goals:
+        - slug: ship-v1
+          title: Ship v1
+          status: active
+        - slug: docs
+          title: Docs pass
+          status: active
+      ---
+      """)
+
+      File.mkdir_p!(Path.join([co_dir, "projects", "blog", "tasks"]))
+
+      File.write!(Path.join([co_dir, "projects", "blog", "project.md"]), """
+      ---
+      slug: blog
+      name: blog
+      ---
+      """)
+
+      File.write!(Path.join([co_dir, "projects", "blog", "tasks", "a.md"]), """
+      ---
+      kind: task/v1
+      title: draft post
+      status: done
+      goal: ship-v1
+      ---
+      """)
+
+      File.write!(Path.join([co_dir, "projects", "blog", "tasks", "b.md"]), """
+      ---
+      kind: task/v1
+      title: edit post
+      status: in-progress
+      goal: ship-v1
+      ---
+      """)
+
+      File.write!(Path.join([co_dir, "projects", "blog", "tasks", "c.md"]), """
+      ---
+      kind: task/v1
+      title: docs site
+      status: todo
+      goal: docs
+      ---
+      """)
+
+      {:ok, _view, html} = live(conn, ~p"/companies")
+
+      assert html =~ "gl-company-card__goals"
+      assert html =~ "2 goals"
+      # 1 done / 3 total = 33% (integer div)
+      assert html =~ "33%"
+      assert html =~ "(1/3)"
+    end
+  end
+
   # TODO.md P1 — skip link renders as first focusable element + main
   # has a focusable target id.
   test "layout exposes a skip-to-content link", %{conn: conn} do

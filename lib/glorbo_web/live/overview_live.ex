@@ -295,8 +295,90 @@ defmodule GlorboWeb.OverviewLive do
       in_progress_count: in_progress_count(base, slug, path),
       spend_usd: spend_usd(path),
       alert_count: alert_count(path),
+      goals: goals_summary(base, slug, path),
       health: :healthy
     }
+  end
+
+  # Backlog #13: overview card shows a goals-progress summary. We
+  # reuse the same per-goal task-count rollup CompanyLive uses; no
+  # new data source. Returns `%{count, total_tasks, done_tasks,
+  # pct}` or nil if the company has no goals defined — the card
+  # hides the row entirely in that case.
+  defp goals_summary(base, slug, path) do
+    goals = company_goals(path)
+
+    if goals == [] do
+      nil
+    else
+      counts = goal_task_counts(base, slug)
+      per_goal = Enum.map(goals, &merge_goal_stats(&1, counts))
+      total_tasks = Enum.sum(Enum.map(per_goal, & &1.task_count))
+      done_tasks = Enum.sum(Enum.map(per_goal, & &1.done_count))
+      pct = if total_tasks == 0, do: 0, else: div(done_tasks * 100, total_tasks)
+
+      %{
+        count: length(per_goal),
+        total_tasks: total_tasks,
+        done_tasks: done_tasks,
+        pct: pct
+      }
+    end
+  end
+
+  defp company_goals(path) do
+    case File.read(Path.join(path, "company.md")) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, %{"goals" => g}, _} when is_list(g) ->
+            for item <- g, is_map(item), slug = to_string(Map.get(item, "slug", "")), slug != "" do
+              %{slug: slug}
+            end
+
+          _ ->
+            []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  # Per-goal task counts: {total, done} keyed by goal slug. Walks
+  # `projects/*/tasks/*.md` once, bucketing by frontmatter `goal:`.
+  defp goal_task_counts(base, slug) do
+    pattern = Path.join([base, "companies", slug, "projects", "*", "tasks", "*.md"])
+
+    pattern
+    |> Path.wildcard()
+    |> Enum.reduce(%{}, &fold_task/2)
+  end
+
+  defp fold_task(path, acc) do
+    case File.read(path) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, %{"goal" => goal_slug} = meta, _} when is_binary(goal_slug) and goal_slug != "" ->
+            status = to_string(Map.get(meta, "status", ""))
+            delta = if status == "done", do: {1, 1}, else: {1, 0}
+            Map.update(acc, goal_slug, delta, fn {t, d} ->
+              {t0, d0} = delta
+              {t + t0, d + d0}
+            end)
+
+          _ ->
+            acc
+        end
+
+      _ ->
+        acc
+    end
+  end
+
+  defp merge_goal_stats(%{slug: s} = goal, counts) do
+    {total, done} = Map.get(counts, s, {0, 0})
+    pct = if total == 0, do: 0, else: div(done * 100, total)
+    Map.merge(goal, %{task_count: total, done_count: done, progress_pct: pct})
   end
 
   defp company_name(path, slug) do
