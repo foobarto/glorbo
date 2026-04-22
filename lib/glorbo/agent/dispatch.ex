@@ -571,16 +571,50 @@ defmodule Glorbo.Agent.Dispatch do
     # unsandboxed runner. For unsandboxed runs we must use the
     # HOST env (not the sandbox-rewritten one) — there's no
     # /workspace mount, the CLI sees the real host paths.
+    # threatmodel H4: Linux hosts with bwrap missing are a
+    # silent-sandbox-bypass risk. Refuse to run and emit a
+    # prominent audit event. macOS keeps the fallback.
     case Glorbo.Sandbox.Bwrap.availability() do
       :ok ->
         Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
 
       {:error, :unavailable} ->
-        host_invocation_opts =
-          Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
+        if linux?() do
+          emit_sandbox_refused_audit(bwrap_opts)
+          {:error, :sandbox_unavailable}
+        else
+          host_invocation_opts =
+            Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
 
-        emit_sandbox_unavailable_audit_once(bwrap_opts)
-        Glorbo.Sandbox.Unsandboxed.start(host_invocation_opts, run_opts)
+          emit_sandbox_unavailable_audit_once(bwrap_opts)
+          Glorbo.Sandbox.Unsandboxed.start(host_invocation_opts, run_opts)
+        end
+    end
+  end
+
+  defp linux?, do: match?({:unix, :linux}, :os.type())
+
+  # On Linux, bwrap missing is treated as a hard failure. We still
+  # emit an audit so directors see *why* dispatch failed.
+  defp emit_sandbox_refused_audit(%{} = bwrap_opts) do
+    company = Map.get(bwrap_opts, :company) || "_system"
+
+    entry = %{
+      action: "agent.sandbox_refused",
+      actor: "system",
+      target: nil,
+      detail: %{
+        os: "linux",
+        note: "bwrap not on PATH on Linux; dispatch refused (threatmodel H4)"
+      }
+    }
+
+    try do
+      audit_fun(base: nil).(company, entry)
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
     end
   end
 

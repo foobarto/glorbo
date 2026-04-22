@@ -1102,6 +1102,21 @@ defmodule GlorboWeb.KanbanLive do
 
   defp maybe_notify_assignee(_prev, new_assignee, company, task_id, title, body)
        when is_binary(new_assignee) do
+    # threatmodel [35]/[36]: `new_assignee` comes straight from the
+    # LiveView form (or frontmatter). Without a slug check, values
+    # like `../../companies/other/agents/ceo` escape the intended
+    # `agents/<slug>` directory via `Path.join/1`, enabling cross-
+    # company or arbitrary-path file writes under the Glorbo user.
+    if GlorboWeb.Slug.valid?(new_assignee) do
+      do_notify_assignee(new_assignee, company, task_id, title, body)
+    else
+      :ok
+    end
+  end
+
+  defp maybe_notify_assignee(_prev, _new, _co, _id, _title, _body), do: :ok
+
+  defp do_notify_assignee(new_assignee, company, task_id, title, body) do
     agent_dir = Path.join([base_dir(), "companies", company, "agents", new_assignee])
 
     if File.dir?(agent_dir) do
@@ -1137,8 +1152,6 @@ defmodule GlorboWeb.KanbanLive do
 
     :ok
   end
-
-  defp maybe_notify_assignee(_prev, _new, _co, _id, _title, _body), do: :ok
 
   defp safe_wake_assignee(company, slug) do
     case Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, slug}) do

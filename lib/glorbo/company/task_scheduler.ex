@@ -311,6 +311,17 @@ defmodule Glorbo.Company.TaskScheduler do
 
         re_arm(state, task_id, entry)
 
+      not GlorboWeb.Slug.valid?(assignee) ->
+        emit_audit(state, %{
+          action: "scheduler.invalid_assignee",
+          actor: "system",
+          company: state.company,
+          target: entry.rel_path,
+          detail: %{assigned_to: inspect(assignee)}
+        })
+
+        re_arm(state, task_id, entry)
+
       true ->
         ts = state.clock_fun.() |> DateTime.to_iso8601()
         filename = "sched-#{System.unique_integer([:positive])}-#{task_id}.md"

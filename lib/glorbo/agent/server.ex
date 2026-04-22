@@ -656,12 +656,29 @@ defmodule Glorbo.Agent.Server do
 
   defp apply_task_actions(_abs, []), do: :ok
 
+  # threatmodel H8: the reply ACTIONS block bypasses ACL/approval
+  # gates — it writes straight to the task's frontmatter. Statuses
+  # like "approved" / "denied" are authoritative for the approval
+  # engine, so an agent that can emit ACTIONS could self-approve or
+  # deny its own tasks. Restrict to non-authoritative transitions
+  # (progress/blocked/done) and validate the assignee slug.
+  @agent_settable_statuses ~w(todo in_progress in-progress blocked done)
+
   defp apply_task_actions(abs, actions) do
     updates =
       Enum.reduce(actions, %{}, fn
-        {"reassign_to", slug}, acc -> Map.put(acc, "assigned_to", slug)
-        {"status", status}, acc -> Map.put(acc, "status", status)
-        _, acc -> acc
+        {"reassign_to", slug}, acc ->
+          if GlorboWeb.Slug.valid?(slug),
+            do: Map.put(acc, "assigned_to", slug),
+            else: acc
+
+        {"status", status}, acc ->
+          if status in @agent_settable_statuses,
+            do: Map.put(acc, "status", status),
+            else: acc
+
+        _, acc ->
+          acc
       end)
 
     if updates == %{} do
@@ -725,10 +742,34 @@ defmodule Glorbo.Agent.Server do
     #{String.trim(body)}
     """
 
+    # threatmodel H11: the agent controls its outbox directory, so
+    # it can pre-seed a symlink at the envelope's expected filename.
+    # File.write follows symlinks, which would let the agent
+    # overwrite any file writable by the Glorbo OS user (e.g.
+    # ~/.glorbo/config.md). lstat-and-refuse anything non-regular
+    # at the target path before we write.
     try do
       File.mkdir_p!(outbox_dir)
-      File.write!(path, content)
-      :ok
+
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular}} ->
+          File.write!(path, content)
+          :ok
+
+        {:ok, %File.Stat{type: type}} ->
+          require Logger
+          Logger.warning("reply outbox write refused: #{inspect(type)} at #{path}")
+          :ok
+
+        {:error, :enoent} ->
+          File.write!(path, content)
+          :ok
+
+        {:error, reason} ->
+          require Logger
+          Logger.warning("reply outbox lstat failed: #{inspect(reason)}")
+          :ok
+      end
     rescue
       e ->
         require Logger

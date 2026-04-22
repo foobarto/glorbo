@@ -190,12 +190,15 @@ defmodule GlorboWeb.Actions do
   defp validate_task_path_strict(_), do: {:error, :invalid_task_path}
 
   defp wake_task_assignee(base, company, abs_task_path, task_id, body, ts, audit) do
+    # threatmodel [41]: assignee comes from the task file, which an
+    # agent can author. Without slug validation, values like
+    # `../../companies/other/agents/ceo` would let a task comment
+    # land in another company's inbox (cross-company isolation
+    # bypass) or any directory writable by the Glorbo user.
     with {:ok, content} <- File.read(abs_task_path),
          {:ok, fm} <- extract_frontmatter(content),
-         assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to") do
-      # The Router's `@mention` path only fires for literal `@slug` matches
-      # in the body — an assignee who isn't @mentioned wouldn't otherwise
-      # get notified. Write the same inbox/mentions shape for them.
+         assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to"),
+         true <- GlorboWeb.Slug.valid?(assignee) do
       write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, "director")
     else
       _ -> :ok

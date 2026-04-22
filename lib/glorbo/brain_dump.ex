@@ -52,38 +52,45 @@ defmodule Glorbo.BrainDump do
 
   defp do_capture(base, company, body, now) do
     dir = dir(base, company)
-    File.mkdir_p!(dir)
 
-    day = date_string(now)
-    path = Path.join(dir, "#{day}.md")
-    title = derive_title(body)
-    ts = time_string(now)
+    with :ok <- ensure_safe_dir(dir),
+         day <- date_string(now),
+         path <- Path.join(dir, "#{day}.md"),
+         :ok <- ensure_regular_file(path),
+         :ok <- File.mkdir_p(dir) do
+      title = derive_title(body)
+      ts = time_string(now)
 
-    section = "\n## #{ts} — #{title}\n\n#{body}\n"
-    existing? = File.exists?(path)
+      section = "\n## #{ts} — #{title}\n\n#{body}\n"
+      existing? = File.regular?(path)
 
-    header =
-      if existing? do
-        ""
-      else
-        """
-        ---
-        kind: braindump/v1
-        created_at: #{DateTime.to_iso8601(DateTime.truncate(now, :second))}
-        ---
-        # Brain dump · #{day}
-        """
+      header =
+        if existing? do
+          ""
+        else
+          """
+          ---
+          kind: braindump/v1
+          created_at: #{DateTime.to_iso8601(DateTime.truncate(now, :second))}
+          ---
+          # Brain dump · #{day}
+          """
+        end
+
+      case File.write(path, header <> section, [:append]) do
+        :ok ->
+          {:ok,
+           %{
+             ts: DateTime.to_iso8601(DateTime.truncate(now, :second)),
+             title: title,
+             body: body,
+             day: day
+           }}
+
+        err ->
+          err
       end
-
-    :ok = File.write!(path, header <> section, [:append])
-
-    {:ok,
-     %{
-       ts: DateTime.to_iso8601(DateTime.truncate(now, :second)),
-       title: title,
-       body: body,
-       day: day
-     }}
+    end
   end
 
   @doc """
@@ -121,8 +128,14 @@ defmodule Glorbo.BrainDump do
     project = "inbox"
     project_dir = Path.join([co_dir, "projects", project])
     tasks_dir = Path.join(project_dir, "tasks")
-    File.mkdir_p!(tasks_dir)
 
+    with :ok <- ensure_safe_dir(tasks_dir),
+         :ok <- File.mkdir_p(tasks_dir) do
+      do_convert_to_task(tasks_dir, project, entry, base, company)
+    end
+  end
+
+  defp do_convert_to_task(tasks_dir, project, entry, base, company) do
     task_id = task_id_for(tasks_dir, entry)
     filename = "#{task_id}.md"
     abs = Path.join(tasks_dir, filename)
@@ -135,7 +148,9 @@ defmodule Glorbo.BrainDump do
         {:error, :already_exists}
 
       false ->
-        with {:ok, ^rel} <- write_atomic(abs, content, rel) do
+        with :ok <- ensure_regular_file(abs),
+             :ok <- ensure_regular_file(abs <> ".tmp"),
+             {:ok, ^rel} <- write_atomic(abs, content, rel) do
           # Best-effort — a task was successfully written; leaving the
           # brain-dump note in place would let the user convert it a
           # second time and create a duplicate task. The failure mode
@@ -177,7 +192,9 @@ defmodule Glorbo.BrainDump do
       true ->
         tmp = path <> ".tmp"
 
-        with :ok <- File.write(tmp, new_content) do
+        with :ok <- ensure_regular_file(path),
+             :ok <- ensure_regular_file(tmp),
+             :ok <- File.write(tmp, new_content) do
           File.rename(tmp, path)
         end
     end
@@ -350,10 +367,34 @@ defmodule Glorbo.BrainDump do
 
   defp write_atomic(abs, content, rel) do
     tmp = abs <> ".tmp"
-    :ok = File.write!(tmp, content)
-    :ok = File.rename(tmp, abs)
-    {:ok, rel}
-  rescue
-    e -> {:error, e}
+
+    with :ok <- ensure_regular_file(tmp),
+         :ok <- File.write(tmp, content),
+         :ok <- File.rename(tmp, abs) do
+      {:ok, rel}
+    end
+  end
+
+  # threatmodel H7: reject anything that isn't a plain file at the
+  # target path so File.write / File.rename cannot be tricked into
+  # following an agent-planted symlink.
+  defp ensure_regular_file(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Refuse to operate inside a braindump/tasks directory that was
+  # swapped for a symlink to somewhere else on disk.
+  defp ensure_safe_dir(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_directory}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 end

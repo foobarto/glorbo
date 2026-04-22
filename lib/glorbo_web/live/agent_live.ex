@@ -311,6 +311,15 @@ defmodule GlorboWeb.AgentLive do
 
       {:error, :invalid_path} ->
         {:noreply, put_flash(socket, :error, "Invalid path.")}
+
+      {:error, :not_a_regular_file} ->
+        {:noreply, put_flash(socket, :error, "Path is not a regular file; refused.")}
+
+      {:error, :symlink_in_path} ->
+        {:noreply, put_flash(socket, :error, "Path contains a symlink; refused.")}
+
+      {:error, :contract_file} ->
+        {:noreply, put_flash(socket, :error, "Contract file; use the config editor.")}
     end
   end
 
@@ -346,6 +355,8 @@ defmodule GlorboWeb.AgentLive do
   # editor on it. Refuses to overwrite an existing file.
   def handle_event("create_file", %{"path" => rel}, socket) do
     with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         :ok <- refuse_contract_write(rel),
+         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)),
          false <- File.exists?(abs_path),
          :ok <- File.mkdir_p(Path.dirname(abs_path)),
          :ok <- File.write(abs_path, "") do
@@ -475,6 +486,7 @@ defmodule GlorboWeb.AgentLive do
 
   defp soft_delete(socket, rel) do
     with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)),
          true <- File.exists?(abs_path) do
       ts = System.system_time(:millisecond)
       trash_dir = Path.join([agent_dir(socket), "history", "deleted"])
@@ -499,21 +511,76 @@ defmodule GlorboWeb.AgentLive do
 
   defp read_workspace_file(socket, rel) do
     with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
-         {:ok, %File.Stat{size: size}} <- File.stat(abs_path),
+         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)),
+         {:ok, %File.Stat{type: :regular, size: size}} <- File.lstat(abs_path),
          :ok <- check_size(size),
          {:ok, bytes} <- File.read(abs_path),
          :ok <- check_binary(bytes) do
       {:ok, bytes}
     else
-      {:error, :enoent} -> {:error, :not_found}
-      {:error, reason} when reason in [:too_large, :binary, :invalid_path] -> {:error, reason}
-      {:error, _} -> {:error, :not_found}
+      {:ok, %File.Stat{}} ->
+        {:error, :not_a_regular_file}
+
+      {:error, :enoent} ->
+        {:error, :not_found}
+
+      {:error, reason}
+      when reason in [:too_large, :binary, :invalid_path, :not_a_regular_file, :contract_file] ->
+        {:error, reason}
+
+      {:error, _} ->
+        {:error, :not_found}
     end
   end
 
   defp write_workspace_file(socket, rel, content) do
-    with {:ok, abs_path} <- resolve_workspace_path(socket, rel) do
+    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
+         :ok <- refuse_contract_write(rel),
+         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)) do
       File.write(abs_path, content)
+    end
+  end
+
+  # threatmodel H9: AGENT.md is the agent's permission + network
+  # contract. The typed config editor (`save_config`) is the only
+  # sanctioned write path; the generic open/save/create flow must
+  # refuse to touch it so a dashboard user (or a network-enabled
+  # agent reaching a token-less LAN endpoint) can't self-escalate
+  # by rewriting permissions directly. `stdout.log` stays refused
+  # as runtime state — matches the existing delete-refuse list.
+  # SOUL.md / HEARTBEAT.md remain editable through the generic
+  # editor because they have no escalation surface.
+  @contract_files ~w(AGENT.md stdout.log)
+  defp refuse_contract_write(rel) do
+    if Path.basename(rel) in @contract_files,
+      do: {:error, :contract_file},
+      else: :ok
+  end
+
+  # threatmodel H10: resolve_workspace_path only compares strings;
+  # an attacker-planted symlink *under* the agent dir would pass the
+  # prefix check yet File.read/write would still follow it. lstat
+  # every path component from the agent root to the target and
+  # refuse any symlink along the way. :enoent on leaves is fine
+  # (new file) — only symlinks are fatal.
+  defp ensure_no_symlink_on_path(abs_path, root) do
+    relative = Path.relative_to(abs_path, root)
+    parts = Path.split(relative)
+
+    Enum.reduce_while(parts, root, fn part, acc ->
+      next = Path.join(acc, part)
+
+      case File.lstat(next) do
+        {:ok, %File.Stat{type: :symlink}} -> {:halt, {:error, :symlink_in_path}}
+        {:ok, %File.Stat{}} -> {:cont, next}
+        {:error, :enoent} -> {:halt, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      :ok -> :ok
+      {:error, _} = err -> err
+      path when is_binary(path) -> :ok
     end
   end
 
@@ -1593,15 +1660,18 @@ defmodule GlorboWeb.AgentLive do
         |> Enum.flat_map(fn e ->
           full = Path.join(path, e)
 
-          cond do
-            File.dir?(full) ->
+          # threatmodel H10: use lstat so symlinks in the agent
+          # workspace don't get recursed or rendered as regular
+          # files.
+          case File.lstat(full) do
+            {:ok, %File.Stat{type: :directory}} ->
               [%{name: e, kind: :dir, depth: depth, rel: Path.relative_to(full, ag_dir)}] ++
                 walk_workspace_dir(ag_dir, full, depth + 1)
 
-            File.regular?(full) ->
+            {:ok, %File.Stat{type: :regular}} ->
               [%{name: e, kind: :file, depth: depth, rel: Path.relative_to(full, ag_dir)}]
 
-            true ->
+            _ ->
               []
           end
         end)

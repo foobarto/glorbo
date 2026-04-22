@@ -282,13 +282,29 @@ function collectCommands() {
   return items
 }
 
+// threatmodel [25]: palette labels and hints can come from
+// agent-authored frontmatter (task titles, agent slugs). The palette
+// rows are written with innerHTML, so any unescaped `<` / `"` in a
+// label turns into a stored XSS vector. Escape every interpolated
+// value (text *and* attribute context — we always double-quote
+// attributes, so the same map covers both).
+function escapeHtml(s) {
+  if (s == null) return ""
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 function paletteHtml(items) {
   const rows = items
     .map(
       (it, i) => `
-      <li class="gl-palette__row" data-idx="${i}" data-href="${it.href}">
-        <span class="gl-palette__label">${it.label}</span>
-        ${it.hint ? `<span class="gl-palette__hint gl-muted">${it.hint}</span>` : ""}
+      <li class="gl-palette__row" data-idx="${i}" data-href="${escapeHtml(it.href)}">
+        <span class="gl-palette__label">${escapeHtml(it.label)}</span>
+        ${it.hint ? `<span class="gl-palette__hint gl-muted">${escapeHtml(it.hint)}</span>` : ""}
       </li>`
     )
     .join("")
@@ -382,9 +398,9 @@ function toggleCommandPalette() {
     list.innerHTML = items
       .map(
         (it, i) => `
-        <li class="gl-palette__row" data-idx="${i}" data-href="${it.href}">
-          <span class="gl-palette__label">${it.label}</span>
-          ${it.hint ? `<span class="gl-palette__hint gl-muted">${it.hint}</span>` : ""}
+        <li class="gl-palette__row" data-idx="${i}" data-href="${escapeHtml(it.href)}">
+          <span class="gl-palette__label">${escapeHtml(it.label)}</span>
+          ${it.hint ? `<span class="gl-palette__hint gl-muted">${escapeHtml(it.hint)}</span>` : ""}
         </li>`
       )
       .join("")

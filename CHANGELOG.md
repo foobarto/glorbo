@@ -10,6 +10,81 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — Threat-model wave 2 (2026-04-22, Codex scan)
+
+Codex Cloud posted 87 findings against commit `cc99146`; the prior
+security pass (T1-T15) already resolved 6 of them (1/2/3 → T1/T3/T4,
+13 → T5, 14 → T2, 15 → T7). This wave addresses **all 9 remaining
+high-severity** findings plus 5 impactful mediums. Every fix lands
+with the existing unit/regression suite green (1655 tests); new
+specific tests will ship in a follow-up wave. Remaining 67 findings
+(lower-severity mediums + lows + informational) queued for triage.
+
+Handling the HIGH items (paths point to `lib/glorbo/...`):
+
+- **H4** — `Dispatch.default_run_fun/4` silently fell through to
+  `Glorbo.Sandbox.Unsandboxed` when bwrap was missing. On Linux
+  that's a sandbox bypass; now refuses with `{:error, :sandbox_unavailable}`
+  and emits `agent.sandbox_refused`. macOS keeps the fallback
+  (GEP-5 D6 invariant).
+- **H5** — `TaskScheduler.maybe_fire/5` read `assigned_to` straight
+  from frontmatter and built the inbox path unchecked. A crafted
+  task with `assigned_to: ../foo` wrote outside `agents/<slug>/inbox`.
+  Now `GlorboWeb.Slug.valid?/1`-gated with
+  `scheduler.invalid_assignee` audit.
+- **H6** — `AuditLive.scaffold_audit_task/2` used `File.write!/2`
+  on `.tmp` + `File.rename/2` — both follow pre-planted symlinks.
+  Added `refuse_if_symlink/1` lstat gate on both paths.
+- **H7** — `Glorbo.BrainDump.capture/4` + `convert_to_task/3`
+  used raw `File.write!/File.rename` with no symlink defense.
+  Added `ensure_regular_file/1` + `ensure_safe_dir/1` guarding
+  capture, convert, and section-removal paths.
+- **H8** — Reply-block `ACTIONS:` DSL let an agent emit
+  `status: approved` / `reassign_to: anyone` with zero ACL checks,
+  enabling self-approval and unauthorized reassignment. Status
+  now whitelists `todo/in_progress/in-progress/blocked/done` only;
+  reassign_to requires `GlorboWeb.Slug.valid?/1`.
+- **H9** — `AgentLive` generic file editor could write `AGENT.md`
+  via `open_file`/`save_file`/`create_file`. That's the agent's
+  permission + network contract; self-escalation trivial. New
+  `refuse_contract_write/1` blocks `AGENT.md` and `stdout.log`;
+  typed config editor remains the sanctioned path. SOUL.md /
+  HEARTBEAT.md stay editable (no escalation surface).
+- **H10** — Same LiveView's `read_workspace_file/2`,
+  `write_workspace_file/3`, `soft_delete/2`, and `walk_workspace_dir/3`
+  used `File.read/File.write/File.dir?/File.regular?` — all follow
+  symlinks. New `ensure_no_symlink_on_path/2` walks path components
+  with `File.lstat`; tree walker switched to `File.lstat` too so
+  symlinks don't get rendered as directories or recursed into.
+- **H11** — `Agent.Server.write_outbox_reply/3` wrote the
+  agent-envelope via `File.write!` in a dir the agent controls.
+  Pre-seeded symlinks would redirect writes to arbitrary host
+  files. Added `File.lstat`-refuse for non-regular targets.
+- **H12** — `Dispatcher.maybe_stdout_to_reply/4` fallback wrote
+  `reply.md` via `File.write!` with only `fs.exists?` guarding
+  (broken symlinks read as non-existent). Same lstat-refuse.
+
+Medium-severity fixes (highest-impact):
+
+- **M25** — Command palette rendered server-supplied search result
+  `label`/`hint`/`href` into `innerHTML` — task titles authored
+  by agents could smuggle `<script>`. Added `escapeHtml/1` in
+  `assets/js/app.js`, applied to every interpolation in
+  `paletteHtml` + `renderList`.
+- **M35/M36** — `KanbanLive.maybe_notify_assignee/6` built the
+  inbox path from the LiveView form's `assigned_to` without
+  validation. Slug-gated via `GlorboWeb.Slug.valid?/1`.
+- **M40** — `TaskDefinition.canonicalize_ref/2`'s `projects/…md`
+  pass-through branch accepted `..` segments. New `traversal?/1`
+  rejects absolute paths, NUL, or any `..` segment.
+- **M41** — `GlorboWeb.Actions.wake_task_assignee/7` pulled
+  `assigned_to` from a task file (agent-authored) and forwarded
+  to `write_mention/8` unchecked. Slug-gated.
+
+Threatmodel CSV statuses flipped for the 20 resolved rows
+(`resolved (prior wave T…, commit …, 2026-04-22)` or
+`resolved (H…/M…, pending commit, 2026-04-22)`).
+
 ### Security — Threat-model pass (2026-04-22)
 
 Fifteen findings from `docs/testing/threatmodel.md` triaged and

@@ -147,10 +147,34 @@ defmodule Glorbo.CLI.Dispatcher do
         :ok
 
       true ->
+        # threatmodel H12: the reply path lives inside the agent
+        # workspace, so a malicious CLI can plant a (possibly
+        # broken) symlink at the expected location. File.write
+        # follows it, which can create or clobber arbitrary files
+        # writable by the Glorbo user. lstat and refuse if anything
+        # non-regular already exists.
         parent = Path.dirname(reply_path)
         fs.mkdir_p!.(parent)
-        File.write!(reply_path, strip_ansi(stdout))
-        :ok
+
+        case File.lstat(reply_path) do
+          {:ok, %File.Stat{type: :regular}} ->
+            File.write!(reply_path, strip_ansi(stdout))
+            :ok
+
+          {:ok, %File.Stat{type: type}} ->
+            require Logger
+            Logger.warning("stdout→reply fallback refused: #{inspect(type)} at #{reply_path}")
+            :ok
+
+          {:error, :enoent} ->
+            File.write!(reply_path, strip_ansi(stdout))
+            :ok
+
+          {:error, reason} ->
+            require Logger
+            Logger.warning("stdout→reply lstat failed: #{inspect(reason)}")
+            :ok
+        end
     end
   end
 

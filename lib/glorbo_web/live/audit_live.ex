@@ -539,11 +539,30 @@ defmodule GlorboWeb.AuditLive do
     """
 
     tmp = abs <> ".tmp"
-    :ok = File.write!(tmp, content)
-    :ok = File.rename(tmp, abs)
-    {:ok, rel}
+
+    with :ok <- refuse_if_symlink(tmp),
+         :ok <- refuse_if_symlink(abs),
+         :ok <- File.write(tmp, content),
+         :ok <- File.rename(tmp, abs) do
+      {:ok, rel}
+    else
+      {:error, reason} -> {:error, reason}
+    end
   rescue
     e -> {:error, e}
+  end
+
+  # threatmodel H6: reject pre-created symlinks at either the temp
+  # path or the final target — File.write/rename follow symlinks
+  # and would otherwise overwrite arbitrary host files an agent can
+  # pre-seed inside the shared projects/inbox/tasks/ directory.
+  defp refuse_if_symlink(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp uniqify_audit_task_id(dir, base, n) do

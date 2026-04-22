@@ -606,9 +606,17 @@ defmodule Glorbo.TaskDefinition do
 
     cond do
       String.starts_with?(ref, "projects/") and String.ends_with?(ref, ".md") ->
-        if File.exists?(Path.join(company_dir, ref)),
-          do: {:ok, ref},
-          else: {:error, :not_found}
+        # threatmodel [40]: reject traversal in the pass-through
+        # branch. A ref like `projects/../../config.md` would
+        # otherwise resolve via File.exists? and leak secrets into
+        # any caller that reads the returned path.
+        if traversal?(ref) do
+          {:error, :not_found}
+        else
+          if File.exists?(Path.join(company_dir, ref)),
+            do: {:ok, ref},
+            else: {:error, :not_found}
+        end
 
       ref =~ ~r/\A[a-z0-9][a-z0-9-]*-\d+\z/ ->
         # Try the GEP-13 shape first: derive project from the ref itself.
@@ -638,6 +646,16 @@ defmodule Glorbo.TaskDefinition do
       [_, project] -> project
       _ -> ref
     end
+  end
+
+  # Reject any ref that contains `..` segments, leading `/`, or
+  # NUL. Belt-and-braces: the regexes in other branches only match
+  # simple slug-integer pairs, but the `projects/...md` pass-through
+  # accepts anything and is the one a caller might plausibly feed
+  # from audit or URL input.
+  defp traversal?(ref) do
+    segments = Path.split(ref)
+    String.contains?(ref, <<0>>) or Path.type(ref) != :relative or ".." in segments
   end
 
   defp scan_projects_for(company_dir, filename) do
