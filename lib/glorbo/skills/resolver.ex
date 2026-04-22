@@ -145,9 +145,16 @@ defmodule Glorbo.Skills.Resolver do
     builtin = Path.join([Application.app_dir(:glorbo, "priv/templates/skills"), "#{name}.md"])
 
     cond do
-      fs_fun.exists?.(user) -> user
-      fs_fun.exists?.(builtin) -> builtin
+      regular_file?(user, fs_fun) -> user
+      regular_file?(builtin, fs_fun) -> builtin
       true -> nil
+    end
+  end
+
+  defp regular_file?(path, fs_fun) do
+    case fs_fun.lstat.(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
     end
   end
 
@@ -226,6 +233,7 @@ defmodule Glorbo.Skills.Resolver do
     %{
       mkdir_p!: &File.mkdir_p!/1,
       exists?: &File.exists?/1,
+      lstat: &File.lstat/1,
       cp!: &File.cp!/2,
       write!: &File.write!/2,
       read: &File.read/1

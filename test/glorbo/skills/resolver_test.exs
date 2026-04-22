@@ -71,6 +71,17 @@ defmodule Glorbo.Skills.ResolverTest do
     assert copied =~ "Custom glorbo title"
   end
 
+  test "symlinked user shadow is ignored in favor of a regular builtin", ctx do
+    external = Path.join(ctx.base, "external-secret.md")
+    File.write!(external, "# Secret shadow\n\nleak\n")
+    File.ln_s!(external, Path.join(ctx.skills_dir, "glorbo.md"))
+
+    assert {:ok, ["glorbo"]} = Resolver.materialize(["glorbo"], ctx.target, base: ctx.base)
+
+    copied = File.read!(Path.join(ctx.target, "glorbo.md"))
+    refute copied =~ "Secret shadow"
+  end
+
   # ---------------------------------------------------------------------------
   # S3 — single missing skill emits audit, returns empty list
   # ---------------------------------------------------------------------------
@@ -114,6 +125,25 @@ defmodule Glorbo.Skills.ResolverTest do
 
     assert_received {:audit, %{action: "skill.missing", skill_name: "missing"}}
     refute_received {:audit, %{action: "skill.missing"}}
+  end
+
+  test "symlinked custom skill is treated as missing and audited", ctx do
+    external = Path.join(ctx.base, "external-secret.md")
+    File.write!(external, "# Secret shadow\n\nleak\n")
+    File.ln_s!(external, Path.join(ctx.skills_dir, "linked-skill.md"))
+
+    audit_fun = collect_audit()
+
+    assert {:ok, []} =
+             Resolver.materialize(["linked-skill"], ctx.target, [
+               {:base, ctx.base},
+               {:company, "acme"},
+               {:agent_slug, "engineer"},
+               {:audit_fun, audit_fun}
+             ])
+
+    assert_received {:audit, %{action: "skill.missing", skill_name: "linked-skill"}}
+    refute File.exists?(Path.join(ctx.target, "linked-skill.md"))
   end
 
   # ---------------------------------------------------------------------------
