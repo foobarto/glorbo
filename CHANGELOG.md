@@ -10,6 +10,96 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — Threat-model wave 3 (2026-04-22, mediums)
+
+Closed 16 medium-severity Codex findings. Path-traversal /
+isolation-break items (Tier 1) and secure-by-default regressions
++ input hardening (Tier 2). Resolved rows pruned from
+`docs/testing/threatmodel.md`; 51 lower-severity findings remain
+queued. 1656 tests green.
+
+Tier 1 — isolation breaks exploitable by a malicious agent:
+
+- **M02 + M11** — `Glorbo.Agent.LoopDetector.resolve/5` built
+  `companies/<co>/<task_path>` from sentinel frontmatter without
+  checking shape. Agents can write their own `state/` so a crafted
+  `task_path: ../../otherco/projects/...` had the director-initiated
+  resolution mutate cross-company task files. New
+  `validate_sentinel_task_path/1` confines to
+  `projects/<slug>/tasks/<id>.md`.
+- **M04** — `TaskLive` + `InboxLive` `stuck_resolve` accepted any
+  client-supplied `sentinel_path` and joined into an absolute path.
+  New `validate_relative_sentinel_path/1` rejects absolute paths,
+  `..`, NUL, or anything not matching `agents/<slug>/state/stuck-on-<id>.md`.
+- **M14** — `Glorbo.Company.Router.handle_outbox_comment/4` blindly
+  appended any agent's outbox comment to any task across all
+  projects — an agent with zero `tasks:*`/`projects:*` permissions
+  could mutate any task by dropping a comment file. New
+  `check_comment_permission/2` requires
+  `tasks:update:<project>` or `projects:write:<project>`
+  (project-scoped or `*`).
+- **M03** — `handle_outbox_memory_write/4` followed symlinks on
+  both source (agent outbox) and dest (memory dir). Agents could
+  redirect a memory write into another agent's memory directory.
+  Added `ensure_regular_file_lstat/1` on both paths.
+- **M18** — `KanbanLive.delete_task_file/3` `mkdir_p`/`rename`'d
+  through `projects/<p>/history/` without lstat. Agent-planted
+  symlinked history dirs would redirect task moves to another
+  company. New `ensure_no_symlink_directory/1` walks each path
+  component; `ensure_regular_file_or_absent/1` guards the rename
+  target.
+- **M19** — `ProjectLive.ensure_and_load_meta/1` +
+  `write_project_md/2` used `File.read`/`File.write!`/`File.rename`
+  on `project.md` with no lstat. Symlink swap → arbitrary host
+  read/write. New `ensure_project_md_writable/1`.
+- **M17** — `KanbanLive.list_task_attachments/2` enumerated
+  attachments via `companies/*/projects/<p>/attachments/<id>/`,
+  leaking filenames + sizes from sibling tenants sharing project +
+  task slugs. Now scoped to caller's company; `File.ls` instead of
+  `Path.wildcard`.
+- **M10** — `Glorbo.Agent.Dispatch.resolve_provider/3` honoured
+  the task's `provider:` over the agent's spec. An agent with
+  `tasks:write` could swap to a more-privileged provider whose
+  `auth_binds` mount host secrets. New `reconcile_task_provider/2`
+  pins to `spec.provider`; mismatched task overrides are logged
+  and ignored.
+
+Tier 2 — secure-by-default + input hardening:
+
+- **M16** — `Glorbo.Agent.Parser.validate_network/1` defaulted
+  missing `network:` to `:proxy`, which inherits the host netns
+  (advisory enforcement until GEP-31 lands). Default flipped to
+  `:none` (kernel-enforced); templates that need egress set
+  `network: proxy` explicitly.
+- **M13** — Editor template (`priv/templates/agents/editor.md`)
+  was the only template carrying `network: open` (full host net).
+  Flipped to `network: proxy`.
+- **M21** — `glorbo new agent` scaffold default permissions
+  changed from `[projects:read:*, chat:read:*]` to `[]`. Fresh
+  agents no longer have automatic read access to every project
+  + chat log; directors grant narrowly scoped access in AGENT.md.
+- **M15** — `priv/providers/opencode.toml` ro-bound
+  `~/.config/opencode/` into every opencode-backed agent's
+  sandbox. The dir typically holds third-party API credentials —
+  any compromised agent could read + exfiltrate. `auth_binds`
+  removed; operators who need host provider configs override per
+  agent.
+- **M12** — `GlorboWeb.Actions.hire_argv/2` only validated the
+  agent slug; `role`/`provider` flowed into AGENT.md frontmatter
+  unchecked, letting an HR agent inject extra keys (permissions,
+  network, heartbeat) into the new agent's spec. Added
+  `@hire_role_re` (printable ASCII, ≤64 chars) and
+  `@hire_provider_allowlist`. Defense-in-depth: scaffold itself
+  now sanitises role/provider/model via `sanitize_yaml_scalar/2`
+  (rejects newlines, quotes, `---`, control chars).
+- **M06** — Already covered by wave-2 M25's `escapeHtml` in the
+  command palette — palette renders both task hits and audit hits
+  via the same row template, so the wave-2 escape covers both.
+  Verified during this wave.
+- **M05** — `AuditExportController.csv_cell/1` now prefixes any
+  cell starting with `= + - @ \\t \\r` with a single tick to
+  neutralise spreadsheet formula injection.
+
 ### Security — Threat-model wave 2 (2026-04-22, Codex scan)
 
 Codex Cloud posted 87 findings against commit `cc99146`; the prior

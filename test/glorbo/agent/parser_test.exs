@@ -238,7 +238,11 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:invalid_network, "bogus"}} = Parser.parse_file(path)
     end
 
-    test "P9: missing network defaults to :proxy (CLI providers need egress)", ctx do
+    test "P9: missing network defaults to :none (threatmodel M16)", ctx do
+      # threatmodel M16: defaulting to :proxy silently opted agents
+      # into egress (advisory-only until GEP-31). Default is now
+      # :none; templates that need egress set `network: proxy`
+      # explicitly.
       content = """
       ---
       role: x
@@ -248,7 +252,7 @@ defmodule Glorbo.Agent.ParserTest do
       """
 
       path = write_agent(ctx, "e", content)
-      assert {:ok, %{network: :proxy}} = Parser.parse_file(path)
+      assert {:ok, %{network: :none}} = Parser.parse_file(path)
     end
   end
 

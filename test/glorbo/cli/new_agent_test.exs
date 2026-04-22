@@ -31,10 +31,13 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert content =~ "provider: claude-code"
       assert content =~ "model: claude-sonnet-4-5"
       assert content =~ "network: proxy"
-      # Default permissions: read-only project + chat access so a fresh
-      # agent can immediately see what's on disk (updated 2026-04-18).
-      assert content =~ "projects:read:*"
-      assert content =~ "chat:read:*"
+      # threatmodel M21: scaffolds now ship with `permissions: []`.
+      # Directors grant narrowly scoped access (e.g.
+      # `projects:read:<slug>`) explicitly in AGENT.md rather than
+      # inheriting broad `:*` wildcards by default.
+      assert content =~ "permissions: []"
+      refute content =~ "projects:read:*"
+      refute content =~ "chat:read:*"
       assert content =~ "monthly_usd: 10.0"
       # Default scaffold attaches the `glorbo` skill so every agent
       # starts knowing how to use the action layer (PLAN P2-4).
@@ -114,7 +117,7 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert spec.slug == "ceo"
       assert spec.provider == "claude-code"
       assert spec.network == :proxy
-      assert spec.permissions == [{"projects", "read", "*"}, {"chat", "read", "*"}]
+      assert spec.permissions == []
       assert spec.model == "claude-sonnet-4-5"
     end
   end

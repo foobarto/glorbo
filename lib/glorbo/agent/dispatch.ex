@@ -268,13 +268,19 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  # #235 per-task override: if the task map carries a non-empty
-  # :provider, prefer it over spec.provider. Falls back to spec on any
-  # miss (nil, blank). Unknown provider names surface as
-  # {:error, {:unknown_provider, name}} so misconfiguration is loud.
+  # #235 per-task override: task's :provider can ONLY pin to the
+  # agent's own spec.provider. threatmodel M10: accepting any
+  # provider from task frontmatter let an agent with tasks:write
+  # pick a more-privileged provider whose auth_binds mount host
+  # secrets. Provider is now derived from the agent spec; the
+  # `task.provider` hint is only respected when it equals
+  # `spec.provider` (exact match) — any mismatch is logged and
+  # ignored. Per-task *model* selection (task.model) is still
+  # handled elsewhere via the agent's own model alias map, which
+  # was never the attack surface.
   defp resolve_provider(spec, task, opts) do
     fun = Keyword.get(opts, :provider_fun, &Registry.get/1)
-    name = task_provider_override(task) || spec.provider
+    name = reconcile_task_provider(task, spec)
 
     case fun.(name) do
       nil -> {:error, {:unknown_provider, name}}
@@ -282,8 +288,22 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp task_provider_override(%{provider: p}) when is_binary(p) and p != "", do: p
-  defp task_provider_override(_), do: nil
+  defp reconcile_task_provider(%{provider: p}, spec)
+       when is_binary(p) and p != "" and p != "" do
+    if p == spec.provider do
+      p
+    else
+      require Logger
+
+      Logger.warning(
+        "ignoring task.provider=#{inspect(p)} != agent.provider=#{inspect(spec.provider)}; pinning to agent spec (threatmodel M10)"
+      )
+
+      spec.provider
+    end
+  end
+
+  defp reconcile_task_provider(_, spec), do: spec.provider
 
   # #236 — resolve task's `model:` value. If it matches a named alias
   # in `spec.models`, expand to the concrete model name. Otherwise

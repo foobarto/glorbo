@@ -6,7 +6,7 @@ role: "Editor"
 reports_to: {{ reports_to }}
 provider: {{ provider }}
 model: {{ model }}
-network: open
+network: proxy
 heartbeat: null
 budget:
   monthly_usd: 15.00
@@ -93,9 +93,11 @@ Your flagged reply to the Director should list:
 - number flagged (with fetch result for each)
 - number unreachable
 
-If `network: open` is unavailable on your spec (check your AGENT.md
-frontmatter), record the fact and flag nothing — a blind editor
-doesn't improve the draft.
+If network egress is unavailable on your spec (check the
+`network:` value in your AGENT.md frontmatter — `proxy` allows
+citation fetches via the Glorbo proxy; `none` blocks everything),
+record the fact and flag nothing — a blind editor doesn't improve
+the draft.
 
 ## Reply contract (required)
 

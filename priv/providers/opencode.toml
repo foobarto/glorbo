@@ -48,18 +48,19 @@ allow_version_probe = true
 
 usage_parser = "none"
 
-# Sandbox HOME is /workspace (see Bwrap.build_argv). opencode reads
-# its provider definitions from $HOME/.config/opencode/opencode.json —
-# the Director's real `~/.config/opencode/` is ro-mounted there so the
-# agent inherits the same `lmstudio`, `ollama`, etc. provider list
-# the user configured. State (sqlite db, session cache) is left to
-# opencode to create fresh under `$XDG_DATA_HOME`, pointed at a
-# workspace-local dir so the sandbox can write without touching the
-# Director's real `~/.local/share/opencode/`.
+# Sandbox HOME is /workspace (see Bwrap.build_argv). State (sqlite
+# db, session cache) is left to opencode to create fresh under
+# `$XDG_DATA_HOME`, pointed at a workspace-local dir so the sandbox
+# can write without touching the Director's real
+# `~/.local/share/opencode/`.
+#
+# threatmodel M15: the host `~/.config/opencode/` directory frequently
+# carries API credentials for third-party providers (anthropic,
+# openai, etc.). Mounting it read-only into every opencode-backed
+# agent means any compromised agent can read those keys and
+# exfiltrate via its outputs or network access. `auth_binds` is now
+# empty by default; operators who need host provider configs
+# available inside the sandbox can override via a per-agent
+# provider TOML (GEP-8) after assessing the exfiltration risk.
 [env]
 XDG_DATA_HOME = "{workspace}/.opencode-data"
-
-[[auth_binds]]
-host    = "~/.config/opencode"
-sandbox = "/workspace/.config/opencode"
-mode    = "ro"

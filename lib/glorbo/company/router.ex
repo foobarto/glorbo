@@ -913,10 +913,19 @@ defmodule Glorbo.Company.Router do
   # Append an agent-authored comment to a task. Looks for the task
   # file across all projects under `companies/<co>/projects/*/tasks/`
   # since the comment file only names the task-id.
+  #
+  # threatmodel M14: the original handler blindly appended to any
+  # task in any project — an agent with zero `tasks:*` or
+  # `projects:*` permissions could mutate tasks anywhere in the
+  # company by dropping a comment file. Check the sender's
+  # permissions against the *resolved* project slug before writing.
   defp handle_outbox_comment(abs_path, sender, task_id, state) do
     with {:ok, content} <- File.read(abs_path),
          {:ok, body} <- strip_frontmatter(content),
          {:ok, task_path} <- find_task_file(task_id, state),
+         project = project_from_task_path(task_path),
+         {:ok, perms} <- lookup_permissions(sender, state),
+         :ok <- check_comment_permission(perms, project),
          :ok <- append_task_comment(task_path, sender, body),
          :ok <- File.rm(abs_path) do
       emit_comment_route_audit(sender, task_id, state)
@@ -928,6 +937,41 @@ defmodule Glorbo.Company.Router do
         )
 
         :ok
+    end
+  end
+
+  # Extract the project slug from a resolved task path
+  # (`.../projects/<slug>/tasks/<id>.md`). Returns `""` if the
+  # shape isn't as expected, which will make `check_comment_permission`
+  # deny.
+  defp project_from_task_path(task_path) do
+    task_path
+    |> Path.split()
+    |> Enum.chunk_every(3, 1, :discard)
+    |> Enum.find_value("", fn
+      ["projects", slug, "tasks"] -> slug
+      _ -> false
+    end)
+  end
+
+  # Agent may comment on a task when it has either tasks:update:*
+  # (project-scoped) or projects:write:* (directory-scoped). Matches
+  # the action set the task Router already enforces for task
+  # mutations elsewhere.
+  defp check_comment_permission(_perms, ""), do: {:error, :permission_denied}
+
+  defp check_comment_permission(perms, project) do
+    candidates = [
+      {"tasks", "update", project},
+      {"tasks", "update", "*"},
+      {"projects", "write", project},
+      {"projects", "write", "*"}
+    ]
+
+    if Enum.any?(candidates, &match?(:ok, ACLMapper.check_action(perms, &1))) do
+      :ok
+    else
+      {:error, :permission_denied}
     end
   end
 
@@ -987,7 +1031,14 @@ defmodule Glorbo.Company.Router do
 
     dest_path = Path.join(memory_dir, filename)
 
-    with {:ok, content} <- File.read(abs_path),
+    # threatmodel M03: the outbox file is agent-authored — it can
+    # be a symlink pointing at another agent's memory directory or
+    # any host-writable file. `File.read` + atomic_write would then
+    # read from / overwrite the target. lstat and refuse non-regular
+    # files on both the source (outbox) and the destination.
+    with :ok <- ensure_regular_file_lstat(abs_path),
+         :ok <- ensure_regular_file_lstat(dest_path),
+         {:ok, content} <- File.read(abs_path),
          :ok <- check_memory_body_size(content),
          {:ok, meta, _body} <- Frontmatter.parse(content),
          :ok <- check_memory_kind(meta),
@@ -1439,6 +1490,18 @@ defmodule Glorbo.Company.Router do
         :ok -> :ok
         {:error, reason} -> {:error, {:rename_failed, reason}}
       end
+    end
+  end
+
+  # threatmodel M03 helper: allow a regular file or a non-existent
+  # path; refuse symlinks and special files. Callers use this to
+  # keep agent-planted symlinks from redirecting reads/writes.
+  defp ensure_regular_file_lstat(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

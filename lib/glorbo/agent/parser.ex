@@ -25,7 +25,11 @@ defmodule Glorbo.Agent.Parser do
       `{:error, :multiple_models_not_supported}`.
     * `permissions:` defaults to `[]` when absent (P7 — agent with no granted
       permissions is valid; it just can't route anything).
-    * `network:` defaults to `:proxy` (CLI providers need egress).
+    * `network:` defaults to `:none` (threatmodel M16 —
+      secure-by-default). Templates that need egress set
+      `network: proxy` explicitly. Until GEP-31 ships kernel-level
+      netns enforcement, `:proxy` is advisory (env-var hint) so we
+      don't silently opt agents into it when the field is missing.
     * `timeout_seconds:` defaults to 300 (D-06).
     * `budget_usd_cents_month:` defaults to `nil` (P11 — no cap == no
       hard-stop, matches BudgetTracker semantics).
@@ -417,8 +421,8 @@ defmodule Glorbo.Agent.Parser do
   # egress to their hosted API endpoint (api.anthropic.com etc). :none was
   # the earlier secure-by-default but it silently bricks every claude-code
   # dispatch; opt-in explicitly in `agent.md` if you really want airgapped.
-  defp validate_network(nil), do: {:ok, :proxy}
-  defp validate_network(""), do: {:ok, :proxy}
+  defp validate_network(nil), do: {:ok, :none}
+  defp validate_network(""), do: {:ok, :none}
 
   defp validate_network(raw) when is_binary(raw) do
     case Map.fetch(@network_map, raw) do

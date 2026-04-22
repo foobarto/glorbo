@@ -189,7 +189,7 @@ defmodule GlorboWeb.KanbanLive do
         denial_reason: task.denial_reason || "",
         body: prompt,
         comments: comments,
-        attachments: list_task_attachments(task.project, task.task_id)
+        attachments: list_task_attachments(company, task.project, task.task_id)
       }
 
       assign(socket, :open_task, detail)
@@ -1008,42 +1008,48 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  defp list_task_attachments(project, task_id)
-       when is_binary(project) and is_binary(task_id) do
+  # threatmodel M17: the original implementation used a wildcard
+  # `companies/*/` segment which enumerated attachments from every
+  # tenant sharing a project slug + task id, leaking cross-company
+  # metadata (filenames + sizes). Scope to the caller's company.
+  defp list_task_attachments(company, project, task_id)
+       when is_binary(company) and is_binary(project) and is_binary(task_id) do
     base = base_dir()
 
-    # Need company slug too — get from socket via caller. Since this
-    # runs inside open_task (which has socket.assigns.company_slug),
-    # callers pass it in. For now we can derive from task_path, but
-    # safer to accept a 3rd arg. Keep this permissive: return [] on
-    # any filesystem hiccup.
-    pattern =
+    dir =
       Path.join([
         base,
         "companies",
-        "*",
+        company,
         "projects",
         project,
         "attachments",
-        task_id,
-        "*"
+        task_id
       ])
 
-    pattern
-    |> Path.wildcard()
-    |> Enum.map(fn abs ->
-      %{
-        name: Path.basename(abs),
-        size:
-          case File.stat(abs) do
-            {:ok, %File.Stat{size: s}} -> s
-            _ -> 0
-          end
-      }
-    end)
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.sort()
+        |> Enum.map(fn name ->
+          abs = Path.join(dir, name)
+
+          %{
+            name: name,
+            size:
+              case File.stat(abs) do
+                {:ok, %File.Stat{size: s}} -> s
+                _ -> 0
+              end
+          }
+        end)
+
+      _ ->
+        []
+    end
   end
 
-  defp list_task_attachments(_, _), do: []
+  defp list_task_attachments(_, _, _), do: []
 
   defp apply_search_filter(tasks, nil), do: tasks
   defp apply_search_filter(tasks, ""), do: tasks
@@ -1308,12 +1314,16 @@ defmodule GlorboWeb.KanbanLive do
       history_dir =
         Path.join([base, "companies", company, "projects", project, "history", "tasks"])
 
-      File.mkdir_p!(history_dir)
-
-      history_md = Path.join(history_dir, filename)
-
-      with :ok <- File.rename(abs_path, history_md) do
-        # Move attachments dir too (if it exists).
+      # threatmodel M18: refuse to proceed if any segment on the
+      # history path is a symlink. `File.mkdir_p` + `File.rename`
+      # follow symlinked directories, so an agent with projects:write
+      # could redirect history → another company's tree and have the
+      # director move a task into it.
+      with :ok <- ensure_no_symlink_directory(history_dir),
+           :ok <- File.mkdir_p(history_dir),
+           history_md = Path.join(history_dir, filename),
+           :ok <- ensure_regular_file_or_absent(history_md),
+           :ok <- File.rename(abs_path, history_md) do
         attach_src =
           Path.join([base, "companies", company, "projects", project, "attachments", task_id])
 
@@ -1330,12 +1340,52 @@ defmodule GlorboWeb.KanbanLive do
           ])
 
         if File.dir?(attach_src) do
-          File.mkdir_p!(Path.dirname(attach_dst))
-          File.rename(attach_src, attach_dst)
+          move_attachments_dir(attach_src, attach_dst)
         end
 
         :ok
       end
+    end
+  end
+
+  defp move_attachments_dir(src, dst) do
+    case ensure_no_symlink_directory(Path.dirname(dst)) do
+      :ok ->
+        File.mkdir_p!(Path.dirname(dst))
+        File.rename(src, dst)
+
+      _ ->
+        :ok
+    end
+  end
+
+  # Walk each parent directory; refuse if any existing component is
+  # a symlink. `:enoent` is fine (directory will be created fresh).
+  defp ensure_no_symlink_directory(dir) do
+    Enum.reduce_while(Path.split(dir), "", fn seg, acc ->
+      next = if acc == "", do: seg, else: Path.join(acc, seg)
+
+      case File.lstat(next) do
+        {:ok, %File.Stat{type: :directory}} -> {:cont, next}
+        {:ok, %File.Stat{type: :symlink}} -> {:halt, {:error, :symlink_in_path}}
+        {:ok, %File.Stat{}} -> {:halt, {:error, :not_a_directory}}
+        {:error, :enoent} -> {:halt, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      :ok -> :ok
+      {:error, _} = err -> err
+      path when is_binary(path) -> :ok
+    end
+  end
+
+  defp ensure_regular_file_or_absent(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

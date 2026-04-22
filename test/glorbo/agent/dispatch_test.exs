@@ -530,7 +530,11 @@ defmodule Glorbo.Agent.DispatchTest do
       assert_received {:recorded, %{model: "claude-haiku-4-5"}}
     end
 
-    test "task.provider overrides spec.provider at resolution", ctx do
+    test "task.provider mismatch is ignored (threatmodel M10)", ctx do
+      # threatmodel M10: honouring an agent-authored task.provider
+      # let an agent with tasks:write swap to a more-privileged
+      # provider whose auth_binds mount host secrets. The resolver
+      # now pins to the agent spec's provider and logs the mismatch.
       task = Map.put(ctx.task, :provider, "codex")
       pid = self()
 
@@ -547,8 +551,29 @@ defmodule Glorbo.Agent.DispatchTest do
                  audit_fun: ctx.audit_fun
                )
 
-      assert_received {:resolved, "codex"}
-      assert_received {:audit, %{action: "agent.dispatch", provider: "codex"}}
+      # Spec pins `claude-code`; mismatched `codex` is ignored.
+      assert_received {:resolved, "claude-code"}
+      assert_received {:audit, %{action: "agent.dispatch", provider: "claude-code"}}
+    end
+
+    test "task.provider matching spec.provider resolves as before", ctx do
+      task = Map.put(ctx.task, :provider, "claude-code")
+      pid = self()
+
+      provider_fun = fn name ->
+        send(pid, {:resolved, name})
+        stub_provider(name: name)
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(""),
+                 provider_fun: provider_fun,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:resolved, "claude-code"}
     end
 
     test "blank task.model/provider falls back to spec", ctx do

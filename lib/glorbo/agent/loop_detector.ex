@@ -360,9 +360,16 @@ defmodule Glorbo.Agent.LoopDetector do
       task_path = to_string(fm["task_path"] || "")
       agent_slug = to_string(fm["agent"] || "")
       task_id = to_string(fm["task_id"] || Path.basename(task_path, ".md"))
-      abs_task = Path.join([base, "companies", company, task_path])
 
-      with :ok <- apply_task_mutation(decision, abs_task) do
+      # threatmodel M02/M11: the sentinel file lives under
+      # `agents/<slug>/state/` which is agent-writable. A malicious
+      # agent can drop `task_path: ../../otherco/projects/…` and
+      # have the director-initiated resolution write (via
+      # apply_task_mutation) escape the company. Confine the path
+      # to `projects/<slug>/tasks/<id>.md` within this company.
+      with :ok <- validate_sentinel_task_path(task_path),
+           abs_task = Path.join([base, "companies", company, task_path]),
+           :ok <- apply_task_mutation(decision, abs_task) do
         _ = File.rm(abs_sentinel)
 
         emit_resolved_audit(audit_fun, company, %{
@@ -442,6 +449,27 @@ defmodule Glorbo.Agent.LoopDetector do
       _ -> false
     end)
   end
+
+  # threatmodel M02/M11: sentinel files are agent-writable, so
+  # task_path must be validated before we construct
+  # `companies/<co>/<task_path>` or hand it to TaskDefinition.write.
+  # Restrict to `projects/<slug>/tasks/<id>.md` — matches the only
+  # shape legitimate agent telemetry can produce.
+  @sentinel_task_path_re ~r{\Aprojects/[a-z0-9][a-z0-9-]*/tasks/[a-z0-9][a-z0-9._-]*\.md\z}
+  defp validate_sentinel_task_path(path) when is_binary(path) do
+    segments = Path.split(path)
+
+    cond do
+      path == "" -> {:error, :sentinel_empty_task_path}
+      String.contains?(path, <<0>>) -> {:error, :sentinel_invalid_task_path}
+      Path.type(path) != :relative -> {:error, :sentinel_invalid_task_path}
+      ".." in segments -> {:error, :sentinel_invalid_task_path}
+      not Regex.match?(@sentinel_task_path_re, path) -> {:error, :sentinel_invalid_task_path}
+      true -> :ok
+    end
+  end
+
+  defp validate_sentinel_task_path(_), do: {:error, :sentinel_invalid_task_path}
 
   defp apply_task_mutation(:retry, _abs_task), do: :ok
 

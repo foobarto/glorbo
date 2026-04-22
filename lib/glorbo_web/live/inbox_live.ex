@@ -196,29 +196,35 @@ defmodule GlorboWeb.InboxLive do
       when dec in ["retry", "skip", "stop"] do
     base = socket.assigns.base
     co = socket.assigns.company_slug
-    abs_sentinel = Path.join([base, "companies", co, sp])
 
-    case Glorbo.Agent.LoopDetector.resolve(
-           abs_sentinel,
-           String.to_existing_atom(dec),
-           base,
-           co,
-           actor: "director"
-         ) do
-      :ok ->
-        stuck = load_stuck(base, co)
+    # threatmodel M04: client-supplied `sentinel_path` is joined
+    # into an absolute path. Confine to the expected shape.
+    with :ok <- validate_relative_sentinel_path(sp),
+         abs_sentinel = Path.join([base, "companies", co, sp]),
+         :ok <-
+           Glorbo.Agent.LoopDetector.resolve(
+             abs_sentinel,
+             String.to_existing_atom(dec),
+             base,
+             co,
+             actor: "director"
+           ) do
+      stuck = load_stuck(base, co)
 
-        flash_msg =
-          case dec do
-            "retry" -> "Stuck sentinel cleared — next dispatch will retry."
-            "skip" -> "Reassigned to director."
-            "stop" -> "Task marked denied."
-          end
+      flash_msg =
+        case dec do
+          "retry" -> "Stuck sentinel cleared — next dispatch will retry."
+          "skip" -> "Reassigned to director."
+          "stop" -> "Task marked denied."
+        end
 
-        {:noreply,
-         socket
-         |> assign(:stuck, stuck)
-         |> put_flash(:info, flash_msg)}
+      {:noreply,
+       socket
+       |> assign(:stuck, stuck)
+       |> put_flash(:info, flash_msg)}
+    else
+      {:error, :invalid} ->
+        {:noreply, put_flash(socket, :error, "Invalid sentinel path.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Resolve failed: #{inspect(reason)}")}
@@ -338,6 +344,25 @@ defmodule GlorboWeb.InboxLive do
     |> Enum.map(&stuck_row(&1, co_dir))
     |> Enum.reject(&is_nil/1)
   end
+
+  # threatmodel M04: confine client-supplied sentinel paths to
+  # `agents/<slug>/state/stuck-on-<id>.md` under the current
+  # company. Absolute paths, `..`, and NUL are rejected.
+  @sentinel_path_re ~r{\Aagents/[a-z0-9][a-z0-9-]*/state/stuck-on-[a-z0-9][a-z0-9._-]*\.md\z}
+
+  defp validate_relative_sentinel_path(sp) when is_binary(sp) do
+    segments = Path.split(sp)
+
+    cond do
+      String.contains?(sp, <<0>>) -> {:error, :invalid}
+      Path.type(sp) != :relative -> {:error, :invalid}
+      ".." in segments -> {:error, :invalid}
+      not Regex.match?(@sentinel_path_re, sp) -> {:error, :invalid}
+      true -> :ok
+    end
+  end
+
+  defp validate_relative_sentinel_path(_), do: {:error, :invalid}
 
   defp stuck_row(sentinel_path, co_dir) do
     filename = Path.basename(sentinel_path, ".md")

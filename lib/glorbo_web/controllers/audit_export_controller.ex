@@ -93,18 +93,36 @@ defmodule GlorboWeb.AuditExportController do
   @csv_quote "\""
   @csv_escaped_quote "\"\""
 
+  # threatmodel M05: Excel / LibreOffice / Google Sheets treat any
+  # cell starting with `= + - @ \t \r` as a formula, so an
+  # attacker-controlled audit field (actor, target, detail) can
+  # execute spreadsheet code when the CSV is opened. Neutralise
+  # by prefixing with a single tick; the CSV content still escapes
+  # as a quoted cell because the tick + formula-lead trips the
+  # quoting needed check below.
+  @formula_leads ["=", "+", "-", "@", "\t", "\r"]
+
   defp csv_cell(nil), do: ""
   defp csv_cell(value) when not is_binary(value), do: csv_cell(to_string(value))
 
   defp csv_cell(value) do
-    if needs_quoting?(value) do
-      @csv_quote <> String.replace(value, @csv_quote, @csv_escaped_quote) <> @csv_quote
+    neutralised = neutralise_formula(value)
+
+    if needs_quoting?(neutralised) do
+      @csv_quote <> String.replace(neutralised, @csv_quote, @csv_escaped_quote) <> @csv_quote
     else
-      value
+      neutralised
     end
   end
 
+  defp neutralise_formula(<<c::utf8, _::binary>> = value)
+       when <<c::utf8>> in @formula_leads do
+    "'" <> value
+  end
+
+  defp neutralise_formula(value), do: value
+
   defp needs_quoting?(value) do
-    String.contains?(value, [",", "\"", "\n", "\r"])
+    String.contains?(value, [",", "\"", "\n", "\r", "'"])
   end
 end

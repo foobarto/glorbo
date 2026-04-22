@@ -113,9 +113,13 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     ag_path = prepare_agent_dir(co_path, agent)
 
-    role = opts[:role] || "Agent"
-    provider = opts[:provider] || "claude-code"
-    model = opts[:model] || "claude-sonnet-4-5"
+    # threatmodel M12: role/provider/model flow verbatim into
+    # AGENT.md frontmatter. Rejecting newlines / `"` / `---` here
+    # prevents frontmatter-injection even if a caller skipped the
+    # Actions-layer validator (defense in depth).
+    role = sanitize_yaml_scalar(opts[:role] || "Agent", "Agent")
+    provider = sanitize_yaml_scalar(opts[:provider] || "claude-code", "claude-code")
+    model = sanitize_yaml_scalar(opts[:model] || "claude-sonnet-4-5", "claude-sonnet-4-5")
 
     File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
@@ -127,9 +131,12 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     model: #{model}
     network: proxy
     heartbeat: null
-    permissions:
-      - projects:read:*
-      - chat:read:*
+    # threatmodel M21: scaffolded agents start with zero
+    # permissions. Grant narrowly scoped access (e.g.
+    # `projects:read:<project-slug>`) by editing AGENT.md; don't
+    # leave the default `:*` wildcards that let every fresh agent
+    # read every project and chat log.
+    permissions: []
     budget:
       monthly_usd: 10.00
     skills:
@@ -283,6 +290,24 @@ defmodule Glorbo.CLI.Scaffold.Agent do
       end
 
     {:new_agent, 0, message}
+  end
+
+  # threatmodel M12: trim + reject anything that would break out
+  # of a YAML scalar (newline, double-quote, backslash, `---` run,
+  # NUL, control chars, `>` `|` block-scalar indicators). Fall back
+  # to the sanitized default rather than raising so a misbehaving
+  # caller still gets a well-formed AGENT.md with a safe baseline.
+  @yaml_scalar_bad_re ~r/[\x00-\x1f"\n\r\\\|>]|---/
+
+  defp sanitize_yaml_scalar(value, fallback) do
+    str = value |> to_string() |> String.trim()
+
+    cond do
+      str == "" -> fallback
+      Regex.match?(@yaml_scalar_bad_re, str) -> fallback
+      String.length(str) > 128 -> fallback
+      true -> str
+    end
   end
 
   defp prepare_agent_dir(co_path, agent) do
@@ -456,7 +481,8 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     DEFAULTS (D-12, no-template mode)
       role=Agent, provider=claude-code, model=claude-sonnet-4-5,
-      network=proxy, permissions=[projects:read:*, chat:read:*],
+      network=proxy, permissions=[] (edit AGENT.md to grant
+      project/chat access — no broad reads by default),
       budget.monthly_usd=10.00, skills=[], heartbeat=null
 
     COMPANY

@@ -313,14 +313,33 @@ defmodule GlorboWeb.ProjectLive do
   defp ensure_and_load_meta(proj_dir) do
     path = Path.join(proj_dir, "project.md")
 
-    unless File.exists?(path) do
-      slug = proj_dir |> Path.basename()
-      File.write!(path, "---\nkind: project/v1\nslug: #{slug}\n---\n")
-    end
+    # threatmodel M19: project.md lives under an agent-writable
+    # projects tree. A symlink swap redirects File.read / File.write
+    # to arbitrary host paths. lstat on the target and refuse
+    # anything non-regular. :enoent is fine — we'll create it.
+    case ensure_project_md_writable(path) do
+      :ok ->
+        unless File.exists?(path) do
+          slug = proj_dir |> Path.basename()
+          File.write!(path, "---\nkind: project/v1\nslug: #{slug}\n---\n")
+        end
 
-    case File.read(path) do
-      {:ok, content} -> parse_meta(content)
-      _ -> %{name: nil, icon: nil, description: nil}
+        case File.read(path) do
+          {:ok, content} -> parse_meta(content)
+          _ -> %{name: nil, icon: nil, description: nil}
+        end
+
+      {:error, _} ->
+        %{name: nil, icon: nil, description: nil}
+    end
+  end
+
+  defp ensure_project_md_writable(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -416,34 +435,36 @@ defmodule GlorboWeb.ProjectLive do
 
   defp write_project_md(proj_dir, meta) do
     path = Path.join(proj_dir, "project.md")
-
-    body =
-      case File.read(path) do
-        {:ok, content} ->
-          {_fm, body} = split_frontmatter(content)
-          body
-      end
-
-    fm_lines =
-      [
-        {"name", meta.name},
-        {"icon", meta.icon},
-        {"description", meta.description}
-      ]
-      |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
-      |> Enum.map_join("\n", fn {k, v} -> ~s(#{k}: "#{escape(v)}") end)
-
-    new_content = "---\n" <> fm_lines <> "\n---\n" <> (body || "")
-
     tmp = path <> ".tmp"
 
-    with :ok <- File.write(tmp, new_content, [:sync]),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      err ->
-        _ = File.rm(tmp)
-        err
+    # threatmodel M19: lstat-refuse any symlink at either the
+    # target or the temp path. Without this, an agent-planted
+    # symlink for either name redirects File.write/File.rename to
+    # arbitrary host paths on save.
+    with :ok <- ensure_project_md_writable(path),
+         :ok <- ensure_project_md_writable(tmp),
+         {:ok, content} <- File.read(path) do
+      {_fm, body} = split_frontmatter(content)
+
+      fm_lines =
+        [
+          {"name", meta.name},
+          {"icon", meta.icon},
+          {"description", meta.description}
+        ]
+        |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
+        |> Enum.map_join("\n", fn {k, v} -> ~s(#{k}: "#{escape(v)}") end)
+
+      new_content = "---\n" <> fm_lines <> "\n---\n" <> (body || "")
+
+      with :ok <- File.write(tmp, new_content, [:sync]),
+           :ok <- File.rename(tmp, path) do
+        :ok
+      else
+        err ->
+          _ = File.rm(tmp)
+          err
+      end
     end
   end
 

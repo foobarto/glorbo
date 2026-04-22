@@ -463,6 +463,17 @@ defmodule GlorboWeb.Actions do
   defp hire_task?(%{"kind" => "hire"}), do: :ok
   defp hire_task?(_), do: {:error, :not_a_hire}
 
+  # threatmodel M12: hire-task frontmatter is authored by an
+  # agent (the HR role). Role + provider flow verbatim into
+  # AGENT.md frontmatter via the scaffold CLI, so unescaped
+  # newlines / `---` / `"` let a malicious HR agent inject extra
+  # keys (permissions, network=open, etc.) into the new agent's
+  # spec and self-escalate once the director approves the hire.
+  # Slug is already regex-validated; tighten role to a printable
+  # ASCII subset and pin provider to the known allowlist.
+  @hire_role_re ~r/\A[A-Za-z][A-Za-z0-9 _.-]{0,63}\z/
+  @hire_provider_allowlist ~w(claude-code codex gemini opencode)
+
   defp hire_argv(company, fm) do
     slug = to_string(fm["agent_slug"] || "")
     role = to_string(fm["role"] || "")
@@ -474,6 +485,12 @@ defmodule GlorboWeb.Actions do
 
       not Regex.match?(~r/\A[a-z][a-z0-9_-]{0,63}\z/, slug) ->
         {:error, :invalid_agent_slug}
+
+      not Regex.match?(@hire_role_re, role) ->
+        {:error, :invalid_hire_role}
+
+      provider not in @hire_provider_allowlist ->
+        {:error, :invalid_hire_provider}
 
       true ->
         {:ok, ["#{company}/#{slug}", "--role", role, "--provider", provider]}
