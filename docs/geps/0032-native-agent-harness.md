@@ -2,7 +2,7 @@
 gep: 32
 title: Native Agent Harness — OpenAI v1-Compatible Provider
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-23
 requires: [4, 5, 8]
@@ -11,6 +11,9 @@ history:
   - date: 2026-04-23
     status: Draft
     note: Initial draft from multi-turn brainstorm + gep-research grounding (GEPs 2, 3, 7, 8, 23, 31).
+  - date: 2026-04-23
+    status: Accepted
+    note: Accepted by Director on the same day as draft. 28 decision-log entries locked via prior brainstorm; no revisions requested.
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
