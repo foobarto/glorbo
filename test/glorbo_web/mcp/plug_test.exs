@@ -318,14 +318,31 @@ defmodule GlorboWeb.MCP.PlugTest do
   end
 
   describe "method routing" do
-    test "GET returns 405 (SSE not offered in wave a)" do
+    test "GET without session header returns 400 Invalid Request" do
+      # MCP 2025-06-18 §Session management: clients MUST carry
+      # Mcp-Session-Id on subsequent requests once initialize issued one.
       conn =
         :get
         |> conn("/mcp")
         |> McpPlug.call(@opts)
 
-      assert conn.status == 405
-      assert ["POST, DELETE"] = get_resp_header(conn, "allow")
+      assert conn.status == 400
+
+      assert %{"error" => %{"code" => -32_600, "message" => "Invalid Request"}} =
+               Jason.decode!(conn.resp_body)
+    end
+
+    test "GET with unknown session header returns 404 Unknown session" do
+      conn =
+        :get
+        |> conn("/mcp")
+        |> put_req_header("mcp-session-id", "nosuch-session")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 404
+
+      assert %{"error" => %{"code" => -32_002, "message" => "Unknown session"}} =
+               Jason.decode!(conn.resp_body)
     end
 
     test "DELETE returns 204" do
@@ -363,6 +380,90 @@ defmodule GlorboWeb.MCP.PlugTest do
 
         assert conn.status == 200
       end
+    end
+  end
+
+  describe "session lifecycle (GEP-29 wave d.2)" do
+    test "initialize starts a Session GenServer keyed to Mcp-Session-Id" do
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "2025-06-18"}
+        })
+        |> McpPlug.call(@opts)
+
+      assert [session_id] = get_resp_header(conn, "mcp-session-id")
+      assert GlorboWeb.MCP.Session.exists?(session_id)
+
+      # Clean up so the DynamicSupervisor doesn't leak across tests.
+      GlorboWeb.MCP.Session.terminate_session(session_id)
+    end
+
+    test "DELETE with session header tears down the session" do
+      {:ok, session_id} =
+        GlorboWeb.MCP.Session.start_session(%{client: "test", base: "/tmp"})
+
+      conn =
+        :delete
+        |> conn("/mcp")
+        |> put_req_header("mcp-session-id", session_id)
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 204
+      refute GlorboWeb.MCP.Session.exists?(session_id)
+    end
+
+    test "resources/subscribe over HTTP records the subscription on the session" do
+      {:ok, session_id} =
+        GlorboWeb.MCP.Session.start_session(%{client: "test", base: "/tmp"})
+
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 10,
+          "method" => "resources/subscribe",
+          "params" => %{"uri" => "glorbo://audit/acme"}
+        })
+        |> put_req_header("mcp-session-id", session_id)
+        |> put_req_header("mcp-protocol-version", "2025-06-18")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+      assert %{"result" => %{}} = Jason.decode!(conn.resp_body)
+      assert ["glorbo://audit/acme"] = GlorboWeb.MCP.Session.subscribed_uris(session_id)
+
+      GlorboWeb.MCP.Session.terminate_session(session_id)
+    end
+
+    test "POST with unknown session header returns 404 -32002" do
+      conn =
+        post_json(%{"jsonrpc" => "2.0", "id" => 11, "method" => "ping"})
+        |> put_req_header("mcp-session-id", "nosuch-session")
+        |> put_req_header("mcp-protocol-version", "2025-06-18")
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 404
+
+      assert %{"error" => %{"code" => -32_002, "message" => "Unknown session"}} =
+               Jason.decode!(conn.resp_body)
+    end
+
+    test "resources/subscribe without a session returns -32002 at JSON-RPC layer" do
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 12,
+          "method" => "resources/subscribe",
+          "params" => %{"uri" => "glorbo://audit/acme"}
+        })
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 200
+
+      assert %{"error" => %{"code" => -32_002, "message" => "No active session"}} =
+               Jason.decode!(conn.resp_body)
     end
   end
 end

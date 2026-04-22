@@ -99,6 +99,12 @@ defmodule Glorbo.Application do
       # cleanup — see GlorboWeb.StdoutStreamer moduledoc).
       {DynamicSupervisor,
        name: GlorboWeb.StdoutStreamer.Supervisor, strategy: :one_for_one, max_restarts: 100},
+      # GEP-29 wave (d.2): per-MCP-session state (subscriptions + SSE
+      # pid) under a DynamicSupervisor, addressed via a :unique Registry
+      # keyed by the Mcp-Session-Id header.
+      {Registry, keys: :unique, name: GlorboWeb.MCP.SessionRegistry},
+      {DynamicSupervisor,
+       name: GlorboWeb.MCP.SessionSupervisor, strategy: :one_for_one, max_restarts: 100},
       GlorboWeb.Endpoint
     ]
 

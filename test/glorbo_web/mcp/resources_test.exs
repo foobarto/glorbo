@@ -287,7 +287,7 @@ defmodule GlorboWeb.MCP.ResourcesTest do
       assert {:reply, %{"capabilities" => caps}} =
                dispatch("initialize", %{"protocolVersion" => "2025-06-18"}, base)
 
-      assert caps["resources"] == %{"listChanged" => false, "subscribe" => false}
+      assert caps["resources"] == %{"listChanged" => false, "subscribe" => true}
     end
   end
 end

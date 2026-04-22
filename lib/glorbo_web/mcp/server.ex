@@ -45,6 +45,7 @@ defmodule GlorboWeb.MCP.Server do
   """
 
   alias GlorboWeb.MCP.Resources
+  alias GlorboWeb.MCP.Session
   alias GlorboWeb.MCP.Tools
 
   @protocol_version "2025-06-18"
@@ -122,6 +123,8 @@ defmodule GlorboWeb.MCP.Server do
       "resources/list" -> handle_resources_list(context)
       "resources/templates/list" -> handle_resources_templates_list()
       "resources/read" -> handle_resources_read(params, context)
+      "resources/subscribe" -> handle_resources_subscribe(params, context)
+      "resources/unsubscribe" -> handle_resources_unsubscribe(params, context)
       _ -> {:error, -32_601, "Method not found", %{method: method}}
     end
   end
@@ -179,7 +182,7 @@ defmodule GlorboWeb.MCP.Server do
        "protocolVersion" => negotiated,
        "capabilities" => %{
          "tools" => %{"listChanged" => false},
-         "resources" => %{"listChanged" => false, "subscribe" => false}
+         "resources" => %{"listChanged" => false, "subscribe" => true}
        },
        "serverInfo" => %{
          "name" => @server_name,
@@ -232,6 +235,45 @@ defmodule GlorboWeb.MCP.Server do
   end
 
   defp handle_resources_read(_bad, _context),
+    do: {:error, -32_602, "Invalid params", %{expected: "uri: string"}}
+
+  # resources/subscribe + resources/unsubscribe require an attached
+  # session — the plug stamps `:session_id` into context on every
+  # post-initialize request. Stateless callers (no Mcp-Session-Id
+  # header at all) get `-32002` since the server has nowhere to hang
+  # the subscription state.
+  defp handle_resources_subscribe(%{"uri" => uri}, %{session_id: session_id})
+       when is_binary(uri) and is_binary(session_id) do
+    case Session.subscribe(session_id, uri) do
+      :ok ->
+        {:reply, %{}}
+
+      {:error, :unknown_session} ->
+        {:error, -32_002, "Unknown session", %{"session_id" => session_id}}
+
+      {:error, reason} ->
+        {:error, -32_602, "Invalid params", %{"uri" => uri, "reason" => inspect(reason)}}
+    end
+  end
+
+  defp handle_resources_subscribe(%{"uri" => _}, _context),
+    do: {:error, -32_002, "No active session", %{"hint" => "call initialize first"}}
+
+  defp handle_resources_subscribe(_bad, _context),
+    do: {:error, -32_602, "Invalid params", %{expected: "uri: string"}}
+
+  defp handle_resources_unsubscribe(%{"uri" => uri}, %{session_id: session_id})
+       when is_binary(uri) and is_binary(session_id) do
+    case Session.unsubscribe(session_id, uri) do
+      :ok -> {:reply, %{}}
+      {:error, :unknown_session} -> {:error, -32_002, "Unknown session", %{}}
+    end
+  end
+
+  defp handle_resources_unsubscribe(%{"uri" => _}, _context),
+    do: {:error, -32_002, "No active session", %{"hint" => "call initialize first"}}
+
+  defp handle_resources_unsubscribe(_bad, _context),
     do: {:error, -32_602, "Invalid params", %{expected: "uri: string"}}
 
   # ---------------------------------------------------------------------------

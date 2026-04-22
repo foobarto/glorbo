@@ -41,6 +41,14 @@ defmodule GlorboWeb.MCP.Resources do
   @uri_scheme "glorbo"
 
   @doc """
+  Public helper for modules that need to apply the same slug-gate
+  to URI path segments (e.g. `GlorboWeb.MCP.Session` when parsing
+  subscribe targets).
+  """
+  @spec valid_segment?(String.t()) :: boolean()
+  def valid_segment?(segment), do: Slug.valid?(segment)
+
+  @doc """
   Enumerate every concrete resource URI this server currently
   knows about. Walks `<base>/companies/` once; emits per-company
   audit/approvals/proposals URIs + per-channel chat URIs.

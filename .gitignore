@@ -104,3 +104,4 @@ coverage/
 # curated report lives at `docs/knowledge-graph/GRAPH_REPORT.md`.
 graphify-out/
 **/graphify-out/
+.codex

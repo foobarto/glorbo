@@ -84,6 +84,75 @@ prompt preview to Inbox Mine tab" as a separate follow-up.
 
 1559 tests green; mix credo --strict clean.
 
+### Added — GEP-29 wave (d.2): MCP resources/subscribe + SSE streaming
+
+Closes out the MCP resources surface with server-initiated
+notifications. Clients can now subscribe to any resource URI
+surfaced in wave (d.1) and receive `notifications/resources/updated`
+messages pushed over an SSE stream whenever the underlying
+filesystem or audit log changes.
+
+New runtime components:
+
+- `GlorboWeb.MCP.Session` — per-session GenServer holding the
+  subscription set, Phoenix.PubSub subscriptions, and the attached
+  SSE pid. Auto-detaches on SSE process exit via `Process.monitor/1`.
+- `GlorboWeb.MCP.SessionSupervisor` — `DynamicSupervisor` parent.
+- `GlorboWeb.MCP.SessionRegistry` — `:unique` Registry keyed by the
+  `Mcp-Session-Id` issued in `initialize`.
+
+Wire contract additions:
+
+- `initialize` starts a Session and stamps its id on the response
+  header. Subsequent requests must echo `Mcp-Session-Id`.
+- `resources/subscribe` + `resources/unsubscribe` JSON-RPC methods.
+  Subscribe maps the URI to its PubSub topic (`company:<co>:audit`
+  for audit, `company:<co>:projects` for approvals, `…:proposals`
+  for proposals, `…:channels:<ch>` for chat) and records it on the
+  Session. Unsubscribe drops it; the last URI referencing a topic
+  triggers `Phoenix.PubSub.unsubscribe/2`.
+- `GET /mcp` opens an SSE stream (`Content-Type: text/event-stream`)
+  and attaches the plug process to the session. Emits a
+  `: stream open` comment frame immediately, then a `: keep-alive`
+  comment every 15s so intermediaries don't cull the idle connection.
+  Each `notifications/resources/updated` arrives as a `data: {…}\n\n`
+  frame.
+- `DELETE /mcp` with a session header terminates the session;
+  without one, still returns 204 for client-shutdown idempotency.
+
+Initialize capability now advertises
+`"resources": {"listChanged": false, "subscribe": true}`.
+
+Notification routing is narrowed by URI family so an audit event
+doesn't fire `updated` for an unrelated chat subscription.
+Channel-level events further narrow by channel slug. Cross-company
+over-notification in the audit case is a known limitation — clients
+always re-read the snapshot anyway, so it's at most a spurious wakeup.
+
+Codex review caught and we fixed: TOCTOU races between
+`Registry.lookup/2` and `GenServer.call/stop/3` (now caught as
+`:noproc`/`:shutdown` exits and surfaced as `:unknown_session`),
+PubSub refcount leaks when re-subscribing the same URI (now
+idempotent), over-broad notifications firing on every URI regardless
+of family (now filtered), and the GET-without-session case
+conflating "missing header" with "expired session" (now 400 vs 404
+respectively).
+
+Notes for wave (d.3) or later: per-company URI routing on audit
+events would require either embedding the company in
+`{:audit_append, record}` broadcasts or switching to topic-aware
+subscriptions. Neither is urgent — clients re-read on any signal.
+
+- `lib/glorbo_web/mcp/session.ex` — new (~380 lines)
+- `lib/glorbo_web/mcp/plug.ex` — SSE stream handler + session
+  lifecycle wiring
+- `lib/glorbo_web/mcp/server.ex` — subscribe/unsubscribe dispatch
+- `lib/glorbo/application.ex` — SessionSupervisor + SessionRegistry
+  children
+- `test/glorbo_web/mcp/session_test.exs` — 19 new tests
+
+150 MCP tests pass; 1603 tests total green.
+
 ### Added — GEP-29 wave (d.1): MCP resources (list + read snapshots)
 
 First half of the MCP resources surface per 2025-06-18 spec. The

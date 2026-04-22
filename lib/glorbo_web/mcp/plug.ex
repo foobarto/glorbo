@@ -45,6 +45,7 @@ defmodule GlorboWeb.MCP.Plug do
   require Logger
 
   alias GlorboWeb.MCP.Server
+  alias GlorboWeb.MCP.Session
 
   # Origins are compared by parsed URI.host, not prefix-matched. Prefix
   # matching would accept `http://localhost.evil.tld` as valid; exact
@@ -117,8 +118,9 @@ defmodule GlorboWeb.MCP.Plug do
   defp handle_post(conn) do
     with {:ok, envelope, conn} <- read_envelope(conn),
          {:ok, method, params, id} <- extract_request(envelope),
-         :ok <- validate_protocol_version(conn, method) do
-      context = build_context(conn)
+         :ok <- validate_protocol_version(conn, method),
+         {:ok, session_id, conn} <- ensure_session(conn, method) do
+      context = build_context(conn, session_id)
 
       if is_nil(id) do
         # Notification per JSON-RPC 2.0: request with no `id` field
@@ -127,7 +129,7 @@ defmodule GlorboWeb.MCP.Plug do
         _ = Server.dispatch(method, params, context)
         send_resp(conn, 202, "")
       else
-        dispatch_request(conn, method, params, id, context)
+        dispatch_request(conn, method, params, id, context, session_id)
       end
     else
       {:error, :invalid_json} ->
@@ -176,6 +178,56 @@ defmodule GlorboWeb.MCP.Plug do
 
       {:error, :read_body_failed} ->
         send_resp(conn, 400, "failed to read request body")
+
+      {:error, {:unknown_session, session_id}} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          404,
+          Jason.encode!(
+            rpc_error(
+              nil,
+              -32_002,
+              "Unknown session",
+              %{"session_id" => session_id}
+            )
+          )
+        )
+    end
+  end
+
+  # `initialize` spins up a new session. Every other method must
+  # arrive with an `Mcp-Session-Id` header that maps to a live
+  # Session GenServer. Returning `{:error, {:unknown_session, id}}`
+  # bubbles up to `handle_post/1` as a 404 JSON-RPC error.
+  defp ensure_session(conn, "initialize") do
+    context_opts = %{
+      client: client_name(conn),
+      base: Glorbo.Filesystem.Hierarchy.default_root()
+    }
+
+    case Session.start_session(context_opts) do
+      {:ok, session_id} -> {:ok, session_id, conn}
+      {:error, reason} -> {:error, {:session_start_failed, reason}}
+    end
+  end
+
+  defp ensure_session(conn, _method) do
+    case get_req_header(conn, "mcp-session-id") do
+      [session_id | _] when is_binary(session_id) and session_id != "" ->
+        if Session.exists?(session_id) do
+          {:ok, session_id, conn}
+        else
+          {:error, {:unknown_session, session_id}}
+        end
+
+      _ ->
+        # Stateless callers (no session header) are allowed for
+        # request/response methods that don't need session state —
+        # most of the tool catalog works fine without subscriptions.
+        # The subscribe/unsubscribe handlers themselves enforce the
+        # presence of a session.
+        {:ok, nil, conn}
     end
   end
 
@@ -208,19 +260,19 @@ defmodule GlorboWeb.MCP.Plug do
     end
   end
 
-  defp dispatch_request(conn, method, params, id, context) do
+  defp dispatch_request(conn, method, params, id, context, session_id) do
     case Server.dispatch(method, params, context) do
       {:reply, result} ->
-        respond(conn, id, {:ok, result})
+        respond(conn, id, {:ok, result}, session_id)
 
       {:error, code, message, data} ->
-        respond(conn, id, {:error, code, message, data})
+        respond(conn, id, {:error, code, message, data}, session_id)
 
       :no_reply ->
         # Handler declared this method a notification even though the
         # client sent an id. Acknowledge with an empty success result
         # so the client's request/response bookkeeping stays happy.
-        respond(conn, id, {:ok, %{}})
+        respond(conn, id, {:ok, %{}}, session_id)
     end
   end
 
@@ -229,14 +281,107 @@ defmodule GlorboWeb.MCP.Plug do
   # ---------------------------------------------------------------------------
 
   defp handle_get(conn) do
-    # Wave (a): no server-initiated stream. Clients that speak
-    # Streamable HTTP accept a 405 here and fall back to request/
-    # response. Later waves open an SSE stream for resource
-    # subscriptions and forward PubSub events.
-    conn
-    |> put_resp_header("allow", "POST, DELETE")
-    |> send_resp(405, "SSE streams are not yet offered at this endpoint")
-    |> halt()
+    case get_req_header(conn, "mcp-session-id") do
+      [session_id | _] when is_binary(session_id) and session_id != "" ->
+        if Session.exists?(session_id) do
+          attach_and_stream(conn, session_id)
+        else
+          # Header present but session not live — 404 distinguishes
+          # "expired / terminated" from the missing-header case below.
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(
+            404,
+            Jason.encode!(
+              rpc_error(nil, -32_002, "Unknown session", %{
+                "session_id" => session_id
+              })
+            )
+          )
+        end
+
+      _ ->
+        # Missing header — a spec-level transport error. 400 Bad
+        # Request per MCP 2025-06-18 Streamable HTTP §Session
+        # management: "subsequent HTTP requests from the client MUST
+        # include the Mcp-Session-Id".
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          400,
+          Jason.encode!(
+            rpc_error(nil, -32_600, "Invalid Request", %{
+              "reason" => "GET requires an Mcp-Session-Id header"
+            })
+          )
+        )
+    end
+  end
+
+  # SSE stream loop. Opens a chunked response with
+  # `Content-Type: text/event-stream`, registers the plug process
+  # with the Session, then blocks receiving messages. Every message
+  # the Session pushes is framed as an SSE event and written to the
+  # chunk stream. A failed `chunk/2` means the client disconnected;
+  # the loop exits and the Session auto-detaches via its process
+  # monitor.
+  defp attach_and_stream(conn, session_id) do
+    conn =
+      conn
+      |> put_resp_header("content-type", "text/event-stream")
+      |> put_resp_header("cache-control", "no-cache")
+      |> put_resp_header("connection", "keep-alive")
+      # Let the client echo back the session id on its next POST.
+      |> put_resp_header("mcp-session-id", session_id)
+      |> send_chunked(200)
+
+    case Session.attach_sse(session_id, self()) do
+      :ok ->
+        # One initial comment frame to flush headers + prove liveness.
+        conn =
+          case chunk(conn, ": stream open\n\n") do
+            {:ok, c} -> c
+            {:error, _} -> conn
+          end
+
+        sse_loop(conn, session_id)
+
+      {:error, _reason} ->
+        conn
+    end
+  end
+
+  defp sse_loop(conn, session_id) do
+    receive do
+      {:mcp_notification, method, params} ->
+        case write_event(conn, method, params) do
+          {:ok, conn} ->
+            sse_loop(conn, session_id)
+
+          {:error, _} ->
+            _ = Session.detach_sse(session_id, self())
+            conn
+        end
+    after
+      # Keep-alive comment every 15s so intermediaries don't cull
+      # the idle connection. Comments (`: ...`) are ignored by
+      # EventSource but exercise the byte stream.
+      15_000 ->
+        case chunk(conn, ": keep-alive\n\n") do
+          {:ok, conn} ->
+            sse_loop(conn, session_id)
+
+          {:error, _} ->
+            _ = Session.detach_sse(session_id, self())
+            conn
+        end
+    end
+  end
+
+  defp write_event(conn, method, params) do
+    payload = %{"jsonrpc" => "2.0", "method" => method, "params" => params}
+    frame = "data: #{Jason.encode!(payload)}\n\n"
+    chunk(conn, frame)
   end
 
   # ---------------------------------------------------------------------------
@@ -244,16 +389,23 @@ defmodule GlorboWeb.MCP.Plug do
   # ---------------------------------------------------------------------------
 
   defp handle_delete(conn) do
-    # Wave (a) is stateless; nothing to terminate server-side.
-    # Acknowledge so compliant clients don't error on clean shutdown.
-    send_resp(conn, 204, "")
+    case get_req_header(conn, "mcp-session-id") do
+      [session_id | _] when is_binary(session_id) and session_id != "" ->
+        _ = Session.terminate_session(session_id)
+        send_resp(conn, 204, "")
+
+      _ ->
+        # Stateless DELETE — nothing to terminate, but the spec lets
+        # the server acknowledge so clients don't error on shutdown.
+        send_resp(conn, 204, "")
+    end
   end
 
   # ---------------------------------------------------------------------------
   # Response helpers
   # ---------------------------------------------------------------------------
 
-  defp respond(conn, id, outcome) do
+  defp respond(conn, id, outcome, session_id) do
     payload =
       case outcome do
         {:ok, result} -> rpc_result(id, result)
@@ -261,24 +413,21 @@ defmodule GlorboWeb.MCP.Plug do
       end
 
     conn
-    |> maybe_put_session_header(payload)
+    |> maybe_put_session_header(payload, session_id)
     |> put_resp_content_type("application/json")
     |> send_resp(200, Jason.encode!(payload))
   end
 
   # Stamp `Mcp-Session-Id` on the `initialize` response. Echoed by
-  # the client on every subsequent request per spec. Wave (a) does
-  # not persist state keyed to the id; it's there so clients can
-  # round-trip correctly.
-  defp maybe_put_session_header(conn, %{"result" => %{"protocolVersion" => _}}) do
-    put_resp_header(conn, "mcp-session-id", session_id())
+  # the client on every subsequent request per spec. Wave (d.2) wires
+  # the id to a live Session GenServer under
+  # `GlorboWeb.MCP.SessionSupervisor`.
+  defp maybe_put_session_header(conn, %{"result" => %{"protocolVersion" => _}}, session_id)
+       when is_binary(session_id) do
+    put_resp_header(conn, "mcp-session-id", session_id)
   end
 
-  defp maybe_put_session_header(conn, _other), do: conn
-
-  defp session_id do
-    :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
-  end
+  defp maybe_put_session_header(conn, _other, _session_id), do: conn
 
   defp rpc_result(id, result),
     do: %{"jsonrpc" => "2.0", "id" => id, "result" => result}
@@ -354,10 +503,11 @@ defmodule GlorboWeb.MCP.Plug do
   # Context construction
   # ---------------------------------------------------------------------------
 
-  defp build_context(conn) do
+  defp build_context(conn, session_id) do
     %{
       client: client_name(conn),
-      base: Glorbo.Filesystem.Hierarchy.default_root()
+      base: Glorbo.Filesystem.Hierarchy.default_root(),
+      session_id: session_id
     }
   end
 
