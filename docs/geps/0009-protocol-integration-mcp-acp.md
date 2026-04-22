@@ -2,15 +2,24 @@
 gep: 9
 title: Protocol-Level Integration — MCP, ACP
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Informational
 created: 2026-04-17
 requires: [2, 4, 5]
 see-also: [8]
+extended-by: [29]
 history:
   - date: 2026-04-17
     status: Draft
     note: Forward-looking GEP. Captures the direction Glorbo would take for bidirectional / long-running / shared-runtime agent workflows if they become necessary. No implementation commitment.
+  - date: 2026-04-22
+    status: Accepted
+    note: |
+      Transitioned per D4. GEP-29 (Glorbo as MCP Server) is the first
+      concrete Standards GEP built on this direction — covers the
+      server side (Glorbo as MCP server over HTTP-SSE). This GEP
+      remains the direction record; GEP-29 carries the implementation
+      decisions.
 ---
 
 # GEP-9: Protocol-Level Integration — MCP, ACP

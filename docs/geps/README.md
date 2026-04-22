@@ -32,7 +32,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0006 | [Phoenix LiveView + Channels for the Dashboard](./0006-phoenix-liveview-dashboard.md)    | Informational | Implemented |
 | 0007 | [SQLite as Derived Data](./0007-sqlite-as-derived-data.md)                               | Informational | Implemented |
 | 0008 | [Provider Registry + CLI Auto-Detect](./0008-provider-registry-and-auto-detect.md)       | Standards     | Implemented |
-| 0009 | [Protocol-Level Integration — MCP, ACP](./0009-protocol-integration-mcp-acp.md)          | Informational | Draft       |
+| 0009 | [Protocol-Level Integration — MCP, ACP](./0009-protocol-integration-mcp-acp.md)          | Informational | Accepted    |
 | 0010 | [Agent and Role-Specific Skill Templates](./0010-agent-and-skill-templates.md)           | Standards     | Implemented |
 | 0011 | [The Zen of Glorbo](./0011-zen-of-glorbo.md)                                             | Informational | Accepted    |
 | 0012 | [No User-Input Atoms — Registry Over Process Names](./0012-no-user-input-atoms.md)       | Standards     | Draft       |
@@ -52,6 +52,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0026 | [Benchmark Templates and Provider A/B Comparison](./0026-benchmark-templates-and-ab-comparison.md) | Standards     | Draft       |
 | 0027 | [Agent Sandbox Path Requests via Director Approval](./0027-agent-sandbox-path-requests.md) | Standards     | Implemented |
 | 0028 | [Agent-Created Proposals via Director Approval](./0028-agent-created-proposals.md)        | Standards     | Draft       |
+| 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
