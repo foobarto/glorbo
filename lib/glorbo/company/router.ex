@@ -202,8 +202,23 @@ defmodule Glorbo.Company.Router do
   end
 
   # "chat:general" | "agent:ceo" | "broadcast:*" | ...
-  defp parse_to("chat:" <> channel) when byte_size(channel) > 0, do: {:ok, {:chat, channel}}
-  defp parse_to("agent:" <> slug) when byte_size(slug) > 0, do: {:ok, {:agent, slug}}
+  #
+  # Threatmodel H3/H6 (wave 4): each segment is Path.join'd into the
+  # channels/inbox filesystem tree, so anything that isn't a canonical
+  # slug (`[a-z0-9-]+`) is path-traversal fuel. Reject at parse time
+  # — no `..`, no absolute paths, no `/`.
+  defp parse_to("chat:" <> channel) when byte_size(channel) > 0 do
+    if GlorboWeb.Slug.valid?(channel),
+      do: {:ok, {:chat, channel}},
+      else: {:error, {:invalid_message, :invalid_channel_slug}}
+  end
+
+  defp parse_to("agent:" <> slug) when byte_size(slug) > 0 do
+    if GlorboWeb.Slug.valid?(slug),
+      do: {:ok, {:agent, slug}},
+      else: {:error, {:invalid_message, :invalid_agent_slug}}
+  end
+
   defp parse_to("broadcast:" <> _), do: {:ok, :broadcast}
   defp parse_to(_), do: {:error, {:invalid_message, :unknown_to_scheme}}
 

@@ -211,6 +211,7 @@ defmodule Glorbo.Approvals.GateTest do
     Body.
     """)
 
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-04.md")
     send(pid, {:file_event, "projects/foo/tasks/t-04.md", [:modified]})
 
     assert_receive {:wake, "engineer", :director_approval, task_map}, 500
@@ -265,6 +266,7 @@ defmodule Glorbo.Approvals.GateTest do
     # t-05
     """)
 
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-05.md")
     send(pid, {:file_event, "projects/foo/tasks/t-05.md", [:modified]})
 
     # Wait for resolution
@@ -397,6 +399,7 @@ defmodule Glorbo.Approvals.GateTest do
     body
     """)
 
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-10.md")
     send(pid, {:file_event, "projects/foo/tasks/t-10.md", [:modified]})
 
     assert_audit_within(:action, "approval.granted", 1_500)
@@ -490,6 +493,7 @@ defmodule Glorbo.Approvals.GateTest do
     body
     """)
 
+    :ok = Gate.mark_director_decision(pid2, "projects/foo/tasks/t-12.md")
     send(pid2, {:file_event, "projects/foo/tasks/t-12.md", [:modified]})
     assert_audit_within(:action, "approval.granted", 1_500)
   end
@@ -579,6 +583,7 @@ defmodule Glorbo.Approvals.GateTest do
     body
     """)
 
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-14.md")
     send(pid, {:file_event, "projects/foo/tasks/t-14.md", [:modified]})
     _ = :sys.get_state(pid)
 
@@ -622,6 +627,8 @@ defmodule Glorbo.Approvals.GateTest do
     body
     """)
 
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-15.md")
+
     :ok =
       Phoenix.PubSub.broadcast(
         Glorbo.PubSub,
@@ -630,6 +637,56 @@ defmodule Glorbo.Approvals.GateTest do
       )
 
     assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
+  # G16 — threatmodel H4 regression: agent file-write without a Director mark
+  # is treated as a self-approval attempt. Gate reverts status to "awaiting"
+  # and emits approval.self_approval_rejected. No agent wake.
+  test "G16: agent self-approval flip is reverted + audited", ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-16",
+        title: "ok",
+        status: "pending-approval",
+        requires_approval: "director"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # Agent writes status: approved directly (bypass).
+    File.write!(path, """
+    ---
+    title: ok
+    status: approved
+    requires_approval: director
+    ---
+    body
+    """)
+
+    # No `Gate.mark_director_decision` call — this simulates an agent
+    # bypass, not a Director action.
+    send(pid, {:file_event, "projects/foo/tasks/t-16.md", [:modified]})
+
+    # Should NOT wake the agent.
+    refute_receive {:wake, _, _, _}, 200
+
+    assert_audit_within(:action, "approval.self_approval_rejected", 1_500)
+
+    # File must have been reverted back to awaiting.
+    {:ok, reverted} = Glorbo.TaskDefinition.parse_file(path, base: ctx.base, company: "acme")
+    assert reverted.status == "awaiting"
+
+    # DB row stays in "awaiting".
+    row = Repo.get_by(TasksApprovalState, task_path: "projects/foo/tasks/t-16.md")
+    assert row.status == "awaiting"
   end
 
   # ---- helpers ---------------------------------------------------------

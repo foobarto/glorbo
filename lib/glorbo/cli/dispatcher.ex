@@ -231,6 +231,19 @@ defmodule Glorbo.CLI.Dispatcher do
   end
 
   defp read_reply(path, max_bytes, fs) do
+    # Threatmodel H1/H2 (wave 4): lstat first. The reply path lives inside
+    # the agent workspace, so an untrusted CLI can pre-create it as a
+    # symlink to a host file (e.g. `~/.glorbo/config.md`). `File.stat`
+    # follows the link; `File.lstat` sees the symlink itself.
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> do_read_reply(path, max_bytes, fs)
+      {:ok, %{type: other}} -> {:error, {:reply_file_not_regular, other}}
+      {:error, :enoent} -> {:error, :reply_file_missing}
+      {:error, reason} -> {:error, {:reply_file_stat_error, reason}}
+    end
+  end
+
+  defp do_read_reply(path, max_bytes, fs) do
     case fs.stat.(path) do
       {:ok, %{size: 0}} ->
         {:error, :reply_file_empty}

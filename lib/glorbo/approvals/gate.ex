@@ -118,6 +118,21 @@ defmodule Glorbo.Approvals.Gate do
     GenServer.call(server, {:request_approval, req})
   end
 
+  @doc """
+  Mark a Director-driven approval decision as in-flight. Callers
+  (`GlorboWeb.Actions.set_approval`) MUST invoke this **before**
+  writing the task frontmatter. The Gate's watcher-handler later
+  checks this mark to distinguish legitimate Director writes from
+  agent self-approval attempts (Threatmodel H4).
+
+  Marks expire 10 seconds after insertion so stale entries can't
+  grant future file writes.
+  """
+  @spec mark_director_decision(GenServer.server(), String.t()) :: :ok
+  def mark_director_decision(server, task_path) when is_binary(task_path) do
+    GenServer.call(server, {:mark_director_decision, task_path})
+  end
+
   # `resolve_approval/3` moved to `Glorbo.Test.GateHelpers` — it was a
   # test-only shortcut that used `:sys.get_state/1` on the production API
   # surface. Tests now call `Glorbo.Test.GateHelpers.resolve_approval/3`
@@ -144,7 +159,13 @@ defmodule Glorbo.Approvals.Gate do
       audit_fun: Keyword.get(opts, :audit_fun, &AuditLog.append/2),
       audit_server: Keyword.get(opts, :audit_server, AuditLog),
       agent_wake_fun: Keyword.get(opts, :agent_wake_fun, &default_agent_wake/3),
-      pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub)
+      pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
+      # Threatmodel H4: set of `task_path` marked by the Director's
+      # `set_approval` path just before it writes the frontmatter.
+      # The watcher-driven approval handler consults this to tell
+      # legitimate Director flips from agent self-approval attempts.
+      # Values are monotonic timestamps in milliseconds.
+      director_pending: %{}
     }
 
     {:ok, state}
@@ -156,11 +177,39 @@ defmodule Glorbo.Approvals.Gate do
     {:reply, reply, state}
   end
 
+  def handle_call({:mark_director_decision, task_path}, _from, state) do
+    now = System.monotonic_time(:millisecond)
+    pending = Map.put(prune_expired(state.director_pending, now), task_path, now)
+    {:reply, :ok, %{state | director_pending: pending}}
+  end
+
+  # 10 s TTL — plenty of headroom for the file write + watcher round-trip
+  # (sub-second in practice) but short enough that an abandoned Director
+  # mark can't be repurposed later.
+  @director_mark_ttl_ms 10_000
+
+  defp prune_expired(pending, now) do
+    for {path, ts} <- pending, now - ts < @director_mark_ttl_ms, into: %{}, do: {path, ts}
+  end
+
+  defp consume_director_mark(state, task_path) do
+    now = System.monotonic_time(:millisecond)
+    pending = prune_expired(state.director_pending, now)
+
+    case Map.pop(pending, task_path) do
+      {nil, pending} -> {:agent_bypass, %{state | director_pending: pending}}
+      {_ts, pending} -> {:director, %{state | director_pending: pending}}
+    end
+  end
+
   @impl true
   def handle_info({:file_event, rel_path, events}, state) do
-    if :modified in events and Regex.match?(@project_task_re, rel_path) do
-      handle_projects_event(rel_path, state)
-    end
+    state =
+      if :modified in events and Regex.match?(@project_task_re, rel_path) do
+        handle_projects_event(rel_path, state)
+      else
+        state
+      end
 
     {:noreply, state}
   end
@@ -287,13 +336,13 @@ defmodule Glorbo.Approvals.Gate do
         company: state.company
       })
 
-      :ok
+      state
     else
       abs_path = Path.join([state.base, "companies", state.company, rel_path])
 
       case TaskDefinition.parse_file(abs_path, base: state.base, company: state.company) do
         {:ok, td} ->
-          resolve_status(td, state)
+          resolve_status(td, abs_path, state)
 
         {:error, reason} ->
           audit(state, %{
@@ -304,7 +353,7 @@ defmodule Glorbo.Approvals.Gate do
             company: state.company
           })
 
-          :ok
+          state
       end
     end
   end
@@ -320,7 +369,7 @@ defmodule Glorbo.Approvals.Gate do
 
   defp unsafe_rel_path?(_), do: true
 
-  defp resolve_status(%TaskDefinition{status: "approved"} = td, state) do
+  defp resolve_status(%TaskDefinition{status: "approved"} = td, abs_path, state) do
     case find_awaiting_row(state, td.task_path) do
       nil ->
         audit(state, %{
@@ -332,12 +381,22 @@ defmodule Glorbo.Approvals.Gate do
           company: state.company
         })
 
+        state
+
       %TasksApprovalState{agent_slug: agent} ->
-        resolve_granted(td, agent, state)
+        case consume_director_mark(state, td.task_path) do
+          {:director, state} ->
+            :ok = resolve_granted(td, agent, state)
+            state
+
+          {:agent_bypass, state} ->
+            revert_unauthorised_status(td, abs_path, agent, "approved", state)
+            state
+        end
     end
   end
 
-  defp resolve_status(%TaskDefinition{status: "denied"} = td, state) do
+  defp resolve_status(%TaskDefinition{status: "denied"} = td, abs_path, state) do
     case find_awaiting_row(state, td.task_path) do
       nil ->
         audit(state, %{
@@ -349,14 +408,48 @@ defmodule Glorbo.Approvals.Gate do
           company: state.company
         })
 
+        state
+
       %TasksApprovalState{agent_slug: agent} ->
-        resolve_denied(td, agent, state)
+        case consume_director_mark(state, td.task_path) do
+          {:director, state} ->
+            :ok = resolve_denied(td, agent, state)
+            state
+
+          {:agent_bypass, state} ->
+            revert_unauthorised_status(td, abs_path, agent, "denied", state)
+            state
+        end
     end
   end
 
   # Any other status (pending-approval, in-progress, completed, custom) is a
   # no-op — the sentinel stays in place until approved/denied.
-  defp resolve_status(_td, _state), do: :ok
+  defp resolve_status(_td, _abs_path, state), do: state
+
+  # Threatmodel H4 (wave 4): an awaiting task file flipped to
+  # approved/denied without a matching Director mark. Only the
+  # Director's `set_approval` path marks the Gate before writing;
+  # any other writer is an agent with `tasks:update` rwx on the
+  # project tasks directory abusing that grant to self-approve.
+  # Revert the file back to `awaiting` and audit the attempt.
+  defp revert_unauthorised_status(td, abs_path, agent, attempted, state) do
+    audit(state, %{
+      action: "approval.self_approval_rejected",
+      actor: "system",
+      agent: agent,
+      target: td.task_path,
+      attempted_status: attempted,
+      company: state.company
+    })
+
+    case File.lstat(abs_path) do
+      {:ok, %{type: :regular}} -> _ = TaskDefinition.write(abs_path, %{status: "awaiting"})
+      _ -> :ok
+    end
+
+    :ok
+  end
 
   defp resolve_granted(td, agent, state) do
     :ok = upsert_resolved(state, td, agent, "approved", nil)

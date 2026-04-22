@@ -33,6 +33,23 @@ defmodule Glorbo.Test.GateHelpers do
   """
   @spec resolve_approval(GenServer.server(), String.t(), String.t()) :: :ok
   def resolve_approval(server, task_path, _status) do
+    # Threatmodel H4: mark the transition as Director-driven so the
+    # Gate's watcher handler treats our synthetic write as legitimate
+    # instead of reverting it.
+    :ok = Glorbo.Approvals.Gate.mark_director_decision(server, task_path)
+    send(server, {:file_event, task_path, [:modified]})
+    _ = :sys.get_state(server)
+    :ok
+  end
+
+  @doc """
+  Simulate an AGENT self-approval attempt — the file is written but
+  no Director mark is placed. The Gate's watcher handler should
+  detect this and revert the file back to `awaiting` + emit a
+  `approval.self_approval_rejected` audit event.
+  """
+  @spec simulate_agent_bypass(GenServer.server(), String.t()) :: :ok
+  def simulate_agent_bypass(server, task_path) do
     send(server, {:file_event, task_path, [:modified]})
     _ = :sys.get_state(server)
     :ok

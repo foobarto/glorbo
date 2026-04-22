@@ -732,6 +732,7 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp prepare_run_dir_path(spec, task, opts) do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+    :ok = validate_task_id!(task.task_id)
 
     Path.join([
       base,
@@ -744,6 +745,32 @@ defmodule Glorbo.Agent.Dispatch do
       task.task_id
     ])
   end
+
+  # Threatmodel H5 (wave 4): task.task_id is Path.join'd into the run
+  # directory. A task file's `task_id` field is agent-reachable (via
+  # outbox writes / projects:write), so we must reject anything that
+  # can traverse out of `.glorbo-run/`. Canonical IDs are either
+  # `[a-z0-9][a-z0-9._-]*` (project-prefixed per GEP-13, heartbeat,
+  # etc.) — no slashes, no `..`, no control chars.
+  @task_id_re ~r/\A[a-z0-9][a-z0-9._-]*\z/
+  defp validate_task_id!(id) when is_binary(id) do
+    cond do
+      id == ".." or String.contains?(id, "/") ->
+        raise ArgumentError, "unsafe task_id: #{inspect(id)}"
+
+      String.contains?(id, <<0>>) ->
+        raise ArgumentError, "unsafe task_id: #{inspect(id)}"
+
+      not Regex.match?(@task_id_re, id) ->
+        raise ArgumentError, "unsafe task_id: #{inspect(id)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_task_id!(other),
+    do: raise(ArgumentError, "task_id must be a binary, got: #{inspect(other)}")
 
   defp cleanup_run_dir(run_dir, opts) do
     override = Keyword.get(opts, :cleanup_fun)

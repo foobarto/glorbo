@@ -349,6 +349,11 @@ defmodule GlorboWeb.Actions do
          :ok <- validate_task_path(task_path) do
       abs = Path.join([base, "companies", company, task_path])
       status = to_string(decision)
+      # Threatmodel H4: tell the Gate a Director-driven status flip
+      # is coming BEFORE the file write lands so its watcher-driven
+      # handler doesn't misread our own write as an agent bypass
+      # and revert it.
+      mark_director_approval(company, task_path)
 
       # On approve, restore the task's assigned_to to the requesting
       # agent recorded in the sentinel. Request-flow (Gate) reassigns
@@ -502,6 +507,21 @@ defmodule GlorboWeb.Actions do
   end
 
   defp maybe_put_requesting_agent(entry, _), do: entry
+
+  # Threatmodel H4: flag the Gate that a Director-initiated status flip
+  # is in flight for this task_path. The Gate's watcher handler consumes
+  # the mark and treats marked writes as legitimate; an unmarked transition
+  # to approved/denied is treated as an agent self-approval attempt and
+  # reverted.
+  defp mark_director_approval(company, task_path) do
+    gate = Glorbo.Company.Supervisor.via(company, :approvals_gate)
+    _ = Glorbo.Approvals.Gate.mark_director_decision(gate, task_path)
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
 
   defp maybe_put_denial_reason(entry, :denied, r) when is_binary(r) and r != "" do
     Map.put(entry, :denial_reason, String.trim(r))
