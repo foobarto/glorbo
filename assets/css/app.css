@@ -61,7 +61,105 @@
   --gl-ff-mono:
     "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono", Menlo,
     Consolas, "Liberation Mono", monospace;
+
+  /* ========== TUI tokens (GEP-30 Phase 1) ==========
+     Canonical palette and scales from the design handoff at
+     .design/design_handoff_glorbo_tui/design-tokens.css. These are
+     the authoritative tokens going forward; the --gl-* vars above
+     are kept as aliases so existing call sites keep working during
+     the per-phase restyle. Do NOT introduce new hues — the handoff
+     constrains us to the values below. */
+
+  /* Surfaces (near-black with a green tint) */
+  --glorbo-bg:       #0a0d0b; /* primary canvas */
+  --glorbo-bg-2:     #0f1411; /* top bar, sidebar, channel rail, cards */
+  --glorbo-bg-3:     #121a15; /* nested / inset surfaces (hover, focus) */
+
+  /* Hairlines */
+  --glorbo-line:     #1f2a24; /* default border / divider (1px) */
+  --glorbo-line-2:   #2a3a32; /* stronger border (button edges, pill outlines) */
+
+  /* Text */
+  --glorbo-fg:       #c9d9cd; /* default foreground */
+  --glorbo-fg-dim:   #7a8c80; /* secondary text, metadata */
+  --glorbo-fg-mute:  #4a5a50; /* tertiary text, placeholder glyphs */
+
+  /* Semantic accents (desaturated terminal palette) */
+  --glorbo-green:     #8ddc90; /* success · running · primary action · user@ */
+  --glorbo-green-dim: #5a9660; /* fill for progress bars, muted positive */
+  --glorbo-cyan:      #7adccf; /* paths, file names, company name, links */
+  --glorbo-amber:     #e0b97a; /* warnings, channel names, budget alerts, approval gates */
+  --glorbo-red:       #e08a7a; /* errors, danger, destructive confirmations */
+  --glorbo-magenta:   #c69ae0; /* the human (director) vs agents, hooks */
+
+  /* Type */
+  --glorbo-font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace,
+                      "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --glorbo-font-size-xs:  11px;   /* status bar, xsmall metadata */
+  --glorbo-font-size-sm:  11.5px; /* topbar, sidebar, channel rail */
+  --glorbo-font-size-md:  12px;   /* body default */
+  --glorbo-font-size-lg:  13px;   /* composer, inline prompts */
+  --glorbo-font-size-xl:  15px;   /* page heading */
+  --glorbo-font-size-2xl: 22px;   /* KPI big numbers */
+  --glorbo-line-height:   1.45;
+
+  /* Spacing */
+  --glorbo-space-1:  2px;
+  --glorbo-space-2:  4px;
+  --glorbo-space-3:  6px;
+  --glorbo-space-4:  8px;
+  --glorbo-space-5: 10px;
+  --glorbo-space-6: 12px;
+  --glorbo-space-8: 18px;
+
+  /* Geometry */
+  --glorbo-radius:       0px; /* terminal-sharp; use borders, not curves */
+  --glorbo-radius-pill: 10px; /* pills and kbd chips only */
+  --glorbo-shadow-none:  none;
+
+  /* Stacking */
+  --glorbo-z-sidebar:  10;
+  --glorbo-z-drawer:   20;
+  --glorbo-z-overlay: 100;
+
+  /* Timing */
+  --glorbo-blink:       1.05s; /* cursor blink in composer */
+  --glorbo-heartbeat:   1.2s;  /* running-agent status dot */
 }
+
+/* ========== TUI semantic utility map (GEP-30 Phase 1) ==========
+   Every piece of text in the TUI design uses ONE of these roles.
+   Role reference:
+     green   → user (director)@, success, running status, primary
+               button, approve action, progress bar fill, chat
+               activity spark peaks.
+     cyan    → file paths, company name, channel-slug prefixes when
+               highlighted, skill invocations.
+     amber   → channel names (#general), warnings, budget used /
+               caps, approval-gated state, pinned messages.
+     red     → errors, danger zone, SIGKILL / destructive confirm,
+               denied sandbox events, agent-crashed state.
+     magenta → human vs agent distinction in rosters & transcripts,
+               the "director" role chip, hooks (lifecycle-hook names
+               in lists).
+     fg-dim  → all secondary labels (e.g. "uptime", "/ $10", "5m ago").
+     fg-mute → separators, ascii box-drawing characters, helper
+               glyphs, inline key-hint prose ("·" dividers). */
+.glorbo-text-default { color: var(--glorbo-fg); }
+.glorbo-text-dim     { color: var(--glorbo-fg-dim); }
+.glorbo-text-mute    { color: var(--glorbo-fg-mute); }
+.glorbo-text-green   { color: var(--glorbo-green); }
+.glorbo-text-cyan    { color: var(--glorbo-cyan); }
+.glorbo-text-amber   { color: var(--glorbo-amber); }
+.glorbo-text-red     { color: var(--glorbo-red); }
+.glorbo-text-magenta { color: var(--glorbo-magenta); }
+
+.glorbo-text-xs   { font-size: var(--glorbo-font-size-xs); }
+.glorbo-text-sm   { font-size: var(--glorbo-font-size-sm); }
+.glorbo-text-md   { font-size: var(--glorbo-font-size-md); }
+.glorbo-text-lg   { font-size: var(--glorbo-font-size-lg); }
+
+.glorbo-upper { text-transform: uppercase; letter-spacing: 0.03em; }
 
 /* ========== Reset + base ========== */
 *,
