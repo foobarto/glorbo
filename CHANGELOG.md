@@ -10,6 +10,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — Channels → Chat label + DM list cleanup (backlog #15)
+
+UI-only. Three cosmetic nudges:
+
+- Sidebar nav: "Channels" → "Chat". The underlying file tree
+  (`channels/*.md`), routes (`/companies/:co/channels/:ch`), and
+  module names (`ChannelLive`) stay; only the human-facing label
+  changes.
+- Channel-rail header: `/channels` → `/chat`.
+- DM list entries: drop the "director ↔" prefix, show the agent
+  slug only (`ceo` instead of `director ↔ ceo`).
+- DM channel heading: `DM · director ↔ <agent>` → `DM · <agent>`.
+  The compose placeholder still includes "as Director" for the
+  actor context.
+- DM list already auto-populates every agent in the company —
+  confirmed via `list_dm_threads/2`; faded entries become live on
+  first click thanks to `ensure_dm_channel/3`. No code change.
+
+Tests updated: `company_live_test.exs` nav-label array,
+`channel_live_test.exs` for the new rail + heading shape.
+
+1559 tests green.
+
 ### Changed — Collapse Approvals page into Inbox (backlog #14)
 
 The standalone `/companies/:company/approvals` route + LiveView +

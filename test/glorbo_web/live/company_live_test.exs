@@ -21,7 +21,7 @@ defmodule GlorboWeb.CompanyLiveTest do
     # Approvals was folded into Inbox (backlog #14); nav no longer
     # has a separate entry. The pending-approvals badge moved to
     # the Inbox item.
-    for label <- ~w(Overview Channels Inbox Providers) do
+    for label <- ~w(Overview Chat Inbox Providers) do
       assert html =~ ">#{label}<"
     end
 

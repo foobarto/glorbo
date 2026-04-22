@@ -38,7 +38,7 @@ defmodule GlorboWeb.ChannelLiveTest do
              live(conn, "/companies/acme/channels/ghost")
   end
 
-  test "sidebar marks Channels nav item active", %{conn: conn} do
+  test "sidebar marks Chat nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
 
     assert html =~
@@ -94,11 +94,16 @@ defmodule GlorboWeb.ChannelLiveTest do
              ~r|<a[^>]*href="/companies/acme/channels/general"[^>]*gl-channel-list__link--active|
   end
 
-  test "dm rail lists every agent as a director↔agent thread", %{conn: conn} do
+  test "dm rail lists every agent by slug only (backlog #15)", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
     # The seeded fixture has one agent `ceo`; the rail should link to it.
     assert html =~ ~s(href="/companies/acme/dms/ceo")
-    assert html =~ "director ↔ ceo"
+    # Backlog #15: DM list entries render `<agent-slug>`, not the
+    # prior "director ↔ <agent>" noise.
+    refute html =~ "director ↔ ceo"
+    # Regression: assert the specific rendered link cell to avoid
+    # matching the word "ceo" elsewhere on the page.
+    assert html =~ ~r/<a [^>]*href="\/companies\/acme\/dms\/ceo"[^>]*>\s*ceo\s*<\/a>/
   end
 
   test "dm channel URL auto-creates + redirects to ChannelLive", %{conn: conn, base: base} do
@@ -123,14 +128,18 @@ defmodule GlorboWeb.ChannelLiveTest do
     refute html =~ "#dm-director--ceo"
   end
 
-  test "DM channel heading renders 'DM · director ↔ <agent>'", %{conn: conn, base: base} do
+  test "DM channel heading renders 'DM · <agent>' (backlog #15)", %{conn: conn, base: base} do
     File.write!(
       Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"]),
       "# DM\n"
     )
 
     {:ok, _view, html} = live(conn, "/companies/acme/channels/dm-director--ceo")
-    assert html =~ "DM · director ↔ ceo"
+    # Backlog #15: heading drops the "director ↔" prefix. The compose
+    # placeholder keeps "as Director" so the director knows their
+    # outgoing role context.
+    assert html =~ "DM · ceo"
+    refute html =~ "director ↔ ceo"
     assert html =~ "Message ceo as Director"
   end
 

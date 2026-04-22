@@ -36,7 +36,7 @@ defmodule GlorboWeb.Components.Sidebar do
   @nav [
     {:overview, "◈", "Overview", :company},
     {:kanban, "▤", "Kanban", :company},
-    {:chat, "◫", "Channels", :company},
+    {:chat, "◫", "Chat", :company},
     # The standalone `:approvals` nav was folded into `:inbox` —
     # the pending-approvals badge now lives on the Inbox item.
     # Backlog #14 rationale: one feed, not two.

@@ -272,8 +272,8 @@ defmodule GlorboWeb.ChannelLive do
       </div>
 
       <div class="gl-channel__layout">
-        <aside class="gl-channel__rail" aria-label="Channels">
-          <h2 class="gl-panel__header">/channels</h2>
+        <aside class="gl-channel__rail" aria-label="Chat">
+          <h2 class="gl-panel__header">/chat</h2>
           <ul class="gl-channel-list">
             <li :for={c <- @channels}>
               <.link
@@ -309,7 +309,7 @@ defmodule GlorboWeb.ChannelLive do
                   not d.started && "gl-channel-list__link--faded"
                 ]}
               >
-                director ↔ {d.agent}
+                {d.agent}
               </.link>
             </li>
           </ul>
@@ -556,7 +556,7 @@ defmodule GlorboWeb.ChannelLive do
   defp dm_counterparty("dm-director--" <> agent), do: agent
   defp dm_counterparty(_), do: nil
 
-  defp channel_heading("dm-director--" <> agent), do: "DM · director ↔ #{agent}"
+  defp channel_heading("dm-director--" <> agent), do: "DM · #{agent}"
   defp channel_heading(ch), do: "##{ch}"
 
   defp empty_state("dm-director--" <> agent), do: "No messages with #{agent} yet."
