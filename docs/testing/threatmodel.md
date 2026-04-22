@@ -158,27 +158,16 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **100 open** · 26 dropped as already fixed by security waves 1–3 (verified against HEAD on 2026-04-23).
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **94 open** ·
+32 dropped: waves 1–3 on 2026-04-22 closed 26 (high + medium symlink /
+authz bypass), wave 4 on 2026-04-23 closed the remaining 6 highs
+(dispatcher reply lstat, router slug validation, approval-gate
+director mark, dispatch task_id validation). HEAD-verified.
 
-Breakdown: 0 critical, 6 high, 31 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 31 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
-
-### High (active exploit path, breaks core isolation or authz) — 6
-
-- **Reply file read follows symlinks, enabling sandbox escape** — The GEP-8 rewire sends all agent executions through `Glorbo.CLI.Dispatcher.invoke/3`, which constructs a reply path and reads the reply file after the sandboxed CLI exits. The dispatcher uses `fs.stat`/`fs.read` (which follow symlinks) and does not verify the…
-  *Paths:* `lib/glorbo/agent/dispatch.ex, lib/glorbo/cli/dispatcher.ex, priv/providers/claude-code.toml`
-- **Dispatcher follows symlinked reply files, leaking host data** — Glorbo.CLI.Dispatcher constructs a reply path under the agent workspace and then reads it via File.stat and File.read. Because these operations follow symlinks, an untrusted agent running in the sandbox can replace the reply file with a symlink pointing at…
-  *Paths:* `lib/glorbo/cli/dispatcher.ex`
-- **Outbox routing allows path traversal via `to` field** — The new PubSub handler reads agent-controlled outbox files and forwards the frontmatter `to` value directly into the routing pipeline. `validate_message/1` only blocks control characters, while `parse_to/1` accepts any channel/slug string. The resulting…
-  *Paths:* `lib/glorbo/company/router.ex`
-- **Approval gate lets agents self‑approve tasks via file edits** — Glorbo.Approvals.Gate reacts to any modified task file and treats `status: approved` or `status: denied` as authoritative, immediately waking the agent when approved. There is no validation that the change was made by a director or outside the sandbox.…
-  *Paths:* `lib/glorbo/approvals/gate.ex, lib/glorbo/security/acl_mapper.ex`
-- **Dispatch run_dir uses unvalidated task_id for host writes** — Glorbo.Agent.Dispatch now derives the per-task run directory by directly joining `task.task_id` into the workspace path. The pipeline then materializes skills and writes the prompt into that run_dir and finally calls Resolver.cleanup (File.rm_rf) on the same…
-  *Paths:* `lib/glorbo/agent/dispatch.ex`
-- **Router allows path traversal via unsanitized chat/agent targets** — The commit introduces a Router that accepts any non-empty `chat:` channel or `agent:` slug and then uses those strings directly in `Path.join/1` when writing channel and inbox files. Because there is no slug/path validation, a malicious agent can supply…
-  *Paths:* `lib/glorbo/company/router.ex`
 
 ### Medium (constrained exploit — local access or misconfig) — 31
 
