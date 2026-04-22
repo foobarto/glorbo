@@ -42,9 +42,19 @@ defmodule GlorboWeb.BrainDumpLive do
          |> push_navigate(to: ~p"/companies")}
 
       true ->
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+        end
+
         {:ok, load_and_assign(socket, co)}
     end
   end
+
+  @impl true
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket),
+    do: {:noreply, socket}
+
+  def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),

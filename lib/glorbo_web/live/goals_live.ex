@@ -37,8 +37,10 @@ defmodule GlorboWeb.GoalsLive do
          |> push_navigate(to: ~p"/companies")}
 
       true ->
-        if connected?(socket),
-          do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
+          Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+        end
 
         {:ok, load_and_assign(socket, co)}
     end
@@ -49,11 +51,63 @@ defmodule GlorboWeb.GoalsLive do
     {:noreply, load_and_assign(socket, socket.assigns.company_slug)}
   end
 
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket) do
+    # Re-render the layout so the sidebar agent pills + statusbar
+    # agents-running count reflect the fresh state.
+    {:noreply, socket}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: ChatDrawer.State.post(socket, body)
+
+  def handle_event("new_goal_open", _params, socket),
+    do: {:noreply, assign(socket, :new_goal, empty_goal_form())}
+
+  def handle_event("new_goal_cancel", _params, socket),
+    do: {:noreply, assign(socket, :new_goal, nil)}
+
+  def handle_event("new_goal_submit", %{"goal" => params}, socket) do
+    co = socket.assigns.company_slug
+    path = Path.join([base_dir(), "companies", co, "company.md"])
+
+    case Glorbo.Company.Goals.add_goal(path, %{
+           slug: params["slug"] || "",
+           title: params["title"] || "",
+           description: params["description"] || ""
+         }) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:new_goal, nil)
+         |> put_flash(:info, "Goal added.")
+         |> load_and_assign(co)}
+
+      {:error, reason} ->
+        form = %{
+          slug: params["slug"] || "",
+          title: params["title"] || "",
+          description: params["description"] || "",
+          error: goal_error_message(reason)
+        }
+
+        {:noreply, assign(socket, :new_goal, form)}
+    end
+  end
+
+  defp empty_goal_form, do: %{slug: "", title: "", description: "", error: nil}
+
+  defp goal_error_message(:slug_required), do: "Slug is required."
+
+  defp goal_error_message(:invalid_slug),
+    do: "Slug must be lowercase letters, digits, and hyphens (max 64 chars)."
+
+  defp goal_error_message(:slug_taken), do: "Slug is already in use."
+  defp goal_error_message(:title_required), do: "Title is required."
+  defp goal_error_message({:error, _} = e), do: inspect(e)
+  defp goal_error_message(other), do: "Could not save goal: #{inspect(other)}"
 
   @impl true
   def render(assigns) do
@@ -72,7 +126,67 @@ defmodule GlorboWeb.GoalsLive do
             </span>
           </p>
         </div>
+        <div>
+          <button type="button" class="gl-btn gl-btn--primary" phx-click="new_goal_open">
+            + add goal
+          </button>
+        </div>
       </header>
+
+      <div :if={@new_goal} class="gl-modal-scrim" phx-click-away="new_goal_cancel">
+        <form
+          class="gl-modal"
+          phx-submit="new_goal_submit"
+          phx-window-keydown="new_goal_cancel"
+          phx-key="Escape"
+        >
+          <header class="gl-modal__header">
+            <strong>Add goal</strong>
+            <button type="button" class="gl-modal__close" phx-click="new_goal_cancel">×</button>
+          </header>
+          <div class="gl-modal__body">
+            <label class="gl-form__row">
+              <span class="gl-form__label">slug</span>
+              <input
+                type="text"
+                name="goal[slug]"
+                value={@new_goal.slug}
+                class="gl-input"
+                placeholder="my-goal"
+                pattern="[a-z][a-z0-9-]{0,63}"
+                autofocus
+                required
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">title</span>
+              <input
+                type="text"
+                name="goal[title]"
+                value={@new_goal.title}
+                class="gl-input"
+                placeholder="Ship the thing"
+                required
+              />
+            </label>
+            <label class="gl-form__row">
+              <span class="gl-form__label">description (optional)</span>
+              <textarea
+                name="goal[description]"
+                class="gl-input"
+                rows="3"
+              >{@new_goal.description}</textarea>
+            </label>
+            <div :if={@new_goal.error} class="gl-banner gl-banner--error">
+              {@new_goal.error}
+            </div>
+          </div>
+          <footer class="gl-modal__footer">
+            <button type="button" class="gl-btn" phx-click="new_goal_cancel">cancel</button>
+            <button type="submit" class="gl-btn gl-btn--primary">add goal</button>
+          </footer>
+        </form>
+      </div>
 
       <p :if={@goals == [] and @unassigned_count == 0} class="gl-muted">
         No goals declared in <code>company.md</code>
@@ -179,6 +293,7 @@ defmodule GlorboWeb.GoalsLive do
     |> assign(:goals, goals_with_stats)
     |> assign(:unassigned_count, length(unassigned_fms))
     |> assign(:unassigned_breakdown, status_breakdown(unassigned_fms))
+    |> assign_new(:new_goal, fn -> nil end)
     |> ChatDrawer.State.wire_drawer()
   end
 

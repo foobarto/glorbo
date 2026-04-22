@@ -87,6 +87,8 @@ const NAV_MAP = {
   k: (co) => co && `/companies/${co}/kanban`,
   b: (co) => co && `/companies/${co}/braindump`,
   d: "/costs",
+  // `g n` — open the new-task drawer on the focused company's kanban.
+  n: (co) => co && `/companies/${co}/kanban?new_task=1`,
 }
 
 // Resolve current company from the URL first (most reliable), falling
@@ -180,6 +182,7 @@ function cheatsheetHtml() {
               <dt><kbd>g</kbd><kbd>a</kbd></dt><dd>audit log</dd>
               <dt><kbd>g</kbd><kbd>v</kbd></dt><dd>approvals queue</dd>
               <dt><kbd>g</kbd><kbd>k</kbd></dt><dd>kanban board</dd>
+              <dt><kbd>g</kbd><kbd>n</kbd></dt><dd>new task (opens drawer)</dd>
               <dt><kbd>g</kbd><kbd>b</kbd></dt><dd>brain dump</dd>
             </dl>
           </section>
@@ -233,9 +236,15 @@ function collectCommands() {
       { label: `Skills (${co})`, hint: "", href: `/companies/${co}/skills` },
       { label: `Brain dump (${co})`, hint: "g b", href: `/companies/${co}/braindump` },
     )
-    // Director actions — open modals via the `?modal=` query param
-    // that CompanyLive.handle_params already understands.
+    // Director actions — open modals/drawers via query params. The
+    // new-task drawer reads `?new_task=1` on Kanban; `?modal=…` opens
+    // the new-agent / new-project modals on the company overview.
     items.push(
+      {
+        label: `+ new task (${co})`,
+        hint: "g n",
+        href: `/companies/${co}/kanban?new_task=1`,
+      },
       {
         label: `+ new agent (${co})`,
         hint: "action",
@@ -536,6 +545,41 @@ const AutoDismissFlash = {
 // default on every page; toggle with Ctrl+` (rebindable via
 // localStorage['glorbo.chatdrawer.toggle_key']). Resizable via the
 // top handle. All states persist to localStorage.
+const SIDEBAR_COLLAPSED_KEY = "glorbo.sidebar.collapsed"
+const SIDEBAR_COLLAPSED_CLASS = "gl-app-shell--sidebar-collapsed"
+const SidebarCollapse = {
+  mounted() {
+    if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") {
+      this.el.classList.add(SIDEBAR_COLLAPSED_CLASS)
+    }
+    this._onClick = (e) => {
+      const btn = e.target.closest("#gl-sidebar-toggle")
+      if (!btn) return
+      e.preventDefault()
+      this._toggle()
+    }
+    this._onKey = (e) => {
+      if (e.repeat) return
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.code !== "KeyB") return
+      const t = e.target
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+      e.preventDefault()
+      this._toggle()
+    }
+    document.addEventListener("click", this._onClick)
+    window.addEventListener("keydown", this._onKey)
+  },
+  destroyed() {
+    document.removeEventListener("click", this._onClick)
+    window.removeEventListener("keydown", this._onKey)
+  },
+  _toggle() {
+    const collapsed = this.el.classList.toggle(SIDEBAR_COLLAPSED_CLASS)
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0")
+  }
+}
+
 const CHAT_DRAWER_H_KEY = "glorbo.chatdrawer.height"
 const CHAT_DRAWER_MIN_KEY = "glorbo.chatdrawer.minimized"
 const CHAT_DRAWER_TOGGLE_KEY = "glorbo.chatdrawer.toggle_key"
@@ -792,7 +836,7 @@ const ClockTick = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

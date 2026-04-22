@@ -56,7 +56,7 @@ defmodule GlorboWeb.BrainDumpLiveTest do
     assert html =~ "Task scaffolded:"
 
     [task_file] =
-      Path.wildcard(Path.join([base, "companies/acme/projects/inbox/tasks/t-bd-*.md"]))
+      Path.wildcard(Path.join([base, "companies/acme/projects/inbox/tasks/inbox-*.md"]))
 
     body = File.read!(task_file)
     assert body =~ "source: braindump"

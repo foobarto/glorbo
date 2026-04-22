@@ -233,7 +233,10 @@ button { font-family: inherit; font-size: inherit; }
     "sidebar main"
     "statusbar statusbar";
   height: 100vh;
+  transition: grid-template-columns 140ms ease;
 }
+.gl-app-shell--sidebar-collapsed { grid-template-columns: 0 1fr; }
+.gl-app-shell--sidebar-collapsed .gl-sidebar { display: none; }
 .gl-sidebar { grid-area: sidebar; }
 .gl-main    { grid-area: main; background: var(--gl-bg); overflow-y: auto;
               padding: var(--gl-space-lg) var(--gl-space-xl); }
@@ -261,6 +264,18 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-muted);
   overflow: hidden;
 }
+.gl-topbar__sidebar-toggle {
+  background: transparent;
+  border: 1px solid var(--gl-border-strong);
+  color: var(--gl-fg-muted);
+  font-family: var(--gl-ff-mono);
+  font-size: 14px;
+  line-height: 1;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.gl-topbar__sidebar-toggle:hover { color: var(--gl-accent); border-color: var(--gl-accent); }
+.gl-app-shell--sidebar-collapsed .gl-topbar__sidebar-toggle { color: var(--gl-accent); }
 .gl-topbar__brand {
   font-weight: 700;
   color: var(--gl-accent);
@@ -273,21 +288,33 @@ button { font-family: inherit; font-size: inherit; }
 .gl-topbar__brand-glyph { color: var(--gl-accent); }
 .gl-topbar__sep { color: var(--gl-fg-ghost); }
 .gl-topbar__path { color: var(--gl-fg-muted); }
+/* Company picker — renders inline with the `~/.glorbo/companies/`
+ * breadcrumb (design mock 20) so the company slug reads like the
+ * next path segment. No box, no raised background; the ▾ chevron
+ * is the only affordance. Hover reveals a subtle bg/underline. */
 .gl-topbar__picker {
   color: var(--gl-fg);
-  padding: 2px 6px;
-  border: 1px solid var(--gl-border-strong);
-  background: var(--gl-surface-raised);
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border-radius: 2px;
+  margin-left: -4px;
 }
-.gl-topbar__picker:hover { background: var(--gl-surface-hover); }
-.gl-topbar__picker::after { content: "▾"; color: var(--gl-fg-subtle); }
+.gl-topbar__picker:hover,
+.gl-topbar__picker:focus-within {
+  background: var(--gl-surface-raised);
+}
+.gl-topbar__picker::after {
+  content: "▾";
+  color: var(--gl-fg-subtle);
+  font-size: 10px;
+}
 .gl-topbar__picker-select {
   background: transparent;
   border: 0;
@@ -1265,6 +1292,32 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-subtle);
   font-style: italic;
 }
+/* Sticky "+ new task" button — sits just above the health footer,
+ * visible on every page so directors can open the drawer without
+ * navigating to Kanban first. `margin-top: auto` glues it to the
+ * bottom when the project/agent lists are short. */
+.gl-sidebar__new-task {
+  margin: auto 10px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--gl-accent);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--gl-accent);
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  display: block;
+}
+.gl-sidebar__new-task:hover,
+.gl-sidebar__new-task:focus {
+  background: color-mix(in srgb, var(--gl-accent) 15%, transparent);
+  color: var(--gl-accent);
+}
+.gl-sidebar__new-task + .gl-sidebar__footer {
+  margin-top: var(--gl-space-sm);
+}
 .gl-sidebar__footer {
   margin-top: auto;
   padding: var(--gl-space-sm) 14px;
@@ -1506,6 +1559,79 @@ button { font-family: inherit; font-size: inherit; }
 @keyframes gl-shelf-slide {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
+}
+
+/* New-task right-side drawer — mirrors `.gl-task-detail--shelf` but
+ * gets its own class so the footer keybind hint row and scroll
+ * behaviour don't leak into the task detail view. Reuses
+ * `.gl-new-task-form` CSS inside `__body` for the field grid. */
+.gl-new-task-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 96vw);
+  height: 100vh;
+  background: var(--gl-surface);
+  border-left: 1px solid var(--gl-border);
+  animation: gl-shelf-slide 0.15s ease-out;
+  font-family: var(--gl-ff-mono);
+}
+/* The shared `.gl-company-md-form` has min-width:540px and its own
+ * padding — inside the drawer we let the body grow to the drawer's
+ * full width and lay out rows as label | input. */
+.gl-new-task-drawer .gl-new-task-drawer__body.gl-company-md-form {
+  min-width: 0;
+  padding: var(--gl-space-md) var(--gl-space-lg);
+  gap: var(--gl-space-sm);
+}
+.gl-new-task-drawer .gl-company-md-form .gl-form__row {
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+}
+.gl-new-task-drawer .gl-company-md-form .gl-form__row--stretch {
+  align-items: start;
+}
+.gl-new-task-drawer__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border);
+  background: var(--gl-surface-raised);
+}
+.gl-new-task-drawer__title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--gl-space-sm);
+  font-size: 13px;
+}
+.gl-new-task-drawer__status {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.gl-new-task-drawer__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--gl-space-md);
+}
+.gl-new-task-drawer__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: var(--gl-space-sm) var(--gl-space-md);
+  border-top: 1px solid var(--gl-border);
+  background: var(--gl-surface-raised);
+  font-size: 11px;
+}
+.gl-new-task-drawer__hotkeys kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--gl-border);
+  border-radius: 3px;
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  background: var(--gl-bg);
+  margin: 0 2px;
 }
 .gl-task-detail__fields {
   display: flex;
@@ -1936,6 +2062,103 @@ button { font-family: inherit; font-size: inherit; }
 .gl-agent-history__action.gl-action--default { color: var(--gl-fg); }
 .gl-agent-history__row--skipped .gl-agent-history__action { opacity: 0.6; }
 
+/* Agent runs tab — one row per invocation, TUI-aligned. */
+.gl-agent-runs {
+  padding: var(--gl-space-sm);
+  max-height: 520px;
+  overflow-y: auto;
+}
+.gl-agent-runs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gl-agent-runs__row {
+  border-bottom: 1px dashed var(--gl-border);
+  border-left: 2px solid transparent;
+}
+.gl-agent-runs__row:last-child { border-bottom: none; }
+.gl-agent-runs__row--complete { border-left-color: var(--gl-success); }
+.gl-agent-runs__row--running  { border-left-color: var(--gl-cyan); }
+.gl-agent-runs__row--unknown  { border-left-color: var(--gl-border-strong); }
+
+.gl-agent-runs__header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 9ch 11ch 1fr auto 10ch 9ch;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--gl-fg);
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.gl-agent-runs__header:hover {
+  background: color-mix(in oklch, var(--gl-accent) 6%, transparent);
+}
+.gl-agent-runs__inv { color: var(--gl-fg-muted); }
+.gl-agent-runs__trigger { color: var(--gl-accent); }
+.gl-agent-runs__task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gl-agent-runs__tools { font-size: 11px; }
+.gl-agent-runs__status {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  text-align: center;
+  padding: 1px 4px;
+  border: 1px solid var(--gl-border);
+}
+.gl-agent-runs__status--complete { color: var(--gl-success); border-color: var(--gl-success); }
+.gl-agent-runs__status--running  { color: var(--gl-cyan); border-color: var(--gl-cyan); }
+.gl-agent-runs__status--unknown  { color: var(--gl-fg-muted); }
+
+.gl-agent-runs__duration {
+  text-align: right;
+  color: var(--gl-fg-muted);
+}
+
+.gl-agent-runs__body {
+  padding: 6px 14px 10px 14px;
+  background: color-mix(in oklch, var(--gl-surface) 94%, var(--gl-bg));
+  border-top: 1px dashed var(--gl-border);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-agent-runs__meta {
+  display: grid;
+  grid-template-columns: 9ch 1fr;
+  gap: 2px var(--gl-space-sm);
+  margin: 0;
+}
+.gl-agent-runs__meta dt {
+  color: var(--gl-fg-muted);
+  text-transform: lowercase;
+}
+.gl-agent-runs__meta dd { margin: 0; }
+.gl-agent-runs__reply {
+  margin-top: 8px;
+  border-top: 1px dashed var(--gl-border);
+  padding-top: 6px;
+}
+.gl-agent-runs__reply-body {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--gl-bg);
+  border: 1px solid var(--gl-border);
+  white-space: pre-wrap;
+  font-size: 11px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .gl-project__icon {
   color: var(--gl-accent);
   margin-right: 8px;
@@ -2208,12 +2431,145 @@ button { font-family: inherit; font-size: inherit; }
 .gl-slug-hint--taken { color: var(--gl-danger); }
 .gl-slug-hint--available { color: var(--gl-success); }
 
-/* Stuck agents on the InboxLive Mine tab — loop-detector sentinels. */
 .gl-danger { color: var(--gl-danger); }
-.gl-inbox__stuck {
-  border-left: 3px solid var(--gl-danger);
-  padding-left: var(--gl-space-sm);
+
+/* Inbox — approvals, path-requests, stuck agents, recent activity. */
+.gl-inbox__tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--gl-space-md);
+  border-bottom: 1px solid var(--gl-border);
 }
+.gl-inbox__tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--gl-fg-muted);
+  cursor: pointer;
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  margin-bottom: -1px;
+}
+.gl-inbox__tab:hover { color: var(--gl-fg); }
+.gl-inbox__tab--active {
+  color: var(--gl-accent);
+  border-bottom-color: var(--gl-accent);
+}
+.gl-inbox__section {
+  margin-bottom: var(--gl-space-lg);
+}
+.gl-inbox__section > .gl-heading--heading {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gl-fg-muted);
+  margin: 0 0 var(--gl-space-xs);
+  padding-bottom: 2px;
+  border-bottom: 1px dashed var(--gl-border);
+}
+.gl-inbox__empty {
+  padding: 10px 0;
+  font-size: 12px;
+}
+.gl-inbox__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gl-inbox__approval {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "meta   actions"
+    "title  actions"
+    "extra  actions";
+  column-gap: var(--gl-space-md);
+  row-gap: 2px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--gl-border);
+  border-left: 3px solid var(--gl-accent);
+}
+.gl-inbox__approval:last-child { border-bottom: none; }
+.gl-inbox__approval--archived {
+  border-left-color: var(--gl-border-strong);
+  opacity: 0.6;
+}
+.gl-inbox__path-req { border-left-color: var(--gl-amber); }
+.gl-inbox__stuck    { border-left-color: var(--gl-danger); }
+
+.gl-inbox__approval-meta {
+  grid-area: meta;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+  color: var(--gl-fg-muted);
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+.gl-inbox__approval-meta .gl-tabular { color: var(--gl-fg); }
+
+.gl-inbox__approval-title {
+  grid-area: title;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.gl-inbox__path-req-paths {
+  grid-area: extra;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 2px;
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-inbox__path-req-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--gl-border);
+  background: color-mix(in oklch, var(--gl-amber) 8%, transparent);
+  color: var(--gl-fg);
+  white-space: nowrap;
+}
+
+.gl-inbox__approval-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Recent activity: one row per audit entry, grid-aligned. */
+.gl-inbox__audit { display: flex; flex-direction: column; }
+.gl-inbox__audit-row {
+  display: grid;
+  grid-template-columns: 21ch 24px 12ch minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--gl-space-sm);
+  padding: 4px 8px;
+  border-bottom: 1px dashed var(--gl-border);
+  font-family: var(--gl-ff-mono);
+  font-size: 11px;
+}
+.gl-inbox__audit-row > .gl-tabular,
+.gl-inbox__audit-row > .gl-muted.gl-tabular {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gl-inbox__audit-row:last-child { border-bottom: none; }
+.gl-inbox__audit-row:hover { background: color-mix(in oklch, var(--gl-accent) 5%, transparent); }
+.gl-inbox__audit-actor { color: var(--gl-fg); }
+.gl-inbox__audit-action { color: var(--gl-accent); }
+.gl-inbox__audit-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gl-inbox__audit-archive { opacity: 0.6; }
+.gl-inbox__audit-archive:hover { opacity: 1; }
 
 /* Wizard progress strip (paperclip-ux-gaps §13). */
 .gl-wizard-steps {

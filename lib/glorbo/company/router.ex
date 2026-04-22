@@ -704,8 +704,29 @@ defmodule Glorbo.Company.Router do
           do: {:proposal, id},
           else: :message
 
+      [<<_::binary>> = file] ->
+        # Permissive shorthand: a top-level outbox file whose
+        # frontmatter declares `kind: task/v1` is treated as a task
+        # filing into the `inbox` project. Saves the agent from
+        # having to learn the exact `tasks/<project>/` prefix.
+        task_id = Path.basename(file, ".md")
+
+        if task_id_valid?(task_id) and task_kind_frontmatter?(abs_path),
+          do: {:task, "inbox", task_id},
+          else: :message
+
       _ ->
         :message
+    end
+  end
+
+  # Best-effort frontmatter peek — safe on unreadable / non-md files.
+  defp task_kind_frontmatter?(abs_path) do
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      to_string(Map.get(fm, "kind", "")) == "task/v1"
+    else
+      _ -> false
     end
   end
 
@@ -743,6 +764,7 @@ defmodule Glorbo.Company.Router do
          :ok <- File.write(dest_path, stamped_content, [:sync]),
          :ok <- File.rm(abs_path) do
       emit_task_route_audit(sender, project, task_id, state)
+      maybe_request_approval(meta, dest_path, project, task_id, sender, state)
       :ok
     else
       {:error, reason} ->
@@ -752,6 +774,60 @@ defmodule Glorbo.Company.Router do
 
         :ok
     end
+  end
+
+  # If the task's frontmatter asks for director approval, open a
+  # sentinel + awaiting row so the task shows up in the Inbox.
+  # Recognised shapes:
+  #   - `requires_approval: director`  — canonical (GEP-19, TaskDefinition)
+  #   - `status: pending_approval`     — agent shorthand; treat the same
+  #   - `status: pending-approval`     — same, with a hyphen
+  defp maybe_request_approval(meta, dest_path, project, task_id, sender, state) do
+    wants_approval? =
+      case Map.get(meta, "requires_approval") do
+        "director" ->
+          true
+
+        :director ->
+          true
+
+        _ ->
+          case Map.get(meta, "status") do
+            "pending_approval" -> true
+            "pending-approval" -> true
+            _ -> false
+          end
+      end
+
+    if wants_approval? do
+      task_rel = Path.join(["projects", project, "tasks", "#{task_id}.md"])
+
+      case Glorbo.TaskDefinition.parse_file(dest_path,
+             base: state.base,
+             company: state.company
+           ) do
+        {:ok, td} ->
+          req = %{
+            agent: sender,
+            task_definition: %{td | task_path: task_rel},
+            requesting_trigger: :outbox_filed
+          }
+
+          try do
+            gate = Glorbo.Company.Supervisor.via(state.company, :approvals_gate)
+            _ = Glorbo.Approvals.Gate.request_approval(gate, req)
+          rescue
+            _ -> :ok
+          catch
+            _, _ -> :ok
+          end
+
+        _ ->
+          :ok
+      end
+    end
+
+    :ok
   end
 
   # Append a `## Context` footer to outbox-routed tasks naming the
@@ -795,9 +871,22 @@ defmodule Glorbo.Company.Router do
   end
 
   defp check_project_write_permission(perms, project) do
-    case ACLMapper.check_action(perms, {"projects", "write", project}) do
-      :ok -> :ok
-      {:error, _} -> ACLMapper.check_action(perms, {"projects", "write", "*"})
+    # Filing a task into <project> is authorised by any of:
+    #   projects:write:<project>  — full RW on that project
+    #   projects:write:*          — full RW on all projects
+    #   tasks:create:<project>    — narrow "can add tasks here"
+    #   tasks:create:*            — narrow "can add tasks to any project"
+    checks = [
+      {"projects", "write", project},
+      {"projects", "write", "*"},
+      {"tasks", "create", project},
+      {"tasks", "create", "*"}
+    ]
+
+    if Enum.any?(checks, &match?(:ok, ACLMapper.check_action(perms, &1))) do
+      :ok
+    else
+      {:error, {:permission_denied, "projects:write:#{project}"}}
     end
   end
 

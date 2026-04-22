@@ -27,6 +27,10 @@ defmodule GlorboWeb.CostsLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      subscribe_agent_status_all()
+    end
+
     {:ok,
      socket
      |> assign(:page_title, "Costs — Glorbo")
@@ -37,8 +41,30 @@ defmodule GlorboWeb.CostsLive do
   end
 
   @impl true
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket),
+    do: {:noreply, socket}
+
+  def handle_info(_other, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),
     do: ChatDrawer.State.post(socket, body)
+
+  defp subscribe_agent_status_all do
+    co_dir = Path.join(base_dir(), "companies")
+
+    case File.ls(co_dir) do
+      {:ok, slugs} ->
+        Enum.each(slugs, fn slug ->
+          if File.dir?(Path.join(co_dir, slug)) do
+            Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents:status")
+          end
+        end)
+
+      _ ->
+        :ok
+    end
+  end
 
   @impl true
   def render(assigns) do

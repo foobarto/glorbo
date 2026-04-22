@@ -42,6 +42,10 @@ defmodule GlorboWeb.SkillsLive do
       true ->
         co_path = Path.join([base_dir(), "companies", co])
 
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+        end
+
         {:ok,
          socket
          |> assign(:page_title, "#{co} · skills — Glorbo")
@@ -53,6 +57,12 @@ defmodule GlorboWeb.SkillsLive do
          |> ChatDrawer.State.wire_drawer()}
     end
   end
+
+  @impl true
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket),
+    do: {:noreply, socket}
+
+  def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("chat_drawer_post", %{"body" => body}, socket),

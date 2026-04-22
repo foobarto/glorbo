@@ -25,6 +25,10 @@ defmodule GlorboWeb.ProvidersLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      subscribe_agent_status_all()
+    end
+
     {:ok,
      socket
      |> assign(:page_title, "Providers — Glorbo")
@@ -32,6 +36,12 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign(:probing, false)
      |> assign_providers()}
   end
+
+  @impl true
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket),
+    do: {:noreply, socket}
+
+  def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("chat_drawer_post", _params, socket),
@@ -213,4 +223,20 @@ defmodule GlorboWeb.ProvidersLive do
   end
 
   defp read_toml(_), do: "# (no source file)"
+
+  defp subscribe_agent_status_all do
+    co_dir = Path.join(GlorboWeb.LiveHelpers.base_dir(), "companies")
+
+    case File.ls(co_dir) do
+      {:ok, slugs} ->
+        Enum.each(slugs, fn slug ->
+          if File.dir?(Path.join(co_dir, slug)) do
+            Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents:status")
+          end
+        end)
+
+      _ ->
+        :ok
+    end
+  end
 end

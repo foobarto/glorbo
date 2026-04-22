@@ -51,6 +51,7 @@ defmodule GlorboWeb.TaskLive do
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:projects")
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:audit")
+        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
       end
 
       {:ok,

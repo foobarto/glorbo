@@ -24,7 +24,10 @@ defmodule GlorboWeb.OverviewLive do
   def mount(_params, _session, socket) do
     # OverviewLive takes no slug params — no WR-02 guard needed; kept
     # as a no-op for symmetry with the other LVs.
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Glorbo.PubSub, "companies")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "companies")
+      subscribe_agent_status_all()
+    end
 
     {:ok,
      socket
@@ -43,7 +46,30 @@ defmodule GlorboWeb.OverviewLive do
   def handle_info({:company_removed, _slug}, socket),
     do: {:noreply, assign(socket, :companies, load_companies())}
 
+  def handle_info({:agent_status, _slug, _status, _working_on}, socket) do
+    # Trigger a re-render so the sticky sidebar/statusbar pick up fresh
+    # agent state.
+    {:noreply, socket}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp subscribe_agent_status_all do
+    base = base_dir()
+    co_dir = Path.join(base, "companies")
+
+    case File.ls(co_dir) do
+      {:ok, slugs} ->
+        Enum.each(slugs, fn slug ->
+          if File.dir?(Path.join(co_dir, slug)) do
+            Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{slug}:agents:status")
+          end
+        end)
+
+      _ ->
+        :ok
+    end
+  end
 
   @impl true
   def handle_event("chat_drawer_post", _params, socket),

@@ -10,6 +10,88 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — New-task drawer + sidebar quick-action + palette shortcut
+
+The "+ new task" button on Kanban now opens a right-side shelf
+drawer (matches `.design/` mock 20) instead of the center modal.
+Three new entry points for the same drawer:
+
+- sticky `+ new task` button at the bottom of every company
+  sidebar (navigates to `kanban?new_task=1`),
+- command-palette entry `+ new task (<co>)`,
+- global `g n` keyboard shortcut.
+
+The drawer reuses the existing `new_task_create` LV pipeline —
+upload handling, frontmatter splicing, and assignee notification
+are unchanged. A `?new_task=1` query param on `/kanban` opens the
+drawer empty; `?assignee=<slug>` still opens it pre-filled.
+
+### Added — In-UI goal creation + collapsible sidebar
+
+- `GoalsLive` gets a `+ new goal` modal (slug + title + optional
+  description) backed by `Glorbo.Company.Goals`. Frontmatter
+  splice preserves existing `goals:` list and unknown keys.
+- Topbar gains a `‖` sidebar-toggle (Ctrl+B); new
+  `SidebarCollapse` JS hook mirrors the chat drawer's
+  localStorage pattern so the preference persists across pages.
+- Company picker renders inline with the `~/.glorbo/companies/`
+  breadcrumb — no box, no raised bg, just a ▾ chevron.
+
+### Changed — Inbox redesign + audit-row grid fix
+
+Inbox grows dedicated `gl-inbox__*` surfaces: tabs, per-type
+rails (amber for path-requests, danger for stuck), and an
+audit-row grid with ellipsis on ISO timestamps so the avatar
+column stops colliding with long `YYYY-MM-DDTHH:MM:SS.SSSZ`
+strings.
+
+### Changed — Agent detail + RUNS restyle
+
+- Identity box shows the live runtime PID (or `(not running)`).
+- RUNS list rows gain status-coloured left rails (green complete
+  / cyan running / grey unknown), tighter 6-col grid header,
+  inline reply snippet.
+
+### Fixed — Agent-created approval tasks now reach the inbox
+
+Two bugs combined to silently drop agent-created approval tasks:
+
+1. The outbox router rejected bare task files (`outbox/<id>.md`)
+   because the classifier required a project prefix.
+2. `Glorbo.Approvals.Gate.request_approval/2` existed but was
+   only called from tests; production never invoked it.
+
+Router now recognises task-kind frontmatter on bare filenames
+and explicitly calls `Approvals.Gate.request_approval` after a
+successful file-to-project move when the task carries
+`requires_approval: director` (or the newer
+`status: pending_approval`). The CEO agent's system prompt
+scaffold was updated so agents learn the real outbox channels
+rather than inventing filenames like `<task-id>-shaped.md`.
+
+### Fixed — Brain-dump task IDs + delete-on-convert
+
+- `BrainDump.convert_to_task/3` now emits canonical `inbox-NN`
+  task IDs instead of `t-bd-YYYY-MM-DD-<slug>` so `TaskLive`'s
+  validator (`\A[a-z][a-z0-9_-]*-\d+\z`) can open them.
+  Provenance stays in frontmatter (`source: braindump`,
+  `braindump_ts: …`).
+- Converting a brain-dump entry now deletes the source section
+  from its day file atomically — no more duplicate-conversion
+  risk. Day file is `File.rm`'d if the last visible entry was
+  just converted.
+
+### Fixed — Live status wiring across cross-company LVs
+
+`agents:status` PubSub is now subscribed by every director LV
+that renders the sidebar (Costs, Providers, Goals, Skills,
+BrainDump, Overview, Task, Agent). Previously only the company-
+pinned pages ticked, so the sidebar agent-status pill and the
+footer `<active>/<total> agents` counter went stale on Costs /
+Providers / Overview until a manual refresh. The helper uses
+`File.ls("companies")` + `Phoenix.PubSub.subscribe` per slug
+for cross-company pages.
+
 ### Changed — Director Dashboard TUI Redesign (GEP-30)
 
 The Director-facing LiveView dashboard now reads as a true TUI

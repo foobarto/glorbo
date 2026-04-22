@@ -131,23 +131,13 @@ defmodule GlorboWeb.KanbanLive do
 
     title = build_kanban_title(slug, filter, goal_filter)
 
-    # `?assignee=<slug>` opens the new-task modal pre-filled with
+    # `?assignee=<slug>` opens the new-task drawer pre-filled with
     # this agent as the assignee — entry point from AgentLive's
-    # "assign task" button (PLAN P1-3). `?return_to=<path>` remembers
-    # where cancel should navigate back to.
-    {new_task_form, new_task_open?} =
-      case Map.get(params, "assignee") do
-        slug_val when is_binary(slug_val) and slug_val != "" ->
-          if GlorboWeb.Slug.valid?(slug_val) do
-            form = socket.assigns.new_task_form |> Map.put(:assigned_to, slug_val)
-            {form, true}
-          else
-            {socket.assigns.new_task_form, socket.assigns.new_task_open?}
-          end
-
-        _ ->
-          {socket.assigns.new_task_form, socket.assigns.new_task_open?}
-      end
+    # "assign task" button (PLAN P1-3). `?new_task=1` opens the
+    # drawer empty — used by the sidebar + new task button and the
+    # command palette (`g n`). `?return_to=<path>` remembers where
+    # cancel should navigate back to.
+    {new_task_form, new_task_open?} = resolve_new_task_params(params, socket.assigns)
 
     socket =
       socket
@@ -682,34 +672,44 @@ defmodule GlorboWeb.KanbanLive do
       </p>
 
       <%!--
-        New-task modal: title/description/assignee/priority/severity +
-        file uploads. Attachments are uploaded to
-        `projects/<proj>/attachments/<task_id>/<filename>`.
+        New-task right-side drawer (.design/20-kanban-new-task-drawer.png):
+        title/description/assignee/priority/severity + file uploads.
+        Attachments are uploaded to
+        `projects/<proj>/attachments/<task_id>/<filename>`. Slides in
+        from the right, leaving the kanban board visible on the left.
       --%>
-      <div :if={@new_task_open?} class="gl-modal-scrim" phx-click-away="new_task_cancel">
+      <div
+        :if={@new_task_open?}
+        class="gl-shelf-scrim"
+        phx-click-away="new_task_cancel"
+      >
         <form
           phx-submit="new_task_create"
           phx-change="new_task_validate"
           phx-window-keydown="new_task_cancel"
           phx-key="Escape"
-          class="gl-modal"
+          class="gl-new-task-drawer"
           role="dialog"
           aria-modal="true"
           aria-labelledby="gl-new-task-title"
         >
-          <header class="gl-modal__header">
-            <div id="gl-new-task-title"><strong>+ new task</strong></div>
+          <header class="gl-new-task-drawer__header">
+            <div id="gl-new-task-title" class="gl-new-task-drawer__title">
+              <strong>+ new task</strong>
+              <span class="gl-muted gl-new-task-drawer__status">DRAFT</span>
+            </div>
             <button
               type="button"
-              class="gl-modal__close"
+              class="gl-btn gl-btn--sm"
               phx-click="new_task_cancel"
               aria-label="Close"
+              title="esc"
             >
-              ×
+              esc close
             </button>
           </header>
 
-          <div class="gl-new-task-form gl-company-md-form">
+          <div class="gl-new-task-drawer__body gl-company-md-form">
             <label class="gl-form__row">
               <span class="gl-form__label">project</span>
               <select
@@ -824,9 +824,13 @@ defmodule GlorboWeb.KanbanLive do
             </label>
           </div>
 
-          <footer class="gl-modal__footer">
+          <footer class="gl-new-task-drawer__footer">
+            <span class="gl-muted gl-new-task-drawer__hotkeys">
+              <kbd>⌘</kbd><kbd>↵</kbd> create · <kbd>esc</kbd> discard
+            </span>
+            <span class="gl-panel__spacer"></span>
             <button type="button" class="gl-btn" phx-click="new_task_cancel">cancel</button>
-            <button type="submit" class="gl-btn gl-btn--primary">create</button>
+            <button type="submit" class="gl-btn gl-btn--primary">+ create task</button>
           </footer>
         </form>
       </div>
@@ -920,6 +924,26 @@ defmodule GlorboWeb.KanbanLive do
   # ---------------------------------------------------------------------------
   # Data helpers
   # ---------------------------------------------------------------------------
+
+  # Decide the drawer's initial state based on query params:
+  # - `?assignee=<slug>` pre-fills the assigned-to field and opens.
+  # - `?new_task=1` opens empty (sidebar button, command palette).
+  # - neither: preserve whatever the current assigns say.
+  defp resolve_new_task_params(params, assigns) do
+    case Map.get(params, "assignee") do
+      slug when is_binary(slug) and slug != "" ->
+        if GlorboWeb.Slug.valid?(slug) do
+          form = Map.put(assigns.new_task_form, :assigned_to, slug)
+          {form, true}
+        else
+          {assigns.new_task_form, assigns.new_task_open?}
+        end
+
+      _ ->
+        open? = Map.get(params, "new_task") in ["1", "true"]
+        {assigns.new_task_form, open? or assigns.new_task_open?}
+    end
+  end
 
   defp apply_project_filter(tasks, nil), do: tasks
 

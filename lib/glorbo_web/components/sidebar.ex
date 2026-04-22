@@ -136,6 +136,15 @@ defmodule GlorboWeb.Components.Sidebar do
         prefix={tree_prefix(i, length(@projects))}
       />
 
+      <.link
+        :if={@focus}
+        navigate={~p"/companies/#{@focus}/kanban?new_task=1"}
+        class="gl-sidebar__new-task"
+        title="Open the new-task drawer (g n)"
+      >
+        + new task
+      </.link>
+
       <div class="gl-sidebar__footer">
         <GlorboWeb.Components.HealthDot.health_dot
           status={health_status_atom(compute_health())}

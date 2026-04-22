@@ -131,10 +131,101 @@ defmodule Glorbo.BrainDump do
     content = render_task(task_id, entry)
 
     case File.exists?(abs) do
-      true -> {:error, :already_exists}
-      false -> write_atomic(abs, content, rel)
+      true ->
+        {:error, :already_exists}
+
+      false ->
+        with {:ok, ^rel} <- write_atomic(abs, content, rel) do
+          # Best-effort — a task was successfully written; leaving the
+          # brain-dump note in place would let the user convert it a
+          # second time and create a duplicate task. The failure mode
+          # if the delete fails (permissions, racing editor) is
+          # benign: the user sees the note and can delete it manually.
+          _ = delete_entry(base, company, entry)
+          {:ok, rel}
+        end
     end
   end
+
+  @doc """
+  Remove a single captured section from its day file. No-ops if the
+  file no longer exists or the section is not present.
+  """
+  @spec delete_entry(Path.t(), String.t(), entry()) :: :ok | {:error, term()}
+  def delete_entry(base, company, entry) do
+    dir = dir(base, company)
+    filename = "#{entry.day}.md"
+    path = Path.join(dir, filename)
+
+    case File.read(path) do
+      {:ok, content} -> apply_section_removal(path, content, entry)
+      {:error, :enoent} -> :ok
+      err -> err
+    end
+  end
+
+  defp apply_section_removal(path, content, entry) do
+    new_content = remove_section(content, entry)
+
+    cond do
+      new_content == content ->
+        :ok
+
+      String.trim(new_content) == "" ->
+        File.rm(path)
+
+      true ->
+        tmp = path <> ".tmp"
+
+        with :ok <- File.write(tmp, new_content) do
+          File.rename(tmp, path)
+        end
+    end
+  end
+
+  # Strip the section whose header matches the entry's time + title.
+  # Splits into (preamble, [header_line × body] sections) and filters
+  # out the matching one. Boundaries come from the same regex the
+  # reader uses so writer/reader/remover stay aligned.
+  defp remove_section(content, entry) do
+    time = String.slice(entry.ts, 11, 8)
+    title = String.trim(entry.title)
+
+    {preamble, sections} = split_sections(content)
+
+    kept =
+      Enum.reject(sections, fn {t, name, _body} ->
+        t == time and String.trim(name) == title
+      end)
+
+    preamble <> Enum.map_join(kept, "", &render_section/1)
+  end
+
+  defp render_section({time, name, body}), do: "## #{time} — #{name}\n" <> body
+
+  # Returns {preamble_text, [{time, title, body_incl_leading_newline}]}
+  defp split_sections(content) do
+    parts = Regex.split(~r/^## (\d{2}:\d{2}:\d{2})\s+—\s+(.+)$/m, content, include_captures: true)
+
+    case parts do
+      [preamble | rest] ->
+        {preamble, group_sections(rest, [])}
+
+      [] ->
+        {content, []}
+    end
+  end
+
+  defp group_sections([], acc), do: Enum.reverse(acc)
+
+  defp group_sections([header_line, body | rest], acc) do
+    case Regex.run(~r/^## (\d{2}:\d{2}:\d{2})\s+—\s+(.+)$/m, header_line) do
+      [_full, time, name] -> group_sections(rest, [{time, name, body} | acc])
+      _ -> group_sections(rest, acc)
+    end
+  end
+
+  defp group_sections([_trailing], acc), do: Enum.reverse(acc)
 
   # ---------------------------------------------------------------------------
   # Helpers
@@ -170,15 +261,13 @@ defmodule Glorbo.BrainDump do
     end
   end
 
-  @section_regex ~r/^## (\d{2}:\d{2}:\d{2})\s+—\s+(.+)$/m
-
   defp parse_sections(content, day) do
     # Split on the header while keeping the matched line. Result shape:
     # [leading_text, header1, body1, header2, body2, ...] — we want the
     # (header, body) pairs. `Regex.scan` gives us the header captures,
     # `Regex.split` gives the bodies — zip them.
-    headers = Regex.scan(@section_regex, content)
-    bodies = Regex.split(@section_regex, content)
+    headers = Regex.scan(~r/^## (\d{2}:\d{2}:\d{2})\s+—\s+(.+)$/m, content)
+    bodies = Regex.split(~r/^## (\d{2}:\d{2}:\d{2})\s+—\s+(.+)$/m, content)
 
     # Drop the pre-first-header chunk. `split` without include_captures
     # yields N+1 parts where N is the number of headers.
@@ -199,36 +288,38 @@ defmodule Glorbo.BrainDump do
     }
   end
 
-  defp task_id_for(tasks_dir, entry) do
-    slug_part = slugify(entry.title)
-    base_id = "t-bd-#{entry.day}-#{slug_part}"
-    uniqify(tasks_dir, base_id, 0)
-  end
+  # Task IDs follow GEP-13's `<project>-NN` convention so every
+  # standard route that parses task IDs (TaskLive, Router,
+  # assignment mentions) accepts them without a special case.
+  # Provenance back to the original brain-dump entry is preserved in
+  # the task's frontmatter (`source: braindump`, `braindump_ts`)
+  # rather than the filename.
+  defp task_id_for(tasks_dir, _entry) do
+    project = "inbox"
+    prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
+    legacy_re = ~r/\At-(\d+)\.md\z/
 
-  defp uniqify(tasks_dir, base_id, suffix) do
-    candidate =
-      case suffix do
-        0 -> base_id
-        n -> "#{base_id}-#{n}"
+    max_n =
+      case File.ls(tasks_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.map(fn f -> Regex.run(prefixed_re, f) || Regex.run(legacy_re, f) end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.map(fn [_, n] -> String.to_integer(n) end)
+          |> Enum.max(fn -> 0 end)
+
+        _ ->
+          0
       end
 
-    if File.exists?(Path.join(tasks_dir, "#{candidate}.md")) do
-      uniqify(tasks_dir, base_id, suffix + 1)
-    else
-      candidate
-    end
-  end
+    next = max_n + 1
 
-  defp slugify(title) do
-    title
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9]+/, "-")
-    |> String.trim("-")
-    |> String.slice(0, 40)
-    |> case do
-      "" -> "entry"
-      s -> s
-    end
+    n_str =
+      if next <= 99,
+        do: String.pad_leading(Integer.to_string(next), 2, "0"),
+        else: Integer.to_string(next)
+
+    "#{project}-#{n_str}"
   end
 
   defp render_task(_task_id, entry) do

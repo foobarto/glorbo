@@ -41,6 +41,15 @@ defmodule GlorboWeb.Components.Topbar do
 
     ~H"""
     <header class="gl-topbar" role="banner">
+      <button
+        type="button"
+        id="gl-sidebar-toggle"
+        class="gl-topbar__sidebar-toggle"
+        aria-label="Toggle sidebar (Ctrl+B)"
+        title="Toggle sidebar (Ctrl+B)"
+      >
+        ‖
+      </button>
       <.link navigate={~p"/companies"} class="gl-topbar__brand" aria-label="Go to companies list">
         <span class="gl-topbar__brand-glyph" aria-hidden="true">▟</span> GLORBO
       </.link>

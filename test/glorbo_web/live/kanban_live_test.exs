@@ -424,11 +424,17 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute html =~ "ceo task"
   end
 
-  test "?assignee=<slug> opens new-task modal with assignee prefilled",
+  test "?assignee=<slug> opens new-task drawer with assignee prefilled",
        %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?assignee=ceo")
-    assert html =~ "gl-modal-scrim"
+    assert html =~ "gl-new-task-drawer"
     assert html =~ ~s(name="assigned_to") and html =~ "ceo"
+  end
+
+  test "?new_task=1 opens the empty new-task drawer",
+       %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban?new_task=1")
+    assert html =~ "gl-new-task-drawer"
   end
 
   test "?return_to=/path redirects on cancel when set",

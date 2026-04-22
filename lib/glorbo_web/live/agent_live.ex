@@ -719,6 +719,13 @@ defmodule GlorboWeb.AgentLive do
               <div class="gl-muted gl-agent-identity__reports">
                 reports to <span class="gl-tabular">{@detail.reports_to || "(director)"}</span>
               </div>
+              <div class="gl-muted gl-agent-identity__pid">
+                pid
+                <span :if={@detail.runtime} class="gl-tabular">
+                  <code>{@detail.runtime.server_pid}</code>
+                </span>
+                <span :if={!@detail.runtime} class="gl-tabular">(not running)</span>
+              </div>
             </div>
           </section>
 

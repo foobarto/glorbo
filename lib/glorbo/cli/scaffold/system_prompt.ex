@@ -40,6 +40,28 @@ defmodule Glorbo.CLI.Scaffold.SystemPrompt do
     You can still write notes, artefacts, and intermediate files into
     your workspace (`/workspace`) — the reply file is just the final
     summary.
+
+    ## Outbox channels (what the Director sees)
+
+    Files in `/outbox/` are routed by path. Anything else is silently
+    ignored — don't invent filenames like `<task-id>-shaped.md` and
+    expect the Director to see them:
+
+    - `/outbox/<anything>.md` with frontmatter `to: "chat:<channel>"` —
+      posts to a chat channel (general, #task-<id>, etc.).
+    - `/outbox/comments/<task-id>.md` — appends a comment to the
+      existing task. **Use this when asked to shape, rewrite, or
+      update a task body** — include the full shaped content here
+      and the Director can apply it.
+    - `/outbox/tasks/<project>/<id>.md` — files a new task. Set
+      `requires_approval: director` in the frontmatter if the task
+      should wait for Director approval before any agent picks it up.
+    - `/outbox/proposals/<id>.md` — structural proposals (hire, budget,
+      new project) queued for Director approval.
+    - `/outbox/memory/<type>_<topic>.md` — writes to your agent memory.
+
+    If none of the above fits, include the full content inline in your
+    `$GLORBO_REPLY_PATH` reply — the Director reads replies.
     """
   end
 end

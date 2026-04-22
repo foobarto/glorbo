@@ -90,7 +90,7 @@ defmodule Glorbo.BrainDumpTest do
         BrainDump.capture(base, co, "refactor dispatch", now: ~U[2026-04-21 09:00:00Z])
 
       {:ok, rel} = BrainDump.convert_to_task(base, co, entry)
-      assert rel =~ "projects/inbox/tasks/t-bd-2026-04-21-refactor-dispatch"
+      assert rel =~ ~r/\Aprojects\/inbox\/tasks\/inbox-\d+\.md\z/
 
       abs = Path.join([base, "companies", co, rel])
       content = File.read!(abs)
@@ -112,6 +112,33 @@ defmodule Glorbo.BrainDumpTest do
       {:ok, rel1} = BrainDump.convert_to_task(base, co, e1)
       {:ok, rel2} = BrainDump.convert_to_task(base, co, e2)
       refute rel1 == rel2
+    end
+
+    test "removes the source brain-dump section after a successful convert",
+         %{base: base, company: co} do
+      {:ok, keep} =
+        BrainDump.capture(base, co, "keep me", now: ~U[2026-04-21 09:00:00Z])
+
+      {:ok, drop} =
+        BrainDump.capture(base, co, "drop me", now: ~U[2026-04-21 09:05:00Z])
+
+      {:ok, _rel} = BrainDump.convert_to_task(base, co, drop)
+
+      day_path = Path.join([base, "companies", co, "braindump", "2026-04-21.md"])
+      content = File.read!(day_path)
+      assert content =~ "keep me"
+      refute content =~ "drop me"
+      assert List.first(BrainDump.list(base, co)).title == keep.title
+    end
+
+    test "leaves no visible entries after converting the only one",
+         %{base: base, company: co} do
+      {:ok, only} =
+        BrainDump.capture(base, co, "only one", now: ~U[2026-04-21 09:00:00Z])
+
+      {:ok, _rel} = BrainDump.convert_to_task(base, co, only)
+
+      assert BrainDump.list(base, co) == []
     end
   end
 end
