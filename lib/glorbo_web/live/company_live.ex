@@ -1050,8 +1050,11 @@ defmodule GlorboWeb.CompanyLive do
     co = socket.assigns.company_slug
     {count, errors} = broadcast_wake_all(co)
 
-    Glorbo.Company.AuditLog.append(%{
-      company: co,
+    # B1: resolve to whichever AuditLog process is running — the
+    # per-company via-tuple in production or the bare module set up
+    # by the LV test harness. The previous bare-module call never
+    # reached a live process in production and exited silently.
+    Glorbo.Company.AuditLog.append_for(co, %{
       actor: "director",
       action: "director.heartbeat_broadcast",
       target: co,

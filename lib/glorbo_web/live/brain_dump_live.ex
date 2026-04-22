@@ -280,18 +280,17 @@ defmodule GlorboWeb.BrainDumpLive do
   defp emit_audit(company, action, target, detail) do
     base =
       Map.merge(detail, %{
-        company: company,
         actor: "director",
         action: action,
         target: target
       })
 
-    try do
-      AuditLog.append(base)
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
+    # B1: AuditLog is per-company under Glorbo.Company.Supervisor
+    # (`via(company, :audit_log)`) in production, but unit LV tests
+    # run with a single bare-module AuditLog. `append_for/2` resolves
+    # the right target; the old `AuditLog.append(base)` targeted the
+    # bare module by default and silently dropped every production
+    # event via the rescue :exit clause.
+    AuditLog.append_for(company, base)
   end
 end

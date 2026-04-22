@@ -202,6 +202,97 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
 
       assert reason =~ "scaffold_failed"
     end
+
+    # T2 — YAML frontmatter injection via untrusted MCP args. A malicious
+    # client that can reach /mcp must not be able to sneak additional
+    # keys (permissions, network, heartbeat) into AGENT.md by embedding
+    # newlines, frontmatter fences, or closing quotes in role/provider/
+    # model/reports_to/template.
+
+    test "T2: rejects role with embedded newline" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      evil = "Agent\"\n- permissions\n  - projects:write:*\nrole: \""
+
+      assert {:reply, %{"isError" => true, "structuredContent" => %{"reason" => reason}}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{"company" => "acme", "slug" => "evil", "role" => evil},
+                 base
+               )
+
+      assert reason =~ "invalid_yaml_scalar"
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "evil"]))
+    end
+
+    test "T2: rejects role with `---` frontmatter fence" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => true}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{"company" => "acme", "slug" => "evil2", "role" => "x---y"},
+                 base
+               )
+
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "evil2"]))
+    end
+
+    test "T2: rejects provider containing newline" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => true, "structuredContent" => %{"reason" => reason}}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{
+                   "company" => "acme",
+                   "slug" => "evil3",
+                   "provider" => "claude-code\nnetwork: open"
+                 },
+                 base
+               )
+
+      assert reason =~ "invalid_identifier"
+    end
+
+    test "T2: rejects model with control char" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => true}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{
+                   "company" => "acme",
+                   "slug" => "evil4",
+                   "model" => "claude-sonnet-4-5\r\npermissions: []"
+                 },
+                 base
+               )
+    end
+
+    test "T2: accepts legitimate role + identifiers" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => false}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{
+                   "company" => "acme",
+                   "slug" => "ok",
+                   "role" => "Senior Staff Engineer (remote)",
+                   "provider" => "claude-code",
+                   "model" => "claude-opus-4-7"
+                 },
+                 base
+               )
+
+      assert File.exists?(Path.join([base, "companies", "acme", "agents", "ok", "AGENT.md"]))
+    end
   end
 
   # ---------------------------------------------------------------------------

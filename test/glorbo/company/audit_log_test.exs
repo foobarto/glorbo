@@ -213,4 +213,45 @@ defmodule Glorbo.Company.AuditLogTest do
       refute_receive {:audit_append, _}, 200
     end
   end
+
+  # B1: LiveView call sites (`BrainDumpLive.emit_audit`, `CompanyLive.
+  # do_wake_all`) used the default `__MODULE__` server arg, which is
+  # never registered in production — per-company supervisor uses a
+  # Registry via-tuple instead — so every event silently died under
+  # the rescue :exit clause. `append_for/2` auto-resolves the target.
+  describe "append_for/2 — B1 LV-call-site fix" do
+    test "writes via the per-company via-tuple when that process is registered",
+         %{base: base} do
+      via = Glorbo.Company.Supervisor.via("acme", :audit_log)
+
+      {:ok, pid} = AuditLog.start_link(name: via, base: base)
+      Sandbox.allow(Glorbo.Repo, self(), pid)
+
+      assert :ok =
+               AuditLog.append_for("acme", %{
+                 actor: "director",
+                 action: "braindump.capture",
+                 target: "2026-04-22T10:00:00Z"
+               })
+
+      [path] = read_jsonl_files(base)
+      decoded = path |> File.read!() |> String.trim_trailing() |> Jason.decode!()
+      assert decoded["action"] == "braindump.capture"
+      assert decoded["actor"] == "director"
+    end
+
+    test "returns :ok silently when neither process is registered" do
+      # If both targets are missing (early-boot, crashed supervisor),
+      # the helper must still return :ok so a click handler doesn't
+      # crash the LiveView. Audit loss is preferable to UI loss here.
+      ghost = "ghost-company-#{System.unique_integer([:positive])}"
+
+      assert :ok =
+               AuditLog.append_for(ghost, %{
+                 actor: "director",
+                 action: "test",
+                 target: ghost
+               })
+    end
+  end
 end

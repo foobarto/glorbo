@@ -49,12 +49,30 @@ defmodule GlorboWeb.MCP.Tools.CreateAgent do
   @impl true
   def call(%{"company" => company, "slug" => slug} = args, context)
       when is_binary(company) and is_binary(slug) do
-    with :ok <- Args.require_slugs(company: company, slug: slug) do
+    with :ok <- Args.require_slugs(company: company, slug: slug),
+         :ok <- validate_scalar_args(args) do
       do_call(company, slug, args, context)
     end
   end
 
   def call(_args, _context), do: {:error, :missing_args}
+
+  # Threatmodel T2: untrusted MCP strings land directly in AGENT.md
+  # YAML frontmatter. Reject anything that could inject additional
+  # keys (newlines, `---` fence, `"` quote closure) or that doesn't
+  # match the expected shape for identifier-like fields.
+  defp validate_scalar_args(args) do
+    with :ok <- Args.require_safe_yaml_scalar(args["role"], :role, 128),
+         :ok <- Args.require_safe_identifier(args["provider"], :provider),
+         :ok <- Args.require_safe_identifier(args["model"], :model),
+         :ok <- maybe_require_slug(args["reports_to"], :reports_to) do
+      Args.require_safe_identifier(args["template"], :template)
+    end
+  end
+
+  defp maybe_require_slug(nil, _field), do: :ok
+  defp maybe_require_slug("", _field), do: :ok
+  defp maybe_require_slug(value, field), do: Args.require_slug(value, field)
 
   defp do_call(company, slug, args, context) do
     base = context[:base] || Glorbo.Filesystem.Hierarchy.default_root()

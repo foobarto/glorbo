@@ -45,6 +45,49 @@ defmodule Glorbo.Company.AuditLog do
     GenServer.call(server, {:append, entry})
   end
 
+  @doc """
+  Append to whichever AuditLog server is actually running for this
+  company. Production routes through the per-company via-tuple set
+  up by `Glorbo.Company.Supervisor`; the unit-LV test harness in
+  `GlorboWeb.LiveCase` instead starts a single bare-module AuditLog
+  that all companies share.
+
+  The bare `append/2` call with the bare module name silently exits
+  when the per-company tree is running (threatmodel-adjacent bug B1,
+  discovered during the bench-tech-blog UAT 2026-04-22) because no
+  process is registered under `Glorbo.Company.AuditLog`.
+
+  This helper picks the correct target so LiveViews that only know
+  the company slug emit events successfully in both environments.
+  """
+  @spec append_for(String.t(), entry()) :: :ok
+  def append_for(company, %{} = entry) when is_binary(company) do
+    server = resolve_server(company)
+
+    try do
+      GenServer.call(server, {:append, Map.put_new(entry, :company, company)})
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+  end
+
+  defp resolve_server(company) do
+    via = Glorbo.Company.Supervisor.via(company, :audit_log)
+
+    case GenServer.whereis(via) do
+      nil ->
+        case Process.whereis(__MODULE__) do
+          nil -> via
+          pid when is_pid(pid) -> pid
+        end
+
+      pid when is_pid(pid) ->
+        pid
+    end
+  end
+
   @impl GenServer
   def init(opts) do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
