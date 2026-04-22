@@ -132,20 +132,22 @@ defmodule GlorboWeb.MCP.Session do
   def terminate_session(session_id) do
     case Registry.lookup(@registry, session_id) do
       [{pid, _}] ->
-        # `GenServer.stop/3` exits the caller with `:noproc` if the pid
-        # died between the lookup and the stop call. Swallow it — the
-        # session is effectively terminated either way.
-        try do
-          GenServer.stop(pid, :normal)
-        catch
-          :exit, {:noproc, _} -> :ok
-        end
+        stop_session(pid)
 
       [] ->
         :ok
     end
 
     :ok
+  end
+
+  # `GenServer.stop/3` exits the caller with `:noproc` if the pid
+  # died between the Registry lookup and the stop call. Swallow it —
+  # the session is effectively terminated either way.
+  defp stop_session(pid) do
+    GenServer.stop(pid, :normal)
+  catch
+    :exit, {:noproc, _} -> :ok
   end
 
   @doc """
@@ -172,17 +174,16 @@ defmodule GlorboWeb.MCP.Session do
     # Registry's :DOWN handler runs. A synchronous `GenServer.call` either
     # returns or exits — the try/catch translates the exit into `false`.
     case Registry.lookup(@registry, session_id) do
-      [{pid, _}] ->
-        try do
-          GenServer.call(pid, :ping, 1_000)
-          true
-        catch
-          :exit, _ -> false
-        end
-
-      [] ->
-        false
+      [{pid, _}] -> alive_ping?(pid)
+      [] -> false
     end
+  end
+
+  defp alive_ping?(pid) do
+    GenServer.call(pid, :ping, 1_000)
+    true
+  catch
+    :exit, _ -> false
   end
 
   # ---------------------------------------------------------------------------
@@ -292,32 +293,29 @@ defmodule GlorboWeb.MCP.Session do
 
   defp via(session_id), do: {:via, Registry, {@registry, session_id}}
 
+  # Same race as terminate_session/1: the pid can die between the
+  # Registry lookup and the call. Translate `:noproc`/`:shutdown` into
+  # the same `{:error, :unknown_session}` the `[]` branch returns so
+  # callers see consistent behavior.
   defp call(session_id, msg) do
     case Registry.lookup(@registry, session_id) do
-      [{pid, _}] ->
-        # Same race as terminate_session/1: the pid can die between
-        # the lookup and the call. Translate `:noproc` into the same
-        # `{:error, :unknown_session}` the `[]` branch returns so
-        # callers see consistent behavior.
-        try do
-          GenServer.call(pid, msg)
-        catch
-          :exit, {:noproc, _} -> {:error, :unknown_session}
-          :exit, {:shutdown, _} -> {:error, :unknown_session}
-        end
-
-      [] ->
-        {:error, :unknown_session}
+      [{pid, _}] -> safe_call(pid, msg)
+      [] -> {:error, :unknown_session}
     end
   end
 
+  defp safe_call(pid, msg) do
+    GenServer.call(pid, msg)
+  catch
+    :exit, {:noproc, _} -> {:error, :unknown_session}
+    :exit, {:shutdown, _} -> {:error, :unknown_session}
+  end
+
   defp subscribed_uris_call(pid) do
-    try do
-      GenServer.call(pid, :subscribed_uris)
-    catch
-      :exit, {:noproc, _} -> []
-      :exit, {:shutdown, _} -> []
-    end
+    GenServer.call(pid, :subscribed_uris)
+  catch
+    :exit, {:noproc, _} -> []
+    :exit, {:shutdown, _} -> []
   end
 
   defp add_subscription(state, uri, topic) do
