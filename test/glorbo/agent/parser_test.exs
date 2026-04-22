@@ -174,7 +174,9 @@ defmodule Glorbo.Agent.ParserTest do
       """
 
       path = write_agent(ctx, "engineer", content)
-      assert {:error, {:invalid_permission, "projects:write:../other-company"}} = Parser.parse_file(path)
+
+      assert {:error, {:invalid_permission, "projects:write:../other-company"}} =
+               Parser.parse_file(path)
     end
 
     test "P7: missing permissions field defaults to []", ctx do

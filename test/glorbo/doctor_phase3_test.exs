@@ -18,13 +18,14 @@ defmodule Glorbo.DoctorPhase3Test do
   end
 
   describe "D1: run_checks count (post-GEP-5 D6 pruning)" do
-    test "GEP-5 D6 removed 4 podman/ollama checks; count is 10" do
+    test "GEP-5 D6 removed 4 podman/ollama checks; count is 11 with private_files" do
       checks = Doctor.run_checks(phase3_deps())
       names = Enum.map(checks, & &1.name) |> MapSet.new()
 
       assert "bwrap" in names
       assert "user_namespaces" in names
-      assert length(checks) == 10
+      assert "private_files" in names
+      assert length(checks) == 11
     end
   end
 
@@ -112,6 +113,7 @@ defmodule Glorbo.DoctorPhase3Test do
       # Phase 2 (podman/ollama/runtime_image/runtime_exec removed per GEP-5 D6)
       assert "audit_dir" in names
       assert "sockets_dir" in names
+      assert "private_files" in names
       assert "tar_zstd" in names
 
       # Phase 3 additions

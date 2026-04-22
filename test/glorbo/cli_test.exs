@@ -144,7 +144,14 @@ defmodule Glorbo.CLITest do
     end
 
     # Phase-2 / Phase-3 check names also present.
-    for name <- ["audit_dir", "sockets_dir", "tar_zstd", "bwrap", "user_namespaces"] do
+    for name <- [
+          "audit_dir",
+          "sockets_dir",
+          "private_files",
+          "tar_zstd",
+          "bwrap",
+          "user_namespaces"
+        ] do
       assert output =~ name
     end
   end
@@ -155,8 +162,8 @@ defmodule Glorbo.CLITest do
     decoded = Jason.decode!(output)
     assert decoded["version"] == "0.0.4"
     # GEP-5 D6 pruned podman/ollama/runtime_image/runtime_exec:
-    # 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10 checks.
-    assert length(decoded["checks"]) == 10
+    # 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11 checks.
+    assert length(decoded["checks"]) == 11
     assert Map.has_key?(decoded, "exit_code")
     assert Map.has_key?(decoded, "all_passed")
     # Additive severity field on every check (D-44).

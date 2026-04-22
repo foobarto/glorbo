@@ -6,7 +6,8 @@ defmodule Glorbo.Doctor.TestHelpers do
   faked OS functions. Any key not supplied falls through to the real default.
   """
   def deps(overrides \\ []) do
-    tmp_home = Path.join(System.tmp_dir!(), "glorbo-doctor-home-#{System.unique_integer([:positive])}")
+    tmp_home =
+      Path.join(System.tmp_dir!(), "glorbo-doctor-home-#{System.unique_integer([:positive])}")
 
     Keyword.merge(
       [

@@ -16,7 +16,7 @@ defmodule Glorbo.Doctor.FixerTest do
       registered = Fixer.fixers() |> Map.keys() |> Enum.sort()
 
       expected =
-        ~w(glorbo_dir audit_dir sockets_dir bwrap)
+        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap)
         |> Enum.sort()
 
       assert registered == expected
