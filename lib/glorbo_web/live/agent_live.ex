@@ -1787,29 +1787,38 @@ defmodule GlorboWeb.AgentLive do
   end
 
   defp io_card_from_file(path) do
-    case File.read(path) do
-      {:ok, content} ->
-        meta =
-          case Glorbo.Filesystem.Frontmatter.parse(content) do
-            {:ok, m, _} -> m
-            _ -> %{}
-          end
-
-        body = strip_frontmatter(content)
-        title = first_heading(body) || Path.basename(path, ".md")
-
-        preview =
-          body |> String.replace(~r/^#\s+.*\n/, "") |> String.trim() |> String.slice(0, 220)
-
-        %{
-          meta: "from: #{meta["from"] || "—"} · #{meta["ts"] || meta["delivered_at"] || "—"}",
-          title: title,
-          preview: preview
-        }
-
-      _ ->
-        %{meta: "—", title: Path.basename(path), preview: ""}
+    # Threatmodel wave 5: the agent's inbox and outbox are writable by
+    # the untrusted sandboxed CLI, so a malicious agent can drop a
+    # symlink that points at a host file (e.g. `~/.glorbo/config.md`)
+    # and wait for a Director to open the agent detail page, at which
+    # point File.read follows the link and surfaces host content in
+    # the preview. Reject non-regular files at the outer seam.
+    with {:ok, %{type: :regular}} <- File.lstat(path),
+         {:ok, content} <- File.read(path) do
+      do_io_card(content, path)
+    else
+      _ -> false
     end
+  end
+
+  defp do_io_card(content, path) do
+    meta =
+      case Glorbo.Filesystem.Frontmatter.parse(content) do
+        {:ok, m, _} -> m
+        _ -> %{}
+      end
+
+    body = strip_frontmatter(content)
+    title = first_heading(body) || Path.basename(path, ".md")
+
+    preview =
+      body |> String.replace(~r/^#\s+.*\n/, "") |> String.trim() |> String.slice(0, 220)
+
+    %{
+      meta: "from: #{meta["from"] || "—"} · #{meta["ts"] || meta["delivered_at"] || "—"}",
+      title: title,
+      preview: preview
+    }
   end
 
   defp strip_frontmatter(content) do

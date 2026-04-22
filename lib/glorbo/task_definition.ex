@@ -263,10 +263,27 @@ defmodule Glorbo.TaskDefinition do
   @spec write(Path.t(), map()) :: :ok | {:error, term()}
   def write(file_path, updates) when is_binary(file_path) and is_map(updates) do
     with :ok <- validate_keys(updates),
+         :ok <- ensure_regular_file(file_path),
          {:ok, content} <- File.read(file_path),
          rewritten <- maybe_loop_back_recurring(content, updates),
          {:ok, new_content} <- substitute_frontmatter(content, rewritten) do
       atomic_write(file_path, new_content)
+    end
+  end
+
+  # Threatmodel wave 5: an agent with `tasks:update` permission has
+  # rwx on `projects/<scope>/tasks` inside its sandbox. Without a
+  # regular-file check here, a malicious agent can replace its task
+  # file (or pre-create `<task>.md.tmp`) with a symlink pointing at
+  # `~/.glorbo/config.md` / audit logs / another company's task. When
+  # a Director action then calls `TaskDefinition.write`, File.read +
+  # atomic_write follow the symlink and read/overwrite the target.
+  defp ensure_regular_file(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> :ok
+      {:ok, %{type: other}} -> {:error, {:not_regular_file, other}}
+      {:error, :enoent} -> {:error, :enoent}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -362,7 +379,25 @@ defmodule Glorbo.TaskDefinition do
 
   defp atomic_write(file_path, new_content) do
     tmp = file_path <> ".tmp"
+    # Threatmodel wave 5: don't let a pre-created `<file>.tmp` symlink
+    # redirect the write. lstat both the target and the temp side; if
+    # the temp file exists and isn't a regular file, refuse.
+    with :ok <- ensure_regular_file_or_absent(tmp),
+         :ok <- ensure_regular_file_or_absent(file_path) do
+      do_atomic_write(tmp, file_path, new_content)
+    end
+  end
 
+  defp ensure_regular_file_or_absent(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> :ok
+      {:error, :enoent} -> :ok
+      {:ok, %{type: other}} -> {:error, {:not_regular_file, other}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp do_atomic_write(tmp, file_path, new_content) do
     case File.write(tmp, new_content, [:sync]) do
       :ok ->
         case File.rename(tmp, file_path) do

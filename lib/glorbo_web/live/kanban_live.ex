@@ -1077,14 +1077,29 @@ defmodule GlorboWeb.KanbanLive do
     ]
   end
 
+  defp real_directory?(parent, slug) do
+    case File.lstat(Path.join(parent, slug)) do
+      {:ok, %{type: :directory}} -> true
+      _ -> false
+    end
+  end
+
   defp list_projects(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])
 
     case File.ls(projects_dir) do
       {:ok, slugs} ->
+        # Threatmodel wave 5: slug-gate the enumeration AND lstat (not
+        # File.dir?, which follows symlinks). An agent with project-
+        # write access could otherwise plant a symlink
+        # `projects/evil → /etc` that appears in the Kanban "new task"
+        # dropdown, so that selecting it writes task files under the
+        # target directory.
         slugs
         |> Enum.sort()
-        |> Enum.filter(&File.dir?(Path.join(projects_dir, &1)))
+        |> Enum.filter(fn slug ->
+          GlorboWeb.Slug.valid?(slug) and real_directory?(projects_dir, slug)
+        end)
 
       _ ->
         []
