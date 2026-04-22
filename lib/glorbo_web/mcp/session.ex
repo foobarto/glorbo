@@ -217,14 +217,32 @@ defmodule GlorboWeb.MCP.Session do
     {:ok, state}
   end
 
+  # Threatmodel T5: cap per-session subscriptions so a single client
+  # can't accumulate unbounded PubSub topic handlers by spamming
+  # resources/subscribe. 64 is generous for legitimate workflows
+  # (a resource tree tracking a company's agents + projects + channels
+  # rarely exceeds ~20 URIs) and bounds the blast radius if a client
+  # loops on subscribe.
+  @max_subscriptions_per_session 64
+
   @impl true
   def handle_call({:subscribe, uri}, _from, state) do
-    case uri_to_topic(uri) do
-      {:ok, topic} ->
-        {:reply, :ok, add_subscription(state, uri, topic)}
+    cond do
+      MapSet.member?(state.subscribed_uris, uri) ->
+        # Idempotent: already subscribed, no-op.
+        {:reply, :ok, state}
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+      MapSet.size(state.subscribed_uris) >= @max_subscriptions_per_session ->
+        {:reply, {:error, :subscription_cap_reached}, state}
+
+      true ->
+        case uri_to_topic(uri) do
+          {:ok, topic} ->
+            {:reply, :ok, add_subscription(state, uri, topic)}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
     end
   end
 

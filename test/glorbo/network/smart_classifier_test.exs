@@ -46,6 +46,30 @@ defmodule Glorbo.Network.SmartClassifierTest do
       assert {:deny, :private_ip} = SmartClassifier.classify("172.20.4.4", cfg)
     end
 
+    # T8: private-IP rejection outranks operator/agent-supplied
+    # allowlists. SSRF via the proxy is the only reason the proxy
+    # exists on a netns — letting "127.0.0.1" or "10.0.0.1" through
+    # because it was explicitly in `allow` would defeat the point.
+    test "T8: allowlist cannot override private-IP rejection" do
+      cfg = %{
+        allow: ["127.0.0.1", "10.0.0.1", "192.168.50.50", "localhost"],
+        deny: []
+      }
+
+      assert {:deny, :private_ip} = SmartClassifier.classify("127.0.0.1", cfg)
+      assert {:deny, :private_ip} = SmartClassifier.classify("10.0.0.1", cfg)
+      assert {:deny, :private_ip} = SmartClassifier.classify("192.168.50.50", cfg)
+      assert {:deny, :private_ip} = SmartClassifier.classify("localhost", cfg)
+    end
+
+    test "T8: denylist still wins over private-IP (explicit block remains authoritative)" do
+      cfg = %{allow: [], deny: ["127.0.0.1"]}
+      # Denylist returns :denylist reason even though the host is also
+      # a private IP — deny is deny either way, but the reason tag
+      # matters for audit.
+      assert {:deny, :denylist} = SmartClassifier.classify("127.0.0.1", cfg)
+    end
+
     test "ad-TLDs are rejected" do
       cfg = %{allow: [], deny: []}
       assert {:deny, :ad_tld} = SmartClassifier.classify("tracker.doubleclick.net", cfg)

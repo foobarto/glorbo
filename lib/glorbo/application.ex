@@ -103,8 +103,16 @@ defmodule Glorbo.Application do
       # pid) under a DynamicSupervisor, addressed via a :unique Registry
       # keyed by the Mcp-Session-Id header.
       {Registry, keys: :unique, name: GlorboWeb.MCP.SessionRegistry},
+      # Threatmodel T5: cap concurrent MCP sessions so a local-only
+      # misbehaving client can't exhaust memory by spamming `initialize`
+      # without ever sending DELETE. 256 is well above legitimate
+      # usage (every editor tab + agent tends to use a single session)
+      # but low enough that a runaway loop can't take the BEAM down.
       {DynamicSupervisor,
-       name: GlorboWeb.MCP.SessionSupervisor, strategy: :one_for_one, max_restarts: 100},
+       name: GlorboWeb.MCP.SessionSupervisor,
+       strategy: :one_for_one,
+       max_restarts: 100,
+       max_children: 256},
       GlorboWeb.Endpoint
     ]
 

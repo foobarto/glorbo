@@ -69,11 +69,18 @@ defmodule Glorbo.Network.SmartClassifier do
       match_list?(normalised, Map.get(egress_config, :deny, [])) ->
         {:deny, :denylist}
 
-      match_list?(normalised, Map.get(egress_config, :allow, [])) ->
-        {:allow, :allowlist}
-
+      # Threatmodel T8: private-IP rejection MUST precede the allowlist
+      # check. If an operator or agent-supplied `allow` list contains a
+      # private/loopback address ("127.0.0.1", "10.0.0.1", …) the proxy
+      # would otherwise pass traffic through to host-local services,
+      # defeating SSRF isolation. The private_ip?/1 invariant is
+      # unconditional: no matter what the allowlist says, we never let
+      # the sandbox reach the host's private network.
       private_ip?(normalised) ->
         {:deny, :private_ip}
+
+      match_list?(normalised, Map.get(egress_config, :allow, [])) ->
+        {:allow, :allowlist}
 
       ad_tld?(normalised) ->
         {:deny, :ad_tld}
