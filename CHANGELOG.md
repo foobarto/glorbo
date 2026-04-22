@@ -10,6 +10,49 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-29 wave (c.2): creation + dispatch tools (19 tools total)
+
+Wave (c.2) completes the core MCP write surface. External clients
+can now scaffold companies + agents, create channels, submit
+proposals through the GEP-28 outbox pipeline, and force agent
+heartbeats — all the Director-side mutations the dashboard offers.
+
+- `glorbo.force_agent_heartbeat(company, agent, reason?)` — wraps
+  Actions.wake_agent. Writes the wake-request sentinel; audit
+  actor is mcp:<client>.
+- `glorbo.create_company(slug)` — wraps
+  Scaffold.Company.scaffold/2 (new public API accepting base:
+  opt). Idempotent (returns status=existed on re-scaffold).
+- `glorbo.create_agent(company, slug, role?, provider?, model?,
+  reports_to?, template?)` — wraps Scaffold.Agent.scaffold/3
+  (promoted to public API). Default scaffold now honors
+  `--model`; pre-existing CLI bug fixed in passing.
+- `glorbo.create_channel(company, channel)` — initializes
+  channels/<channel>.md with canonical channel-log/v1
+  frontmatter.
+- `glorbo.create_proposal(company, id, subtype, body)` — writes
+  agents/mcp/outbox/proposals/<id>.md; the Router's GEP-28 D7
+  outbox pipeline picks it up and validates. Synthetic `mcp`
+  sender is stamped as `proposed_by` by the Router.
+- `glorbo.decide_proposal(company, id, decision,
+  denial_reason?, superseded_by?)` — same outbox pipeline for
+  status flips (approved / denied / superseded). Router's
+  self-approval guard blocks flips where sender == proposed_by.
+
+Actions.wake_agent/4 gained an `actor:` opt (default "director")
+to match the pattern established for post_message/set_approval
+in wave (c.1). Scaffold.Company and Scaffold.Agent exposed
+public `scaffold/2,3` entries with a `base:` opt so non-CLI
+callers can target a non-default GLORBO_HOME.
+
+Note: `dispatch_task` is intentionally not in the catalog — no
+dedicated Actions entry exists; use `force_agent_heartbeat` to
+wake the assignee after posting a task. Documented in GEP-29.
+
+18 new tests (happy + traversal + idempotent + empty-body +
+invalid-decision + missing-proposal). 1557 tests green; mix
+credo --strict clean.
+
 ### Added — GEP-29 wave (c.1): first write tools (approvals + chat)
 
 The MCP catalog grows its first mutation verbs. External clients can

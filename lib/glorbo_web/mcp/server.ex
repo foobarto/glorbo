@@ -72,7 +72,14 @@ defmodule GlorboWeb.MCP.Server do
     Tools.ApproveTask,
     Tools.DenyTask,
     Tools.PostMessage,
-    Tools.CaptureBrainDump
+    Tools.CaptureBrainDump,
+    # Wave (c.2): dispatch + creation writes
+    Tools.ForceAgentHeartbeat,
+    Tools.CreateCompany,
+    Tools.CreateAgent,
+    Tools.CreateChannel,
+    Tools.CreateProposal,
+    Tools.DecideProposal
   ]
 
   @type request :: %{

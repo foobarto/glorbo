@@ -73,8 +73,15 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     end
   end
 
-  defp scaffold(company, agent, opts) do
-    base = glorbo_home()
+  @doc """
+  Public scaffold entry — same effect as `glorbo new agent <co>/<ag>`
+  with the given flags. `opts[:base]` lets non-CLI callers (MCP,
+  tests) target a non-default `GLORBO_HOME`.
+  """
+  @spec scaffold(String.t(), String.t(), keyword()) :: {:new_agent, 0 | 1, String.t()}
+  def scaffold(company, agent, opts)
+      when is_binary(company) and is_binary(agent) and is_list(opts) do
+    base = Keyword.get(opts, :base) || glorbo_home()
     co_path = Path.join([base, "companies", company])
 
     cond do
@@ -108,6 +115,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     role = opts[:role] || "Agent"
     provider = opts[:provider] || "claude-code"
+    model = opts[:model] || "claude-sonnet-4-5"
 
     File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
@@ -116,7 +124,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     name: #{String.upcase(agent)}
     role: "#{role}"
     provider: #{provider}
-    model: claude-sonnet-4-5
+    model: #{model}
     network: api-only
     heartbeat: null
     permissions:

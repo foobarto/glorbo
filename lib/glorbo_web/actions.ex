@@ -465,6 +465,7 @@ defmodule GlorboWeb.Actions do
   def wake_agent(company, agent, reason, opts \\ []) do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
+    actor = Keyword.get(opts, :actor, "director")
     reason = reason || ""
 
     with :ok <- validate_slug(company),
@@ -490,7 +491,7 @@ defmodule GlorboWeb.Actions do
         :ok ->
           AuditLog.append(audit, %{
             company: company,
-            actor: "director",
+            actor: actor,
             action: "agent.wake_request",
             target: "agents/#{agent}",
             reason: reason

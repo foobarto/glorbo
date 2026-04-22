@@ -49,6 +49,18 @@ defmodule Glorbo.CLI.Scaffold.Company do
     end
   end
 
+  @doc """
+  Public scaffold entry — same effect as `glorbo new company <slug>`
+  but with an explicit `base:` opt so callers outside the CLI flow
+  (MCP tools, tests) can target a non-default `GLORBO_HOME`.
+  """
+  @spec scaffold(String.t(), keyword()) ::
+          {:new_company, 0 | 1, String.t()}
+  def scaffold(slug, opts) when is_binary(slug) and is_list(opts) do
+    base = Keyword.get(opts, :base, glorbo_home())
+    do_scaffold(slug, base)
+  end
+
   # OptionParser with strict switches for clarity; unknown flags error.
   defp parse_opts(argv) do
     {parsed, rest, invalid} =
@@ -95,8 +107,9 @@ defmodule Glorbo.CLI.Scaffold.Company do
     end
   end
 
-  defp scaffold(slug) do
-    base = glorbo_home()
+  defp scaffold(slug), do: do_scaffold(slug, glorbo_home())
+
+  defp do_scaffold(slug, base) do
     co = Path.join([base, "companies", slug])
 
     if File.exists?(co) do
