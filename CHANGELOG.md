@@ -10,6 +10,43 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-29 wave (c.1): first write tools (approvals + chat)
+
+The MCP catalog grows its first mutation verbs. External clients can
+now drive approvals and chat with the same side effects (audit, agent
+wake on mentions, scaffold-on-approve) as the Director dashboard.
+
+- `glorbo.approve_task(company, project, task_id)` — flips task
+  status to approved, restores assigned_to from the sentinel,
+  emits approval.approved. Same code path as the LiveView Approve
+  button (`Actions.set_approval/4`).
+- `glorbo.deny_task(company, project, task_id, denial_reason)` —
+  same via set_approval with :denied. denial_reason required and
+  must be non-empty.
+- `glorbo.post_message(company, channel, body)` — appends with a
+  `## <ts> | mcp:<client>` header, routes @mentions, triggers
+  channel rotation. Uses `Actions.post_message/4`.
+- `glorbo.capture_brain_dump(company, body)` — writes today's
+  braindump file via `BrainDump.capture/4`.
+
+**`Actions.post_message/4` and `Actions.set_approval/4` gained an
+`actor:` opt.** Default stays `"director"` so every LiveView
+callsite is unaffected. MCP tools pass `mcp:<client>` (GEP-29 D4)
+so audit entries preserve provenance — a director clicking
+Approve in the browser and an MCP client calling approve_task
+both flow through the same code, but the audit log distinguishes
+them.
+
+Codex-reviewed; no must-fix. Two nice-to-haves applied inline:
+- capture_brain_dump test asserts the `day` field shape so a
+  later regression can't silently return nil on the wire.
+- deny_task test clarifies the pre-serialization vs on-disk
+  denial_reason shape (fake sink reads flat keys; JSONL folds
+  non-core keys into `detail:`).
+
+11 new tests (happy + traversal + empty-reason + channel auto-create
++ regression assertions). 1539 tests green; mix credo --strict clean.
+
 ### Added — GEP-29 wave (b.2): read-catalog completed (13 tools total)
 
 Six more read-only MCP tools land, finishing the read side of the

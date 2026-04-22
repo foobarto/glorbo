@@ -67,7 +67,12 @@ defmodule GlorboWeb.MCP.Server do
     Tools.GetChannel,
     Tools.ListPendingApprovals,
     Tools.QueryAudit,
-    Tools.GetCompanyHealth
+    Tools.GetCompanyHealth,
+    # Wave (c.1): approvals + chat writes
+    Tools.ApproveTask,
+    Tools.DenyTask,
+    Tools.PostMessage,
+    Tools.CaptureBrainDump
   ]
 
   @type request :: %{

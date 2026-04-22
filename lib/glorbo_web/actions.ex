@@ -66,6 +66,7 @@ defmodule GlorboWeb.Actions do
   def post_message(company, channel, body, opts \\ []) when is_binary(body) do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
+    actor = Keyword.get(opts, :actor, "director")
 
     with :ok <- validate_slug(company),
          :ok <- validate_slug(channel),
@@ -73,13 +74,13 @@ defmodule GlorboWeb.Actions do
          path = channel_path(base, company, channel),
          :ok <- ensure_regular_file(path) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      entry = "\n## #{ts} | director\n#{body}\n"
+      entry = "\n## #{ts} | #{actor}\n#{body}\n"
 
       case File.write(path, entry, [:append, :sync]) do
         :ok ->
           AuditLog.append(audit, %{
             company: company,
-            actor: "director",
+            actor: actor,
             action: "chat.post",
             target: "channels/#{channel}.md",
             channel: channel
@@ -305,6 +306,7 @@ defmodule GlorboWeb.Actions do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
     denial_reason = Keyword.get(opts, :denial_reason)
+    actor = Keyword.get(opts, :actor, "director")
 
     with :ok <- validate_slug(company),
          :ok <- validate_task_path(task_path) do
@@ -345,7 +347,7 @@ defmodule GlorboWeb.Actions do
           entry =
             %{
               company: company,
-              actor: "director",
+              actor: actor,
               action: "approval.#{decision}",
               target: task_path
             }

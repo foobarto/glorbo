@@ -21,12 +21,19 @@ defmodule GlorboWeb.MCP.Tool do
     * `:base`   — `~/.glorbo` root override (tests use a tmp dir).
 
   Tools that don't need the context can ignore it.
+
+  Tools that call `GlorboWeb.Actions` (writes) may also receive
+  `:audit` — a GenServer pid / via tuple / module name that overrides
+  the default Registry-based audit lookup. Production MCP traffic
+  leaves this unset; `Actions` then resolves via
+  `Glorbo.Agent.Registry`. Tests inject a `FakeAudit` here.
   """
 
   @type arguments :: map()
   @type context :: %{
           optional(:client) => String.t(),
-          optional(:base) => Path.t()
+          optional(:base) => Path.t(),
+          optional(:audit) => pid() | atom() | {:via, module(), term()}
         }
 
   @callback name() :: String.t()
