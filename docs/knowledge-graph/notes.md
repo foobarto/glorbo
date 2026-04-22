@@ -1,0 +1,139 @@
+# Knowledge notes — Glorbo
+
+Living document. Where `GRAPH_REPORT.md` is machine-generated
+(graphify AST + clustering), this file is **hand-curated tacit
+knowledge**: findings, gotchas, false-positive patterns, mental
+models, and "things I learned that were non-obvious". Updated
+whenever a session uncovers something worth preserving for the
+next session's Claude (or human).
+
+**Write here when you discover:**
+
+- A graph signal that looks surprising but is actually benign (or
+  the reverse — a flag that turned out to be a real bug).
+- An invariant that spans several modules and isn't obvious from
+  any single file.
+- A non-trivial call chain that took time to untangle — leave a
+  breadcrumb so the next session doesn't retrace.
+- A dependency / tool behaviour that's easy to get wrong (bwrap,
+  burrito, ecto_sqlite3 quirks, etc.).
+- Anything a teammate would ask about in a code review.
+
+**Keep entries short.** One paragraph per fact, dated. When an
+entry becomes stale, update or remove it — this isn't a changelog,
+it's a working memory.
+
+---
+
+## 2026-04-22 — Initial graph analysis (post wave c.2)
+
+### Graph caveats (tree-sitter false positives)
+
+The knowledge graph was built with
+`graphify update lib` on the 220-file `lib/` tree (2478 nodes, 4478
+edges, 103 communities, 81% EXTRACTED / 19% INFERRED). Signal
+quality is good BUT:
+
+- **Generic function names are not abstractions.** `parse()` shows
+  up as the #2 god node (93 edges) — it's `Frontmatter.parse`,
+  `TaskDefinition.parse_file`, `Agent.Parser.parse_file`,
+  `Glorbo.CLI.Parsers.*.parse` and more, all collapsed into one
+  node because tree-sitter doesn't qualify by module. Same for
+  `get()`, `map()`, `lookup()`, `run()`, `inspect()`, `warning()`.
+  Don't reason from these — they're name-space bleed.
+- **Confirmed false-positive inferred edge:**
+  `ProposalsSink.resolve_audit_server → PathGrantStore.lookup`.
+  The real code calls `Elixir.Registry.lookup/2`. Generalizes:
+  any INFERRED edge crossing subsystem boundaries (e.g.
+  ProposalsSink into PathGrantStore) deserves a grep before you
+  trust it.
+- **Corpus scope matters.** Running `graphify update .` includes
+  `deps/` and `_build/` and produces a ~22k-node graph dominated
+  by SQLite C functions and Phoenix.LiveView internals. Always
+  scope to `lib/` (or `lib/` + `test/support/` if tests are in
+  scope for the question).
+
+### Load-bearing utility: `default_root/0`
+
+`Glorbo.Filesystem.Hierarchy.default_root/0` (74 edges, bridges 27
+communities) is the entry point for every filesystem-touching
+module. If you ever change its behaviour (env var lookup, default
+path), the blast radius is the whole codebase. Treat it as a
+public API even though it's a plain function.
+
+### FileSpec modules flagged as "thin communities"
+
+15+ `Glorbo.FileSpec.*Md` modules each form their own 6-node
+cluster. The graph flags each as a "thin community - may be noise
+or needs more connections." That's **by design** — the GEP-25
+pattern is "each spec is independent; implements the FileSpec
+behaviour via 5 callbacks." Not a refactoring opportunity.
+
+### Isolated top-level modules (non-issue)
+
+`Glorbo`, `Glorbo.Repo`, `Glorbo.Company`, `Glorbo.AuditEvent`,
+`Glorbo.Agent` show as isolated nodes (≤1 connection). They're
+thin namespace shells. Non-issue unless one of them starts
+accumulating behaviour.
+
+### Architectural hot-spots worth knowing
+
+- **`Glorbo.Company.Router` (96 edges, #1)** — policy enforcement
+  choke point. Every agent mutation goes through it. If you see a
+  new write path that bypasses it, *that's a design bug*
+  (GEP-5 / GEP-19 / GEP-28).
+- **ACL + Router in Community 3** — Router and `ACLMapper` cluster
+  together. Consistent with the kernel-is-the-policy-engine
+  invariant from GEP-5.
+- **MCP tools in Community 0** — wave c.1 + c.2 write tools
+  (ApproveTask, CaptureBrainDump, etc.) form a 72-node community.
+  Good cohesion. Don't let that cluster start pulling in
+  dashboard internals; it should stay thin.
+
+---
+
+## Session rhythm — graphify + this notes file
+
+1. **Session start (new feature):**
+   `graphify update lib` — rebuild. Then skim `GRAPH_REPORT.md`
+   and this file for anything relevant to the task.
+2. **Mid-session / post-compaction:**
+   `graphify query "<current task>"` — bounded 2k-token answer
+   instead of rereading 20 files.
+3. **Before ending a session that touched non-trivial code:**
+   - `graphify update lib && mv lib/graphify-out/GRAPH_REPORT.md
+     docs/knowledge-graph/ && rm -rf lib/graphify-out`
+   - Append any new learning to this file under today's date
+     heading (append — don't rewrite old entries).
+4. **Stale entries:** rather than delete, annotate with a
+   superseding note. History tells future Claude how a belief
+   evolved.
+
+---
+
+## How to use `graphify query` effectively
+
+- Phrase questions in graph-y terms: "where is X defined?",
+  "what calls Y?", "which modules bridge A and B?". The query
+  engine does BFS traversal; it's literal.
+- Cap budget with `--budget 1500` for cheap queries; default 2000
+  is fine for exploration.
+- When a query returns less than you expect, the graph may be
+  stale — rebuild with `graphify update lib`.
+- For "explain this module" use
+  `graphify explain "Glorbo.Company.Router"` — denser than a
+  query and better anchored on one node.
+
+---
+
+## What belongs in this file vs elsewhere
+
+| Kind of fact | Where it lives |
+|---|---|
+| "This is the current architecture" | `docs/architecture.md` |
+| "We decided X because Y" | `docs/geps/NNNN-*.md` |
+| "Watch out for this gotcha in <dep>" | this file |
+| "The graph flags this but it's fine" | this file |
+| "This function has a weird call chain" | this file (short) or the function's moduledoc (full) |
+| "We had an incident and learned Z" | this file → eventually a GEP if it shapes future design |
+| Rolling punch list of TODOs | `docs/todo.md` |

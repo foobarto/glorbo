@@ -98,3 +98,9 @@ coverage/
 .reports/
 *.png
 .claude/agents/
+
+# graphify transient outputs. `graph.json` is ~3 MB (binary-ish),
+# `graph.html` 2 MB, `cache/` rebuilds from source. Only the
+# curated report lives at `docs/knowledge-graph/GRAPH_REPORT.md`.
+graphify-out/
+**/graphify-out/

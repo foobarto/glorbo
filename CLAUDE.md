@@ -29,6 +29,17 @@ in a row.
 - `CHANGELOG.md` — what shipped, always
 - `README.md` — if the user-facing pitch or install story changes
 - `docs/DESIGN.md` — if architecture, invariants, or tech stack changes
+- `docs/architecture.md` — if the module map changes (new subsystem,
+  new god node, new invariant)
+- `docs/knowledge-graph/GRAPH_REPORT.md` — run
+  `graphify update lib && mv lib/graphify-out/GRAPH_REPORT.md
+  docs/knowledge-graph/ && rm -rf lib/graphify-out` if any module
+  was added / renamed / deleted. See
+  `docs/knowledge-graph/README.md`.
+- `docs/knowledge-graph/notes.md` — if this session uncovered a
+  gotcha, graph false-positive, load-bearing invariant, or
+  surprising call chain, append a short dated entry. Future
+  sessions thank you.
 - `docs/geps/NNNN-…` — flip status if the GEP's implementation landed
 - `docs/todo.md` — cross off whatever this change addressed
 - `docs/testing/uat.md` — if the change adds a UI surface that needs UAT
@@ -66,6 +77,9 @@ intentionally doesn't carry:
 
 | Need | Go to |
 |---|---|
+| **Architecture map + graph caveats (READ FIRST)** | **`docs/architecture.md`** |
+| **Machine-generated navigation map (READ FIRST)** | **`docs/knowledge-graph/GRAPH_REPORT.md`** |
+| **Tacit knowledge: findings, gotchas, false positives** | **`docs/knowledge-graph/notes.md`** |
 | Authoritative architecture spec  | `docs/DESIGN.md` |
 | Design decisions (what & why)    | `docs/geps/README.md` |
 | Browser UAT checklist            | `docs/testing/uat.md` |
@@ -75,6 +89,57 @@ intentionally doesn't carry:
 | Past autonomous-session logs     | `docs/sessions/` |
 | Archived design artifacts        | `docs/archived/` |
 | On-disk file format specs        | `docs/file-formats/` |
+
+**Consult the knowledge base before reading source files.** The two
+files marked READ FIRST exist specifically to save tokens on "where
+is X?" / "what calls Y?" / "how does Z fit together?" questions.
+Reading them is ~75× cheaper than grep-and-read across 200+
+modules. They are maintained — if they don't cover the question,
+*then* reach for the code.
+
+## Context management — graphify + living notes
+
+The `docs/knowledge-graph/` directory is a two-layer memory system:
+
+1. **`GRAPH_REPORT.md`** — machine-generated structural map
+   (graphify AST + community clustering). Authoritative on
+   "what calls what"; refresh when modules change.
+2. **`notes.md`** — hand-curated tacit knowledge: gotchas,
+   false-positive patterns, architectural hot-spots, session
+   learnings. Authoritative on "why the graph lies about X" and
+   "watch out for Y". Living document; append-only is fine.
+
+**Both must be maintained.** The graph tells you the code's
+shape; the notes tell you what the graph is wrong about and
+why. Together they are the fastest way to answer "where is X?"
+/ "what calls Y?" / "how does Z fit?" without rereading 200+
+modules.
+
+**Session rhythm:**
+
+- **Session start:** skim `docs/architecture.md` +
+  `docs/knowledge-graph/notes.md`. Run `graphify update lib`
+  (then move the report into `docs/knowledge-graph/`) if the
+  graph is older than the last code change you care about.
+- **Mid-session / after `/compact`:** run
+  `graphify query "<current task>"` to re-anchor — bounded
+  output (~2000 tokens) beats rereading 20 files.
+- **When you discover something non-obvious** (a bogus
+  INFERRED edge, a tricky invariant, a dep gotcha): write one
+  short dated paragraph under today's heading in `notes.md`.
+  Don't rewrite old entries — append, supersede with a note if
+  needed.
+- **Before ending a session that touched non-trivial code:**
+  refresh both — rebuild the graph AND append any learnings
+  from the session to `notes.md`. Stale layers silently
+  mis-advise the next session.
+
+**Graph caveats — don't get fooled:** see
+`docs/architecture.md` §"Graph caveats" and
+`docs/knowledge-graph/notes.md` for the running list of
+false-positive patterns (generic function-name collisions,
+bogus INFERRED edges, thin-community flags on intentionally-
+isolated modules).
 
 Top-level conventions that stay in the root:
 
