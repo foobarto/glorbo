@@ -92,18 +92,22 @@ defmodule GlorboWeb.Actions do
           # already durably on disk + audited.
           _ = maybe_rotate_channel(company, path, channel, audit)
 
-          # Director mentions wake the named agent(s). Mirrors the
+          # Mentions wake the named agent(s). Mirrors the
           # Glorbo.Company.Router mention-write shape so the downstream
           # Agent.Server treats it identically (same inbox/mentions/
           # path + `agent.wake` audit with `trigger: "mention"`).
+          # T6 threatmodel: propagate the actor into the mention file
+          # frontmatter so MCP-originated posts don't end up claiming
+          # `from: "director"`.
           _ =
-            route_director_mentions(
+            route_mentions(
               base,
               company,
               channel,
               body,
               ts,
-              audit
+              audit,
+              actor
             )
 
           :ok
@@ -165,7 +169,7 @@ defmodule GlorboWeb.Actions do
           })
 
           _ = wake_task_assignee(base, company, abs_task, task_id, body, ts, audit)
-          _ = route_director_mentions(base, company, "task-#{task_id}", body, ts, audit)
+          _ = route_mentions(base, company, "task-#{task_id}", body, ts, audit, "director")
 
           :ok
 
@@ -192,7 +196,7 @@ defmodule GlorboWeb.Actions do
       # The Router's `@mention` path only fires for literal `@slug` matches
       # in the body — an assignee who isn't @mentioned wouldn't otherwise
       # get notified. Write the same inbox/mentions shape for them.
-      write_director_mention(base, company, "task-#{task_id}", assignee, body, ts, audit)
+      write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, "director")
     else
       _ -> :ok
     end
@@ -227,17 +231,17 @@ defmodule GlorboWeb.Actions do
 
   @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
 
-  defp route_director_mentions(base, company, channel, body, ts, audit) do
+  defp route_mentions(base, company, channel, body, ts, audit, actor) do
     @mention_regex
     |> Regex.scan(body, capture: :all_but_first)
     |> List.flatten()
     |> Enum.uniq()
     |> Enum.each(fn mentioned ->
-      write_director_mention(base, company, channel, mentioned, body, ts, audit)
+      write_mention(base, company, channel, mentioned, body, ts, audit, actor)
     end)
   end
 
-  defp write_director_mention(base, company, channel, mentioned, body, ts, audit) do
+  defp write_mention(base, company, channel, mentioned, body, ts, audit, actor) do
     agent_dir = Path.join([base, "companies", company, "agents", mentioned])
 
     if File.dir?(agent_dir) do
@@ -248,10 +252,14 @@ defmodule GlorboWeb.Actions do
       fname_ts = DateTime.to_unix(now, :millisecond)
       path = Path.join(inbox_mentions, "#{fname_ts}-#{channel}.md")
 
+      # T6 threatmodel: stamp the actual caller's slug, not a hardcoded
+      # "director". MCP-originated posts must carry `from: "mcp:<client>"`
+      # so agents can distinguish Director instructions from tool-
+      # initiated messages. Sanitized via `safe_actor_tag/1`.
       frontmatter = """
       ---
       channel: "#{channel}"
-      from: "director"
+      from: "#{safe_actor_tag(actor)}"
       source_msg: "#{ts}"
       delivered_at: "#{DateTime.to_iso8601(now)}"
       ---
@@ -283,6 +291,27 @@ defmodule GlorboWeb.Actions do
 
     :ok
   end
+
+  # T6 defense-in-depth: strip newlines, double-quotes, and leading/
+  # trailing whitespace from the actor before it lands in YAML
+  # frontmatter. Caller-supplied actors are already built from
+  # `"mcp:#{context.client}"` or the literal "director", but an
+  # adversarial context could push bad bytes in. Fall back to
+  # "director" on pathological values to preserve the old default.
+  defp safe_actor_tag(actor) when is_binary(actor) do
+    cleaned =
+      actor
+      |> String.replace(~r/[\r\n\"]/, "")
+      |> String.trim()
+
+    cond do
+      cleaned == "" -> "director"
+      byte_size(cleaned) > 128 -> "director"
+      true -> cleaned
+    end
+  end
+
+  defp safe_actor_tag(_), do: "director"
 
   defp safe_wake_mention(company, slug) do
     case Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, slug}) do

@@ -1346,12 +1346,23 @@ defmodule Glorbo.Company.Router do
   # with YAML-significant characters are properly quoted (no raw
   # `inspect/1` fallback that could corrupt the file).
   @proposal_key_order ~w(kind id subtype status proposed_by requires_approval proposed_at approved_by approved_at denial_reason superseded_by)
+  # Threatmodel T7: agent-supplied proposal keys land verbatim on the
+  # left-hand side of YAML `k: v` lines. A crafted key like
+  # `"zzz:\nstatus"` serialized raw would produce a second `status`
+  # line that overrides the Router-stamped approval field after the
+  # file is re-parsed. Filter the extras map to only allow
+  # identifier-shaped keys; anything else is silently dropped.
+  @proposal_extra_key_re ~r/\A[a-z][a-z0-9_]{0,63}\z/
+
   defp serialize_proposal(meta, body) do
     canonical = for k <- @proposal_key_order, Map.has_key?(meta, k), do: {k, Map.get(meta, k)}
 
     extras =
       meta
       |> Map.drop(@proposal_key_order)
+      |> Enum.filter(fn {k, _v} ->
+        is_binary(k) and Regex.match?(@proposal_extra_key_re, k)
+      end)
       |> Enum.sort_by(fn {k, _} -> k end)
 
     yaml_lines =

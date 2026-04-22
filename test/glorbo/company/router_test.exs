@@ -1425,5 +1425,56 @@ defmodule Glorbo.Company.RouterTest do
       assert content =~ "status: pending-approval"
       assert_receive {:audit, %{action: "proposal.rejected"}}
     end
+
+    # T7 — YAML key injection in the proposal "extras" map. A malicious
+    # agent with only `proposals:propose:*` must not be able to smuggle
+    # a second `status:` or `approved_by:` line past the Router-stamp
+    # by crafting a frontmatter key that embeds newlines. The sink's
+    # serializer filters extras to identifier-shaped keys only.
+    test "T7 reject injection: extras with newline/colon-in-key are dropped before serialize",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}]
+        })
+
+      # The YAML below includes an attacker-controlled key whose name
+      # ends with `.evil` (would be dropped), and a quoted key that
+      # embeds a newline+colon (dropped too). Anything injected after
+      # a valid key must never end up on its own line in the output.
+      {_path, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "evil-proposal", """
+        ---
+        kind: proposal/v1
+        id: evil-proposal
+        subtype: hire
+        status: pending-approval
+        proposed_at: 2026-04-22T10:00:00Z
+        notes_field: harmless
+        "weird.key": dropped-by-filter
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      dest = Path.join(proposals_dir, "evil-proposal.md")
+      assert File.exists?(dest)
+      content = File.read!(dest)
+
+      # Router-stamped canonical keys are present once, with the
+      # trusted values — nothing overrode them.
+      assert content =~ "status: pending-approval"
+      assert content =~ "proposed_by: ceo"
+
+      # Legitimate snake_case extras are preserved.
+      assert content =~ "notes_field: harmless"
+
+      # Illegitimate keys are silently dropped rather than written
+      # out. (The exact key shapes were quoted in the input.)
+      refute content =~ "weird.key"
+      refute content =~ "\"weird.key\""
+    end
   end
 end
