@@ -2453,14 +2453,43 @@ button { font-family: inherit; font-size: inherit; }
   padding: var(--gl-space-sm) var(--gl-space-md);
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border-strong);
-  border-radius: 2px;
+  border-radius: 0;
 }
+/* GEP-30: IRC-style composer prompt — director@<co>:#<channel>$,
+   colour-coded per segment to match the bottom chat drawer. */
 .gl-compose__prompt {
-  color: var(--gl-accent);
   font-family: var(--gl-ff-mono);
   font-size: 12px;
   white-space: nowrap;
   user-select: none;
+  flex: 0 0 auto;
+}
+.gl-compose__prompt-user {
+  color: var(--glorbo-green, var(--gl-accent));
+}
+.gl-compose__prompt-co {
+  color: var(--glorbo-cyan, var(--gl-cyan));
+}
+.gl-compose__prompt-channel {
+  color: var(--glorbo-amber, var(--gl-amber));
+}
+.gl-compose__prompt-dim {
+  color: var(--glorbo-fg-mute, var(--gl-fg-subtle));
+}
+.gl-compose__hint {
+  font-family: var(--gl-ff-mono);
+  font-size: 10px;
+  color: var(--gl-fg-subtle);
+  padding: 4px var(--gl-space-md) 0;
+  user-select: none;
+}
+.gl-compose__hint kbd {
+  font-family: inherit;
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  padding: 0 4px;
+  color: var(--gl-fg-muted);
+  border-radius: 2px;
 }
 .gl-compose__input {
   flex: 1;

@@ -375,7 +375,7 @@ defmodule GlorboWeb.ChannelLive do
 
           <form phx-submit="post" class="gl-compose">
             <span class="gl-compose__prompt" aria-hidden="true">
-              director@{@channel} ▸
+              <span class="gl-compose__prompt-user">director</span><span class="gl-compose__prompt-dim">@</span><span class="gl-compose__prompt-co">{@company_slug}</span><span class="gl-compose__prompt-dim">:</span><span class="gl-compose__prompt-channel">#{@channel}</span><span class="gl-compose__prompt-dim">$</span>
             </span>
             <textarea
               name="body"
@@ -388,6 +388,9 @@ defmodule GlorboWeb.ChannelLive do
             >{@compose_body}</textarea>
             <button type="submit" class="gl-btn gl-btn--sm gl-btn--primary">send ↵</button>
           </form>
+          <div class="gl-compose__hint" aria-hidden="true">
+            <kbd>@</kbd> mention · <kbd>/</kbd> slash · <kbd>⏎</kbd> send · <kbd>⇧⏎</kbd> newline
+          </div>
         </div>
       </div>
     </section>
