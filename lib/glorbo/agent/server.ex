@@ -576,10 +576,10 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
-  # Task-assignment replies: append a `## <ts> | <slug>\n<body>` block to
-  # the task file itself (same shape as GlorboWeb.Actions.post_task_comment).
-  # Writes go through the filesystem; the kanban overlay's comment thread
-  # renders them next to the Director's prompt.
+  # Task-assignment replies: agents write to the sibling
+  # `<task-id>.comments.md` thread (GEP-30 D8) so the task file
+  # itself stays diff-clean. The Kanban drawer + TaskLive render
+  # the thread from this sibling file.
   #
   # Also parses an optional trailing `ACTIONS:` block for structured
   # directives the agent can emit (reassign_to / status). This lets an
@@ -589,14 +589,18 @@ defmodule Glorbo.Agent.Server do
     company_root = Path.join([state.base, "companies", state.spec.company])
 
     case resolve_task_path(company_root, task_id) do
-      {:ok, abs} ->
+      {:ok, abs_task} ->
         {comment_body, actions} = extract_task_actions(body)
-        ts = DateTime.utc_now() |> DateTime.to_iso8601()
-        entry = "\n## #{ts} | #{state.spec.slug}\n#{String.trim(comment_body)}\n"
+        comments_path = Glorbo.TaskComments.path_for(abs_task)
 
-        case File.write(abs, entry, [:append, :sync]) do
+        case Glorbo.TaskComments.append(
+               comments_path,
+               state.spec.slug,
+               String.trim(comment_body),
+               task_id: task_id
+             ) do
           :ok ->
-            apply_task_actions(abs, actions)
+            apply_task_actions(abs_task, actions)
             :ok
 
           {:error, reason} ->

@@ -799,10 +799,12 @@ defmodule Glorbo.Agent.ServerTest do
       %{task_path: task_path, base: base}
     end
 
-    test "TA-1: plain reply appends `## ts | slug` comment block", ctx do
+    test "TA-1: plain reply appends `## ts | slug` comment block to sibling (GEP-30 D8)",
+         ctx do
       %{task_path: path} = setup_task_assignment(ctx, "t-01", "Got it.")
 
-      content = File.read!(path)
+      comments_path = Glorbo.TaskComments.path_for(path)
+      content = File.read!(comments_path)
       assert content =~ "## "
       assert content =~ " | #{ctx.spec.slug}"
       assert content =~ "Got it."
@@ -818,11 +820,14 @@ defmodule Glorbo.Agent.ServerTest do
 
       %{task_path: path} = setup_task_assignment(ctx, "t-02", reply)
 
-      content = File.read!(path)
-      assert content =~ ~r/^assigned_to: "?director"?$/m
-      # Comment body preserved (sans ACTIONS block)
-      assert content =~ "Handing back."
-      refute content =~ "reassign_to:"
+      task_content = File.read!(path)
+      assert task_content =~ ~r/^assigned_to: "?director"?$/m
+      refute task_content =~ "reassign_to:"
+
+      # Comment body preserved (sans ACTIONS block) in the sibling thread.
+      comments_content = File.read!(Glorbo.TaskComments.path_for(path))
+      assert comments_content =~ "Handing back."
+      refute comments_content =~ "reassign_to:"
     end
 
     test "TA-3: ACTIONS/status rewrites status frontmatter", ctx do
@@ -865,10 +870,10 @@ defmodule Glorbo.Agent.ServerTest do
       """
 
       %{task_path: path} = setup_task_assignment(ctx, "t-empty", reply)
-      content = File.read!(path)
-      assert content =~ "Just noting."
       # Frontmatter unchanged
-      assert content =~ ~r/^status: "?todo"?$/m
+      assert File.read!(path) =~ ~r/^status: "?todo"?$/m
+      # Comment lands in the sibling thread (GEP-30 D8).
+      assert File.read!(Glorbo.TaskComments.path_for(path)) =~ "Just noting."
     end
 
     test "TA-5: unknown ACTIONS keys are ignored (comment still appended)", ctx do
@@ -882,10 +887,10 @@ defmodule Glorbo.Agent.ServerTest do
 
       %{task_path: path} = setup_task_assignment(ctx, "t-05", reply)
 
-      content = File.read!(path)
-      assert content =~ "Noted."
       # Original frontmatter untouched
-      assert content =~ ~r/^status: "?todo"?$/m
+      assert File.read!(path) =~ ~r/^status: "?todo"?$/m
+      # Comment still appended — to the sibling thread.
+      assert File.read!(Glorbo.TaskComments.path_for(path)) =~ "Noted."
     end
 
     test "TA-5b: duplicate ACTIONS blocks — only first is used; subsequent prose ignored",

@@ -105,14 +105,20 @@ defmodule GlorboWeb.TaskLiveTest do
     assert html =~ "Comment is empty"
   end
 
-  test "valid comment appends to task body", %{conn: conn, base: base} do
+  test "valid comment appends to sibling .comments.md (GEP-30 D8)",
+       %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
     render_submit(view, "comment_task", %{"comment" => "ping"})
 
-    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
-    content = File.read!(path)
-    assert content =~ "ping"
-    assert content =~ "| director"
+    task_path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+    comments_path = Glorbo.TaskComments.path_for(task_path)
+
+    task_content = File.read!(task_path)
+    refute task_content =~ "ping"
+
+    comments_content = File.read!(comments_path)
+    assert comments_content =~ "ping"
+    assert comments_content =~ "| director"
   end
 
   test "save_task rewrites frontmatter via shared TaskDetailForm",
@@ -409,7 +415,9 @@ defmodule GlorboWeb.TaskLiveTest do
       body of foo-2
       """)
 
-      # Append a comment on foo-1 that references foo-2.
+      # GEP-30 D8: comments live in the sibling `.comments.md` file,
+      # so seed that alongside the task — the autolink render now
+      # reads from there.
       File.write!(
         Path.join(tasks_dir, "foo-1.md"),
         """
@@ -420,6 +428,16 @@ defmodule GlorboWeb.TaskLiveTest do
         ---
 
         original prompt
+        """
+      )
+
+      File.write!(
+        Path.join(tasks_dir, "foo-1.comments.md"),
+        """
+        ---
+        kind: task-comments/v1
+        task_id: foo-1
+        ---
 
         ## 2026-04-21T05:00:00Z | director
         please sync with foo-2 before starting

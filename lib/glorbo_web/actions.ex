@@ -143,15 +143,20 @@ defmodule GlorboWeb.Actions do
          :ok <- validate_task_path_strict(task_path),
          :ok <- validate_body(body),
          :ok <- validate_comment_nonblank(body),
-         abs = Path.join([base, "companies", company, task_path]),
-         :ok <- ensure_regular_file(abs) do
+         abs_task = Path.join([base, "companies", company, task_path]),
+         :ok <- ensure_regular_file(abs_task) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      entry = "\n## #{ts} | director\n#{body}\n"
+      task_id = task_path |> Path.basename() |> Path.rootname()
+      # GEP-30 D8: comments live in a sibling `.comments.md` file,
+      # not inline in the task body. The task file stays diff-clean;
+      # the thread is rendered from the sibling by Kanban + TaskLive.
+      comments_path = Glorbo.TaskComments.path_for(abs_task)
 
-      case File.write(abs, entry, [:append, :sync]) do
+      case Glorbo.TaskComments.append(comments_path, "director", body,
+             ts: ts,
+             task_id: task_id
+           ) do
         :ok ->
-          task_id = task_path |> Path.basename() |> Path.rootname()
-
           AuditLog.append(audit, %{
             company: company,
             actor: "director",
@@ -159,7 +164,7 @@ defmodule GlorboWeb.Actions do
             target: task_path
           })
 
-          _ = wake_task_assignee(base, company, abs, task_id, body, ts, audit)
+          _ = wake_task_assignee(base, company, abs_task, task_id, body, ts, audit)
           _ = route_director_mentions(base, company, "task-#{task_id}", body, ts, audit)
 
           :ok

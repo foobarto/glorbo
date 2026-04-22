@@ -190,23 +190,32 @@ defmodule GlorboWeb.ActionsTest do
       %{task_path: "projects/web/tasks/t-01.md"}
     end
 
-    test "appends `## <ts> | director\\n<body>` to the task file", %{
-      base: base,
-      audit: audit,
-      task_path: tp
-    } do
+    test "appends `## <ts> | director\\n<body>` to the sibling comments file (GEP-30 D8)",
+         %{
+           base: base,
+           audit: audit,
+           task_path: tp
+         } do
       assert :ok =
                Actions.post_task_comment("acme", tp, "Looks good.",
                  base: base,
                  audit: audit
                )
 
-      abs = Path.join([base, "companies", "acme", tp])
-      content = File.read!(abs)
+      # The task file itself stays diff-clean — only the prompt + frontmatter.
+      abs_task = Path.join([base, "companies", "acme", tp])
+      task_content = File.read!(abs_task)
+      assert task_content =~ "Initial prompt."
+      refute task_content =~ "Looks good."
 
-      assert content =~ "Initial prompt."
-      assert content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.* \| director/
-      assert content =~ "Looks good."
+      # The comment lands in the sibling `.comments.md` file with the
+      # expected `## <ts> | director` header.
+      abs_comments = Glorbo.TaskComments.path_for(abs_task)
+      comments_content = File.read!(abs_comments)
+      assert comments_content =~ "kind: task-comments/v1"
+      assert comments_content =~ "task_id: t-01"
+      assert comments_content =~ ~r/## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.* \| director/
+      assert comments_content =~ "Looks good."
     end
 
     test "wakes the assignee even without an @mention", %{

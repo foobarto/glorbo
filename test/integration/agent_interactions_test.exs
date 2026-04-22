@@ -234,14 +234,19 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
         {:file_event, Path.relative_to(inbox_path, ctx.co_root), [:created]}
       )
 
-      # Wait for the task file to be mutated
+      # Wait for the task file to be mutated (frontmatter) AND the
+      # sibling comment file to exist (GEP-30 D8 — comments live in
+      # `<task-id>.comments.md` now, not inline).
       await_file_change(task_path, "assigned_to: director", 2_000)
 
       content = File.read!(task_path)
       assert content =~ ~r/^assigned_to: "?director"?$/m
       assert content =~ ~r/^status: "?todo"?$/m
-      assert content =~ "Done. Handing back."
       refute content =~ "reassign_to:"
+
+      comments_path = Glorbo.TaskComments.path_for(task_path)
+      await_file_change(comments_path, "Done. Handing back.", 2_000)
+      assert File.read!(comments_path) =~ "Done. Handing back."
     end
 
     test "plain reply (no ACTIONS) appends comment but leaves frontmatter alone", ctx do
@@ -260,13 +265,16 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
         {:file_event, Path.relative_to(inbox_path, ctx.co_root), [:created]}
       )
 
-      await_file_change(task_path, "Reviewed.", 2_000)
+      comments_path = Glorbo.TaskComments.path_for(task_path)
+      await_file_change(comments_path, "Reviewed.", 2_000)
 
+      # Comment landed in the sibling thread.
+      comments_content = File.read!(comments_path)
+      assert comments_content =~ " | ceo\n"
+      assert comments_content =~ "Reviewed."
+
+      # Task file frontmatter unchanged (no ACTIONS).
       content = File.read!(task_path)
-      # Comment appended
-      assert content =~ " | ceo\n"
-      assert content =~ "Reviewed."
-      # Assignment unchanged (no ACTIONS)
       assert content =~ ~r/^assigned_to: "?ceo"?$/m
       assert content =~ ~r/^status: "?todo"?$/m
     end
@@ -297,13 +305,13 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
         {:file_event, Path.relative_to(inbox_path, ctx.co_root), [:created]}
       )
 
-      await_file_change(task_path, "Done.", 2_000)
+      comments_path = Glorbo.TaskComments.path_for(task_path)
+      await_file_change(comments_path, "Done.", 2_000)
 
-      content = File.read!(task_path)
-      # Assignment unchanged
-      assert content =~ ~r/^status: "?todo"?$/m
-      # Comment still appended
-      assert content =~ "Done."
+      # Task frontmatter unchanged.
+      assert File.read!(task_path) =~ ~r/^status: "?todo"?$/m
+      # Comment landed in sibling file despite malformed ACTIONS.
+      assert File.read!(comments_path) =~ "Done."
     end
   end
 
@@ -379,15 +387,19 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       )
 
       await_file_change(task_path, "status: done", 2_000)
-      content = File.read!(task_path)
 
-      # Status updated
-      assert content =~ ~r/^status: "?done"?$/m
+      # Status updated on the task file itself.
+      assert File.read!(task_path) =~ ~r/^status: "?done"?$/m
+
+      # Comment lands in the sibling thread (GEP-30 D8).
+      comments_path = Glorbo.TaskComments.path_for(task_path)
+      await_file_change(comments_path, "Got it, marking done.", 2_000)
+      comments_content = File.read!(comments_path)
 
       # Comment body is the PRE-ACTIONS section only
-      assert content =~ "Got it, marking done."
+      assert comments_content =~ "Got it, marking done."
       # Post-ACTIONS chatter should NOT leak into the comment
-      refute content =~ "chatty trailing prose"
+      refute comments_content =~ "chatty trailing prose"
     end
   end
 

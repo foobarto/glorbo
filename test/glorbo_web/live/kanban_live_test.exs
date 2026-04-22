@@ -203,16 +203,15 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "Ship it."
   end
 
-  test "open_task splits prompt body from comment history",
+  test "open_task reads the comment thread from the sibling file (GEP-30 D8)",
        %{conn: conn, base: base} do
-    # Seed a task that mixes a markdown `## Sub-section` header in the
-    # prompt (must stay in the body) with a real comment (must render
-    # in the comments panel). Earlier regex naively split on ANY `## `,
-    # which smashed sub-section headers into the comment stream.
-    path =
-      Path.join([base, "companies", "acme", "projects", "website", "tasks", "mix-body.md"])
+    # Under GEP-30 D8 the task file carries only the prompt body;
+    # the thread lives in a sibling `<task-id>.comments.md`. A markdown
+    # `## Sub-section` header in the prompt must stay put, and the
+    # sibling file's comment must render in the comments panel.
+    tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
 
-    File.write!(path, """
+    File.write!(Path.join(tasks_dir, "mix-body.md"), """
     ---
     title: Mixed body
     status: todo
@@ -223,6 +222,13 @@ defmodule GlorboWeb.KanbanLiveTest do
     ## Sub-section in prompt
 
     Body continues
+    """)
+
+    File.write!(Path.join(tasks_dir, "mix-body.comments.md"), """
+    ---
+    kind: task-comments/v1
+    task_id: mix-body
+    ---
 
     ## 2026-04-18T10:00:00Z | director
     Actual comment
@@ -236,11 +242,12 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ "## Sub-section in prompt"
     assert html =~ "Body continues"
 
-    # The real Director comment shows up in the comments panel
+    # The comment from the sibling file shows up in the comments panel.
     assert html =~ "Actual comment"
     assert html =~ "comments (1)"
 
-    File.rm!(path)
+    File.rm!(Path.join(tasks_dir, "mix-body.md"))
+    File.rm!(Path.join(tasks_dir, "mix-body.comments.md"))
   end
 
   test "save_task rewrites title + body + priority on disk", %{conn: conn, base: base} do
@@ -276,7 +283,7 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute html =~ "gl-task-detail"
   end
 
-  test "comment_task appends `## ts | director\\n<body>` to the task file",
+  test "comment_task appends `## ts | director\\n<body>` to the sibling .comments.md (GEP-30 D8)",
        %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 
@@ -285,13 +292,20 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     render_hook(view, "comment_task", %{"comment" => "Please review by EOD"})
 
-    abs = Path.join([base, "companies", "acme", task_rel])
-    content = File.read!(abs)
+    abs_task = Path.join([base, "companies", "acme", task_rel])
+    abs_comments = Glorbo.TaskComments.path_for(abs_task)
 
+    # Task file itself stays unchanged (diff-clean prompt).
+    task_content = File.read!(abs_task)
+    refute task_content =~ "Please review by EOD"
+
+    # The comment lives in the sibling file.
+    comments_content = File.read!(abs_comments)
+    assert comments_content =~ "kind: task-comments/v1"
     # Director's comment rendered with lowercase attribution (user
     # 2026-04-19 UAT: all authors are lowercase for consistency).
-    assert content =~ " | director\n"
-    assert content =~ "Please review by EOD"
+    assert comments_content =~ " | director\n"
+    assert comments_content =~ "Please review by EOD"
   end
 
   test "comment_task with empty body shows a flash and does not append",

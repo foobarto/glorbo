@@ -62,7 +62,7 @@ defmodule GlorboWeb.TaskLive do
        |> assign(:task_id, task_id)
        |> assign(:rel_path, rel_path)
        |> assign(:project, project)
-       |> assign(:task, to_detail(task))
+       |> assign(:task, to_detail(task, abs_path))
        |> assign(:usage_totals, load_usage_totals(base, co, rel_path))
        |> assign(:history, Glorbo.Audit.Query.for_task(base, co, rel_path, limit: 25))
        |> assign(:history_expanded, MapSet.new())
@@ -91,9 +91,15 @@ defmodule GlorboWeb.TaskLive do
   def handle_info({:file_event, rel, _events}, socket) do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel)
 
-    if rel == socket.assigns.rel_path do
+    # GEP-30 D8: the comment thread is a sibling file, so thread-only
+    # updates arrive under a different rel_path. Refresh when either
+    # the task file itself or its `.comments.md` sibling changes.
+    task_rel = socket.assigns.rel_path
+    comments_rel = Glorbo.TaskComments.path_for(task_rel)
+
+    if rel == task_rel or rel == comments_rel do
       base = base_dir()
-      abs = Path.join([base, "companies", socket.assigns.company_slug, rel])
+      abs = Path.join([base, "companies", socket.assigns.company_slug, task_rel])
 
       case Glorbo.TaskDefinition.parse_file(abs,
              base: base,
@@ -102,7 +108,7 @@ defmodule GlorboWeb.TaskLive do
         {:ok, task} ->
           {:noreply,
            socket
-           |> assign(:task, to_detail(task))
+           |> assign(:task, to_detail(task, abs))
            |> assign(
              :next_fire_at,
              next_fire_at(socket.assigns.company_slug, socket.assigns.task_id)
@@ -337,9 +343,7 @@ defmodule GlorboWeb.TaskLive do
     end
   end
 
-  defp to_detail(task) do
-    {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")
-
+  defp to_detail(task, abs_task_path) do
     %{
       task_id: task.task_id,
       title: task.title || "",
@@ -350,62 +354,18 @@ defmodule GlorboWeb.TaskLive do
       requires_approval: if(task.requires_approval == :director, do: "director", else: ""),
       denial_reason: task.denial_reason || "",
       schedule: task.schedule || "",
-      body: prompt,
-      comments: comments
+      body: String.trim(task.prompt_body || ""),
+      # GEP-30 D8: thread lives in a sibling `.comments.md` file.
+      comments: load_task_comments(abs_task_path)
     }
   end
 
-  # Mirror of Kanban's split_prompt_and_comments/1 — ISO-timestamp
-  # headers separate the prompt prologue from subsequent comment
-  # blocks.
-  @ts_header_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*$/m
+  defp load_task_comments(abs_task_path) do
+    comments_path = Glorbo.TaskComments.path_for(abs_task_path)
 
-  defp split_prompt_and_comments(body) do
-    case Regex.scan(@ts_header_re, body, return: :index) do
-      [] ->
-        {String.trim(body), []}
-
-      matches ->
-        [{first_start, _} | _] = matches |> Enum.map(&hd/1)
-        prompt = body |> binary_part(0, first_start) |> String.trim()
-        comments = parse_comments(body, matches)
-        {prompt, comments}
-    end
-  end
-
-  defp parse_comments(body, matches) do
-    matches
-    |> Enum.with_index()
-    |> Enum.map(fn {[{start, _} | captures], i} ->
-      ts =
-        case Enum.at(captures, 0) do
-          {s, l} -> binary_part(body, s, l)
-          _ -> ""
-        end
-
-      author =
-        case Enum.at(captures, 1) do
-          {s, l} -> binary_part(body, s, l)
-          _ -> ""
-        end
-
-      next_start =
-        case Enum.at(matches, i + 1) do
-          [{ns, _} | _] -> ns
-          _ -> byte_size(body)
-        end
-
-      header_end = find_newline(body, start)
-      body_text = body |> binary_part(header_end, next_start - header_end) |> String.trim()
-
-      %{author: author, timestamp: ts, body: body_text}
-    end)
-  end
-
-  defp find_newline(body, from) do
-    case :binary.match(body, "\n", scope: {from, byte_size(body) - from}) do
-      {idx, _len} -> idx + 1
-      :nomatch -> byte_size(body)
+    case Glorbo.TaskComments.read(comments_path) do
+      {:ok, entries} -> entries
+      _ -> []
     end
   end
 

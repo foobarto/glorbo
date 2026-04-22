@@ -184,7 +184,8 @@ defmodule GlorboWeb.KanbanLive do
     with {:ok, abs} <- resolve_task_path(task_path, company),
          {:ok, task} <-
            Glorbo.TaskDefinition.parse_file(abs, base: base_dir(), company: company) do
-      {prompt, comments} = split_prompt_and_comments(task.prompt_body || "")
+      prompt = String.trim(task.prompt_body || "")
+      comments = load_task_comments(abs)
 
       detail = %{
         task_path: task_path,
@@ -271,9 +272,18 @@ defmodule GlorboWeb.KanbanLive do
   # so new comments + status changes appear without closing/reopening.
   defp maybe_refresh_open_task(%{assigns: %{open_task: nil}} = socket, _rel_path), do: socket
 
-  defp maybe_refresh_open_task(%{assigns: %{open_task: %{task_path: path}}} = socket, rel_path)
-       when path == rel_path do
-    maybe_open_task_from_param(socket, socket.assigns.company_slug, rel_path)
+  defp maybe_refresh_open_task(%{assigns: %{open_task: %{task_path: path}}} = socket, rel_path) do
+    # GEP-30 D8: the sibling `.comments.md` thread is a separate
+    # file, so watcher events land under a different rel_path. Refresh
+    # the overlay when either the task file itself or its thread
+    # sibling changes.
+    comments_rel = Glorbo.TaskComments.path_for(path)
+
+    if rel_path == path or rel_path == comments_rel do
+      maybe_open_task_from_param(socket, socket.assigns.company_slug, path)
+    else
+      socket
+    end
   end
 
   defp maybe_refresh_open_task(socket, _rel_path), do: socket
@@ -408,8 +418,10 @@ defmodule GlorboWeb.KanbanLive do
         }
 
         prompt = Map.get(params, "body", "") |> String.trim()
-        comments_tail = rebuild_comments_tail(task)
-        body = if comments_tail == "", do: prompt, else: prompt <> "\n\n" <> comments_tail
+        # GEP-30 D8: comments live in the sibling `.comments.md` file,
+        # not inline. Save writes the prompt only — the thread stays
+        # untouched.
+        body = prompt
 
         with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
              :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
@@ -959,54 +971,16 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  # Task body may contain a prompt (before any comment header) followed
-  # by a thread of `## <iso8601-ts> | <author>\n<body>` comment blocks
-  # written by `GlorboWeb.Actions.post_task_comment/4`. The split must
-  # recognize the TIMESTAMP shape specifically — a prompt may legitimately
-  # contain markdown `## Sub-section` headers that aren't comments.
-  # ISO8601 timestamps always start with a year (4 digits) followed by
-  # `-MM-DD`; matching that prefix before the `|` separator keeps
-  # markdown headers in the prompt where they belong.
-  @task_comment_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
+  # GEP-30 D8: the task comment thread lives in a sibling
+  # `<task>.comments.md` file. Wrap the `Glorbo.TaskComments.read`
+  # helper so the open-task overlay gets an empty list on any IO
+  # failure rather than crashing.
+  defp load_task_comments(abs_task_path) do
+    comments_path = Glorbo.TaskComments.path_for(abs_task_path)
 
-  defp split_prompt_and_comments(body) do
-    body = String.trim(body)
-
-    # Split on the first `## <iso-date>` header — anything before is prompt.
-    case Regex.run(~r/^(?<prompt>.*?)(?=\n## \d{4}-|\z)/ms, body, capture: :all_names) do
-      [prompt] ->
-        rest_start = byte_size(prompt)
-        rest = String.slice(body, rest_start, byte_size(body) - rest_start)
-
-        comments =
-          @task_comment_re
-          |> Regex.scan(rest, capture: :all_names)
-          |> Enum.map(fn [author, body_c, ts] ->
-            %{
-              author: String.trim(author),
-              timestamp: String.trim(ts),
-              body: String.trim(body_c)
-            }
-          end)
-
-        {String.trim(prompt), comments}
-
-      _ ->
-        {body, []}
-    end
-  end
-
-  defp rebuild_comments_tail(task) do
-    case task do
-      %{comments: comments} when is_list(comments) and comments != [] ->
-        comments
-        |> Enum.map_join("\n", fn c ->
-          "## #{c.timestamp} | #{c.author}\n#{c.body}\n"
-        end)
-        |> String.trim_trailing()
-
-      _ ->
-        ""
+    case Glorbo.TaskComments.read(comments_path) do
+      {:ok, entries} -> entries
+      _ -> []
     end
   end
 
