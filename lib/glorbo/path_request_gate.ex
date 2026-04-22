@@ -364,11 +364,45 @@ defmodule Glorbo.PathRequestGate do
         %{
           host_path: host_path,
           sandbox_path: sandbox_path_for(host_path),
-          mode: mode
+          mode: downgrade_cross_company_mode(host_path, mode, state)
         }
       end)
 
     PathGrantStore.grant(state.company, agent_slug, task_id, paths_for_store, now)
+  end
+
+  # GEP-27 §151-161 + threatmodel T4: cross-company paths must always
+  # be mounted read-only, even when the director approves a `:write`
+  # request. Anything under `<base>/companies/<other>/` that isn't this
+  # company's own tree is downgraded to `:read` before the grant is
+  # stored. bwrap translates `:read` into `--ro-bind`, `:write` into
+  # `--bind`, so enforcing here is the single load-bearing gate.
+  defp downgrade_cross_company_mode(host_path, mode, state) do
+    resolve_cross_company_mode(host_path, mode, state.base, state.company)
+  end
+
+  @doc false
+  # Exposed for unit testing. Production callers must use the
+  # state-bound `downgrade_cross_company_mode/3`.
+  def resolve_cross_company_mode(host_path, mode, base, own_company)
+      when is_binary(host_path) and mode in [:read, :write] and is_binary(base) and
+             is_binary(own_company) do
+    companies_root = Path.join(base, "companies")
+    own_prefix = Path.join(companies_root, own_company) <> "/"
+
+    cond do
+      mode == :read ->
+        :read
+
+      String.starts_with?(host_path, own_prefix) ->
+        mode
+
+      String.starts_with?(host_path, companies_root <> "/") ->
+        :read
+
+      true ->
+        mode
+    end
   end
 
   defp archive_request(agent_slug, task_id, state) do

@@ -90,5 +90,18 @@ defmodule Glorbo.TaskCommentsTest do
       assert :ok = TaskComments.append(path, "director", "hi", ts: "2026-04-22T10:00:00Z")
       assert File.exists?(path)
     end
+
+    test "rejects a symlinked comments path (T1 symlink-swap defense)",
+         %{tmp: tmp} do
+      target = Path.join(tmp, "outside.md")
+      path = Path.join(tmp, "blog-2.comments.md")
+      File.write!(target, "do not touch")
+      File.ln_s!(target, path)
+
+      assert {:error, :not_a_regular_file} =
+               TaskComments.append(path, "director", "hi", ts: "2026-04-22T10:00:00Z")
+
+      assert File.read!(target) == "do not touch"
+    end
   end
 end

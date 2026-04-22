@@ -83,7 +83,8 @@ defmodule Glorbo.TaskComments do
     ts = Keyword.get_lazy(opts, :ts, fn -> DateTime.utc_now() |> DateTime.to_iso8601() end)
     task_id = Keyword.get_lazy(opts, :task_id, fn -> derive_task_id(path) end)
 
-    with :ok <- ensure_file(path, task_id) do
+    with :ok <- ensure_file(path, task_id),
+         :ok <- ensure_regular_file(path) do
       entry = "\n## #{ts} | #{author}\n#{String.trim_trailing(body)}\n"
       File.write(path, entry, [:append, :sync])
     end
@@ -109,22 +110,37 @@ defmodule Glorbo.TaskComments do
   # If the file already exists we leave it alone — the caller only
   # appends a new entry.
   defp ensure_file(path, task_id) do
-    if File.exists?(path) do
-      :ok
-    else
-      ts = DateTime.utc_now() |> DateTime.to_iso8601()
+    with :ok <- ensure_regular_file(path) do
+      if File.exists?(path) do
+        :ok
+      else
+        ts = DateTime.utc_now() |> DateTime.to_iso8601()
 
-      header = """
-      ---
-      kind: task-comments/v1
-      task_id: #{task_id}
-      created_at: #{ts}
-      ---
-      """
+        header = """
+        ---
+        kind: task-comments/v1
+        task_id: #{task_id}
+        created_at: #{ts}
+        ---
+        """
 
-      with :ok <- File.mkdir_p(Path.dirname(path)) do
-        File.write(path, header)
+        with :ok <- File.mkdir_p(Path.dirname(path)) do
+          File.write(path, header)
+        end
       end
+    end
+  end
+
+  # Symlink-swap defense (threatmodel T1). An attacker-controlled agent
+  # must not be able to pre-create `<task-id>.comments.md` as a symlink
+  # to `~/.glorbo/config.md` and have the host append to the target.
+  # Missing path is fine — the first write creates the file.
+  defp ensure_regular_file(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

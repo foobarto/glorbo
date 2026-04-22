@@ -361,9 +361,58 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp write_prompt(run_dir, prompt, opts) do
     fs = fs_fun(opts)
+    ensure_safe_run_dir!(run_dir)
     fs.mkdir_p!.(run_dir)
+    ensure_safe_prompt_path!(prompt_path(run_dir))
     fs.write!.(prompt_path(run_dir), prompt)
     :ok
+  end
+
+  # Symlink-swap defense (threatmodel T3). The agent controls its
+  # workspace and the heartbeat `task_id` is a constant ("heartbeat"),
+  # so a malicious agent can pre-create `.glorbo-run/heartbeat/` as a
+  # symlink to a sensitive host directory, causing the subsequent
+  # prompt write to escape the sandbox. Reject any pre-existing
+  # non-directory entry at the run path before `mkdir_p!`.
+  defp ensure_safe_run_dir!(run_dir) do
+    case File.lstat(run_dir) do
+      {:ok, %File.Stat{type: :directory}} ->
+        :ok
+
+      {:ok, %File.Stat{}} ->
+        raise File.Error,
+          reason: :not_a_regular_directory,
+          action: "prepare run_dir",
+          path: run_dir
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "stat run_dir", path: run_dir
+    end
+  end
+
+  # Paired defense: even when run_dir is a real directory, a symlinked
+  # `task-prompt.md` inside it would still redirect the write. Reject
+  # anything other than a missing path or regular file.
+  defp ensure_safe_prompt_path!(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        :ok
+
+      {:ok, %File.Stat{}} ->
+        raise File.Error,
+          reason: :not_a_regular_file,
+          action: "prepare task-prompt.md",
+          path: path
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "stat task-prompt.md", path: path
+    end
   end
 
   defp build_ctx(spec, task, workspace, run_dir, provider, invocation_id) do

@@ -245,6 +245,91 @@ defmodule Glorbo.Agent.DispatchTest do
     assert_received {:prompt_exists, true}
   end
 
+  # T3 — symlink-swap defense on the run_dir path. A malicious agent could
+  # pre-create `.glorbo-run/<task_id>/` as a symlink to a sensitive host
+  # directory (e.g. ~/.glorbo/) so that the subsequent prompt write
+  # escapes the sandbox. The dispatch pipeline must refuse to use a
+  # non-directory run_dir.
+  test "T3: pre-existing run_dir symlink is rejected before prompt write", ctx do
+    workspace_run =
+      Path.join([
+        ctx.base,
+        "companies",
+        "acme",
+        "agents",
+        "engineer",
+        "workspace",
+        ".glorbo-run"
+      ])
+
+    File.mkdir_p!(workspace_run)
+
+    # Point `.glorbo-run/t-001` at a "sensitive" directory the attacker
+    # shouldn't be able to influence.
+    sensitive = Path.join(ctx.base, "sensitive-dir")
+    File.mkdir_p!(sensitive)
+    File.write!(Path.join(sensitive, "config.md"), "secret: keep-me\n")
+
+    File.ln_s!(sensitive, Path.join(workspace_run, "t-001"))
+
+    run_fun = fn _a, _e, _b, _r ->
+      flunk("run_fun must not be called when run_dir is a symlink")
+    end
+
+    assert_raise File.Error, ~r/not_a_regular_directory|prepare run_dir/, fn ->
+      Dispatch.execute(ctx.spec, ctx.task,
+        base: ctx.base,
+        run_fun: run_fun,
+        provider_fun: fn _ -> stub_provider() end,
+        audit_fun: ctx.audit_fun
+      )
+    end
+
+    # Sensitive target was not written to.
+    assert File.read!(Path.join(sensitive, "config.md")) == "secret: keep-me\n"
+    refute File.exists?(Path.join(sensitive, "task-prompt.md"))
+  end
+
+  # T3 — paired defense: even when run_dir itself is a real directory,
+  # a symlinked `task-prompt.md` inside it would still redirect the
+  # write. Reject it.
+  test "T3: pre-existing prompt-file symlink inside run_dir is rejected",
+       ctx do
+    run_dir =
+      Path.join([
+        ctx.base,
+        "companies",
+        "acme",
+        "agents",
+        "engineer",
+        "workspace",
+        ".glorbo-run",
+        "t-001"
+      ])
+
+    File.mkdir_p!(run_dir)
+
+    sensitive = Path.join(ctx.base, "outside.md")
+    File.write!(sensitive, "do not touch")
+
+    File.ln_s!(sensitive, Path.join(run_dir, "task-prompt.md"))
+
+    run_fun = fn _a, _e, _b, _r ->
+      flunk("run_fun must not be called when task-prompt.md is a symlink")
+    end
+
+    assert_raise File.Error, ~r/not_a_regular_file|prepare task-prompt/, fn ->
+      Dispatch.execute(ctx.spec, ctx.task,
+        base: ctx.base,
+        run_fun: run_fun,
+        provider_fun: fn _ -> stub_provider() end,
+        audit_fun: ctx.audit_fun
+      )
+    end
+
+    assert File.read!(sensitive) == "do not touch"
+  end
+
   # ---------------------------------------------------------------------------
   # D5 — model fallback when parsed usage has model=nil
   # ---------------------------------------------------------------------------
