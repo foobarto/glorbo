@@ -10,6 +10,32 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — Collapse Approvals page into Inbox (backlog #14)
+
+The standalone `/companies/:company/approvals` route + LiveView +
+sidebar entry are retired. Their function was fully duplicated by
+`InboxLive`'s Mine tab, which already renders the same
+awaiting-approval sentinel data with approve / deny / archive
+buttons.
+
+- Deleted `GlorboWeb.ApprovalQueueLive`,
+  `GlorboWeb.Components.ApprovalCard`, the two test files
+  (`approval_queue_live_test.exs`,
+  `approval_queue_integration_test.exs`), and the router mount.
+- Removed `:approvals` from the sidebar nav. The pending-approvals
+  badge now renders on the `:inbox` item instead of a duplicate
+  nav row.
+- Updated doc comments and one test assertion in
+  `company_live_test.exs` + rephrased `sidebar_test.exs` moduledoc.
+
+ApprovalQueueLive's list-select + prompt-diff-panel + keyboard-
+shortcut features are not preserved — Inbox's Mine tab stays a
+flat feed. If power-user approval workflow emerges as a real
+need, `docs/todo.md` can track "add keyboard shortcuts + inline
+prompt preview to Inbox Mine tab" as a separate follow-up.
+
+1559 tests green; mix credo --strict clean.
+
 ### Changed — GEP-29 wave (e): MCP-Protocol-Version header validation
 
 Spec-compliance fix for the Streamable HTTP transport. Previously

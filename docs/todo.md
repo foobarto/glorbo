@@ -56,6 +56,11 @@ it's been in CHANGELOG for a cycle.
   behaviour: `g k kanban · …`. Consider collapsing to a single
   "⌨ shortcuts" popover below some breakpoint instead of
   ellipsis.
+- [ ] **Approvals power-user features on Inbox Mine tab.**
+  ApprovalQueueLive was collapsed into Inbox (backlog #14), but
+  its keyboard shortcuts (j/k/y/n) and prompt-diff panel weren't
+  preserved. Revisit if director feedback complains about
+  approval throughput.
 
 ## P3 — thinking out loud
 

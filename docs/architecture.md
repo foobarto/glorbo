@@ -89,8 +89,9 @@ Seven canonical views per GEP-6:
 - Audit (`AuditLive`) — filterable audit log.
 - Health (`HealthLive`) — doctor checks + supervisor state.
 
-Plus specialty LVs: Approvals (deprecated — being folded into
-Inbox, backlog #14), Costs, Providers, Goals, BrainDump, Projects.
+Plus specialty LVs: Costs, Providers, Goals, BrainDump, Projects.
+(ApprovalQueueLive was folded into Inbox in backlog #14 — the Mine
+tab renders the same sentinel data with approve/deny buttons.)
 
 ### 5. MCP server (GEP-29) — `lib/glorbo_web/mcp/`
 

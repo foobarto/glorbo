@@ -23,7 +23,7 @@ defmodule GlorboWeb.Components.Sidebar do
   ## Attrs
 
     * `:current_company` — slug string or nil.
-    * `:active` — one of `:overview | :kanban | :chat | :approvals |
+    * `:active` — one of `:overview | :kanban | :chat |
       :inbox | :audit | :goals | :skills | :braindump | :providers |
       :costs | nil`; drives the active-row highlight.
   """
@@ -37,7 +37,9 @@ defmodule GlorboWeb.Components.Sidebar do
     {:overview, "◈", "Overview", :company},
     {:kanban, "▤", "Kanban", :company},
     {:chat, "◫", "Channels", :company},
-    {:approvals, "✓", "Approvals", :company},
+    # The standalone `:approvals` nav was folded into `:inbox` —
+    # the pending-approvals badge now lives on the Inbox item.
+    # Backlog #14 rationale: one feed, not two.
     {:inbox, "☷", "Inbox", :company},
     {:audit, "≡", "Audit log", :company},
     {:goals, "◇", "Goals", :company},
@@ -80,7 +82,7 @@ defmodule GlorboWeb.Components.Sidebar do
           <span class="gl-sidebar__glyph" aria-hidden="true">{glyph}</span>
           <span class="gl-sidebar__label">{label}</span>
           <span
-            :if={id == :approvals and @approvals_pending > 0}
+            :if={id == :inbox and @approvals_pending > 0}
             class="gl-sidebar__badge"
             aria-label={"#{@approvals_pending} pending approvals"}
           >
@@ -218,7 +220,6 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(_, nil), do: "#"
   defp nav_href(:kanban, slug), do: ~p"/companies/#{slug}/kanban"
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
-  defp nav_href(:approvals, slug), do: ~p"/companies/#{slug}/approvals"
   defp nav_href(:inbox, slug), do: ~p"/companies/#{slug}/inbox"
   defp nav_href(:audit, slug), do: ~p"/companies/#{slug}/audit"
   defp nav_href(:goals, slug), do: ~p"/companies/#{slug}/goals"

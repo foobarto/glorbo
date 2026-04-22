@@ -5,8 +5,9 @@ defmodule GlorboWeb.Components.SidebarTest do
 
   An `awaiting-approval-<slug>.md` whose `<slug>` doesn't match
   any task file in `projects/*/tasks/` is **not** counted by the
-  Approvals badge, because ApprovalQueueLive and InboxLive filter
-  those orphan sentinels out. A badge counting them would lead
+  sidebar's pending-approvals badge (now displayed on the Inbox
+  nav item since backlog #14 folded ApprovalQueueLive into
+  InboxLive). A badge counting orphan sentinels would lead
   directors to a "1 pending" button that opens an empty list —
   user-visible lying.
   """

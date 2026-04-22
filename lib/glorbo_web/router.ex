@@ -37,10 +37,11 @@ defmodule GlorboWeb.Router do
     # as a right-side shelf; clicking "open task page →" navigates here.
     live "/companies/:company/tasks/:task_id", TaskLive
     live "/companies/:company/agents/:agent", AgentLive
-    live "/companies/:company/approvals", ApprovalQueueLive
     # Unified director inbox — approvals + recent activity + future
-    # @mention and assignment feeds. Replaces the approval-only lens
-    # paperclip's /Inbox tab offers. See paperclip-ux-gaps.md §3.
+    # @mention and assignment feeds. The standalone `/approvals`
+    # route was folded in here (backlog #14) — Inbox's Mine tab
+    # renders the same awaiting-approval sentinels with approve /
+    # deny / archive buttons.
     live "/companies/:company/inbox", InboxLive
     # Plan 04-03 Task 2: content-scope chat view.
     live "/companies/:company/channels/:channel", ChannelLive

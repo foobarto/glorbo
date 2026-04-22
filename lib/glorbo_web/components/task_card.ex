@@ -17,8 +17,8 @@ defmodule GlorboWeb.Components.TaskCard do
   director has to approve before the agent's side-effect lands.
   This pill is a *metadata* marker; a task is only actually waiting
   on approval once the agent writes an `awaiting-approval-*.md`
-  sentinel, which shows in `/approvals` (and not here — the
-  kanban doesn't poll per-task sentinel state, UAT N7).
+  sentinel, which shows on the Inbox "Mine" tab (and not here —
+  the kanban doesn't poll per-task sentinel state, UAT N7).
   Priority renders as a colored dot + label
   (`● high` rose, `● medium` amber, `● low` muted). Project is derived
   from the task_path (`projects/<project>/tasks/…`) in
@@ -72,7 +72,7 @@ defmodule GlorboWeb.Components.TaskCard do
         <span
           :if={@task.requires_approval == :director and @task.status not in ["denied", "approved"]}
           class="gl-task-card__approval-tag"
-          title="Approval-gated: director approval required before the agent's side-effect lands. Awaiting-approval state appears in /approvals when the agent writes a sentinel."
+          title="Approval-gated: director approval required before the agent's side-effect lands. Awaiting-approval state appears on the Inbox Mine tab when the agent writes a sentinel."
         >
           ⚠ gated
         </span>

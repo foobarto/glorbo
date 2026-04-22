@@ -18,7 +18,10 @@ defmodule GlorboWeb.CompanyLiveTest do
     # CompanyTabs removed — sidebar owns navigation now.
     # Kanban is reached via the PROJECTS rail (per-project scope) instead
     # of a top-level nav entry.
-    for label <- ~w(Overview Channels Approvals Providers) do
+    # Approvals was folded into Inbox (backlog #14); nav no longer
+    # has a separate entry. The pending-approvals badge moved to
+    # the Inbox item.
+    for label <- ~w(Overview Channels Inbox Providers) do
       assert html =~ ">#{label}<"
     end
 
