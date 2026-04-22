@@ -310,10 +310,18 @@ This GEP is **Draft**. Landed in the scaffolding commit:
 - CEO template gains `proposals:write:*` and proposal-routing guidance
 - `/proposals` listed in CEO runtime mount summary
 
-**Deferred to runtime-wiring follow-up:**
+**Landed in runtime-wiring wave 1:**
 
-- Router classification + audit events for `proposals/*.md` writes
-  (`proposal.requested` / `.approved` / `.denied` / `.superseded`)
+- `Filesystem.Watcher` classifies `proposals/*.md` as `:proposals`,
+  reindexes on write, and broadcasts on `company:<co>:proposals`
+  PubSub topic so downstream subscribers (InboxLive, etc.) can
+  subscribe without scanning disk.
+
+**Deferred to runtime-wiring follow-up waves:**
+
+- Audit events for `proposals/*.md` writes (`proposal.requested` /
+  `.approved` / `.denied` / `.superseded`) — emit from a GenServer
+  that subscribes to the `proposals` topic.
 - Router-level status-flip enforcement (see Failure Modes row above)
 - InboxLive proposal card rendering + approve/deny actions
 - Reindex `proposals` derived table

@@ -344,6 +344,33 @@ defmodule Glorbo.Filesystem.WatcherTest do
       refute_receive {:file_event, _, _}, 400
     end
 
+    test "W6 (GEP-28): proposals file event broadcasts on company:<co>:proposals" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:proposals")
+
+      File.mkdir_p!(Path.join(dir, "proposals"))
+      proposal_file = Path.join([dir, "proposals", "hire-writer-2026-04-22.md"])
+      write!(proposal_file, "---\nkind: proposal/v1\nstatus: pending-approval\n---\n")
+
+      assert_receive {:file_event, rel, _events}, 2_000
+      assert String.starts_with?(rel, "proposals/")
+      assert String.ends_with?(rel, ".md")
+    end
+
+    test "W6b (GEP-28): nested proposals/<dir>/*.md does NOT broadcast on proposals topic" do
+      {_pid, co, dir, _base} = start_watcher()
+      :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:proposals")
+
+      File.mkdir_p!(Path.join([dir, "proposals", "archive"]))
+      nested = Path.join([dir, "proposals", "archive", "old.md"])
+      write!(nested, "# archived\n")
+
+      # FileSpec.ProposalMd only matches /proposals/<id>.md direct children
+      # (regex `/proposals/[^/]+\.md\z`). Nested paths must not masquerade as
+      # proposal traffic.
+      refute_receive {:file_event, _, _}, 400
+    end
+
     test "W5: channels file event broadcasts on company:<co>:channels" do
       {_pid, co, dir, _base} = start_watcher()
       :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels")

@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-28 runtime wave 1: Watcher classifies proposals/*.md
+
+- **`Glorbo.Filesystem.Watcher`** — classifies `proposals/*.md` writes
+  as `:proposals`, reindexes them (via the existing `reindex_fun`),
+  and broadcasts `{:file_event, rel, events}` on a new
+  `company:<co>:proposals` PubSub topic. InboxLive and other
+  downstream subscribers can now observe proposal activity without
+  scanning the audit log. Pairs with GEP-28's spec scaffolding from
+  the prior commit.
+- 1 new regression test (`W6`) under
+  `test/glorbo/filesystem/watcher_test.exs`.
+
+1438 tests green; `mix credo --strict` clean.
+
 ### Added — GEP-28 scaffolding: agent-created proposals (spec + permissions)
 
 **Scope of this commit: spec, permissions, docs, CEO template.** Runtime

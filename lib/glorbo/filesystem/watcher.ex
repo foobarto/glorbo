@@ -271,8 +271,22 @@ defmodule Glorbo.Filesystem.Watcher do
       String.starts_with?(rel, "projects/") ->
         :projects
 
+      # GEP-28: `proposals/<id>.md` — direct children only, matching
+      # `FileSpec.ProposalMd`'s `/proposals/[^/]+\\.md\\z` path spec. Nested
+      # paths (e.g. `proposals/archive/foo.md`) stay on `:other` so they
+      # don't masquerade as proposals in PubSub.
+      proposals_direct_child?(rel) ->
+        :proposals
+
       true ->
         :other
+    end
+  end
+
+  defp proposals_direct_child?(rel) do
+    case Path.split(rel) do
+      ["proposals", file] -> String.ends_with?(file, ".md")
+      _ -> false
     end
   end
 
@@ -295,6 +309,9 @@ defmodule Glorbo.Filesystem.Watcher do
     do: Logger.debug("[watcher/#{company}] wake-request event #{rel} (Phase 4 target)")
 
   defp inline_dispatch(:projects, company, path, _rel, state),
+    do: state.reindex_fun.(company, path)
+
+  defp inline_dispatch(:proposals, company, path, _rel, state),
     do: state.reindex_fun.(company, path)
 
   defp inline_dispatch(:ignore, _company, _path, _rel, _state), do: :ok
@@ -327,6 +344,7 @@ defmodule Glorbo.Filesystem.Watcher do
       String.starts_with?(rel, "agents/") -> agents_topic_for(rel)
       String.starts_with?(rel, "projects/") -> "projects"
       String.starts_with?(rel, "channels/") -> channels_topic_for(rel)
+      proposals_direct_child?(rel) -> "proposals"
       true -> nil
     end
   end
