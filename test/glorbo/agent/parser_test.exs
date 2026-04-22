@@ -162,6 +162,21 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:invalid_permission, "unknown:write:foo"}} = Parser.parse_file(path)
     end
 
+    test "P6b: traversal-like permission scope is rejected via ACLMapper", ctx do
+      content = """
+      ---
+      role: x
+      provider: claude-code
+      model: claude-opus-4-6
+      permissions:
+        - projects:write:../other-company
+      ---
+      """
+
+      path = write_agent(ctx, "engineer", content)
+      assert {:error, {:invalid_permission, "projects:write:../other-company"}} = Parser.parse_file(path)
+    end
+
     test "P7: missing permissions field defaults to []", ctx do
       content = """
       ---

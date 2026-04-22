@@ -25,24 +25,39 @@ defmodule Glorbo.Security.ACLMapper do
 
   Returns `{:ok, {resource, action, scope}}` on success,
   `{:error, :malformed}` if the string doesn't split into 3 non-empty parts,
-  or `{:error, :unknown_resource}` if the resource isn't in the whitelist.
+  `{:error, :unknown_resource}` if the resource isn't in the whitelist,
+  or `{:error, :invalid_scope}` if the scope is neither `"*"` nor a valid slug.
   """
   @spec parse_permission(String.t()) ::
-          {:ok, permission()} | {:error, :unknown_resource | :malformed}
+          {:ok, permission()} | {:error, :invalid_scope | :unknown_resource | :malformed}
   def parse_permission(string) when is_binary(string) do
     case String.split(string, ":", parts: 3) do
       [resource, action, scope]
       when resource != "" and action != "" and scope != "" ->
-        if resource in @whitelisted_resources do
-          {:ok, {resource, action, scope}}
-        else
-          {:error, :unknown_resource}
+        cond do
+          resource not in @whitelisted_resources ->
+            {:error, :unknown_resource}
+
+          not valid_scope?(scope) ->
+            {:error, :invalid_scope}
+
+          true ->
+            {:ok, {resource, action, scope}}
         end
 
       _ ->
         {:error, :malformed}
     end
   end
+
+  # Threatmodel wave 6: scope flows into `Path.join` inside
+  # `Glorbo.Sandbox.PermissionMapper`, which emits `--bind` /
+  # `--ro-bind` arguments for bwrap. A scope of `..` or
+  # `../other-co` would escape the agent's sandbox mount view —
+  # the kernel-layer enforcement leaks. Restrict to either `"*"`
+  # or a canonical slug. Nothing else should ever appear here.
+  defp valid_scope?("*"), do: true
+  defp valid_scope?(scope), do: GlorboWeb.Slug.valid?(scope)
 
   @doc """
   Check whether `permissions` grant the requested `action`.

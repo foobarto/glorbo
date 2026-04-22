@@ -22,6 +22,11 @@ defmodule Glorbo.Security.ACLMapperTest do
                ACLMapper.parse_permission("agents:create:*")
     end
 
+    test "returns error for traversal-like scope" do
+      assert {:error, :invalid_scope} = ACLMapper.parse_permission("projects:write:../audit")
+      assert {:error, :invalid_scope} = ACLMapper.parse_permission("chat:read:..")
+    end
+
     test "parses two-part input as malformed" do
       assert {:error, :malformed} = ACLMapper.parse_permission("projects:write")
     end
