@@ -94,6 +94,41 @@ defmodule GlorboWeb.OverviewLiveTest do
       assert html =~ "33%"
       assert html =~ "(1/3)"
     end
+
+    # T9 — malformed goal.slug values in company.md (list/map/nil)
+    # previously crashed the /companies LiveView via
+    # `to_string/1` → `Protocol.UndefinedError`. The render must now
+    # skip those entries silently rather than taking the whole
+    # overview down.
+    test "T9: malformed goal slugs (list/map/nil) are silently dropped, render survives",
+         %{conn: conn, base: base} do
+      File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+      ---
+      slug: acme
+      name: Acme
+      goals:
+        - slug: good-goal
+          name: shippable goal
+        - slug:
+            - one
+            - two
+          name: list slug (should be dropped)
+        - slug: {m: apples}
+          name: map slug (should be dropped)
+        - slug: null
+          name: nil slug (should be dropped)
+      ---
+      """)
+
+      # LV must render without raising even though three of the four
+      # goal entries are malformed.
+      {:ok, _view, html} = live(conn, ~p"/companies")
+
+      assert html =~ "gl-company-card__goals"
+      # Exactly one usable goal → "1 goal" singular, or else
+      # the pluralised rendering. The important bit is no crash.
+      refute html =~ "Protocol.UndefinedError"
+    end
   end
 
   # TODO.md P1 — skip link renders as first focusable element + main

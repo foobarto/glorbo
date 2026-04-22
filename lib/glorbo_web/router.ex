@@ -81,10 +81,16 @@ defmodule GlorboWeb.Router do
   end
 
   # GEP-29 wave (a) — Model Context Protocol server.
-  # Streamable HTTP transport, single endpoint. Not behind :dashboard
-  # on purpose — MCP clients don't carry the dashboard bearer token,
-  # and the Plug applies its own Origin check for DNS-rebind
-  # protection. Localhost-binding of the endpoint is the outer
-  # boundary.
-  forward "/mcp", GlorboWeb.MCP.Plug
+  # Streamable HTTP transport, single endpoint. Wrapped in the
+  # `:dashboard` pipeline (threatmodel T11): if `dashboard_token` is
+  # configured, MCP clients must pass it via `Authorization: Bearer
+  # <token>` or `?token=<token>`. Without a configured token the
+  # pipeline is a no-op and loopback binding + host-user trust is the
+  # outer boundary. The MCP plug keeps its own Origin check for
+  # DNS-rebind protection.
+  scope "/" do
+    pipe_through :dashboard
+
+    forward "/mcp", GlorboWeb.MCP.Plug
+  end
 end

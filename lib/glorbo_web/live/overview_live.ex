@@ -357,9 +357,14 @@ defmodule GlorboWeb.OverviewLive do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
           {:ok, %{"goals" => g}, _} when is_list(g) ->
+            # Threatmodel T9: `goal.slug` comes from attacker-controlled
+            # YAML. A list or map value previously made `to_string/1`
+            # raise `Protocol.UndefinedError` and took down the /companies
+            # overview for everyone. Filter down to real scalars before
+            # coercing; silently drop malformed entries.
             for item <- g,
                 is_map(item),
-                slug = to_string(Map.get(item, "slug", "")),
+                slug = safe_goal_slug(Map.get(item, "slug")),
                 slug != "" do
               %{slug: slug}
             end
@@ -372,6 +377,11 @@ defmodule GlorboWeb.OverviewLive do
         []
     end
   end
+
+  defp safe_goal_slug(v) when is_binary(v), do: v
+  defp safe_goal_slug(v) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_goal_slug(v) when is_integer(v), do: Integer.to_string(v)
+  defp safe_goal_slug(_), do: ""
 
   # Per-goal task counts: {total, done} keyed by goal slug. Walks
   # `projects/*/tasks/*.md` once, bucketing by frontmatter `goal:`.
