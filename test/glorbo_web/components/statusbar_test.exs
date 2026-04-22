@@ -41,6 +41,13 @@ defmodule GlorboWeb.Components.StatusbarTest do
       assert html =~ "paths"
     end
 
+    test "renders the MCP endpoint segment (GEP-30)" do
+      html = render_statusbar()
+      assert html =~ "mcp:"
+      # Endpoint is localhost-relative (:PORT/mcp per GEP-29).
+      assert html =~ ~r|:\d+/mcp|
+    end
+
     test "renders a clock with datetime attr" do
       html = render_statusbar()
       assert html =~ "<time"

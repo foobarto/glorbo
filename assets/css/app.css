@@ -2972,6 +2972,13 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   transition: none;
   user-select: none;
 }
+/* GEP-30: suppress the open/close transition on first mount so users
+   who stored `minimized=0` don't see a 30px→full-height animation
+   before the hook applies their stored state. The hook removes this
+   class synchronously after _applyStored(). */
+.gl-chat-drawer--booting {
+  transition: none;
+}
 .gl-chat-drawer__handle {
   position: absolute;
   top: -3px;
@@ -3019,8 +3026,41 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   display: inline-block;
   transition: transform 120ms ease-out;
 }
-.gl-chat-drawer--minimized .gl-chat-drawer__toggle-glyph {
+/* Minimized glyph is ▴ (pull-up affordance); expanded shows ▾ via flip. */
+.gl-chat-drawer:not(.gl-chat-drawer--minimized) .gl-chat-drawer__toggle-glyph {
   transform: rotate(180deg);
+}
+.gl-chat-drawer__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--glorbo-fg-mute, var(--gl-fg-subtle));
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+  font-size: var(--glorbo-font-xsmall, 10.5px);
+}
+.gl-chat-drawer__hint-label {
+  color: inherit;
+}
+.gl-chat-drawer__kbd {
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+  background: var(--glorbo-bg-3, var(--gl-surface-raised));
+  border: 1px solid var(--glorbo-line-2, var(--gl-border-strong));
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--glorbo-fg, var(--gl-fg-muted));
+  border-radius: 2px;
+}
+/* GEP-30: quake console header segments — co:#general */
+.gl-chat-drawer__co {
+  color: var(--glorbo-cyan, var(--gl-cyan));
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+}
+.gl-chat-drawer__channel {
+  color: var(--glorbo-amber, var(--gl-amber));
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+}
+.gl-chat-drawer__sep {
+  color: var(--glorbo-fg-mute, var(--gl-fg-subtle));
 }
 .gl-chat-drawer__body {
   flex: 1 1 auto;
@@ -3077,25 +3117,47 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-chat-drawer__body-text p:last-child { margin-bottom: 0; }
 .gl-chat-drawer__compose {
   display: flex;
+  align-items: baseline;
   gap: 6px;
   padding: 6px var(--gl-space-md);
   border-top: 1px solid var(--gl-border);
-  background: var(--gl-surface);
+  background: var(--glorbo-bg, var(--gl-surface));
   flex: 0 0 auto;
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+}
+/* GEP-30: IRC-style prompt preceding the input.
+   director@<co>:#general$  — each segment colour-coded. */
+.gl-chat-drawer__prompt {
+  white-space: nowrap;
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+  font-size: 12px;
+  flex: 0 0 auto;
+  user-select: none;
+}
+.gl-chat-drawer__prompt-user {
+  color: var(--glorbo-green, var(--gl-accent));
+}
+.gl-chat-drawer__prompt-co {
+  color: var(--glorbo-cyan, var(--gl-cyan));
+}
+.gl-chat-drawer__prompt-channel {
+  color: var(--glorbo-amber, var(--gl-amber));
+}
+.gl-chat-drawer__prompt-dim {
+  color: var(--glorbo-fg-mute, var(--gl-fg-subtle));
 }
 .gl-chat-drawer__input {
   flex: 1 1 auto;
-  background: var(--gl-surface-raised);
-  border: 1px solid var(--gl-border);
-  border-radius: 4px;
-  padding: 4px 8px;
-  color: var(--gl-fg);
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: var(--glorbo-fg, var(--gl-fg));
   font-family: inherit;
   font-size: 12px;
+  caret-color: var(--glorbo-green, var(--gl-accent));
 }
 .gl-chat-drawer__input:focus-visible {
-  outline: 1px solid var(--gl-accent);
-  outline-offset: -1px;
+  outline: none;
 }
 
 /* Leave room at the bottom of .gl-main so the drawer doesn't cover content. */

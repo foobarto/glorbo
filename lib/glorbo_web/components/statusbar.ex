@@ -52,6 +52,10 @@ defmodule GlorboWeb.Components.Statusbar do
         <span :if={@s.watch_mode == :polling} class="gl-statusbar__warn">polling:</span>
         <span :if={@s.watch_mode != :polling}>inotify:</span> watching {@s.inotify_paths} paths
       </span>
+      <span class="gl-statusbar__sep">│</span>
+      <span>
+        mcp: <span class="gl-statusbar__mcp">{@s.mcp_endpoint}</span>
+      </span>
       <span class="gl-statusbar__spacer"></span>
       <span>{@s.director}</span>
       <span class="gl-statusbar__sep">│</span>
@@ -78,10 +82,27 @@ defmodule GlorboWeb.Components.Statusbar do
       sqlite_human: sqlite_size_human(base),
       inotify_paths: inotify_path_count(),
       watch_mode: watch_mode(),
+      mcp_endpoint: mcp_endpoint(),
       director: director_identity(),
       now_str: now_str(),
       now_iso: now_iso()
     }
+  end
+
+  # MCP Streamable-HTTP endpoint is always localhost per GEP-29. Port
+  # tracks the Phoenix endpoint config (defaults to 4000, overridable
+  # via PORT at runtime for dev and releases).
+  defp mcp_endpoint do
+    port =
+      case Application.get_env(:glorbo, GlorboWeb.Endpoint, [])[:http] do
+        [{:port, p} | _] when is_integer(p) -> p
+        opts when is_list(opts) -> Keyword.get(opts, :port, 4000)
+        _ -> 4000
+      end
+
+    ":#{port}/mcp"
+  rescue
+    _ -> ":4000/mcp"
   end
 
   defp daemon_status(base) do

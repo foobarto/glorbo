@@ -1,6 +1,10 @@
 defmodule GlorboWeb.Components.ChatDrawer do
   @moduledoc """
-  Persistent chat drawer docked to the bottom of the viewport.
+  Quake-console chat drawer docked to the bottom of the viewport
+  (GEP-30). Minimized by default on every page — a single-row summary
+  bar (company:#general · unread count). Toggle with `Ctrl+`` (or
+  whatever keybind the user stored under `glorbo.chatdrawer.toggle_key`
+  in localStorage) to slide up the full transcript + composer.
 
   Always renders when a company is focused (has `current_company`).
   Tails `#general` for that company — swap-to-another-channel is a
@@ -9,11 +13,14 @@ defmodule GlorboWeb.Components.ChatDrawer do
 
   ## Features
 
+  - Minimized by default (thin header bar). The `ChatDrawer` hook
+    slides it up when the user presses the configured toggle key.
   - Drag the 4px top handle to resize (persisted to
     `localStorage['glorbo.chatdrawer.height']`).
-  - Click the header to minimize (collapses to just the header bar,
-    persisted to `localStorage['glorbo.chatdrawer.minimized']`).
-  - Compose form posts to `GlorboWeb.Actions.post_message/4`.
+  - Click the header or press the keybind to toggle minimize
+    (persisted to `localStorage['glorbo.chatdrawer.minimized']`).
+  - Compose renders as an IRC-style prompt
+    `director@<co>:#general$ <input>`.
   - Realtime updates via PubSub on `company:<co>:channels:general`.
 
   ## Assigns (driven by the parent LiveView)
@@ -36,7 +43,7 @@ defmodule GlorboWeb.Components.ChatDrawer do
     ~H"""
     <section
       id="gl-chat-drawer"
-      class="gl-chat-drawer"
+      class="gl-chat-drawer gl-chat-drawer--minimized"
       phx-hook="ChatDrawer"
       data-no-company={is_nil(@current_company) && "1"}
     >
@@ -44,23 +51,26 @@ defmodule GlorboWeb.Components.ChatDrawer do
       </div>
       <header class="gl-chat-drawer__header">
         <div class="gl-chat-drawer__title">
-          <span class="gl-chat-drawer__glyph" aria-hidden="true">◫</span>
+          <span class="gl-chat-drawer__glyph" aria-hidden="true">^</span>
           <%= if @current_company do %>
-            <strong>#general</strong>
-            <span class="gl-muted">· {@current_company}</span>
+            <span class="gl-chat-drawer__co">{@current_company}</span><span class="gl-chat-drawer__sep">:</span><span class="gl-chat-drawer__channel">#general</span>
           <% else %>
             <strong>chat</strong>
             <span class="gl-muted">· pick a company to chat</span>
           <% end %>
         </div>
-        <button
-          type="button"
-          class="gl-chat-drawer__toggle"
-          id="gl-chat-drawer-toggle"
-          aria-label="Minimize chat drawer"
-        >
-          <span class="gl-chat-drawer__toggle-glyph" aria-hidden="true">▾</span>
-        </button>
+        <div class="gl-chat-drawer__hint">
+          <kbd class="gl-chat-drawer__kbd">Ctrl+`</kbd>
+          <span class="gl-chat-drawer__hint-label">toggle</span>
+          <button
+            type="button"
+            class="gl-chat-drawer__toggle"
+            id="gl-chat-drawer-toggle"
+            aria-label="Toggle chat drawer"
+          >
+            <span class="gl-chat-drawer__toggle-glyph" aria-hidden="true">▴</span>
+          </button>
+        </div>
       </header>
       <div class="gl-chat-drawer__body">
         <div :if={@current_company == nil} class="gl-chat-drawer__empty">
@@ -103,13 +113,16 @@ defmodule GlorboWeb.Components.ChatDrawer do
           id="gl-chat-drawer-form"
           class="gl-chat-drawer__compose"
         >
+          <span class="gl-chat-drawer__prompt" aria-hidden="true">
+            <span class="gl-chat-drawer__prompt-user">director</span><span class="gl-chat-drawer__prompt-dim">@</span><span class="gl-chat-drawer__prompt-co">{@current_company}</span><span class="gl-chat-drawer__prompt-dim">:</span><span class="gl-chat-drawer__prompt-channel">#general</span><span class="gl-chat-drawer__prompt-dim">$</span>
+          </span>
           <input
             type="text"
             name="body"
             id="gl-chat-drawer-input"
             maxlength="10240"
             class="gl-chat-drawer__input"
-            placeholder="Message #general as Director…"
+            placeholder=""
             autocomplete="off"
           />
           <button type="submit" class="gl-btn gl-btn--sm gl-btn--primary">send ↵</button>

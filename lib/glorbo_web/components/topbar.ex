@@ -35,13 +35,14 @@ defmodule GlorboWeb.Components.Topbar do
       |> assign(:companies, list_company_slugs())
       |> assign(:app_version, app_version())
       |> assign(:bwrap_version, bwrap_version())
+      |> assign(:otp_version, otp_version())
       |> assign(:kernel_version, kernel_version())
       |> assign(:emergency_stopped?, emergency_stopped?(assigns[:current_company]))
 
     ~H"""
     <header class="gl-topbar" role="banner">
       <.link navigate={~p"/companies"} class="gl-topbar__brand" aria-label="Go to companies list">
-        <span class="gl-topbar__brand-glyph" aria-hidden="true">▚</span> GLORBO
+        <span class="gl-topbar__brand-glyph" aria-hidden="true">▟</span> GLORBO
       </.link>
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
 
@@ -71,6 +72,7 @@ defmodule GlorboWeb.Components.Topbar do
       <span class="gl-topbar__version">
         v{@app_version}
         <span :if={@bwrap_version != ""}>· bwrap {@bwrap_version}</span>
+        <span :if={@otp_version != ""}>· otp-{@otp_version}</span>
         <span :if={@kernel_version != ""}>· kernel {@kernel_version}</span>
       </span>
 
@@ -191,6 +193,12 @@ defmodule GlorboWeb.Components.Topbar do
       {output, 0} -> String.trim(output)
       _ -> ""
     end
+  rescue
+    _ -> ""
+  end
+
+  defp otp_version do
+    :erlang.system_info(:otp_release) |> to_string()
   rescue
     _ -> ""
   end

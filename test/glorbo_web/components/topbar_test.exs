@@ -69,5 +69,10 @@ defmodule GlorboWeb.Components.TopbarTest do
       # vsn may be "dev" in test or a real version; presence of `v` prefix is enough
       assert html =~ ~r/v[\w\.-]+/
     end
+
+    test "version strip includes the OTP release (GEP-30)" do
+      html = render_topbar([])
+      assert html =~ "otp-"
+    end
   end
 end

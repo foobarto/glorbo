@@ -532,30 +532,101 @@ const AutoDismissFlash = {
   },
 }
 
-// Bottom-docked chat drawer. Resizable via the top handle; minimize
-// via click on the header. Both states persist to localStorage.
+// Bottom-docked quake-console chat drawer (GEP-30). Minimized by
+// default on every page; toggle with Ctrl+` (rebindable via
+// localStorage['glorbo.chatdrawer.toggle_key']). Resizable via the
+// top handle. All states persist to localStorage.
 const CHAT_DRAWER_H_KEY = "glorbo.chatdrawer.height"
 const CHAT_DRAWER_MIN_KEY = "glorbo.chatdrawer.minimized"
+const CHAT_DRAWER_TOGGLE_KEY = "glorbo.chatdrawer.toggle_key"
+// Default toggle: Ctrl + backtick. Matches VS Code terminal.
+// Match on `code` (physical key) so AZERTY / Dvorak / IME layouts
+// still hit the VS-Code-style affordance. `key` is kept as a fallback
+// so user-stored binds (which may use logical key) still work.
+const CHAT_DRAWER_DEFAULT_TOGGLE = {ctrlKey: true, metaKey: false, code: "Backquote"}
 const ChatDrawer = {
   mounted() {
+    // Drawer renders with `--minimized` as the server-side default so
+    // default users don't see an expanded-to-minimized collapse. For
+    // users who stored an expanded state, _applyStored would animate
+    // 30px → full-height; suppress that one-shot transition by marking
+    // the drawer "booting" until the stored state is applied.
+    this.el.classList.add("gl-chat-drawer--booting")
     this._applyStored()
+    // Force reflow so the class removal triggers a fresh transition frame.
+    void this.el.offsetHeight
+    this.el.classList.remove("gl-chat-drawer--booting")
     this._bindHandle()
     this._bindHeader()
+    this._bindKeybind()
   },
   updated() {
     // Re-apply on LV re-render so the persisted state survives.
     this._applyStored()
+  },
+  destroyed() {
+    if (this._keydownHandler) {
+      window.removeEventListener("keydown", this._keydownHandler)
+    }
   },
   _applyStored() {
     const h = parseInt(localStorage.getItem(CHAT_DRAWER_H_KEY) || "", 10)
     if (!isNaN(h) && h >= 80 && h <= window.innerHeight * 0.7) {
       document.documentElement.style.setProperty("--gl-chat-drawer-h", h + "px")
     }
-    if (localStorage.getItem(CHAT_DRAWER_MIN_KEY) === "1") {
-      this.el.classList.add("gl-chat-drawer--minimized")
-    } else {
+    // Default to minimized. Only remove the class when the user has
+    // explicitly expanded (stored "0"); missing-or-"1" keeps it minimized.
+    if (localStorage.getItem(CHAT_DRAWER_MIN_KEY) === "0") {
       this.el.classList.remove("gl-chat-drawer--minimized")
+    } else {
+      this.el.classList.add("gl-chat-drawer--minimized")
     }
+  },
+  _readToggle() {
+    const raw = localStorage.getItem(CHAT_DRAWER_TOGGLE_KEY)
+    if (!raw) return CHAT_DRAWER_DEFAULT_TOGGLE
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && (typeof parsed.code === "string" || typeof parsed.key === "string")) {
+        return parsed
+      }
+    } catch (_) { /* fall through to default */ }
+    return CHAT_DRAWER_DEFAULT_TOGGLE
+  },
+  _bindKeybind() {
+    this._keydownHandler = (e) => {
+      // Ignore auto-repeat so holding the key doesn't thrash the drawer.
+      if (e.repeat) return
+      const bind = this._readToggle()
+      // Match modifier precisely (user may store ctrl or meta).
+      if (!!bind.ctrlKey !== e.ctrlKey) return
+      if (!!bind.metaKey !== e.metaKey) return
+      // Prefer `code` (physical key, layout-independent) when the bind
+      // defines it; fall back to `key` (logical) for legacy binds.
+      if (bind.code) {
+        if (bind.code !== e.code) return
+      } else if (bind.key !== e.key) return
+      // Don't hijack the bind while the user is typing into another
+      // textarea/input — the drawer input is fine, it's the toggle we
+      // want to remain global.
+      const t = e.target
+      if (t && t.id !== "gl-chat-drawer-input" &&
+          (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+        return
+      }
+      e.preventDefault()
+      this._toggle()
+      // When opening, focus the input so the user can type immediately.
+      if (!this.el.classList.contains("gl-chat-drawer--minimized")) {
+        const input = this.el.querySelector("#gl-chat-drawer-input")
+        if (input) input.focus()
+      }
+    }
+    window.addEventListener("keydown", this._keydownHandler)
+  },
+  _toggle() {
+    const min = this.el.classList.toggle("gl-chat-drawer--minimized")
+    localStorage.setItem(CHAT_DRAWER_MIN_KEY, min ? "1" : "0")
   },
   _bindHandle() {
     const handle = this.el.querySelector(".gl-chat-drawer__handle")
@@ -593,21 +664,16 @@ const ChatDrawer = {
     const header = this.el.querySelector(".gl-chat-drawer__header")
     if (!header) return
 
-    const toggle = () => {
-      const min = this.el.classList.toggle("gl-chat-drawer--minimized")
-      localStorage.setItem(CHAT_DRAWER_MIN_KEY, min ? "1" : "0")
-    }
-
     // Whole header toggles; compose input below isn't swallowed.
     header.addEventListener("click", (e) => {
       // Let the dedicated toggle button through (it dispatches its own click).
       if (e.target.closest(".gl-chat-drawer__toggle")) return
-      toggle()
+      this._toggle()
     })
     const btn = this.el.querySelector(".gl-chat-drawer__toggle")
     if (btn) btn.addEventListener("click", (e) => {
       e.stopPropagation()
-      toggle()
+      this._toggle()
     })
   },
 }
