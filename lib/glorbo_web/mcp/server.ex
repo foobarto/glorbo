@@ -44,6 +44,7 @@ defmodule GlorboWeb.MCP.Server do
   isError path.
   """
 
+  alias GlorboWeb.MCP.Resources
   alias GlorboWeb.MCP.Tools
 
   @protocol_version "2025-06-18"
@@ -118,6 +119,9 @@ defmodule GlorboWeb.MCP.Server do
       "ping" -> {:reply, %{}}
       "tools/list" -> handle_tools_list()
       "tools/call" -> handle_tools_call(params, context)
+      "resources/list" -> handle_resources_list(context)
+      "resources/templates/list" -> handle_resources_templates_list()
+      "resources/read" -> handle_resources_read(params, context)
       _ -> {:error, -32_601, "Method not found", %{method: method}}
     end
   end
@@ -174,7 +178,8 @@ defmodule GlorboWeb.MCP.Server do
      %{
        "protocolVersion" => negotiated,
        "capabilities" => %{
-         "tools" => %{"listChanged" => false}
+         "tools" => %{"listChanged" => false},
+         "resources" => %{"listChanged" => false, "subscribe" => false}
        },
        "serverInfo" => %{
          "name" => @server_name,
@@ -206,6 +211,28 @@ defmodule GlorboWeb.MCP.Server do
 
   defp handle_tools_call(_bad, _context),
     do: {:error, -32_602, "Invalid params", %{expected: "name: string"}}
+
+  # ---------------------------------------------------------------------------
+  # Resources (GEP-29 wave d.1) — list/read only; subscribe deferred
+  # ---------------------------------------------------------------------------
+
+  defp handle_resources_list(context) do
+    {:reply, %{"resources" => Resources.list(context)}}
+  end
+
+  defp handle_resources_templates_list do
+    {:reply, %{"resourceTemplates" => Resources.templates()}}
+  end
+
+  defp handle_resources_read(%{"uri" => uri}, context) when is_binary(uri) do
+    case Resources.read(uri, context) do
+      {:ok, result} -> {:reply, result}
+      {:error, code, message, data} -> {:error, code, message, data}
+    end
+  end
+
+  defp handle_resources_read(_bad, _context),
+    do: {:error, -32_602, "Invalid params", %{expected: "uri: string"}}
 
   # ---------------------------------------------------------------------------
   # Invocation

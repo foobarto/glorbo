@@ -331,7 +331,10 @@ defmodule GlorboWeb.OverviewLive do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
           {:ok, %{"goals" => g}, _} when is_list(g) ->
-            for item <- g, is_map(item), slug = to_string(Map.get(item, "slug", "")), slug != "" do
+            for item <- g,
+                is_map(item),
+                slug = to_string(Map.get(item, "slug", "")),
+                slug != "" do
               %{slug: slug}
             end
 
@@ -361,6 +364,7 @@ defmodule GlorboWeb.OverviewLive do
           {:ok, %{"goal" => goal_slug} = meta, _} when is_binary(goal_slug) and goal_slug != "" ->
             status = to_string(Map.get(meta, "status", ""))
             delta = if status == "done", do: {1, 1}, else: {1, 0}
+
             Map.update(acc, goal_slug, delta, fn {t, d} ->
               {t0, d0} = delta
               {t + t0, d + d0}

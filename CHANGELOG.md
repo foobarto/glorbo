@@ -84,6 +84,59 @@ prompt preview to Inbox Mine tab" as a separate follow-up.
 
 1559 tests green; mix credo --strict clean.
 
+### Added — GEP-29 wave (d.1): MCP resources (list + read snapshots)
+
+First half of the MCP resources surface per 2025-06-18 spec. The
+server now exposes a read-only resource catalog alongside its tool
+catalog, letting MCP clients enumerate and read Glorbo's main data
+surfaces by URI rather than by named tool call.
+
+Four URI families, all under the custom `glorbo://` scheme:
+
+- `glorbo://audit/<company>` — bounded audit snapshot (~100 rows)
+- `glorbo://chat/<company>/<channel>` — recent channel messages
+- `glorbo://approvals/<company>` — tasks awaiting Director approval
+- `glorbo://proposals/<company>` — GEP-28 proposals for a company
+
+New JSON-RPC methods wired into `GlorboWeb.MCP.Server.dispatch/3`:
+
+- `resources/list` — enumerates concrete URIs by walking the company
+  tree; slug-gates every segment (company dir + channel filename)
+  so only spec-legal URIs are advertised.
+- `resources/templates/list` — returns the 4 URI templates for
+  clients that prefer construction over enumeration.
+- `resources/read` — parses URI, verifies the company directory
+  exists (missing → `-32002`), then dispatches to the matching read
+  tool (`QueryAudit`, `GetChannel`, `ListPendingApprovals`,
+  `ListProposals`). Returns MCP-spec `{contents: [{uri, mimeType,
+  text}]}` with JSON-encoded payloads.
+
+Subscriptions (`resources/subscribe` + SSE push) are deferred to
+wave (d.2) — snapshots land first so clients can exercise the URI
+model before we wire streaming state.
+
+Initialize response now advertises `"resources": {"listChanged":
+false, "subscribe": false}` alongside the existing tools capability.
+
+Security posture matches the tool path: every URI segment passes
+through `GlorboWeb.Slug.valid?/1`, trailing slashes and extra path
+segments are rejected at parse time, and unknown-company reads
+return `-32002 Resource not found` rather than empty JSON.
+
+- `lib/glorbo_web/mcp/resources.ex` — new module (catalog + reader)
+- `lib/glorbo_web/mcp/server.ex` — dispatch wiring + capability
+- `test/glorbo_web/mcp/resources_test.exs` — 18 tests (list
+  enumeration, templates shape, read happy paths, unknown company,
+  unknown channel, traversal attempts, malformed URIs)
+
+Codex review caught and we fixed: unknown-company reads collapsing
+to empty JSON (→ now `-32002`), catalog entries trusting raw
+filesystem names (→ now slug-gated), and trailing-slash aliasing
+on single-segment URIs (→ now rejected for URI identity stability
+ahead of wave (d.2)).
+
+1574 tests green; mix credo --strict clean.
+
 ### Changed — GEP-29 wave (e): MCP-Protocol-Version header validation
 
 Spec-compliance fix for the Streamable HTTP transport. Previously

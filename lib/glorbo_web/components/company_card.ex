@@ -50,7 +50,9 @@ defmodule GlorboWeb.Components.CompanyCard do
           <span
             :if={@company.goals.total_tasks > 0}
             class="gl-muted"
-          >({@company.goals.done_tasks}/{@company.goals.total_tasks})</span>
+          >
+            ({@company.goals.done_tasks}/{@company.goals.total_tasks})
+          </span>
         </div>
         <div class="gl-company-card__goals-bar">
           <div
