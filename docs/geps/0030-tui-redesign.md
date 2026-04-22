@@ -2,7 +2,7 @@
 gep: 0030
 title: Director Dashboard TUI Redesign (V1)
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-22
 history:
@@ -17,6 +17,19 @@ history:
     note: |
       Accepted after director sign-off. Open questions O1/O2/O3 folded
       into D12/D13/D14. Phase 1 (tokens merge) begins next.
+  - date: 2026-04-22
+    status: Implemented
+    note: |
+      Phases 1–8 shipped on main. Tokens merged; chrome restyled
+      (quake-console drawer with Ctrl+`, IRC composer, `▟` brand,
+      otp-release + MCP endpoint in the version strip); overview +
+      channels + audit + kanban + goals/skills/providers sharpened
+      (hairline panels, radius 0, dashed row separators, modals
+      flattened); task-comments/v1 FileSpec shipped as an atomic
+      cut (sibling `.comments.md` thread via `Glorbo.TaskComments`,
+      all writers + readers in Actions / Agent.Server / KanbanLive /
+      TaskLive routed to the new path). Existing `?` cheatsheet +
+      ⌘K palette reused.
 requires: [2, 6]
 see-also: [11, 15, 20, 25]
 ---

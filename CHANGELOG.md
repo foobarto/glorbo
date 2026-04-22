@@ -10,6 +10,42 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — Director Dashboard TUI Redesign (GEP-30)
+
+The Director-facing LiveView dashboard now reads as a true TUI
+terminal panel rather than a hybrid of soft-UI and phosphor
+effects. Restyle, not a rewrite — same routes, same state, same
+LiveView modules. Shipped in eight phases on `main`:
+
+- **Tokens** — the TUI handoff palette is merged into `app.css`
+  under `--glorbo-*` alongside the existing OKLCH `--gl-*` tokens.
+- **Chrome** — the chat drawer becomes a Quake-console (minimized
+  by default on every page, toggle with **Ctrl+`** matched on
+  `e.code === "Backquote"` so non-US layouts still hit it); the
+  composer renders an IRC-style prompt
+  `director@<co>:#general$` with colour-coded segments. Topbar
+  gains `otp-<release>` in the version strip + the `▟` brand
+  glyph; statusbar gains the `mcp: :4000/mcp` segment (GEP-29).
+- **Overview, channels, audit, kanban, goals, skills, providers,
+  modal overlays** — stat cards, panels, agent-roster table,
+  banner, input, modal, and task-drawer surfaces drop their
+  2–8px radii and drop shadows to read as hairline-bordered
+  terminal containers. Audit rows + agent-roster rows gain
+  dashed separators matching the prototype.
+- **ChannelLive composer** — full
+  `director@<co>:#<channel>$` IRC prompt + a keybind hint row
+  (`@ · / · ⏎ · ⇧⏎`).
+- **task-comments/v1 FileSpec** — atomic cut per GEP-30 D8:
+  task comments now live in a sibling `<task-id>.comments.md`
+  file via the new `Glorbo.TaskComments` reader/writer. The
+  task file stays diff-clean; Kanban drawer + TaskLive render
+  the thread from the sibling. `Actions.post_task_comment/4`,
+  `Agent.Server.write_task_comment_reply/3`, KanbanLive, and
+  TaskLive all routed to the new path.
+
+Existing keyboard overlays (`?` cheatsheet, `⌘K` command
+palette) were already wired; this pass sharpened their chrome.
+
 ### Added — Goals-progress row on OverviewLive company cards (backlog #13)
 
 Each company card on `/companies` now surfaces an aggregate
