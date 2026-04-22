@@ -173,6 +173,12 @@ jobs:
   # transparent.
   build-macos:
     name: ${{ matrix.arch }} macOS build
+    # Disabled 2026-04-22: macOS runners are queuing indefinitely on
+    # GitHub-hosted capacity. Re-enable by removing the `if: false`
+    # below (and restoring `build-macos` to the release job's
+    # `needs:` list). Release binaries revert to Linux-only until
+    # then; macOS users install via Homebrew or build locally.
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -261,7 +267,9 @@ jobs:
   release:
     name: Publish signed release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-and-test, build-macos]
+    # build-macos is disabled (see job above); restore it here when
+    # re-enabling macOS CI.
+    needs: [build-and-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write   # create the GitHub Release
@@ -278,8 +286,10 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: artifacts/
         run: |
+          # macOS darwin artifacts are excluded while build-macos is
+          # disabled. Restore glorbo-darwin-x86_64 / glorbo-darwin-arm64
+          # below when re-enabling the macOS job.
           sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 \
-                    glorbo-darwin-x86_64 glorbo-darwin-arm64 \
                     > SHA256SUMS
           cat SHA256SUMS
 
@@ -295,10 +305,9 @@ jobs:
       - name: Sign each binary (keyless, Sigstore OIDC)
         working-directory: artifacts/
         run: |
+          # macOS signing lines removed while build-macos is disabled.
           cosign sign-blob --yes --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64
           cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
-          cosign sign-blob --yes --bundle glorbo-darwin-x86_64.sig glorbo-darwin-x86_64
-          cosign sign-blob --yes --bundle glorbo-darwin-arm64.sig glorbo-darwin-arm64
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -308,10 +317,6 @@ jobs:
             artifacts/glorbo-linux-x86_64.sig
             artifacts/glorbo-linux-aarch64
             artifacts/glorbo-linux-aarch64.sig
-            artifacts/glorbo-darwin-x86_64
-            artifacts/glorbo-darwin-x86_64.sig
-            artifacts/glorbo-darwin-arm64
-            artifacts/glorbo-darwin-arm64.sig
             artifacts/SHA256SUMS
             artifacts/SHA256SUMS.sig
           generate_release_notes: true
