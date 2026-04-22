@@ -1339,7 +1339,8 @@ button { font-family: inherit; font-size: inherit; }
 .gl-approval-card {
   background: var(--gl-surface);
   border: 1px solid var(--gl-border);
-  border-radius: 6px;
+  /* GEP-30: sharp TUI cards across the company/agent/task/approval family. */
+  border-radius: 0;
   padding: var(--gl-space-md);
   color: inherit;
   display: block;
@@ -1370,7 +1371,7 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-approvals__row {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0;
   outline: 2px solid transparent;
   outline-offset: 2px;
 }
@@ -1380,7 +1381,8 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-approvals__diff {
   background: var(--gl-surface);
-  border-radius: 6px;
+  border: 1px solid var(--gl-border);
+  border-radius: 0;
   padding: var(--gl-space-md);
   min-height: 200px;
   position: sticky;
@@ -1395,7 +1397,8 @@ button { font-family: inherit; font-size: inherit; }
   font-size: var(--gl-font-label);
   white-space: pre-wrap;
   word-break: break-word;
-  border-radius: 4px;
+  border: 1px solid var(--gl-border);
+  border-radius: 0;
   max-height: 60vh;
   overflow: auto;
 }
@@ -1430,7 +1433,7 @@ button { font-family: inherit; font-size: inherit; }
   padding: var(--gl-space-sm) var(--gl-space-md);
   background: var(--gl-surface);
   border: 1px solid var(--gl-border);
-  border-radius: 6px;
+  border-radius: 0;
   transition: background-color 200ms ease;
 }
 .gl-agent-stub:hover { background: var(--gl-surface-raised); }
@@ -1451,7 +1454,7 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-muted);
   font-size: var(--gl-font-label);
   padding: var(--gl-space-sm) var(--gl-space-md);
-  border-radius: 6px;
+  border-radius: 0;
 }
 .gl-kanban__board {
   display: grid;
@@ -1770,7 +1773,7 @@ button { font-family: inherit; font-size: inherit; }
   overflow-y: auto;
   background: var(--gl-bg);
   border: 1px solid var(--gl-border);
-  border-radius: 6px;
+  border-radius: 0;
   padding: var(--gl-space-sm);
   padding-left: 44px;
   font-family: inherit;
@@ -2348,7 +2351,8 @@ button { font-family: inherit; font-size: inherit; }
   flex-direction: column;
   gap: var(--gl-space-sm);
   background: var(--gl-surface);
-  border-radius: 6px;
+  border: 1px solid var(--gl-border);
+  border-radius: 0;
   padding: var(--gl-space-md);
   min-height: 240px;
 }
@@ -2643,7 +2647,8 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-provider-card {
   background: var(--gl-surface);
-  border-radius: 6px;
+  border: 1px solid var(--gl-border);
+  border-radius: 0;
   padding: var(--gl-space-md);
   display: flex;
   flex-direction: column;
@@ -2712,9 +2717,9 @@ button { font-family: inherit; font-size: inherit; }
   z-index: 20;
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border);
-  border-radius: 6px;
+  border-radius: 0;
   padding: var(--gl-space-md);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: var(--gl-space-sm);
