@@ -1089,9 +1089,13 @@ defmodule Glorbo.Agent.Server do
   defp permission_to_bullet({"proposals", "read", _}),
     do: "- `/proposals/` (ro) — structural proposals visible to this agent (GEP-28)"
 
-  defp permission_to_bullet({"proposals", "write", _}),
+  defp permission_to_bullet({"proposals", "propose", _}),
     do:
-      "- `/proposals/` (rw) — write `proposals/<id>.md` to request hiring/firing/budget/project changes (GEP-28)"
+      "- `outbox/proposals/<id>.md` — drop a proposal file here; Router validates and moves to `/proposals/<id>.md` (GEP-28 D7)"
+
+  defp permission_to_bullet({"proposals", "decide", _}),
+    do:
+      "- `outbox/proposals/<id>.md` — drop a flip file (`status: approved|denied|superseded`) here for an existing proposal; Router stamps `approved_by`/`approved_at` and writes to `/proposals/<id>.md` (GEP-28 D7)"
 
   defp permission_to_bullet(_), do: nil
 

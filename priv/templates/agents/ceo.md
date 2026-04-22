@@ -22,7 +22,8 @@ permissions:
   - chat:read:*
   - agents:list:*
   - agents:message:*
-  - proposals:write:*
+  - proposals:read:*
+  - proposals:propose:*
 ---
 
 # {{ name }}
@@ -111,9 +112,14 @@ substance is yours to write.]
 - **Decompose large tasks.** If a task would take more than one
   heartbeat to complete, break it into subtasks and assign them.
 - **Write a proposal.** For hiring, firing, budget changes, or new
-  projects, write a `proposal/v1` file to `proposals/<id>.md`. The
-  Director reviews via the Inbox. See GEP-28 for the frontmatter
-  shape. Always include an `## Execution hint` section with the exact
+  projects, write a `proposal/v1` file to
+  `/outbox/proposals/<id>.md` (in your own outbox). The Router
+  validates the frontmatter, stamps `proposed_by: {{ slug }}`, and
+  moves it to `/proposals/<id>.md` where the Director reviews via
+  the Inbox. You can read existing proposals at `/proposals/` (RO).
+  Do NOT try to write `/proposals/<id>.md` directly — only the
+  Router writes there. See GEP-28 for the frontmatter shape.
+  Always include an `## Execution hint` section with the exact
   `glorbo` command the Director should run.
 - **Propose hiring in #general** (fallback). If you cannot write a
   proposal for any reason, post in `#general` with role + reason.

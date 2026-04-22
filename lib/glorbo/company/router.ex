@@ -641,6 +641,9 @@ defmodule Glorbo.Company.Router do
       {:path_request, task_id} ->
         handle_outbox_path_request(abs_path, sender, task_id, state)
 
+      {:proposal, id} ->
+        handle_outbox_proposal(abs_path, sender, id, state)
+
       :message ->
         handle_outbox_message(abs_path, sender, state)
     end
@@ -692,10 +695,24 @@ defmodule Glorbo.Company.Router do
           do: {:path_request, actual_task_id},
           else: :message
 
+      # GEP-28 D7 — agent-sourced proposal via outbox
+      # agents/<sender>/outbox/proposals/<id>.md → proposals/<id>.md
+      ["proposals", <<_::binary>> = file] ->
+        id = Path.basename(file, ".md")
+
+        if proposal_id_valid?(id),
+          do: {:proposal, id},
+          else: :message
+
       _ ->
         :message
     end
   end
+
+  # Proposal IDs follow the same shape as filesystem-friendly slugs:
+  # alnum + `_-`. Matches `FileSpec.ProposalMd` path regex stem.
+  @proposal_id_re ~r/\A[a-z0-9][a-z0-9_-]*\z/
+  defp proposal_id_valid?(id), do: Regex.match?(@proposal_id_re, id)
 
   @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
   defp memory_filename_valid?(name), do: Regex.match?(@memory_filename_re, name)
@@ -999,6 +1016,268 @@ defmodule Glorbo.Company.Router do
       reason when is_binary(reason) and byte_size(reason) >= 10 -> :ok
       _ -> {:error, :path_request_missing_reason}
     end
+  end
+
+  # GEP-28 D7 — agent-sourced proposal write via outbox.
+  #
+  # Two modes dispatched by destination existence:
+  #
+  #   create: no existing `proposals/<id>.md`. Sender needs
+  #     `proposals:propose:*`. Status must be `pending-approval`. Router
+  #     stamps `proposed_by: <sender>` (forge-proof — the outbox owner
+  #     cannot be spoofed). `approved_by` / `approved_at` / `denial_reason`
+  #     / `superseded_by` must all be null.
+  #
+  #   flip: existing `proposals/<id>.md`. Sender needs
+  #     `proposals:decide:*`. New `status ∈ {approved, denied, superseded}`.
+  #     `id` / `subtype` / `proposed_by` / `proposed_at` preserved from the
+  #     on-disk file. For `approved`/`denied`: sender ≠ existing
+  #     `proposed_by` (no self-approval). Router stamps
+  #     `approved_by: <sender>` + `approved_at: <now>`.
+  #
+  # On reject the outbox source is dropped so the agent doesn't retry on
+  # the same bad input; a `proposal.rejected` audit records the reason.
+  defp handle_outbox_proposal(abs_path, sender, id, state) do
+    dest_path = Path.join([state.base, "companies", state.company, "proposals", "#{id}.md"])
+
+    # Validation is strict; post-commit cleanup is best-effort. A
+    # successful commit must not be re-surfaced as a rejection just
+    # because we couldn't clean the outbox source — the proposal is
+    # already on disk.
+    case validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
+      {:ok, final_content} ->
+        :ok = File.mkdir_p(Path.dirname(dest_path))
+        :ok = atomic_write(dest_path, final_content)
+        cleanup_outbox_source(abs_path, sender, id, state)
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "[router/#{state.company}] proposal rejected sender=#{sender} id=#{id} reason=#{inspect(reason)}"
+        )
+
+        _ =
+          state.audit_fun.(state.company, %{
+            actor: sender,
+            action: "proposal.rejected",
+            target: "proposals/#{id}.md",
+            detail: %{reason: inspect(reason)}
+          })
+
+        _ = File.rm(abs_path)
+        :ok
+    end
+  end
+
+  defp validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
+    with {:ok, content} <- File.read(abs_path),
+         {:ok, meta, body} <- Frontmatter.parse(content),
+         :ok <- require_proposal_kind(meta),
+         :ok <- require_proposal_id_match(meta, id),
+         :ok <- require_proposal_subtype(meta),
+         {:ok, perms} <- lookup_permissions(sender, state),
+         {:ok, merged_meta, final_body} <-
+           validate_and_merge_proposal(meta, body, dest_path, sender, perms) do
+      {:ok, serialize_proposal(merged_meta, final_body)}
+    end
+  end
+
+  # Post-commit: the proposal is written. If we can't rm the outbox
+  # source, log loudly but succeed — otherwise the next file_event
+  # would try to replay an already-committed write and emit a bogus
+  # rejection audit.
+  defp cleanup_outbox_source(abs_path, sender, id, state) do
+    case File.rm(abs_path) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error(
+          "[router/#{state.company}] proposal post-commit rm failed sender=#{sender} id=#{id} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp require_proposal_kind(meta) do
+    case Map.get(meta, "kind") do
+      "proposal/v1" -> :ok
+      other -> {:error, {:proposal_bad_kind, other}}
+    end
+  end
+
+  defp require_proposal_id_match(meta, id) do
+    case Map.get(meta, "id") do
+      ^id -> :ok
+      other -> {:error, {:proposal_id_mismatch, other, id}}
+    end
+  end
+
+  defp require_proposal_subtype(meta) do
+    case Map.get(meta, "subtype") do
+      s when is_binary(s) and byte_size(s) > 0 -> :ok
+      _ -> {:error, :proposal_missing_subtype}
+    end
+  end
+
+  # Dispatch create vs flip by destination existence. Merges in the
+  # Router-stamped fields so agents cannot forge `proposed_by` /
+  # `approved_by`.
+  #
+  # Returns `{:ok, merged_meta, body_to_write}` — the flip path
+  # preserves the existing body (agents can't rewrite a proposal's
+  # rationale when deciding it); the create path uses the incoming
+  # body verbatim.
+  defp validate_and_merge_proposal(meta, body, dest_path, sender, perms) do
+    if File.exists?(dest_path) do
+      flip_proposal(meta, dest_path, sender, perms)
+    else
+      create_proposal(meta, body, sender, perms)
+    end
+  end
+
+  defp create_proposal(meta, body, sender, perms) do
+    with :ok <- ACLMapper.check_action(perms, {"proposals", "propose", "*"}),
+         :ok <- require_create_status(meta),
+         :ok <- require_nil_approval_fields(meta) do
+      stamped =
+        meta
+        |> Map.put("proposed_by", sender)
+        |> Map.put_new_lazy("proposed_at", &iso_now/0)
+        |> Map.put("requires_approval", Map.get(meta, "requires_approval", "director"))
+
+      {:ok, stamped, body}
+    end
+  end
+
+  defp flip_proposal(meta, dest_path, sender, perms) do
+    with :ok <- ACLMapper.check_action(perms, {"proposals", "decide", "*"}),
+         {:ok, existing_content} <- File.read(dest_path),
+         {:ok, existing_meta, existing_body} <- Frontmatter.parse(existing_content),
+         {:ok, new_status} <- require_flip_status(meta),
+         proposed_by = Map.get(existing_meta, "proposed_by"),
+         :ok <- reject_self_approval(new_status, sender, proposed_by) do
+      merged =
+        existing_meta
+        |> Map.put("status", new_status)
+        |> put_flip_fields(new_status, sender, meta)
+
+      {:ok, merged, existing_body}
+    end
+  end
+
+  defp require_create_status(meta) do
+    case Map.get(meta, "status") do
+      "pending-approval" -> :ok
+      other -> {:error, {:proposal_bad_create_status, other}}
+    end
+  end
+
+  defp require_nil_approval_fields(meta) do
+    offenders =
+      ["approved_by", "approved_at", "denial_reason", "superseded_by"]
+      |> Enum.filter(fn k -> has_nonempty?(meta, k) end)
+
+    case offenders do
+      [] -> :ok
+      list -> {:error, {:proposal_create_has_approval_fields, list}}
+    end
+  end
+
+  defp require_flip_status(meta) do
+    case Map.get(meta, "status") do
+      s when s in ["approved", "denied", "superseded"] -> {:ok, s}
+      other -> {:error, {:proposal_bad_flip_status, other}}
+    end
+  end
+
+  defp reject_self_approval(status, sender, proposed_by)
+       when status in ["approved", "denied"] do
+    if is_binary(proposed_by) and proposed_by == sender do
+      {:error, :proposal_self_approval}
+    else
+      :ok
+    end
+  end
+
+  defp reject_self_approval(_status, _sender, _proposed_by), do: :ok
+
+  # Stale-field cleanup on flip: when transitioning into any terminal
+  # state, clear fields that belonged to a different terminal state. A
+  # `denied` proposal later flipped to `approved` must not carry its
+  # old `denial_reason`, and vice versa.
+  defp put_flip_fields(meta, "approved", sender, _new_meta) do
+    meta
+    |> Map.put("approved_by", sender)
+    |> Map.put("approved_at", iso_now())
+    |> Map.put("denial_reason", nil)
+    |> Map.put("superseded_by", nil)
+  end
+
+  defp put_flip_fields(meta, "denied", sender, new_meta) do
+    meta =
+      meta
+      |> Map.put("approved_by", sender)
+      |> Map.put("approved_at", iso_now())
+      |> Map.put("superseded_by", nil)
+
+    case Map.get(new_meta, "denial_reason") do
+      r when is_binary(r) and byte_size(r) > 0 -> Map.put(meta, "denial_reason", r)
+      _ -> meta
+    end
+  end
+
+  defp put_flip_fields(meta, "superseded", _sender, new_meta) do
+    meta =
+      meta
+      |> Map.put("approved_by", nil)
+      |> Map.put("approved_at", nil)
+      |> Map.put("denial_reason", nil)
+
+    case Map.get(new_meta, "superseded_by") do
+      sb when is_binary(sb) and byte_size(sb) > 0 -> Map.put(meta, "superseded_by", sb)
+      _ -> meta
+    end
+  end
+
+  defp has_nonempty?(meta, key) do
+    case Map.get(meta, key) do
+      nil -> false
+      "" -> false
+      _ -> true
+    end
+  end
+
+  defp iso_now, do: DateTime.utc_now() |> DateTime.to_iso8601()
+
+  # Canonical key order matches `FileSpec.ProposalMd.canonical_key_order/0`;
+  # unknown keys land after the canonical set alphabetically for a
+  # stable round-trip. Uses `FrontmatterWriter.yaml_scalar/1` so strings
+  # with YAML-significant characters are properly quoted (no raw
+  # `inspect/1` fallback that could corrupt the file).
+  @proposal_key_order ~w(kind id subtype status proposed_by requires_approval proposed_at approved_by approved_at denial_reason superseded_by)
+  defp serialize_proposal(meta, body) do
+    canonical = for k <- @proposal_key_order, Map.has_key?(meta, k), do: {k, Map.get(meta, k)}
+
+    extras =
+      meta
+      |> Map.drop(@proposal_key_order)
+      |> Enum.sort_by(fn {k, _} -> k end)
+
+    yaml_lines =
+      Enum.map_join(canonical ++ extras, "\n", fn {k, v} ->
+        "#{k}: #{Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)}"
+      end)
+
+    body_trimmed = body |> to_string() |> String.trim_leading()
+
+    "---\n#{yaml_lines}\n---\n\n#{body_trimmed}"
+    |> ensure_trailing_newline()
+  end
+
+  defp ensure_trailing_newline(s) do
+    if String.ends_with?(s, "\n"), do: s, else: s <> "\n"
   end
 
   defp forward_to_path_request_gate(sender, task_id, meta, state) do

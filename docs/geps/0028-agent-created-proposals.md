@@ -9,6 +9,14 @@ history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft.
+  - date: 2026-04-22
+    status: Draft
+    note: |
+      Wave 2b — outbox-indirection pivot. Agents no longer write
+      `proposals/` directly; all agent-sourced writes go through
+      the Router via `agents/<sender>/outbox/proposals/<id>.md`.
+      `proposals:write:*` replaced by `proposals:propose:*` and
+      `proposals:decide:*`. Adds D7.
 requires: [3, 5, 10, 19, 25]
 see-also: [27]
 ---
@@ -75,10 +83,13 @@ companies/<co>/
   short descriptor + date. The file stem is the proposal ID.
 - `proposals/` is a new directory at the company root, peer to `agents/`,
   `projects/`, `channels/`, etc.
-- Agents write here only if their `agent.md` permissions include
-  `proposals:write:*` (or similar — see Permissions below).
-- **bwrap enforcement:** `proposals/` must be `--bind` read-write in the agent's
-  mount list when the permission is present, and omitted otherwise (GEP-5 D1).
+- **Only the Router and trusted Elixir processes (LiveView actions, CLI) write
+  directly to `proposals/`.** Agents never mount `proposals/` read-write — see
+  D7. Agents submit create/flip requests via their own outbox; the Router
+  validates and performs the on-disk write.
+- **bwrap enforcement:** `proposals/` is either `--ro-bind` (when the agent has
+  `proposals:read:*`) or omitted. No agent template carries `proposals:write:*`
+  any more.
 
 ### File format: `proposal/v1`
 
@@ -192,15 +203,32 @@ company record. A future `glorbo prune` or manual cleanup can remove old ones.
 
 ### Router integration
 
-`Glorbo.Company.Router` watches `proposals/*.md` via the existing filesystem
-watcher. On write/change:
+Agent writes flow through the outbox:
 
-1. Parse via `FileSpec.ProposalMd`.
-2. Emit `proposal.requested` / `proposal.updated` / `proposal.approved` / `proposal.denied`
-   audit events (via `AuditLog`).
-3. Publish `company:<co>:proposals` on PubSub so InboxLive refreshes.
-4. Reindex the proposal into SQLite (`proposals` derived table) so dashboards
-   can query without scanning disk.
+```
+agents/<sender>/outbox/proposals/<id>.md   (agent writes)
+  → Router.classify_outbox_file/3 → {:proposal, id}
+  → Router.handle_outbox_proposal/4 (validate + write + delete source)
+  → proposals/<id>.md                       (canonical location)
+```
+
+The Router handler distinguishes **create** vs **flip** by the existence of the
+destination file:
+
+| Case | Existing `proposals/<id>.md`? | Required permission | Frontmatter rules |
+|------|-------------------------------|---------------------|-------------------|
+| Create | no | `proposals:propose:*` | `status: pending-approval`; `approved_by` / `approved_at` / `denial_reason` / `superseded_by` all null; Router stamps `proposed_by: <sender>` (forge-proof) |
+| Flip | yes | `proposals:decide:*` | New `status ∈ {approved, denied, superseded}`. `id`, `subtype`, `proposed_by`, `proposed_at` preserved from existing file. For `approved` / `denied`: `approved_by` must not equal `proposed_by`. Router stamps `approved_by: <sender>` and `approved_at: <now>` |
+
+On accept the Router writes `proposals/<id>.md`, deletes the outbox source, and
+lets `Filesystem.Watcher` broadcast on `company:<co>:proposals` — the existing
+`ProposalsSink` (wave 2a) emits the canonical audit event
+(`proposal.requested` / `.approved` / `.denied` / `.superseded`). On reject the
+Router emits a `proposal.rejected` audit with reason and drops the outbox
+source so the agent doesn't retry on the same bad input.
+
+`FileSpec.ProposalMd` validation applies at both layers (Router pre-write and
+`glorbo validate` / `fmt` offline).
 
 ### Inbox surface
 
@@ -227,19 +255,22 @@ Archive hides the proposal from Mine (same archival mechanism as task approvals)
 
 ### Permissions model
 
-Proposals introduce a new permission namespace:
+Proposals introduce a three-verb permission namespace (write access is
+indirect — always via the outbox):
 
 | Permission | Meaning |
 |------------|---------|
-| `proposals:read:*` | Agent can read all proposals |
-| `proposals:write:*` | Agent can write new proposals |
-| `proposals:write:<subtype>` | Agent can write proposals of a specific subtype |
+| `proposals:read:*` | RO bwrap mount of `proposals/` — agent can read all proposals |
+| `proposals:propose:*` | Router accepts `agents/<sender>/outbox/proposals/<id>.md` from the agent as new proposals (create only) |
+| `proposals:decide:*` | Router accepts agent-sourced flips of existing proposals to `approved` / `denied` / `superseded` |
 
-The CEO template should include `proposals:write:*` by default. Other templates
-(engineer, researcher) get `proposals:read:*` only.
+The CEO template carries `proposals:read:*` + `proposals:propose:*`. Director-
+class agents carry `proposals:read:*` + `proposals:decide:*`. Neither carries
+write access to the `proposals/` mount point directly.
 
-**bwrap mapping:** `proposals/` is bind-mounted read-only for `proposals:read:*`,
-read-write for `proposals:write:*`, and omitted entirely if absent.
+**bwrap mapping:** `proposals/` is `--ro-bind` mounted for `proposals:read:*`;
+nothing additional for `propose` / `decide` (the agent's own outbox is already
+RW; the Router handles the move). Direct-write permission has been removed.
 
 ### Audit events
 
@@ -282,10 +313,11 @@ However, the dashboard may only render rich UI for known subtypes.
    tolerates a missing `proposals/` dir.
 2. **No breaking changes.** Task approval (GEP-19) is untouched. The Inbox
    surfaces proposals alongside existing approval types; no UI removal.
-3. **CEO template update.** The CEO template gains `proposals:write:*` and a
-   new system-prompt section: "When you need to hire, increase a budget, or
-   create a project, write a proposal to `proposals/<id>.md` instead of posting
-   in #general."
+3. **CEO template update.** The CEO template gains `proposals:read:*` +
+   `proposals:propose:*` and a new system-prompt section: "When you need to
+   hire, increase a budget, or create a project, write a proposal file to
+   `agents/<you>/outbox/proposals/<id>.md` — the Router moves it into
+   `proposals/<id>.md` after validating the frontmatter."
 4. **Reindex.** `glorbo reindex` learns to index `proposals/*.md` into the
    SQLite `proposals` derived table.
 
@@ -293,40 +325,58 @@ However, the dashboard may only render rich UI for known subtypes.
 
 | Failure | Surface | Mitigation |
 |---------|---------|------------|
-| Agent writes proposal without `proposals:write:*` permission | bwrap `EROFS` (kernel-level) | Agent sees write error; nothing in audit |
-| Proposal `id` doesn't match filename stem | `FileSpec.ProposalMd` validator error | `glorbo validate` flags it; Router skips indexing |
-| Proposal `status` set to `approved` without `approved_by` | Inbox shows warning badge | Frontmatter schema optional-key check |
-| Race: Director approves while agent edits | Last writer wins (filesystem semantics) | Proposals are append-only by convention; edits after submission are discouraged |
+| Agent lacks `proposals:propose:*` | Router rejects outbox file; emits `proposal.rejected` audit with `reason: :permission_denied`; outbox source dropped | Frontmatter schema + Router permission check |
+| Agent sets `proposed_by` to someone else on create | Ignored — Router stamps `proposed_by: <sender>` from outbox owner on every accept | Outbox-owner identity is forge-proof |
+| Agent flips own proposal to `approved` | Router's flip path rejects when `approved_by == proposed_by`; emits `proposal.rejected` audit | D7 content rule |
+| Proposal `id` doesn't match filename stem | Router rejects create; `FileSpec.ProposalMd` validator also flags it offline | Schema + Router pre-write check |
+| Flip targets a non-existent `proposals/<id>.md` | Router rejects (treats absent-destination as create, but flip payload fails create rules) | Classify by destination existence |
+| Race: two decisions on the same proposal | Last writer wins (filesystem semantics); both get audited | `proposal.approved` + later `proposal.denied` both land in audit log; UI surfaces the latest status |
 | `subtype` is unknown string | Validator passes; dashboard renders generic card | Subtype is intentionally open |
-| Agent with `proposals:write:*` flips own `status: approved` | bwrap mount is rwx; kernel cannot enforce field-level write restriction | **Router-level enforcement required**: reject agent-sourced writes that transition `status` to `approved`/`denied` for a proposal the agent didn't propose, *or* where `approved_by ≠ director`. Tracked as part of runtime-wiring follow-up (see Implementation status). |
 
 ## Implementation status (2026-04-22)
 
 This GEP is **Draft**. Landed in the scaffolding commit:
 
 - `FileSpec.ProposalMd` (spec + canonical key order + docs)
-- `proposals:{read,write}:*` permission namespace (ACLMapper, PermissionMapper)
+- `proposals:{read,propose,decide}:*` permission namespace
+  (ACLMapper, PermissionMapper) — `write` retired in wave 2b
 - Company scaffold creates `proposals/` + `headcount_budget: 3`
-- CEO template gains `proposals:write:*` and proposal-routing guidance
+- CEO template carries `proposals:read:*` + `proposals:propose:*`
 - `/proposals` listed in CEO runtime mount summary
 
 **Landed in runtime-wiring wave 1:**
 
 - `Filesystem.Watcher` classifies `proposals/*.md` as `:proposals`,
   reindexes on write, and broadcasts on `company:<co>:proposals`
-  PubSub topic so downstream subscribers (InboxLive, etc.) can
-  subscribe without scanning disk.
+  PubSub topic so downstream subscribers can subscribe without
+  scanning disk.
+
+**Landed in runtime-wiring wave 2a:**
+
+- `Glorbo.Company.ProposalsSink` observer GenServer subscribes to
+  the `proposals` topic and emits canonical audit events
+  (`proposal.requested` / `.approved` / `.denied` / `.superseded`)
+  whenever the file content transitions into a known status.
+  Best-effort — never crashes the supervisor on a bad file.
+
+**Landed in runtime-wiring wave 2b:**
+
+- Router outbox indirection: `agents/<sender>/outbox/proposals/<id>.md`
+  is classified as `{:proposal, id}` and handled by
+  `Glorbo.Company.Router.handle_outbox_proposal/4`. Create vs flip
+  dispatched by destination existence; permission + content rules
+  enforced before the Router writes `proposals/<id>.md`.
+- Drop `proposals:write:*`. Replace with `proposals:propose:*` +
+  `proposals:decide:*`. bwrap no longer RW-mounts `proposals/`
+  for any template.
 
 **Deferred to runtime-wiring follow-up waves:**
 
-- Audit events for `proposals/*.md` writes (`proposal.requested` /
-  `.approved` / `.denied` / `.superseded`) — emit from a GenServer
-  that subscribes to the `proposals` topic.
-- Router-level status-flip enforcement (see Failure Modes row above)
-- InboxLive proposal card rendering + approve/deny actions
-- Reindex `proposals` derived table
+- InboxLive proposal card rendering + approve/deny actions (wave 2c).
+- Reindex `proposals` derived table (wave 2d).
 - Auto-approval evaluator (headcount budget rule for `hire` / `fire`)
-- Integration + E2E tests from the Test strategy section
+  (wave 2e).
+- Integration + E2E tests from the Test strategy section.
 
 ## Test strategy
 
@@ -410,6 +460,35 @@ This GEP is **Draft**. Landed in the scaffolding commit:
   own workflows. A completely freeform field would lose dashboard UI affordances
   for known subtypes. The compromise: validate as string, render rich UI for
   known values, fall back to generic for unknowns.
+
+### D7. Outbox indirection for all agent-sourced proposal writes (wave 2b)
+
+- **Decided:** Agents no longer have direct write access to the `proposals/`
+  directory. All agent-sourced proposal creation and status flips go through
+  the per-agent outbox:
+
+  ```
+  agents/<sender>/outbox/proposals/<id>.md
+  ```
+
+  The Router's `handle_outbox_proposal/4` parses, validates, and (on accept)
+  writes `proposals/<id>.md` — then deletes the outbox source. `proposals:write:*`
+  is retired in favour of `proposals:propose:*` (create new) and
+  `proposals:decide:*` (flip existing).
+
+- **Alternatives:** (B) Keep direct write + add a "detect and reject" observer
+  that reverts bad writes by caching prior content. (C) Enforce purely at the
+  Inbox-UI layer, trusting that non-UI writes are Director-authored.
+
+- **Why:** Option B requires the sink to maintain prior-state cache per proposal
+  and implement a rollback mechanism on top of filesystem events — complex,
+  racy, and still leaves a window where the bad state is observable. Option C
+  is a lie (any agent with `proposals:write:*` can corrupt state). Outbox
+  indirection matches every other Router-mediated write in the system (tasks,
+  comments, memory, path requests) and makes the write path forge-proof: the
+  outbox subtree is physically owned by the sender via bwrap, so the Router
+  always knows who authored the request. Pre-1.0 this is a clean atomic cut;
+  no backwards-compat shim.
 
 ### D6. Auto-approval for hire/fire within headcount budget
 

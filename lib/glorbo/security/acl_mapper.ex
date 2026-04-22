@@ -131,11 +131,16 @@ defmodule Glorbo.Security.ACLMapper do
   defp permission_to_acl(username, {"tasks", "update", scope}),
     do: [{username, :rwx, "projects/#{scope}/tasks"}]
 
-  defp permission_to_acl(username, {"proposals", "write", "*"}),
-    do: [{username, :rwx, "proposals"}]
-
+  # proposals:read:* — RO access to the company's proposal tree
   defp permission_to_acl(username, {"proposals", "read", "*"}),
     do: [{username, :rx, "proposals"}]
+
+  # proposals:propose:* / decide:* — Router-gated via outbox (GEP-28 D7);
+  # no ACL entry needed. The agent's own outbox is already :rwx via the
+  # D-07 baseline, so they can drop `agents/<slug>/outbox/proposals/<id>.md`
+  # into place; the Router handles the move to `proposals/<id>.md`.
+  defp permission_to_acl(_username, {"proposals", "propose", _scope}), do: []
+  defp permission_to_acl(_username, {"proposals", "decide", _scope}), do: []
 
   # Catch-all for any other permission — no ACL entry
   defp permission_to_acl(_username, _perm), do: []

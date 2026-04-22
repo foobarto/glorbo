@@ -766,4 +766,664 @@ defmodule Glorbo.Company.RouterTest do
       assert_receive {:audit, %{action: "memory.delete"}}
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Proposals outbox routing (GEP-28 wave 2b / D7) — agent-sourced proposal
+  # writes go through the Router via
+  # `agents/<sender>/outbox/proposals/<id>.md`. Router classifies, validates,
+  # and writes to `proposals/<id>.md` — or rejects and emits
+  # `proposal.rejected` audit.
+  # ---------------------------------------------------------------------------
+  describe "proposal outbox routing (GEP-28 D7)" do
+    setup do
+      base = TmpGlorboHome.setup()
+      scaffold_company(base, ["ceo", "director"])
+      File.mkdir_p!(Path.join([base, "companies", @company, "proposals"]))
+
+      ceo_outbox = Path.join([base, "companies", @company, "agents/ceo/outbox/proposals"])
+
+      director_outbox =
+        Path.join([base, "companies", @company, "agents/director/outbox/proposals"])
+
+      File.mkdir_p!(ceo_outbox)
+      File.mkdir_p!(director_outbox)
+
+      {:ok,
+       base: base,
+       ceo_outbox: ceo_outbox,
+       director_outbox: director_outbox,
+       proposals_dir: Path.join([base, "companies", @company, "proposals"])}
+    end
+
+    defp start_proposals_router!(base, perms_by_sender) do
+      perms_fun = fn sender, _state -> {:ok, Map.get(perms_by_sender, sender, [])} end
+      start_router_with_perms!(base, perms_fun)
+    end
+
+    defp write_outbox_proposal!(dir, sender, id, body) do
+      path = Path.join(dir, "#{id}.md")
+      File.write!(path, body)
+      {path, "agents/#{sender}/outbox/proposals/#{id}.md"}
+    end
+
+    defp wait(router), do: _ = :sys.get_state(router)
+
+    test "P1 create: CEO with proposals:propose:* writes outbox proposal → Router writes proposals/<id>.md with proposed_by stamped",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}]
+        })
+
+      {_path, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "hire-writer-2026-04-22", """
+        ---
+        kind: proposal/v1
+        id: hire-writer-2026-04-22
+        subtype: hire
+        status: pending-approval
+        proposed_by: ignored
+        proposed_at: 2020-01-01T00:00:00Z
+        ---
+        Need a Writer.
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      dest = Path.join(proposals_dir, "hire-writer-2026-04-22.md")
+      assert File.exists?(dest)
+      content = File.read!(dest)
+      # Router overrides agent-supplied proposed_by — only the outbox
+      # owner is a trustable author.
+      assert content =~ "proposed_by: ceo"
+      refute content =~ "proposed_by: ignored"
+      assert content =~ "status: pending-approval"
+      assert content =~ "Need a Writer"
+
+      # Source file dropped from outbox on accept.
+      refute File.exists?(Path.join(ceo_outbox, "hire-writer-2026-04-22.md"))
+    end
+
+    test "P2 flip-approve: director writes flip over an existing proposal → approved_by stamped, proposed_by preserved",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      # Step 1 — CEO creates the proposal.
+      {_p, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "increase-ceo-budget", """
+        ---
+        kind: proposal/v1
+        id: increase-ceo-budget
+        subtype: budget
+        status: pending-approval
+        ---
+        Double the monthly cap.
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      # Step 2 — Director flips to approved.
+      {_p2, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "increase-ceo-budget", """
+        ---
+        kind: proposal/v1
+        id: increase-ceo-budget
+        subtype: budget
+        status: approved
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      dest = Path.join(proposals_dir, "increase-ceo-budget.md")
+      content = File.read!(dest)
+      assert content =~ "status: approved"
+      assert content =~ "approved_by: director"
+      assert content =~ ~r/approved_at: "?\d{4}-\d{2}-\d{2}T/
+      # Original proposer preserved through the flip.
+      assert content =~ "proposed_by: ceo"
+      # Body is preserved from the first write (flip body is
+      # ignored).
+      assert content =~ "Double the monthly cap"
+
+      refute File.exists?(Path.join(director_outbox, "increase-ceo-budget.md"))
+    end
+
+    test "P3 flip-deny: director flips to denied with denial_reason",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "new-webapp", """
+        ---
+        kind: proposal/v1
+        id: new-webapp
+        subtype: project
+        status: pending-approval
+        ---
+        Bootstrap a new webapp project.
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "new-webapp", """
+        ---
+        kind: proposal/v1
+        id: new-webapp
+        subtype: project
+        status: denied
+        denial_reason: Out of scope for Q2
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "new-webapp.md"))
+      assert content =~ "status: denied"
+      assert content =~ "approved_by: director"
+      # YAML serializer quotes strings with spaces; parse back to
+      # assert semantic equality.
+      assert {:ok, meta, _} = Glorbo.Filesystem.Frontmatter.parse(content)
+      assert Map.get(meta, "denial_reason") == "Out of scope for Q2"
+      assert content =~ "proposed_by: ceo"
+    end
+
+    test "P4 flip-superseded: flip sets superseded_by without approval fields",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "hire-writer-old", """
+        ---
+        kind: proposal/v1
+        id: hire-writer-old
+        subtype: hire
+        status: pending-approval
+        ---
+        old reasoning
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "hire-writer-old", """
+        ---
+        kind: proposal/v1
+        id: hire-writer-old
+        subtype: hire
+        status: superseded
+        superseded_by: hire-writer-new
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "hire-writer-old.md"))
+      assert content =~ "status: superseded"
+      assert content =~ "superseded_by: hire-writer-new"
+      # Supersede doesn't set approved_by/at (emitted as null).
+      assert content =~ "approved_by: null"
+      assert content =~ "approved_at: null"
+    end
+
+    test "P5 reject create: sender lacks proposals:propose:*",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} = start_proposals_router!(base, %{"ceo" => []})
+
+      {_, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "hire-writer", """
+        ---
+        kind: proposal/v1
+        id: hire-writer
+        subtype: hire
+        status: pending-approval
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      refute File.exists?(Path.join(proposals_dir, "hire-writer.md"))
+      refute File.exists?(Path.join(ceo_outbox, "hire-writer.md"))
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P6 reject create: status not pending-approval",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{"ceo" => [{"proposals", "propose", "*"}]})
+
+      {_, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "preapproved", """
+        ---
+        kind: proposal/v1
+        id: preapproved
+        subtype: hire
+        status: approved
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      refute File.exists?(Path.join(proposals_dir, "preapproved.md"))
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P7 reject create: approval fields pre-filled",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{"ceo" => [{"proposals", "propose", "*"}]})
+
+      {_, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "sneaky", """
+        ---
+        kind: proposal/v1
+        id: sneaky
+        subtype: hire
+        status: pending-approval
+        approved_by: director
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      refute File.exists?(Path.join(proposals_dir, "sneaky.md"))
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P8 reject create: bad kind",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{"ceo" => [{"proposals", "propose", "*"}]})
+
+      {_, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "wrong-kind", """
+        ---
+        kind: task/v1
+        id: wrong-kind
+        subtype: hire
+        status: pending-approval
+        ---
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      refute File.exists?(Path.join(proposals_dir, "wrong-kind.md"))
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P9 reject create: id doesn't match filename stem",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      {name, _pid} =
+        start_proposals_router!(base, %{"ceo" => [{"proposals", "propose", "*"}]})
+
+      {_, rel} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "filename-a", """
+        ---
+        kind: proposal/v1
+        id: filename-b
+        subtype: hire
+        status: pending-approval
+        ---
+        """)
+
+      send(name, {:file_event, rel, [:created]})
+      wait(name)
+
+      refute File.exists?(Path.join(proposals_dir, "filename-a.md"))
+      refute File.exists?(Path.join(proposals_dir, "filename-b.md"))
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P10 reject flip: sender lacks proposals:decide:*",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      # Seed with a valid pending proposal first (CEO can propose).
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          # Director with only propose, no decide.
+          "director" => [{"proposals", "propose", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "needs-decide", """
+        ---
+        kind: proposal/v1
+        id: needs-decide
+        subtype: hire
+        status: pending-approval
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "needs-decide", """
+        ---
+        kind: proposal/v1
+        id: needs-decide
+        subtype: hire
+        status: approved
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "needs-decide.md"))
+      assert content =~ "status: pending-approval"
+      refute content =~ "approved_by"
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P11 reject flip: self-approval (sender == proposed_by)",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      # CEO has both propose and decide (bad combo for security — test
+      # that even so, they can't self-approve).
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}, {"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "self-approve", """
+        ---
+        kind: proposal/v1
+        id: self-approve
+        subtype: hire
+        status: pending-approval
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "self-approve", """
+        ---
+        kind: proposal/v1
+        id: self-approve
+        subtype: hire
+        status: approved
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "self-approve.md"))
+      assert content =~ "status: pending-approval"
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+
+    test "P12b flip denied→approved clears stale denial_reason",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "revived", """
+        ---
+        kind: proposal/v1
+        id: revived
+        subtype: hire
+        status: pending-approval
+        ---
+        first attempt
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "revived", """
+        ---
+        kind: proposal/v1
+        id: revived
+        subtype: hire
+        status: denied
+        denial_reason: Not yet
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      {_, rel3} =
+        write_outbox_proposal!(director_outbox, "director", "revived", """
+        ---
+        kind: proposal/v1
+        id: revived
+        subtype: hire
+        status: approved
+        ---
+        """)
+
+      send(name, {:file_event, rel3, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "revived.md"))
+      assert content =~ "status: approved"
+      # Stale denial_reason must be cleared on the approve flip.
+      refute content =~ "denial_reason: Not yet"
+    end
+
+    test "P12c approved→superseded clears approved_by/at",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "hire-old", """
+        ---
+        kind: proposal/v1
+        id: hire-old
+        subtype: hire
+        status: pending-approval
+        ---
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "hire-old", """
+        ---
+        kind: proposal/v1
+        id: hire-old
+        subtype: hire
+        status: approved
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      {_, rel3} =
+        write_outbox_proposal!(director_outbox, "director", "hire-old", """
+        ---
+        kind: proposal/v1
+        id: hire-old
+        subtype: hire
+        status: superseded
+        superseded_by: hire-new
+        ---
+        """)
+
+      send(name, {:file_event, rel3, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "hire-old.md"))
+      assert content =~ "status: superseded"
+      assert content =~ "superseded_by: hire-new"
+      # Stale approval fields cleared.
+      assert content =~ "approved_by: null"
+      assert content =~ "approved_at: null"
+    end
+
+    test "P12d denial_reason containing YAML-significant chars is quoted on round-trip",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "quoting-test", """
+        ---
+        kind: proposal/v1
+        id: quoting-test
+        subtype: hire
+        status: pending-approval
+        ---
+        body
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "quoting-test", """
+        ---
+        kind: proposal/v1
+        id: quoting-test
+        subtype: hire
+        status: denied
+        denial_reason: "Budget: insufficient, see #finance"
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      dest = Path.join(proposals_dir, "quoting-test.md")
+      content = File.read!(dest)
+
+      # Written content must be re-parseable — if the YAML emitter
+      # didn't quote the `:` / `#` / `,` chars, the frontmatter
+      # parser would blow up or lose fields.
+      assert {:ok, meta, _body} =
+               Glorbo.Filesystem.Frontmatter.parse(content)
+
+      assert Map.get(meta, "denial_reason") ==
+               "Budget: insufficient, see #finance"
+
+      assert Map.get(meta, "status") == "denied"
+    end
+
+    test "P12 reject flip: invalid status value",
+         %{
+           base: base,
+           ceo_outbox: ceo_outbox,
+           director_outbox: director_outbox,
+           proposals_dir: proposals_dir
+         } do
+      {name, _pid} =
+        start_proposals_router!(base, %{
+          "ceo" => [{"proposals", "propose", "*"}],
+          "director" => [{"proposals", "decide", "*"}]
+        })
+
+      {_, rel1} =
+        write_outbox_proposal!(ceo_outbox, "ceo", "bad-flip", """
+        ---
+        kind: proposal/v1
+        id: bad-flip
+        subtype: hire
+        status: pending-approval
+        ---
+        """)
+
+      send(name, {:file_event, rel1, [:created]})
+      wait(name)
+
+      {_, rel2} =
+        write_outbox_proposal!(director_outbox, "director", "bad-flip", """
+        ---
+        kind: proposal/v1
+        id: bad-flip
+        subtype: hire
+        status: junk-status
+        ---
+        """)
+
+      send(name, {:file_event, rel2, [:created]})
+      wait(name)
+
+      content = File.read!(Path.join(proposals_dir, "bad-flip.md"))
+      assert content =~ "status: pending-approval"
+      assert_receive {:audit, %{action: "proposal.rejected"}}
+    end
+  end
 end

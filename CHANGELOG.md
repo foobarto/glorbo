@@ -10,6 +10,50 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-28 runtime wave 2b: outbox indirection for proposals (BREAKING pre-1.0)
+
+Agents no longer have direct write access to `proposals/`. All agent-sourced
+proposal creation and status flips flow through the Router via the per-agent
+outbox, mirroring the existing tasks / comments / memory / path-request
+patterns. This closes the wave 2a loophole where any agent with
+`proposals:write:*` could flip its own `status: approved`.
+
+- **`proposals:write:*` is removed.** Replaced by two narrower verbs:
+  - `proposals:propose:*` — create a new proposal (outbox only).
+  - `proposals:decide:*` — flip an existing proposal to
+    `approved` / `denied` / `superseded` (outbox only).
+- **CEO template** — carries `proposals:read:*` + `proposals:propose:*`.
+  Guidance updated to drop files in `outbox/proposals/<id>.md`.
+- **bwrap** — `proposals/` is RO-mounted for `proposals:read:*`, never
+  RW for any template.
+- **`Glorbo.Company.Router`** — new `{:proposal, id}` classification in
+  `classify_outbox_file/3` + `handle_outbox_proposal/4` that validates
+  (kind, subtype, id-matches-stem, permissions, create-vs-flip
+  frontmatter rules) and writes `proposals/<id>.md` atomically. Stamps
+  `proposed_by: <sender>` on create and `approved_by: <sender>` +
+  `approved_at: <now>` on flip — both forge-proof. Rejects
+  self-approval (`approved_by == proposed_by`) and clears stale
+  terminal-state fields on re-transitions.
+- **GEP-28** — D7 added (outbox-indirection decision). Permissions,
+  Router-integration, and Failure-modes sections rewritten. `history:`
+  frontmatter bumped.
+- **Tests** — 15 new P-series tests covering create + flip (approve /
+  deny / supersede) happy paths, permission rejections, content-rule
+  rejections, stale-field cleanup on terminal-to-terminal flips, and
+  YAML quoting round-trip for strings with reserved characters.
+
+1457 tests green; `mix credo --strict` clean. Codex-reviewed with
+two must-fix items applied inline before commit.
+
+### Added — GEP-28 runtime wave 2a: ProposalsSink audit observer
+
+Per-company GenServer subscribing to `company:<co>:proposals` PubSub and
+emitting canonical `proposal.requested|.approved|.denied|.superseded`
+audit entries whenever a `proposals/<id>.md` file transitions into a
+known status. Best-effort — malformed or unknown-status files are
+logged and skipped; never crashes the supervisor. Wired into
+`Glorbo.Company.Supervisor` as child #10.
+
 ### Added — GEP-28 runtime wave 1: Watcher classifies proposals/*.md
 
 - **`Glorbo.Filesystem.Watcher`** — classifies `proposals/*.md` writes

@@ -558,3 +558,115 @@ While you decide, I'm /clear-ing to free context; next loop
 iteration (or a fresh `/loop 1h …`) will read this entry and
 proceed on your choice.
 
+---
+
+## 2026-04-22 — GEP-28 wave 2b picked: Option A (outbox indirection)
+
+User chose A — "prefer clean and proper fixes even if they require
+more effort… otherwise bad design choices compound". Scope of wave:
+
+- Drop `proposals:write:*` permission (no more direct-write).
+- Add `proposals:propose:*` (create new proposal via outbox) and
+  `proposals:decide:*` (approve/deny via outbox) permissions.
+- `proposals:read:*` stays (RO bwrap mount).
+- Router classifies `agents/<sender>/outbox/proposals/<id>.md` as
+  `{:proposal, id}`. Handler:
+  - **Create path** (no existing `proposals/<id>.md`): sender must
+    have `proposals:propose:*`. Status must be `pending-approval`.
+    `approved_by`/`approved_at`/`denial_reason`/`superseded_by`
+    must be null. Router stamps `proposed_by: <sender>` (forge-
+    proof). Writes to `proposals/<id>.md`.
+  - **Flip path** (existing `proposals/<id>.md`): sender must have
+    `proposals:decide:*`. Merges new frontmatter over existing,
+    preserving `id`/`subtype`/`proposed_by`/`proposed_at`. For
+    `status: approved|denied`: `approved_by` ≠ `proposed_by` (no
+    self-approval). Router stamps `approved_by: <sender>` and
+    `approved_at: <now>`.
+- Update CEO template: `proposals:write:*` →
+  `proposals:propose:*` + `proposals:read:*`; revise "Write a
+  proposal" instructions to reference outbox write path.
+- GEP-28 revision: add D7 decision log entry, update
+  Permissions / Router integration / Failure modes / Implementation
+  status sections, bump `history:` frontmatter.
+- DESIGN.md + CHANGELOG updates.
+- Tests: Router create/flip happy paths, all rejection modes.
+
+ProposalsSink (wave 2a) stays — still the single audit source.
+With Router as the only writer to `proposals/`, the sink emits
+canonical events on every write as before.
+
+### 2026-04-22 — GEP-28 wave 2b codex findings
+
+Two must-fix items from codex, both caught and fixed inline:
+
+1. **Post-commit `rm` failure masqueraded as rejection.** If
+   `atomic_write(dest)` succeeded but `File.rm(src)` failed, the
+   original `with` pipeline returned error → emitted
+   `proposal.rejected` for a proposal that was already committed,
+   plus left the source file around to be re-processed on the
+   next file_event (potential double-emission of audit events on
+   restart). **Fix:** split validation from commit/cleanup.
+   `validate_outbox_proposal/5` returns `{:ok, final_content}`
+   or `{:error, reason}`; the happy path writes the dest then
+   best-effort rm's with a log-loud-but-return-:ok. The rejected
+   audit only fires on validation failure, never on cleanup
+   failure.
+
+2. **Unsafe YAML emitter.** `serialize_proposal/2` wrote
+   binaries raw and `inspect/1`-fell-back for non-scalars — a
+   denial reason with a `:` or `,` would have produced invalid
+   YAML. **Fix:** replaced the local `yaml_scalar/1` with
+   `Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1`, which
+   properly quotes YAML-significant strings. Added test P12d
+   asserting a denial reason with `:`, `#`, and `,` round-trips
+   cleanly.
+
+One nice-to-have also addressed:
+
+3. **Stale fields on terminal-to-terminal flips.** A proposal
+   denied-then-approved carried the old `denial_reason` through
+   to the approved state; an approved-then-superseded carried
+   `approved_by`/`approved_at` through. **Fix:** `put_flip_fields/4`
+   now explicitly clears fields that belong to other terminals.
+   Added tests P12b (denied→approved clears `denial_reason`)
+   and P12c (approved→superseded clears approval fields).
+
+**Not-fixed** (deemed out of scope):
+
+- CEO can't supersede their own old proposal without
+  `proposals:decide:*`. Codex flagged this as "intended governance,
+  not a bug" — agreed. A future revision could add
+  `proposals:supersede:self` if the no-supersede pain shows up.
+
+**Final stats:** 1457 tests, 0 failures. 15 new tests in
+`test/glorbo/company/router_test.exs` (P1–P12 + P12b/c/d).
+Credo --strict clean. Docs check clean.
+
+---
+
+## 2026-04-22 — Queued: GEP-29 MCP server
+
+New feature: Glorbo as an MCP server. User's requirements:
+
+- **Access level:** r/w.
+- **Transport:** HTTP SSE (slots next to the Phoenix endpoint).
+- **Auth:** none, localhost-only (matches the project's theme).
+- **Tool surface:** 1:1 map to current web-UI functionality —
+  external agents should be able to use Glorbo as effectively as
+  a human via the browser.
+- **Company scope:** same as the web UI (multi-company browsable
+  via explicit selection, not session-scoped).
+
+**Next step:** `glorbo-new-gep` brainstorm + GEP-29 draft before
+writing any code. Deferring until wave 2b is shipped. The GEP
+needs to enumerate every web-UI action (CompanyPicker, CompanyLive,
+InboxLive, AgentLive, ChatLive, KanbanLive, AuditLive, BrainDump,
+new-company/agent/project wizards, dispatch, approve, deny,
+heartbeat-force, etc.) and map each to an MCP tool name +
+arguments + permission.
+
+Also relevant:
+- Fresh demo running on `http://localhost:4000` (pid 2848269) —
+  user's spot-check instance. Don't touch for UATs; spin up a
+  separate port + temp `GLORBO_HOME` for tests.
+
