@@ -45,7 +45,7 @@ REST API or duplicating the LiveView handlers.
 
 ## Goals
 
-- Expose an MCP server at `/mcp/sse` on the existing Phoenix endpoint
+- Expose an MCP server at `/mcp` on the existing Phoenix endpoint
   (localhost:4000 by default, alongside the dashboard).
 - Provide an MCP **tool surface** that is a 1:1 map of the Director's
   web-UI capabilities: browse companies, inspect agents/tasks/channels,
@@ -83,22 +83,38 @@ REST API or duplicating the LiveView handlers.
 
 ### Transport and mount point
 
-- **Protocol:** MCP ≥ 2025-03-26 spec, HTTP SSE transport.
-  JSON-RPC 2.0 framed as `text/event-stream`.
-- **Mount point:** a new `GlorboWeb.MCP.SSE` plug (or `Hermes.Server`
-  router) mounted at `/mcp/sse` under the existing
-  `GlorboWeb.Endpoint`. No separate endpoint, no separate port.
-- **Supervision:** the MCP session manager is a child of
-  `GlorboWeb.Endpoint`'s supervision tree (or a sibling under
-  `Glorbo.Application` if Hermes ships its own supervisor). Every
-  long-lived session runs under a `DynamicSupervisor` so a bad
-  client can't take down the dashboard.
-- **Library:** prefer `hermes_mcp` (Hex) if it supports HTTP-SSE
-  server mode. If not, roll a thin plug: the MCP-over-SSE wire format
-  is small (JSON-RPC messages as `event: message\ndata: {...}\n\n`)
-  and cheaper to hand-author than to vendor a library that doesn't
-  fit. Final choice is an implementation decision; D6 captures the
-  tradeoff.
+- **Protocol:** MCP spec version 2025-06-18, **Streamable HTTP**
+  transport. Single endpoint handling both POST (client → server
+  JSON-RPC) and GET (optional server-initiated SSE stream). The
+  server responds to each POST with either `Content-Type:
+  application/json` (one-shot) or `Content-Type: text/event-stream`
+  (SSE) at its own discretion.
+- **Mount point:** single URL path `/mcp` on the existing
+  `GlorboWeb.Endpoint`. Serves POST and GET. The legacy two-endpoint
+  HTTP+SSE transport (`/sse` + `/messages`, from the 2024-11-05 spec)
+  is **not** supported — clients too old to speak Streamable HTTP get
+  a 400.
+- **Headers:** clients MUST send `MCP-Protocol-Version: 2025-06-18`
+  on every request after `initialize`. The server advertises
+  `Mcp-Session-Id: <uuid>` in the `initialize` response; clients
+  echo it on every subsequent request.
+- **Security:** the plug binds `127.0.0.1` only and MUST validate
+  the `Origin` header on all requests to prevent DNS rebinding
+  attacks (spec §Security Warning). Requests from unknown origins
+  get 403.
+- **Supervision:** the session registry is a child of
+  `Glorbo.Application`. Each active session is a lightweight
+  GenServer under a `DynamicSupervisor` so a bad client can't take
+  down the dashboard. Session state: protocol version, client name,
+  subscribed resources, last-event-id (for SSE resumability).
+- **Library:** hand-rolled Plug-based adapter (D6 resolved). Research
+  found `hermes_mcp` (0.14.1) and `mcp_sse` (0.1.6) on Hex; hermes
+  has underdocumented SSE server mode plus a `finch` transitive
+  dep, `mcp_sse` is lighter but still adds a dep. Streamable HTTP's
+  wire format is small enough (~200 LoC for `initialize`,
+  `tools/list`, `tools/call`, `resources/*`, plus JSON-RPC framing)
+  that hand-rolling keeps the dep tree lean and matches Glorbo's
+  single-binary Burrito constraint.
 
 ### Tool surface (1:1 with the dashboard)
 
@@ -220,7 +236,7 @@ raw tuple so programmatic clients can branch on it.
 ### Lifecycle
 
 - **`mix phx.server` / `glorbo serve`:** MCP endpoint starts
-  automatically on `/mcp/sse`.
+  automatically on `/mcp`.
 - **`glorbo run <co>/<agent> <task>`:** headless dispatch mode,
   Phoenix not started → MCP absent. Consistent with GEP-6 D4.
 - **Kill switch:** config `config :glorbo, GlorboWeb.Endpoint,
@@ -234,14 +250,14 @@ raw tuple so programmatic clients can branch on it.
 config :glorbo, GlorboWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
   mcp_enabled: true,
-  mcp_path: "/mcp/sse"
+  mcp_path: "/mcp"
 ```
 
 ## Migration / rollout
 
 Additive; zero breaking changes.
 
-1. **New route.** `/mcp/sse` is introduced. No existing path
+1. **New route.** `/mcp` is introduced. No existing path
    changes.
 2. **No ACL changes.** MCP actors use the existing audit vocabulary
    with the `mcp:` prefix; existing dashboards and reporters keep
@@ -378,20 +394,24 @@ Additive; zero breaking changes.
   SSE is also the de-facto path for agent-browser / Claude Code
   MCP integrations today.
 
-### D6. Hermes MCP SDK vs hand-rolled plug — defer to implementation
+### D6. Hand-rolled Plug-based MCP adapter
 
-- **Decided:** prefer `hermes_mcp` if it supports HTTP-SSE server
-  mode cleanly; otherwise hand-roll a Plug-based SSE adapter +
-  JSON-RPC dispatcher.
-- **Alternatives:** commit unconditionally to Hermes; commit
-  unconditionally to hand-rolling.
-- **Why:** Hermes is the only serious candidate in the Elixir
-  ecosystem, but its server-mode maturity at time of writing is
-  unverified. A hand-rolled plug is ~200 LoC for the parts Glorbo
-  needs (`initialize`, `tools/list`, `tools/call`, `resources/*`)
-  and keeps deps lean. The deciding factor is whether Hermes'
-  abstractions cost more to learn than the wire format costs to
-  implement.
+- **Decided:** hand-roll a Plug-based Streamable HTTP adapter for
+  Glorbo's MCP surface. No external MCP library dependency.
+- **Alternatives:** (a) `hermes_mcp` 0.14.1 — the most-established
+  Elixir MCP SDK; (b) `mcp_sse` 0.1.6 — lighter-weight alternative.
+- **Why:** the spike (2026-04-22, claude-code-guide agent) found
+  hermes has underdocumented Streamable HTTP server support plus a
+  `finch` transitive dep that bloats a single-binary Burrito
+  release; `mcp_sse` is lighter but still adds a non-trivial
+  dependency. The Streamable HTTP wire format is ~200 LoC for the
+  methods Glorbo needs (`initialize`, `tools/list`, `tools/call`,
+  `resources/list`, `resources/read`, `resources/subscribe`, plus
+  JSON-RPC 2.0 envelope parsing and SSE framing). Hand-rolling keeps
+  the dep tree lean, preserves full control of the wire format, and
+  matches Glorbo's "no npm, no Python, single-binary" philosophy.
+  Revisit if a future spec revision makes the wire format
+  materially more complex.
 
 ### D7. Resources are SSE tails of existing PubSub topics
 

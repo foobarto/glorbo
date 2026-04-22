@@ -10,6 +10,47 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-29 wave (a): MCP server scaffolding (localhost HTTP-SSE)
+
+Glorbo now exposes an MCP server at `POST /mcp` via the existing
+Phoenix endpoint. Wave (a) ships the JSON-RPC 2.0 dispatcher, the
+Streamable HTTP transport adapter, and the first tool — the rest of
+the catalog lands in follow-up waves.
+
+- **`GlorboWeb.MCP.Server`** — tool registry + JSON-RPC dispatcher.
+  Handles `initialize`, `ping`, `tools/list`, `tools/call`.
+  Protocol version `2025-06-18`. Unknown methods → `-32601`;
+  malformed payloads → `-32600`; unknown tool → `-32000`. Tool-
+  execution failures surface as spec-compliant `CallToolResult`
+  frames with `isError: true`, not JSON-RPC errors.
+- **`GlorboWeb.MCP.Plug`** — Streamable HTTP transport. Single
+  endpoint handling POST (client JSON-RPC), GET → 405 (SSE streams
+  land in a later wave), DELETE → 204. Notifications (no `id`)
+  always return 202 regardless of method. Exact-host Origin check
+  (`localhost`, `127.0.0.1`, `::1`) as DNS-rebind protection.
+  `Mcp-Session-Id` stamped on the `initialize` response.
+- **`GlorboWeb.MCP.Tool`** — behaviour the tool registry consumes.
+  Per-request context carries `:client` (normalized MCP client name
+  used as the `mcp:<client>` audit actor) and `:base` (injectable
+  GLORBO_HOME).
+- **`GlorboWeb.MCP.Tools.ListCompanies`** — first tool
+  (`glorbo.list_companies`). Enumerates `<base>/companies/*` and
+  returns `slug`, `name`, `headcount_budget` per entry.
+- Router: `forward "/mcp", GlorboWeb.MCP.Plug`. Not behind the
+  dashboard bearer-token gate — the plug's own Origin check +
+  localhost endpoint bind are the outer boundary, matching GEP-6
+  D5's trust model.
+- 26 new tests: dispatcher unit (protocol methods, tools/list,
+  tools/call happy + errors, CallToolResult round-trip) + Plug
+  integration (JSON-RPC framing, notification semantics, Origin
+  rejection including prefix-spoofing guards, method routing).
+
+Codex-reviewed; three must-fix items applied inline before commit
+(exact-host Origin match, generic notification handling, CallToolResult
+wrapping for tool-execution errors).
+
+1483 tests green; `mix credo --strict` clean.
+
 ### Changed — GEP-28 runtime wave 2b: outbox indirection for proposals (BREAKING pre-1.0)
 
 Agents no longer have direct write access to `proposals/`. All agent-sourced

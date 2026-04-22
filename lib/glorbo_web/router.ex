@@ -78,4 +78,12 @@ defmodule GlorboWeb.Router do
 
     get "/search", SearchController, :search
   end
+
+  # GEP-29 wave (a) — Model Context Protocol server.
+  # Streamable HTTP transport, single endpoint. Not behind :dashboard
+  # on purpose — MCP clients don't carry the dashboard bearer token,
+  # and the Plug applies its own Origin check for DNS-rebind
+  # protection. Localhost-binding of the endpoint is the outer
+  # boundary.
+  forward "/mcp", GlorboWeb.MCP.Plug
 end
