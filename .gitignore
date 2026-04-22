@@ -97,6 +97,9 @@ coverage/
 # Local .reports/ — session outputs from audits/E2E runs; not source.
 .reports/
 *.png
+# Track the design-handoff screenshots (checked in as pixel references
+# cited by GEP-30). Everything else matching *.png stays ignored.
+!.design/design_handoff_glorbo_tui/screenshots/*.png
 .claude/agents/
 
 # graphify transient outputs. `graph.json` is ~3 MB (binary-ish),

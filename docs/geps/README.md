@@ -53,6 +53,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0027 | [Agent Sandbox Path Requests via Director Approval](./0027-agent-sandbox-path-requests.md) | Standards     | Implemented |
 | 0028 | [Agent-Created Proposals via Director Approval](./0028-agent-created-proposals.md)        | Standards     | Draft       |
 | 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Implemented |
+| 0030 | [Director Dashboard TUI Redesign (V1)](./0030-tui-redesign.md)                             | Standards     | Accepted    |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

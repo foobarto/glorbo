@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Glorbo · Redesign exploration</title>
+<meta name="viewport" content="width=1440"/>
+<link rel="stylesheet" href="styles.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Architects+Daughter&family=Patrick+Hand&display=swap" rel="stylesheet"/>
+<style>
+  html, body { height: 100%; }
+  body { background: #f0eee9; }
+  /* The canvas owns full viewport; artboard contents are fixed-size divs that get scaled via overflow hidden in focus */
+</style>
+</head>
+<body>
+
+<!-- Tweaks panel (hidden until toggled) -->
+<div id="tweaks-panel">
+  <h4>Tweaks</h4>
+  <label>Direction
+    <select id="tk-dir">
+      <option value="all">show all</option>
+      <option value="v1">only V1 · TUI</option>
+      <option value="v2">only V2 · Hybrid</option>
+      <option value="v3">only V3 · Wireframe</option>
+    </select>
+  </label>
+  <label>Canvas bg
+    <select id="tk-bg">
+      <option value="#f0eee9">warm gray (default)</option>
+      <option value="#0a0d0b">black</option>
+      <option value="#fafaf7">paper</option>
+      <option value="#1a1a17">ink</option>
+    </select>
+  </label>
+  <label>Grid
+    <input type="checkbox" id="tk-grid" checked/>
+  </label>
+  <label>Annotations
+    <input type="checkbox" id="tk-annot" checked/>
+  </label>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid #2a2a25;color:#9a9a90;font-size:11px;line-height:1.5">
+    <div>⌘-drag · pan</div>
+    <div>⌘+scroll / pinch · zoom</div>
+    <div>click any artboard → focus</div>
+  </div>
+</div>
+
+<div id="root"></div>
+
+<!-- React & Babel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="v1.jsx"></script>
+<script type="text/babel" src="v1-screens.jsx"></script>
+<script type="text/babel" src="v1-tight.jsx"></script>
+<script type="text/babel" src="v1-errors-page.jsx"></script>
+<script type="text/babel" src="v1-chat.jsx"></script>
+
+<script type="text/babel">
+/* ======= Tweaks defaults (persisted via host) ======= */
+const GLORBO_TWEAKS = /*EDITMODE-BEGIN*/{
+  "direction": "all",
+  "canvasBg": "#f0eee9",
+  "showGrid": true,
+  "showAnnotations": true
+}/*EDITMODE-END*/;
+
+/* ======= Tweaks wiring ======= */
+(function(){
+  const panel = document.getElementById("tweaks-panel");
+  const dir = document.getElementById("tk-dir");
+  const bg = document.getElementById("tk-bg");
+  const grid = document.getElementById("tk-grid");
+  const annot = document.getElementById("tk-annot");
+
+  function apply(t) {
+    document.body.dataset.dir = t.direction || "all";
+    document.body.dataset.grid = t.showGrid ? "on" : "off";
+    document.body.dataset.annot = t.showAnnotations ? "on" : "off";
+    // swap canvas bg live
+    const dc = document.querySelector(".design-canvas");
+    if (dc) dc.style.background = t.canvasBg;
+    // hide artboards of other directions
+    document.querySelectorAll("[data-dc-section]").forEach(sec => {
+      const id = sec.getAttribute("data-dc-section") || "";
+      const show = t.direction === "all" || id.startsWith(t.direction);
+      sec.style.display = show ? "" : "none";
+    });
+  }
+
+  const state = { ...GLORBO_TWEAKS };
+  dir.value = state.direction; bg.value = state.canvasBg;
+  grid.checked = state.showGrid; annot.checked = state.showAnnotations;
+
+  function push(key, val) {
+    state[key] = val;
+    apply(state);
+    try { window.parent.postMessage({type: "__edit_mode_set_keys", edits: {[key]: val}}, "*"); } catch(e){}
+  }
+
+  dir.addEventListener("change", () => push("direction", dir.value));
+  bg.addEventListener("change", () => push("canvasBg", bg.value));
+  grid.addEventListener("change", () => push("showGrid", grid.checked));
+  annot.addEventListener("change", () => push("showAnnotations", annot.checked));
+
+  window.addEventListener("message", (e) => {
+    const d = e.data || {};
+    if (d.type === "__activate_edit_mode") panel.classList.add("on");
+    if (d.type === "__deactivate_edit_mode") panel.classList.remove("on");
+  });
+  try { window.parent.postMessage({type: "__edit_mode_available"}, "*"); } catch(e){}
+
+  // first paint
+  setTimeout(() => apply(state), 80);
+  // re-apply when canvas renders
+  new MutationObserver(() => apply(state)).observe(document.getElementById("root"), { childList: true, subtree: true });
+})();
+</script>
+
+<!-- main canvas -->
+<script type="text/babel">
+const { DesignCanvas, DCSection, DCArtboard, DCPostIt } = window;
+
+function App() {
+  return (
+    <DesignCanvas>
+
+      <DCSection id="readme" title="Glorbo · Redesign exploration"
+        subtitle="TUI-first dashboard for directors living in ~/.glorbo/. Drag to rearrange, click any frame to focus.">
+        <DCArtboard id="legend" label="Legend" width={1000} height={200}>
+          <div style={{padding:"24px 28px",fontFamily:"system-ui",color:"#2a251f",lineHeight:1.6}}>
+            <div style={{fontWeight:600,fontSize:14,marginBottom:6}}>V1 · TUI tight</div>
+            <div style={{fontSize:12.5,color:"#6b6b63",marginBottom:12}}>Monospace, box-drawing chrome, green-on-black. For the <code>~/.glorbo</code> power user who already lives in the filesystem. Keyboard-first, maximum density, every UI element maps to a shell command.</div>
+            <div style={{padding:"10px 12px",background:"#faf5e0",border:"1px dashed #c8b870",fontSize:12.5}}>
+              <b>How to read this file:</b> two rows — the main screens, then the tightening pass (states the first cut skipped: empty, loading, errors, palette, keys, confirm, narrow, 500, 404, chat, company details). Every page has the bottom chat drawer; it's fully expanded on Company details.
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="v1-tui" title="V1 · TUI tight" subtitle="Monospace, box-drawing, green-on-black — for the director who lives in the terminal.">
+        <DCArtboard id="overview" label="Company dashboard" width={1440} height={920}><window.V1Polished/></DCArtboard>
+        <DCArtboard id="kanban" label="Kanban" width={1440} height={920}><window.V1Kanban/></DCArtboard>
+        <DCArtboard id="agent" label="Agent detail" width={1440} height={920}><window.V1Agent/></DCArtboard>
+        <DCArtboard id="inbox" label="Inbox · approvals" width={1440} height={920}><window.V1Inbox/></DCArtboard>
+        <DCArtboard id="audit" label="Audit log" width={1440} height={920}><window.V1Audit/></DCArtboard>
+        <DCArtboard id="goals" label="Goals" width={1440} height={920}><window.V1Goals/></DCArtboard>
+        <DCArtboard id="skills" label="Skills" width={1440} height={920}><window.V1Skills/></DCArtboard>
+        <DCArtboard id="providers" label="Providers" width={1440} height={920}><window.V1Providers/></DCArtboard>
+        <DCArtboard id="chat" label="Chat · full page" width={1440} height={920}><window.V1Chat/></DCArtboard>
+        <DCArtboard id="details" label="Company details · drawer expanded" width={1440} height={920}><window.V1CompanyDetails/></DCArtboard>
+      </DCSection>
+
+      <DCSection id="v1-tight" title="V1 · Edge states"
+        subtitle="Empty / loading / error / palette / keys / confirm / narrow-window / 500 / 404. Every state has a clear next action.">
+        <DCArtboard id="empty" label="Empty states" width={1440} height={920}><window.V1Empty/></DCArtboard>
+        <DCArtboard id="loading" label="Loading · skeletons" width={1440} height={920}><window.V1Loading/></DCArtboard>
+        <DCArtboard id="errors" label="Errors · crashed agent, denied sandbox, toast stack" width={1440} height={920}><window.V1Errors/></DCArtboard>
+        <DCArtboard id="palette" label="⌘K · command palette" width={1440} height={920}><window.V1Palette/></DCArtboard>
+        <DCArtboard id="keys" label="? · keyboard overlay" width={1440} height={920}><window.V1Keys/></DCArtboard>
+        <DCArtboard id="confirm" label="Confirm · destructive" width={1440} height={920}><window.V1Confirm/></DCArtboard>
+        <DCArtboard id="narrow" label="Narrow window (640px)" width={640} height={920}><window.V1Narrow/></DCArtboard>
+        <DCArtboard id="err500" label="500 · glorbo has fainted" width={1440} height={920}><window.V1Err500/></DCArtboard>
+        <DCArtboard id="err404" label="404 · path not found" width={1440} height={920}><window.V1Err404/></DCArtboard>
+        <DCPostIt top={-8} right={-30} rotate={-3}>
+          What's new: every state has a clear next action. No dead ends. All keyboard-driven.
+        </DCPostIt>
+      </DCSection>
+
+      <DCSection id="next" title="Next steps"
+        subtitle="Leave a note on any artboard or here.">
+        <DCArtboard id="poll" label="Decisions needed" width={720} height={340}>
+          <div style={{padding:"22px 26px",fontFamily:"system-ui",color:"#2a251f",lineHeight:1.7}}>
+            <h2 style={{fontSize:18,fontWeight:600,margin:"0 0 12px"}}>Open questions</h2>
+            <ol style={{paddingLeft:20,margin:0,fontSize:13.5}}>
+              <li><b>Chat drawer default state</b> — minimized on every page, or only off the Chat page? I have it minimized everywhere + fully expanded on Company&nbsp;details.</li>
+              <li><b>Shell prompt format</b> — <code>director@uat-demo:#general$</code>. Keep the channel as <code>#name</code>, or go full path <code>~/chat/general</code>?</li>
+              <li><b>Hooks surface</b> — live as a list on Company&nbsp;details, or promoted to their own page under the Company sidebar group?</li>
+              <li><b>Narrow-window / mobile</b> — ship the 640px variant, or say "no, it's a desktop tool" and drop it?</li>
+            </ol>
+          </div>
+        </DCArtboard>
+        <DCPostIt top={30} right={-30} rotate={3} width={200}>
+          Leaning toward Company details owning hooks + a separate /hooks page only if the list grows past ~10.
+        </DCPostIt>
+      </DCSection>
+
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+</body>
+</html>
