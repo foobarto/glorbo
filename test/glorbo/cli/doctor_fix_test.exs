@@ -72,6 +72,13 @@ defmodule Glorbo.CLI.DoctorFixTest do
       assert is_binary(d2)
     end
 
+    test "private_files fixer returns {:ok, _} (and is idempotent)" do
+      assert {:ok, d1} = Fixer.fix_private_files(%{name: "private_files"})
+      assert {:ok, d2} = Fixer.fix_private_files(%{name: "private_files"})
+      assert is_binary(d1)
+      assert is_binary(d2)
+    end
+
     test "bwrap fixer returns {:explain, _} (no auto-install per T-05-12)" do
       assert {:explain, guidance} = Fixer.explain_bwrap(%{name: "bwrap"})
       assert guidance =~ "bubblewrap"

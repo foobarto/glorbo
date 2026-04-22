@@ -60,12 +60,25 @@ defmodule Glorbo.Filesystem.HierarchyTest do
 
       # Case A: absent → empty
       :ok = Hierarchy.ensure!(base)
-      assert File.read!(Path.join(base, "config.md")) == ""
+      config_path = Path.join(base, "config.md")
+      log_path = Path.join(base, "logs/glorbo.log")
+
+      assert File.read!(config_path) == ""
+      assert File.read!(log_path) == ""
+
+      {:ok, config_stat} = File.stat(config_path)
+      {:ok, log_stat} = File.stat(log_path)
+      assert Bitwise.band(config_stat.mode, 0o777) == 0o600
+      assert Bitwise.band(log_stat.mode, 0o777) == 0o600
 
       # Case B: present → preserved
-      File.write!(Path.join(base, "config.md"), "preserved content\n")
+      File.write!(config_path, "preserved content\n")
+      File.chmod!(config_path, 0o644)
       :ok = Hierarchy.ensure!(base)
-      assert File.read!(Path.join(base, "config.md")) == "preserved content\n"
+      assert File.read!(config_path) == "preserved content\n"
+
+      {:ok, preserved_stat} = File.stat(config_path)
+      assert Bitwise.band(preserved_stat.mode, 0o777) == 0o644
     end
   end
 

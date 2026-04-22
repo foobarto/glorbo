@@ -179,9 +179,9 @@ defmodule Glorbo.DoctorTest do
         )
 
       results = Doctor.run_checks(deps)
-      # GEP-5 D6: 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10
+      # GEP-5 D6 + row 61: 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11
       # (podman/ollama/ollama_daemon/runtime_image/runtime_exec dropped)
-      assert length(results) == 10
+      assert length(results) == 11
 
       Enum.each(results, fn r ->
         assert Map.has_key?(r, :name)
@@ -204,6 +204,7 @@ defmodule Glorbo.DoctorTest do
                [
                  "audit_dir",
                  "sockets_dir",
+                 "private_files",
                  "tar_zstd",
                  "bwrap",
                  "user_namespaces"
@@ -300,6 +301,7 @@ defmodule Glorbo.DoctorTest do
       for name <- [
             "disk_space",
             "sockets_dir",
+            "private_files",
             "tar_zstd"
           ] do
         assert by_name[name] == :warning, "#{name} should be :warning"
@@ -345,7 +347,7 @@ defmodule Glorbo.DoctorTest do
     end
   end
 
-  describe "Phase 2: check_audit_dir + check_sockets_dir (D-46 idempotent)" do
+  describe "Phase 2: check_audit_dir + check_sockets_dir + check_private_files" do
     test "creates + cleans probe in ~/.glorbo/audit/_system/ and ~/.glorbo/runtime/sockets/" do
       tmp =
         Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
@@ -370,6 +372,7 @@ defmodule Glorbo.DoctorTest do
       results = Doctor.run_checks(deps)
       audit = Enum.find(results, &(&1.name == "audit_dir"))
       sockets = Enum.find(results, &(&1.name == "sockets_dir"))
+      private_files = Enum.find(results, &(&1.name == "private_files"))
 
       assert audit.pass
       assert audit.severity == :blocker
@@ -383,6 +386,43 @@ defmodule Glorbo.DoctorTest do
       %File.Stat{mode: mode} = File.stat!(sockets_path)
       # Lower 9 bits hold permissions; assert 0700.
       assert Bitwise.band(mode, 0o777) == 0o700
+
+      assert private_files.pass
+      assert private_files.severity == :warning
+    end
+
+    test "private_files warns when config.md or glorbo.log is more permissive than 0600" do
+      tmp =
+        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      base = Path.join(tmp, ".glorbo")
+      File.mkdir_p!(Path.join(base, "logs"))
+      File.write!(Path.join(base, "config.md"), "")
+      File.write!(Path.join(base, "logs/glorbo.log"), "")
+      File.chmod!(Path.join(base, "config.md"), 0o644)
+      File.chmod!(Path.join(base, "logs/glorbo.log"), 0o664)
+
+      deps =
+        TestHelpers.deps(
+          home_fun: fn -> tmp end,
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "private_files"))
+
+      refute check.pass
+      assert check.severity == :warning
+      assert check.detail =~ "config.md=0644"
+      assert check.detail =~ "logs/glorbo.log=0664"
     end
   end
 
@@ -470,8 +510,8 @@ defmodule Glorbo.DoctorTest do
       results = Doctor.run_checks(deps)
       decoded = results |> Formatter.to_json() |> Jason.decode!()
 
-      # GEP-5 D6: 5 Phase-1 + 3 Phase-2 + 2 Phase-3 = 10
-      assert length(decoded["checks"]) == 10
+      # GEP-5 D6 + row 61: 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11
+      assert length(decoded["checks"]) == 11
       # Top-level envelope keys all still present
       for k <- ["version", "checks", "all_passed", "passed_count", "total_count", "exit_code"] do
         assert Map.has_key?(decoded, k), "envelope key #{k} missing"

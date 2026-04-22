@@ -73,6 +73,7 @@ defmodule Glorbo.Doctor do
       run(:erts_version, :blocker, fn -> check_erts_version(deps) end),
       run(:audit_dir, :blocker, fn -> check_audit_dir(deps) end),
       run(:sockets_dir, :warning, fn -> check_sockets_dir(deps) end),
+      run(:private_files, :warning, fn -> check_private_files(deps) end),
       run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end),
       linux_only.(:bwrap, :blocker, fn -> check_bwrap(deps) end),
       linux_only.(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
@@ -282,6 +283,44 @@ defmodule Glorbo.Doctor do
       write_probe(path, "writable runtime socket dir, mode 0700", "#{path} (writable, 0700)")
     rescue
       e in [File.Error] -> {:fail, Exception.message(e), "writable runtime socket dir, mode 0700"}
+    end
+  end
+
+  @spec check_private_files(keyword()) :: {:ok | :fail, String.t(), String.t()}
+  defp check_private_files(deps) do
+    base = glorbo_base(deps)
+    required = "config.md and logs/glorbo.log mode <= 0600"
+
+    offenders =
+      [{"config.md", "config.md"}, {"logs/glorbo.log", "logs/glorbo.log"}]
+      |> Enum.flat_map(fn {label, rel} ->
+        path = Path.join(base, rel)
+
+        case File.lstat(path) do
+          {:ok, %File.Stat{type: :regular, mode: mode}} ->
+            perms = Bitwise.band(mode, 0o777)
+
+            if perms > 0o600 do
+              ["#{label}=0#{Integer.to_string(perms, 8)}"]
+            else
+              []
+            end
+
+          {:ok, %File.Stat{type: type}} ->
+            ["#{label}=#{type}"]
+
+          {:error, :enoent} ->
+            []
+
+          {:error, reason} ->
+            ["#{label}=#{inspect(reason)}"]
+        end
+      end)
+
+    if offenders == [] do
+      {:ok, "config.md/logs.glorbo.log absent or private", required}
+    else
+      {:fail, Enum.join(offenders, ", "), required}
     end
   end
 

@@ -30,6 +30,7 @@ defmodule Glorbo.Doctor.Fixer do
     "glorbo_dir" => &__MODULE__.fix_glorbo_dir/1,
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
+    "private_files" => &__MODULE__.fix_private_files/1,
     "bwrap" => &__MODULE__.explain_bwrap/1
   }
 
@@ -229,6 +230,50 @@ defmodule Glorbo.Doctor.Fixer do
       {:ok, "created #{path} (mode 0700)"}
     else
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  def fix_private_files(_check) do
+    base = Glorbo.Filesystem.Hierarchy.default_root()
+
+    case chmod_private_files([
+           Path.join(base, "config.md"),
+           Path.join([base, "logs", "glorbo.log"])
+         ]) do
+      {:ok, []} ->
+        {:ok, "no private files present"}
+
+      {:ok, changed} ->
+        {:ok, "chmod 0600 on #{Enum.join(changed, ", ")}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp chmod_private_files(paths) do
+    Enum.reduce_while(paths, {:ok, []}, fn path, {:ok, acc} ->
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular}} ->
+          case File.chmod(path, 0o600) do
+            :ok -> {:cont, {:ok, [path | acc]}}
+            {:error, reason} -> {:halt, {:error, {path, reason}}}
+          end
+
+        {:error, :enoent} ->
+          {:cont, {:ok, acc}}
+
+        {:ok, %File.Stat{type: type}} ->
+          {:halt, {:error, {path, {:not_regular_file, type}}}}
+
+        {:error, reason} ->
+          {:halt, {:error, {path, reason}}}
+      end
+    end)
+    |> case do
+      {:ok, changed} -> {:ok, Enum.reverse(changed)}
+      {:error, _} = err -> err
     end
   end
 

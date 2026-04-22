@@ -6,11 +6,13 @@ defmodule Glorbo.Doctor.TestHelpers do
   faked OS functions. Any key not supplied falls through to the real default.
   """
   def deps(overrides \\ []) do
+    tmp_home = Path.join(System.tmp_dir!(), "glorbo-doctor-home-#{System.unique_integer([:positive])}")
+
     Keyword.merge(
       [
         cmd_fun: &System.cmd/2,
         which_fun: &System.find_executable/1,
-        home_fun: &System.user_home!/0,
+        home_fun: fn -> tmp_home end,
         otp_release_fun: fn ->
           :otp_release |> :erlang.system_info() |> List.to_string()
         end,

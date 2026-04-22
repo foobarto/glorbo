@@ -40,7 +40,10 @@ defmodule Glorbo.Filesystem.Hierarchy do
 
     Enum.each(@files, fn {path, default} ->
       full = Path.join(base, path)
-      unless File.exists?(full), do: File.write!(full, default)
+      unless File.exists?(full) do
+        File.write!(full, default)
+        File.chmod!(full, 0o600)
+      end
     end)
 
     File.chmod!(Path.join(base, "runtime/sockets"), 0o700)
