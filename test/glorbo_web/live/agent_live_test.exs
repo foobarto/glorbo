@@ -496,7 +496,7 @@ defmodule GlorboWeb.AgentLiveTest do
     role: Engineer
     provider: claude-code
     model: claude-sonnet-4-5
-    network: api-only
+    network: proxy
     heartbeat: null
     permissions:
       - projects:read:*

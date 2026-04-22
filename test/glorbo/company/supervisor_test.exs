@@ -49,7 +49,7 @@ defmodule Glorbo.Company.SupervisorTest do
   end
 
   describe "S1: 11-child base tree (incl. TaskScheduler; Plan 03-05 + Approvals.Gate + PathRequestGate + ProposalsSink + AgentBoot)" do
-    test "CompanySupervisor starts 11 children by default (no api-only agents → no Proxy)" do
+    test "CompanySupervisor starts 11 children by default (no proxy agents → no Proxy)" do
       {sup_pid, _co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
       assert length(children) == 11
@@ -70,14 +70,14 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(modules, Glorbo.PathRequestGate)
       assert MapSet.member?(modules, Glorbo.Company.ProposalsSink)
       assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
-      # GAP-4: no api-only agent on disk → Network.Proxy is NOT started
+      # GAP-4: no proxy agent on disk → Network.Proxy is NOT started
       refute MapSet.member?(modules, Glorbo.Network.Proxy)
     end
   end
 
-  describe "S1b: 12-child tree when an api-only agent is declared (GAP-4)" do
-    test "CompanySupervisor starts 12 children when api_only?: true" do
-      {sup_pid, _co, _base} = start_company(api_only?: true)
+  describe "S1b: 12-child tree when an proxy agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 12 children when proxy?: true" do
+      {sup_pid, _co, _base} = start_company(proxy?: true)
       children = Supervisor.which_children(sup_pid)
       assert length(children) == 12
 
@@ -204,7 +204,7 @@ defmodule Glorbo.Company.SupervisorTest do
       slug: #{slug}
       role: Scout
       provider: claude-code
-      network: api-only
+      network: proxy
       #{extra_opts}
       """
 
@@ -232,7 +232,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_allow_sup"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -276,7 +276,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_allow_invalid"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -309,7 +309,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_allow_empty"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -347,7 +347,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_allow_union"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -380,7 +380,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_no_smart"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -417,7 +417,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_smart"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->
@@ -462,7 +462,7 @@ defmodule Glorbo.Company.SupervisorTest do
           name: Glorbo.Test.UniqueName.gen("company_strict"),
           company: company,
           base: base,
-          api_only?: true
+          proxy?: true
         )
 
       on_exit(fn ->

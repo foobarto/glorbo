@@ -41,7 +41,7 @@ defmodule Glorbo.Agent.ParserTest do
         - projects:write:website-redesign
         - chat:read:*
       heartbeat: "*/30 * * * *"
-      network: api-only
+      network: proxy
       skills:
         - elixir-style
         - git-hygiene
@@ -63,7 +63,7 @@ defmodule Glorbo.Agent.ParserTest do
       assert {"projects", "write", "website-redesign"} in spec.permissions
       assert {"chat", "read", "*"} in spec.permissions
       assert spec.heartbeat == "*/30 * * * *"
-      assert spec.network == :api_only
+      assert spec.network == :proxy
       assert spec.skills == ["elixir-style", "git-hygiene"]
       assert spec.budget_usd_cents_month == 10_000
       assert spec.timeout_seconds == 600
@@ -196,18 +196,18 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:ok, %{network: :none}} = Parser.parse_file(path)
     end
 
-    test "P8b: network: api-only → :api_only", ctx do
+    test "P8b: network: proxy → :proxy", ctx do
       content = ~s"""
       ---
       role: x
       provider: claude-code
       model: claude-opus-4-6
-      network: api-only
+      network: proxy
       ---
       """
 
       path = write_agent(ctx, "b", content)
-      assert {:ok, %{network: :api_only}} = Parser.parse_file(path)
+      assert {:ok, %{network: :proxy}} = Parser.parse_file(path)
     end
 
     test "P8c: network: open → :open", ctx do
@@ -238,7 +238,7 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:invalid_network, "bogus"}} = Parser.parse_file(path)
     end
 
-    test "P9: missing network defaults to :api_only (CLI providers need egress)", ctx do
+    test "P9: missing network defaults to :proxy (CLI providers need egress)", ctx do
       content = """
       ---
       role: x
@@ -248,7 +248,7 @@ defmodule Glorbo.Agent.ParserTest do
       """
 
       path = write_agent(ctx, "e", content)
-      assert {:ok, %{network: :api_only}} = Parser.parse_file(path)
+      assert {:ok, %{network: :proxy}} = Parser.parse_file(path)
     end
   end
 

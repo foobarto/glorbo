@@ -115,7 +115,7 @@ Three levels, declared per-agent:
 - **`network: none`** (default) — `--unshare-net`. The sandbox has no
   network namespace inheritance. Kernel-enforced: the agent literally
   has no IP stack.
-- **`network: api-only`** — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
+- **`network: proxy`** — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
   pointing at a Glorbo-managed allowlist CONNECT proxy. The proxy
   only permits hosts in the agent's declaration. v0.0.1 is
   advisory-only at the kernel layer (a determined agent could ignore
@@ -262,7 +262,7 @@ These are in-scope for future GEPs, not for this one.
 ### D4. Network as declarative, kernel-enforced for `none`
 
 - **Decided:** `network: none` sets `--unshare-net`, kernel-enforced.
-  `network: api-only` is advisory via `HTTP_PROXY` in v0.0.1, with
+  `network: proxy` is advisory via `HTTP_PROXY` in v0.0.1, with
   netns + nftables hardening planned.
 - **Alternatives:** always open network; always via proxy; require
   per-host proxy; firewall at the host level.

@@ -322,7 +322,7 @@ ecosystem.
 
 - **Decided:** `String.to_existing_atom/1` remains permitted for
   parsing inputs against a closed, source-declared enum (e.g. agent
-  `network:` field against `[:none, :api_only, :full]`). The
+  `network:` field against `[:none, :proxy, :full]`). The
   `security/acl_mapper.ex` moduledoc ban on `String.to_existing_atom`
   is read as "on open-ended user input," not "never."
 - **Alternatives:** ban `String.to_existing_atom/1` entirely in user-

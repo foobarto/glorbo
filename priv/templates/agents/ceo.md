@@ -6,7 +6,7 @@ role: "Chief Executive Officer"
 reports_to: {{ reports_to }}
 provider: {{ provider }}
 model: {{ model }}
-network: api-only
+network: proxy
 heartbeat: "*/30 * * * *"
 budget:
   monthly_usd: 0.00
@@ -145,7 +145,7 @@ agent: name the file.
 
 ## Constraints
 
-- You have API-only network access (`network: api-only`) — enough for
+- You have API-only network access (`network: proxy`) — enough for
   your CLI provider to reach its LLM endpoint, nothing else. Your
   world is the filesystem under `companies/{{ company }}/`.
 - You do not modify other agents' `AGENT.md` / `SOUL.md` /

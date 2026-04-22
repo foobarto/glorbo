@@ -30,7 +30,7 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert content =~ ~s(role: "Agent")
       assert content =~ "provider: claude-code"
       assert content =~ "model: claude-sonnet-4-5"
-      assert content =~ "network: api-only"
+      assert content =~ "network: proxy"
       # Default permissions: read-only project + chat access so a fresh
       # agent can immediately see what's on disk (updated 2026-04-18).
       assert content =~ "projects:read:*"
@@ -113,7 +113,7 @@ defmodule Glorbo.CLI.NewAgentTest do
 
       assert spec.slug == "ceo"
       assert spec.provider == "claude-code"
-      assert spec.network == :api_only
+      assert spec.network == :proxy
       assert spec.permissions == [{"projects", "read", "*"}, {"chat", "read", "*"}]
       assert spec.model == "claude-sonnet-4-5"
     end

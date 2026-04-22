@@ -24,8 +24,8 @@ to block specific hosts, and we have no way to limit the blast
 radius of a prompt-injected agent that decides to POST credentials
 to an attacker.
 
-The existing three primitives — `:none | :api_only | :open` — are
-too coarse AND overlap: `:api_only` is a limp subset of `:open` with
+The existing three primitives — `:none | :proxy | :open` — are
+too coarse AND overlap: `:proxy` is a limp subset of `:open` with
 no real enforcement (the kernel has no way to distinguish API calls
 from other HTTPS). With this GEP we collapse the network policy to
 **three values: `:loopback | :full | :proxy`**. `:none` goes too —
@@ -83,7 +83,7 @@ The `network:` field takes a new, simpler three-value set:
 | Old | New | Behaviour |
 |-----|-----|-----------|
 | `none` | `loopback` | loopback-only netns; can reach `127.0.0.1` / `::1` but no external hosts. Fits the local-LLM (LM Studio / Ollama) case without opening the internet. |
-| `api_only` | `loopback` | same target; see migration section |
+| `:proxy` | `loopback` | same target; see migration section |
 | `open` | `full` | `--share-net`; unfiltered access to anything the host can reach |
 | *(new)* | `proxy` | veth pair into proxy-only netns; every external packet goes through `127.0.0.1:4100` |
 
@@ -333,7 +333,7 @@ agent never sees it as a prompt input and never learns the full URL
 | Old value | New value | Behaviour change |
 |-----------|-----------|------------------|
 | `none` | `loopback` | previous `:none` was `--unshare-net` (nothing at all); becomes loopback-only. Strictly more useful (local LLMs work) with the same "no external reach" guarantee. |
-| `api_only` | `loopback` | no enforcement was ever real; collapses to `loopback`. Directors who actually meant "route everything through an API host on the internet" should migrate to `proxy`. |
+| `:proxy` | `loopback` | no enforcement was ever real; collapses to `loopback`. Directors who actually meant "route everything through an API host on the internet" should migrate to `proxy`. |
 | `open` | `full` | rename only; same behaviour |
 
 `Glorbo.Agent.Parser` accepts the old values as synonyms for one
@@ -341,11 +341,11 @@ release (v0.0.4 → v0.0.5), emitting a `spec.deprecated_network`
 warning audit. v0.0.6 removes the aliases entirely — a hard error
 at parse time.
 
-**Why loopback replaces both `none` and `api_only`?** `:none`
+**Why loopback replaces both `none` and `:proxy`?** `:none`
 (`--unshare-net`) is strictly less useful than loopback-only: no
 legitimate CLI benefits from total network absence over loopback-
 only access, and most "offline" CLIs actually need at least a local
-daemon (LM Studio, Ollama, pg). `:api_only` pretended to allow only
+daemon (LM Studio, Ollama, pg). `:proxy` pretended to allow only
 HTTPS-to-APIs but the kernel has no way to enforce that — it was
 documentation, not a boundary. Collapsing both into `loopback` gives
 directors one honest answer for "local talking to local"; anyone
@@ -537,12 +537,12 @@ Other rollout notes:
 
 ### D10. Collapse to three policies (`loopback | full | proxy`)
 
-- **Decided:** drop `api_only`; rename `none → loopback` (and give
+- **Decided:** drop `:proxy`; rename `none → loopback` (and give
   it loopback access rather than nothing); `open → full`; add
   `proxy`.
 - **Alternatives:** keep four values; keep `none` as
-  truly-no-network; keep `api_only` with best-effort deny lists.
-- **Why:** `api_only` never had kernel-layer enforcement — it was
+  truly-no-network; keep `:proxy` with best-effort deny lists.
+- **Why:** `:proxy` never had kernel-layer enforcement — it was
   documentation, not a boundary, and `:proxy` now does the actual
   filtering it was gesturing at. `none` is strictly less useful
   than `loopback` (local LLMs work under loopback; directors who

@@ -1,4 +1,4 @@
-defmodule Glorbo.Integration.SandboxNetworkApiOnlyTest do
+defmodule Glorbo.Integration.SandboxNetworkProxyTest do
   use ExUnit.Case, async: false
 
   @moduletag :bwrap
@@ -66,7 +66,7 @@ defmodule Glorbo.Integration.SandboxNetworkApiOnlyTest do
       outbox_path: ctx.outbox,
       company_path: ctx.company_path,
       permissions: [],
-      network_policy: :api_only,
+      network_policy: :proxy,
       cli_auth_binds: [],
       cli_env: %{},
       proxy_url: proxy_url,
@@ -105,13 +105,13 @@ defmodule Glorbo.Integration.SandboxNetworkApiOnlyTest do
   HTTPS_PROXY and reaches the host directly. This test is informational
   — it does NOT pass a strict denial — it simply records that the
   advisory boundary is bypassable. Kept in the suite as a reminder that
-  `api-only` is advisory in v0.0.1 and documented as such.
+  `proxy` is advisory in v0.0.1 and documented as such.
   """
   @tag :skip_in_ci
   test "IP2: HTTPS_PROXY is advisory (bypass documented; skipped unless manually enabled)" do
     # This test intentionally documents Pitfall 7. It's skipped by default
     # to avoid making external network calls from the test suite. The
-    # integration-level proof of api-only enforcement is IP1 above; this
+    # integration-level proof of proxy enforcement is IP1 above; this
     # entry exists for documentation + manual verification.
     :ok
   end

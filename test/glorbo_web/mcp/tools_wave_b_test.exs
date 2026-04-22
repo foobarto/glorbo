@@ -42,7 +42,7 @@ defmodule GlorboWeb.MCP.ToolsWaveBTest do
     role: #{Keyword.get(opts, :role, "Engineer")}
     provider: #{Keyword.get(opts, :provider, "claude-code")}
     model: #{Keyword.get(opts, :model, "claude-haiku-4-5")}
-    network: #{Keyword.get(opts, :network, "api-only")}
+    network: #{Keyword.get(opts, :network, "proxy")}
     reports_to: #{Keyword.get(opts, :reports_to, "director")}
     heartbeat: "*/15 * * * *"
     budget:
@@ -194,7 +194,7 @@ defmodule GlorboWeb.MCP.ToolsWaveBTest do
       assert spec["slug"] == "ceo"
       assert spec["role"] == "CEO"
       assert spec["model"] == "claude-opus-4-7"
-      assert spec["network"] == "api-only"
+      assert spec["network"] == "proxy"
       assert is_list(spec["permissions"])
     end
 

@@ -6,7 +6,7 @@ defmodule Glorbo.Init.ExampleCompany do
 
     * `company.md` with `name: acme` and a short mission
     * `agents/ceo/AGENT.md` with `provider: claude-code`,
-      `network: api-only` (CLI providers need egress to their LLM
+      `network: proxy` (CLI providers need egress to their LLM
       endpoint), default model `claude-sonnet-4-5`
     * `agents/ceo/HEARTBEAT.md` (GEP-14) — cron-wake instructions
     * `channels/general.md` (default company-wide channel)
@@ -47,7 +47,7 @@ defmodule Glorbo.Init.ExampleCompany do
       monthly_usd: 0.00
       alert_at_pct: 80
     heartbeat: "*/30 * * * *"
-    network: api-only
+    network: proxy
     skills: []
     permissions:
       - projects:read:*

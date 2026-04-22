@@ -6,7 +6,7 @@ role: Senior Editor
 reports_to: director
 provider: {{ provider }}
 model: {{ model }}
-network: api-only
+network: proxy
 heartbeat: null
 permissions:
   - projects:read:*

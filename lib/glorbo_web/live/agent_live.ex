@@ -1837,7 +1837,7 @@ defmodule GlorboWeb.AgentLive do
   defp network_line("none"),
     do: {"--unshare-net", "# kernel netns shutdown — no egress possible"}
 
-  defp network_line("api-only"),
+  defp network_line("proxy"),
     do: {"--setenv HTTPS_PROXY http://127.0.0.1:9443", "# allowlisted HTTPS CONNECT proxy"}
 
   defp network_line("open"),

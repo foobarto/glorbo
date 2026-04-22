@@ -150,7 +150,7 @@ archetype: software-development
 default_provider: claude-code
 default_model: claude-sonnet-4-5
 fixtures_dir: fixtures
-network: api-only                     # every agent in this company
+network: proxy                     # every agent in this company
                                       # gets this default; agents can
                                       # narrow via their own `network:`
 required_skills: []                   # optional declared skills
@@ -258,7 +258,7 @@ files — no separate rank table.
 1. Template fixtures are bind-mounted **read-only** into the
    sandbox. Agents can read but not write (mutation goes to the
    company workspace).
-2. Template `AGENT.md` `network:` defaults to `api-only` with a
+2. Template `AGENT.md` `network:` defaults to `proxy` with a
    narrow allowlist in the agent frontmatter. The per-company GEP-23
    proxy enforces at the kernel layer.
 3. Bench run manifest records the exact fixtures tree SHA (hash of

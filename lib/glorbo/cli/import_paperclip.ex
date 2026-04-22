@@ -40,7 +40,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
        `glorbo new company`).
     5. For each sub-directory of `<src>` that contains an `AGENTS.md`:
        * Wrap the body in Glorbo frontmatter (name / slug / role /
-         provider / model / network: api-only / heartbeat: null /
+         provider / model / network: proxy / heartbeat: null /
          permissions: []).
        * Write to `agents/<slug>/AGENT.md`.
        * Copy `HEARTBEAT.md`, `SOUL.md`, `TOOLS.md` verbatim.
@@ -250,7 +250,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
     reports_to: director
     provider: claude-code
     model: claude-sonnet-4-5
-    network: api-only
+    network: proxy
     heartbeat: null
     budget:
       monthly_usd: 20.00

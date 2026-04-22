@@ -60,7 +60,7 @@ defmodule Glorbo.Sandbox.Bwrap do
   ## Network policy (D-15, D-17)
 
     * `:none` → `--unshare-net` (kernel-enforced egress block).
-    * `:api_only` → inherits host netns, but `HTTPS_PROXY` and `HTTP_PROXY`
+    * `:proxy` → inherits host netns, but `HTTPS_PROXY` and `HTTP_PROXY`
       env vars point at a `Glorbo.Network.Proxy` listener with a hostname
       allowlist. Advisory-only (RESEARCH Pitfall 7) — motivated agents can
       bypass by ignoring the env.
@@ -98,7 +98,7 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   alias Glorbo.Sandbox.PermissionMapper
 
-  @type network_policy :: :none | :api_only | :open
+  @type network_policy :: :none | :proxy | :open
 
   @type invocation_opts :: %{
           required(:agent_workspace) => String.t(),
@@ -195,7 +195,7 @@ defmodule Glorbo.Sandbox.Bwrap do
   # ---------------------------------------------------------------------------
 
   defp network_flag(:none), do: ["--unshare-net"]
-  defp network_flag(:api_only), do: []
+  defp network_flag(:proxy), do: []
   defp network_flag(:open), do: []
 
   # ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ defmodule Glorbo.Sandbox.Bwrap do
     Regex.match?(~r/\A[A-Za-z_][A-Za-z0-9_]*\z/, k)
   end
 
-  defp proxy_env_for(%{network_policy: :api_only, proxy_url: url}) when is_binary(url) do
+  defp proxy_env_for(%{network_policy: :proxy, proxy_url: url}) when is_binary(url) do
     [{"HTTPS_PROXY", url}, {"HTTP_PROXY", url}]
   end
 

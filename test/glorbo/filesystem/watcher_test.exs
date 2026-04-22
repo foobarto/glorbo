@@ -294,7 +294,7 @@ defmodule Glorbo.Filesystem.WatcherTest do
       assert MapSet.member?(modules, Glorbo.PathRequestGate)
       assert MapSet.member?(modules, Glorbo.Company.ProposalsSink)
       assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
-      # GAP-4: no api-only agent on disk → Network.Proxy NOT started
+      # GAP-4: no proxy agent on disk → Network.Proxy NOT started
       refute MapSet.member?(modules, Glorbo.Network.Proxy)
     end
   end

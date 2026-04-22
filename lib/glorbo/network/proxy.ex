@@ -1,6 +1,6 @@
 defmodule Glorbo.Network.Proxy do
   @moduledoc """
-  HTTPS CONNECT allowlist proxy for `network: api-only` agents (D-17;
+  HTTPS CONNECT allowlist proxy for `network: proxy` agents (D-17;
   SEC-03; T-03-33; advisory-only per T-03-34 / Pitfall 7).
 
   A small (~150 LOC target) OTP-native proxy that accepts HTTPS CONNECT
@@ -35,7 +35,7 @@ defmodule Glorbo.Network.Proxy do
   Base list from `config/network_policy.exs` (Plan 03-02):
 
       config :glorbo, :network_policy, %{
-        api_only_base_allowlist: %{
+        proxy_base_allowlist: %{
           "claude-code" => ~w(api.anthropic.com ...),
           "gemini-cli" => ~w(generativelanguage.googleapis.com ...),
           "codex"      => ~w(api.openai.com ...)
@@ -465,7 +465,7 @@ defmodule Glorbo.Network.Proxy do
   # ---------------------------------------------------------------------------
 
   @doc """
-  Base api-only allowlist derived from `config :glorbo,
+  Base proxy allowlist derived from `config :glorbo,
   :network_policy`. Public so `Glorbo.Company.Supervisor` can
   compose it with per-agent `network_allow:` extensions before
   passing the union to the Proxy init.
@@ -475,7 +475,7 @@ defmodule Glorbo.Network.Proxy do
     config = Application.get_env(:glorbo, :network_policy, %{})
 
     base =
-      case Map.get(config, :api_only_base_allowlist) do
+      case Map.get(config, :proxy_base_allowlist) do
         %{} = by_provider -> by_provider |> Map.values() |> List.flatten()
         _ -> []
       end

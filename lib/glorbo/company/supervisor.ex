@@ -13,8 +13,8 @@ defmodule Glorbo.Company.Supervisor do
     7. `Glorbo.Approvals.Gate`         — SEC-04 Director approval flow (GAP-5)
     8. `Glorbo.PathRequestGate`        — GEP-27 Agent sandbox path requests
     9. `Glorbo.Network.Proxy` (conditional) — HTTPS CONNECT allowlist for
-       api-only agents (GAP-4; started iff at least one AGENT.md declares
-       `network: api-only`).
+       proxy agents (GAP-4; started iff at least one AGENT.md declares
+       `network: proxy`).
    10. `Glorbo.Company.ProposalsSink`  — GEP-28 wave 2a audit event emitter
        for `proposals/*.md` writes.
    11. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
@@ -107,9 +107,9 @@ defmodule Glorbo.Company.Supervisor do
     ]
 
     # GAP-4: start Glorbo.Network.Proxy when at least one agent declares
-    # network: :api_only. Scanned from agent.md files on disk so the
+    # network: :proxy. Scanned from agent.md files on disk so the
     # decision tracks the filesystem source of truth (CLAUDE.md
-    # invariant). `api_only?: true|false` in opts overrides the scan
+    # invariant). `proxy?: true|false` in opts overrides the scan
     # for tests that want to assert a specific shape.
     #
     # GAP-5: Approvals.Gate always starts — its PubSub subscription is
@@ -130,10 +130,10 @@ defmodule Glorbo.Company.Supervisor do
   # ---------------------------------------------------------------------------
 
   defp maybe_append_proxy(children, opts, company, base) do
-    api_only? =
-      Keyword.get_lazy(opts, :api_only?, fn -> company_has_api_only_agent?(company, base) end)
+    proxy? =
+      Keyword.get_lazy(opts, :proxy?, fn -> company_has_proxy_agent?(company, base) end)
 
-    if api_only? do
+    if proxy? do
       children ++
         [
           {Glorbo.Network.Proxy,
@@ -144,7 +144,7 @@ defmodule Glorbo.Company.Supervisor do
              # GEP-23 R19a (#283) — compose base allowlist + any
              # per-agent `network_allow:` frontmatter extensions at
              # proxy boot. Coarse-grained: proxy sees the union, so
-             # any allowed host is reachable by any api-only agent
+             # any allowed host is reachable by any proxy agent
              # in the company. Per-requester gating is R19b.
              allowlist_fun: fn _co -> company_allowlist(company, base) end,
              # GEP-23 Phase 3 (#321) — smart-mode classifier. Built
@@ -282,7 +282,7 @@ defmodule Glorbo.Company.Supervisor do
 
   defp valid_hostname?(_), do: false
 
-  defp company_has_api_only_agent?(company, base) do
+  defp company_has_proxy_agent?(company, base) do
     agents_dir = Path.join([base, "companies", company, "agents"])
 
     case File.ls(agents_dir) do
@@ -290,22 +290,22 @@ defmodule Glorbo.Company.Supervisor do
         entries
         |> Enum.map(&Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, &1)))
         |> Enum.filter(&File.regular?/1)
-        |> Enum.any?(&agent_md_declares_api_only?/1)
+        |> Enum.any?(&agent_md_declares_proxy?/1)
 
       _ ->
         false
     end
   end
 
-  # Fast-path: skim frontmatter for `network: api-only` via a substring
+  # Fast-path: skim frontmatter for `network: proxy` via a substring
   # scan. Only full-parse if the skim says yes — avoids O(agents) YAML
   # parses on every company boot for the common case where no agent is
-  # api-only (TODO.md Important #1).
-  defp agent_md_declares_api_only?(agent_md_path) do
+  # proxy (TODO.md Important #1).
+  defp agent_md_declares_proxy?(agent_md_path) do
     case File.read(agent_md_path) do
       {:ok, content} ->
-        if String.contains?(content, "api-only") or String.contains?(content, "api_only") do
-          match?({:ok, %{network: :api_only}}, AgentParser.parse_file(agent_md_path))
+        if String.contains?(content, "proxy") do
+          match?({:ok, %{network: :proxy}}, AgentParser.parse_file(agent_md_path))
         else
           false
         end

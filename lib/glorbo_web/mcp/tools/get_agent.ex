@@ -82,8 +82,8 @@ defmodule GlorboWeb.MCP.Tools.GetAgent do
   defp permission_strings(_), do: []
 
   # Agent.Spec's network is parsed as an atom with underscores
-  # (`:api_only`). The on-disk canonical form uses hyphens
-  # (`api-only`); MCP clients expect the hyphen form.
+  # (`:proxy`). The on-disk canonical form uses hyphens
+  # (`proxy`); MCP clients expect the hyphen form.
   defp network_to_wire(atom) when is_atom(atom) do
     atom |> Atom.to_string() |> String.replace("_", "-")
   end

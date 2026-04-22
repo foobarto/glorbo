@@ -6,7 +6,7 @@ role: "Provenance Auditor"
 reports_to: {{ reports_to }}
 provider: {{ provider }}
 model: {{ model }}
-network: api-only
+network: proxy
 heartbeat: null
 budget:
   monthly_usd: 15.00

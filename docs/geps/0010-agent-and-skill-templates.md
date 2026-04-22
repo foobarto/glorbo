@@ -159,7 +159,7 @@ budget:
   monthly_usd: 30.00
   alert_at_pct: 80
 heartbeat: "*/30 * * * *"
-network: api-only
+network: proxy
 skills:
   - code-review
   - web-search

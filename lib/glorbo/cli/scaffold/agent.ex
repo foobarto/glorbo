@@ -22,7 +22,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     * `role:` — `"Agent"` (override via `--role`).
     * `provider:` — `"claude-code"` (override via `--provider`).
     * `model:` — `"claude-sonnet-4-5"`.
-    * `network:` — `"api-only"`.
+    * `network:` — `"proxy"`.
     * `permissions:` — `[]`.
     * `budget.monthly_usd:` — `10.00` (= 1000 ¢/month).
     * `skills:` — `[]`.
@@ -125,7 +125,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     role: "#{role}"
     provider: #{provider}
     model: #{model}
-    network: api-only
+    network: proxy
     heartbeat: null
     permissions:
       - projects:read:*
@@ -456,7 +456,7 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
     DEFAULTS (D-12, no-template mode)
       role=Agent, provider=claude-code, model=claude-sonnet-4-5,
-      network=api-only, permissions=[projects:read:*, chat:read:*],
+      network=proxy, permissions=[projects:read:*, chat:read:*],
       budget.monthly_usd=10.00, skills=[], heartbeat=null
 
     COMPANY

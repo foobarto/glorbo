@@ -92,11 +92,9 @@ defmodule Glorbo.Sandbox.BwrapTest do
       refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
     end
 
-    test "B2: network: :api_only → --unshare-net ABSENT + HTTPS_PROXY + HTTP_PROXY env" do
+    test "B2: network: :proxy → --unshare-net ABSENT + HTTPS_PROXY + HTTP_PROXY env" do
       argv =
-        Bwrap.build_argv(
-          base_opts(%{network_policy: :api_only, proxy_url: "http://localhost:9999"})
-        )
+        Bwrap.build_argv(base_opts(%{network_policy: :proxy, proxy_url: "http://localhost:9999"}))
 
       refute "--unshare-net" in argv
       assert_subsequence(argv, ["--setenv", "HTTPS_PROXY", "http://localhost:9999"])

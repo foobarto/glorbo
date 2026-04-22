@@ -279,7 +279,7 @@ Glorbo.Application
 │       ├── Glorbo.Company.BudgetTracker # Token/cost accounting
 │       ├── Glorbo.Approvals.Gate        # Approval-queue gate
 │       ├── Glorbo.Network.Proxy         # Hostname-allowlist HTTPS proxy
-│       │                                # (only if any agent has network: api-only)
+│       │                                # (only if any agent has network: proxy)
 │       ├── Task.Supervisor              # Per-agent dispatch tasks
 │       └── Glorbo.Agent.Server (ceo)    # One per agent; idle between wakes;
 │                                        # wakes → bwrap+CLI invocation via
@@ -431,7 +431,7 @@ standing container, no long-lived namespace, no privileged daemon.
 
 - `network: none` (default) — `--unshare-net`: no network namespace access,
   kernel-enforced.
-- `network: api-only` — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
+- `network: proxy` — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
   pointed at a Glorbo-managed HTTPS CONNECT allowlist proxy. Currently
   advisory (a determined agent could ignore the env vars); a dedicated
   netns + `nftables` hardening iteration is planned to make the
@@ -442,10 +442,10 @@ Sibling agents and other companies are **not mounted** — company
 isolation is therefore absolute by construction: there is no path
 inside the sandbox that could reach another company's data.
 
-**Planned hardening:** `network: api-only` currently inherits the host
+**Planned hardening:** `network: proxy` currently inherits the host
 netns plus a `HTTPS_PROXY` env var pointing at the per-company
 hostname-allowlist proxy. This is advisory — a determined agent could
-ignore the env vars. A future iteration will move `api-only` agents
+ignore the env vars. A future iteration will move `proxy` agents
 into a dedicated netns with `nftables` rules forcing all egress
 through the proxy, making the allowlist kernel-enforced like `none`
 already is.
@@ -485,7 +485,7 @@ budget:
   monthly_usd: 50.00
   alert_at_pct: 80
 heartbeat: "*/30 * * * *"          # Check inbox every 30 minutes
-network: api-only
+network: proxy
 # Set to true only when routing through a provider whose
 # usage_parser = "none" (hermes, opencode, pi). Default false — dispatch
 # refuses an untracked provider without this opt-in (GEP-8 D15).
@@ -731,7 +731,7 @@ permissions:
 ```
 
 `network:` declarations map to `--unshare-net` (none), a shared netns +
-HTTPS CONNECT allowlist proxy env (api-only), or inherited host netns
+HTTPS CONNECT allowlist proxy env (proxy), or inherited host netns
 (open). A write attempt into `/projects/other-project` from inside the
 sandboxed CLI fails with `EACCES` at the kernel — not at the Elixir
 layer.
@@ -986,7 +986,7 @@ glorbo up
   --cap-drop ALL` and no setuid helpers.
 - **Network isolation:** Agents default to `network: none` —
   `--unshare-net` is a kernel netns shutdown; egress is physically
-  blocked. `api-only` and `open` must be explicitly opted into.
+  blocked. `proxy` and `open` must be explicitly opted into.
 - **Read-only mounts:** bwrap binds everything but the agent's own
   workspace and outbox as `--ro-bind`. Sibling agents and other
   companies are not mounted at all.

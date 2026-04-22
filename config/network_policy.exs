@@ -1,4 +1,4 @@
-# Base allowlist of hostnames for `network: api-only` agents (D-16, D-17).
+# Base allowlist of hostnames for `network: proxy` agents (D-16, D-17).
 #
 # Verified: 2026-04-16. Re-verify before each Glorbo release; upstream endpoint
 # lists drift as providers add/retire regions. Additions MUST be reviewed for
@@ -16,7 +16,7 @@
 import Config
 
 config :glorbo, :network_policy, %{
-  api_only_base_allowlist: %{
+  proxy_base_allowlist: %{
     "claude-code" =>
       ~w(api.anthropic.com claude.ai platform.claude.com sentry.io statsig.anthropic.com),
     "gemini-cli" =>

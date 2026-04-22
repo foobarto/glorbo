@@ -40,7 +40,7 @@ defmodule Glorbo.ApplicationTest do
     # Current child shape: AuditLog, Watcher, Router, Scheduler,
     # TaskScheduler, BudgetTracker, AgentSupervisor, Approvals.Gate,
     # PathRequestGate, ProposalsSink, AgentBoot = 11 children.
-    # Network.Proxy only joins when an api-only agent is on disk
+    # Network.Proxy only joins when an proxy agent is on disk
     # (GAP-4); smoke_test has none → 11, not 12.
     base = Path.join(System.tmp_dir!(), "glorbo_app_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join([base, "companies", "smoke_test"]))

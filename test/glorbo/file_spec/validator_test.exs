@@ -85,7 +85,7 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       slug: ceo
       role: Chief Executive Officer
       provider: claude-code
-      network: api-only
+      network: proxy
       ---
       System prompt body.
       """)
@@ -174,7 +174,7 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       slug: ceo
       role: CEO
       provider: claude-code
-      network: api-only
+      network: proxy
       ---
       """)
 

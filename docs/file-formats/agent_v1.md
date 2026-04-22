@@ -20,7 +20,7 @@ bwrap), skills, and optional per-agent allowlist extensions
 | Key | Allowed values |
 |-----|----------------|
 | `autonomy` | `supervised`, `semi-autonomous`, `autonomous` |
-| `network` | `none`, `api-only`, `full` |
+| `network` | `none`, `proxy`, `full` |
 
 ### Patterns
 
@@ -47,7 +47,7 @@ role: Chief Executive Officer
 reports_to: director
 provider: claude-code
 model: claude-sonnet-4-5
-network: api-only
+network: proxy
 heartbeat: "*/30 * * * *"
 budget:
   monthly_usd: 0.00

@@ -31,7 +31,7 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       model: Keyword.get(opts, :model, "claude-sonnet-4-5"),
       permissions: Keyword.get(opts, :permissions, []),
       heartbeat: nil,
-      network: :api_only,
+      network: :proxy,
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 60,

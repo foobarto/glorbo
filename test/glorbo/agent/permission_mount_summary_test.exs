@@ -22,7 +22,7 @@ defmodule Glorbo.Agent.PermissionMountSummaryTest do
       model: "m",
       permissions: permissions,
       heartbeat: nil,
-      network: :api_only,
+      network: :proxy,
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 300,

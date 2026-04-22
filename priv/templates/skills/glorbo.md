@@ -210,7 +210,7 @@ Director's Kanban shows it; they scaffold the agent with
 ## What NOT to do
 
 - Don't `curl` external URLs expecting to hit Glorbo's API. The
-  sandbox has no network access by default (and `api_only` mode
+  sandbox has no network access by default (and `proxy` mode
   only permits your LLM provider's endpoint).
 - Don't try to scaffold other agents by writing to
   `/company/agents/...` — your sandbox doesn't mount that path.

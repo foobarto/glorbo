@@ -37,7 +37,7 @@ defmodule Glorbo.FileSpec.AgentMd do
         :autonomy
       ],
       enums: %{
-        network: ["none", "api-only", "full"],
+        network: ["none", "proxy", "full"],
         autonomy: ["supervised", "semi-autonomous", "autonomous"]
       },
       patterns: %{
@@ -87,7 +87,7 @@ defmodule Glorbo.FileSpec.AgentMd do
         reports_to: director
         provider: claude-code
         model: claude-sonnet-4-5
-        network: api-only
+        network: proxy
         heartbeat: "*/30 * * * *"
         budget:
           monthly_usd: 0.00

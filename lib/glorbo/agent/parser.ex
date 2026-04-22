@@ -17,7 +17,7 @@ defmodule Glorbo.Agent.Parser do
   ## Allowlists + invariants
 
     * `@allowed_providers` — `["claude-code", "gemini-cli", "codex"]` (D-02).
-    * `@network_map` — `"none" → :none | "api-only" → :api_only | "open" → :open`.
+    * `@network_map` — `"none" → :none | "proxy" → :proxy | "open" → :open`.
     * `@skill_name_regex` / `@slug_regex` — `~r/\A[a-z][a-z0-9_-]{0,63}\z/`
       (T-03-19 path-traversal block; bounds slug to kebab-case ASCII).
     * `model:` is REQUIRED for all three providers (LLM-04 single-model
@@ -25,7 +25,7 @@ defmodule Glorbo.Agent.Parser do
       `{:error, :multiple_models_not_supported}`.
     * `permissions:` defaults to `[]` when absent (P7 — agent with no granted
       permissions is valid; it just can't route anything).
-    * `network:` defaults to `:api_only` (CLI providers need egress).
+    * `network:` defaults to `:proxy` (CLI providers need egress).
     * `timeout_seconds:` defaults to 300 (D-06).
     * `budget_usd_cents_month:` defaults to `nil` (P11 — no cap == no
       hard-stop, matches BudgetTracker semantics).
@@ -50,7 +50,7 @@ defmodule Glorbo.Agent.Parser do
   # pi, etc., all qualify, matching what the director sees on
   # `/providers`.
   @fallback_providers ["claude-code", "gemini-cli", "codex"]
-  @network_map %{"none" => :none, "api-only" => :api_only, "open" => :open}
+  @network_map %{"none" => :none, "proxy" => :proxy, "open" => :open}
   @default_timeout_seconds 300
   @slug_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
   @skill_name_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
@@ -413,12 +413,12 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  # Network policy. Nil defaults to :api_only — CLI-provider agents need
+  # Network policy. Nil defaults to :proxy — CLI-provider agents need
   # egress to their hosted API endpoint (api.anthropic.com etc). :none was
   # the earlier secure-by-default but it silently bricks every claude-code
   # dispatch; opt-in explicitly in `agent.md` if you really want airgapped.
-  defp validate_network(nil), do: {:ok, :api_only}
-  defp validate_network(""), do: {:ok, :api_only}
+  defp validate_network(nil), do: {:ok, :proxy}
+  defp validate_network(""), do: {:ok, :proxy}
 
   defp validate_network(raw) when is_binary(raw) do
     case Map.fetch(@network_map, raw) do
