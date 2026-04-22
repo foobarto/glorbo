@@ -78,12 +78,16 @@ const NAV_MAP = {
   o: "/companies",
   h: "/health",
   p: "/providers",
-  // Per-company shortcuts — Director pressing `g c` / `g a` / `g v` /
+  // Per-company shortcuts — Director pressing `g c` / `g a` / `g i` /
   // `g k` from anywhere inside a company sends them to that company's
-  // channels / audit / approvals / kanban.
+  // channels / audit / inbox / kanban. `g v` used to target the
+  // standalone /approvals route which was folded into /inbox (backlog
+  // #14); UAT 2026-04-22 found the old shortcut still pointed at the
+  // dead route. Rewired to the Mine tab of Inbox where approvals live.
   c: (co) => co && `/companies/${co}/channels/general`,
   a: (co) => co && `/companies/${co}/audit`,
-  v: (co) => co && `/companies/${co}/approvals`,
+  v: (co) => co && `/companies/${co}/inbox?tab=mine`,
+  i: (co) => co && `/companies/${co}/inbox`,
   k: (co) => co && `/companies/${co}/kanban`,
   b: (co) => co && `/companies/${co}/braindump`,
   d: "/costs",
@@ -180,7 +184,8 @@ function cheatsheetHtml() {
             <dl class="gl-cheatsheet__list">
               <dt><kbd>g</kbd><kbd>c</kbd></dt><dd>#general chat</dd>
               <dt><kbd>g</kbd><kbd>a</kbd></dt><dd>audit log</dd>
-              <dt><kbd>g</kbd><kbd>v</kbd></dt><dd>approvals queue</dd>
+              <dt><kbd>g</kbd><kbd>i</kbd></dt><dd>inbox</dd>
+              <dt><kbd>g</kbd><kbd>v</kbd></dt><dd>inbox · approvals (mine)</dd>
               <dt><kbd>g</kbd><kbd>k</kbd></dt><dd>kanban board</dd>
               <dt><kbd>g</kbd><kbd>n</kbd></dt><dd>new task (opens drawer)</dd>
               <dt><kbd>g</kbd><kbd>b</kbd></dt><dd>brain dump</dd>
@@ -230,9 +235,9 @@ function collectCommands() {
     items.push(
       { label: `#general (${co})`, hint: "g c", href: `/companies/${co}/channels/general` },
       { label: `Audit (${co})`, hint: "g a", href: `/companies/${co}/audit` },
-      { label: `Approvals (${co})`, hint: "g v", href: `/companies/${co}/approvals` },
+      { label: `Approvals (${co})`, hint: "g v", href: `/companies/${co}/inbox?tab=mine` },
       { label: `Kanban (${co})`, hint: "g k", href: `/companies/${co}/kanban` },
-      { label: `Inbox (${co})`, hint: "", href: `/companies/${co}/inbox` },
+      { label: `Inbox (${co})`, hint: "g i", href: `/companies/${co}/inbox` },
       { label: `Skills (${co})`, hint: "", href: `/companies/${co}/skills` },
       { label: `Brain dump (${co})`, hint: "g b", href: `/companies/${co}/braindump` },
     )
@@ -748,6 +753,22 @@ const SubmitOnEnter = {
   },
 }
 
+// Submit on Ctrl/Cmd+Enter; Enter alone inserts a newline. Used for
+// multi-line compose surfaces (brain-dump capture, UAT 2026-04-22 U1)
+// where free-form newlines matter more than one-shot submission.
+const SubmitOnCtrlEnter = {
+  mounted() {
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        if (this.el.value.trim() !== "") {
+          this.el.form?.requestSubmit()
+        }
+      }
+    })
+  },
+}
+
 // Pin scroll to the bottom when new lines arrive, BUT leave the user
 // alone if they've scrolled up to read older output. Standard terminal
 // tail-with-follow behaviour.
@@ -836,7 +857,7 @@ const ClockTick = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, SubmitOnEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, SubmitOnEnter, SubmitOnCtrlEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

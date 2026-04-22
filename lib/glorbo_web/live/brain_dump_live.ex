@@ -156,6 +156,7 @@ defmodule GlorboWeb.BrainDumpLive do
             rows="4"
             placeholder="dump a thought, todo, question, observation… first line becomes the title"
             autocomplete="off"
+            phx-hook="SubmitOnCtrlEnter"
           >{@draft}</textarea>
           <div class="gl-braindump__form-actions">
             <span class="gl-muted">

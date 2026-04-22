@@ -156,6 +156,7 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
     copy_rendered_files(template_dir, co, vars)
     link_or_copy_fixtures(template_dir, co, manifest)
     place_task_files(template_dir, co, vars)
+    ensure_default_channel(co)
 
     Audit.emit("new_company", "complete", %{
       slug: slug,
@@ -315,5 +316,26 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
 
   defp glorbo_home do
     System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+  end
+
+  # B2 (UAT 2026-04-22): the sidebar Chat link targets
+  # `/companies/<co>/channels/general`. Most templates don't seed a
+  # channels dir, so a freshly-scaffolded company's Chat link flashes
+  # "Channel not found" and bounces back to Overview. Drop a minimal
+  # `general.md` stub unless the template already provided one.
+  defp ensure_default_channel(co) do
+    path = Path.join([co, "channels", "general.md"])
+
+    unless File.exists?(path) do
+      File.mkdir_p!(Path.dirname(path))
+
+      File.write!(path, """
+      ---
+      kind: channel-log/v1
+      channel: general
+      created_at: #{DateTime.utc_now() |> DateTime.to_iso8601()}
+      ---
+      """)
+    end
   end
 end

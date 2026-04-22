@@ -132,6 +132,20 @@ defmodule Glorbo.CLI.Scaffold.Company do
       # #{slug}
       """)
 
+      # B2 (UAT 2026-04-22): the sidebar Chat link hardcodes
+      # `/companies/<co>/channels/general`. Without a seeded
+      # `general.md` every click flashes "Channel not found" and
+      # redirects to Overview — a bad first impression on every
+      # fresh company. Drop a minimal channel stub so the link
+      # always works.
+      File.write!(Path.join([co, "channels", "general.md"]), """
+      ---
+      kind: channel-log/v1
+      channel: general
+      created_at: #{DateTime.utc_now() |> DateTime.to_iso8601()}
+      ---
+      """)
+
       Audit.emit("new_company", "complete", %{slug: slug, path: co})
       {:new_company, 0, "✓ created company: #{co}\n"}
     end
