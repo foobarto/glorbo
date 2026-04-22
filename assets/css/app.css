@@ -1611,7 +1611,9 @@ button { font-family: inherit; font-size: inherit; }
 .gl-kanban__column {
   min-width: 0;
   background: var(--gl-surface);
-  border-radius: 6px;
+  /* GEP-30: columns read as panels, not cards — radius 0 + hairline. */
+  border: 1px solid var(--gl-border);
+  border-radius: 0;
   padding: var(--gl-space-md);
   transition: outline-color 120ms ease;
   outline: 1px dashed transparent;
@@ -1657,7 +1659,8 @@ button { font-family: inherit; font-size: inherit; }
   gap: 6px;
   cursor: grab;
   transition: border-color 100ms ease;
-  border-radius: 2px;
+  /* GEP-30: sharp TUI cards. */
+  border-radius: 0;
   margin-bottom: var(--gl-space-sm);
 }
 .gl-task-card:hover { border-color: var(--gl-border-strong); }
@@ -2253,7 +2256,8 @@ button { font-family: inherit; font-size: inherit; }
 /* ========== Banners ========== */
 .gl-banner {
   padding: var(--gl-space-sm) var(--gl-space-md);
-  border-radius: 6px;
+  /* GEP-30: banners are bar-shaped, not pill-shaped. */
+  border-radius: 0;
   margin-bottom: var(--gl-space-md);
 }
 .gl-banner--muted {
