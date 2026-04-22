@@ -8,6 +8,7 @@ created: 2026-04-17
 implemented-in: v0.0.1
 requires: [2, 3]
 see-also: [6, 32]
+extended-by: [33]
 history:
   - date: 2026-04-17
     status: Draft
