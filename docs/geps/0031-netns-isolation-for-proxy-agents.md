@@ -6,7 +6,7 @@ status: Draft
 type: Standards
 created: 2026-04-22
 requires: [5, 23]
-see-also: [4, 8, 22, 27]
+see-also: [4, 8, 22, 27, 32]
 history:
   - date: 2026-04-22
     status: Draft
@@ -68,7 +68,7 @@ a kernel-enforced constraint.
   proxy port, DNS over UDP/53 fails and the agent must rely on
   the proxy's HTTP CONNECT (hostname-based) path. Acceptable.
 
-## Decision
+## Design
 
 Use **`pasta` (from the `passt` project)** as the userspace network
 stack for each agent on `network: proxy`. Pasta is designed for

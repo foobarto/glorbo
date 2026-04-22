@@ -5,7 +5,7 @@ author: Glorbo Maintainers <security@example.invalid>
 status: Draft
 type: Informational
 created: 2026-04-18
-see-also: [5, 16]
+see-also: [5, 16, 32]
 history:
   - date: 2026-04-18
     status: Draft
