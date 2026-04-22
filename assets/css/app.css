@@ -387,7 +387,7 @@ button { font-family: inherit; font-size: inherit; }
 .gl-panel {
   background: var(--gl-surface);
   border: 1px solid var(--gl-border);
-  border-radius: 2px;
+  border-radius: 0;
 }
 .gl-panel__header {
   display: flex;
@@ -499,7 +499,7 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   flex-direction: column;
   gap: var(--gl-space-xs);
-  border-radius: 2px;
+  border-radius: 0;
 }
 .gl-stat-card__label {
   font-family: var(--gl-ff-mono);
@@ -588,7 +588,7 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 .gl-stat-breakdown__head {
   display: flex;
@@ -601,8 +601,9 @@ button { font-family: inherit; font-size: inherit; }
   display: flex;
   height: 6px;
   background: var(--gl-surface-raised);
-  border-radius: 2px;
+  border-radius: 0;
   overflow: hidden;
+  border: 1px solid var(--gl-border);
 }
 .gl-stat-breakdown__seg {
   display: block;
@@ -1026,7 +1027,8 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-agent-table tbody td {
   padding: var(--gl-space-sm) var(--gl-space-md);
-  border-bottom: 1px solid var(--gl-border-faint);
+  /* GEP-30: dashed hairline between rows matches the TUI prototype. */
+  border-bottom: 1px dashed var(--gl-border-faint);
   vertical-align: top;
 }
 .gl-agent-table__row { cursor: pointer; transition: background-color 120ms ease; }
@@ -2085,7 +2087,7 @@ button { font-family: inherit; font-size: inherit; }
   color: var(--gl-fg-muted);
   background: var(--gl-surface-raised);
   border: 1px solid var(--gl-border-strong);
-  border-radius: 2px;
+  border-radius: 1px;
   transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
   line-height: 1.4;
 }
