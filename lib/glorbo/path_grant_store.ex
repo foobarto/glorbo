@@ -68,11 +68,22 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec lookup(String.t(), String.t(), String.t()) :: {:ok, [map()]} | :not_found
   def lookup(company, agent, task_id) do
-    key = {company, agent, task_id}
+    # Table can be missing when a test shuts down the supervisor that
+    # owns it (typical for unit tests that don't boot the full app).
+    # Defensive: treat missing-table as "no grants" rather than
+    # crashing the caller. `revoke/3` already does this; mirror it
+    # here so `lookup/3` doesn't blow up isolated test runs.
+    # Production boot always calls ensure_started/0 at the company-
+    # supervisor layer so this path only fires in test contexts.
+    if :ets.info(@table) == :undefined do
+      :not_found
+    else
+      key = {company, agent, task_id}
 
-    case :ets.lookup(@table, key) do
-      [{^key, %{paths: paths}}] -> {:ok, paths}
-      [] -> :not_found
+      case :ets.lookup(@table, key) do
+        [{^key, %{paths: paths}}] -> {:ok, paths}
+        [] -> :not_found
+      end
     end
   end
 

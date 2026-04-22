@@ -265,7 +265,13 @@ defmodule Mix.Tasks.Glorbo.Docs.FileFormats do
             "and commit the result."
         )
 
-        System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+        # `Mix.raise/1` is sufficient to make the CLI exit 1 —
+        # previously this also registered a `System.at_exit` shutdown
+        # hook as belt-and-braces, but the hook fired when the task
+        # was invoked from inside ExUnit (via the drift test) and
+        # turned every subsequent `mix test` run into exit-1 despite
+        # 0 failures. The hook was redundant; Mix.raise alone handles
+        # the CLI case.
         Mix.raise("docs/file-formats drift (#{length(files)} file(s))")
     end
   end
