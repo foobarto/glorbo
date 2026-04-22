@@ -2,7 +2,7 @@ defmodule Glorbo.Company.Supervisor do
   @moduledoc """
   Per-company supervisor (AGT-01; D-44).
 
-  Owns an 8- to 10-child supervision tree:
+  Owns an 11- to 12-child supervision tree:
 
     1. `Glorbo.Company.AuditLog`       — append-only JSONL + SQLite mirror (Plan 2-01)
     2. `Glorbo.Filesystem.Watcher`     — inotify + PubSub broadcast (Plan 2-04 + 3-05)
@@ -15,7 +15,9 @@ defmodule Glorbo.Company.Supervisor do
     9. `Glorbo.Network.Proxy` (conditional) — HTTPS CONNECT allowlist for
        api-only agents (GAP-4; started iff at least one AGENT.md declares
        `network: api-only`).
-   10. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
+   10. `Glorbo.Company.ProposalsSink`  — GEP-28 wave 2a audit event emitter
+       for `proposals/*.md` writes.
+   11. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
        `AgentSupervisor.start_agent/2` and `Scheduler.register/3` for
        every on-disk agent; last so every dep is alive by the time it
        runs (gated by `config :glorbo, :auto_boot_agents`).
@@ -63,6 +65,7 @@ defmodule Glorbo.Company.Supervisor do
           | :network_proxy
           | :approvals_gate
           | :path_request_gate
+          | :proposals_sink
 
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
@@ -116,6 +119,7 @@ defmodule Glorbo.Company.Supervisor do
       |> maybe_append_proxy(opts, company, base)
       |> append_gate(company, base)
       |> append_path_request_gate(company, base)
+      |> append_proposals_sink(company, base)
       |> append_agent_boot(company, base)
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -349,6 +353,22 @@ defmodule Glorbo.Company.Supervisor do
            company: company,
            base: base,
            audit_server: via(company, :audit_log)
+         ]}
+      ]
+  end
+
+  # ---------------------------------------------------------------------------
+  # ProposalsSink (GEP-28 wave 2a)
+  # ---------------------------------------------------------------------------
+
+  defp append_proposals_sink(children, company, base) do
+    children ++
+      [
+        {Glorbo.Company.ProposalsSink,
+         [
+           name: via(company, :proposals_sink),
+           company: company,
+           base: base
          ]}
       ]
   end

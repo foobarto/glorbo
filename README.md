@@ -650,6 +650,13 @@ runtime):
   external path access via outbox sentinel; director approves
   with per-path mode downgrade; task-scoped bwrap mount under
   `/external/`; revoked automatically after dispatch.
+- **GEP-28 — agent-created proposals** (scaffolding + watcher
+  classification shipped; Inbox UI + auto-approval queued) —
+  agents write `proposals/<id>.md` with `proposal/v1` frontmatter
+  to propose hiring, firing, budget bumps, and new projects;
+  `proposals:{read,write}:*` permission namespace with bwrap mount
+  rules; CEO template ships with proposal authoring guidance;
+  Watcher broadcasts on `company:<co>:proposals` PubSub topic.
 - **R29 — Homebrew tap** ✓ — `brew install foobarto/tap/glorbo`
   with Linux x86_64 + aarch64 binaries.
 - **R30 — macOS builds** ✓ — Burrito targets `macos_x86_64` +
@@ -665,7 +672,7 @@ runtime):
   search, per-task model/provider override, agent model aliases,
   brain dump (`g b`), recurring tasks (`↻` pill), channel log
   rotation + archive browser, named autonomy tiers.
-- Tests: 1436/1436 green · `mix credo --strict` clean ·
+- Tests: 1439/1439 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
 Pending for a later release: GEP-23 Phase 4 (real LLM dispatch

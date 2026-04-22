@@ -286,3 +286,202 @@ heartbeat dispatch fix + system-prompt enrichment + scheduler
 audit arity fix + DB.Bootstrap". I'm updating the CHANGELOG
 framing accordingly before commit.
 
+---
+
+## 2026-04-22 — GEP-28 wave 1 shipped (4cb7ffe), shell died mid-session
+
+Shipped the first runtime-wiring wave: `Filesystem.Watcher` now
+classifies `proposals/<id>.md` direct-child writes as `:proposals`,
+reindexes them, and broadcasts on `company:<co>:proposals` PubSub.
+Codex caught an over-broad matcher (nested `proposals/a/b.md`
+would have been misclassified vs FileSpec.ProposalMd's
+single-segment regex); I tightened it via `proposals_direct_child?/1`
++ added a regression test (W6b) for the nested case.
+
+**Tests:** 1439 green; credo strict clean. Committed + pushed
+as `4cb7ffe`.
+
+**Then the shell died.** After kicking off a `mix glorbo.build_local`
+in the background, every subsequent `Bash` tool call started
+returning `exit 1` with no stdout, even trivial ones like
+`true`, `echo`, `pwd`. The burrito binary on disk is stale (still
+points at the `b18dfab` era build). When the shell recovers, running
+`mix glorbo.build_local` will resymlink `./glorbo` to the fresh
+burrito output.
+
+**Docs-only work done while shell was broken:**
+
+- README.md: added GEP-28 bullet under v0.0.4 shipped list; bumped
+  test count `1436 → 1439`. This edit is uncommitted; it'll go
+  with the next normal commit.
+
+**Queued for the next /loop iteration (wave 2):**
+
+Per GEP-28 "Deferred to runtime-wiring follow-up waves":
+
+1. Audit events for `proposals/*.md` writes — a new GenServer
+   (e.g. `Glorbo.Company.ProposalsSink`) that subscribes to the
+   `proposals` topic, parses the file, and emits
+   `proposal.requested` / `.approved` / `.denied` / `.superseded`
+   with the right `actor:` (agent slug on creation, `director`
+   on status flip, `system` on auto-approval).
+2. Router-level status-flip enforcement — reject agent-sourced
+   writes that transition `status` to `approved`/`denied` for a
+   proposal the agent didn't propose *or* where `approved_by`
+   is not `director`/`system`. Required before trusting any
+   auto-approval, since bwrap can't restrict writes field-level.
+3. InboxLive proposal card — render pending proposals alongside
+   task approvals + path requests. Reuse the existing archival
+   machinery.
+4. Reindex `proposals` derived table — so dashboards can query
+   pending/approved counts without a full filesystem scan.
+5. Auto-approval evaluator — headcount-budget rule for `hire`
+   (active agents < `headcount_budget` in `company.md`) and
+   assignment-check rule for `fire` (target agent has no open
+   `assigned_to` tasks).
+
+Order preference: (1) and (2) land together since they share
+parsing + subscribe to the same topic. (3) and (4) can land
+separately. (5) lands last because it depends on (2) to enforce
+the "only director/system can set `approved`" invariant.
+
+**Open question for you:** the permission-restriction alternative
+from the prior entry ("agents write to `proposals/pending/<id>.md`,
+Router sanitises + moves to `proposals/<id>.md`") — still not
+pursued. If you'd prefer that safer model over Router-level
+status-flip enforcement, let me know and I'll revise the GEP.
+Current default: enforce at Router (simpler on-disk layout, harder
+enforcement).
+
+---
+
+## 2026-04-22 — GEP-28 wave 2a (ProposalsSink) — staged but BLOCKED
+
+Shell is still dead this session — every Bash call returns exit 1.
+Delegated wave 2a to a sub-agent with its own shell, but the
+sub-agent hit the same failure mode (sandbox/shell-level, not
+process-level). Code is written but not compiled/tested/committed.
+
+### Uncommitted state (two waves stacked)
+
+**Wave A — mine, small docs:**
+- `README.md` — new GEP-28 bullet under v0.0.4 shipped list; test
+  count `1436 → 1439`.
+- `user.md` — the wave 1 entry above + this entry.
+
+**Wave B — sub-agent, ProposalsSink:**
+- `lib/glorbo/company/proposals_sink.ex` (new, 211 lines) — per-company
+  GenServer observer. Subscribes to `company:<co>:proposals` via
+  `{:continue, :subscribe}`. On `{:file_event, rel, events}` where
+  `rel` is a direct child of `proposals/`, reads the file, parses
+  frontmatter, classifies by `status:`, emits
+  `proposal.requested|approved|denied|superseded` via AuditLog.
+  Dep-injects `audit_fun`, `read_fun`, `test_pid`. Best-effort:
+  malformed frontmatter is logged and skipped, never crashes the
+  sink. Registry-lookup audit server fallback mirrors
+  `Scheduler.default_audit_fun/2`.
+- `lib/glorbo/company/supervisor.ex` — added `:proposals_sink` to
+  `role()` union; `append_proposals_sink/3` pipeline step between
+  `append_path_request_gate` and `append_agent_boot`; moduledoc
+  enumerates it as child #10; also bumped moduledoc child-range
+  claim `8- to 11` → `11- to 12` (was stale even before this — base
+  already includes TaskScheduler and the proxy-aware pipeline).
+- `test/glorbo/company/proposals_sink_test.exs` (new) — three
+  tests: T1 pending-approval emits `proposal.requested`,
+  T2 approved emits `proposal.approved`, T3 malformed YAML does
+  not crash sink + subsequent good event still emits.
+- `test/glorbo/company/supervisor_test.exs` — child count
+  `10 → 11` base, `11 → 12` with proxy; describe-block titles
+  updated; `ProposalsSink` MapSet.member? assertion.
+- `test/glorbo/application_test.exs` — `10 → 11`; ProposalsSink
+  module added to expected children enumeration; comment updated.
+- `test/glorbo/filesystem/watcher_test.exs` — `10 → 11` child-count
+  expectation; ProposalsSink MapSet.member? assertion.
+
+### What the next session must do
+
+1. `mix compile --warnings-as-errors` — Wave B is unverified. Risk
+   areas: `Glorbo.Filesystem.Frontmatter.parse/1` usage (verified
+   exists, right arity), `:via` name registration in supervisor,
+   Phoenix.PubSub.subscribe signature.
+2. `mix test test/glorbo/company/proposals_sink_test.exs` —
+   three tests expected.
+3. `mix test` — baseline was 1439, expect 1442 (3 new).
+4. `mix credo --strict; echo $?` — exit 0 required.
+5. `mix glorbo.docs.file_formats --check` — clean.
+6. `codex exec` review on the ProposalsSink delta. Must-fix:
+   (a) duplicate event bursts (watcher may fire multiple
+   `:modified` events in quick succession — does the sink emit
+   once per file-final-state or once per event? currently latter,
+   may be too chatty for the audit log; consider debouncing via
+   `Process.send_after`), (b) `handle_info(_other, …)` swallows
+   everything silently — OK for an observer but worth a comment,
+   (c) `:subscribe` failure handling — if `Phoenix.PubSub.subscribe`
+   somehow raises, the init continuation will crash; acceptable.
+7. One commit bundling all uncommitted work. Message suggestion:
+   `feat(proposals): GEP-28 wave 2a — ProposalsSink audit observer`.
+8. `mix precommit` as final gate.
+9. `git push origin main`.
+10. `mix glorbo.build_local` to refresh the burrito symlink (the
+    one from `4cb7ffe` era never successfully rebuilt — background
+    task exited 1 with no output).
+
+### Meta-issue: shell broken session-wide
+
+Both my session and the sub-agent's session hit the same failure.
+Something at the Claude Code sandbox/harness layer is denying
+all Bash calls. I've tried `true`, `echo`, `pwd`, `date`, `ls`,
+all exit 1. The tool returns `<error>Exit code 1</error>` with no
+stdout or stderr. This started right after I kicked off
+`mix glorbo.build_local` in the background; background task
+reported `exit 1` and then all subsequent Bash was broken.
+
+Docs/Read/Edit/Grep/Glob all still work.
+
+Recommendation: next /loop fire will open a fresh Claude Code
+session from the cron — that should have a working shell. The
+cron fires every hour at :07.
+
+**Update:** misunderstood — the cron (`9a7c8a5a`) fires *inside
+this same session*, not a new one. Since the shell is
+session-wide dead, each re-fire was landing in a broken context
+and producing no useful work. I've CronDelete'd `9a7c8a5a`
+to stop the loop.
+
+Restart Claude Code to get a fresh shell, then run the combined
+Wave A + Wave B work through `mix precommit` per the checklist
+above. Or `/loop 1h …` again and a fresh cron will fire into
+the new (healthy) session.
+
+---
+
+## 2026-04-22 — GEP-28 wave 2a codex findings
+
+Fresh Claude Code session; shell healthy. Ran the wave 2a checklist:
+
+- `mix compile --warnings-as-errors` — clean.
+- `mix test test/glorbo/company/proposals_sink_test.exs` — 3/3 pass.
+- `mix test` — 1442 tests, 1 pre-existing flaky failure
+  (`Glorbo.Agent.DispatchTest` D5, ETS `:glorbo_path_grants` table
+  missing when dispatch_test runs after a teardown; passes in
+  isolation and on a second full-suite run; unrelated to wave 2a).
+- `mix credo --strict` — exit 0.
+- `mix glorbo.docs.file_formats --check` — clean (23 files).
+
+Codex second-opinion review (3 risks I flagged):
+
+1. **Duplicate event bursts** — *not an issue*. Watcher already
+   coalesces same-path bursts before PubSub; remaining repeats
+   are genuine re-writes. Audit-log chatter is acceptable at
+   v0.0.4 scale and doesn't corrupt state.
+2. **`handle_info(_other, …)` silent swallow** — *nice-to-have*.
+   Low risk but a one-line intent comment helps future
+   maintenance. **Fixed inline** — comment added above the clause.
+3. **init→`{:continue, :subscribe}` failure path** — *not an
+   issue*. If `Phoenix.PubSub.subscribe/2` raises, that signals
+   broken config; fail-fast + supervisor restart loop is a
+   better signal than swallowing and silently running
+   unsubscribed.
+
+Net: no must-fix, one nice-to-have applied. Committing.
+
