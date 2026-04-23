@@ -254,6 +254,8 @@ defmodule GlorboWeb.ChannelLiveTest do
       {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
       assert html =~ "archived segment"
       assert html =~ "2026-04-01 10:00:00Z"
+      assert html =~ "B"
+      refute html =~ "msgs"
     end
 
     test "open_archive event loads segment messages", %{conn: conn} do

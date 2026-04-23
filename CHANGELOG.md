@@ -52,6 +52,10 @@ change between minor versions. Pin exact versions in downstream usage.
   new ETS entries once the title cache reaches its hard ceiling, so
   agent-authored task metadata can no longer grow the named cache table
   without bound.
+- The archive browser in `ChannelLive` now renders metadata-only
+  segment summaries from filename + `File.stat/1` and stops reading
+  every archive body on each refresh. Full archive content is only
+  loaded when the director explicitly opens a segment.
 
 ## [0.3.0] — 2026-04-23
 

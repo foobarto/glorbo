@@ -446,6 +446,14 @@ table is full, later paths still parse live and return correct search
 results, they just stop being cached. That is enough to turn the memory
 growth bug into a bounded perf tradeoff.
 
+### ChannelLive archives — listing metadata should stay metadata-only
+
+The archive browser does not need message counts badly enough to justify
+reading every archive file on each LiveView refresh. Filename-derived
+labels plus `File.stat/1` size are enough for the collapsed list; keep
+the full markdown read only on `open_archive`, where the director has
+explicitly asked for that segment's body.
+
 ---
 
 ## What belongs in this file vs elsewhere

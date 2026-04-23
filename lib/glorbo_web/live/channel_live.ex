@@ -339,9 +339,7 @@ defmodule GlorboWeb.ChannelLive do
                 >
                   {a.label}
                 </button>
-                <span class="gl-muted gl-channel__archives-meta">
-                  {a.size_h} · {a.message_count} msgs
-                </span>
+                <span class="gl-muted gl-channel__archives-meta">{a.size_h}</span>
               </li>
             </ul>
             <div :if={@open_archive} class="gl-channel__archives-viewer">
@@ -425,27 +423,18 @@ defmodule GlorboWeb.ChannelLive do
     path = Path.join(dir, filename)
     name = Path.basename(filename, ".md")
 
-    {size_bytes, count} =
-      case File.read(path) do
-        {:ok, content} ->
-          {byte_size(content), count_headers(content)}
-
-        _ ->
-          {0, 0}
+    size_bytes =
+      case File.stat(path) do
+        {:ok, %File.Stat{size: size}} -> size
+        _ -> 0
       end
 
     %{
       name: name,
       label: humanise_archive_label(name),
-      size_h: humanise_bytes(size_bytes),
-      message_count: count
+      size_h: humanise_bytes(size_bytes)
     }
   end
-
-  @archive_header_regex ~r/^## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/m
-
-  defp count_headers(content),
-    do: Regex.scan(@archive_header_regex, content) |> length()
 
   # Archive filenames look like `2026-04-21-10-00-00Z.md`
   # (ts with `T` / `:` / `.` replaced by `-`). We display the

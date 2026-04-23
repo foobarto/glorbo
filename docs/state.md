@@ -36,15 +36,15 @@ Last updated: 2026-04-23
 
 ## Security Status
 
-- Open findings in `docs/testing/threatmodel.md`: `70`
-- Breakdown: `0` critical, `0` high, `7` medium, `39` low,
+- Open findings in `docs/testing/threatmodel.md`: `69`
+- Breakdown: `0` critical, `0` high, `6` medium, `39` low,
   `24` informational
 
 ## Next Implementation Target
 
 - Primary next coding target: **resume the remaining medium
   threatmodel findings**
-- Planned scope: drive the open medium count below `7` while the new
+- Planned scope: drive the open medium count below `6` while the new
   native phase 2b surface bakes on `main`
 - Secondary feature target: later GEP-32 phases (model discovery,
   cache/SQLite projection, `detect-providers`)

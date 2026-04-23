@@ -158,7 +158,7 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **70 open** ·
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **69 open** ·
 48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
@@ -171,26 +171,24 @@ warning) and verified 3 more mediums were already fixed at HEAD
 symlink-target guard); wave 7 on 2026-04-23 closed 4 mediums
 (Kanban open_task strict path+lstat guard, release formula SHA
 validation, agent budget block enforcement, backup temp+rename
-0600 flow); post-wave-7 follow-up fixes on 2026-04-23 closed 4 more
+0600 flow); post-wave-7 follow-up fixes on 2026-04-23 closed 5 more
 mediums (proxy acceptor mailbox DoS, console cookie argv exposure,
-stdout streamer buffer cap, search title-cache cap); wave 5 also
-discovered 6 more mediums were
+stdout streamer buffer cap, search title-cache cap, archive list
+metadata-only refresh); wave 5 also discovered 6 more mediums were
 already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 7 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 6 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
-### Medium (constrained exploit — local access or misconfig) — 7
+### Medium (constrained exploit — local access or misconfig) — 6
 
 - **Unbounded MCP sessions/subscriptions allow resource exhaustion DoS** — The commit introduces per-session GenServers and resource subscriptions for MCP. `initialize` now calls `Session.start_session/1` to spawn a new process for every request, but there is no cap, TTL, or cleanup unless the client sends DELETE. Additionally,…
   *Paths:* `lib/glorbo_web/mcp/plug.ex, lib/glorbo_web/mcp/session.ex`
 - **Company cap sums global agent slugs, enabling cross-company DoS** — The new CompanyCap module computes company usage by listing agent directory names and summing Budget rows where agent_slug is in that list. The budgets table is keyed only by agent_slug and year_month, with no company field. If two companies share an agent…
   *Paths:* `lib/glorbo/budget/company_cap.ex, lib/glorbo/budget.ex`
-- **Archive listing reads entire archive files on every update** — The new archive browser refreshes the archive list on every file event and, for each archive file, performs a full File.read to compute size and message counts. An agent with chat:write permission can spam messages to rotate channels, producing many large…
-  *Paths:* `lib/glorbo_web/live/channel_live.ex`
 - **Stuck sentinel resolution trusts paths from untrusted files** — The loop-detector feature adds a "stuck" sentinel flow that loads any `agents/*/state/stuck-on-*.md` file and surfaces it in the Inbox UI. Agents have write access to their own `state` directory, so a malicious agent can craft a fake stuck sentinel with a…
   *Paths:* `lib/glorbo_web/live/inbox_live.ex, lib/glorbo/security/acl_mapper.ex`
 - **Auto-mounting CLI binary dirs leaks host paths into sandbox** — `cli_binary_binds/1` now auto-detects the provider’s resolved binary path and ro-binds both the symlink’s parent directory and the symlink target’s parent into the sandbox at the same absolute paths. Because `resolved_path` comes from PATH or a user-defined…
