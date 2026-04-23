@@ -36,28 +36,41 @@ defmodule Glorbo.Filesystem.FrontmatterWriter do
   end
 
   @doc """
-  Atomic-write the content at `file_path`. Exposed so callers
-  (e.g. file editors that rewrite the whole body, not just frontmatter)
-  can share the same crash-safety guarantee.
+  Atomic-write the content at `file_path`.
+
+  Contract:
+
+    * Target must be a regular file (or absent). Symlinks, FIFOs,
+      directories are refused — callers writing into agent-writable
+      trees would otherwise redirect the write through a planted
+      symlink.
+    * Tmp path includes a unique integer so concurrent writers to
+      the same canonical file don't collide on the rename staging
+      slot. The prior `file_path <> ".tmp"` literal collided under
+      parallel frontmatter updates.
+    * On any failure (stat, write, rename), the tmp is cleaned up
+      best-effort and the original target is left intact.
   """
   @spec atomic_write(Path.t(), binary()) :: :ok | {:error, term()}
   def atomic_write(file_path, new_content) do
-    tmp = file_path <> ".tmp"
+    with :ok <- Glorbo.Filesystem.AgentWritableFile.ensure_writable(file_path) do
+      tmp = file_path <> ".tmp-#{System.unique_integer([:positive, :monotonic])}"
 
-    case File.write(tmp, new_content, [:sync]) do
-      :ok ->
-        case File.rename(tmp, file_path) do
-          :ok ->
-            :ok
+      case File.write(tmp, new_content, [:sync]) do
+        :ok ->
+          case File.rename(tmp, file_path) do
+            :ok ->
+              :ok
 
-          {:error, _} = err ->
-            _ = File.rm(tmp)
-            err
-        end
+            {:error, _} = err ->
+              _ = File.rm(tmp)
+              err
+          end
 
-      {:error, _} = err ->
-        _ = File.rm(tmp)
-        err
+        {:error, _} = err ->
+          _ = File.rm(tmp)
+          err
+      end
     end
   end
 

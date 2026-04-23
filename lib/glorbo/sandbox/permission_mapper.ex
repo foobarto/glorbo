@@ -69,6 +69,7 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # projects:write:<name> → rw-bind just that project (sibling projects invisible)
   defp permission_to_flags({"projects", "write", name}, co) when name != "*" do
+    name = assert_safe_scope!(name)
     ["--bind", Path.join([co, "projects", name]), "/projects/#{name}"]
   end
 
@@ -79,6 +80,7 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # projects:read:<name>
   defp permission_to_flags({"projects", "read", name}, co) when name != "*" do
+    name = assert_safe_scope!(name)
     ["--ro-bind", Path.join([co, "projects", name]), "/projects/#{name}"]
   end
 
@@ -89,6 +91,7 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # chat:read:<channel> → ro-bind single channel file
   defp permission_to_flags({"chat", "read", channel}, co) when channel != "*" do
+    channel = assert_safe_scope!(channel)
     ["--ro-bind", Path.join([co, "channels", "#{channel}.md"]), "/channels/#{channel}.md"]
   end
 
@@ -110,6 +113,7 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # tasks:update:<project> → rw-bind the project's tasks/ subdir
   defp permission_to_flags({"tasks", "update", project}, co) when project != "*" do
+    project = assert_safe_scope!(project)
     ["--bind", Path.join([co, "projects", project, "tasks"]), "/projects/#{project}/tasks"]
   end
 
@@ -129,4 +133,21 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # Unknown permission family → empty (no kernel mount)
   defp permission_to_flags({_resource, _action, _scope}, _co), do: []
+
+  # Defense-in-depth assertion: every scope string that reaches
+  # `Path.join` here is supposed to already be slug-validated by
+  # `Glorbo.Security.ACLMapper.parse_permission/1`. If it isn't —
+  # because a future regression lets `projects:read:../../etc`
+  # through the parser — refuse loudly rather than emit a
+  # `--bind ../../etc` argv slot. Opencode + codex round-3 flagged
+  # this as the class that would have caught a parser drift.
+  defp assert_safe_scope!(scope) when is_binary(scope) do
+    if Glorbo.Slug.valid?(scope) do
+      scope
+    else
+      raise ArgumentError,
+            "permission_mapper: refusing unsafe scope #{inspect(scope)} — " <>
+              "ACLMapper.parse_permission/1 should have rejected it upstream"
+    end
+  end
 end

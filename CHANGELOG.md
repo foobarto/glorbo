@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — scope validation + atomic_write hardening
+
+- **[HIGH]** `Glorbo.Sandbox.PermissionMapper.permission_to_flags/2`
+  now asserts `Glorbo.Slug.valid?/1` on every scope string that
+  reaches `Path.join` (`projects:read:<name>`, `projects:write:<name>`,
+  `chat:read:<channel>`, `tasks:update:<project>`). Scope should
+  already be validated by `ACLMapper.parse_permission/1`; this is
+  defense-in-depth — a future parser regression can't produce
+  `--bind ../../etc /projects/etc` any more. Raises `ArgumentError`
+  on drift so the dispatch fails loudly rather than silently
+  mounting the wrong path.
+- **[MED]** `Glorbo.Filesystem.FrontmatterWriter.atomic_write/2`
+  now `lstat`-guards the target via `AgentWritableFile.ensure_writable/1`
+  and uses a unique-per-call `.tmp-<monotonic>` staging name.
+  Previously the literal `<file>.tmp` collided under concurrent
+  writers to the same canonical file, and a symlinked target was
+  followed through the `File.write` / `File.rename` pair.
+
 ### Fixed — audit-trail correctness (codex round-3)
 
 - **[HIGH]** `Glorbo.EmergencyStop.engage/2` + `clear/2` default
