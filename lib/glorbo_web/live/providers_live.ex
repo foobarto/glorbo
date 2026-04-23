@@ -23,6 +23,7 @@ defmodule GlorboWeb.ProvidersLive do
   alias Glorbo.CLI.Registry
   alias Glorbo.CLI.Registry.Provider
   alias Glorbo.Providers.Detect
+  alias Glorbo.Providers.Enable
   alias Glorbo.Providers.ModelCatalog
 
   @impl true
@@ -94,6 +95,33 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign(:scan_results, results)}
   end
 
+  # GEP-32 phase 4 — promote a scan result into `~/.glorbo/providers.toml`.
+  # Refreshes the Registry afterwards so the main grid picks up the
+  # new entry without a full page reload.
+  def handle_event("enable_provider", %{"alias" => alias_name}, socket) do
+    detection = Enum.find(socket.assigns.scan_results, &(&1.alias == alias_name))
+
+    case maybe_enable(alias_name, detection) do
+      :ok ->
+        Registry.refresh()
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Enabled #{alias_name} — added to ~/.glorbo/providers.toml.")
+         |> assign_registry_snapshot()}
+
+      {:error, :already_enabled} ->
+        {:noreply,
+         put_flash(socket, :info, "#{alias_name} was already in ~/.glorbo/providers.toml.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Enable failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp maybe_enable(_alias, nil), do: {:error, :not_in_scan_results}
+  defp maybe_enable(alias_name, detection), do: Enable.enable(alias_name, detection: detection)
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -147,6 +175,15 @@ defmodule GlorboWeb.ProvidersLive do
             <span class="gl-tabular">{r.alias}</span>
             <span class="gl-muted">{r.endpoint}</span>
             <span>{scan_status_label(r.status)}</span>
+            <button
+              :if={r.status == :ready}
+              type="button"
+              class="gl-btn gl-btn--sm"
+              phx-click="enable_provider"
+              phx-value-alias={r.alias}
+            >
+              + enable
+            </button>
           </li>
         </ul>
       </section>

@@ -10,7 +10,7 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Added — GEP-32 native agent harness (phase 4, partial)
+### Added — GEP-32 native agent harness (phase 4)
 
 - `glorbo detect-providers` CLI verb probes localhost for native
   providers (ollama, llama.cpp, LocalAI, vLLM, LM Studio) using the
@@ -18,9 +18,12 @@ change between minor versions. Pin exact versions in downstream usage.
   fingerprints for the shared-port tie-break. `--json` emits NDJSON
   per alias, otherwise a short human-readable report.
 - ProvidersLive grows a "scan localhost" button that surfaces the
-  same probe results as an advisory block — scanning is read-only;
-  activating a discovered provider still requires the Director to
-  add the matching TOML entry to `~/.glorbo/providers.toml`.
+  same probe results as an advisory block. Each `:ready` row now
+  offers an "+ enable" button that appends a matching `[[providers]]`
+  entry to `~/.glorbo/providers.toml` (kind=native, auth=none,
+  `usage_parser = "native-v1"`, correct `model_list` shape per alias)
+  via `Glorbo.Providers.Enable`. The action is idempotent — a second
+  Enable on the same alias is a no-op and flashes a notice.
 - AgentLive config panel now populates the `model` field with a
   datalist of the cached model catalog for the currently-selected
   provider (queried from `provider_models`). Free-text entry still

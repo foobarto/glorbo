@@ -33,9 +33,9 @@ it's been in CHANGELOG for a cycle.
   llama.cpp, LocalAI, vLLM, LM Studio) with shape + Server-header +
   body fingerprints, ProvidersLive `scan localhost` button, and
   AgentLive `model` datalist backed by the `provider_models` cache.
-- [ ] **GEP-32 phase 4 follow-up — auto-activate discovered providers
-  via `Enable` flow.** Append-to-`~/.glorbo/providers.toml` when the
-  Director clicks "Enable" on a scan result.
+- [x] **GEP-32 phase 4 follow-up — auto-activate discovered providers
+  via `Enable` flow.** Shipped `Glorbo.Providers.Enable` + the
+  `+ enable` button per `:ready` scan row; idempotent on double-click.
 - [ ] **GEP-32 phase 4 follow-up — model combobox on KanbanLive
   new-task quick-add.** Mirror AgentLive's provider-aware datalist
   in the task-creation dropdown.

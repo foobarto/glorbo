@@ -95,6 +95,24 @@ defmodule GlorboWeb.ProvidersLiveTest do
         assert html =~ alias_name
       end)
     end
+
+    @tag :capture_log
+    test "enable_provider event reports a flash on :not_reachable",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/providers")
+
+      # Scan populates scan_results from real probes. Nothing is
+      # listening locally, so every result is :unreachable — which is
+      # exactly what we need to exercise the enable-failure branch.
+      view |> element("button", "⌕ scan localhost") |> render_click()
+
+      # Trigger the handler directly; scan_results exists, but the
+      # alias entry is :unreachable so Enable.enable/2 returns
+      # :not_reachable and the LV flashes the failure.
+      html = render_click(view, "enable_provider", %{"alias" => "ollama"})
+
+      assert html =~ "Enable failed" or html =~ "not_reachable"
+    end
   end
 
   describe "version probing" do

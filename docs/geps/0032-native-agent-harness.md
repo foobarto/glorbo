@@ -2,7 +2,7 @@
 gep: 32
 title: Native Agent Harness — OpenAI v1-Compatible Provider
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-23
 requires: [4, 5, 8]
@@ -29,6 +29,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: "Phase 4 partial: `glorbo detect-providers` CLI verb + ProvidersLive `scan localhost` button ship localhost auto-detection across ollama/llama.cpp/LocalAI/vLLM/LM Studio with shape + Server-header + body fingerprints. AgentLive config editor now renders a `model` datalist populated from the `provider_models` cache for the currently-selected provider. Auto-activation (append-to-`providers.toml` on Enable) and the KanbanLive new-task quick-add combobox are still open, but Director-driven discovery + manual enablement is now end-to-end."
+  - date: 2026-04-23
+    status: Implemented
+    note: "Phase 4 Enable flow landed: `Glorbo.Providers.Enable.enable/2` appends a matching `[[providers]]` block to `~/.glorbo/providers.toml` (kind=native, auth=none, usage_parser=native-v1, correct model_list shape per alias) when the Director clicks `+ enable` on a `:ready` scan row. Action is idempotent — a second enable is a no-op. With that the four planned phases (registry schema + harness, full tool catalog, model catalog, auto-detect + Providers UX) are complete. KanbanLive quick-add model combobox remains as a polish follow-up tracked in `docs/todo.md`."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
