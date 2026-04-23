@@ -44,6 +44,10 @@ change between minor versions. Pin exact versions in downstream usage.
   `iex --cookie ...` argv. The launcher now injects `-setcookie ...`
   through `ERL_AFLAGS`, which removes the cookie from cross-user
   process listings while keeping the remote-shell flow unchanged.
+- `GlorboWeb.StdoutStreamer` now caps both its unterminated partial-line
+  buffer and final per-line payload size. A sandboxed agent can no
+  longer grow the streamer's heap indefinitely by writing one huge
+  newline-free stdout line.
 
 ## [0.3.0] — 2026-04-23
 

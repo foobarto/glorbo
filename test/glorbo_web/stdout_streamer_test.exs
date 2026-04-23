@@ -172,6 +172,45 @@ defmodule GlorboWeb.StdoutStreamerTest do
     GlorboWeb.StdoutStreamer.stop(pid)
   end
 
+  test "caps an unterminated partial line and drops overflow until newline", %{
+    base: base,
+    agent: agent,
+    path: path
+  } do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    File.write!(path, String.duplicate("x", 20_000), [:append])
+    Process.sleep(400)
+
+    state = :sys.get_state(pid)
+    assert state.buf_truncated?
+    assert byte_size(state.buf) <= 8_192
+    assert String.ends_with?(state.buf, "... [truncated]")
+
+    File.write!(path, "ignored-after-cap\nnext line\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: body}}, 2_000
+    assert byte_size(body) <= 8_192
+    assert String.ends_with?(body, "... [truncated]")
+    refute body =~ "ignored-after-cap"
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: "next line"}}, 2_000
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
+  test "caps a complete long line before broadcast", %{base: base, agent: agent, path: path} do
+    {:ok, pid} = GlorboWeb.StdoutStreamer.start("acme", agent, base: base)
+
+    File.write!(path, String.duplicate("y", 20_000) <> "\n", [:append])
+
+    assert_receive {:stdout_line, "acme", ^agent, %{body: body}}, 2_000
+    assert byte_size(body) <= 8_192
+    assert String.ends_with?(body, "... [truncated]")
+
+    GlorboWeb.StdoutStreamer.stop(pid)
+  end
+
   test "trims trailing whitespace and \\r from lines", %{
     base: base,
     agent: agent,

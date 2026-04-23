@@ -428,6 +428,15 @@ keep the remote-shell flow unchanged without exposing the cookie in
 `ps`/`/proc` argv. That is a useful hardening step, but not a secrecy
 boundary against the same OS user.
 
+### StdoutStreamer — cap the partial line, not just the replay/history
+
+The dangerous heap growth path in `StdoutStreamer` is the no-newline
+tail buffer, not the replay window or the LiveView stream length.
+Bounding only history/backfill would still let one newline-free stdout
+line grow the GenServer heap forever. The fix is to cap the pending
+line itself, mark it truncated, and drop the overflow until the next
+newline resets framing.
+
 ---
 
 ## What belongs in this file vs elsewhere

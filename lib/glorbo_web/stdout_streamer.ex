@@ -53,6 +53,12 @@ defmodule GlorboWeb.StdoutStreamer do
   # Kill them so the tail matches the on-disk log.
   @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
 
+  # Threatmodel M8: bound both the pending no-newline buffer and the
+  # final per-line payload size so a sandboxed agent cannot grow the
+  # streamer's heap with one giant stdout line.
+  @line_max_bytes 8_192
+  @truncated_suffix "... [truncated]"
+
   @doc """
   Start (or look up) a streamer for this {company, agent}. Singleton
   keyed by `{:stdout_streamer, company, agent}` in `Glorbo.Agent.Registry`
@@ -123,6 +129,7 @@ defmodule GlorboWeb.StdoutStreamer do
       agent: agent,
       pubsub: pubsub,
       buf: "",
+      buf_truncated?: false,
       # Rolling buffer of recent payloads (newest-last). Late
       # subscribers (additional LV mounts on the same agent) call
       # backfill/1 to seed their local stream with this slice —
@@ -291,13 +298,44 @@ defmodule GlorboWeb.StdoutStreamer do
   # strip.
   defp flush_lines("", state), do: state
 
+  # Once the pending buffer has already been capped, ignore everything
+  # else on that line until the next newline arrives. This keeps heap
+  # growth bounded even if the agent never flushes line breaks.
+  defp flush_lines(bytes, %{buf_truncated?: true} = state) do
+    case :binary.match(bytes, "\n") do
+      :nomatch ->
+        state
+
+      {newline_idx, 1} ->
+        line = state.buf
+        rest_offset = newline_idx + 1
+        rest_size = byte_size(bytes) - rest_offset
+        rest = :binary.part(bytes, rest_offset, rest_size)
+
+        state =
+          state
+          |> Map.put(:buf, "")
+          |> Map.put(:buf_truncated?, false)
+
+        state = process_line(line, state)
+
+        flush_lines(rest, state)
+    end
+  end
+
   defp flush_lines(bytes, state) do
     parts = String.split(bytes, "\n")
     {complete, [tail]} = Enum.split(parts, -1)
 
     state = Enum.reduce(complete, state, &process_line(&1, &2))
 
-    %{state | buf: tail}
+    case cap_partial_buffer(tail) do
+      {:ok, tail} ->
+        %{state | buf: tail, buf_truncated?: false}
+
+      {:truncated, tail} ->
+        %{state | buf: tail, buf_truncated?: true}
+    end
   end
 
   # Drop whitespace-only lines (task #142) before turning them into
@@ -307,7 +345,11 @@ defmodule GlorboWeb.StdoutStreamer do
   # markers still survive the filter because their bodies contain
   # non-whitespace.
   defp process_line(raw, state) do
-    body = raw |> strip_ansi() |> String.trim_trailing()
+    body =
+      raw
+      |> strip_ansi()
+      |> String.trim_trailing()
+      |> truncate_line_body()
 
     if String.trim(body) == "" do
       state
@@ -347,6 +389,42 @@ defmodule GlorboWeb.StdoutStreamer do
   defp build_payload(body) do
     {kind, extra} = classify_and_extract(body)
     Map.merge(%{id: make_id(), body: body, kind: kind}, extra)
+  end
+
+  defp cap_partial_buffer(tail) when byte_size(tail) <= @line_max_bytes, do: {:ok, tail}
+
+  defp cap_partial_buffer(tail) do
+    keep = max(@line_max_bytes - byte_size(@truncated_suffix), 0)
+    {:truncated, valid_utf8_prefix(tail, keep) <> @truncated_suffix}
+  end
+
+  defp truncate_line_body(body) when byte_size(body) <= @line_max_bytes, do: body
+
+  defp truncate_line_body(body) do
+    keep = max(@line_max_bytes - byte_size(@truncated_suffix), 0)
+    valid_utf8_prefix(body, keep) <> @truncated_suffix
+  end
+
+  defp valid_utf8_prefix(_body, max_bytes) when max_bytes <= 0, do: ""
+
+  defp valid_utf8_prefix(body, max_bytes) do
+    size = min(byte_size(body), max_bytes)
+    prefix = :binary.part(body, 0, size)
+
+    if String.valid?(prefix) do
+      prefix
+    else
+      trim_invalid_utf8_suffix(prefix)
+    end
+  end
+
+  defp trim_invalid_utf8_suffix(prefix) do
+    size = byte_size(prefix)
+
+    Enum.find_value(0..3, "", fn drop ->
+      candidate = :binary.part(prefix, 0, max(size - drop, 0))
+      if String.valid?(candidate), do: candidate
+    end)
   end
 
   # Tag each line so the UI can render dispatch boundaries as cards.
