@@ -776,6 +776,11 @@ defmodule Glorbo.Company.Router do
          :ok <- check_project_write_permission(perms, project),
          :ok <- ensure_project_exists(project_md),
          :ok <- refuse_if_exists(dest_path),
+         # threatmodel M03 (write side): `projects/<p>/tasks/` lives
+         # in a tree the sender may have RW-mounted. An agent can
+         # pre-plant a symlink at the task-id filename, turning the
+         # host-side materialise into a write through the symlink.
+         :ok <- ensure_regular_file_lstat(dest_path),
          :ok <- File.mkdir_p(project_tasks_dir),
          stamped_content <- stamp_with_context(content, sender),
          :ok <- File.write(dest_path, stamped_content, [:sync]),

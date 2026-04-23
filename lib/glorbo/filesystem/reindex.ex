@@ -335,10 +335,18 @@ defmodule Glorbo.Filesystem.Reindex do
     # instead of 3N queries. Company's `on_delete: :delete_all` FK means the
     # Agent delete is redundant when company.md itself vanished, but issuing
     # it for stray agent.md vanishings is still correct and cheap.
+    #
+    # Chunking: SQLite defaults to ~999 bind parameters per query (bump'd
+    # to 32k in newer builds but we don't get to assume that). A reindex
+    # that vanishes >999 paths at once would fail the query. 500 is safely
+    # below every supported SQLite.
     if vanished != [] do
-      Repo.delete_all(from r in ReindexState, where: r.file_path in ^vanished)
-      Repo.delete_all(from c in Company, where: c.file_path in ^vanished)
-      Repo.delete_all(from a in Agent, where: a.file_path in ^vanished)
+      Enum.chunk_every(vanished, 500)
+      |> Enum.each(fn chunk ->
+        Repo.delete_all(from r in ReindexState, where: r.file_path in ^chunk)
+        Repo.delete_all(from c in Company, where: c.file_path in ^chunk)
+        Repo.delete_all(from a in Agent, where: a.file_path in ^chunk)
+      end)
     end
 
     length(vanished)

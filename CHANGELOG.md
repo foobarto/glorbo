@@ -10,6 +10,35 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — round-3 hardening (host-write symlink defense)
+
+Round-3 triage from the codex round-2 review. Symmetric to the
+previous sweep's host-read symlink defense — every host write into
+an agent-writable tree now `lstat`s before the write so a pre-planted
+symlink can't turn a Director-initiated write into a confused-deputy
+attack.
+
+- **[HIGH fix]** `GlorboWeb.Actions.wake_agent/4` now guards
+  `agents/<slug>/state/wake-request.md` with an lstat check before
+  writing. Previously a malicious agent could plant a symlink at
+  `wake-request.md` pointing at any host file the user could reach;
+  the Director's next wake would write through it.
+- **[HIGH fix]** `Glorbo.Approvals.Gate.write_sentinel/4` lstat-guards
+  `agents/<slug>/state/awaiting-approval-<task>.md`. Same class —
+  sentinel path sits in agent-writable `state/`.
+- **[HIGH fix]** `Glorbo.Company.Router.handle_outbox_task/5`
+  lstat-guards the **destination** task file
+  (`projects/<p>/tasks/<id>.md`). A sender with `projects:write:*`
+  RW-mounts the tree; without a dest-side guard the Router's
+  `File.write` would follow a pre-planted symlink.
+- **[MED fix]** `Glorbo.Filesystem.Reindex.cleanup_vanished/1` chunks
+  its `WHERE file_path IN ^vanished` deletes at 500 per batch so a
+  reindex that vanishes >999 paths no longer hits SQLite's default
+  bind-parameter ceiling.
+
+Two regression tests added (`wake_agent` refuse-symlink and
+`R-outbox-dest-symlink`) to lock in the threat-model-M03 guarantees.
+
 ### Security — round-2 hardening (post-review-2 sweep)
 
 - **[CRITICAL fix]** `AgentSupervisor` crash no longer permanently

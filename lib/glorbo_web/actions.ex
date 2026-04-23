@@ -561,21 +561,35 @@ defmodule GlorboWeb.Actions do
       Director wake request.
       """
 
-      case File.write(path, body, [:sync]) do
-        :ok ->
-          AuditLog.append(audit, %{
-            company: company,
-            actor: actor,
-            action: "agent.wake_request",
-            target: "agents/#{agent}",
-            reason: reason
-          })
+      # threatmodel M03: `state/` is agent-writable. Without an lstat
+      # check the agent could pre-plant a symlink at `wake-request.md`
+      # pointing at an arbitrary host file, turning a Director-initiated
+      # wake into a write into (say) `~/.glorbo/config.md`.
+      with :ok <- ensure_regular_file_for_write(path),
+           :ok <- File.write(path, body, [:sync]) do
+        AuditLog.append(audit, %{
+          company: company,
+          actor: actor,
+          action: "agent.wake_request",
+          target: "agents/#{agent}",
+          reason: reason
+        })
 
-          :ok
-
-        {:error, _} = err ->
-          err
+        :ok
       end
+    end
+  end
+
+  # M03 host-write guard: accept a regular file or a non-existent path
+  # (first write), refuse anything else (symlinks, FIFOs, directories).
+  # Returns `{:error, {:path_not_regular, type}}` on refusal so callers
+  # can tag the error with their own shape.
+  defp ensure_regular_file_for_write(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{type: type}} -> {:error, {:path_not_regular, type}}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, {:path_stat_failed, reason}}
     end
   end
 

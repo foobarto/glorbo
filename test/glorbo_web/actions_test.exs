@@ -605,6 +605,28 @@ defmodule GlorboWeb.ActionsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # threatmodel M03 (host-write side). `state/` is agent-writable;
+    # a malicious agent can plant a symlink at `wake-request.md` before
+    # the Director's wake fires. Without an lstat guard the Director's
+    # write follows the symlink to any host file the user can reach.
+    test "refuses to write through an agent-planted symlink at state/wake-request.md",
+         %{base: base, audit: audit} do
+      secret = Path.join(base, "director-secret.txt")
+      File.write!(secret, "sensitive director-only content\n")
+
+      state_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+      File.mkdir_p!(state_dir)
+      wake_path = Path.join(state_dir, "wake-request.md")
+      :ok = File.ln_s(secret, wake_path)
+
+      assert {:error, {:path_not_regular, :symlink}} =
+               Actions.wake_agent("acme", "ceo", "deploy", base: base, audit: audit)
+
+      # Secret file stays untouched.
+      assert File.read!(secret) == "sensitive director-only content\n"
+      assert FakeAudit.calls(audit) == []
+    end
   end
 
   # ---------------------------------------------------------------------------

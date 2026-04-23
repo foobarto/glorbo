@@ -292,7 +292,20 @@ defmodule Glorbo.Approvals.Gate do
     To deny: edit the task file and set `status: denied` in its frontmatter.
     """
 
-    File.write!(path, body)
+    # threatmodel M03: `state/` is agent-writable. Refuse to follow a
+    # symlink the agent pre-planted at the sentinel path — otherwise
+    # the host write lands at an attacker-chosen target.
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        File.write!(path, body)
+
+      {:error, :enoent} ->
+        File.write!(path, body)
+
+      {:ok, %File.Stat{type: type}} ->
+        raise "refusing sentinel write: #{inspect(type)} at #{path}"
+    end
+
     :ok
   end
 

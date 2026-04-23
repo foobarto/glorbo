@@ -579,6 +579,48 @@ defmodule Glorbo.Company.RouterTest do
     refute File.exists?(dest)
   end
 
+  # threatmodel M03 write-side. An agent that can write into a shared
+  # `projects/<p>/tasks/` tree (via `projects:write:*`) could pre-plant
+  # a symlink at `<task-id>.md` before filing another task. Without an
+  # lstat on `dest_path` the Router's `File.write(dest_path, ...)`
+  # would follow that symlink and the materialised task content lands
+  # at the agent's chosen host target.
+  test "R-outbox-dest-symlink: task dest is lstat-guarded before File.write" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    secret = Path.join(base, "secret-host-file.md")
+    File.write!(secret, "original director content\n")
+
+    dest_dir = Path.join([base, "companies", @company, "projects", "blog", "tasks"])
+    File.mkdir_p!(dest_dir)
+    dest_path = Path.join(dest_dir, "blog-99.md")
+    :ok = File.ln_s(secret, dest_path)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-99.md"), """
+    ---
+    kind: task/v1
+    title: planted
+    status: todo
+    ---
+    overwrite attempt
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-99.md", [:created]})
+    _ = :sys.get_state(name)
+
+    # Router must refuse rather than follow the symlink. Secret stays.
+    assert File.read!(secret) == "original director content\n"
+  end
+
   # threatmodel M03 regression. An agent can write into its own
   # outbox — including planting a symlink that points at an arbitrary
   # host file. Every outbox reader must lstat before reading or a
