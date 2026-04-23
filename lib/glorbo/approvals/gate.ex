@@ -526,23 +526,42 @@ defmodule Glorbo.Approvals.Gate do
         "#{td.task_id}.md"
       ])
 
-    File.mkdir_p!(Path.dirname(history_path))
+    history_dir = Path.dirname(history_path)
 
-    case File.rename(td.file_path, history_path) do
-      :ok ->
-        :ok
+    # threatmodel M03. `File.mkdir_p!` follows symlinks; if any
+    # ancestor segment was planted as a symlink by a prior path-grant
+    # or operator edit, the rename lands at the aliased target.
+    # Refuse if any segment from base→history_dir is a symlink.
+    # Opencode round-3 flagged. Historical behaviour (crash on
+    # unexpected shape) is preserved via the `audit` path below.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(history_dir) do
+      audit(state, %{
+        action: "approval.rename_failed",
+        actor: "system",
+        target: td.task_path,
+        history_path: history_path,
+        error: "history_dir_has_symlinked_segment",
+        company: state.company
+      })
+    else
+      File.mkdir_p!(history_dir)
 
-      {:error, reason} ->
-        audit(state, %{
-          action: "approval.rename_failed",
-          actor: "system",
-          target: td.task_path,
-          history_path: history_path,
-          error: inspect(reason),
-          company: state.company
-        })
+      case File.rename(td.file_path, history_path) do
+        :ok ->
+          :ok
 
-        :ok
+        {:error, reason} ->
+          audit(state, %{
+            action: "approval.rename_failed",
+            actor: "system",
+            target: td.task_path,
+            history_path: history_path,
+            error: inspect(reason),
+            company: state.company
+          })
+
+          :ok
+      end
     end
 
     sentinel = sentinel_path(state, agent, td.task_id)

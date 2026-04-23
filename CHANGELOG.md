@@ -10,6 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — round-4 batch 2
+
+- **[MED]** `Glorbo.Approvals.Gate.resolve_denied/3` now checks the
+  `history/tasks/` ancestor chain for symlinks before `File.mkdir_p!`
+  + `File.rename`. A symlinked ancestor (planted by a prior path-
+  grant or operator edit) would have aliased the archive target out
+  of the company tree. Opencode round-3 flagged.
+- **[MED]** `Glorbo.Network.SmartClassifier.private_ip?/1` coverage
+  expanded to reject `0.0.0.0`, `::`, `::1` expanded form,
+  `::ffff:<rfc1918>` IPv4-mapped IPv6, `fe80::/10` IPv6 link-local,
+  and `fc00::/7` IPv6 ULA. Previously an agent could CONNECT to any
+  of these shapes and reach the host network namespace through the
+  proxy. Regression test enumerates all six new shapes.
+- **[MED]** `Glorbo.Providers.NativeConfig.credentials_dir/1` now
+  validates `GLORBO_CREDENTIALS_DIR` — must be absolute, no `..`,
+  not a system path (`/etc`, `/usr`, `/bin`, `/sbin`, `/proc`,
+  `/sys`, `/dev`). Previously `GLORBO_CREDENTIALS_DIR=/etc` would
+  silently repoint credential resolution at `/etc/<provider>.toml`
+  and start bind-mounting host config into the sandbox.
+
 ### Security — round-4 surgical fixes (codex+opencode round-3 triage)
 
 - **[HIGH]** `Glorbo.PathRequestGate.write_pending_sentinel/4` now

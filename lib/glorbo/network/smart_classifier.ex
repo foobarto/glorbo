@@ -239,22 +239,86 @@ defmodule Glorbo.Network.SmartClassifier do
 
   defp host_matches?(host, pattern), do: host == pattern
 
-  # Treat any RFC1918 / loopback / link-local literal as private.
-  # We never accept a private-IP destination from the sandbox: the
-  # proxy runs in a netns without a route to the host's private
-  # network.
+  # Treat any RFC1918 / loopback / link-local / unspecified / ULA
+  # literal as private. We never accept a private-IP destination from
+  # the sandbox: the proxy runs in a netns without a route to the
+  # host's private network.
+  #
+  # Coverage expanded in round-4 after opencode flagged several
+  # missing shapes (`0.0.0.0`, `::`, `fc00::/7` ULA, `fe80::/10`
+  # link-local, `::ffff:...` IPv4-mapped).
   defp private_ip?(host) do
     cond do
-      host == "localhost" -> true
-      host == "127.0.0.1" -> true
-      host == "::1" -> true
-      String.starts_with?(host, "127.") -> true
-      String.starts_with?(host, "10.") -> true
-      String.starts_with?(host, "192.168.") -> true
-      String.starts_with?(host, "169.254.") -> true
-      String.match?(host, ~r/^172\.(1[6-9]|2\d|3[0-1])\./) -> true
-      true -> false
+      # Loopback + unspecified aliases.
+      host == "localhost" ->
+        true
+
+      host == "127.0.0.1" ->
+        true
+
+      host == "0.0.0.0" ->
+        true
+
+      # IPv6 loopback / unspecified, including common non-canonical
+      # forms (`::0001`, `0:0:0:0:0:0:0:1`, with or without brackets).
+      ipv6_loopback_or_unspec?(host) ->
+        true
+
+      # IPv4-mapped IPv6 loopback `::ffff:127.0.0.1` or any
+      # `::ffff:<rfc1918>`.
+      String.starts_with?(host, "::ffff:") and
+          private_ip?(String.replace_leading(host, "::ffff:", "")) ->
+        true
+
+      # IPv4 RFC1918 + loopback + link-local.
+      String.starts_with?(host, "127.") ->
+        true
+
+      String.starts_with?(host, "10.") ->
+        true
+
+      String.starts_with?(host, "192.168.") ->
+        true
+
+      String.starts_with?(host, "169.254.") ->
+        true
+
+      String.match?(host, ~r/^172\.(1[6-9]|2\d|3[0-1])\./) ->
+        true
+
+      # IPv6 link-local fe80::/10 and ULA fc00::/7 (covers fc and fd).
+      ipv6_link_local?(host) ->
+        true
+
+      ipv6_ula?(host) ->
+        true
+
+      true ->
+        false
     end
+  end
+
+  defp ipv6_loopback_or_unspec?(host) do
+    normal = host |> String.trim_leading("[") |> String.trim_trailing("]")
+
+    normal in [
+      "::",
+      "::1",
+      "0:0:0:0:0:0:0:0",
+      "0:0:0:0:0:0:0:1"
+    ]
+  end
+
+  defp ipv6_link_local?(host) do
+    normal = host |> String.trim_leading("[") |> String.trim_trailing("]") |> String.downcase()
+
+    # fe80:: / 10 — any of fe80, fe81 .. febf.
+    String.match?(normal, ~r/^fe[89ab][0-9a-f]:/)
+  end
+
+  defp ipv6_ula?(host) do
+    normal = host |> String.trim_leading("[") |> String.trim_trailing("]") |> String.downcase()
+    String.match?(normal, ~r/^f[cd][0-9a-f]{2}:/)
   end
 
   defp ad_tld?(host) do

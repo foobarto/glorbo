@@ -23,7 +23,36 @@ defmodule Glorbo.Providers.NativeConfig do
   @spec credentials_dir(keyword()) :: Path.t()
   def credentials_dir(opts \\ []) do
     env_fun = Keyword.get(opts, :env_fun, &System.get_env/1)
-    env_fun.("GLORBO_CREDENTIALS_DIR") || Hierarchy.native_credentials_dir()
+
+    case env_fun.("GLORBO_CREDENTIALS_DIR") do
+      nil ->
+        Hierarchy.native_credentials_dir()
+
+      "" ->
+        Hierarchy.native_credentials_dir()
+
+      override when is_binary(override) ->
+        # Refuse obviously-wrong overrides so setting
+        # `GLORBO_CREDENTIALS_DIR=/etc` doesn't point credentials at
+        # `/etc/<provider>.toml` and start bind-mounting host system
+        # config. Opencode round-3 flagged.
+        cond do
+          not String.starts_with?(override, "/") ->
+            raise ArgumentError,
+                  "GLORBO_CREDENTIALS_DIR must be an absolute path; got #{inspect(override)}"
+
+          String.contains?(override, "/../") or String.ends_with?(override, "/..") ->
+            raise ArgumentError,
+                  "GLORBO_CREDENTIALS_DIR must not contain `..`; got #{inspect(override)}"
+
+          override in ["/etc", "/usr", "/bin", "/sbin", "/proc", "/sys", "/dev"] ->
+            raise ArgumentError,
+                  "GLORBO_CREDENTIALS_DIR refuses system path #{inspect(override)}"
+
+          true ->
+            override
+        end
+    end
   end
 
   @spec default_credentials_path(String.t(), keyword()) :: Path.t()

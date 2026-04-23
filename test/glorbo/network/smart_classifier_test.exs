@@ -46,6 +46,36 @@ defmodule Glorbo.Network.SmartClassifierTest do
       assert {:deny, :private_ip} = SmartClassifier.classify("172.20.4.4", cfg)
     end
 
+    # Opencode round-3 regression. Original `private_ip?/1` missed
+    # several shapes an agent could use to reach the host network
+    # via the proxy.
+    test "private-IP literals — expanded shapes (round-4)" do
+      cfg = %{allow: [], deny: []}
+
+      for bad <- [
+            # IPv4 unspecified / any-address.
+            "0.0.0.0",
+            # IPv6 loopback + unspecified (canonical + expanded).
+            "::",
+            "::1",
+            "0:0:0:0:0:0:0:0",
+            "0:0:0:0:0:0:0:1",
+            # IPv4-mapped IPv6 to loopback / RFC1918.
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:192.168.1.1",
+            # IPv6 link-local (fe80::/10).
+            "fe80::1",
+            "feb0::abcd",
+            # IPv6 ULA (fc00::/7 — fc or fd).
+            "fc00::1",
+            "fd12:3456:789a::1"
+          ] do
+        assert {:deny, :private_ip} = SmartClassifier.classify(bad, cfg),
+               "expected #{bad} to be rejected as private"
+      end
+    end
+
     # T8: private-IP rejection outranks operator/agent-supplied
     # allowlists. SSRF via the proxy is the only reason the proxy
     # exists on a netns — letting "127.0.0.1" or "10.0.0.1" through
