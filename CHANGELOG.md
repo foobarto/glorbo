@@ -23,7 +23,7 @@ change between minor versions. Pin exact versions in downstream usage.
   and `Formatter.format_content/2` is idempotent (`:unchanged` + stable
   round-trip).
 
-### Added — CI auto-publishes the Homebrew tap + macOS build re-enabled
+### Added — CI auto-publishes the Homebrew tap on release
 
 - New `publish-homebrew-tap` job on `.github/workflows/ci.yml`
   runs after the signed `release` job finishes. It clones
@@ -32,14 +32,18 @@ change between minor versions. Pin exact versions in downstream usage.
   release's `SHA256SUMS`, and pushes the formula bump if the
   rendered output changed. The tap stays in lock-step with
   `main` with zero hand-off.
-- The `build-macos` matrix is re-enabled after the 2026-04-22
-  queue-indefinitely incident cleared. Darwin x86_64 + arm64
-  binaries are back in the release bundle (artifacts, cosign
-  signatures, SHA256SUMS, release-files list). The release job
-  now depends on both `build-and-test` and `build-macos`; if
-  runners queue again, flip the `if: false` on `build-macos`
-  AND drop it from `release`'s `needs:` list to keep Linux
-  releases cutting.
+
+### Known gap — macOS builds still disabled
+
+- The `build-macos` CI matrix was re-enabled briefly on
+  2026-04-23 and the first run (24852774115) queued indefinitely
+  without scheduling a single job in 25+ minutes — GHA macOS
+  capacity has not recovered. Matrix re-disabled for now (second
+  time); macOS artifacts excluded from the release bundle again.
+  The formula generator still renders a Linux-only formula
+  cleanly via `depends_on :linux`. Flip the `if: false` gate AND
+  restore `build-macos` to `release`'s `needs:` list when runners
+  are consistently available.
 
 ### Changed — `mix glorbo.release_formula` tolerates Linux-only releases
 
