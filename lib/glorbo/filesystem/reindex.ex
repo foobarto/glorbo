@@ -5,12 +5,11 @@ defmodule Glorbo.Filesystem.Reindex do
   Walks `companies/` under the given base, MD5-hashes every `.md` file,
   compares against `reindex_state`, and upserts the `companies` / `agents`
   domain rows when frontmatter changed. Deletes state rows for files that
-  vanished from disk.
+  vanished from disk. GEP-32 phase 3 also rebuilds the derived
+  `provider_models` table from `cache/providers/*.json`.
 
-  **W2 scope:** Phase-2 reindex reconstructs `companies`, `agents`, and
-  `reindex_state` only. The `audit_events` table is NOT rebuilt from disk
-  here — JSONL is the source of truth, and Phase 3 will add a separate
-  import path for audit data.
+  `audit_events` is still NOT rebuilt from disk here — JSONL remains the
+  source of truth on that axis.
 
   **B4 contract (load-bearing):** `process_file/1` is PRIVATE. Plan 04 will
   add a public `process_path/2` wrapper for the watcher integration; do
@@ -30,6 +29,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   alias Glorbo.{Agent, Company, Repo}
   alias Glorbo.Filesystem.{Frontmatter, ReindexState}
+  alias Glorbo.Providers.ModelCatalog
 
   @type result :: %{indexed: integer(), skipped: integer(), deleted: integer()}
 
@@ -114,6 +114,7 @@ defmodule Glorbo.Filesystem.Reindex do
       end)
 
     deleted = cleanup_vanished(files)
+    :ok = ModelCatalog.rebuild_projection_from_cache(Path.dirname(companies_dir))
 
     {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted}}
   end

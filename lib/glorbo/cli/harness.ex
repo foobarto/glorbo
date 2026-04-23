@@ -15,6 +15,7 @@ defmodule Glorbo.CLI.Harness do
   alias Glorbo.CLI.Harness.HTTP
   alias Glorbo.CLI.Registry.Loader
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Providers.NativeConfig
 
   @switches [
     provider: :string,
@@ -133,7 +134,7 @@ defmodule Glorbo.CLI.Harness do
 
     case {blank_to_nil(env.("GLORBO_NATIVE_ENDPOINT")), blank_to_nil(env.("GLORBO_NATIVE_AUTH"))} do
       {endpoint, auth} when is_binary(endpoint) and is_binary(auth) ->
-        with {:ok, parsed_auth} <- parse_auth(auth) do
+        with {:ok, parsed_auth} <- NativeConfig.parse_auth(auth) do
           {:ok,
            %Provider{
              name: name,
@@ -155,10 +156,11 @@ defmodule Glorbo.CLI.Harness do
 
     with {:ok, reply_path} <- require_env(env, "GLORBO_REPLY_PATH"),
          {:ok, usage_path} <- require_env(env, "GLORBO_USAGE_PATH"),
-         {:ok, auth} <- parse_auth(blank_to_nil(env.("GLORBO_NATIVE_AUTH")) || provider.auth),
+         {:ok, auth} <-
+           NativeConfig.parse_auth(blank_to_nil(env.("GLORBO_NATIVE_AUTH")) || provider.auth),
          {:ok, credentials} <- load_credentials(args.provider, opts),
          {:ok, endpoint} <-
-           resolve_endpoint(
+           NativeConfig.resolve_endpoint(
              blank_to_nil(env.("GLORBO_NATIVE_ENDPOINT")) || provider.endpoint,
              credentials
            ),
@@ -182,7 +184,7 @@ defmodule Glorbo.CLI.Harness do
              "GLORBO_NATIVE_MAX_TOOL_CALLS_PER_TURN",
              @default_max_tool_calls_per_turn
            ),
-         :ok <- validate_auth(auth, args.provider, credentials) do
+         :ok <- NativeConfig.validate_auth(auth, args.provider, credentials) do
       {:ok,
        %{
          provider: args.provider,
@@ -426,78 +428,20 @@ defmodule Glorbo.CLI.Harness do
 
   defp auth_headers(config) do
     [{"content-type", "application/json"}, {"accept", "application/json"}] ++
-      auth_headers_for(config.auth, Map.get(config, :credentials, %{}))
-  end
-
-  defp auth_headers_for(:none, _credentials), do: []
-
-  defp auth_headers_for(:bearer, credentials) do
-    key = Map.get(credentials, "api_key")
-    extras = Map.get(credentials, "extras", %{})
-
-    [{"authorization", "Bearer " <> key}] ++
-      maybe_extra_header("openai-organization", extras["organization"]) ++
-      maybe_extra_header("openai-project", extras["project"])
-  end
-
-  defp auth_headers_for(:api_key, credentials) do
-    [{"api-key", Map.fetch!(credentials, "api_key")}]
-  end
-
-  defp maybe_extra_header(_header, nil), do: []
-  defp maybe_extra_header(_header, ""), do: []
-  defp maybe_extra_header(header, value), do: [{header, to_string(value)}]
-
-  defp resolve_endpoint(nil, _credentials), do: {:error, :missing_endpoint}
-  defp resolve_endpoint("", _credentials), do: {:error, :missing_endpoint}
-
-  defp resolve_endpoint(endpoint, credentials) when is_binary(endpoint) do
-    {:ok, Map.get(credentials, "endpoint") || endpoint}
-  end
-
-  defp validate_auth(:none, _provider, _credentials), do: :ok
-
-  defp validate_auth(_auth, provider, credentials) do
-    case Map.get(credentials, "api_key") do
-      key when is_binary(key) and key != "" -> :ok
-      _ -> {:error, {:missing_api_key, provider}}
-    end
+      NativeConfig.auth_headers(config.auth, Map.get(config, :credentials, %{}))
   end
 
   defp load_credentials(provider, opts) do
     read_fun = Keyword.get(opts, :credentials_read_fun, &File.read/1)
     path = credentials_path(provider, opts)
-
-    case path do
-      nil ->
-        {:ok, %{}}
-
-      _ ->
-        case read_fun.(path) do
-          {:ok, raw} ->
-            case Toml.decode(raw) do
-              {:ok, map} when is_map(map) -> {:ok, map}
-              {:error, reason} -> {:error, {:invalid_credentials_toml, reason}}
-            end
-
-          {:error, :enoent} ->
-            {:ok, %{}}
-
-          {:error, reason} ->
-            {:error, {:credentials_read_failed, reason}}
-        end
-    end
+    NativeConfig.load_credentials_from_path(path, read_fun: read_fun)
   end
 
   defp credentials_path(provider, opts) do
     env = env_fun(opts)
 
     blank_to_nil(env.("GLORBO_NATIVE_CREDENTIALS_PATH")) ||
-      Path.join(credentials_dir(env), "#{provider}.toml")
-  end
-
-  defp credentials_dir(env_fun) do
-    env_fun.("GLORBO_CREDENTIALS_DIR") || Glorbo.Filesystem.Hierarchy.native_credentials_dir()
+      NativeConfig.default_credentials_path(provider, env_fun: env)
   end
 
   defp require_env(env_fun, key) do
@@ -510,16 +454,6 @@ defmodule Glorbo.CLI.Harness do
   defp env_fun(opts) do
     Keyword.get(opts, :env_fun, &System.get_env/1)
   end
-
-  defp parse_auth(nil), do: {:ok, nil}
-  defp parse_auth(:none), do: {:ok, :none}
-  defp parse_auth(:bearer), do: {:ok, :bearer}
-  defp parse_auth(:api_key), do: {:ok, :api_key}
-  defp parse_auth("none"), do: {:ok, :none}
-  defp parse_auth("bearer"), do: {:ok, :bearer}
-  defp parse_auth("api_key"), do: {:ok, :api_key}
-  defp parse_auth("api-key"), do: {:ok, :api_key}
-  defp parse_auth(other), do: {:error, {:invalid_auth, other}}
 
   defp normalize_content(nil), do: ""
   defp normalize_content(content) when is_binary(content), do: String.trim(content)

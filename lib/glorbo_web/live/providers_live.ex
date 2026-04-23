@@ -22,6 +22,7 @@ defmodule GlorboWeb.ProvidersLive do
 
   alias Glorbo.CLI.Registry
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Providers.ModelCatalog
 
   @impl true
   def mount(_params, _session, socket) do
@@ -34,7 +35,8 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign(:page_title, "Providers — Glorbo")
      |> assign(:sidebar_active, :providers)
      |> assign(:probing, false)
-     |> assign_providers()}
+     |> assign(:refreshing_models, false)
+     |> assign_registry_snapshot()}
   end
 
   @impl true
@@ -49,7 +51,7 @@ defmodule GlorboWeb.ProvidersLive do
 
   def handle_event("refresh", _params, socket) do
     Registry.refresh()
-    {:noreply, assign_providers(socket)}
+    {:noreply, assign_registry_snapshot(socket)}
   end
 
   def handle_event("probe", _params, socket) do
@@ -62,7 +64,17 @@ defmodule GlorboWeb.ProvidersLive do
     {:noreply,
      socket
      |> assign(:probing, false)
-     |> assign_providers()}
+     |> assign_registry_snapshot()}
+  end
+
+  def handle_event("refresh_models", _params, socket) do
+    socket = assign(socket, :refreshing_models, true)
+    _ = ModelCatalog.refresh_all()
+
+    {:noreply,
+     socket
+     |> assign(:refreshing_models, false)
+     |> assign_registry_snapshot()}
   end
 
   @impl true
@@ -83,6 +95,14 @@ defmodule GlorboWeb.ProvidersLive do
         </div>
         <div class="gl-providers__actions">
           <button type="button" class="gl-btn" phx-click="refresh">↻ refresh PATH</button>
+          <button
+            type="button"
+            class="gl-btn"
+            phx-click="refresh_models"
+            disabled={@refreshing_models}
+          >
+            {if @refreshing_models, do: "⟳ refreshing models…", else: "↻ refresh models"}
+          </button>
           <button type="button" class="gl-btn gl-btn--primary" phx-click="probe" disabled={@probing}>
             {if @probing, do: "⟳ probing…", else: "⌕ probe all"}
           </button>
@@ -132,6 +152,18 @@ defmodule GlorboWeb.ProvidersLive do
             <dd :if={p.kind == :native} class="gl-tabular gl-cyan-text">{p.endpoint}</dd>
             <dt :if={p.kind == :native}>auth</dt>
             <dd :if={p.kind == :native} class="gl-tabular">{p.auth}</dd>
+            <dt :if={p.kind == :native}>models</dt>
+            <dd :if={p.kind == :native} class="gl-tabular">
+              {catalog_model_count(@catalog, p.name)}
+            </dd>
+            <dt :if={p.kind == :native}>catalog</dt>
+            <dd :if={p.kind == :native} class={catalog_status_class(@catalog, p.name)}>
+              {catalog_status_label(@catalog, p.name)}
+            </dd>
+            <dt :if={p.kind == :native}>refreshed</dt>
+            <dd :if={p.kind == :native} class="gl-tabular">
+              {catalog_refreshed(@catalog, p.name)}
+            </dd>
             <dt>version</dt>
             <dd class="gl-tabular">{version_display(p)}</dd>
             <dt>parser</dt>
@@ -161,13 +193,15 @@ defmodule GlorboWeb.ProvidersLive do
   # Data
   # ---------------------------------------------------------------------------
 
-  defp assign_providers(socket) do
+  defp assign_registry_snapshot(socket) do
     providers = list_safe() |> Enum.sort_by(& &1.name)
     counts = count_by_status(providers)
+    catalog = catalog_safe()
 
     socket
     |> assign(:providers, providers)
     |> assign(:counts, counts)
+    |> assign(:catalog, catalog)
   end
 
   defp list_safe do
@@ -179,6 +213,17 @@ defmodule GlorboWeb.ProvidersLive do
     _ -> []
   catch
     _, _ -> []
+  end
+
+  defp catalog_safe do
+    case Process.whereis(ModelCatalog) do
+      nil -> %{}
+      _pid -> ModelCatalog.summary()
+    end
+  rescue
+    _ -> %{}
+  catch
+    _, _ -> %{}
   end
 
   defp count_by_status(providers) do
@@ -212,6 +257,39 @@ defmodule GlorboWeb.ProvidersLive do
       :routable -> "routable"
       :installed_untracked -> "no budget track"
       :not_installed -> "not installed"
+    end
+  end
+
+  defp catalog_model_count(catalog, provider_name) do
+    case Map.get(catalog, provider_name) do
+      %{model_count: count} -> Integer.to_string(count)
+      _ -> "—"
+    end
+  end
+
+  defp catalog_status_label(catalog, provider_name) do
+    case Map.get(catalog, provider_name, %{status: :idle}).status do
+      :ready -> "cached"
+      :auth -> "auth failed"
+      :unreachable -> "unreachable"
+      :stale -> "stale"
+      :shape -> "probe broken"
+      _ -> "not refreshed"
+    end
+  end
+
+  defp catalog_status_class(catalog, provider_name) do
+    case Map.get(catalog, provider_name, %{status: :idle}).status do
+      :ready -> "gl-tabular gl-accent-text"
+      :idle -> "gl-tabular gl-muted"
+      _ -> "gl-tabular gl-danger-text"
+    end
+  end
+
+  defp catalog_refreshed(catalog, provider_name) do
+    case Map.get(catalog, provider_name) do
+      %{refreshed_at: %DateTime{} = dt} -> Calendar.strftime(dt, "%Y-%m-%d %H:%M UTC")
+      _ -> "—"
     end
   end
 

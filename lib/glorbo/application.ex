@@ -86,6 +86,8 @@ defmodule Glorbo.Application do
       # so Agent.Server can resolve its provider at agent-boot time.
       # Load-validation failure is a hard crash by design (GEP-8 D9).
       Glorbo.CLI.Registry,
+      # GEP-32 phase 3: host-side native-provider model catalog cache.
+      Glorbo.Providers.ModelCatalog,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       # M-series fix: enumerate companies on disk at boot and start a
       # per-company supervisor for each. Without this, the dashboard

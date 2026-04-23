@@ -15,6 +15,7 @@ defmodule Glorbo.Filesystem.Hierarchy do
   # Directories created unconditionally (mkdir -p). Order-independent.
   @dirs ~w(
     bin
+    cache/providers
     companies
     runtime/sockets
     logs
@@ -83,5 +84,13 @@ defmodule Glorbo.Filesystem.Hierarchy do
   def native_credentials_dir do
     System.get_env("GLORBO_CREDENTIALS_DIR") ||
       Path.expand("~/.local/etc/glorbo/credentials")
+  end
+
+  @doc """
+  Cache directory for derived provider-model catalogs.
+  """
+  @spec providers_cache_dir(Path.t()) :: Path.t()
+  def providers_cache_dir(base \\ default_root()) when is_binary(base) do
+    Path.join([base, "cache", "providers"])
   end
 end

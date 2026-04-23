@@ -23,6 +23,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: "Phase 2b landed on `main`: `bash` and `web_fetch` now ship in the native tool loop, `http_timeout_s` / `http_max_retries` / `web_fetch_timeout_s` / `max_tool_calls_per_turn` are threaded from `agent.md`, and provider/tool HTTP retries now honor transient-failure policy."
+  - date: 2026-04-23
+    status: Accepted
+    note: "Phase 3 host-side ModelCatalog GenServer landed: per-provider `/v1/models` + Ollama `/api/tags` probes on explicit refresh, `~/.glorbo/cache/providers/*.json` cache, derived `provider_models` SQLite projection, reindex rebuild without network calls, `AgentBoot` soft-warn on unknown model, ProvidersLive model-count + catalog-status chip, and shared `Glorbo.Providers.NativeConfig` helpers extracted from Harness. Phase 4 (`glorbo detect-providers`, agent-wizard model combobox) remains open."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider

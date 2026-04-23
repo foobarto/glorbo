@@ -20,10 +20,17 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **GEP-32 phase 3 — native model discovery + cache surface.**
-  Phase 2b is now landed on `main`; the next tranche is provider-model
-  discovery, `~/.glorbo/cache/providers/*.json`, SQLite projection, and
-  the first `detect-providers` / Providers UX follow-through.
+- [x] **GEP-32 phase 3 — native model discovery + cache surface.**
+  Shipped `Glorbo.Providers.ModelCatalog` + `NativeConfig` +
+  `ProviderModel` schema + migration. Wires `cache/providers/*.json`
+  to a derived SQLite projection, reindex rebuild is network-free,
+  AgentBoot soft-warns on unknown models, ProvidersLive grows a
+  catalog chip (status / model count / refreshed), and failure
+  classification matches the spec matrix (`:auth` / `:unreachable` /
+  `:stale` / `:shape`).
+- [ ] **GEP-32 phase 4 — `glorbo detect-providers` CLI verb + agent-
+  wizard model combobox.** Phase 3's cache is live and queryable,
+  so this tranche is unblocked.
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.

@@ -27,6 +27,7 @@ defmodule Glorbo.Company.AgentBoot do
   alias Glorbo.Company.AgentSupervisor
   alias Glorbo.Company.Scheduler
   alias Glorbo.Company.Supervisor, as: CompanySup
+  alias Glorbo.Providers.ModelCatalog
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
@@ -74,6 +75,7 @@ defmodule Glorbo.Company.AgentBoot do
 
     case AgentParser.parse_file(agent_md) do
       {:ok, spec} ->
+        maybe_warn_unknown_model(spec)
         start_and_register(company, slug, spec)
 
       {:error, reason} ->
@@ -114,6 +116,22 @@ defmodule Glorbo.Company.AgentBoot do
   end
 
   defp maybe_register_heartbeat(_, _, _), do: :ok
+
+  defp maybe_warn_unknown_model(%{provider: provider, model: model}) do
+    case ModelCatalog.model_known?(provider, model) do
+      :unknown ->
+        Logger.warning(
+          "agent_boot: model #{inspect(model)} for provider #{inspect(provider)} is absent from the cached model catalog; dispatch still allowed"
+        )
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
 
   # The dispatch_fun runs inside the Scheduler process when the timer
   # fires. It calls into the AgentServer's wake queue by registered

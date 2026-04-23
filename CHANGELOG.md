@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-32 native agent harness (phase 3)
+
+- Host-side `Glorbo.Providers.ModelCatalog` GenServer lands the first
+  tranche of automatic model discovery for native providers. Native
+  aliases get `/v1/models`-style probes (OpenAI shape) or
+  `/api/tags` (Ollama shape) on explicit `refresh`, with raw responses
+  persisted under `~/.glorbo/cache/providers/<alias>.json` and a
+  derived SQLite projection in the new `provider_models` table.
+  Dispatch never waits on a probe, and `glorbo reindex` rebuilds the
+  projection from the cache without any network calls (GEP-32 D23).
+- Failure classification covers the spec's matrix: `:auth` for
+  401/403/missing-credentials, `:unreachable` for connection refused
+  and friends, `:stale` for timeouts / 5xx, and `:shape` for
+  malformed JSON or unknown response shapes.
+- `Glorbo.Company.AgentBoot` now soft-warns when an agent names a
+  model absent from the cached catalog; dispatch is not blocked
+  (GEP-32 D24).
+- `ProvidersLive` grows a "refresh models" action plus per-provider
+  catalog chip (status / model count / refreshed timestamp).
+- Shared native-provider config helpers (auth parsing, TOML
+  credentials loading, endpoint resolution, auth-header construction)
+  split out of `Glorbo.CLI.Harness` into a new
+  `Glorbo.Providers.NativeConfig` so the harness and the catalog agree
+  bit-for-bit on auth semantics.
+
 ## [0.4.1] — 2026-04-23
 
 ### Fixed
