@@ -355,13 +355,20 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp write_pending_sentinel(path, meta, agent_slug, _state) do
+    # `reason` is agent-authored markdown; a newline or `:` would
+    # break the YAML frontmatter or inject a top-level key the
+    # Director-facing dashboard reads. Quote it through the canonical
+    # FrontmatterWriter.yaml_scalar/1 which escapes control chars,
+    # backslashes, and quotes. `task_id` and `agent_slug` are
+    # already slug-validated; path list is JSON which is always
+    # single-line valid YAML.
     content = """
     ---
     kind: path-pending/v1
     agent: #{agent_slug}
     task_id: #{meta.task_id}
     paths: #{Jason.encode!(meta.paths)}
-    reason: #{meta.reason}
+    reason: #{Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(meta.reason)}
     requested_at: #{DateTime.utc_now() |> DateTime.to_iso8601()}
     ---
 
@@ -560,9 +567,20 @@ defmodule Glorbo.PathRequestGate do
   # Helpers
   # ---------------------------------------------------------------------------
 
+  # Two approved paths with matching basenames (e.g. `/tmp/a/config.json`
+  # and `/etc/config.json`) would both resolve to `/external/config.json`
+  # — the second bwrap mount shadows the first, so the agent sees only
+  # one of the two grants. Codex round-3 flagged it. Disambiguate with
+  # a short content-hash of the full host_path.
   defp sandbox_path_for(host_path) do
     basename = Path.basename(host_path)
-    "/external/#{basename}"
+
+    hash =
+      :crypto.hash(:sha256, host_path)
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 8)
+
+    "/external/#{hash}-#{basename}"
   end
 
   defp via(company) do

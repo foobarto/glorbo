@@ -269,7 +269,27 @@ defmodule GlorboWeb.Actions do
 
       """
 
-      _ = File.write(path, frontmatter <> body)
+      # threatmodel M03 (host-write defense-in-depth). `inbox/mentions/`
+      # is `--ro-bind` for the mentioned agent inside the sandbox, so
+      # the normal agent can't plant a symlink here. But a future path-
+      # grant or operator-level editor could; the `fname_ts` filename
+      # also means a millisecond-accurate race isn't impossible. Refuse
+      # to follow symlinks before writing.
+      case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+        :ok ->
+          _ = File.write(path, frontmatter <> body)
+
+        {:error, _} ->
+          # Silently skip the mention write rather than crashing the
+          # Director's post_message call — the chat message itself was
+          # already durably appended to the channel file. Log so it's
+          # visible.
+          require Logger
+
+          Logger.warning(
+            "[actions/#{company}] skipped mention write for #{mentioned}: non-regular path at #{path}"
+          )
+      end
 
       AuditLog.append(audit, %{
         company: company,

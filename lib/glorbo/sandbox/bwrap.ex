@@ -398,12 +398,65 @@ defmodule Glorbo.Sandbox.Bwrap do
   @spec approved_path_flags([map()]) :: [String.t()]
   def approved_path_flags(paths) when is_list(paths) do
     Enum.flat_map(paths, fn %{host_path: host, sandbox_path: sandbox, mode: mode} ->
+      # Defense-in-depth: PathRequestGate already validates these on
+      # approval + store, but the argv slot is load-bearing (a
+      # `../` in sandbox_path would mount at an unintended location;
+      # a non-absolute host_path would mean whatever pwd the bwrap
+      # process happens to be in). Opencode round-3 flagged the
+      # unchecked pass-through.
+      :ok = assert_valid_grant_path!(host, :host_path)
+      :ok = assert_valid_sandbox_path!(sandbox)
+
       flag = if mode == :write, do: "--bind", else: "--ro-bind"
       [flag, host, sandbox]
     end)
   end
 
   def approved_path_flags(_), do: []
+
+  # host_path must be an absolute path with no `..` segments so
+  # bwrap's `--bind` / `--ro-bind` can't accidentally resolve
+  # somewhere unintended.
+  defp assert_valid_grant_path!(path, kind) when is_binary(path) do
+    cond do
+      not String.starts_with?(path, "/") ->
+        raise ArgumentError,
+              "approved_path_flags: #{kind} must be absolute, got #{inspect(path)}"
+
+      String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
+        raise ArgumentError,
+              "approved_path_flags: #{kind} must not contain `..`, got #{inspect(path)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp assert_valid_grant_path!(_, kind) do
+    raise ArgumentError, "approved_path_flags: #{kind} must be a string"
+  end
+
+  # sandbox_path is where bwrap mounts the grant INSIDE the namespace.
+  # Must live under /external/ so it can't overlap a system mount
+  # (`/usr`, `/etc`, `/workspace`) and can't traverse (`..`).
+  defp assert_valid_sandbox_path!(path) when is_binary(path) do
+    cond do
+      not String.starts_with?(path, "/external/") ->
+        raise ArgumentError,
+              "approved_path_flags: sandbox_path must live under /external/, got #{inspect(path)}"
+
+      String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
+        raise ArgumentError,
+              "approved_path_flags: sandbox_path must not contain `..`, got #{inspect(path)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp assert_valid_sandbox_path!(_) do
+    raise ArgumentError, "approved_path_flags: sandbox_path must be a string"
+  end
 
   # ---------------------------------------------------------------------------
   # Working dir + env

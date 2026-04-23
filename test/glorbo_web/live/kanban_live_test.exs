@@ -28,7 +28,37 @@ defmodule GlorboWeb.KanbanLiveTest do
        %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 
-    # Find a seeded task's relative path by scanning the fixture tree.
+    # Seed a plain task (not approval-gated) so the drag-to-done
+    # happy path exercises the write without tripping the new
+    # approval-gate guard.
+    plain_rel = "projects/inbox/tasks/plain-#{System.unique_integer([:positive])}.md"
+    plain_abs = Path.join([base, "companies", "acme", plain_rel])
+    File.mkdir_p!(Path.dirname(plain_abs))
+
+    File.write!(plain_abs, """
+    ---
+    kind: task/v1
+    title: "Plain task"
+    status: pending
+    ---
+
+    Do the thing.
+    """)
+
+    render_hook(view, "kanban:move", %{"task_path" => plain_rel, "to" => "done"})
+
+    assert File.read!(plain_abs) =~ ~r/status:\s*done/
+  end
+
+  # Regression for the opencode round-3 finding: dragging a task
+  # with `requires_approval: director` straight to done bypasses
+  # the Director approval workflow.
+  test "kanban:move refuses drag-to-done on a task that requires director approval",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    # Find the seeded approval-gated task (the t-01 fixture sets
+    # `requires_approval: director`).
     task_path =
       [base, "companies", "acme", "projects"]
       |> Path.join()
@@ -44,15 +74,20 @@ defmodule GlorboWeb.KanbanLiveTest do
             []
         end
       end)
-      |> List.first()
+      |> Enum.find(fn rel ->
+        abs = Path.join([base, "companies", "acme", rel])
+        File.read!(abs) =~ ~r/requires_approval:\s*director/
+      end)
 
-    assert task_path, "no seeded tasks available in fixture"
+    assert task_path, "fixture should include at least one approval-gated task"
 
     render_hook(view, "kanban:move", %{"task_path" => task_path, "to" => "done"})
 
+    # Status on disk must NOT have been flipped to done.
     abs = Path.join([base, "companies", "acme", task_path])
-    content = File.read!(abs)
-    assert content =~ ~r/status:\s*done/
+    refute File.read!(abs) =~ ~r/status:\s*done/
+    # User got a useful flash.
+    assert render(view) =~ "requires director approval"
   end
 
   test "kanban:move rejects a traversal path", %{conn: conn} do

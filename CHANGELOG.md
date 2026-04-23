@@ -10,6 +10,39 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — round-4 surgical fixes (codex+opencode round-3 triage)
+
+- **[HIGH]** `Glorbo.PathRequestGate.write_pending_sentinel/4` now
+  quotes the agent-authored `reason:` field through
+  `FrontmatterWriter.yaml_scalar/1`. A newline or `:` in the reason
+  previously broke the sentinel YAML or injected a top-level key
+  the Director-facing dashboard reads. Codex round-3 flag.
+- **[HIGH]** `Glorbo.PathRequestGate.sandbox_path_for/1` disambiguates
+  `/external/<hash8>-<basename>` so two approved paths with matching
+  basenames (`/tmp/a/config.json` + `/etc/config.json`) no longer
+  shadow each other at bwrap mount time. 8-char SHA-256 prefix
+  on the full host_path is enough for disambiguation without
+  making the sandbox path opaque.
+- **[HIGH]** `Glorbo.Sandbox.Bwrap.approved_path_flags/1` now asserts
+  every grant's `host_path` is absolute + `..`-free, and every
+  `sandbox_path` lives under `/external/` + `..`-free. PathRequestGate
+  validates these on approval, but the argv slot is load-bearing
+  (a rogue `../` would mount at a different scope). Raises
+  `ArgumentError` on drift.
+- **[HIGH]** `GlorboWeb.KanbanLive` `kanban:move` now refuses to
+  flip a task with `requires_approval: director` to `done` or
+  `in-progress` unless the task is already `approved`.
+  Previously drag-to-done silently skipped the Director approval
+  workflow. New regression test plus a seeded plain-task fixture
+  for the happy path.
+- **[MED]** `GlorboWeb.Actions.write_mention/8` and
+  `GlorboWeb.KanbanLive.do_notify_assignee/5` now `lstat`-guard the
+  target inbox file. Inbox is `--ro-bind` to the mentioned agent,
+  so the agent can't plant a symlink, but a future path grant or
+  operator tool could; defense-in-depth refuses to follow one.
+  On rejection, logs a warning and skips the write rather than
+  crashing the whole Director action.
+
 ### Changed — docs quality pass (round-3 drift sweep)
 
 Drift caught by codex + opencode round-3 reviews against the code

@@ -562,6 +562,7 @@ defmodule GlorboWeb.KanbanLive do
   def handle_event("kanban:move", %{"task_path" => task_path, "to" => to}, socket) do
     with {:ok, status} <- column_to_status(to),
          {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
+         :ok <- refuse_if_bypasses_approval_gate(abs_path, status),
          :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: status}) do
       base = base_dir()
 
@@ -575,9 +576,50 @@ defmodule GlorboWeb.KanbanLive do
 
       {:noreply, assign(socket, :columns, group_by_column(tasks))}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not move task.")}
+      {:error, :approval_gate_bypass} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This task requires director approval — approve it via the Inbox before moving to done."
+         )}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Could not move task.")}
     end
   end
+
+  # A task with `requires_approval: director` in its frontmatter
+  # must NOT skip the approval workflow by being dragged straight to
+  # done. Opencode round-3 flagged: `column_to_status("done") →
+  # {:ok, "done"}` was written unconditionally, so drag-to-done
+  # bypassed the gate. Refuse the move unless the task has already
+  # been approved (status == "approved").
+  defp refuse_if_bypasses_approval_gate(abs_path, target_status)
+       when target_status in ["done", "in-progress"] do
+    case File.read(abs_path) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, fm, _body} ->
+            requires? = to_string(Map.get(fm, "requires_approval", "")) == "director"
+            approved? = to_string(Map.get(fm, "status", "")) == "approved"
+
+            if requires? and not approved? do
+              {:error, :approval_gate_bypass}
+            else
+              :ok
+            end
+
+          _ ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp refuse_if_bypasses_approval_gate(_abs, _status), do: :ok
 
   @impl true
   def render(assigns) do
@@ -1162,7 +1204,21 @@ defmodule GlorboWeb.KanbanLive do
       #{body}
       """
 
-      File.write!(path, content)
+      # threatmodel M03 defense-in-depth. `inbox/` is `--ro-bind` for
+      # this agent inside the sandbox, but a future path grant or
+      # operator tool could plant a symlink; refuse to follow one
+      # before writing.
+      case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+        :ok ->
+          File.write!(path, content)
+
+        {:error, _} ->
+          require Logger
+
+          Logger.warning(
+            "[kanban/#{company}] skipped assignee notify for #{new_assignee}: non-regular path at #{path}"
+          )
+      end
 
       # Belt-and-braces: inotify → PubSub → Agent.Server is the canonical
       # wake path, but boot-race or dropped events leave tasks sitting in
