@@ -378,7 +378,7 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
     ---
     """)
 
-    agent_md = Path.join([co_root, "agents", slug, "agent.md"])
+    agent_md = Path.join([co_root, "agents", slug, "AGENT.md"])
 
     File.write!(agent_md, """
     ---

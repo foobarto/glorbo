@@ -2,7 +2,7 @@
 gep: 0015
 title: ALLCAPS convention for agent-facing markdown files
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Informational
 created: 2026-04-17
 extended-by: [21]
@@ -19,6 +19,15 @@ history:
       AGENT.md. Opt-in per agent; scaffolder writes it when the chosen
       template has a matching priv/templates/souls/<role>.md. See
       task #118 commit history.
+  - date: 2026-04-23
+    status: Implemented
+    note: >-
+      Soft-migration fallback deleted. `Glorbo.Agent.FileLayout.agent_md/1`
+      now always returns `AGENT.md` — the lowercase candidate list is
+      gone, callers no longer branch on casing, and the FileSpec `kind:
+      agent/v1` path guard (GEP-25 R28) rejects `agent.md` at the
+      boundary. The last live-integration fixture that wrote lowercase
+      was migrated in the same commit.
 ---
 
 # GEP-15: ALLCAPS convention for agent-facing markdown files

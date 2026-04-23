@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-15 ALLCAPS convention — soft fallback dropped
+
+- `Glorbo.Agent.FileLayout.agent_md/1` now unconditionally returns
+  `AGENT.md`. The lowercase `agent.md` fallback that the module
+  carried as a soft-migration path is gone, aligning with the
+  pre-1.0 "no kid gloves" posture and the GEP-25 R28 `agent/v1`
+  path guard that already rejects lowercase `agent.md` at the
+  FileSpec boundary. The `agent_md_candidates/0` public getter is
+  removed (it had no callers outside the module itself).
+- GEP-12 (no user-input atoms) and GEP-15 (ALLCAPS convention) are
+  frontmatter-flipped to `Implemented` to match the shipped code;
+  README index follows.
+
 ### Added — GEP-32 native agent harness (phase 4)
 
 - `glorbo detect-providers` CLI verb probes localhost for native

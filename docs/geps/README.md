@@ -35,10 +35,10 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0009 | [Protocol-Level Integration — MCP, ACP](./0009-protocol-integration-mcp-acp.md)          | Informational | Accepted    |
 | 0010 | [Agent and Role-Specific Skill Templates](./0010-agent-and-skill-templates.md)           | Standards     | Implemented |
 | 0011 | [The Zen of Glorbo](./0011-zen-of-glorbo.md)                                             | Informational | Accepted    |
-| 0012 | [No User-Input Atoms — Registry Over Process Names](./0012-no-user-input-atoms.md)       | Standards     | Draft       |
+| 0012 | [No User-Input Atoms — Registry Over Process Names](./0012-no-user-input-atoms.md)       | Standards     | Implemented |
 | 0013 | [Project-prefixed Task IDs](./0013-project-prefixed-task-ids.md)                         | Standards     | Implemented |
 | 0014 | [Agent Heartbeat Semantics and HEARTBEAT.md](./0014-agent-heartbeat-semantics.md)        | Standards     | Implemented |
-| 0015 | [ALLCAPS Convention for Agent-facing Markdown](./0015-allcaps-agent-md-convention.md)    | Informational | Accepted    |
+| 0015 | [ALLCAPS Convention for Agent-facing Markdown](./0015-allcaps-agent-md-convention.md)    | Informational | Implemented |
 | 0016 | [Agent Wake + Dispatch Pipeline](./0016-agent-wake-dispatch-pipeline.md)                 | Informational | Implemented |
 | 0017 | [Cross-OS Sandbox and Filesystem Watcher Landscape](./0017-cross-os-sandbox-and-watcher.md) | Informational | Draft       |
 | 0018 | [agentcompanies/v1 interop — adopt paperclip.ai schema?](./0018-agentcompanies-v1-interop.md) | Informational | Placeholder |

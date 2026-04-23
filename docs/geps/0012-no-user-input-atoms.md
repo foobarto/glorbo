@@ -2,7 +2,7 @@
 gep: 12
 title: No User-Input Atoms — Registry Over Process Names
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-17
 requires: [2]
@@ -11,6 +11,9 @@ history:
   - date: 2026-04-17
     status: Draft
     note: Initial draft — promotes an existing informal rule (T-03-15) to an enforced standard after an audit surfaced one violation in Company.Supervisor.
+  - date: 2026-04-23
+    status: Implemented
+    note: "Fully landed on `main`: `Company.Supervisor.via/2` is the canonical `{:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, role}}}` registration (lib/glorbo/company/supervisor.ex:86); `Credo.Check.Warning.UnsafeToAtom` is enabled in `.credo.exs:162` so `mix credo --strict` blocks regressions; and every per-company child (audit_log, file_watcher, router, scheduler, task_scheduler, budget_tracker, agent_sup, network_proxy, approvals_gate, path_request_gate, proposals_sink) routes through `via/2`."
 ---
 
 # GEP-12: No User-Input Atoms — Registry Over Process Names
