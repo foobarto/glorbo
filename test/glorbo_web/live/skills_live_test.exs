@@ -17,6 +17,7 @@ defmodule GlorboWeb.SkillsLiveTest do
 
     File.write!(Path.join(user_dir, "glorbo.md"), """
     ---
+    kind: task/v1
     name: glorbo
     title: customised
     ---
@@ -34,6 +35,7 @@ defmodule GlorboWeb.SkillsLiveTest do
 
     File.write!(agent_md, """
     ---
+    kind: agent/v1
     name: ceo
     provider: claude-code
     model: anthropic/claude-opus-4-6

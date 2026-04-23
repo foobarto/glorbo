@@ -43,6 +43,7 @@ defmodule GlorboWeb.KanbanRealtimeTest do
 
     File.write!(task_path, """
     ---
+    kind: task/v1
     title: "Fix navbar"
     status: in-progress
     assigned_to: ceo

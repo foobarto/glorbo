@@ -503,6 +503,7 @@ defmodule Gep.ValidatorTest do
 
     """
     ---
+    kind: task/v1
     gep: #{gep.number}
     title: #{gep.title}
     author: #{gep.author}

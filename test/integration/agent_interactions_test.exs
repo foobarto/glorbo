@@ -141,6 +141,7 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
 
     File.write!(task_path, """
     ---
+    kind: task/v1
     title: "Seed"
     status: "todo"
     assigned_to: "#{target_slug}"
@@ -544,6 +545,7 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
 
       File.write!(abs, """
       ---
+      kind: task/v1
       title: "Review"
       status: "todo"
       assigned_to: "ceo"

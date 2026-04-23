@@ -53,6 +53,7 @@ defmodule Glorbo.Test.Fixtures do
 
     File.write!(Path.join(agent_dir, "AGENT.md"), """
     ---
+    kind: agent/v1
     name: CEO
     slug: ceo
     role: "Chief Executive Officer"
@@ -90,6 +91,7 @@ defmodule Glorbo.Test.Fixtures do
 
     File.write!(Path.join(tasks_dir, "t-01.md"), """
     ---
+    kind: task/v1
     title: "Deploy landing page"
     status: pending
     assigned_to: ceo

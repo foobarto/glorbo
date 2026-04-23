@@ -31,6 +31,7 @@ defmodule Glorbo.TaskDefinitionWriteTest do
     test "rewrites status in place; preserves other frontmatter verbatim", %{path: path} do
       seed_task(path, """
       ---
+      kind: task/v1
       title: "Deploy landing page"
       status: pending
       assigned_to: ceo
@@ -53,6 +54,7 @@ defmodule Glorbo.TaskDefinitionWriteTest do
     test "rewrites denial_reason when missing; adds value inline", %{path: path} do
       seed_task(path, """
       ---
+      kind: task/v1
       title: "Deploy landing page"
       status: pending
       denial_reason: ""
@@ -169,6 +171,7 @@ defmodule Glorbo.TaskDefinitionWriteTest do
 
       File.write!(task_path, """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending
       assigned_to: ceo

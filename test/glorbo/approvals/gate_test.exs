@@ -35,6 +35,9 @@ defmodule Glorbo.Approvals.GateTest do
   end
 
   defp write_task(ctx, id, attrs) do
+    # GEP-25 R26.2b — every task frontmatter must carry `kind: task/v1`.
+    attrs = Keyword.put_new(attrs, :kind, "task/v1")
+
     fm_lines =
       attrs
       |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{v}" end)
@@ -202,6 +205,7 @@ defmodule Glorbo.Approvals.GateTest do
     # Director "approves" by editing status
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -258,6 +262,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: risky
     status: denied
     requires_approval: director
@@ -392,6 +397,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -440,6 +446,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -486,6 +493,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -576,6 +584,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -620,6 +629,7 @@ defmodule Glorbo.Approvals.GateTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director
@@ -664,6 +674,7 @@ defmodule Glorbo.Approvals.GateTest do
     # Agent writes status: approved directly (bypass).
     File.write!(path, """
     ---
+    kind: task/v1
     title: ok
     status: approved
     requires_approval: director

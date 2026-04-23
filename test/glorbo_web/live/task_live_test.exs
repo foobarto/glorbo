@@ -22,6 +22,7 @@ defmodule GlorboWeb.TaskLiveTest do
 
     File.write!(Path.join(tasks_dir, "foo-1.md"), """
     ---
+    kind: task/v1
     title: hello task
     assigned_to: ceo
     status: todo
@@ -299,6 +300,7 @@ defmodule GlorboWeb.TaskLiveTest do
 
       File.write!(Path.join(tasks_dir, "foo-1.md"), """
       ---
+      kind: task/v1
       title: recurring task
       assigned_to: ceo
       status: todo
@@ -407,6 +409,7 @@ defmodule GlorboWeb.TaskLiveTest do
       # Second task so foo-2 references are valid.
       File.write!(Path.join(tasks_dir, "foo-2.md"), """
       ---
+      kind: task/v1
       title: second task
       assigned_to: ceo
       status: todo
@@ -422,6 +425,7 @@ defmodule GlorboWeb.TaskLiveTest do
         Path.join(tasks_dir, "foo-1.md"),
         """
         ---
+        kind: task/v1
         title: first task
         assigned_to: ceo
         status: todo

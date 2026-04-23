@@ -767,6 +767,7 @@ defmodule Glorbo.Agent.ServerTest do
 
       File.write!(task_path, """
       ---
+      kind: task/v1
       title: "Demo"
       status: "todo"
       assigned_to: "#{slug}"

@@ -64,6 +64,7 @@ defmodule GlorboWeb.CompanyLiveTest do
     # Overlay a company.md that has a goals list.
     File.write!(Path.join([base, "companies", "acme", "company.md"]), """
     ---
+    kind: task/v1
     slug: acme
     name: Acme
     mission: Test
@@ -108,6 +109,7 @@ defmodule GlorboWeb.CompanyLiveTest do
        %{conn: conn, base: base} do
     File.write!(Path.join([base, "companies", "acme", "company.md"]), """
     ---
+    kind: task/v1
     slug: acme
     name: Acme
     goals:
@@ -129,6 +131,7 @@ defmodule GlorboWeb.CompanyLiveTest do
 
     File.write!(Path.join(tasks_dir, "foo-1.md"), """
     ---
+    kind: task/v1
     title: task-1
     status: done
     goal: q4-launch
@@ -137,6 +140,7 @@ defmodule GlorboWeb.CompanyLiveTest do
 
     File.write!(Path.join(tasks_dir, "foo-2.md"), """
     ---
+    kind: task/v1
     title: task-2
     status: todo
     goal: q4-launch

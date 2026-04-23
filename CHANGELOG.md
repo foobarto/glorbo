@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-25 R26.2b parser enforcement sweep
+
+- `Glorbo.Agent.Parser.validate/4` now requires `kind: agent/v1`
+  in AGENT.md frontmatter; `Glorbo.TaskDefinition.parse_frontmatter/2`
+  now requires `kind: task/v1` in task files. Missing or wrong
+  `kind:` returns `{:error, {:missing_kind, expected}}` /
+  `{:wrong_kind, expected, got}` before any other validation
+  runs. Closes GEP-25's parser-boundary enforcement — the
+  matching Router-outbox enforcement landed in R26.2a, and the
+  FileSpec validator already reported drift; now the agent/task
+  runtime refuses to boot on non-canonical frontmatter.
+- Bulk-patched 29 test fixture files + 2 support modules to
+  carry the required `kind:` line via an Elixir one-shot
+  script; the 6 edge cases (memory entries matched incorrectly,
+  validator's own missing-kind fixture, a task fixture with a
+  `provider:` override) were hand-corrected. GEP-25 frontmatter
+  flipped from Draft to Implemented.
+
 ### Added — GEP-26 Phase B (Director-facing slice) — blind A/B scoring
 
 - `/benchmarks` lists every `~/.glorbo/benchmarks/runs/<run-id>/`

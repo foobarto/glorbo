@@ -129,7 +129,8 @@ defmodule Glorbo.Agent.Parser do
   @spec validate(map(), String.t(), String.t(), Path.t()) ::
           {:ok, Spec.t()} | {:error, parse_error()}
   def validate(meta, slug, company, file_path) when is_map(meta) do
-    with :ok <- validate_slug(slug),
+    with :ok <- require_kind(meta),
+         :ok <- validate_slug(slug),
          {:ok, provider} <- validate_provider(meta["provider"]),
          {:ok, model} <- validate_model(meta["model"]),
          {:ok, models} <- validate_models_aliases(meta["models"]),
@@ -347,6 +348,19 @@ defmodule Glorbo.Agent.Parser do
       :ok
     else
       {:error, {:invalid_slug, slug}}
+    end
+  end
+
+  # GEP-25 R26.2b — require `kind: agent/v1` in AGENT.md frontmatter.
+  # The file-spec boundary already rejects `agent.md` (lowercase) and
+  # non-canonical path shapes; this is the parser-level boundary that
+  # stops an AGENT.md without a `kind:` at all from booting. Pre-1.0
+  # "no kid gloves" — no fallback readers, no deprecation window.
+  defp require_kind(meta) do
+    case Map.get(meta, "kind") do
+      "agent/v1" -> :ok
+      nil -> {:error, {:missing_kind, "agent/v1"}}
+      other -> {:error, {:wrong_kind, "agent/v1", other}}
     end
   end
 

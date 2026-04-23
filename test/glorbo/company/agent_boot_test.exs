@@ -40,6 +40,7 @@ defmodule Glorbo.Company.AgentBootTest do
 
     File.write!(FileLayout.agent_md_canonical(agent_dir), """
     ---
+    kind: agent/v1
     name: #{String.upcase(slug)}
     slug: #{slug}
     role: "Test agent"

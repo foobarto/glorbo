@@ -34,6 +34,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P1: valid agent.md returns fully populated Spec", ctx do
       content = """
       ---
+      kind: agent/v1
       role: Senior Engineer
       provider: claude-code
       model: claude-opus-4-6
@@ -87,6 +88,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "native built-ins are accepted when the live registry is unavailable", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: openai
       model: gpt-4.1
@@ -101,6 +103,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P2: unknown provider rejected with {:invalid_provider, _}", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: bogus-provider
       model: some-model
@@ -114,6 +117,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "provider missing → {:invalid_provider, \"\"}", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       model: some-model
       ---
@@ -128,6 +132,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P3: missing model returns :missing_model", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       ---
@@ -140,6 +145,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P4: list model returns :multiple_models_not_supported", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model:
@@ -157,6 +163,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P5: malformed permission tuple is rejected", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -172,6 +179,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P6: unknown resource rejected via ACLMapper", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -187,6 +195,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P6b: traversal-like permission scope is rejected via ACLMapper", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -204,6 +213,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P7: missing permissions field defaults to []", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -224,6 +234,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P8a: network: none → :none", ctx do
       content = ~s"""
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -238,6 +249,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P8b: network: proxy → :proxy", ctx do
       content = ~s"""
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -252,6 +264,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P8c: network: open → :open", ctx do
       content = ~s"""
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -266,6 +279,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P8d: unknown network → {:invalid_network, _}", ctx do
       content = ~s"""
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -284,6 +298,7 @@ defmodule Glorbo.Agent.ParserTest do
       # explicitly.
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -297,6 +312,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "native providers reject missing network because :none is impossible", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: openai
       model: gpt-4.1
@@ -311,6 +327,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "native providers reject explicit network: none", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: openrouter
       model: openai/gpt-4.1
@@ -327,6 +344,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "native providers accept proxy and open network modes", ctx do
       proxy = """
       ---
+      kind: agent/v1
       role: x
       provider: openai
       model: gpt-4.1
@@ -336,6 +354,7 @@ defmodule Glorbo.Agent.ParserTest do
 
       open = """
       ---
+      kind: agent/v1
       role: x
       provider: openrouter
       model: openai/gpt-4.1
@@ -359,6 +378,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P10: missing heartbeat defaults to nil", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -372,6 +392,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P11: missing budget defaults to nil (no hard-stop)", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -385,6 +406,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P11b: budget.monthly_usd is converted to cents", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -400,6 +422,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P12: missing timeout_seconds defaults to 300 (D-06)", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -413,6 +436,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "GEP-32 runtime knobs default when absent", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -431,6 +455,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "GEP-32 runtime knobs accept explicit values", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -459,6 +484,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P13: scalar skill string normalises to single-element list", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -473,6 +499,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P14: skill name with ../ rejected (T-03-19 path traversal)", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -494,6 +521,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P15: declaring agents:create:* returns :agents_create_forbidden", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -515,6 +543,7 @@ defmodule Glorbo.Agent.ParserTest do
     test "P16: slug derived from file path", ctx do
       content = """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -534,6 +563,7 @@ defmodule Glorbo.Agent.ParserTest do
 
       File.write!(path, """
       ---
+      kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
@@ -557,6 +587,7 @@ defmodule Glorbo.Agent.ParserTest do
         path =
           write_agent(ctx, "eng-#{:erlang.phash2(raw)}", ~s"""
           ---
+          kind: agent/v1
           role: x
           provider: claude-code
           model: claude-opus-4-6
@@ -583,6 +614,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "eng-default", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -598,6 +630,7 @@ defmodule Glorbo.Agent.ParserTest do
         path =
           write_agent(ctx, "eng-#{value}", """
           ---
+          kind: agent/v1
           role: x
           provider: claude-code
           model: claude-opus-4-6
@@ -614,6 +647,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "eng-bad", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -630,6 +664,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "nl-hb", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -645,6 +680,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "cron-hb", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -661,6 +697,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "bad-hb", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -678,6 +715,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "no-mr", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -693,6 +731,7 @@ defmodule Glorbo.Agent.ParserTest do
         path =
           write_agent(ctx, "mr-#{n}", """
           ---
+          kind: agent/v1
           role: x
           provider: claude-code
           model: claude-opus-4-6
@@ -709,6 +748,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "mr-big", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -724,6 +764,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "mr-bad", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -741,6 +782,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "no-aliases", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -755,6 +797,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "with-aliases", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -773,6 +816,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "blank-model", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6
@@ -789,6 +833,7 @@ defmodule Glorbo.Agent.ParserTest do
       path =
         write_agent(ctx, "bad-alias", """
         ---
+        kind: agent/v1
         role: x
         provider: claude-code
         model: claude-opus-4-6

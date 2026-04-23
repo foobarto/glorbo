@@ -16,6 +16,7 @@ defmodule Glorbo.Filesystem.FrontmatterWriterTest do
   test "rewrites only the requested keys, leaves unknowns alone", %{path: path} do
     File.write!(path, """
     ---
+    kind: agent/v1
     name: alice
     role: engineer
     notes: keep me

@@ -22,6 +22,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T1: parses a fully populated task.md into TaskDefinition", ctx do
     content = """
     ---
+    kind: task/v1
     title: Delete stale backups
     status: pending-approval
     assigned_to: engineer
@@ -52,6 +53,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T1b: optional `goal:` frontmatter parses into td.goal", ctx do
     content = """
     ---
+    kind: task/v1
     title: Weekly research
     goal: weekly-digest
     status: todo
@@ -65,7 +67,7 @@ defmodule Glorbo.TaskDefinitionTest do
   end
 
   test "T1c: missing goal: frontmatter leaves td.goal as nil", ctx do
-    content = "---\ntitle: no-goal\n---\nbody\n"
+    content = "---\nkind: task/v1\ntitle: no-goal\n---\nbody\n"
     path = write_task(ctx, "t-ng.md", content)
     assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
     assert td.goal == nil
@@ -75,6 +77,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T2: requires_approval false coerces to nil", ctx do
     content = """
     ---
+    kind: task/v1
     title: Harmless task
     status: pending
     requires_approval: false
@@ -92,6 +95,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T3: absent requires_approval coerces to nil", ctx do
     content = """
     ---
+    kind: task/v1
     title: Harmless task
     status: pending
     ---
@@ -108,6 +112,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T4: string \"director\" coerces to :director", ctx do
     content = """
     ---
+    kind: task/v1
     title: Dangerous task
     requires_approval: "director"
     ---
@@ -124,6 +129,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T5: requires_approval true returns error", ctx do
     content = """
     ---
+    kind: task/v1
     title: Ambiguous
     requires_approval: true
     ---
@@ -140,6 +146,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T6: requires_approval \"producer\" returns error", ctx do
     content = """
     ---
+    kind: task/v1
     title: Not supported
     requires_approval: producer
     ---
@@ -170,6 +177,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T8: corrupt YAML returns {:error, {:yaml_error, _}}", ctx do
     content = """
     ---
+    kind: task/v1
     title: [unclosed bracket
     status: pending
     ---
@@ -198,6 +206,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T10: task_id derived from filename stem", ctx do
     contents = """
     ---
+    kind: task/v1
     title: dated
     ---
     body
@@ -221,6 +230,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T11: task_path is computed as path relative to company dir", ctx do
     content = """
     ---
+    kind: task/v1
     title: relative
     ---
     body
@@ -239,6 +249,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T12: path outside company dir returns :path_outside_company", ctx do
     content = """
     ---
+    kind: task/v1
     title: elsewhere
     ---
     body
@@ -258,6 +269,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T13: denial_reason round-trips into the struct", ctx do
     content = """
     ---
+    kind: task/v1
     title: Rejected
     status: denied
     requires_approval: director
@@ -276,6 +288,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T14: unknown status string kept verbatim", ctx do
     content = """
     ---
+    kind: task/v1
     title: weird
     status: weird
     ---
@@ -304,6 +317,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T17: parses `<project>-NN.md` filenames (GEP-13)", ctx do
     content = """
     ---
+    kind: task/v1
     title: Prefixed
     status: pending
     ---
@@ -320,6 +334,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T19: canonicalize_ref resolves `<project>-NN` shape directly", ctx do
     content = """
     ---
+    kind: task/v1
     title: direct
     ---
     body
@@ -338,6 +353,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T20: canonicalize_ref resolves legacy t-NN across projects", ctx do
     content = """
     ---
+    kind: task/v1
     title: legacy
     ---
     body
@@ -357,6 +373,7 @@ defmodule Glorbo.TaskDefinitionTest do
        ctx do
     content = """
     ---
+    kind: task/v1
     title: dup
     ---
     body
@@ -380,6 +397,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T22: canonicalize_ref passes through a full relative task_path", ctx do
     content = """
     ---
+    kind: task/v1
     title: already-canonical
     ---
     body
@@ -404,6 +422,7 @@ defmodule Glorbo.TaskDefinitionTest do
 
     content = """
     ---
+    kind: task/v1
     title: Hyphen slug
     ---
     body
@@ -420,6 +439,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T23: parses optional model/provider override frontmatter", ctx do
     content = """
     ---
+    kind: task/v1
     title: use cheaper model for this one
     status: todo
     model: claude-haiku-4-5
@@ -440,6 +460,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T23b: model/provider are nil when absent (preserves existing behaviour)", ctx do
     content = """
     ---
+    kind: task/v1
     title: default
     status: todo
     ---
@@ -459,6 +480,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T25: parses optional budget_usd_cents cap", ctx do
     content = """
     ---
+    kind: task/v1
     title: expensive research
     status: todo
     budget_usd_cents: 2500
@@ -474,6 +496,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T25b: string values parse too", ctx do
     content = """
     ---
+    kind: task/v1
     title: quoted
     status: todo
     budget_usd_cents: "750"
@@ -488,6 +511,7 @@ defmodule Glorbo.TaskDefinitionTest do
   test "T25c: malformed budget → nil", ctx do
     content = """
     ---
+    kind: task/v1
     title: bad
     status: todo
     budget_usd_cents: abc
@@ -504,6 +528,7 @@ defmodule Glorbo.TaskDefinitionTest do
     test "T24a: schedule field parses into td.schedule", ctx do
       content = """
       ---
+      kind: task/v1
       title: weekly summary
       status: todo
       schedule: every monday at 9am
@@ -522,6 +547,7 @@ defmodule Glorbo.TaskDefinitionTest do
     test "T24b: writing status=done on a recurring task loops back to todo", ctx do
       content = """
       ---
+      kind: task/v1
       title: daily standup review
       status: in-progress
       schedule: every morning
@@ -538,6 +564,7 @@ defmodule Glorbo.TaskDefinitionTest do
     test "T24c: non-recurring task still transitions to done", ctx do
       content = """
       ---
+      kind: task/v1
       title: one-off
       status: in-progress
       ---
@@ -553,6 +580,7 @@ defmodule Glorbo.TaskDefinitionTest do
     test "T24d: loop-back works with string-keyed updates", ctx do
       content = """
       ---
+      kind: task/v1
       title: hourly check
       status: in-progress
       schedule: every hour
@@ -570,6 +598,7 @@ defmodule Glorbo.TaskDefinitionTest do
          ctx do
       content = """
       ---
+      kind: task/v1
       title: weekly retro
       status: in-progress
       schedule: every friday at 5pm
@@ -588,6 +617,7 @@ defmodule Glorbo.TaskDefinitionTest do
     test "T24e: other statuses on recurring tasks pass through unchanged", ctx do
       content = """
       ---
+      kind: task/v1
       title: weekly
       status: todo
       schedule: every monday at 9am

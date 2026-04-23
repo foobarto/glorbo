@@ -10,6 +10,7 @@ defmodule GlorboWeb.SearchControllerTest do
 
     File.write!(Path.join(tasks_dir, "foo-1.md"), """
     ---
+    kind: task/v1
     title: Hello search
     status: todo
     ---

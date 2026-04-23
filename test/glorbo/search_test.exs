@@ -20,6 +20,7 @@ defmodule Glorbo.SearchTest do
 
     File.write!(Path.join(tasks_dir, "foo-1.md"), """
     ---
+    kind: task/v1
     title: Refactor dispatch pipeline
     status: todo
     ---
@@ -28,6 +29,7 @@ defmodule Glorbo.SearchTest do
 
     File.write!(Path.join(tasks_dir, "foo-2.md"), """
     ---
+    kind: task/v1
     title: Ship release candidate
     status: done
     ---
@@ -36,6 +38,7 @@ defmodule Glorbo.SearchTest do
 
     File.write!(Path.join(tasks_dir, "foo-3.md"), """
     ---
+    kind: task/v1
     title: Investigate weird audit gap
     status: in-progress
     ---
@@ -175,6 +178,7 @@ defmodule Glorbo.SearchTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: Totally new title
     status: todo
     ---
@@ -209,6 +213,7 @@ defmodule Glorbo.SearchTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: #{long_title}
     status: todo
     ---
@@ -226,6 +231,7 @@ defmodule Glorbo.SearchTest do
     for idx <- 4..1_150 do
       File.write!(Path.join(tasks_dir, "foo-#{idx}.md"), """
       ---
+      kind: task/v1
       title: Search cache task #{idx}
       status: todo
       ---

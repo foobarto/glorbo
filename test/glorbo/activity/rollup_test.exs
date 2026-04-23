@@ -72,6 +72,7 @@ defmodule Glorbo.Activity.RollupTest do
 
     File.write!(Path.join(tasks_dir, "blog-1.md"), """
     ---
+    kind: task/v1
     title: a
     status: todo
     ---
@@ -79,6 +80,7 @@ defmodule Glorbo.Activity.RollupTest do
 
     File.write!(Path.join(tasks_dir, "blog-2.md"), """
     ---
+    kind: task/v1
     title: b
     status: done
     ---
@@ -86,6 +88,7 @@ defmodule Glorbo.Activity.RollupTest do
 
     File.write!(Path.join(tasks_dir, "blog-3.md"), """
     ---
+    kind: task/v1
     title: c
     status: todo
     ---
@@ -102,12 +105,14 @@ defmodule Glorbo.Activity.RollupTest do
 
     File.write!(Path.join(tasks_dir, "p-1.md"), """
     ---
+    kind: task/v1
     title: n
     ---
     """)
 
     File.write!(Path.join(tasks_dir, "p-2.md"), """
     ---
+    kind: task/v1
     title: hi
     priority: high
     ---

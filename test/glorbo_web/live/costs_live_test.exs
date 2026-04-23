@@ -10,6 +10,7 @@ defmodule GlorboWeb.CostsLiveTest do
 
     File.write!(Path.join(agent_dir, "AGENT.md"), """
     ---
+    kind: agent/v1
     role: engineering
     provider: claude-code
     model: claude-opus-4-6

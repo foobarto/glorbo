@@ -52,6 +52,7 @@ defmodule Glorbo.Test.PortabilityFixtures do
 
     File.write!(Path.join(ag_path, "AGENT.md"), """
     ---
+    kind: agent/v1
     name: #{String.upcase(agent)}
     slug: #{agent}
     role: "Portability test agent"

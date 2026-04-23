@@ -227,6 +227,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(abs_task, """
       ---
+      kind: task/v1
       id: #{task_id}
       title: Stuck task
       status: in-progress
@@ -409,6 +410,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(abs_task, """
       ---
+      kind: task/v1
       id: #{task_id}
       title: File-drop task
       status: in-progress
@@ -513,6 +515,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(abs_task_2, """
       ---
+      kind: task/v1
       id: #{task_id_2}
       title: Task two
       status: in-progress

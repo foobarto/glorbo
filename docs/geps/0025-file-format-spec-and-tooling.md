@@ -2,7 +2,7 @@
 gep: 25
 title: On-disk file format specs, `glorbo validate`, `glorbo fmt`
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 requires: [2, 3]
@@ -32,6 +32,20 @@ history:
       fixtures); maximal-valid + per-error-condition fixture variants;
       and fixtures for the 4 remaining kinds (audit-event, inbox-archive,
       sentinel-stuck, sentinel-resolution).
+  - date: 2026-04-23
+    status: Implemented
+    note: |
+      R26.2b parser enforcement sweep landed — `Glorbo.Agent.Parser.validate/4`
+      and `Glorbo.TaskDefinition.parse_frontmatter/2` now require `kind: agent/v1`
+      and `kind: task/v1` respectively. Missing or wrong `kind:` on either
+      AGENT.md or a task file returns `{:error, {:missing_kind, "<expected>"}}`
+      or `{:error, {:wrong_kind, "<expected>", "<got>"}}`. Pre-1.0 atomic cut
+      (per pre_1_0_no_kid_gloves memory) — no fallback readers, no deprecation
+      window. The 30+ inline test fixtures across
+      `test/{glorbo,glorbo_web,integration,support}/` were bulk-patched in the
+      same commit via a one-shot Elixir script; the 6 fixtures that didn't
+      match the heuristic (memory entries, validator's own missing-kind test,
+      a task fixture with `provider:` override) were hand-corrected.
 ---
 
 # GEP-25: On-disk file format specs, `glorbo validate`, `glorbo fmt`

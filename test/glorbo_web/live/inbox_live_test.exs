@@ -20,6 +20,7 @@ defmodule GlorboWeb.InboxLiveTest do
 
     File.write!(Path.join(tasks_dir, "demo-1.md"), """
     ---
+    kind: task/v1
     title: decide X
     status: pending
     assigned_to: ceo

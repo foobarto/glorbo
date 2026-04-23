@@ -249,6 +249,7 @@ defmodule GlorboWeb.AgentLiveTest do
 
       File.write!(Path.join(memory_dir, "feedback_tone.md"), """
       ---
+      kind: agent-memory/v1
       name: Director tone
       description: concise, dry, no emoji
       type: feedback
@@ -457,6 +458,7 @@ defmodule GlorboWeb.AgentLiveTest do
 
       File.write!(Path.join(ag, "SOUL.md"), """
       ---
+      kind: agent/v1
       role: "CEO"
       ---
 
@@ -531,6 +533,7 @@ defmodule GlorboWeb.AgentLiveTest do
 
     File.write!(Path.join(eng_dir, "AGENT.md"), """
     ---
+    kind: agent/v1
     name: #{slug}
     role: Engineer
     provider: claude-code

@@ -231,6 +231,7 @@ defmodule GlorboWeb.ActionsTest do
 
       File.write!(Path.join(tasks_dir, "t-01.md"), """
       ---
+      kind: task/v1
       title: "Ship v2"
       status: todo
       assigned_to: ceo
@@ -345,6 +346,7 @@ defmodule GlorboWeb.ActionsTest do
 
       File.write!(task, """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending
       assigned_to: ceo
@@ -420,6 +422,7 @@ defmodule GlorboWeb.ActionsTest do
       # preserves the original agent. Approve should swap it back.
       File.write!(Path.join([base, "companies", "acme", task_path]), """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending
       assigned_to: director
@@ -489,6 +492,7 @@ defmodule GlorboWeb.ActionsTest do
       # swap back to the requester so they see the denial on their lane.
       File.write!(Path.join([base, "companies", "acme", task_path]), """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending-approval
       assigned_to: director
@@ -531,6 +535,7 @@ defmodule GlorboWeb.ActionsTest do
     } do
       File.write!(Path.join([base, "companies", "acme", task_path]), """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending-approval
       assigned_to: director
@@ -693,6 +698,7 @@ defmodule GlorboWeb.ActionsTest do
 
       File.write!(Path.join(tasks_dir, "t-regular.md"), """
       ---
+      kind: task/v1
       title: "Deploy"
       status: pending
       assigned_to: ceo

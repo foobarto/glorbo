@@ -50,6 +50,7 @@ defmodule Glorbo.Integration.ScheduledTaskE2ETest do
 
     File.write!(Path.join(tasks_dir, "#{task_id}.md"), """
     ---
+    kind: task/v1
     title: #{task_id}
     assigned_to: #{assignee}
     status: todo

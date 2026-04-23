@@ -88,6 +88,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(other_dir, "t-99.md"), """
     ---
+    kind: task/v1
     title: "Other project task"
     status: todo
     ---
@@ -213,6 +214,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "mix-body.md"), """
     ---
+    kind: task/v1
     title: Mixed body
     status: todo
     ---
@@ -338,6 +340,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "demo-1.md"), """
     ---
+    kind: task/v1
     title: trace
     status: todo
     ---
@@ -369,6 +372,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "demo-1.md"), """
     ---
+    kind: task/v1
     title: match the goal
     status: todo
     goal: q4-launch
@@ -378,6 +382,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "demo-2.md"), """
     ---
+    kind: task/v1
     title: irrelevant task
     status: todo
     ---
@@ -405,6 +410,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "wfilter-1.md"), """
     ---
+    kind: task/v1
     title: engineer task
     status: todo
     assigned_to: engineer
@@ -413,6 +419,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(Path.join(tasks_dir, "wfilter-2.md"), """
     ---
+    kind: task/v1
     title: ceo task
     status: todo
     assigned_to: ceo
@@ -549,6 +556,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
       File.write!(path, """
       ---
+      kind: task/v1
       title: "Initial"
       status: todo
       ---
@@ -625,6 +633,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
     File.write!(path, """
     ---
+    kind: task/v1
     title: "Sitemap"
     status: todo
     ---

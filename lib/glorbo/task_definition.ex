@@ -149,7 +149,8 @@ defmodule Glorbo.TaskDefinition do
   def parse_frontmatter(meta, opts \\ []) when is_map(meta) do
     file_path = Keyword.get(opts, :file_path, "")
 
-    with {:ok, requires_approval} <- coerce_requires_approval(meta["requires_approval"]) do
+    with :ok <- require_kind(meta),
+         {:ok, requires_approval} <- coerce_requires_approval(meta["requires_approval"]) do
       {:ok,
        %{
          task_id: derive_task_id(file_path),
@@ -171,6 +172,19 @@ defmodule Glorbo.TaskDefinition do
          schedule: as_string(meta["schedule"]),
          budget_usd_cents: coerce_budget(meta["budget_usd_cents"])
        }}
+    end
+  end
+
+  # GEP-25 R26.2b — require `kind: task/v1` in task frontmatter.
+  # Pre-1.0 atomic cut. Missing or wrong `kind:` turns the file from
+  # "silently unparsed task" into a loud rejection the Director sees
+  # in the audit log — matches the Router's outbox boundary already
+  # enforced since R26.2a.
+  defp require_kind(meta) do
+    case Map.get(meta, "kind") do
+      "task/v1" -> :ok
+      nil -> {:error, {:missing_kind, "task/v1"}}
+      other -> {:error, {:wrong_kind, "task/v1", other}}
     end
   end
 

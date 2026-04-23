@@ -183,6 +183,7 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
 
     File.write!(Path.join(memory_dir, "feedback_secret.md"), """
     ---
+    kind: agent-memory/v1
     name: Director secret token
     description: unique one-shot token for R17c e2e memory test
     type: feedback
