@@ -30,6 +30,7 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
 
   @repo "foobarto/glorbo"
   @tap_formula_path "Formula/glorbo.rb"
+  @sha256_re ~r/\A[0-9a-f]{64}\z/i
   @required_assets [
     "glorbo-linux-x86_64",
     "glorbo-linux-aarch64",
@@ -87,18 +88,35 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
     end
   end
 
-  defp parse_sha256sums(body) when is_binary(body) do
+  @doc false
+  def parse_sha256sums(body) when is_binary(body) do
     body
     |> String.split("\n", trim: true)
     |> Enum.reduce(%{}, fn line, acc ->
-      case String.split(line, ~r/\s+/, parts: 2) do
-        [sha, filename] -> Map.put(acc, String.trim(filename), String.trim(sha))
-        _ -> acc
+      case String.split(line, ~r/\s+/, parts: 2, trim: true) do
+        [sha, filename] ->
+          sha = String.trim(sha) |> String.downcase()
+          filename = filename |> String.trim() |> String.trim_leading("*")
+
+          cond do
+            filename == "" ->
+              Mix.raise("Malformed SHA256SUMS line (blank filename): #{inspect(line)}")
+
+            not valid_sha256?(sha) ->
+              Mix.raise("Malformed SHA256SUMS line (invalid sha256): #{inspect(line)}")
+
+            true ->
+              Map.put(acc, filename, sha)
+          end
+
+        _ ->
+          Mix.raise("Malformed SHA256SUMS line: #{inspect(line)}")
       end
     end)
   end
 
-  defp validate_assets!(shas) do
+  @doc false
+  def validate_assets!(shas) do
     for asset <- @required_assets do
       unless Map.has_key?(shas, asset) do
         Mix.raise(
@@ -106,10 +124,17 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
             "ship both x86_64 and aarch64 Burrito binaries?"
         )
       end
+
+      unless valid_sha256?(Map.fetch!(shas, asset)) do
+        Mix.raise("SHA256SUMS contains invalid sha256 for required asset `#{asset}`")
+      end
     end
 
     :ok
   end
+
+  defp valid_sha256?(sha) when is_binary(sha), do: Regex.match?(@sha256_re, sha)
+  defp valid_sha256?(_), do: false
 
   # ------------------------------------------------------------------
   # Formula rendering
