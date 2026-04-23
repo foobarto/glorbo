@@ -47,6 +47,10 @@ defmodule Glorbo.Agent.ParserTest do
         - git-hygiene
       budget_usd_cents_month: 10000
       timeout_seconds: 600
+      http_timeout_s: 90
+      http_max_retries: 4
+      web_fetch_timeout_s: 12
+      max_tool_calls_per_turn: 75
       ---
       # engineer — main responsibilities
       """
@@ -67,6 +71,10 @@ defmodule Glorbo.Agent.ParserTest do
       assert spec.skills == ["elixir-style", "git-hygiene"]
       assert spec.budget_usd_cents_month == 10_000
       assert spec.timeout_seconds == 600
+      assert spec.http_timeout_s == 90
+      assert spec.http_max_retries == 4
+      assert spec.web_fetch_timeout_s == 12
+      assert spec.max_tool_calls_per_turn == 75
       assert spec.file_path == path
     end
   end
@@ -400,6 +408,46 @@ defmodule Glorbo.Agent.ParserTest do
 
       path = write_agent(ctx, "h", content)
       assert {:ok, %{timeout_seconds: 300}} = Parser.parse_file(path)
+    end
+
+    test "GEP-32 runtime knobs default when absent", ctx do
+      content = """
+      ---
+      role: x
+      provider: claude-code
+      model: claude-opus-4-6
+      ---
+      """
+
+      path = write_agent(ctx, "h-native-defaults", content)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.http_timeout_s == 120
+      assert spec.http_max_retries == 3
+      assert spec.web_fetch_timeout_s == 30
+      assert spec.max_tool_calls_per_turn == 50
+    end
+
+    test "GEP-32 runtime knobs accept explicit values", ctx do
+      content = """
+      ---
+      role: x
+      provider: claude-code
+      model: claude-opus-4-6
+      http_timeout_s: 45
+      http_max_retries: 6
+      web_fetch_timeout_s: 9
+      max_tool_calls_per_turn: 80
+      ---
+      """
+
+      path = write_agent(ctx, "h-native-explicit", content)
+
+      assert {:ok, spec} = Parser.parse_file(path)
+      assert spec.http_timeout_s == 45
+      assert spec.http_max_retries == 6
+      assert spec.web_fetch_timeout_s == 9
+      assert spec.max_tool_calls_per_turn == 80
     end
   end
 

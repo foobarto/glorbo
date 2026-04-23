@@ -325,7 +325,13 @@ defmodule Glorbo.CLI.Dispatcher do
         %{
           "GLORBO_NATIVE_ENDPOINT" => provider.endpoint || "",
           "GLORBO_NATIVE_AUTH" => to_string(provider.auth || ""),
-          "GLORBO_NATIVE_CREDENTIALS_PATH" => "/creds/provider.toml"
+          "GLORBO_NATIVE_CREDENTIALS_PATH" => "/creds/provider.toml",
+          "GLORBO_NATIVE_HTTP_TIMEOUT_S" => to_string(Map.get(ctx, :http_timeout_s, 120)),
+          "GLORBO_NATIVE_HTTP_MAX_RETRIES" => to_string(Map.get(ctx, :http_max_retries, 3)),
+          "GLORBO_NATIVE_WEB_FETCH_TIMEOUT_S" =>
+            to_string(Map.get(ctx, :web_fetch_timeout_s, 30)),
+          "GLORBO_NATIVE_MAX_TOOL_CALLS_PER_TURN" =>
+            to_string(Map.get(ctx, :max_tool_calls_per_turn, 50))
         }
       else
         %{}

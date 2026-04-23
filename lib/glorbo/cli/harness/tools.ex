@@ -1,9 +1,15 @@
 defmodule Glorbo.CLI.Harness.Tools do
   @moduledoc false
 
+  alias Glorbo.CLI.Harness.HTTP
+
   @max_glob_matches 200
   @max_grep_matches 200
   @max_grep_file_bytes 512_000
+  @default_bash_timeout_ms 30_000
+  @default_web_fetch_timeout_ms 30_000
+  @max_bash_output_bytes 64_000
+  @max_web_fetch_body_bytes 64_000
 
   @known_audit_actions [
     "tool.read_file",
@@ -18,7 +24,9 @@ defmodule Glorbo.CLI.Harness.Tools do
   @type runtime_config :: %{
           required(:workspace) => String.t(),
           optional(:agent) => String.t(),
-          optional(:task) => String.t()
+          optional(:task) => String.t(),
+          optional(:http_max_retries) => non_neg_integer(),
+          optional(:web_fetch_timeout_ms) => pos_integer()
         }
 
   @type audit_event :: %{
@@ -42,7 +50,15 @@ defmodule Glorbo.CLI.Harness.Tools do
 
   @spec tool_specs() :: [map()]
   def tool_specs do
-    [read_file_tool(), write_file_tool(), edit_file_tool(), glob_tool(), grep_tool()]
+    [
+      read_file_tool(),
+      write_file_tool(),
+      edit_file_tool(),
+      glob_tool(),
+      grep_tool(),
+      bash_tool(),
+      web_fetch_tool()
+    ]
   end
 
   @spec execute(map(), runtime_config(), keyword()) :: execution_result()
@@ -86,6 +102,8 @@ defmodule Glorbo.CLI.Harness.Tools do
   defp execute_decoded("edit_file", args, config, opts), do: edit_file(args, config, opts)
   defp execute_decoded("glob", args, config, opts), do: glob(args, config, opts)
   defp execute_decoded("grep", args, config, opts), do: grep(args, config, opts)
+  defp execute_decoded("bash", args, config, opts), do: bash(args, config, opts)
+  defp execute_decoded("web_fetch", args, config, opts), do: web_fetch(args, config, opts)
 
   defp execute_decoded(name, _args, _config, _opts) do
     %{
@@ -370,6 +388,223 @@ defmodule Glorbo.CLI.Harness.Tools do
 
   defp grep(_args, _config, _opts), do: missing_arg_result("grep", "pattern")
 
+  defp bash(%{"command" => command}, config, opts) when is_binary(command) and command != "" do
+    shell_path = Keyword.get(opts, :bash_shell_path, System.find_executable("sh") || "/bin/sh")
+    timeout_ms = Keyword.get(opts, :bash_timeout_ms, @default_bash_timeout_ms)
+    output_cap = Keyword.get(opts, :bash_output_cap_bytes, @max_bash_output_bytes)
+
+    case run_shell_command(shell_path, command, config.workspace, timeout_ms, output_cap) do
+      {:ok, exit_status, output, truncated} ->
+        ok = exit_status == 0
+        output_fields = encoded_text_fields("stdout", output)
+
+        %{
+          tool_name: "bash",
+          payload:
+            %{
+              "ok" => ok,
+              "command" => command,
+              "exit_status" => exit_status,
+              "truncated" => truncated
+            }
+            |> Map.merge(output_fields),
+          audit_event:
+            audit_event("tool.bash", command, %{
+              "ok" => ok,
+              "exit_status" => exit_status,
+              "bytes" => byte_size(output),
+              "truncated" => truncated
+            })
+        }
+
+      {:timeout, output, truncated} ->
+        output_fields = encoded_text_fields("stdout", output)
+
+        %{
+          tool_name: "bash",
+          payload:
+            %{
+              "ok" => false,
+              "command" => command,
+              "error" => "timeout",
+              "truncated" => truncated
+            }
+            |> Map.merge(output_fields),
+          audit_event:
+            audit_event("tool.bash", command, %{
+              "ok" => false,
+              "error" => "timeout",
+              "bytes" => byte_size(output),
+              "truncated" => truncated
+            })
+        }
+
+      {:error, reason} ->
+        error = inspect(reason)
+
+        %{
+          tool_name: "bash",
+          payload: %{"ok" => false, "command" => command, "error" => error},
+          audit_event:
+            audit_event("tool.bash", command, %{
+              "ok" => false,
+              "error" => error
+            })
+        }
+    end
+  end
+
+  defp bash(_args, _config, _opts), do: missing_arg_result("bash", "command")
+
+  defp web_fetch(%{"url" => raw_url}, config, opts) when is_binary(raw_url) and raw_url != "" do
+    case parse_fetch_uri(raw_url) do
+      {:ok, uri} ->
+        timeout_ms = Map.get(config, :web_fetch_timeout_ms, @default_web_fetch_timeout_ms)
+        max_retries = Map.get(config, :http_max_retries, 0)
+
+        request = %{
+          method: :get,
+          url: raw_url,
+          headers: [{"accept", "text/plain, text/html, application/json, */*"}],
+          timeout_ms: timeout_ms
+        }
+
+        request_opts = [
+          request_fun: Keyword.get(opts, :web_fetch_fun, &HTTP.request/1),
+          max_retries: max_retries,
+          sleep_fun: Keyword.get(opts, :http_sleep_fun, &Process.sleep/1),
+          jitter_fun: Keyword.get(opts, :http_jitter_fun, &default_http_jitter/1)
+        ]
+
+        case HTTP.request_with_retries(request, request_opts) do
+          {:ok, %{status: status, headers: headers, body: body}} ->
+            {response_body, truncated} = capped_binary(body, @max_web_fetch_body_bytes)
+            body_fields = encoded_text_fields("body", response_body)
+            content_type = Map.get(headers, "content-type")
+            ok = status >= 200 and status < 300
+
+            %{
+              tool_name: "web_fetch",
+              payload:
+                %{
+                  "ok" => ok,
+                  "url" => raw_url,
+                  "status" => status,
+                  "content_type" => content_type,
+                  "truncated" => truncated
+                }
+                |> Map.merge(body_fields),
+              audit_event:
+                audit_event("egress.web_fetch", fetch_audit_target(uri), %{
+                  "ok" => ok,
+                  "status" => status,
+                  "bytes" => byte_size(response_body),
+                  "truncated" => truncated,
+                  "url" => raw_url
+                })
+            }
+
+          {:error, reason} ->
+            error = inspect(reason)
+
+            %{
+              tool_name: "web_fetch",
+              payload: %{"ok" => false, "url" => raw_url, "error" => error},
+              audit_event:
+                audit_event("egress.web_fetch", fetch_audit_target(uri), %{
+                  "ok" => false,
+                  "error" => error,
+                  "url" => raw_url
+                })
+            }
+        end
+
+      {:error, reason} ->
+        %{
+          tool_name: "web_fetch",
+          payload: %{"ok" => false, "url" => raw_url, "error" => to_string(reason)},
+          audit_event:
+            audit_event("egress.web_fetch", raw_url, %{
+              "ok" => false,
+              "error" => to_string(reason),
+              "url" => raw_url
+            })
+        }
+    end
+  end
+
+  defp web_fetch(_args, _config, _opts), do: missing_arg_result("web_fetch", "url")
+
+  defp run_shell_command(nil, _command, _workspace, _timeout_ms, _output_cap),
+    do: {:error, :shell_unavailable}
+
+  defp run_shell_command(shell_path, command, workspace, timeout_ms, output_cap) do
+    sh_script = ~s/w="$1"; s="$2"; c="$3"; cd "$w" || exit 1; exec "$s" -c "$c"/
+
+    port =
+      Port.open({:spawn_executable, shell_path}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        :hide,
+        {:args, ["-c", sh_script, "glorbo-harness-bash", workspace, shell_path, command]}
+      ])
+
+    deadline_ms = System.monotonic_time(:millisecond) + timeout_ms
+
+    case drain_shell_port(port, deadline_ms, <<>>, output_cap, false) do
+      {:ok, _status, _output, _truncated} = ok ->
+        ok
+
+      {:timeout, _output, _truncated} = timeout ->
+        safe_port_close(port)
+        timeout
+    end
+  end
+
+  defp drain_shell_port(port, deadline_ms, acc, output_cap, truncated) do
+    timeout_ms = max(deadline_ms - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {^port, {:data, chunk}} ->
+        {next_acc, next_truncated} = append_capped_output(acc, chunk, output_cap, truncated)
+        drain_shell_port(port, deadline_ms, next_acc, output_cap, next_truncated)
+
+      {^port, {:exit_status, status}} ->
+        {:ok, status, acc, truncated}
+    after
+      timeout_ms ->
+        {:timeout, acc, truncated}
+    end
+  end
+
+  defp append_capped_output(acc, _chunk, _output_cap, true), do: {acc, true}
+
+  defp append_capped_output(acc, chunk, output_cap, false) do
+    remaining = max(output_cap - byte_size(acc), 0)
+
+    cond do
+      remaining == 0 ->
+        {acc, true}
+
+      byte_size(chunk) <= remaining ->
+        {acc <> chunk, false}
+
+      true ->
+        {acc <> binary_part(chunk, 0, remaining), true}
+    end
+  end
+
+  defp capped_binary(binary, output_cap) when is_binary(binary) do
+    append_capped_output(<<>>, binary, output_cap, false)
+  end
+
+  defp safe_port_close(port) do
+    Port.close(port)
+  catch
+    :error, _ -> :ok
+  end
+
   defp grep_file(path, pattern, case_sensitive, workspace, stat_fun, lstat_fun, read_fun) do
     with {:ok, %File.Stat{type: :regular}} <- lstat_fun.(path),
          {:ok, %File.Stat{size: size}} <- stat_fun.(path),
@@ -464,6 +699,39 @@ defmodule Glorbo.CLI.Harness.Tools do
       payload: %{"ok" => false, "error" => "invalid_arguments"}
     }
   end
+
+  defp encoded_text_fields(key, value) when is_binary(value) do
+    if String.valid?(value) do
+      %{key => value}
+    else
+      %{"#{key}_base64" => Base.encode64(value), "#{key}_encoding" => "base64"}
+    end
+  end
+
+  defp parse_fetch_uri(raw_url) do
+    uri = URI.parse(raw_url)
+
+    cond do
+      uri.scheme not in ["http", "https"] ->
+        {:error, :invalid_url}
+
+      is_nil(uri.host) ->
+        {:error, :invalid_url}
+
+      true ->
+        {:ok, uri}
+    end
+  end
+
+  defp fetch_audit_target(%URI{host: host, port: nil}), do: host
+
+  defp fetch_audit_target(%URI{host: host, scheme: "http", port: 80}), do: host
+  defp fetch_audit_target(%URI{host: host, scheme: "https", port: 443}), do: host
+
+  defp fetch_audit_target(%URI{host: host, port: port}) when is_integer(port),
+    do: "#{host}:#{port}"
+
+  defp default_http_jitter(_attempt), do: 0
 
   defp read_file_tool do
     %{
@@ -591,6 +859,51 @@ defmodule Glorbo.CLI.Harness.Tools do
             }
           },
           "required" => ["pattern"],
+          "additionalProperties" => false
+        }
+      }
+    }
+  end
+
+  defp bash_tool do
+    %{
+      "type" => "function",
+      "function" => %{
+        "name" => "bash",
+        "description" =>
+          "Run a shell command inside the current sandbox workspace and return stdout plus the exit status.",
+        "parameters" => %{
+          "type" => "object",
+          "properties" => %{
+            "command" => %{
+              "type" => "string",
+              "description" =>
+                "Shell command to execute with the workspace as the current directory."
+            }
+          },
+          "required" => ["command"],
+          "additionalProperties" => false
+        }
+      }
+    }
+  end
+
+  defp web_fetch_tool do
+    %{
+      "type" => "function",
+      "function" => %{
+        "name" => "web_fetch",
+        "description" =>
+          "Fetch an HTTP or HTTPS URL through the current sandbox network policy and return the response body.",
+        "parameters" => %{
+          "type" => "object",
+          "properties" => %{
+            "url" => %{
+              "type" => "string",
+              "description" => "Absolute HTTP or HTTPS URL to fetch with a GET request."
+            }
+          },
+          "required" => ["url"],
           "additionalProperties" => false
         }
       }

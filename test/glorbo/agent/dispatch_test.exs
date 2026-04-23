@@ -472,6 +472,10 @@ defmodule Glorbo.Agent.DispatchTest do
       assert env["GLORBO_NATIVE_ENDPOINT"] == ""
       assert env["GLORBO_NATIVE_AUTH"] == ""
       assert env["GLORBO_NATIVE_CREDENTIALS_PATH"] == "/creds/provider.toml"
+      assert env["GLORBO_NATIVE_HTTP_TIMEOUT_S"] == "45"
+      assert env["GLORBO_NATIVE_HTTP_MAX_RETRIES"] == "4"
+      assert env["GLORBO_NATIVE_WEB_FETCH_TIMEOUT_S"] == "9"
+      assert env["GLORBO_NATIVE_MAX_TOOL_CALLS_PER_TURN"] == "77"
 
       usage_path = Path.join(run_opts.usage_dir, "usage.json")
       File.mkdir_p!(Path.dirname(usage_path))
@@ -481,7 +485,16 @@ defmodule Glorbo.Agent.DispatchTest do
     end
 
     assert {:ok, %{reply: "native ok", usage: %{prompt_tokens: 2, completion_tokens: 3}}} =
-             Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+             Dispatch.execute(
+               %{
+                 ctx.spec
+                 | provider: "openai",
+                   http_timeout_s: 45,
+                   http_max_retries: 4,
+                   web_fetch_timeout_s: 9,
+                   max_tool_calls_per_turn: 77
+               },
+               ctx.task,
                base: ctx.base,
                run_fun: run_fun,
                provider_fun: fn _ -> native_provider end,

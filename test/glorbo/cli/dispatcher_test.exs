@@ -365,7 +365,11 @@ defmodule Glorbo.CLI.DispatcherTest do
         base_ctx(ws,
           agent_slug: "engineer",
           company: "acme",
-          native_binary: "/fake/glorbo"
+          native_binary: "/fake/glorbo",
+          http_timeout_s: 45,
+          http_max_retries: 4,
+          web_fetch_timeout_s: 9,
+          max_tool_calls_per_turn: 77
         )
 
       spy = :ets.new(:native_spy, [:public, :set])
@@ -410,6 +414,10 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert env["GLORBO_NATIVE_ENDPOINT"] == "https://api.openai.com/v1"
       assert env["GLORBO_NATIVE_AUTH"] == "bearer"
       assert env["GLORBO_NATIVE_CREDENTIALS_PATH"] == "/creds/provider.toml"
+      assert env["GLORBO_NATIVE_HTTP_TIMEOUT_S"] == "45"
+      assert env["GLORBO_NATIVE_HTTP_MAX_RETRIES"] == "4"
+      assert env["GLORBO_NATIVE_WEB_FETCH_TIMEOUT_S"] == "9"
+      assert env["GLORBO_NATIVE_MAX_TOOL_CALLS_PER_TURN"] == "77"
       assert env["GLORBO_USAGE_PATH"] == Path.join([ws, ".glorbo-run", "task-1", "usage.json"])
     end
   end

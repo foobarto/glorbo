@@ -10,6 +10,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-32 native agent harness (phase 2b on `main`)
+
+- Native providers now ship the next native tool tranche: `bash` and
+  `web_fetch` join `read_file`, `write_file`, `edit_file`, `glob`, and
+  `grep` inside the first-party harness.
+- `bash` runs in the existing sandbox/runtime contract, inherits the
+  workspace cwd plus sandbox network policy, and records `tool.bash`
+  audit events through the same sanitized `usage.json` replay path as
+  the phase 2a filesystem tools.
+- `web_fetch` now performs audited HTTP GET requests with structured
+  response payloads and `egress.web_fetch` audit events, so native
+  agents have a first-party egress tool instead of relying only on
+  shell escapes.
+- Native runtime knobs are now real end-to-end: `http_timeout_s`,
+  `http_max_retries`, `web_fetch_timeout_s`, and
+  `max_tool_calls_per_turn` parse from `agent.md`, cross the
+  Dispatch→Dispatcher→harness boundary via env, and control both
+  provider calls and `web_fetch`.
+- Provider chat requests and `web_fetch` now share the same transient
+  HTTP retry policy from GEP-32: retry on network errors, timeouts,
+  HTTP 429, and HTTP 5xx; honor integer `Retry-After`; fail fast on
+  other 4xx.
+
 ## [0.3.0] — 2026-04-23
 
 Third pre-1.0 minor on the same day: GEP-31 lands and makes Linux

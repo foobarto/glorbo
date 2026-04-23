@@ -15,15 +15,19 @@ Last updated: 2026-04-23
 
 ## Implementation Status
 
-- GEP-32 is shipped through **phase 2a**.
+- GEP-32 is implemented through **phase 2b on `main`**.
 - GEP-31 is shipped on Linux: `network: proxy` now wraps the sandbox
   launch in `pasta`, so only the per-company proxy port is reachable
   inside the agent netns.
 - Native-provider support is in place: provider registry, built-in
   `openai` / `openrouter`, internal `glorbo harness`, native
   `usage.json`, and audit replay for native tool activity.
-- The native filesystem tool batch is shipped:
-  `read_file`, `write_file`, `edit_file`, `glob`, `grep`.
+- The native tool catalog on `main` is:
+  `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`,
+  `web_fetch`.
+- Native runtime knobs are now threaded end-to-end:
+  `http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
+  `max_tool_calls_per_turn`.
 - Threatmodel waves 1-7 are complete.
 - GEP-33 exists as a draft only; it is not implemented yet.
 - Core docs are aligned with the current release surface:
@@ -38,14 +42,17 @@ Last updated: 2026-04-23
 
 ## Next Implementation Target
 
-- Primary next coding target: **GEP-32 phase 2b**
-- Planned scope: add native `bash` and `web_fetch`
-- Constraint: keep them on the same telemetry and audit path as phase 2a
+- Primary next coding target: **resume the remaining medium
+  threatmodel findings**
+- Planned scope: drive the open medium count below `11` while the new
+  native phase 2b surface bakes on `main`
+- Secondary feature target: later GEP-32 phases (model discovery,
+  cache/SQLite projection, `detect-providers`)
 
 ## Remaining Work Themes
 
 - Close the remaining open threatmodel findings
-- Extend the native harness beyond the phase 2a filesystem batch
+- Extend the native harness beyond the phase 2b tool/runtime batch
 - Address follow-up scheduler/performance and UI polish items from
   `docs/todo.md`
 

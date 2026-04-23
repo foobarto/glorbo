@@ -113,8 +113,62 @@ defmodule Glorbo.CLI.HarnessTest do
              "write_file",
              "edit_file",
              "glob",
-             "grep"
+             "grep",
+             "bash",
+             "web_fetch"
            ]
+  end
+
+  test "retries transient provider responses before succeeding", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 429,
+             headers: %{"retry-after" => "0"},
+             body: %{"error" => %{"message" => "slow down"}}
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "retried reply"}}],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 3},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-1b",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "say hi after retry" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses),
+               http_sleep_fun: fn _ -> :ok end
+             )
+
+    assert File.read!(ctx.reply_path) == "retried reply"
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tracked"] == true
+    assert usage["prompt_tokens"] == 2
+    assert usage["completion_tokens"] == 3
+    assert_received {:request, _first_request}
+    assert_received {:request, _second_request}
   end
 
   test "executes read_file tool calls and records tool counts", ctx do
@@ -411,6 +465,294 @@ defmodule Glorbo.CLI.HarnessTest do
                  &(&1["line_number"] == 1 and &1["path"] == "docs/one.md")
                )
            end)
+  end
+
+  test "executes bash tool calls and records stdout plus exit status", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-bash-1",
+                         "function" => %{
+                           "name" => "bash",
+                           "arguments" => ~s({"command":"printf 'hello from bash'"})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 3},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "bash complete"}}],
+               "usage" => %{"prompt_tokens" => 4, "completion_tokens" => 5},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3c",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "inspect the shell" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses)
+             )
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tool_calls"] == %{"bash" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "tool.bash",
+               "target" => "printf 'hello from bash'",
+               "detail" => %{
+                 "ok" => true,
+                 "exit_status" => 0,
+                 "bytes" => 15,
+                 "truncated" => false
+               }
+             }
+           ]
+
+    assert_received {:request, _first_request}
+    assert_received {:request, second_request}
+
+    [tool_payload] =
+      second_request.body["messages"]
+      |> Enum.filter(&(&1["role"] == "tool"))
+      |> Enum.map(&Jason.decode!(&1["content"]))
+
+    assert tool_payload["ok"] == true
+    assert tool_payload["exit_status"] == 0
+    assert tool_payload["stdout"] == "hello from bash"
+    assert tool_payload["truncated"] == false
+  end
+
+  test "bash tool timeouts become structured tool errors", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-bash-timeout",
+                         "function" => %{
+                           "name" => "bash",
+                           "arguments" => ~s({"command":"sleep 1"})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 1, "completion_tokens" => 1},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "timeout handled"}}],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 2},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3d",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "try a slow command" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses),
+               bash_timeout_ms: 10
+             )
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tool_calls"] == %{"bash" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "tool.bash",
+               "target" => "sleep 1",
+               "detail" => %{
+                 "ok" => false,
+                 "error" => "timeout",
+                 "bytes" => 0,
+                 "truncated" => false
+               }
+             }
+           ]
+
+    assert_received {:request, _first_request}
+    assert_received {:request, second_request}
+
+    [tool_payload] =
+      second_request.body["messages"]
+      |> Enum.filter(&(&1["role"] == "tool"))
+      |> Enum.map(&Jason.decode!(&1["content"]))
+
+    assert tool_payload["ok"] == false
+    assert tool_payload["error"] == "timeout"
+    assert tool_payload["stdout"] == ""
+  end
+
+  test "executes web_fetch tool calls and records egress audit events", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-web-1",
+                         "function" => %{
+                           "name" => "web_fetch",
+                           "arguments" => ~s({"url":"https://example.test/docs"})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 2},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "web fetch complete"}}],
+               "usage" => %{"prompt_tokens" => 1, "completion_tokens" => 3},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    web_fetch_fun = fn request ->
+      send(self(), {:web_fetch_request, request})
+
+      {:ok,
+       %{
+         status: 200,
+         headers: %{"content-type" => "text/plain; charset=utf-8"},
+         body: "fetched body"
+       }}
+    end
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3e",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "fetch docs" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses),
+               web_fetch_fun: web_fetch_fun
+             )
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tool_calls"] == %{"web_fetch" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "egress.web_fetch",
+               "target" => "example.test",
+               "detail" => %{
+                 "ok" => true,
+                 "status" => 200,
+                 "bytes" => 12,
+                 "truncated" => false,
+                 "url" => "https://example.test/docs"
+               }
+             }
+           ]
+
+    assert_received {:web_fetch_request, request}
+    assert request.method == :get
+    assert request.url == "https://example.test/docs"
+
+    assert_received {:request, _first_request}
+    assert_received {:request, second_request}
+
+    [tool_payload] =
+      second_request.body["messages"]
+      |> Enum.filter(&(&1["role"] == "tool"))
+      |> Enum.map(&Jason.decode!(&1["content"]))
+
+    assert tool_payload["ok"] == true
+    assert tool_payload["status"] == 200
+    assert tool_payload["body"] == "fetched body"
+    assert tool_payload["content_type"] == "text/plain; charset=utf-8"
+    assert tool_payload["truncated"] == false
   end
 
   test "returns a clear error when bearer credentials are missing", ctx do

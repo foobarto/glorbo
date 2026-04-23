@@ -12,6 +12,7 @@ defmodule Glorbo.CLI.Harness do
   """
 
   alias Glorbo.CLI.Harness.Tools
+  alias Glorbo.CLI.Harness.HTTP
   alias Glorbo.CLI.Registry.Loader
   alias Glorbo.CLI.Registry.Provider
 
@@ -23,9 +24,10 @@ defmodule Glorbo.CLI.Harness do
     help: :boolean
   ]
 
-  @http_profile :glorbo_harness
-  @max_tool_calls 50
   @default_http_timeout_ms 120_000
+  @default_http_max_retries 3
+  @default_web_fetch_timeout_ms 30_000
+  @default_max_tool_calls_per_turn 50
   @default_workspace "/workspace"
 
   @type runtime_config :: %{
@@ -36,6 +38,10 @@ defmodule Glorbo.CLI.Harness do
           workspace: String.t(),
           endpoint: String.t(),
           auth: Provider.auth_mode() | nil,
+          http_timeout_ms: pos_integer(),
+          http_max_retries: non_neg_integer(),
+          web_fetch_timeout_ms: pos_integer(),
+          max_tool_calls_per_turn: pos_integer(),
           reply_path: String.t(),
           usage_path: String.t()
         }
@@ -156,6 +162,26 @@ defmodule Glorbo.CLI.Harness do
              blank_to_nil(env.("GLORBO_NATIVE_ENDPOINT")) || provider.endpoint,
              credentials
            ),
+         http_timeout_ms <-
+           parse_positive_seconds(env, "GLORBO_NATIVE_HTTP_TIMEOUT_S", @default_http_timeout_ms),
+         http_max_retries <-
+           parse_non_negative_integer(
+             env,
+             "GLORBO_NATIVE_HTTP_MAX_RETRIES",
+             @default_http_max_retries
+           ),
+         web_fetch_timeout_ms <-
+           parse_positive_seconds(
+             env,
+             "GLORBO_NATIVE_WEB_FETCH_TIMEOUT_S",
+             @default_web_fetch_timeout_ms
+           ),
+         max_tool_calls_per_turn <-
+           parse_positive_integer(
+             env,
+             "GLORBO_NATIVE_MAX_TOOL_CALLS_PER_TURN",
+             @default_max_tool_calls_per_turn
+           ),
          :ok <- validate_auth(auth, args.provider, credentials) do
       {:ok,
        %{
@@ -166,6 +192,10 @@ defmodule Glorbo.CLI.Harness do
          workspace: env.("GLORBO_WORKSPACE") || @default_workspace,
          endpoint: endpoint,
          auth: auth,
+         http_timeout_ms: http_timeout_ms,
+         http_max_retries: http_max_retries,
+         web_fetch_timeout_ms: web_fetch_timeout_ms,
+         max_tool_calls_per_turn: max_tool_calls_per_turn,
          reply_path: reply_path,
          usage_path: usage_path,
          credentials: credentials
@@ -217,7 +247,7 @@ defmodule Glorbo.CLI.Harness do
         calls when is_list(calls) ->
           next_total = total_tool_calls + length(calls)
 
-          if next_total > @max_tool_calls do
+          if next_total > config.max_tool_calls_per_turn do
             {:error, {:tool_call_limit_exceeded, next_total}}
           else
             assistant_message = %{
@@ -254,142 +284,40 @@ defmodule Glorbo.CLI.Harness do
         "tool_choice" => "auto",
         "stream" => false
       },
-      timeout_ms: Keyword.get(opts, :http_timeout_ms, @default_http_timeout_ms)
+      timeout_ms: config.http_timeout_ms
     }
 
-    chat_fun = Keyword.get(opts, :chat_fun, &default_chat_fun/1)
+    request_opts = [
+      request_fun: Keyword.get(opts, :chat_fun, &HTTP.request/1),
+      max_retries: config.http_max_retries,
+      sleep_fun: Keyword.get(opts, :http_sleep_fun, &Process.sleep/1),
+      jitter_fun: Keyword.get(opts, :http_jitter_fun, &default_http_jitter/1)
+    ]
 
-    case chat_fun.(request) do
-      {:ok, %{status: 200, body: body}} when is_map(body) ->
-        {:ok, body}
+    case HTTP.request_with_retries(request, request_opts) do
+      {:ok, %{status: 200, body: body}} ->
+        case decode_response_body(body) do
+          decoded when is_map(decoded) -> {:ok, decoded}
+          _ -> {:error, :invalid_chat_response}
+        end
 
       {:ok, %{status: status, body: body}} when status in [401, 403] ->
-        {:error, {:auth, status, error_detail(body)}}
+        {:error, {:auth, status, error_detail(decode_response_body(body))}}
 
       {:ok, %{status: 429, body: body}} ->
-        {:error, {:rate_limited, error_detail(body)}}
+        {:error, {:rate_limited, error_detail(decode_response_body(body))}}
 
       {:ok, %{status: status, body: body}} when status >= 500 ->
-        {:error, {:upstream, status, error_detail(body)}}
+        {:error, {:upstream, status, error_detail(decode_response_body(body))}}
 
       {:ok, %{status: status, body: body}} ->
-        {:error, {:http_status, status, error_detail(body)}}
+        {:error, {:http_status, status, error_detail(decode_response_body(body))}}
+
+      {:error, {:bad_request_fun_return, other}} ->
+        {:error, {:bad_chat_return, other}}
 
       {:error, reason} ->
         {:error, {:http_request_failed, reason}}
-
-      other ->
-        {:error, {:bad_chat_return, other}}
-    end
-  end
-
-  defp default_chat_fun(request) do
-    result =
-      with {:ok, _} <- ensure_started(:inets),
-           {:ok, _} <- ensure_started(:ssl),
-           {:ok, _pid} <- start_http_profile(),
-           :ok <- configure_proxy(request.url) do
-        do_http_request(request)
-      end
-
-    stop_http_profile()
-    result
-  end
-
-  defp ensure_started(app) do
-    case Application.ensure_all_started(app) do
-      {:ok, started} -> {:ok, started}
-      other -> other
-    end
-  end
-
-  defp start_http_profile do
-    case :inets.start(:httpc, [{:profile, @http_profile}]) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
-      other -> other
-    end
-  end
-
-  defp stop_http_profile do
-    _ = :inets.stop(:httpc, @http_profile)
-    :ok
-  end
-
-  defp configure_proxy(url) do
-    scheme = URI.parse(url).scheme || "https"
-    env_key = if scheme == "https", do: "HTTPS_PROXY", else: "HTTP_PROXY"
-
-    case blank_to_nil(System.get_env(env_key) || System.get_env(String.downcase(env_key))) do
-      nil ->
-        :ok
-
-      proxy_url ->
-        case proxy_option(scheme, proxy_url) do
-          {:ok, option} -> :httpc.set_options([option], @http_profile)
-          {:error, _} = err -> err
-        end
-    end
-  end
-
-  defp proxy_option("https", proxy_url) do
-    with {:ok, host, port} <- parse_proxy_url(proxy_url) do
-      {:ok, {:https_proxy, {{String.to_charlist(host), port}, []}}}
-    end
-  end
-
-  defp proxy_option(_scheme, proxy_url) do
-    with {:ok, host, port} <- parse_proxy_url(proxy_url) do
-      {:ok, {:proxy, {{String.to_charlist(host), port}, []}}}
-    end
-  end
-
-  defp parse_proxy_url(proxy_url) when is_binary(proxy_url) do
-    uri = URI.parse(proxy_url)
-
-    cond do
-      uri.scheme not in ["http", "https"] ->
-        {:error, {:invalid_proxy_url, proxy_url}}
-
-      is_nil(uri.host) or is_nil(uri.port) ->
-        {:error, {:invalid_proxy_url, proxy_url}}
-
-      true ->
-        {:ok, uri.host, uri.port}
-    end
-  end
-
-  defp do_http_request(request) do
-    headers =
-      Enum.map(request.headers, fn {k, v} ->
-        {String.to_charlist(k), String.to_charlist(v)}
-      end)
-
-    body = Jason.encode!(request.body)
-    http_options = http_options(request.url, request.timeout_ms)
-
-    case :httpc.request(
-           :post,
-           {String.to_charlist(request.url), headers, ~c"application/json", body},
-           http_options,
-           [body_format: :binary],
-           @http_profile
-         ) do
-      {:ok, {{_version, status, _reason}, _headers, response_body}} ->
-        {:ok, %{status: status, body: decode_response_body(response_body)}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp http_options(url, timeout_ms) do
-    base = [timeout: timeout_ms, connect_timeout: timeout_ms]
-
-    if String.starts_with?(url, "https://") do
-      Keyword.put(base, :ssl, :httpc.ssl_verify_host_options(true))
-    else
-      base
     end
   end
 
@@ -399,6 +327,8 @@ defmodule Glorbo.CLI.Harness do
       {:error, _} -> body
     end
   end
+
+  defp decode_response_body(body), do: body
 
   defp extract_message(response, usage_acc) do
     with [%{"message" => message} | _] <- Map.get(response, "choices"),
@@ -615,6 +545,49 @@ defmodule Glorbo.CLI.Harness do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(other), do: other
 
+  defp parse_positive_seconds(env_fun, key, default_ms) do
+    default_s = div(default_ms, 1_000)
+
+    case blank_to_nil(env_fun.(key)) do
+      nil ->
+        default_ms
+
+      raw ->
+        case Integer.parse(raw) do
+          {seconds, ""} when seconds > 0 -> seconds * 1_000
+          _ -> default_s * 1_000
+        end
+    end
+  end
+
+  defp parse_non_negative_integer(env_fun, key, default) do
+    case blank_to_nil(env_fun.(key)) do
+      nil ->
+        default
+
+      raw ->
+        case Integer.parse(raw) do
+          {value, ""} when value >= 0 -> value
+          _ -> default
+        end
+    end
+  end
+
+  defp parse_positive_integer(env_fun, key, default) do
+    case blank_to_nil(env_fun.(key)) do
+      nil ->
+        default
+
+      raw ->
+        case Integer.parse(raw) do
+          {value, ""} when value > 0 -> value
+          _ -> default
+        end
+    end
+  end
+
+  defp default_http_jitter(_attempt), do: 0
+
   defp monotonic_ms(opts) do
     Keyword.get(opts, :clock_fun, fn -> System.monotonic_time(:millisecond) end).()
   end
@@ -657,7 +630,7 @@ defmodule Glorbo.CLI.Harness do
     do: "invalid credentials TOML: #{inspect(reason)}"
 
   defp format_error({:tool_call_limit_exceeded, total}),
-    do: "tool-call limit exceeded (#{total} > #{@max_tool_calls})"
+    do: "tool-call limit exceeded (#{total})"
 
   defp format_error(:invalid_chat_response), do: "provider returned an invalid chat response"
   defp format_error(:empty_reply), do: "provider returned an empty reply"

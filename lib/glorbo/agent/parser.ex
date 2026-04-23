@@ -33,6 +33,9 @@ defmodule Glorbo.Agent.Parser do
       enforces proxy-only Linux networking, because `:none` remains the
       honest least-privilege default.
     * `timeout_seconds:` defaults to 300 (D-06).
+    * `http_timeout_s:` defaults to 120; `http_max_retries:` to 3;
+      `web_fetch_timeout_s:` to 30; `max_tool_calls_per_turn:` to 50
+      (GEP-32 phase 2b runtime defaults).
     * `budget.monthly_usd:` defaults to `nil` (P11 — no cap == no
       hard-stop, matches BudgetTracker semantics). Legacy
       `budget_usd_cents_month:` is still accepted for compatibility.
@@ -66,6 +69,10 @@ defmodule Glorbo.Agent.Parser do
   @fallback_providers Map.keys(@fallback_provider_kinds)
   @network_map %{"none" => :none, "proxy" => :proxy, "open" => :open}
   @default_timeout_seconds 300
+  @default_http_timeout_s 120
+  @default_http_max_retries 3
+  @default_web_fetch_timeout_s 30
+  @default_max_tool_calls_per_turn 50
   @slug_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
   @skill_name_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
 
@@ -133,6 +140,11 @@ defmodule Glorbo.Agent.Parser do
          {:ok, heartbeat} <- validate_heartbeat(meta["heartbeat"]),
          {:ok, budget} <- validate_budget(meta["budget"], meta["budget_usd_cents_month"]),
          {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]),
+         {:ok, http_timeout_s} <- validate_http_timeout(meta["http_timeout_s"]),
+         {:ok, http_max_retries} <- validate_http_max_retries(meta["http_max_retries"]),
+         {:ok, web_fetch_timeout_s} <- validate_web_fetch_timeout(meta["web_fetch_timeout_s"]),
+         {:ok, max_tool_calls_per_turn} <-
+           validate_max_tool_calls_per_turn(meta["max_tool_calls_per_turn"]),
          {:ok, autonomy} <- validate_autonomy(meta["autonomy"]),
          {:ok, max_retries} <- validate_max_retries(meta["max_retries"]),
          {:ok, egress} <- validate_egress(meta["egress"]) do
@@ -150,6 +162,10 @@ defmodule Glorbo.Agent.Parser do
          skills: skills,
          budget_usd_cents_month: budget,
          timeout_seconds: timeout,
+         http_timeout_s: http_timeout_s,
+         http_max_retries: http_max_retries,
+         web_fetch_timeout_s: web_fetch_timeout_s,
+         max_tool_calls_per_turn: max_tool_calls_per_turn,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
          autonomy: autonomy,
          max_retries: max_retries,
@@ -547,6 +563,25 @@ defmodule Glorbo.Agent.Parser do
   defp validate_timeout(nil), do: {:ok, @default_timeout_seconds}
   defp validate_timeout(v) when is_integer(v) and v > 0, do: {:ok, v}
   defp validate_timeout(_), do: {:ok, @default_timeout_seconds}
+
+  defp validate_http_timeout(nil), do: {:ok, @default_http_timeout_s}
+  defp validate_http_timeout(v) when is_integer(v) and v > 0, do: {:ok, v}
+  defp validate_http_timeout(_), do: {:ok, @default_http_timeout_s}
+
+  defp validate_http_max_retries(nil), do: {:ok, @default_http_max_retries}
+  defp validate_http_max_retries(v) when is_integer(v) and v >= 0, do: {:ok, v}
+  defp validate_http_max_retries(_), do: {:ok, @default_http_max_retries}
+
+  defp validate_web_fetch_timeout(nil), do: {:ok, @default_web_fetch_timeout_s}
+  defp validate_web_fetch_timeout(v) when is_integer(v) and v > 0, do: {:ok, v}
+  defp validate_web_fetch_timeout(_), do: {:ok, @default_web_fetch_timeout_s}
+
+  defp validate_max_tool_calls_per_turn(nil), do: {:ok, @default_max_tool_calls_per_turn}
+
+  defp validate_max_tool_calls_per_turn(v) when is_integer(v) and v > 0,
+    do: {:ok, v}
+
+  defp validate_max_tool_calls_per_turn(_), do: {:ok, @default_max_tool_calls_per_turn}
 
   # #248 T1-A — max_retries: non-negative integer. Default 2
   # (1 initial + 2 retries = 3 total attempts). Capped at 5 to

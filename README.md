@@ -134,18 +134,25 @@ policy-enforced.
 registered CLI installs already on your machine. Their credentials are
 `--ro-bind`ed into the sandbox; session state stays on the host.
 
-**Native OpenAI-compatible providers (v0.2.0, GEP-32 phase 2a)** —
+**Native OpenAI-compatible providers (v0.2.0+, GEP-32)** —
 OpenAI and OpenRouter now run through a first-party `glorbo harness`
 subcommand inside the same bwrap sandbox. The shipped native tool loop
-now covers `read_file`, `write_file`, `edit_file`, `glob`, and `grep`,
-and those tool calls replay into the company audit log. Native usage is
-still metered through Glorbo-owned `usage.json`; providers that omit
-token telemetry remain gated behind `allow_untracked_budget: true`.
+now covers `read_file`, `write_file`, `edit_file`, `glob`, `grep`,
+`bash`, and `web_fetch`, and those tool calls replay into the company
+audit log. Native usage is still metered through Glorbo-owned
+`usage.json`; providers that omit token telemetry remain gated behind
+`allow_untracked_budget: true`.
 Credentials live outside `~/.glorbo/` in
 `~/.local/etc/glorbo/credentials/<provider>.toml`, so naïve backups of
 `~/.glorbo/` do not sweep API keys into archives.
 
-**Config-driven providers (GEP-8, extended in GEP-32 phase 2a)** — Each
+On `main`, phase 2b is now landed: native agents also honor
+`http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
+`max_tool_calls_per_turn` from `agent.md`, and the harness retries
+transient HTTP failures instead of single-shot failing every provider or
+`web_fetch` call.
+
+**Config-driven providers (GEP-8, extended in GEP-32)** — Each
 provider is a TOML entry declaring either how to invoke a CLI or how a
 native OpenAI-compatible endpoint should be reached and metered.
 Built-in providers ship under `priv/providers/*.toml`; drop your own
@@ -336,11 +343,14 @@ Then point an agent at `provider: openai` or `provider: openrouter` in
 - `edit_file`
 - `glob`
 - `grep`
+- `bash`
+- `web_fetch`
 
 Those tools run inside the same sandbox mount view as CLI-backed agents,
-and their activity is replayed into the company audit log. The next
-native-tools tranche is `bash` + `web_fetch`; they are not shipped in
-`v0.2.0`.
+and their activity is replayed into the company audit log. On `main`,
+phase 2b also wires the native runtime knobs from `agent.md`:
+`http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
+`max_tool_calls_per_turn`.
 
 **Proxy-only egress enforcement (v0.3.0, GEP-31)** — On Linux,
 `network: proxy` now wraps the existing bwrap launch in `pasta` so only

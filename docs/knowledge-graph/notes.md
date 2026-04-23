@@ -390,6 +390,24 @@ is still advisory" just because the pure argv builder lacks
 launcher process, while bwrap still owns the filesystem sandbox inside
 that netns.
 
+### GEP-32 phase 2b — runtime knobs cross the process boundary via env
+
+The native harness cannot "just read opts" from `Agent.Dispatch`: in
+production it runs as a subprocess inside bwrap, so every runtime knob
+that matters to phase 2b (`http_timeout_s`, `http_max_retries`,
+`web_fetch_timeout_s`, `max_tool_calls_per_turn`) has to survive the
+`Dispatch.build_ctx/7 -> Dispatcher.build_env/5 -> glorbo harness`
+hop. The load-bearing boundary is the native env contract, not the
+in-memory Elixir call stack.
+
+### GEP-32 phase 2b — tool payloads must stay JSON-safe
+
+`bash` stdout and `web_fetch` bodies are arbitrary bytes, but the
+harness serializes tool results back into JSON messages and stores
+audit replay metadata in `usage.json`. That means phase 2b needs a
+UTF-8 guard, not just a byte cap: invalid text now falls back to
+base64 fields instead of crashing `Jason.encode!/1` on binary output.
+
 ---
 
 ## What belongs in this file vs elsewhere

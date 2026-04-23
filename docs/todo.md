@@ -20,10 +20,10 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **GEP-32 phase 2b — native network tools.** Phase 2a now ships
-  `glorbo harness` + OpenAI/OpenRouter + `read_file` / `write_file` /
-  `edit_file` / `glob` / `grep` plus per-tool audit replay; next cut
-  adds `bash` and `web_fetch` on top of the same audit path.
+- [ ] **GEP-32 phase 3 — native model discovery + cache surface.**
+  Phase 2b is now landed on `main`; the next tranche is provider-model
+  discovery, `~/.glorbo/cache/providers/*.json`, SQLite projection, and
+  the first `detect-providers` / Providers UX follow-through.
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.
@@ -166,6 +166,11 @@ it's been in CHANGELOG for a cycle.
   alongside `read_file`; the native usage contract gained sanitized
   `audit_events`, and Dispatch replays those tool audits into the
   company audit log.
+- [x] **GEP-32 phase 2b (2026-04-23, landed on `main`).** Native
+  `bash` and `web_fetch` now run inside the existing sandbox/runtime
+  contract; provider + tool HTTP requests honor per-agent timeout/retry
+  knobs; and `tool.bash` / `egress.web_fetch` events replay through the
+  same sanitized `usage.json` path.
 - [x] **v0.2.0 shipped.** Second pre-1.0 minor: GEP-32 phase 2a is now
   on the release surface.
 - [x] **GEP-31 shipped (2026-04-23).** Linux `network: proxy` now

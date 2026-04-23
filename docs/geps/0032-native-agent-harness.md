@@ -20,6 +20,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: "Phase 2a landed in v0.2.0: `write_file`, `edit_file`, `glob`, and `grep` join the native tool loop, and sanitized per-tool audit events replay through `Agent.Dispatch`. `bash`, `web_fetch`, and later phases remain open."
+  - date: 2026-04-23
+    status: Accepted
+    note: "Phase 2b landed on `main`: `bash` and `web_fetch` now ship in the native tool loop, `http_timeout_s` / `http_max_retries` / `web_fetch_timeout_s` / `max_tool_calls_per_turn` are threaded from `agent.md`, and provider/tool HTTP retries now honor transient-failure policy."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
@@ -585,10 +588,6 @@ process under the existing `Agent.Dispatch` supervisor.
 
 ## Open questions
 
-- **`max_tool_calls_per_turn` default.** Need a real-world upper bound
-  before the v1 implementation lands; default is TBD during the
-  harness-side implementation. Candidate: 50, matching claude-code's
-  conservative setting. Not blocking acceptance.
 - **Streaming.** v1 will deliver the full assistant message after the
   provider responds, matching how the CLI adapters behave. Whether the
   harness streams tool-call deltas to the Router (for live UI) is

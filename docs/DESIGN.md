@@ -301,7 +301,8 @@ subcommand as short-lived sandboxed processes. External CLIs keep their
 own model access, auth, and tool-use loop; the native harness speaks an
 OpenAI-compatible HTTP API from inside the same bwrap tree and now owns
 its first native filesystem-tool batch (`read_file`, `write_file`,
-`edit_file`, `glob`, `grep`) plus per-tool audit replay.
+`edit_file`, `glob`, `grep`), now extended on `main` with `bash`,
+`web_fetch`, shared HTTP retry/timeouts, and per-tool audit replay.
 
 For each agent wake, Elixir:
 
@@ -974,12 +975,15 @@ Agents can use local models via CLIs that wrap them (e.g. `pi`,
 `opencode` against a local backend) or cloud providers like Anthropic
 (Claude), OpenAI, and Google (Gemini). GEP-32 phase 2a also ships
 native OpenAI-compatible providers (`openai`, `openrouter`) with no
-external CLI install; they own the current native filesystem-tool batch
-(`read_file`, `write_file`, `edit_file`, `glob`, `grep`) and emit
-tracked usage/audit telemetry through `usage.json`. All of these are
-configured per agent in `agent.md` and resolve through the provider
-registry. Local providers are the default-friendly choice; cloud
-providers are opt-in.
+external CLI install; they own the current native tool batch
+(`read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`,
+`web_fetch`) and emit tracked usage/audit telemetry through
+`usage.json`. `agent.md` now also carries the native runtime knobs
+`http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
+`max_tool_calls_per_turn`, which the dispatcher threads through to the
+harness over env. All of these are configured per agent and resolve
+through the provider registry. Local providers are the default-friendly
+choice; cloud providers are opt-in.
 
 Python is **not** a host dependency. There is no container runtime.
 Glorbo bundles neither Podman nor Ollama — those were part of a
