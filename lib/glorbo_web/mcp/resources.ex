@@ -36,7 +36,7 @@ defmodule GlorboWeb.MCP.Resources do
   alias GlorboWeb.MCP.Tools.ListPendingApprovals
   alias GlorboWeb.MCP.Tools.ListProposals
   alias GlorboWeb.MCP.Tools.QueryAudit
-  alias GlorboWeb.Slug
+  alias Glorbo.Slug
 
   @uri_scheme "glorbo"
 

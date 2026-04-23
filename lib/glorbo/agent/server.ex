@@ -668,7 +668,7 @@ defmodule Glorbo.Agent.Server do
     updates =
       Enum.reduce(actions, %{}, fn
         {"reassign_to", slug}, acc ->
-          if GlorboWeb.Slug.valid?(slug),
+          if Glorbo.Slug.valid?(slug),
             do: Map.put(acc, "assigned_to", slug),
             else: acc
 

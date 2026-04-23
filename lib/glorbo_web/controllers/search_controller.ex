@@ -28,7 +28,7 @@ defmodule GlorboWeb.SearchController do
   end
 
   defp fetch_slug(%{"co" => co}) do
-    if GlorboWeb.Slug.valid?(co), do: {:ok, co}, else: :error
+    if Glorbo.Slug.valid?(co), do: {:ok, co}, else: :error
   end
 
   defp fetch_slug(_), do: :error

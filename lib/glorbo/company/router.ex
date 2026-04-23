@@ -208,13 +208,13 @@ defmodule Glorbo.Company.Router do
   # slug (`[a-z0-9-]+`) is path-traversal fuel. Reject at parse time
   # — no `..`, no absolute paths, no `/`.
   defp parse_to("chat:" <> channel) when byte_size(channel) > 0 do
-    if GlorboWeb.Slug.valid?(channel),
+    if Glorbo.Slug.valid?(channel),
       do: {:ok, {:chat, channel}},
       else: {:error, {:invalid_message, :invalid_channel_slug}}
   end
 
   defp parse_to("agent:" <> slug) when byte_size(slug) > 0 do
-    if GlorboWeb.Slug.valid?(slug),
+    if Glorbo.Slug.valid?(slug),
       do: {:ok, {:agent, slug}},
       else: {:error, {:invalid_message, :invalid_agent_slug}}
   end
@@ -681,7 +681,7 @@ defmodule Glorbo.Company.Router do
       ["tasks", project, <<_::binary>> = file] ->
         task_id = Path.basename(file, ".md")
 
-        if GlorboWeb.Slug.valid?(project) and task_id_valid?(task_id),
+        if Glorbo.Slug.valid?(project) and task_id_valid?(task_id),
           do: {:task, project, task_id},
           else: :message
 

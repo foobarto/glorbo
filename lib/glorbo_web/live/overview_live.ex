@@ -96,7 +96,7 @@ defmodule GlorboWeb.OverviewLive do
     status =
       cond do
         trimmed == "" -> :empty
-        not GlorboWeb.Slug.valid?(trimmed) -> :invalid
+        not Glorbo.Slug.valid?(trimmed) -> :invalid
         File.dir?(Path.join([base_dir(), "companies", trimmed])) -> :taken
         true -> :available
       end

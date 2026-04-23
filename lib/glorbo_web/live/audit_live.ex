@@ -34,7 +34,7 @@ defmodule GlorboWeb.AuditLive do
   @impl true
   def mount(%{"company" => co}, _session, socket) do
     # WR-02: slug gate before any filesystem construction.
-    if GlorboWeb.Slug.valid?(co) do
+    if Glorbo.Slug.valid?(co) do
       mount_valid(co, socket)
     else
       {:ok,

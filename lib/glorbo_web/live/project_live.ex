@@ -30,8 +30,8 @@ defmodule GlorboWeb.ProjectLive do
 
   @impl true
   def mount(%{"company" => co, "project" => proj}, _session, socket) do
-    with :valid_co <- (GlorboWeb.Slug.valid?(co) && :valid_co) || :bad_slug,
-         :valid_proj <- (GlorboWeb.Slug.valid?(proj) && :valid_proj) || :bad_slug,
+    with :valid_co <- (Glorbo.Slug.valid?(co) && :valid_co) || :bad_slug,
+         :valid_proj <- (Glorbo.Slug.valid?(proj) && :valid_proj) || :bad_slug,
          base <- base_dir(),
          co_dir <- Path.join([base, "companies", co]),
          proj_dir <- Path.join([co_dir, "projects", proj]),

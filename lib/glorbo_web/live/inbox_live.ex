@@ -33,7 +33,7 @@ defmodule GlorboWeb.InboxLive do
 
   @impl true
   def mount(%{"company" => co}, _session, socket) do
-    if GlorboWeb.Slug.valid?(co) do
+    if Glorbo.Slug.valid?(co) do
       mount_valid(co, socket)
     else
       {:ok,
@@ -386,7 +386,7 @@ defmodule GlorboWeb.InboxLive do
   defp agent_slug_from_sentinel_path(sentinel_path, co_dir) do
     case Path.relative_to(sentinel_path, co_dir) |> Path.split() do
       ["agents", agent_slug, "state", _filename] ->
-        if GlorboWeb.Slug.valid?(agent_slug), do: agent_slug, else: nil
+        if Glorbo.Slug.valid?(agent_slug), do: agent_slug, else: nil
 
       _ ->
         nil

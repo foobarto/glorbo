@@ -10,6 +10,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — `GlorboWeb.Slug` → `Glorbo.Slug` (dependency direction)
+
+- **[BREAKING]** Moved `GlorboWeb.Slug` to `Glorbo.Slug`.
+  25 modules under `lib/glorbo/` (`Router`, `AgentServer`,
+  `ACLMapper`, `TaskScheduler`, `CompanyBoot`, ...) were reaching
+  up into the web layer for slug validation — a dep-direction
+  smell codex + opencode both flagged. The module's contract is
+  unchanged (same regex, same public `valid?/1` surface); only
+  the name moved. Pre-1.0 atomic cut per the "no kid gloves"
+  rule.
+
 ### Changed — dead-code + silent-failure cleanup (BREAKING for
 ### agent.md authors granting `agents:list`)
 

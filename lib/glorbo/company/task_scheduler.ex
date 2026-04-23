@@ -311,7 +311,7 @@ defmodule Glorbo.Company.TaskScheduler do
 
         re_arm(state, task_id, entry)
 
-      not GlorboWeb.Slug.valid?(assignee) ->
+      not Glorbo.Slug.valid?(assignee) ->
         emit_audit(state, %{
           action: "scheduler.invalid_assignee",
           actor: "system",

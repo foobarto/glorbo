@@ -47,13 +47,13 @@ defmodule GlorboWeb.AgentLive do
   @impl true
   def mount(%{"company" => co, "agent" => ag}, _session, socket) do
     cond do
-      not GlorboWeb.Slug.valid?(co) ->
+      not Glorbo.Slug.valid?(co) ->
         {:ok,
          socket
          |> put_flash(:error, "Invalid company identifier.")
          |> push_navigate(to: ~p"/companies")}
 
-      not GlorboWeb.Slug.valid?(ag) ->
+      not Glorbo.Slug.valid?(ag) ->
         {:ok,
          socket
          |> put_flash(:error, "Invalid agent identifier.")

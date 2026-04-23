@@ -12,12 +12,12 @@ defmodule GlorboWeb.MCP.Args do
   anything that isn't a valid slug. Tools should run every path-
   bearing argument through it before building any path.
 
-  Matches `GlorboWeb.Slug.valid?/1` (the same gate LiveView mount
+  Matches `Glorbo.Slug.valid?/1` (the same gate LiveView mount
   params use for WR-02 / T-04-08), so the rules stay consistent
   across every surface that touches the filesystem from user input.
   """
 
-  alias GlorboWeb.Slug
+  alias Glorbo.Slug
 
   @doc """
   Returns `:ok` if `value` is a valid slug string, otherwise

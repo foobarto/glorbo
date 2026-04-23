@@ -21,7 +21,7 @@ defmodule GlorboWeb.AuditExportController do
   @columns ~w(ts actor action target detail)
 
   def export(conn, %{"company" => co}) do
-    if GlorboWeb.Slug.valid?(co) do
+    if Glorbo.Slug.valid?(co) do
       base = Glorbo.Filesystem.Hierarchy.default_root()
       month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
       path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])

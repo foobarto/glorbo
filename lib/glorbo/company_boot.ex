@@ -51,7 +51,7 @@ defmodule Glorbo.CompanyBoot do
         {:ok, slugs} ->
           slugs
           |> Enum.filter(fn slug ->
-            GlorboWeb.Slug.valid?(slug) and File.dir?(Path.join(companies_dir, slug))
+            Glorbo.Slug.valid?(slug) and File.dir?(Path.join(companies_dir, slug))
           end)
           |> Enum.each(&start_company(&1, base))
 

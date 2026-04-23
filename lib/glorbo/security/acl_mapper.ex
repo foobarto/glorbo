@@ -69,7 +69,7 @@ defmodule Glorbo.Security.ACLMapper do
   # the kernel-layer enforcement leaks. Restrict to either `"*"`
   # or a canonical slug. Nothing else should ever appear here.
   defp valid_scope?("*"), do: true
-  defp valid_scope?(scope), do: GlorboWeb.Slug.valid?(scope)
+  defp valid_scope?(scope), do: Glorbo.Slug.valid?(scope)
 
   @doc """
   Check whether `permissions` grant the requested `action`.

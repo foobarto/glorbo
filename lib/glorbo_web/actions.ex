@@ -198,7 +198,7 @@ defmodule GlorboWeb.Actions do
     with {:ok, content} <- File.read(abs_task_path),
          {:ok, fm} <- extract_frontmatter(content),
          assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to"),
-         true <- GlorboWeb.Slug.valid?(assignee) do
+         true <- Glorbo.Slug.valid?(assignee) do
       write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, "director")
     else
       _ -> :ok

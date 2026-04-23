@@ -35,7 +35,7 @@ defmodule GlorboWeb.KanbanLive do
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
     # WR-02: slug gate before any filesystem construction.
-    if GlorboWeb.Slug.valid?(slug) do
+    if Glorbo.Slug.valid?(slug) do
       mount_valid(slug, socket)
     else
       {:ok,
@@ -106,7 +106,7 @@ defmodule GlorboWeb.KanbanLive do
     goal_filter =
       case Map.get(params, "goal") do
         g when is_binary(g) and g != "" ->
-          if GlorboWeb.Slug.valid?(g), do: g, else: nil
+          if Glorbo.Slug.valid?(g), do: g, else: nil
 
         _ ->
           nil
@@ -117,7 +117,7 @@ defmodule GlorboWeb.KanbanLive do
     who_filter =
       case Map.get(params, "who") do
         w when is_binary(w) and w != "" ->
-          if GlorboWeb.Slug.valid?(w), do: w, else: nil
+          if Glorbo.Slug.valid?(w), do: w, else: nil
 
         _ ->
           nil
@@ -933,7 +933,7 @@ defmodule GlorboWeb.KanbanLive do
   defp resolve_new_task_params(params, assigns) do
     case Map.get(params, "assignee") do
       slug when is_binary(slug) and slug != "" ->
-        if GlorboWeb.Slug.valid?(slug) do
+        if Glorbo.Slug.valid?(slug) do
           form = Map.put(assigns.new_task_form, :assigned_to, slug)
           {form, true}
         else
@@ -1099,7 +1099,7 @@ defmodule GlorboWeb.KanbanLive do
         slugs
         |> Enum.sort()
         |> Enum.filter(fn slug ->
-          GlorboWeb.Slug.valid?(slug) and real_directory?(projects_dir, slug)
+          Glorbo.Slug.valid?(slug) and real_directory?(projects_dir, slug)
         end)
 
       _ ->
@@ -1129,7 +1129,7 @@ defmodule GlorboWeb.KanbanLive do
     # like `../../companies/other/agents/ceo` escape the intended
     # `agents/<slug>` directory via `Path.join/1`, enabling cross-
     # company or arbitrary-path file writes under the Glorbo user.
-    if GlorboWeb.Slug.valid?(new_assignee) do
+    if Glorbo.Slug.valid?(new_assignee) do
       do_notify_assignee(new_assignee, company, task_id, title, body)
     else
       :ok

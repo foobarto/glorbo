@@ -23,7 +23,7 @@ defmodule GlorboWeb.TaskLive do
   @impl true
   def mount(%{"company" => co, "task_id" => task_id}, _session, socket) do
     cond do
-      not GlorboWeb.Slug.valid?(co) ->
+      not Glorbo.Slug.valid?(co) ->
         {:ok,
          socket
          |> put_flash(:error, "Invalid company identifier.")

@@ -22,8 +22,8 @@ defmodule GlorboWeb.PageController do
   surface.
   """
   def redirect_to_dm(conn, %{"company" => co, "agent" => agent}) do
-    with true <- GlorboWeb.Slug.valid?(co),
-         true <- GlorboWeb.Slug.valid?(agent) do
+    with true <- Glorbo.Slug.valid?(co),
+         true <- Glorbo.Slug.valid?(agent) do
       base = Glorbo.Filesystem.Hierarchy.default_root()
       agent_dir = Path.join([base, "companies", co, "agents", agent])
 

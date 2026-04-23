@@ -45,7 +45,7 @@ defmodule GlorboWeb.CompanyLive do
 
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
-    if GlorboWeb.Slug.valid?(slug) do
+    if Glorbo.Slug.valid?(slug) do
       mount_valid(slug, socket)
     else
       {:ok,
