@@ -14,6 +14,7 @@ defmodule GlorboWeb.MCP.Tools.DecideProposal do
   """
   @behaviour GlorboWeb.MCP.Tool
 
+  alias Glorbo.Filesystem.FrontmatterWriter
   alias GlorboWeb.MCP.Args
 
   @mcp_sender "mcp"
@@ -67,7 +68,7 @@ defmodule GlorboWeb.MCP.Tools.DecideProposal do
     with :ok <- ensure_proposal_exists(base, company, id),
          :ok <- File.mkdir_p(outbox_dir),
          path = Path.join(outbox_dir, "#{id}.md"),
-         :ok <- File.write(path, flip_body(id, decision, args)) do
+         :ok <- FrontmatterWriter.atomic_write(path, flip_body(id, decision, args)) do
       {:ok,
        %{
          "id" => id,

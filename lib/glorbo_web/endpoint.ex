@@ -39,10 +39,18 @@ defmodule GlorboWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # `:length` caps the body Plug.Parsers will buffer before rejecting.
+  # Without this, an MCP client could POST a multi-gigabyte JSON blob
+  # and the BEAM would accumulate the whole body before any tool-layer
+  # size check ran. 1 MiB is well above every known call shape:
+  # brain-dump captures are 64 KiB, messages 10 KiB, proposals a few
+  # KiB. A request larger than this gets `413 Request Entity Too Large`
+  # before hitting the router.
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    json_decoder: Phoenix.json_library(),
+    length: 1_048_576
 
   plug Plug.MethodOverride
   plug Plug.Head

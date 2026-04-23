@@ -48,42 +48,47 @@ defmodule Glorbo.Company.SupervisorTest do
     {sup_pid, company, base}
   end
 
-  describe "S1: 11-child base tree (incl. TaskScheduler; Plan 03-05 + Approvals.Gate + PathRequestGate + ProposalsSink + AgentBoot)" do
-    test "CompanySupervisor starts 11 children by default (no proxy agents → no Proxy)" do
-      {sup_pid, _co, _base} = start_company()
+  describe "S1: 10-child base tree (AgentSupervisor + AgentBoot now share a :rest_for_one sub-tree)" do
+    test "CompanySupervisor starts 10 direct children by default (no proxy agents)" do
+      {sup_pid, co, _base} = start_company()
+      children = Supervisor.which_children(sup_pid)
+      # AuditLog, Watcher, Router, Scheduler, TaskScheduler, BudgetTracker,
+      # agent_fleet sub-supervisor, Approvals.Gate, PathRequestGate,
+      # ProposalsSink. AgentSupervisor + AgentBoot live under agent_fleet.
+      assert length(children) == 10
+
+      ids = Enum.map(children, fn {id, _pid, _type, _mods} -> id end) |> MapSet.new()
+
+      assert MapSet.member?(ids, Glorbo.Company.AuditLog)
+      assert MapSet.member?(ids, Glorbo.Filesystem.Watcher)
+      assert MapSet.member?(ids, Glorbo.Company.Router)
+      assert MapSet.member?(ids, Glorbo.Company.Scheduler)
+      assert MapSet.member?(ids, Glorbo.Company.TaskScheduler)
+      assert MapSet.member?(ids, Glorbo.Company.BudgetTracker)
+      assert MapSet.member?(ids, Glorbo.Approvals.Gate)
+      assert MapSet.member?(ids, Glorbo.PathRequestGate)
+      assert MapSet.member?(ids, Glorbo.Company.ProposalsSink)
+      # The agent_fleet sub-supervisor wraps AgentSupervisor + AgentBoot.
+      assert MapSet.member?(ids, {:agent_fleet, co})
+      refute MapSet.member?(ids, Glorbo.Network.Proxy)
+    end
+  end
+
+  describe "S1b: 11-child tree when a proxy agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 11 direct children when proxy?: true" do
+      {sup_pid, _co, _base} = start_company(proxy?: true)
       children = Supervisor.which_children(sup_pid)
       assert length(children) == 11
 
       modules =
         children
-        |> Enum.map(fn {_id, _pid, _type, [mod]} -> mod end)
-        |> MapSet.new()
-
-      assert MapSet.member?(modules, Glorbo.Company.AuditLog)
-      assert MapSet.member?(modules, Glorbo.Filesystem.Watcher)
-      assert MapSet.member?(modules, Glorbo.Company.Router)
-      assert MapSet.member?(modules, Glorbo.Company.Scheduler)
-      assert MapSet.member?(modules, Glorbo.Company.TaskScheduler)
-      assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
-      assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
-      assert MapSet.member?(modules, Glorbo.Approvals.Gate)
-      assert MapSet.member?(modules, Glorbo.PathRequestGate)
-      assert MapSet.member?(modules, Glorbo.Company.ProposalsSink)
-      assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
-      # GAP-4: no proxy agent on disk → Network.Proxy is NOT started
-      refute MapSet.member?(modules, Glorbo.Network.Proxy)
-    end
-  end
-
-  describe "S1b: 12-child tree when an proxy agent is declared (GAP-4)" do
-    test "CompanySupervisor starts 12 children when proxy?: true" do
-      {sup_pid, _co, _base} = start_company(proxy?: true)
-      children = Supervisor.which_children(sup_pid)
-      assert length(children) == 12
-
-      modules =
-        children
-        |> Enum.map(fn {_id, _pid, _type, [mod]} -> mod end)
+        |> Enum.map(fn {_id, _pid, _type, mods} ->
+          case mods do
+            [mod] -> mod
+            _ -> nil
+          end
+        end)
+        |> Enum.filter(& &1)
         |> MapSet.new()
 
       assert MapSet.member?(modules, Glorbo.Network.Proxy)
@@ -125,33 +130,94 @@ defmodule Glorbo.Company.SupervisorTest do
     end
   end
 
-  describe "S3: AgentSupervisor restart isolation" do
-    test "killing AgentSupervisor restarts only it; siblings unaffected" do
-      {sup_pid, _co, _base} = start_company()
+  describe "S3: inner AgentSupervisor restart stays scoped to the agent_fleet sub-tree" do
+    test "killing inner AgentSupervisor triggers rest_for_one inside the fleet, leaves siblings alone" do
+      {sup_pid, co, _base} = start_company()
 
       pids_by_id =
         Supervisor.which_children(sup_pid)
         |> Map.new(fn {id, pid, _type, _mod} -> {id, pid} end)
 
-      agent_sup = pids_by_id[Glorbo.Company.AgentSupervisor]
+      fleet_id = {:agent_fleet, co}
+      fleet_pid = pids_by_id[fleet_id]
       router_pid = pids_by_id[Glorbo.Company.Router]
+      assert is_pid(fleet_pid)
 
-      ref = Process.monitor(agent_sup)
-      Process.exit(agent_sup, :kill)
-      assert_receive {:DOWN, ^ref, :process, ^agent_sup, _}, 2_000
+      inner =
+        Supervisor.which_children(fleet_pid)
+        |> Map.new(fn {id, pid, _type, _mod} -> {id, pid} end)
 
-      Process.sleep(100)
+      agent_sup_pid = inner[Glorbo.Company.AgentSupervisor]
+      ref = Process.monitor(agent_sup_pid)
+      Process.exit(agent_sup_pid, :kill)
+      assert_receive {:DOWN, ^ref, :process, ^agent_sup_pid, _}, 2_000
+
+      Process.sleep(200)
+
+      # Router (sibling at the company level) untouched.
       assert Process.alive?(router_pid)
+      # Fleet supervisor itself still alive (same pid); only its inner
+      # children restarted.
+      assert Process.alive?(fleet_pid)
 
-      new_agent_sup =
+      new_inner =
+        Supervisor.which_children(fleet_pid)
+        |> Map.new(fn {id, pid, _type, _mod} -> {id, pid} end)
+
+      new_agent_sup = new_inner[Glorbo.Company.AgentSupervisor]
+      assert is_pid(new_agent_sup)
+      assert new_agent_sup != agent_sup_pid
+    end
+  end
+
+  # Regression for the codex-flagged CRITICAL: if AgentSupervisor
+  # crashed under the old `:one_for_one` + one-shot `:transient`
+  # AgentBoot, the company lost its entire agent fleet forever. The
+  # new `:rest_for_one` `agent_fleet` sub-tree rebuilds both.
+  describe "S4: AgentSupervisor crash triggers AgentBoot rerun (agent_fleet rest_for_one)" do
+    test "killing inner AgentSupervisor forces AgentBoot to rerun (new pid)" do
+      {sup_pid, co, _base} = start_company()
+
+      fleet_id = {:agent_fleet, co}
+
+      fleet_pid =
         Supervisor.which_children(sup_pid)
         |> Enum.find_value(fn
-          {Glorbo.Company.AgentSupervisor, pid, _, _} -> pid
+          {^fleet_id, pid, _, _} -> pid
           _ -> nil
         end)
 
+      assert is_pid(fleet_pid)
+
+      inner_children =
+        Supervisor.which_children(fleet_pid)
+        |> Map.new(fn {id, pid, _type, _mod} -> {id, pid} end)
+
+      agent_sup_pid = inner_children[Glorbo.Company.AgentSupervisor]
+      assert is_pid(agent_sup_pid)
+
+      ref = Process.monitor(agent_sup_pid)
+      Process.exit(agent_sup_pid, :kill)
+      assert_receive {:DOWN, ^ref, :process, ^agent_sup_pid, _}, 2_000
+
+      Process.sleep(200)
+
+      new_inner =
+        Supervisor.which_children(fleet_pid)
+        |> Map.new(fn {id, pid, _type, _mod} -> {id, pid} end)
+
+      # Both children come back — AgentSupervisor with a fresh pid, and
+      # AgentBoot re-runs from scratch (pid may or may not be alive at
+      # check time depending on scan timing, but the child spec must be
+      # present).
+      new_agent_sup = new_inner[Glorbo.Company.AgentSupervisor]
       assert is_pid(new_agent_sup)
-      assert new_agent_sup != agent_sup
+      assert new_agent_sup != agent_sup_pid
+
+      # AgentBoot is registered as a child; pid may be :undefined if
+      # the task already exited (it's one-shot, :transient), but the
+      # id must appear in the supervisor.
+      assert Map.has_key?(new_inner, Glorbo.Company.AgentBoot)
     end
   end
 

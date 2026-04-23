@@ -60,8 +60,10 @@ defmodule Glorbo.Company.Supervisor do
           | :file_watcher
           | :router
           | :scheduler
+          | :task_scheduler
           | :budget_tracker
           | :agent_sup
+          | :agent_fleet
           | :network_proxy
           | :approvals_gate
           | :path_request_gate
@@ -102,8 +104,12 @@ defmodule Glorbo.Company.Supervisor do
        [name: via(company, :task_scheduler), company: company, base: base]},
       {Glorbo.Company.BudgetTracker,
        [name: via(company, :budget_tracker), company: company, base: base]},
-      {Glorbo.Company.AgentSupervisor,
-       [name: via(company, :agent_sup), company: company, base: base]}
+      # AgentSupervisor + AgentBoot share a `:rest_for_one` sub-tree so
+      # that if AgentSupervisor crashes, AgentBoot reruns and repopulates
+      # the fleet. A bare `:one_for_one` at the company level + a
+      # `:transient` one-shot AgentBoot would leave the company with
+      # zero agents forever after a DynamicSupervisor crash.
+      agent_fleet_spec(company, base)
     ]
 
     # GAP-4: start Glorbo.Network.Proxy when at least one agent declares
@@ -120,7 +126,6 @@ defmodule Glorbo.Company.Supervisor do
       |> append_gate(company, base)
       |> append_path_request_gate(company, base)
       |> append_proposals_sink(company, base)
-      |> append_agent_boot(company, base)
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -380,7 +385,26 @@ defmodule Glorbo.Company.Supervisor do
   # alive by the time it runs.
   # ---------------------------------------------------------------------------
 
-  defp append_agent_boot(children, company, base) do
-    children ++ [{Glorbo.Company.AgentBoot, [company: company, base: base]}]
+  # Sub-supervisor spec that owns AgentSupervisor + AgentBoot with
+  # `:rest_for_one`. Ordering matters — AgentSupervisor first, AgentBoot
+  # second — so that an AgentSupervisor crash terminates AgentBoot and
+  # then restarts both. AgentBoot's `:transient` restart type means the
+  # normal completion (one-shot enumerate + exit) never triggers a
+  # spurious re-run; only the supervisor-driven crash-restart does.
+  defp agent_fleet_spec(company, base) do
+    children = [
+      {Glorbo.Company.AgentSupervisor,
+       [name: via(company, :agent_sup), company: company, base: base]},
+      {Glorbo.Company.AgentBoot, [company: company, base: base]}
+    ]
+
+    %{
+      id: {:agent_fleet, company},
+      start:
+        {Supervisor, :start_link,
+         [children, [strategy: :rest_for_one, name: via(company, :agent_fleet)]]},
+      type: :supervisor,
+      restart: :permanent
+    }
   end
 end

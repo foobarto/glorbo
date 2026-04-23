@@ -9,6 +9,7 @@ defmodule GlorboWeb.MCP.Tools.CaptureBrainDump do
   @behaviour GlorboWeb.MCP.Tool
 
   alias Glorbo.BrainDump
+  alias Glorbo.Company.AuditLog
   alias GlorboWeb.MCP.Args
 
   @impl true
@@ -50,6 +51,19 @@ defmodule GlorboWeb.MCP.Tools.CaptureBrainDump do
 
     case BrainDump.capture(base, company, body) do
       {:ok, entry} ->
+        # GEP-29 D4: every MCP-driven write emits an audit event the
+        # same way the LV-driven path does. BrainDumpLive calls
+        # `AuditLog.append_for/2` after `BrainDump.capture/3`; this
+        # tool mirrors that with `mcp:<client>` as the actor so the
+        # audit trail is consistent regardless of surface.
+        _ =
+          AuditLog.append_for(company, %{
+            actor: mcp_actor(context),
+            action: "braindump.capture",
+            target: entry.ts,
+            detail: %{title: entry.title, day: entry.day, source: "mcp"}
+          })
+
         {:ok,
          %{
            "ts" => entry.ts,
@@ -60,5 +74,10 @@ defmodule GlorboWeb.MCP.Tools.CaptureBrainDump do
       {:error, reason} ->
         {:error, {:capture_failed, reason}}
     end
+  end
+
+  defp mcp_actor(context) do
+    client = Map.get(context, :client, "unknown")
+    "mcp:#{client}"
   end
 end

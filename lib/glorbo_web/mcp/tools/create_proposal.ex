@@ -13,6 +13,7 @@ defmodule GlorboWeb.MCP.Tools.CreateProposal do
   """
   @behaviour GlorboWeb.MCP.Tool
 
+  alias Glorbo.Filesystem.FrontmatterWriter
   alias GlorboWeb.MCP.Args
 
   @mcp_sender "mcp"
@@ -69,7 +70,7 @@ defmodule GlorboWeb.MCP.Tools.CreateProposal do
     with :ok <- ensure_company_exists(base, company),
          :ok <- File.mkdir_p(outbox_dir),
          path = Path.join(outbox_dir, "#{id}.md"),
-         :ok <- File.write(path, proposal_body(id, subtype, body)) do
+         :ok <- FrontmatterWriter.atomic_write(path, proposal_body(id, subtype, body)) do
       {:ok,
        %{
          "id" => id,

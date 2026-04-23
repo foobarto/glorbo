@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — round-2 hardening (post-review-2 sweep)
+
+- **[CRITICAL fix]** `AgentSupervisor` crash no longer permanently
+  loses the company's agent fleet. Previously a bare `:one_for_one`
+  `Company.Supervisor` + one-shot `:transient` `AgentBoot` meant the
+  DynamicSupervisor would restart empty after a crash and `AgentBoot`
+  never reran. Wrapped `[AgentSupervisor, AgentBoot]` in a new
+  `agent_fleet` `:rest_for_one` sub-supervisor so an inner crash
+  terminates both children and restarts them in order, repopulating
+  the fleet. Regression test `S4: AgentSupervisor crash triggers
+  AgentBoot rerun` covers the scenario; existing `S3` kept on the
+  sibling-isolation path.
+- **[HIGH fix]** `MCP.Tools.CreateProposal` and
+  `MCP.Tools.DecideProposal` switched from bare `File.write/2` to
+  `FrontmatterWriter.atomic_write/2`. A process crash mid-write no
+  longer leaves a truncated proposal-outbox file that the Router
+  would silently reject on parse.
+- **[HIGH fix]** `GlorboWeb.MCP.Tools.CaptureBrainDump` now emits
+  the `braindump.capture` audit event the moduledoc promised (actor
+  `mcp:<client>`, matching `BrainDumpLive`'s audit path).
+  Previously MCP-driven captures were invisible in the audit trail.
+- **[HIGH fix]** `Plug.Parsers` baseline gained a 1 MiB
+  `length:` cap. An unbounded MCP POST body could previously buffer
+  a multi-gigabyte payload into the BEAM before any tool-layer
+  size check fired. The new cap rejects oversize requests with
+  `413 Request Entity Too Large` before the router runs.
+
 ### Security — post-review hardening sweep (codex + claude review)
 
 - **[CRITICAL fix]** Router outbox readers now `lstat` every

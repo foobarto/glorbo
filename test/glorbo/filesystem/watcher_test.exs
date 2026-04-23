@@ -277,25 +277,25 @@ defmodule Glorbo.Filesystem.WatcherTest do
       end)
 
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 11
+      # AuditLog, Watcher, Router, Scheduler, TaskScheduler,
+      # BudgetTracker, {:agent_fleet, <co>} (wraps AgentSupervisor +
+      # AgentBoot), Approvals.Gate, PathRequestGate, ProposalsSink = 10.
+      assert length(children) == 10
 
-      modules =
-        children
-        |> Enum.map(fn {_id, _pid, _type, [mod]} -> mod end)
-        |> MapSet.new()
+      ids = Enum.map(children, fn {id, _, _, _} -> id end) |> MapSet.new()
 
-      assert MapSet.member?(modules, Glorbo.Company.AuditLog)
-      assert MapSet.member?(modules, Glorbo.Filesystem.Watcher)
-      assert MapSet.member?(modules, Glorbo.Company.Router)
-      assert MapSet.member?(modules, Glorbo.Company.Scheduler)
-      assert MapSet.member?(modules, Glorbo.Company.BudgetTracker)
-      assert MapSet.member?(modules, Glorbo.Company.AgentSupervisor)
-      assert MapSet.member?(modules, Glorbo.Approvals.Gate)
-      assert MapSet.member?(modules, Glorbo.PathRequestGate)
-      assert MapSet.member?(modules, Glorbo.Company.ProposalsSink)
-      assert MapSet.member?(modules, Glorbo.Company.AgentBoot)
+      assert MapSet.member?(ids, Glorbo.Company.AuditLog)
+      assert MapSet.member?(ids, Glorbo.Filesystem.Watcher)
+      assert MapSet.member?(ids, Glorbo.Company.Router)
+      assert MapSet.member?(ids, Glorbo.Company.Scheduler)
+      assert MapSet.member?(ids, Glorbo.Company.BudgetTracker)
+      assert MapSet.member?(ids, Glorbo.Approvals.Gate)
+      assert MapSet.member?(ids, Glorbo.PathRequestGate)
+      assert MapSet.member?(ids, Glorbo.Company.ProposalsSink)
+      # AgentSupervisor + AgentBoot live under the agent_fleet sub-tree.
+      assert MapSet.member?(ids, {:agent_fleet, company})
       # GAP-4: no proxy agent on disk → Network.Proxy NOT started
-      refute MapSet.member?(modules, Glorbo.Network.Proxy)
+      refute MapSet.member?(ids, Glorbo.Network.Proxy)
     end
   end
 
