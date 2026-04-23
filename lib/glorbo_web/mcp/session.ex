@@ -426,7 +426,9 @@ defmodule GlorboWeb.MCP.Session do
   defp touch(state), do: state
 
   defp schedule_idle_timeout(%{idle_timeout_ms: nil} = state), do: state
-  defp schedule_idle_timeout(%{sse_pid: pid} = state) when is_pid(pid), do: cancel_idle_timeout(state)
+
+  defp schedule_idle_timeout(%{sse_pid: pid} = state) when is_pid(pid),
+    do: cancel_idle_timeout(state)
 
   defp schedule_idle_timeout(state) do
     token = make_ref()

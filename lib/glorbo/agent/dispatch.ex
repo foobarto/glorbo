@@ -169,9 +169,11 @@ defmodule Glorbo.Agent.Dispatch do
                workspace,
                run_dir,
                provider,
-               proxy_url,
-               invocation_id,
-               cli_binary,
+               %{
+                 proxy_url: proxy_url,
+                 invocation_id: invocation_id,
+                 cli_binary: cli_binary
+               },
                opts
              ),
            {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
@@ -500,17 +502,7 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp build_ctx(
-         spec,
-         task,
-         workspace,
-         run_dir,
-         provider,
-         proxy_url,
-         invocation_id,
-         cli_binary,
-         _opts
-       ) do
+  defp build_ctx(spec, task, workspace, run_dir, provider, runtime, _opts) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -541,11 +533,11 @@ defmodule Glorbo.Agent.Dispatch do
       web_fetch_timeout_s: Map.get(spec, :web_fetch_timeout_s, 30),
       max_tool_calls_per_turn: Map.get(spec, :max_tool_calls_per_turn, 50),
       prompt_path: prompt_path(run_dir),
-      invocation_id: invocation_id,
+      invocation_id: runtime.invocation_id,
       agent_slug: spec.slug,
       company: spec.company,
-      host_cli_binary: cli_binary.host_path,
-      cli_binary: cli_binary.sandbox_path,
+      host_cli_binary: runtime.cli_binary.host_path,
+      cli_binary: runtime.cli_binary.sandbox_path,
       bwrap_opts: %{
         company: spec.company,
         agent_workspace: workspace,
@@ -554,12 +546,12 @@ defmodule Glorbo.Agent.Dispatch do
         company_path: Path.dirname(Path.dirname(agent_root)),
         permissions: spec.permissions,
         network_policy: spec.network,
-        proxy_url: proxy_url,
+        proxy_url: runtime.proxy_url,
         timeout_seconds: spec.timeout_seconds,
         cli_auth_binds:
           resolve_auth_binds(provider) ++
             native_credentials_binds(provider) ++
-            [cli_binary_bind(cli_binary)],
+            [cli_binary_bind(runtime.cli_binary)],
         approved_paths: approved_paths
       }
     }
@@ -596,16 +588,18 @@ defmodule Glorbo.Agent.Dispatch do
   defp resolve_cli_binary(_provider, _opts), do: {:error, :provider_unavailable}
 
   defp resolve_cli_binary_path(path, provider_name) when is_binary(path) do
-    with {:ok, host_path} <- resolve_regular_binary(path) do
-      basename = Path.basename(host_path)
+    case resolve_regular_binary(path) do
+      {:ok, host_path} ->
+        basename = Path.basename(host_path)
 
-      {:ok,
-       %{
-         host_path: host_path,
-         sandbox_path: "/tmp/glorbo-cli-#{safe_cli_name(provider_name)}-#{basename}"
-       }}
-    else
-      _ -> {:error, :provider_unavailable}
+        {:ok,
+         %{
+           host_path: host_path,
+           sandbox_path: "/tmp/glorbo-cli-#{safe_cli_name(provider_name)}-#{basename}"
+         }}
+
+      _ ->
+        {:error, :provider_unavailable}
     end
   end
 
@@ -613,7 +607,8 @@ defmodule Glorbo.Agent.Dispatch do
     {host_path, sandbox_path}
   end
 
-  defp resolve_regular_binary(path), do: resolve_regular_binary(Path.expand(path), MapSet.new(), 0)
+  defp resolve_regular_binary(path),
+    do: resolve_regular_binary(Path.expand(path), MapSet.new(), 0)
 
   defp resolve_regular_binary(_path, _seen, depth) when depth >= 16,
     do: {:error, :symlink_loop}
