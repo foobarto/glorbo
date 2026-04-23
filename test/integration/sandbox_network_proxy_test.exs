@@ -1,24 +1,27 @@
 defmodule Glorbo.Integration.SandboxNetworkProxyTest do
   use ExUnit.Case, async: false
 
-  @moduletag :bwrap
-
   alias Glorbo.Network.Proxy
   alias Glorbo.Sandbox.Bwrap
   alias Glorbo.Test.BwrapHelpers
   alias Glorbo.Test.TmpGlorboHome
 
-  setup do
-    cond do
-      not BwrapHelpers.bwrap_available?() ->
-        {:skip, "bwrap not available on host"}
+  # Gate the entire module at load time rather than from `setup`.
+  # ExUnit 1.18 `setup` callbacks may return only `:ok`, a keyword,
+  # or a map — returning `{:skip, reason}` raises a merge-failure
+  # wrapped as a test failure. `@moduletag skip: "..."` honours the
+  # skip cleanly while keeping the module body untouched.
+  cond do
+    not BwrapHelpers.bwrap_available?() ->
+      @moduletag :bwrap
+      @moduletag skip: "bwrap not available on host"
 
-      not BwrapHelpers.pasta_available?() ->
-        {:skip, "pasta not available on host"}
+    not BwrapHelpers.pasta_available?() ->
+      @moduletag :bwrap
+      @moduletag skip: "pasta with --splice-only support not available on host"
 
-      true ->
-        :ok
-    end
+    true ->
+      @moduletag :bwrap
   end
 
   defp start_loopback_http_server(body) when is_binary(body) do
