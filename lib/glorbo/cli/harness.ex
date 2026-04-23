@@ -604,7 +604,7 @@ defmodule Glorbo.CLI.Harness do
   end
 
   defp credentials_dir(env_fun) do
-    env_fun.("GLORBO_CREDENTIALS_DIR") || Path.expand("~/.local/etc/glorbo/credentials")
+    env_fun.("GLORBO_CREDENTIALS_DIR") || Glorbo.Filesystem.Hierarchy.native_credentials_dir()
   end
 
   defp require_env(env_fun, key) do

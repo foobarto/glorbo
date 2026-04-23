@@ -237,10 +237,12 @@ defmodule Glorbo.Doctor.Fixer do
   def fix_private_files(_check) do
     base = Glorbo.Filesystem.Hierarchy.default_root()
 
-    case chmod_private_files([
-           Path.join(base, "config.md"),
-           Path.join([base, "logs", "glorbo.log"])
-         ]) do
+    case chmod_private_files(
+           [
+             Path.join(base, "config.md"),
+             Path.join([base, "logs", "glorbo.log"])
+           ] ++ native_credentials_paths()
+         ) do
       {:ok, []} ->
         {:ok, "no private files present"}
 
@@ -274,6 +276,21 @@ defmodule Glorbo.Doctor.Fixer do
     |> case do
       {:ok, changed} -> {:ok, Enum.reverse(changed)}
       {:error, _} = err -> err
+    end
+  end
+
+  defp native_credentials_paths do
+    dir = Glorbo.Filesystem.Hierarchy.native_credentials_dir()
+
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&String.ends_with?(&1, ".toml"))
+        |> Enum.sort()
+        |> Enum.map(&Path.join(dir, &1))
+
+      _ ->
+        []
     end
   end
 

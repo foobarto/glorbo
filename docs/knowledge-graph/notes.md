@@ -356,6 +356,17 @@ mounted into the sandbox. Rule: the harness may consult built-ins, but
 must fall back to the env-driven runtime contract or user-defined native
 providers will fail despite host-side registry resolution succeeding.
 
+### GEP-32 dependency — native credentials need one canonical home path
+
+By 2026-04-23 there were already three call sites that needed to agree
+on where native credentials live: `Agent.Dispatch` (bind the file into
+the sandbox), `CLI.Harness` (load it inside the sandbox), and `Doctor`
+(`private_files` warning/fixer). Duplicating the fallback
+`GLORBO_CREDENTIALS_DIR || ~/.local/etc/glorbo/credentials` in each
+module is drift bait. `Glorbo.Filesystem.Hierarchy.native_credentials_dir/0`
+is now the single source of truth; future native-provider work should
+reuse it instead of re-encoding the path policy.
+
 ---
 
 ## What belongs in this file vs elsewhere

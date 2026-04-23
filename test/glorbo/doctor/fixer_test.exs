@@ -47,6 +47,34 @@ defmodule Glorbo.Doctor.FixerTest do
       # idempotent via `File.mkdir_p/1`, so assert it returns :ok.
       assert {:ok, _} = Fixer.fix_glorbo_dir(%{name: "glorbo_dir"})
     end
+
+    test "fix_private_files chmods native credentials TOML files to 0600" do
+      tmp = Path.join(System.tmp_dir!(), "glorbo-fixer-#{System.unique_integer([:positive])}")
+      base = Path.join(tmp, ".glorbo")
+      creds = Path.join(tmp, "credentials")
+
+      on_exit(fn ->
+        System.delete_env("GLORBO_HOME")
+        System.delete_env("GLORBO_CREDENTIALS_DIR")
+        File.rm_rf!(tmp)
+      end)
+
+      File.mkdir_p!(Path.join(base, "logs"))
+      File.mkdir_p!(creds)
+      File.write!(Path.join(base, "config.md"), "")
+      File.write!(Path.join([base, "logs", "glorbo.log"]), "")
+
+      creds_path = Path.join(creds, "openai.toml")
+      File.write!(creds_path, ~s(api_key = "sk-test"))
+      File.chmod!(creds_path, 0o644)
+
+      System.put_env("GLORBO_HOME", base)
+      System.put_env("GLORBO_CREDENTIALS_DIR", creds)
+
+      assert {:ok, detail} = Fixer.fix_private_files(%{name: "private_files"})
+      assert detail =~ "openai.toml"
+      assert Bitwise.band(File.stat!(creds_path).mode, 0o777) == 0o600
+    end
   end
 
   describe "run/1" do

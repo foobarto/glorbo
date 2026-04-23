@@ -72,4 +72,16 @@ defmodule Glorbo.Filesystem.Hierarchy do
       base -> base
     end
   end
+
+  @doc """
+  Default directory for native-provider credentials.
+
+  Lives outside `~/.glorbo/` on purpose so naive home-folder backups of
+  Glorbo state do not sweep API keys into the archive.
+  """
+  @spec native_credentials_dir() :: Path.t()
+  def native_credentials_dir do
+    System.get_env("GLORBO_CREDENTIALS_DIR") ||
+      Path.expand("~/.local/etc/glorbo/credentials")
+  end
 end

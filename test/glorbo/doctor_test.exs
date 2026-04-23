@@ -391,20 +391,25 @@ defmodule Glorbo.DoctorTest do
       assert private_files.severity == :warning
     end
 
-    test "private_files warns when config.md or glorbo.log is more permissive than 0600" do
+    test "private_files warns when config.md, glorbo.log, or native credentials are more permissive than 0600" do
       tmp =
         Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
 
       on_exit(fn -> File.rm_rf!(tmp) end)
       base = Path.join(tmp, ".glorbo")
+      creds = Path.join(tmp, "credentials")
       File.mkdir_p!(Path.join(base, "logs"))
+      File.mkdir_p!(creds)
       File.write!(Path.join(base, "config.md"), "")
       File.write!(Path.join(base, "logs/glorbo.log"), "")
+      File.write!(Path.join(creds, "openai.toml"), ~s(api_key = "sk-test"))
       File.chmod!(Path.join(base, "config.md"), 0o644)
       File.chmod!(Path.join(base, "logs/glorbo.log"), 0o664)
+      File.chmod!(Path.join(creds, "openai.toml"), 0o644)
 
       deps =
         TestHelpers.deps(
+          credentials_dir: creds,
           home_fun: fn -> tmp end,
           cmd_fun: fn cmd, _args ->
             case cmd do
@@ -423,6 +428,7 @@ defmodule Glorbo.DoctorTest do
       assert check.severity == :warning
       assert check.detail =~ "config.md=0644"
       assert check.detail =~ "logs/glorbo.log=0664"
+      assert check.detail =~ "credentials/openai.toml=0644"
     end
   end
 

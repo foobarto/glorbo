@@ -288,39 +288,82 @@ defmodule Glorbo.Doctor do
 
   @spec check_private_files(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_private_files(deps) do
-    base = glorbo_base(deps)
-    required = "config.md and logs/glorbo.log mode <= 0600"
+    required = "config.md, logs/glorbo.log, and native credentials *.toml mode <= 0600"
+
+    {credential_specs, credential_errors} = native_credentials_specs(deps)
 
     offenders =
-      [{"config.md", "config.md"}, {"logs/glorbo.log", "logs/glorbo.log"}]
-      |> Enum.flat_map(fn {label, rel} ->
-        path = Path.join(base, rel)
-
-        case File.lstat(path) do
-          {:ok, %File.Stat{type: :regular, mode: mode}} ->
-            perms = Bitwise.band(mode, 0o777)
-
-            if perms > 0o600 do
-              ["#{label}=0#{Integer.to_string(perms, 8)}"]
-            else
-              []
-            end
-
-          {:ok, %File.Stat{type: type}} ->
-            ["#{label}=#{type}"]
-
-          {:error, :enoent} ->
-            []
-
-          {:error, reason} ->
-            ["#{label}=#{inspect(reason)}"]
-        end
-      end)
+      private_file_specs(deps)
+      |> Kernel.++(credential_specs)
+      |> Enum.flat_map(&private_file_offenders/1)
+      |> Kernel.++(credential_errors)
 
     if offenders == [] do
-      {:ok, "config.md/logs.glorbo.log absent or private", required}
+      {:ok, "config.md/logs.glorbo.log/native credentials absent or private", required}
     else
       {:fail, Enum.join(offenders, ", "), required}
+    end
+  end
+
+  defp private_file_specs(deps) do
+    base = glorbo_base(deps)
+
+    [
+      {"config.md", Path.join(base, "config.md")},
+      {"logs/glorbo.log", Path.join([base, "logs", "glorbo.log"])}
+    ]
+  end
+
+  defp native_credentials_specs(deps) do
+    dir = native_credentials_dir(deps)
+
+    case File.ls(dir) do
+      {:ok, entries} ->
+        specs =
+          entries
+          |> Enum.filter(&String.ends_with?(&1, ".toml"))
+          |> Enum.sort()
+          |> Enum.map(fn entry ->
+            {"credentials/#{entry}", Path.join(dir, entry)}
+          end)
+
+        {specs, []}
+
+      {:error, :enoent} ->
+        {[], []}
+
+      {:error, reason} ->
+        {[], ["credentials_dir=#{inspect(reason)}"]}
+    end
+  end
+
+  defp native_credentials_dir(deps) do
+    Keyword.get_lazy(
+      deps,
+      :credentials_dir,
+      &Glorbo.Filesystem.Hierarchy.native_credentials_dir/0
+    )
+  end
+
+  defp private_file_offenders({label, path}) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular, mode: mode}} ->
+        perms = Bitwise.band(mode, 0o777)
+
+        if perms > 0o600 do
+          ["#{label}=0#{Integer.to_string(perms, 8)}"]
+        else
+          []
+        end
+
+      {:ok, %File.Stat{type: type}} ->
+        ["#{label}=#{type}"]
+
+      {:error, :enoent} ->
+        []
+
+      {:error, reason} ->
+        ["#{label}=#{inspect(reason)}"]
     end
   end
 

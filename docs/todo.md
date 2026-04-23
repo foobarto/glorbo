@@ -157,3 +157,7 @@ it's been in CHANGELOG for a cycle.
 - [x] **v0.1.0 shipped.** First minor since v0.0.4: GEP-32 phase 1
   plus the post-v0.0.4 threatmodel hardening batches are now rolled
   into the release docs/version surface.
+- [x] **GEP-32 dependency — doctor checks native credential perms.**
+  `private_files` now covers `~/.local/etc/glorbo/credentials/*.toml`
+  (or `GLORBO_CREDENTIALS_DIR`), and the fixer chmods those files to
+  `0600` alongside `config.md` and `logs/glorbo.log`.

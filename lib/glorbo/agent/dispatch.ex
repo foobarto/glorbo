@@ -579,11 +579,9 @@ defmodule Glorbo.Agent.Dispatch do
   defp native_credentials_binds(_), do: []
 
   defp native_credentials_path(%{name: name}) when is_binary(name) do
-    path =
-      System.get_env("GLORBO_CREDENTIALS_DIR") ||
-        Path.expand("~/.local/etc/glorbo/credentials")
-
-    candidate = Path.join(path, "#{name}.toml")
+    candidate =
+      Glorbo.Filesystem.Hierarchy.native_credentials_dir()
+      |> Path.join("#{name}.toml")
 
     if File.exists?(candidate), do: candidate, else: nil
   end
