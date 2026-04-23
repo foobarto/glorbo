@@ -175,9 +175,7 @@ defmodule GlorboWeb.CostsLive do
   defp load_and_assign(socket) do
     base = base_dir()
     agents = list_all_agents(base)
-    agent_slugs = Enum.map(agents, & &1.slug)
-
-    ledger = Ledger.history_for_agents(agent_slugs)
+    ledger = Ledger.history_for_agents(agents)
     months = recent_months(12)
     current_ym = hd(months)
 
@@ -268,11 +266,11 @@ defmodule GlorboWeb.CostsLive do
   # unknown, so the Costs page surfaces usage activity for
   # providers that don't have cost telemetry.
   defp build_rows(agents, ledger, months) do
-    by_slug = Enum.group_by(ledger, & &1.agent_slug)
+    by_agent = Enum.group_by(ledger, &{&1.company_slug, &1.agent_slug})
 
     agents
     |> Enum.map(fn %{slug: slug, company: co} ->
-      rows_for_slug = Map.get(by_slug, slug, [])
+      rows_for_slug = Map.get(by_agent, {co, slug}, [])
 
       by_month =
         rows_for_slug

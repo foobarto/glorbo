@@ -6,6 +6,7 @@ defmodule Glorbo.BudgetSchemaTest do
   describe "changeset/2" do
     test "valid changeset with required fields" do
       attrs = %{
+        company_slug: "acme",
         agent_slug: "engineer",
         year_month: "2026-04",
         prompt_tokens: 100,
@@ -17,36 +18,55 @@ defmodule Glorbo.BudgetSchemaTest do
       assert changeset.valid?
     end
 
+    test "rejects missing company_slug" do
+      attrs = %{agent_slug: "engineer", year_month: "2026-04"}
+      changeset = Budget.changeset(%Budget{}, attrs)
+      refute changeset.valid?
+      assert %{company_slug: ["can't be blank"]} = errors_on(changeset)
+    end
+
     test "rejects missing agent_slug" do
-      attrs = %{year_month: "2026-04"}
+      attrs = %{company_slug: "acme", year_month: "2026-04"}
       changeset = Budget.changeset(%Budget{}, attrs)
       refute changeset.valid?
       assert %{agent_slug: ["can't be blank"]} = errors_on(changeset)
     end
 
     test "rejects missing year_month" do
-      attrs = %{agent_slug: "engineer"}
+      attrs = %{company_slug: "acme", agent_slug: "engineer"}
       changeset = Budget.changeset(%Budget{}, attrs)
       refute changeset.valid?
       assert %{year_month: ["can't be blank"]} = errors_on(changeset)
     end
 
     test "rejects negative cost_usd_cents" do
-      attrs = %{agent_slug: "eng", year_month: "2026-04", cost_usd_cents: -1}
+      attrs = %{
+        company_slug: "acme",
+        agent_slug: "eng",
+        year_month: "2026-04",
+        cost_usd_cents: -1
+      }
+
       changeset = Budget.changeset(%Budget{}, attrs)
       refute changeset.valid?
       assert %{cost_usd_cents: _} = errors_on(changeset)
     end
 
     test "rejects negative prompt_tokens" do
-      attrs = %{agent_slug: "eng", year_month: "2026-04", prompt_tokens: -1}
+      attrs = %{company_slug: "acme", agent_slug: "eng", year_month: "2026-04", prompt_tokens: -1}
       changeset = Budget.changeset(%Budget{}, attrs)
       refute changeset.valid?
       assert %{prompt_tokens: _} = errors_on(changeset)
     end
 
     test "rejects negative completion_tokens" do
-      attrs = %{agent_slug: "eng", year_month: "2026-04", completion_tokens: -1}
+      attrs = %{
+        company_slug: "acme",
+        agent_slug: "eng",
+        year_month: "2026-04",
+        completion_tokens: -1
+      }
+
       changeset = Budget.changeset(%Budget{}, attrs)
       refute changeset.valid?
       assert %{completion_tokens: _} = errors_on(changeset)
@@ -54,8 +74,9 @@ defmodule Glorbo.BudgetSchemaTest do
   end
 
   describe "unique constraint" do
-    test "rejects duplicate {agent_slug, year_month}" do
+    test "rejects duplicate {company_slug, agent_slug, year_month}" do
       attrs = %{
+        company_slug: "acme",
         agent_slug: "engineer",
         year_month: "2026-04",
         prompt_tokens: 100,
@@ -73,6 +94,7 @@ defmodule Glorbo.BudgetSchemaTest do
 
     test "raises ConstraintError without changeset unique_constraint" do
       attrs = %{
+        company_slug: "acme",
         agent_slug: "engineer2",
         year_month: "2026-04",
         prompt_tokens: 0,
@@ -84,7 +106,11 @@ defmodule Glorbo.BudgetSchemaTest do
 
       # Without the changeset safety net, the raw DB constraint raises
       assert_raise Ecto.ConstraintError, fn ->
-        Repo.insert!(%Budget{agent_slug: "engineer2", year_month: "2026-04"})
+        Repo.insert!(%Budget{
+          company_slug: "acme",
+          agent_slug: "engineer2",
+          year_month: "2026-04"
+        })
       end
     end
   end

@@ -158,7 +158,7 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **68 open** ·
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **66 open** ·
 48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
@@ -174,26 +174,23 @@ validation, agent budget block enforcement, backup temp+rename
 0600 flow); post-wave-7 follow-up fixes on 2026-04-23 closed 6 more
 mediums (proxy acceptor mailbox DoS, console cookie argv exposure,
 stdout streamer buffer cap, search title-cache cap, archive list
-metadata-only refresh, stuck sentinel row validation); wave 5 also
-discovered 6 more mediums were
+metadata-only refresh, stuck sentinel row validation); post-v0.4
+budget-scoping fixes on 2026-04-23 closed 1 medium
+(cross-company budget/company-cap bleed); wave 5 also discovered 6 more mediums were
 already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 5 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 3 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
-### Medium (constrained exploit — local access or misconfig) — 5
+### Medium (constrained exploit — local access or misconfig) — 3
 
 - **Unbounded MCP sessions/subscriptions allow resource exhaustion DoS** — The commit introduces per-session GenServers and resource subscriptions for MCP. `initialize` now calls `Session.start_session/1` to spawn a new process for every request, but there is no cap, TTL, or cleanup unless the client sends DELETE. Additionally,…
   *Paths:* `lib/glorbo_web/mcp/plug.ex, lib/glorbo_web/mcp/session.ex`
-- **Company cap sums global agent slugs, enabling cross-company DoS** — The new CompanyCap module computes company usage by listing agent directory names and summing Budget rows where agent_slug is in that list. The budgets table is keyed only by agent_slug and year_month, with no company field. If two companies share an agent…
-  *Paths:* `lib/glorbo/budget/company_cap.ex, lib/glorbo/budget.ex`
 - **Auto-mounting CLI binary dirs leaks host paths into sandbox** — `cli_binary_binds/1` now auto-detects the provider’s resolved binary path and ro-binds both the symlink’s parent directory and the symlink target’s parent into the sandbox at the same absolute paths. Because `resolved_path` comes from PATH or a user-defined…
   *Paths:* `lib/glorbo/agent/dispatch.ex`
-- **Approvals.Gate activation allows self‑approval of tasks** — The commit wires Glorbo.Approvals.Gate into the per‑company supervision tree, making the approval flow live. Gate subscribes to project task file events and resolves approvals whenever it sees a task status set to "approved" or "denied". Because there is no…
-  *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/approvals/gate.ex, lib/glorbo/security/acl_mapper.ex`
 - **CI workflow uses unpinned GitHub Action tags** — The added workflow uses multiple `uses: ...@vX` references to third‑party actions without pinning them to commit SHAs. GitHub Action tags are mutable; if any upstream action is compromised or retagged, the workflow will execute attacker‑controlled code. This…
   *Paths:* `github/workflows/ci.yml`
 

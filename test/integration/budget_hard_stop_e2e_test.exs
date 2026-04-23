@@ -44,6 +44,7 @@ defmodule Glorbo.Integration.BudgetHardStopE2ETest do
       # Seed: cap = $1 (100 cents), used = $2 (200 cents) → over cap
       :ok =
         Ledger.record!(%{
+          company_slug: @company,
           agent_slug: "engineer",
           year_month: Ledger.month_bucket(DateTime.utc_now()),
           prompt_tokens: 0,

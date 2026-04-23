@@ -8,17 +8,19 @@ defmodule Glorbo.Budget.Ledger do
       into integer USD cents via the `config/llm_rates.exs` rate table.
       Missing rates log a warning and return 0 (D-30 user-accepted tradeoff —
       undercounting is preferred to crashing dispatch).
-    * `record!/1` — atomic upsert of a `{agent_slug, year_month}` ledger row
-      via Ecto `on_conflict: [inc: [...]]` — the delta is added to the
-      existing row under SQL-level atomicity, guaranteeing that concurrent
-      writers do not lose updates (RESEARCH Pitfall 2, T-03-08 mitigation).
+    * `record!/1` — atomic upsert of a
+      `{company_slug, agent_slug, year_month}` ledger row via Ecto
+      `on_conflict: [inc: [...]]` — the delta is added to the existing row
+      under SQL-level atomicity, guaranteeing that concurrent writers do
+      not lose updates (RESEARCH Pitfall 2, T-03-08 mitigation).
     * `month_bucket/1` — `"YYYY-MM"` UTC bucket from a `DateTime` or `Date`.
     * `fetch/2` — plain `Repo.get_by` convenience wrapper.
 
   **Why pure (not GenServer):** `record!/1` is stateless; all state lives in
   the SQLite row with DB-level atomicity via the composite unique index on
-  `(agent_slug, year_month)` shipped in Plan 03-01's migration. A GenServer
-  would serialise writes (bottleneck) without adding safety.
+  `(company_slug, agent_slug, year_month)` shipped in the budget-scoping
+  migration. A GenServer would serialise writes (bottleneck) without
+  adding safety.
 
   **Why integer cents:** Plan 03-01 locked `cost_usd_cents :: non_neg_integer()`;
   `SUM` aggregation must be float-drift-free.
@@ -31,6 +33,7 @@ defmodule Glorbo.Budget.Ledger do
   @type provider :: String.t()
   @type model :: String.t()
   @type usage_record :: %{
+          required(:company_slug) => String.t(),
           required(:agent_slug) => String.t(),
           required(:year_month) => String.t(),
           required(:prompt_tokens) => non_neg_integer(),
@@ -110,7 +113,8 @@ defmodule Glorbo.Budget.Ledger do
 
   Semantics: the `prompt_tokens`, `completion_tokens`, and `cost_usd_cents`
   fields in `record` are treated as DELTAS. On first write for a
-  `{agent_slug, year_month}` pair a row is inserted with those values. On
+  `{company_slug, agent_slug, year_month}` pair a row is inserted with
+  those values. On
   subsequent writes the existing row's columns are atomically incremented by
   the deltas via `on_conflict: [inc: [...]]` — the increment happens at the
   SQL layer under row-level locking, so concurrent writers never lose
@@ -136,14 +140,16 @@ defmodule Glorbo.Budget.Ledger do
   """
   @spec record(usage_record()) :: {:ok, Budget.t()} | {:error, Ecto.Changeset.t()}
   def record(%{
+        company_slug: company_slug,
         agent_slug: agent_slug,
         year_month: year_month,
         prompt_tokens: prompt_tokens,
         completion_tokens: completion_tokens,
         cost_usd_cents: cost_usd_cents
       })
-      when is_binary(agent_slug) and is_binary(year_month) do
+      when is_binary(company_slug) and is_binary(agent_slug) and is_binary(year_month) do
     attrs = %{
+      company_slug: company_slug,
       agent_slug: agent_slug,
       year_month: year_month,
       prompt_tokens: prompt_tokens,
@@ -163,7 +169,7 @@ defmodule Glorbo.Budget.Ledger do
              cost_usd_cents: cost_usd_cents
            ]
          ],
-         conflict_target: [:agent_slug, :year_month]
+         conflict_target: [:company_slug, :agent_slug, :year_month]
        )}
     else
       {:error, changeset}
@@ -175,43 +181,76 @@ defmodule Glorbo.Budget.Ledger do
   # ---------------------------------------------------------------------------
 
   @doc """
-  Fetch the ledger row for `{agent_slug, year_month}` or `nil`.
+  Fetch the ledger row for `{company_slug, agent_slug, year_month}` or `nil`.
   """
-  @spec fetch(String.t(), String.t()) :: Budget.t() | nil
-  def fetch(agent_slug, year_month) when is_binary(agent_slug) and is_binary(year_month) do
-    Repo.get_by(Budget, agent_slug: agent_slug, year_month: year_month)
+  @spec fetch(String.t(), String.t(), String.t()) :: Budget.t() | nil
+  def fetch(company_slug, agent_slug, year_month)
+      when is_binary(company_slug) and is_binary(agent_slug) and is_binary(year_month) do
+    Repo.get_by(Budget,
+      company_slug: company_slug,
+      agent_slug: agent_slug,
+      year_month: year_month
+    )
   end
 
   @doc """
-  All ledger rows for `agent_slug`, newest month first. Returns
+  All ledger rows for `{company_slug, agent_slug}`, newest month first. Returns
   `[]` on DB error so callers can stay tolerant during boot /
   test environments without a live repo.
   """
-  @spec history(String.t()) :: [Budget.t()]
-  def history(agent_slug) when is_binary(agent_slug) do
+  @spec history(String.t(), String.t()) :: [Budget.t()]
+  def history(company_slug, agent_slug)
+      when is_binary(company_slug) and is_binary(agent_slug) do
     import Ecto.Query
 
     Budget
-    |> where([b], b.agent_slug == ^agent_slug)
-    |> order_by([b], desc: b.year_month)
+    |> where([b], b.company_slug == ^company_slug and b.agent_slug == ^agent_slug)
+    |> order_by([b], desc: b.year_month, asc: b.company_slug)
     |> Repo.all()
   rescue
     _ -> []
   end
 
   @doc """
-  All ledger rows matching any of `agent_slugs`, grouped by month
-  (most-recent first) then by agent alphabetically.
+  All ledger rows matching any of the given `{company, agent}` refs,
+  grouped by month (most-recent first) then by company + agent
+  alphabetically.
   """
-  @spec history_for_agents([String.t()]) :: [Budget.t()]
-  def history_for_agents(agent_slugs) when is_list(agent_slugs) do
+  @spec history_for_agents([map() | {String.t(), String.t()}]) :: [Budget.t()]
+  def history_for_agents(agent_refs) when is_list(agent_refs) do
     import Ecto.Query
 
-    Budget
-    |> where([b], b.agent_slug in ^agent_slugs)
-    |> order_by([b], desc: b.year_month, asc: b.agent_slug)
-    |> Repo.all()
+    pairs = normalise_agent_refs(agent_refs)
+
+    if pairs == [] do
+      []
+    else
+      companies = Enum.map(pairs, &elem(&1, 0)) |> Enum.uniq()
+      pairs = MapSet.new(pairs)
+
+      Budget
+      |> where([b], b.company_slug in ^companies)
+      |> order_by([b], desc: b.year_month, asc: b.company_slug, asc: b.agent_slug)
+      |> Repo.all()
+      |> Enum.filter(&MapSet.member?(pairs, {&1.company_slug, &1.agent_slug}))
+    end
   rescue
     _ -> []
+  end
+
+  defp normalise_agent_refs(agent_refs) do
+    agent_refs
+    |> Enum.reduce(MapSet.new(), fn
+      %{company: company, slug: slug}, acc
+      when is_binary(company) and is_binary(slug) ->
+        MapSet.put(acc, {company, slug})
+
+      {company, slug}, acc when is_binary(company) and is_binary(slug) ->
+        MapSet.put(acc, {company, slug})
+
+      _other, acc ->
+        acc
+    end)
+    |> MapSet.to_list()
   end
 end

@@ -1500,7 +1500,7 @@ defmodule GlorboWeb.AgentLive do
         _ -> nil
       end
 
-    used = load_used_usd(ag)
+    used = load_used_usd(co, ag)
     cap = spec_cap(spec)
     {pct, cls, tracked?} = classify_budget(used, cap)
 
@@ -1931,8 +1931,8 @@ defmodule GlorboWeb.AgentLive do
   defp provider_cmd("codex"), do: "codex"
   defp provider_cmd(other), do: other
 
-  defp load_used_usd(agent_slug) do
-    case Glorbo.Budget.Ledger.fetch(agent_slug, current_year_month()) do
+  defp load_used_usd(company_slug, agent_slug) do
+    case Glorbo.Budget.Ledger.fetch(company_slug, agent_slug, current_year_month()) do
       %{cost_usd_cents: c} -> c / 100.0
       _ -> 0.0
     end

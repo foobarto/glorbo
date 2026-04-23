@@ -11,6 +11,7 @@ defmodule Glorbo.Budget.CompanyCapTest do
     co = "acme"
     File.mkdir_p!(Path.join([base, "companies", co, "agents", "eng"]))
     File.mkdir_p!(Path.join([base, "companies", co, "agents", "sales"]))
+    File.mkdir_p!(Path.join([base, "companies", "beta", "agents", "eng"]))
 
     # We run these tests inside the sandbox so we can insert Budget rows.
     Ecto.Adapters.SQL.Sandbox.checkout(Repo)
@@ -23,8 +24,9 @@ defmodule Glorbo.Budget.CompanyCapTest do
     {:ok, base: base, company: co}
   end
 
-  defp seed_ledger(slug, cents) do
+  defp seed_ledger(company, slug, cents) do
     Repo.insert!(%Budget{
+      company_slug: company,
       agent_slug: slug,
       year_month: Ledger.month_bucket(DateTime.utc_now()),
       cost_usd_cents: cents
@@ -37,7 +39,7 @@ defmodule Glorbo.Budget.CompanyCapTest do
 
   test "returns :ok when no cap is declared", %{base: base, company: co} do
     write_company_md(base, co, "---\nslug: acme\n---\n")
-    seed_ledger("eng", 10_000)
+    seed_ledger(co, "eng", 10_000)
 
     assert :ok = CompanyCap.check(co, base: base)
   end
@@ -51,8 +53,8 @@ defmodule Glorbo.Budget.CompanyCapTest do
     ---
     """)
 
-    seed_ledger("eng", 1_000)
-    seed_ledger("sales", 2_000)
+    seed_ledger(co, "eng", 1_000)
+    seed_ledger(co, "sales", 2_000)
 
     assert :ok = CompanyCap.check(co, base: base)
   end
@@ -66,8 +68,8 @@ defmodule Glorbo.Budget.CompanyCapTest do
     ---
     """)
 
-    seed_ledger("eng", 4_000)
-    seed_ledger("sales", 5_000)
+    seed_ledger(co, "eng", 4_000)
+    seed_ledger(co, "sales", 5_000)
 
     assert {:alert, 9_000, 10_000} = CompanyCap.check(co, base: base)
   end
@@ -81,8 +83,8 @@ defmodule Glorbo.Budget.CompanyCapTest do
     ---
     """)
 
-    seed_ledger("eng", 6_000)
-    seed_ledger("sales", 5_000)
+    seed_ledger(co, "eng", 6_000)
+    seed_ledger(co, "sales", 5_000)
 
     assert {:stop, 11_000, 10_000} = CompanyCap.check(co, base: base)
   end
@@ -94,8 +96,8 @@ defmodule Glorbo.Budget.CompanyCapTest do
     ---
     """)
 
-    seed_ledger("ghost-agent", 99_999)
-    seed_ledger("eng", 100)
+    seed_ledger("beta", "ghost-agent", 99_999)
+    seed_ledger(co, "eng", 100)
 
     assert :ok = CompanyCap.check(co, base: base)
   end
@@ -113,10 +115,25 @@ defmodule Glorbo.Budget.CompanyCapTest do
 
   test "used_this_month sums only this company's agents",
        %{base: base, company: co} do
-    seed_ledger("eng", 1_500)
-    seed_ledger("sales", 2_500)
-    seed_ledger("outsider", 9_000)
+    seed_ledger(co, "eng", 1_500)
+    seed_ledger(co, "sales", 2_500)
+    seed_ledger("beta", "outsider", 9_000)
 
     assert 4_000 == CompanyCap.used_this_month(base, co)
+  end
+
+  test "same agent slug in another company does not count toward this cap",
+       %{base: base, company: co} do
+    write_company_md(base, co, """
+    ---
+    budget_usd_cents_month: 5000
+    ---
+    """)
+
+    seed_ledger(co, "eng", 100)
+    seed_ledger("beta", "eng", 9_000)
+
+    assert :ok = CompanyCap.check(co, base: base)
+    assert 100 == CompanyCap.used_this_month(base, co)
   end
 end

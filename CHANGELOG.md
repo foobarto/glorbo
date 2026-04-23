@@ -10,6 +10,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- Budget ledger rows are now scoped by `{company, agent, year_month}`
+  instead of raw agent slug alone. Same-slug agents in different
+  companies no longer share per-agent budget state, inflate company
+  caps, or bleed spend into the budget UI.
+
 ## [0.4.0] — 2026-04-23
 
 ### Added — GEP-32 native agent harness (phase 2b)

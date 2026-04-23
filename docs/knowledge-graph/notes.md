@@ -463,6 +463,26 @@ frontmatter. The load-time fix is to require a matching agent slug, a
 valid `projects/<slug>/tasks/<id>.md` path, and an existing regular
 task file before the row is shown to the director at all.
 
+### ApprovalGate tests must mark Director writes too
+
+The `Approvals.Gate` self-approval defense is already live: a task flip
+to `approved` or `denied` is only treated as legitimate when
+`GlorboWeb.Actions.set_approval/4` (or a test helper) calls
+`Gate.mark_director_decision/2` before the watcher event lands. Any
+integration test that edits the task file without placing that mark is
+not simulating a Director approval; it is exercising the
+`approval.self_approval_rejected` path.
+
+### Budget scoping belongs at the ledger boundary
+
+The company-cap bleed was not just a `CompanyCap` bug. `BudgetTracker`,
+`CompanyCap`, `AgentLive`, `CompanyLive`, `OverviewLive`, and
+`CostsLive` all read the same SQLite `budgets` rows, so fixing only the
+cap query would leave same-slug cross-company bleed in the per-agent
+stop/alert path and the spend widgets. The durable fix is to scope the
+ledger row itself by `{company_slug, agent_slug, year_month}` and make
+every reader go through that boundary.
+
 ---
 
 ## What belongs in this file vs elsewhere

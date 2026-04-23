@@ -319,7 +319,7 @@ defmodule GlorboWeb.OverviewLive do
       name: company_name(path, slug),
       agent_count: agent_count(path),
       in_progress_count: in_progress_count(base, slug, path),
-      spend_usd: spend_usd(path),
+      spend_usd: spend_usd(slug, path),
       alert_count: alert_count(path),
       goals: goals_summary(base, slug, path),
       health: :healthy
@@ -487,7 +487,7 @@ defmodule GlorboWeb.OverviewLive do
   # Sum each agent's current-month ledger row into USD. Tolerant of
   # missing SQLite / missing row / crashed ledger — mirrors
   # AgentLive.load_used_usd/1 (agent_live.ex:222-231).
-  defp spend_usd(company_path) do
+  defp spend_usd(company_slug, company_path) do
     agents_dir = Path.join(company_path, "agents")
     ym = current_year_month()
 
@@ -495,15 +495,15 @@ defmodule GlorboWeb.OverviewLive do
       {:ok, slugs} ->
         slugs
         |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
-        |> Enum.reduce(0.0, fn slug, acc -> acc + agent_spend_usd(slug, ym) end)
+        |> Enum.reduce(0.0, fn slug, acc -> acc + agent_spend_usd(company_slug, slug, ym) end)
 
       _ ->
         0.0
     end
   end
 
-  defp agent_spend_usd(agent_slug, year_month) do
-    case Glorbo.Budget.Ledger.fetch(agent_slug, year_month) do
+  defp agent_spend_usd(company_slug, agent_slug, year_month) do
+    case Glorbo.Budget.Ledger.fetch(company_slug, agent_slug, year_month) do
       %{cost_usd_cents: c} when is_integer(c) -> c / 100.0
       _ -> 0.0
     end

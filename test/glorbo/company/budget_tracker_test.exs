@@ -60,12 +60,13 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   end
 
   test "Test 3: check_budget returns :ok below alert threshold" do
-    {name, _pid, _base, _company} = start_tracker!(%{"alice" => 10_000})
+    {name, _pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 
     # Record 7000 cents usage (70% of 10000 — below 80% alert)
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -86,6 +87,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -114,6 +116,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -144,11 +147,12 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   # ---------------------------------------------------------------------------
 
   test "Test 6: check_budget returns {:stop, ...} at 100% + emits budget.hard_stop audit every call" do
-    {name, _pid, _base, _company} = start_tracker!(%{"alice" => 10_000})
+    {name, _pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -171,7 +175,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   # ---------------------------------------------------------------------------
 
   test "Test 7: record/2 calls Ledger.record! with computed cost_usd_cents" do
-    {name, _pid, _base, _company} = start_tracker!(%{"alice" => 10_000})
+    {name, _pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 
     BudgetTracker.record(name, %{
       agent_slug: "alice",
@@ -186,7 +190,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     BudgetTracker.reload_config(name)
 
     ym = Ledger.month_bucket(DateTime.utc_now())
-    row = Repo.get_by(Budget, agent_slug: "alice", year_month: ym)
+    row = Repo.get_by(Budget, company_slug: company, agent_slug: "alice", year_month: ym)
     assert row
     assert row.prompt_tokens == 1_000_000
     assert row.cost_usd_cents == 1_500
@@ -221,7 +225,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   end
 
   test "Test 9: record/2 with zero tokens still creates/updates a row" do
-    {name, _pid, _base, _company} = start_tracker!(%{"alice" => 10_000})
+    {name, _pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 
     BudgetTracker.record(name, %{
       agent_slug: "alice",
@@ -235,13 +239,13 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     BudgetTracker.reload_config(name)
 
     ym = Ledger.month_bucket(DateTime.utc_now())
-    row = Repo.get_by(Budget, agent_slug: "alice", year_month: ym)
+    row = Repo.get_by(Budget, company_slug: company, agent_slug: "alice", year_month: ym)
     assert row
     assert row.cost_usd_cents == 0
   end
 
   test "Test 12: concurrent record/2 from 20 Tasks produces summed totals" do
-    {name, pid, _base, _company} = start_tracker!(%{"alice" => 10_000})
+    {name, pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 
     Sandbox.mode(Glorbo.Repo, {:shared, self()})
     # Re-allow the tracker's process now that we are shared.
@@ -267,7 +271,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     BudgetTracker.reload_config(name)
 
     ym = Ledger.month_bucket(DateTime.utc_now())
-    row = Repo.get_by(Budget, agent_slug: "alice", year_month: ym)
+    row = Repo.get_by(Budget, company_slug: company, agent_slug: "alice", year_month: ym)
     assert row
     assert row.prompt_tokens == 20 * 100
     assert row.completion_tokens == 20 * 50
@@ -315,6 +319,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
 
     # Start at 9_500 (under old cap 10_000 — 95% but over 80% alert threshold)
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -371,6 +376,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -398,12 +404,13 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   # ---------------------------------------------------------------------------
 
   test "Test 13: no cap (budgets_fun returns nil) -> :ok (unlimited)" do
-    {name, _pid, _base, _company} = start_tracker!(%{})
+    {name, _pid, _base, company} = start_tracker!(%{})
 
     # Record way over any plausible cap
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "ghost",
       year_month: ym,
       prompt_tokens: 0,
@@ -450,6 +457,7 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     ym = Ledger.month_bucket(DateTime.utc_now())
 
     Ledger.record!(%{
+      company_slug: company,
       agent_slug: "alice",
       year_month: ym,
       prompt_tokens: 0,
@@ -458,5 +466,30 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     })
 
     assert {:alert, 800, 1_000} = BudgetTracker.check_budget(name, "alice")
+  end
+
+  test "same agent slug in another company does not bleed into this tracker" do
+    {name, _pid, _base, company} = start_tracker!(%{"alice" => 1_000})
+    ym = Ledger.month_bucket(DateTime.utc_now())
+
+    Ledger.record!(%{
+      company_slug: "beta",
+      agent_slug: "alice",
+      year_month: ym,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      cost_usd_cents: 9_000
+    })
+
+    Ledger.record!(%{
+      company_slug: company,
+      agent_slug: "alice",
+      year_month: ym,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      cost_usd_cents: 100
+    })
+
+    assert :ok = BudgetTracker.check_budget(name, "alice")
   end
 end

@@ -79,6 +79,7 @@ defmodule Glorbo.Budget.LedgerTest do
   describe "record!/1" do
     test "Test 10: inserts a new row when none exists" do
       usage = %{
+        company_slug: "acme",
         agent_slug: "alice",
         provider: "claude-code",
         model: "claude-opus-4-6",
@@ -90,7 +91,7 @@ defmodule Glorbo.Budget.LedgerTest do
 
       Ledger.record!(usage)
 
-      row = Repo.get_by(Budget, agent_slug: "alice", year_month: "2026-04")
+      row = Repo.get_by(Budget, company_slug: "acme", agent_slug: "alice", year_month: "2026-04")
       assert row
       assert row.prompt_tokens == 100
       assert row.completion_tokens == 50
@@ -99,6 +100,7 @@ defmodule Glorbo.Budget.LedgerTest do
 
     test "Test 11: two calls for same {slug, ym} produce ONE row with summed totals" do
       base = %{
+        company_slug: "acme",
         agent_slug: "bob",
         provider: "claude-code",
         model: "claude-opus-4-6",
@@ -115,15 +117,45 @@ defmodule Glorbo.Budget.LedgerTest do
 
       count =
         Budget
-        |> where([b], b.agent_slug == "bob")
+        |> where([b], b.company_slug == "acme" and b.agent_slug == "bob")
         |> Repo.aggregate(:count)
 
       assert count == 1
 
-      row = Repo.get_by(Budget, agent_slug: "bob", year_month: "2026-04")
+      row = Repo.get_by(Budget, company_slug: "acme", agent_slug: "bob", year_month: "2026-04")
       assert row.prompt_tokens == 300
       assert row.completion_tokens == 350
       assert row.cost_usd_cents == 35
+    end
+
+    test "same agent slug in two companies stays isolated" do
+      base = %{
+        agent_slug: "shared",
+        provider: "claude-code",
+        model: "claude-opus-4-6",
+        year_month: "2026-04"
+      }
+
+      Ledger.record!(
+        Map.merge(base, %{
+          company_slug: "acme",
+          prompt_tokens: 100,
+          completion_tokens: 0,
+          cost_usd_cents: 10
+        })
+      )
+
+      Ledger.record!(
+        Map.merge(base, %{
+          company_slug: "beta",
+          prompt_tokens: 200,
+          completion_tokens: 0,
+          cost_usd_cents: 25
+        })
+      )
+
+      assert %Budget{cost_usd_cents: 10} = Ledger.fetch("acme", "shared", "2026-04")
+      assert %Budget{cost_usd_cents: 25} = Ledger.fetch("beta", "shared", "2026-04")
     end
 
     test "Test 12: concurrent writes from 10 Tasks sum correctly (atomic upsert)" do
@@ -131,6 +163,7 @@ defmodule Glorbo.Budget.LedgerTest do
       Sandbox.mode(Glorbo.Repo, {:shared, self()})
 
       base = %{
+        company_slug: "acme",
         agent_slug: "carol",
         provider: "claude-code",
         model: "claude-opus-4-6",
@@ -150,12 +183,12 @@ defmodule Glorbo.Budget.LedgerTest do
 
       count =
         Budget
-        |> where([b], b.agent_slug == "carol")
+        |> where([b], b.company_slug == "acme" and b.agent_slug == "carol")
         |> Repo.aggregate(:count)
 
       assert count == 1
 
-      row = Repo.get_by(Budget, agent_slug: "carol", year_month: "2026-04")
+      row = Repo.get_by(Budget, company_slug: "acme", agent_slug: "carol", year_month: "2026-04")
       assert row.prompt_tokens == 10_000
       assert row.completion_tokens == 10_000
       assert row.cost_usd_cents == 10
@@ -163,6 +196,7 @@ defmodule Glorbo.Budget.LedgerTest do
 
     test "Test 13: fetch/2 returns row or nil" do
       usage = %{
+        company_slug: "acme",
         agent_slug: "dave",
         provider: "claude-code",
         model: "claude-opus-4-6",
@@ -174,12 +208,15 @@ defmodule Glorbo.Budget.LedgerTest do
 
       Ledger.record!(usage)
 
-      assert %Budget{agent_slug: "dave"} = Ledger.fetch("dave", "2026-04")
-      assert Ledger.fetch("dave", "2025-01") == nil
+      assert %Budget{company_slug: "acme", agent_slug: "dave"} =
+               Ledger.fetch("acme", "dave", "2026-04")
+
+      assert Ledger.fetch("acme", "dave", "2025-01") == nil
     end
 
     test "Test 14: negative prompt_tokens raises" do
       usage = %{
+        company_slug: "acme",
         agent_slug: "eve",
         provider: "claude-code",
         model: "claude-opus-4-6",

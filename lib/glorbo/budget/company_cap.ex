@@ -10,10 +10,9 @@ defmodule Glorbo.Budget.CompanyCap do
   `budget_usd_cents_month:`. Missing / nil → no cap (unlimited,
   same default as per-agent).
 
-  Sum comparison is over all rows in `Glorbo.Budget` whose
-  `agent_slug` appears in the company's agents directory for the
-  current `year_month`. This is O(agents + rows-this-month), so
-  cheap enough to run on every dispatch pre-check without caching.
+  Sum comparison is over all rows in `Glorbo.Budget` for that
+  `{company_slug, year_month}` bucket, so one company's agents can never
+  poison another company's cap even when they reuse the same slug.
 
   Usage:
 
@@ -58,10 +57,9 @@ defmodule Glorbo.Budget.CompanyCap do
   cap logic — useful for UI display.
   """
   @spec used_this_month(Path.t(), String.t()) :: non_neg_integer()
-  def used_this_month(base, company) do
-    slugs = list_agent_slugs(base, company)
+  def used_this_month(_base, company) do
     month = Ledger.month_bucket(DateTime.utc_now())
-    sum_rows(slugs, month)
+    sum_company_rows(company, month)
   end
 
   @doc """
@@ -94,24 +92,12 @@ defmodule Glorbo.Budget.CompanyCap do
     end
   end
 
-  defp list_agent_slugs(base, company) do
-    dir = Path.join([base, "companies", company, "agents"])
-
-    case File.ls(dir) do
-      {:ok, entries} ->
-        entries
-        |> Enum.filter(&File.dir?(Path.join(dir, &1)))
-
-      _ ->
-        []
-    end
-  end
-
-  defp sum_rows(slugs, month) when is_list(slugs) do
+  defp sum_company_rows(company, month)
+       when is_binary(company) and is_binary(month) do
     import Ecto.Query
 
     Budget
-    |> where([b], b.year_month == ^month and b.agent_slug in ^slugs)
+    |> where([b], b.company_slug == ^company and b.year_month == ^month)
     |> select([b], sum(b.cost_usd_cents))
     |> Repo.one()
     |> case do

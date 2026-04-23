@@ -23,6 +23,7 @@ defmodule GlorboWeb.CostsLiveTest do
     prev_month = "#{prev_y}-" <> String.pad_leading("#{prev_m}", 2, "0")
 
     Repo.insert!(%Budget{
+      company_slug: "acme",
       agent_slug: "engineer",
       year_month: this_month,
       cost_usd_cents: 543,
@@ -31,6 +32,7 @@ defmodule GlorboWeb.CostsLiveTest do
     })
 
     Repo.insert!(%Budget{
+      company_slug: "acme",
       agent_slug: "engineer",
       year_month: prev_month,
       cost_usd_cents: 221,

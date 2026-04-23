@@ -181,7 +181,7 @@ defmodule Glorbo.Company.BudgetTracker do
   def handle_call({:check_budget, agent_slug}, _from, state) do
     {cap_cents, state} = lookup_cap(agent_slug, state)
     year_month = Ledger.month_bucket(DateTime.utc_now())
-    used_cents = fetch_used(agent_slug, year_month)
+    used_cents = fetch_used(state.company, agent_slug, year_month)
 
     cond do
       is_nil(cap_cents) ->
@@ -231,6 +231,7 @@ defmodule Glorbo.Company.BudgetTracker do
 
     _ =
       Ledger.record!(%{
+        company_slug: state.company,
         agent_slug: usage.agent_slug,
         year_month: month,
         prompt_tokens: usage.prompt_tokens,
@@ -271,8 +272,8 @@ defmodule Glorbo.Company.BudgetTracker do
     end
   end
 
-  defp fetch_used(agent_slug, year_month) do
-    case Ledger.fetch(agent_slug, year_month) do
+  defp fetch_used(company_slug, agent_slug, year_month) do
+    case Ledger.fetch(company_slug, agent_slug, year_month) do
       nil -> 0
       row -> row.cost_usd_cents
     end

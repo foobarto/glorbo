@@ -1347,13 +1347,13 @@ defmodule GlorboWeb.CompanyLive do
     end
   end
 
-  defp build_agent_row(agent_slug, _base, _company_slug, agents_dir, audit_map, year_month) do
+  defp build_agent_row(agent_slug, _base, company_slug, agents_dir, audit_map, year_month) do
     agent_path = Path.join(agents_dir, agent_slug)
     agent_md = Glorbo.Agent.FileLayout.agent_md(agent_path)
 
     meta = parse_agent_md(agent_md)
 
-    used = agent_used_usd(agent_slug, year_month)
+    used = agent_used_usd(company_slug, agent_slug, year_month)
     cap = (meta[:budget_monthly_usd] || 0.0) * 1.0
 
     {pct, cls} = budget_classify(used, cap)
@@ -1399,8 +1399,8 @@ defmodule GlorboWeb.CompanyLive do
   defp budget_cents_to_dollars(%{"monthly_usd" => n}) when is_number(n), do: n * 1.0
   defp budget_cents_to_dollars(_), do: 0.0
 
-  defp agent_used_usd(agent_slug, year_month) do
-    case Ledger.fetch(agent_slug, year_month) do
+  defp agent_used_usd(company_slug, agent_slug, year_month) do
+    case Ledger.fetch(company_slug, agent_slug, year_month) do
       %{cost_usd_cents: c} when is_integer(c) -> c / 100.0
       _ -> 0.0
     end
