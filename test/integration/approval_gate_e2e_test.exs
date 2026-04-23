@@ -111,6 +111,11 @@ defmodule Glorbo.Integration.ApprovalGateE2ETest do
           requires_approval: "director"
         )
 
+      # Threatmodel H4 / director-mark invariant: Gate only treats the
+      # status flip as Director-driven when the action path marks it
+      # before the watcher event lands.
+      :ok = Gate.mark_director_decision(gate_pid, "projects/foo/tasks/t-01.md")
+
       # Simulate Watcher broadcast on `company:<co>:projects` (Plan 03-05)
       :ok =
         Phoenix.PubSub.broadcast(
