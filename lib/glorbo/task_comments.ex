@@ -131,16 +131,14 @@ defmodule Glorbo.TaskComments do
     end
   end
 
-  # Symlink-swap defense (threatmodel T1). An attacker-controlled agent
-  # must not be able to pre-create `<task-id>.comments.md` as a symlink
-  # to `~/.glorbo/config.md` and have the host append to the target.
-  # Missing path is fine — the first write creates the file.
+  # Symlink-swap defense — delegate to the canonical AgentWritableFile
+  # seam. `<task-id>.comments.md` lives in the sandbox-writable tree,
+  # so the host-side append MUST lstat first.
   defp ensure_regular_file(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 

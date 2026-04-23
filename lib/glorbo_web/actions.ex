@@ -580,16 +580,14 @@ defmodule GlorboWeb.Actions do
     end
   end
 
-  # M03 host-write guard: accept a regular file or a non-existent path
-  # (first write), refuse anything else (symlinks, FIFOs, directories).
-  # Returns `{:error, {:path_not_regular, type}}` on refusal so callers
-  # can tag the error with their own shape.
+  # M03 host-write guard — delegate to the canonical AgentWritableFile
+  # seam. Local wrapper preserves the old `{:path_not_regular, _}` /
+  # `{:path_stat_failed, _}` error shape callers match on.
   defp ensure_regular_file_for_write(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{type: type}} -> {:error, {:path_not_regular, type}}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, {:path_stat_failed, reason}}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, type}} -> {:error, {:path_not_regular, type}}
+      {:error, {:stat_failed, reason}} -> {:error, {:path_stat_failed, reason}}
     end
   end
 
@@ -680,14 +678,14 @@ defmodule GlorboWeb.Actions do
 
   defp validate_task_path(_), do: {:error, :invalid_task_path}
 
-  # Defense against symlink-swap (T-04-01). If the file exists it must be
-  # a regular file; :enoent is allowed (first write creates the file).
+  # Defense against symlink-swap (T-04-01). Delegates to the canonical
+  # AgentWritableFile seam and flattens the error shape to what the
+  # post_message / post_task_comment callers already match on.
   defp ensure_regular_file(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 

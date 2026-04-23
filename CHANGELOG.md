@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — `Glorbo.Filesystem.AgentWritableFile` seam
+
+- **[MED]** New `Glorbo.Filesystem.AgentWritableFile` module is the
+  canonical host-side lstat-before-touch helper. 7 modules
+  (`Router`, `Actions`, `BrainDump`, `TaskComments`,
+  `TaskDefinition`, `KanbanLive`) had local private copies with
+  subtly different return shapes and names
+  (`ensure_regular_file`, `_lstat`, `_for_write`, `_or_absent`,
+  `read_agent_writable_file`). Everyone now delegates to
+  `ensure_writable/1`, `ensure_regular/1`, or `read/1`. The
+  extraction is the first step toward GEP-35's Router-split + host-
+  write policy seam. Error shapes preserved at each caller site to
+  avoid touching the case matches downstream.
+
 ### Changed — consolidated YAML scalar escaping + error-tuple hygiene
 
 - **[MED]** `Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1` is

@@ -1397,11 +1397,10 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   defp ensure_regular_file_or_absent(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 
@@ -1543,10 +1542,12 @@ defmodule GlorboWeb.KanbanLive do
 
   defp resolve_task_path(_, _), do: :error
 
+  # Caller collapses the full `{:error, ...}` set to a bare `:error`
+  # sentinel, so flatten AgentWritableFile's tagged-error return here.
   defp ensure_regular_file(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :regular}} -> :ok
-      _ -> :error
+    case Glorbo.Filesystem.AgentWritableFile.ensure_regular(path) do
+      :ok -> :ok
+      {:error, _} -> :error
     end
   end
 

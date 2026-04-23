@@ -375,15 +375,12 @@ defmodule Glorbo.BrainDump do
     end
   end
 
-  # threatmodel H7: reject anything that isn't a plain file at the
-  # target path so File.write / File.rename cannot be tricked into
-  # following an agent-planted symlink.
+  # threatmodel H7: delegate to the canonical AgentWritableFile seam.
   defp ensure_regular_file(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 

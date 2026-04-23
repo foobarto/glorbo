@@ -293,11 +293,11 @@ defmodule Glorbo.TaskDefinition do
   # a Director action then calls `TaskDefinition.write`, File.read +
   # atomic_write follow the symlink and read/overwrite the target.
   defp ensure_regular_file(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :regular}} -> :ok
-      {:ok, %{type: other}} -> {:error, {:not_regular_file, other}}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_regular(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, type}} -> {:error, {:not_regular_file, type}}
       {:error, :enoent} -> {:error, :enoent}
-      {:error, reason} -> {:error, reason}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 
@@ -403,11 +403,10 @@ defmodule Glorbo.TaskDefinition do
   end
 
   defp ensure_regular_file_or_absent(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :regular}} -> :ok
-      {:error, :enoent} -> :ok
-      {:ok, %{type: other}} -> {:error, {:not_regular_file, other}}
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, type}} -> {:error, {:not_regular_file, type}}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 

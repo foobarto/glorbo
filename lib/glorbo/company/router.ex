@@ -1615,28 +1615,21 @@ defmodule Glorbo.Company.Router do
     end
   end
 
-  # threatmodel M03 helper: allow a regular file or a non-existent
-  # path; refuse symlinks and special files. Callers use this to
-  # keep agent-planted symlinks from redirecting reads/writes.
+  # threatmodel M03 helpers — delegate to the canonical
+  # `Glorbo.Filesystem.AgentWritableFile` seam so every host-side
+  # read/write that crosses an agent-writable boundary goes through
+  # one lstat-before-touch policy. Local thin wrappers preserve the
+  # error shapes each caller site already matches on.
   defp ensure_regular_file_lstat(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 
-  # Read an agent-writable file after enforcing the M03 lstat guard.
-  # A bare `File.read(path)` on a symlink planted by the agent would
-  # follow into arbitrary host files; every outbox reader uses this
-  # helper instead.
   defp read_agent_writable_file(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> File.read(path)
-      {:ok, %File.Stat{type: type}} -> {:error, {:not_a_regular_file, type}}
-      {:error, reason} -> {:error, reason}
-    end
+    Glorbo.Filesystem.AgentWritableFile.read(path)
   end
 
   # Rewrite MEMORY.md: replace an existing line for this filename
