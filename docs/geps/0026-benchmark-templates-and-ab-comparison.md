@@ -19,6 +19,23 @@ history:
       `benchmarks/runs/<id>/scores.md` persistence) is queued; the stub
       message in `glorbo bench run` stays in place until the Live view
       ships.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      Phase B Director-facing slice shipped: `benchmark-run/v1` FileSpec,
+      `Glorbo.Benchmarks.{list,fetch,score}/3` read/score API,
+      `BenchmarksLive` at `/benchmarks` (aggregate table),
+      `BenchLive` at `/benchmarks/:run_id` (blind A/B panels A/B/C,
+      stable-random order seeded by run_id, unmask-on-submit, scores
+      append to `benchmarks/runs/<id>/scores.md` with markdown
+      per-event sections per D6, manifest `status:` flips to
+      `scored`). Sidebar gets a dedicated Benchmarks nav item. Still
+      queued: the `glorbo bench run <template> <task-id>
+      --providers a,b,c` dispatch orchestrator that forks shadow
+      companies and fans out the task — until it lands, run
+      directories are hand-assembled (or via external tooling), then
+      surface in the LV automatically. The UI is independently
+      useful once the runs exist.
 requires: [2, 4, 8, 10, 25]
 see-also: [16, 18, 19, 20]
 ---

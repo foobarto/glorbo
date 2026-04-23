@@ -17,6 +17,7 @@ key order, and at least one worked example.
 - [`agent-soul/v1`](./agent-soul_v1.md)
 - [`agent/v1`](./agent_v1.md)
 - [`audit-event/v1`](./audit-event_v1.md)
+- [`benchmark-run/v1`](./benchmark-run_v1.md)
 - [`braindump/v1`](./braindump_v1.md)
 - [`channel-log/v1`](./channel-log_v1.md)
 - [`company/v1`](./company_v1.md)

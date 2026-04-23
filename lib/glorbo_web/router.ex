@@ -68,6 +68,11 @@ defmodule GlorboWeb.Router do
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive
+    # GEP-26 Phase B — benchmark runs (A/B provider comparison).
+    # BenchmarksLive is the index, BenchLive is the per-run blind
+    # scoring view. Both read from ~/.glorbo/benchmarks/runs/*.
+    live "/benchmarks", BenchmarksLive
+    live "/benchmarks/:run_id", BenchLive
     # T2-D (#242) — cross-company monthly cost ledger.
     live "/costs", CostsLive
   end

@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-26 Phase B (Director-facing slice) — blind A/B scoring
+
+- `/benchmarks` lists every `~/.glorbo/benchmarks/runs/<run-id>/`
+  on disk via `Glorbo.Benchmarks.list/1`. Filterable by status,
+  click-through to per-run detail.
+- `/benchmarks/:run_id` (`BenchLive`) renders the frozen task plus
+  N output panels labelled `Panel A`, `Panel B`, … in a
+  stable-random order seeded by the `run_id` (same Director,
+  same refresh, same layout — but different runs produce
+  different orderings so the "leftmost slot = claude" bias can't
+  form). Clicking panels in best-to-worst order records a
+  ranking; submitting unmasks the labels and appends a scoring
+  section to `benchmarks/runs/<run-id>/scores.md` (markdown per
+  D6), flipping manifest `status:` to `scored`.
+- `Glorbo.FileSpec.BenchmarkRunMd` validates the manifest
+  (`kind: benchmark-run/v1` + `run_id`/`template`/`task`/
+  `providers`/`started_at`); `glorbo validate` surfaces manifest
+  drift at build time.
+- Sidebar gets a Benchmarks nav entry between Providers and
+  Costs.
+- **Still queued:** the CLI dispatch orchestrator
+  (`glorbo bench run <template> <task-id> --providers a,b,c`)
+  that forks shadow companies and fans a task out to N
+  providers. Until that lands, run directories are hand-
+  assembled or produced by external tooling; the UI picks them
+  up automatically once the manifest is on disk.
+
 ### Added — GEP-28 ProposalsLive + auto-approve-hire
 
 - New Director-facing `/companies/:co/proposals` LiveView groups

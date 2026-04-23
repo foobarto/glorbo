@@ -93,7 +93,8 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.GoalMd,
     Glorbo.FileSpec.ConfigMd,
     Glorbo.FileSpec.PathRequestMd,
-    Glorbo.FileSpec.ProposalMd
+    Glorbo.FileSpec.ProposalMd,
+    Glorbo.FileSpec.BenchmarkRunMd
   ]
 
   @doc """
