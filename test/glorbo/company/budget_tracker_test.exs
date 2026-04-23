@@ -413,4 +413,50 @@ defmodule Glorbo.Company.BudgetTrackerTest do
 
     assert :ok = BudgetTracker.check_budget(name, "ghost")
   end
+
+  test "default budgets_fun reads budget.monthly_usd from AGENT.md" do
+    base = TmpGlorboHome.setup()
+    company = "acme"
+    agent_dir = Path.join([base, "companies", company, "agents", "alice"])
+    File.mkdir_p!(Path.join([base, "companies", company, "alerts"]))
+    File.mkdir_p!(agent_dir)
+
+    File.write!(Path.join(agent_dir, "AGENT.md"), """
+    ---
+    role: Engineer
+    provider: claude-code
+    model: claude-opus-4-6
+    network: proxy
+    budget:
+      monthly_usd: 10.00
+    ---
+    """)
+
+    name = Glorbo.Test.UniqueName.gen("budget_tracker_file")
+
+    pid =
+      start_supervised!(
+        {BudgetTracker,
+         [
+           name: name,
+           company: company,
+           base: base,
+           audit_fun: capturing_audit_fun(self())
+         ]}
+      )
+
+    Sandbox.allow(Glorbo.Repo, self(), pid)
+
+    ym = Ledger.month_bucket(DateTime.utc_now())
+
+    Ledger.record!(%{
+      agent_slug: "alice",
+      year_month: ym,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      cost_usd_cents: 800
+    })
+
+    assert {:alert, 800, 1_000} = BudgetTracker.check_budget(name, "alice")
+  end
 end

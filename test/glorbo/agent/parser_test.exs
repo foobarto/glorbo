@@ -304,6 +304,21 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:ok, %{budget_usd_cents_month: nil}} = Parser.parse_file(path)
     end
 
+    test "P11b: budget.monthly_usd is converted to cents", ctx do
+      content = """
+      ---
+      role: x
+      provider: claude-code
+      model: claude-opus-4-6
+      budget:
+        monthly_usd: 10.50
+      ---
+      """
+
+      path = write_agent(ctx, "g-budget", content)
+      assert {:ok, %{budget_usd_cents_month: 1_050}} = Parser.parse_file(path)
+    end
+
     test "P12: missing timeout_seconds defaults to 300 (D-06)", ctx do
       content = """
       ---

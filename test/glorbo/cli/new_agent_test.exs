@@ -116,6 +116,7 @@ defmodule Glorbo.CLI.NewAgentTest do
 
       assert spec.slug == "ceo"
       assert spec.provider == "claude-code"
+      assert spec.budget_usd_cents_month == 1_000
       assert spec.network == :proxy
       assert spec.permissions == []
       assert spec.model == "claude-sonnet-4-5"
@@ -137,6 +138,7 @@ defmodule Glorbo.CLI.NewAgentTest do
 
       assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
       assert spec.slug == "ceo"
+      assert spec.budget_usd_cents_month == 0
     end
 
     test "engineer template produces parseable AGENT.md", %{home: home} do
@@ -152,6 +154,7 @@ defmodule Glorbo.CLI.NewAgentTest do
 
       assert {:ok, spec} = Glorbo.Agent.Parser.parse_file(path)
       assert "code-review" in spec.skills
+      assert spec.budget_usd_cents_month == 3_000
     end
 
     test "researcher template produces parseable AGENT.md", %{home: home} do

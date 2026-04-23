@@ -31,8 +31,9 @@ defmodule Glorbo.Agent.Parser do
       netns enforcement, `:proxy` is advisory (env-var hint) so we
       don't silently opt agents into it when the field is missing.
     * `timeout_seconds:` defaults to 300 (D-06).
-    * `budget_usd_cents_month:` defaults to `nil` (P11 — no cap == no
-      hard-stop, matches BudgetTracker semantics).
+    * `budget.monthly_usd:` defaults to `nil` (P11 — no cap == no
+      hard-stop, matches BudgetTracker semantics). Legacy
+      `budget_usd_cents_month:` is still accepted for compatibility.
 
   Threat model mitigations applied here:
 
@@ -120,7 +121,7 @@ defmodule Glorbo.Agent.Parser do
          {:ok, network} <- validate_network(meta["network"]),
          {:ok, skills} <- validate_skills(meta["skills"]),
          {:ok, heartbeat} <- validate_heartbeat(meta["heartbeat"]),
-         {:ok, budget} <- validate_budget(meta["budget_usd_cents_month"]),
+         {:ok, budget} <- validate_budget(meta["budget"], meta["budget_usd_cents_month"]),
          {:ok, timeout} <- validate_timeout(meta["timeout_seconds"]),
          {:ok, autonomy} <- validate_autonomy(meta["autonomy"]),
          {:ok, max_retries} <- validate_max_retries(meta["max_retries"]),
@@ -486,9 +487,31 @@ defmodule Glorbo.Agent.Parser do
   defp validate_heartbeat(_), do: {:ok, nil}
 
   # Budget: positive integer cents or nil (no cap → no hard-stop).
-  defp validate_budget(nil), do: {:ok, nil}
-  defp validate_budget(v) when is_integer(v) and v >= 0, do: {:ok, v}
-  defp validate_budget(_), do: {:ok, nil}
+  defp validate_budget(budget_map, legacy_cents) when is_map(budget_map) do
+    case parse_budget_monthly_usd(Map.get(budget_map, "monthly_usd")) do
+      {:ok, nil} -> validate_budget(nil, legacy_cents)
+      result -> result
+    end
+  end
+
+  defp validate_budget(_budget_map, legacy_cents), do: parse_legacy_budget_cents(legacy_cents)
+
+  defp parse_legacy_budget_cents(nil), do: {:ok, nil}
+  defp parse_legacy_budget_cents(v) when is_integer(v) and v >= 0, do: {:ok, v}
+  defp parse_legacy_budget_cents(_), do: {:ok, nil}
+
+  defp parse_budget_monthly_usd(nil), do: {:ok, nil}
+  defp parse_budget_monthly_usd(v) when is_integer(v) and v >= 0, do: {:ok, v * 100}
+  defp parse_budget_monthly_usd(v) when is_float(v) and v >= 0, do: {:ok, round(v * 100)}
+
+  defp parse_budget_monthly_usd(v) when is_binary(v) do
+    case Float.parse(String.trim(v)) do
+      {amount, ""} when amount >= 0 -> {:ok, round(amount * 100)}
+      _ -> {:ok, nil}
+    end
+  end
+
+  defp parse_budget_monthly_usd(_), do: {:ok, nil}
 
   # Timeout: positive integer seconds, default 300 (D-06).
   defp validate_timeout(nil), do: {:ok, @default_timeout_seconds}

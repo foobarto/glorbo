@@ -365,7 +365,8 @@ defmodule Glorbo.Company.BudgetTracker do
 
   # Default budgets_fun: read per-agent cap from
   # `<base>/companies/<co>/agents/<slug>/AGENT.md` frontmatter field
-  # `budget_usd_cents_month:`. Returns `nil` if the agent or field is missing.
+  # `budget.monthly_usd:` (legacy `budget_usd_cents_month:` still accepted).
+  # Returns `nil` if the agent or field is missing.
   defp default_budgets_fun(company, base, agent_slug) do
     agent_dir = Path.join([base, "companies", company, "agents", agent_slug])
     path = Glorbo.Agent.FileLayout.agent_md(agent_dir)
@@ -373,12 +374,31 @@ defmodule Glorbo.Company.BudgetTracker do
     with true <- File.exists?(path),
          {:ok, content} <- File.read(path),
          {:ok, meta, _body} <- Frontmatter.parse(content) do
-      parse_cap_value(meta["budget_usd_cents_month"])
+      parse_cap_value(Map.get(meta, "budget"), Map.get(meta, "budget_usd_cents_month"))
     else
       _ -> nil
     end
   end
 
-  defp parse_cap_value(v) when is_integer(v) and v >= 0, do: v
-  defp parse_cap_value(_), do: nil
+  defp parse_cap_value(budget, legacy) when is_map(budget) do
+    case parse_budget_monthly_usd(Map.get(budget, "monthly_usd")) do
+      nil -> parse_cap_value(nil, legacy)
+      cents -> cents
+    end
+  end
+
+  defp parse_cap_value(_budget, legacy) when is_integer(legacy) and legacy >= 0, do: legacy
+  defp parse_cap_value(_budget, _legacy), do: nil
+
+  defp parse_budget_monthly_usd(v) when is_integer(v) and v >= 0, do: v * 100
+  defp parse_budget_monthly_usd(v) when is_float(v) and v >= 0, do: round(v * 100)
+
+  defp parse_budget_monthly_usd(v) when is_binary(v) do
+    case Float.parse(String.trim(v)) do
+      {amount, ""} when amount >= 0 -> round(amount * 100)
+      _ -> nil
+    end
+  end
+
+  defp parse_budget_monthly_usd(_), do: nil
 end
