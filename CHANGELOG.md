@@ -10,6 +10,36 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — dead-code + silent-failure cleanup (BREAKING for
+### agent.md authors granting `agents:list`)
+
+- **[HIGH]** `Glorbo.Security.ACLMapper.parse_permission/1` now
+  rejects the `agents:list:*` permission with
+  `{:error, :not_implemented}`. The permission has never had a
+  kernel-layer implementation (D-12 staging-tmpfs was always
+  deferred) and silently promising a capability the runtime
+  doesn't enforce is a lie. The dead branch in
+  `Glorbo.Sandbox.PermissionMapper` and the matching test were
+  removed. The stock `ceo.md` template dropped the permission.
+  Migration: audit any AGENT.md granting `agents:list:*` and
+  switch to `agents:message:<target>` (the supported inter-agent
+  discovery path).
+
+### Fixed — silent-rescue logging
+
+- **[HIGH]** `Glorbo.Company.Router.maybe_request_approval/7`
+  previously swallowed every exception / exit from
+  `Glorbo.Approvals.Gate.request_approval/2` with a bare
+  `rescue _ -> :ok` / `catch _, _ -> :ok`. A Gate crash or
+  process-lookup failure meant the Director never saw the
+  approval request and the agent just silently idled. Now logs
+  a warning naming the offending task + agent before returning.
+- **[HIGH]** `Glorbo.Company.AuditLog.append_for/2` had the same
+  blanket-rescue pattern, which produced invisible audit-trail
+  gaps whenever the per-company `AuditLog` GenServer hiccupped.
+  Now logs the failing entry's action + target on both rescue
+  and exit.
+
 ### Security — round-3 hardening (host-write symlink defense)
 
 Round-3 triage from the codex round-2 review. Symmetric to the

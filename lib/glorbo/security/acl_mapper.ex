@@ -29,7 +29,8 @@ defmodule Glorbo.Security.ACLMapper do
   or `{:error, :invalid_scope}` if the scope is neither `"*"` nor a valid slug.
   """
   @spec parse_permission(String.t()) ::
-          {:ok, permission()} | {:error, :invalid_scope | :unknown_resource | :malformed}
+          {:ok, permission()}
+          | {:error, :invalid_scope | :unknown_resource | :malformed | :not_implemented}
   def parse_permission(string) when is_binary(string) do
     case String.split(string, ":", parts: 3) do
       [resource, action, scope]
@@ -40,6 +41,17 @@ defmodule Glorbo.Security.ACLMapper do
 
           not valid_scope?(scope) ->
             {:error, :invalid_scope}
+
+          # `agents:list:*` is accepted historically but has never had a
+          # kernel-layer implementation: PermissionMapper returned `[]` +
+          # logged a warning, the Router never consulted it, and no
+          # test exercises a positive-enforcement case. Rejecting at
+          # parse time surfaces the problem to agent authors (the
+          # AGENT.md won't load) instead of silently promising a
+          # capability the runtime doesn't enforce. Covered by
+          # codex + opencode reviews (round-2, dual-enforcement gap).
+          resource == "agents" and action == "list" ->
+            {:error, :not_implemented}
 
           true ->
             {:ok, {resource, action, scope}}

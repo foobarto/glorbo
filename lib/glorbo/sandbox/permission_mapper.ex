@@ -20,7 +20,7 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   | `chat:write:*`                | `[]` (Router mediates all channel writes)           |
   | `agents:message:*`            | `[]` (Router mediates all agent messages)           |
   | `agents:create:*`             | `[]` (never granted in v0.0.1; AGT-05)              |
-  | `agents:list:*`               | `[]` + Logger.warning (D-12 deferred to v0.0.2)     |
+  | `agents:list:*`               | REJECTED at parse time (`ACLMapper.parse_permission`) |
   | `tasks:update:<project>`      | `--bind <co>/projects/<project>/tasks /projects/... |
 
   **Sibling invisibility (D-10):** when only a scoped permission is granted
@@ -29,17 +29,15 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   returns ENOENT on any open attempt. No `ls /projects` reveals other
   companies' or sibling projects' existence.
 
-  **agents:list gap (D-12 deferred):** Full D-12 staging-tmpfs filtering
-  of `agents/*/` to expose only sibling `agent.md` files (hiding private
-  inbox/outbox/state subdirs) is not shipped in v0.0.1 — the complexity is
-  not justified since the example company in v0.0.1 grants no agent the
-  `agents:list` permission. If a user adds `agents:list` to an agent, a
-  warning is logged and the permission translates to `[]` (no filesystem
-  view). Inter-agent discovery in v0.0.1 is via the Router's
-  `agents:message:<target>` permission family instead. Implementing
-  sibling-view staging is tracked as a v0.0.2 follow-up.
+  **`agents:list:*` is rejected at parse time.** The permission never
+  had a kernel-layer implementation (staging-tmpfs filtering of
+  `agents/*/` was the D-12 design but was never shipped). Accepting a
+  permission the runtime cannot enforce is a silent lie, so
+  `Glorbo.Security.ACLMapper.parse_permission/1` now returns
+  `{:error, :not_implemented}` for it and the agent's AGENT.md fails to
+  load. Inter-agent discovery is via the Router's
+  `agents:message:<target>` permission family.
   """
-  require Logger
 
   @type permission :: {resource :: String.t(), action :: String.t(), scope :: String.t()}
 
@@ -103,27 +101,12 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   # agents:create:* → empty (categorically denied; AGT-05)
   defp permission_to_flags({"agents", "create", _scope}, _co), do: []
 
-  # agents:list:* → empty + warning. The staging-tmpfs implementation
-  # that would materialise an agent roster inside the sandbox is
-  # deferred. Until it lands, this permission is a no-op at the
-  # kernel layer — the agent can't `ls /agents/` — so the Router
-  # remains the only path for inter-agent discovery (via
-  # `agents:message:<slug>`).
-  #
-  # The warning fires every wake, which is noisy but unavoidable
-  # until the Director takes action. Emitting a structured event
-  # instead of a free-form log would be the right surface, but
-  # requires plumbing a company-context audit seam through this
-  # module — deferred as part of the next Router/audit refactor.
-  # (TODO.md High #9.)
-  defp permission_to_flags({"agents", "list", _scope}, _co) do
-    Logger.warning(
-      "permission_mapper: agents:list has no kernel-layer effect yet — " <>
-        "use agents:message:<target> for inter-agent communication."
-    )
-
-    []
-  end
+  # `agents:list:*` is now rejected at parse time by
+  # `Glorbo.Security.ACLMapper.parse_permission/1` (returns
+  # `{:error, :not_implemented}`), so this module never sees it in
+  # a parsed permission list. The clause was removed in the
+  # round-3 sweep — dead code that promised a capability the
+  # runtime never enforced.
 
   # tasks:update:<project> → rw-bind the project's tasks/ subdir
   defp permission_to_flags({"tasks", "update", project}, co) when project != "*" do

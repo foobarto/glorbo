@@ -67,9 +67,21 @@ defmodule Glorbo.Company.AuditLog do
     try do
       GenServer.call(server, {:append, Map.put_new(entry, :company, company)})
     rescue
-      _ -> :ok
+      e ->
+        Logger.warning(
+          "[audit/#{company}] append_for failed: #{Exception.message(e)} " <>
+            "action=#{inspect(Map.get(entry, :action))} target=#{inspect(Map.get(entry, :target))}"
+        )
+
+        :ok
     catch
-      :exit, _ -> :ok
+      :exit, reason ->
+        Logger.warning(
+          "[audit/#{company}] append_for exited: #{inspect(reason)} " <>
+            "action=#{inspect(Map.get(entry, :action))} target=#{inspect(Map.get(entry, :target))}"
+        )
+
+        :ok
     end
   end
 

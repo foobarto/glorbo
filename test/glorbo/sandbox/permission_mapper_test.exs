@@ -63,16 +63,19 @@ defmodule Glorbo.Sandbox.PermissionMapperTest do
                ["--bind", "/tmp/co/projects/foo/tasks", "/projects/foo/tasks"]
     end
 
-    test "PM12: agents:list:* → [] + warning (D-12 deferred to v0.0.2)" do
-      # Capture the Logger warning to keep test output tidy; assert [] return.
-      import ExUnit.CaptureLog
-
-      log =
-        capture_log(fn ->
-          assert PermissionMapper.to_argv([{"agents", "list", "*"}], @co) == []
-        end)
-
-      assert log =~ "agents:list"
+    # `agents:list:*` used to hit this module as an `[]`+warning
+    # no-op, which promised a capability the runtime never enforced.
+    # Round-3: `ACLMapper.parse_permission/1` now rejects the
+    # permission at parse time, so PermissionMapper never sees it in
+    # a parsed permission list. This test guards that the dead branch
+    # really is gone — any cluster of `{"agents", "list", _}` that
+    # sneaks through now hits the `PM-fallback` default clause.
+    test "PM12: agents:list:* branch is removed — hits the unknown-permission fallback" do
+      # Fallback emits an empty flag list and a Logger.warning; we don't
+      # care about the log text, just that the branch-specific
+      # `agents:list` clause is gone. Tuple is a raw malformed perm
+      # (parse should have rejected it upstream).
+      assert PermissionMapper.to_argv([{"agents", "list", "*"}], @co) == []
     end
   end
 

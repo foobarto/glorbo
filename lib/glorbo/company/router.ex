@@ -839,9 +839,21 @@ defmodule Glorbo.Company.Router do
             gate = Glorbo.Company.Supervisor.via(state.company, :approvals_gate)
             _ = Glorbo.Approvals.Gate.request_approval(gate, req)
           rescue
-            _ -> :ok
+            e ->
+              Logger.warning(
+                "[router/#{state.company}] approval request raised: " <>
+                  "#{Exception.message(e)} task=#{task_id} agent=#{sender}"
+              )
+
+              :ok
           catch
-            _, _ -> :ok
+            kind, reason ->
+              Logger.warning(
+                "[router/#{state.company}] approval request #{kind}: " <>
+                  "#{inspect(reason)} task=#{task_id} agent=#{sender}"
+              )
+
+              :ok
           end
 
         _ ->

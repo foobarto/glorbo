@@ -20,7 +20,6 @@ permissions:
   - tasks:read:*
   - chat:write:*
   - chat:read:*
-  - agents:list:*
   - agents:message:*
   - proposals:read:*
   - proposals:propose:*
