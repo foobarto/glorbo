@@ -40,6 +40,10 @@ change between minor versions. Pin exact versions in downstream usage.
   messages into the acceptor mailbox under repeated CONNECT traffic.
   Fire-and-forget handlers now use `start_child/2`, and the regression
   suite asserts the acceptor queue stays drained.
+- `glorbo console` no longer passes the Erlang distribution cookie via
+  `iex --cookie ...` argv. The launcher now injects `-setcookie ...`
+  through `ERL_AFLAGS`, which removes the cookie from cross-user
+  process listings while keeping the remote-shell flow unchanged.
 
 ## [0.3.0] — 2026-04-23
 

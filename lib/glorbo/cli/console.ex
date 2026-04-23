@@ -14,12 +14,14 @@ defmodule Glorbo.CLI.Console do
   returns the iex argv as a string instead of spawning the child; tests
   assert argv shape without launching a real iex.
 
-  Cookie handling (T-05-02): the cookie string is passed directly to
-  `Port.open` as a `--cookie` argv element. It is NEVER logged, NEVER
-  echoed to stdout (except under `:skip_exec` which is test-only), and
-  the audit event detail payloads are empty maps (no cookie, no binary
-  path). The cookie flows via argv → erlexec → Erlang distribution
-  handshake — stdout/stderr/audit channels never see it in production.
+  Cookie handling (T-05-02): the cookie string is NOT passed on the
+  `iex` command line. `launch/2` injects `-setcookie ...` via
+  `ERL_AFLAGS` so other local users cannot read it from `ps`/`/proc`
+  argv. This is defense in depth, not a secrecy boundary against the
+  same OS user. The cookie is NEVER logged, NEVER echoed to stdout
+  (except a redacted preview under `:skip_exec`, which is test-only),
+  and the audit event detail payloads are empty maps (no cookie, no
+  binary path).
   """
   alias Glorbo.CLI.Lifecycle.Pidfile
   alias Glorbo.CLI.Audit
@@ -55,17 +57,17 @@ defmodule Glorbo.CLI.Console do
     argv = [
       "--name",
       @console_node,
-      "--cookie",
-      cookie,
       "--remsh",
       @remote_node
     ]
 
+    env = [{~c"ERL_AFLAGS", String.to_charlist(erl_aflags(cookie))}]
+
     cond do
       skip_exec? ->
-        # Test-only path: return the argv shape without spawning iex.
-        # Never reached in production (callers never set :skip_exec).
-        {:console, 0, "iex " <> Enum.join(argv, " ") <> "\n"}
+        # Test-only path: return a redacted preview without leaking the
+        # distribution cookie into stdout or test failures.
+        {:console, 0, "ERL_AFLAGS=<redacted> iex " <> Enum.join(argv, " ") <> "\n"}
 
       is_nil(System.find_executable("iex")) ->
         {:console, 2, "iex not in PATH. Please install Elixir.\n"}
@@ -77,7 +79,7 @@ defmodule Glorbo.CLI.Console do
         port =
           Port.open(
             {:spawn_executable, iex},
-            [:nouse_stdio, :exit_status, args: argv]
+            [:nouse_stdio, :exit_status, args: argv, env: env]
           )
 
         receive do
@@ -97,9 +99,20 @@ defmodule Glorbo.CLI.Console do
       glorbo console
 
     BEHAVIOR
-      Spawns `iex --name console@127.0.0.1 --cookie <from config.md>
-      --remsh glorbo@127.0.0.1`. Exits with code 3 if glorbo is not
-      running.
+      Spawns `iex --name console@127.0.0.1 --remsh
+      glorbo@127.0.0.1` and injects the Erlang cookie from config.md
+      via `ERL_AFLAGS=-setcookie ...`. Exits with code 3 if glorbo is
+      not running.
     """
+  end
+
+  defp erl_aflags(cookie) do
+    cookie_flag = "-setcookie #{cookie}"
+
+    case System.get_env("ERL_AFLAGS") do
+      nil -> cookie_flag
+      "" -> cookie_flag
+      existing -> existing <> " " <> cookie_flag
+    end
   end
 end

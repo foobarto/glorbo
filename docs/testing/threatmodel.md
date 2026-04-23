@@ -158,7 +158,7 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **73 open** ·
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **72 open** ·
 48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
@@ -171,16 +171,18 @@ warning) and verified 3 more mediums were already fixed at HEAD
 symlink-target guard); wave 7 on 2026-04-23 closed 4 mediums
 (Kanban open_task strict path+lstat guard, release formula SHA
 validation, agent budget block enforcement, backup temp+rename
-0600 flow); wave 5 also discovered 6 more mediums were
+0600 flow); post-wave-7 follow-up fixes on 2026-04-23 closed 2 more
+mediums (proxy acceptor mailbox DoS, console cookie argv exposure);
+wave 5 also discovered 6 more mediums were
 already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 10 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 9 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
-### Medium (constrained exploit — local access or misconfig) — 11
+### Medium (constrained exploit — local access or misconfig) — 9
 
 - **Unbounded MCP sessions/subscriptions allow resource exhaustion DoS** — The commit introduces per-session GenServers and resource subscriptions for MCP. `initialize` now calls `Session.start_session/1` to spawn a new process for every request, but there is no cap, TTL, or cleanup unless the client sends DELETE. Additionally,…
   *Paths:* `lib/glorbo_web/mcp/plug.ex, lib/glorbo_web/mcp/session.ex`
@@ -194,8 +196,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/inbox_live.ex, lib/glorbo/security/acl_mapper.ex`
 - **Auto-mounting CLI binary dirs leaks host paths into sandbox** — `cli_binary_binds/1` now auto-detects the provider’s resolved binary path and ro-binds both the symlink’s parent directory and the symlink target’s parent into the sandbox at the same absolute paths. Because `resolved_path` comes from PATH or a user-defined…
   *Paths:* `lib/glorbo/agent/dispatch.ex`
-- **Erlang cookie exposed via console command-line arguments** — `Glorbo.CLI.Console.launch/2` builds an argv list that embeds the Erlang distribution cookie and spawns `iex` with those arguments. On many systems, command-line arguments are visible to other local users via `ps`/`/proc`, so a different OS user can read the…
-  *Paths:* `lib/glorbo/cli/console.ex`
 - **Unbounded stdout buffering enables dashboard DoS** — The new AgentLive starts a StdoutStreamer and inserts each stdout line into a LiveView stream. StdoutStreamer concatenates new bytes onto an in-memory buffer and only trims it when a newline arrives; there is no cap on the buffer or per-line size. A sandboxed…
   *Paths:* `lib/glorbo_web/live/agent_live.ex, lib/glorbo_web/stdout_streamer.ex`
 - **Approvals.Gate activation allows self‑approval of tasks** — The commit wires Glorbo.Approvals.Gate into the per‑company supervision tree, making the approval flow live. Gate subscribes to project task file events and resolves approvals whenever it sees a task status set to "approved" or "denied". Because there is no…

@@ -162,7 +162,6 @@ prompt instructions.
 ├── glorbo.db                       # SQLite index (rebuildable, disposable)
 │
 ├── state/
-│   ├── .erl_cookie                 # Release cookie (mode 0600) for `glorbo console`
 │   └── glorbo.pid                  # Daemon pidfile (mode 0600)
 │
 ├── audit/
@@ -953,7 +952,9 @@ glorbo init
    Blocker failures abort init.
 3. Writes `~/.glorbo/config.md` with a generated secret and default
    host/port (`127.0.0.1:4000`).
-4. Bootstraps `state/.erl_cookie` (mode 0600) for `glorbo console` remsh.
+4. Bootstraps the Erlang distribution cookie in `config.md` (mode 0600);
+   `glorbo console` injects it via `ERL_AFLAGS=-setcookie ...` instead
+   of leaking it on argv.
 5. (Unless `--no-example`) Scaffolds the `acme` example company with a
    CEO agent including the reply-contract system prompt.
 6. Rebuilds the SQLite index from disk (`glorbo reindex`).

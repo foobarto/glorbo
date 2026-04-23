@@ -419,6 +419,15 @@ handlers should use `Task.Supervisor.start_child/2`; keep
 `async_nolink/2` only for the one acceptor task the GenServer itself
 monitors and re-arms.
 
+### CLI.Console — keep the Erlang cookie off argv
+
+`iex --cookie ...` leaks the distribution cookie into process listings
+on many systems. `iex` and `elixir` both honor `ERL_AFLAGS`, so
+`CLI.Console` can inject `-setcookie ...` through the environment and
+keep the remote-shell flow unchanged without exposing the cookie in
+`ps`/`/proc` argv. That is a useful hardening step, but not a secrecy
+boundary against the same OS user.
+
 ---
 
 ## What belongs in this file vs elsewhere

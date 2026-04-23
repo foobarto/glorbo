@@ -26,7 +26,9 @@ defmodule Glorbo.CLI.ConsoleTest do
       assert out =~ "not running"
     end
 
-    test "when running, argv contains --remsh/--name/--cookie", %{glorbo_home: home} do
+    test "when running, preview contains --remsh/--name without leaking the cookie", %{
+      glorbo_home: home
+    } do
       # Write a live pidfile using our own PID + let Config.erl_cookie/1
       # auto-bootstrap a config.md with an erl_cookie key.
       File.mkdir_p!(Path.join(home, "run"))
@@ -40,8 +42,9 @@ defmodule Glorbo.CLI.ConsoleTest do
       assert out =~ "glorbo@127.0.0.1"
       assert out =~ "--name"
       assert out =~ "console@127.0.0.1"
-      assert out =~ "--cookie"
-      assert out =~ cookie, "argv should contain the actual cookie value"
+      assert out =~ "ERL_AFLAGS=<redacted>"
+      refute out =~ "--cookie"
+      refute out =~ cookie, "preview should not contain the actual cookie value"
     end
 
     test "uses --name (not --sname) per WR-09 correction", %{glorbo_home: home} do
