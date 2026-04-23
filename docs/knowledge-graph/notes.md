@@ -332,6 +332,18 @@ rejection landed in `ae7e3fc` / `b5fa9f8`. For future threatmodel
 waves, grep HEAD for the named fix pattern and existing regression
 test before assuming the row still needs code.
 
+### Threatmodel wave 7 — AGENT.md budget readers must honor the file spec
+
+The canonical `agent/v1` shape in `docs/file-formats/agent_v1.md`,
+the default `glorbo new agent` scaffold, and every built-in agent
+template all use `budget.monthly_usd`, not the legacy top-level
+`budget_usd_cents_month`. Before wave 7, `Agent.Parser` and
+`Company.BudgetTracker` still only read the legacy field, so
+scaffolded/template agents silently ran uncapped. Future code that
+reads an agent budget directly from frontmatter should treat the
+nested `budget.monthly_usd` block as authoritative and only fall
+back to `budget_usd_cents_month` for compatibility.
+
 ---
 
 ## What belongs in this file vs elsewhere

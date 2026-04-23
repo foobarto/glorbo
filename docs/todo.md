@@ -140,3 +140,8 @@ it's been in CHANGELOG for a cycle.
   config/log 0600 + doctor warning; also dropped 3 stale medium
   rows that were already fixed at HEAD (`create_agent` YAML guard,
   proposal extra-key filter, restore symlink-target guard).
+- [x] **Threatmodel wave 7 (2026-04-23).** Shipped 4 medium
+  closures across Kanban `open_task` strict path + lstat guards,
+  release-formula SHA256 validation, canonical agent budget block
+  enforcement in Parser/BudgetTracker, and backup temp+rename
+  0600 finalization.

@@ -158,7 +158,7 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **78 open** ·
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **74 open** ·
 48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
@@ -168,21 +168,22 @@ preview lstat, TaskDefinition.write regular-file guard); wave 6 on
 resolver lstat, watcher/reindex lstat, config/log 0600 + doctor
 warning) and verified 3 more mediums were already fixed at HEAD
 (MCP create_agent YAML injection, proposal key injection, restore
-symlink-target guard); wave 5 also discovered 6 more mediums were
+symlink-target guard); wave 7 on 2026-04-23 closed 4 mediums
+(Kanban open_task strict path+lstat guard, release formula SHA
+validation, agent budget block enforcement, backup temp+rename
+0600 flow); wave 5 also discovered 6 more mediums were
 already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 15 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 11 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
-### Medium (constrained exploit — local access or misconfig) — 22
+### Medium (constrained exploit — local access or misconfig) — 11
 
 - **Unbounded MCP sessions/subscriptions allow resource exhaustion DoS** — The commit introduces per-session GenServers and resource subscriptions for MCP. `initialize` now calls `Session.start_session/1` to spawn a new process for every request, but there is no cap, TTL, or cleanup unless the client sends DELETE. Additionally,…
   *Paths:* `lib/glorbo_web/mcp/plug.ex, lib/glorbo_web/mcp/session.ex`
-- **Release formula task trusts remote SHA256SUMS input** — The newly added Mix task fetches SHA256SUMS over HTTPS via :httpc using default options and parses each line into a map without enforcing that the "sha" tokens are valid hex digests. Those untrusted values are then embedded verbatim in the Ruby formula…
-  *Paths:* `lib/mix/tasks/glorbo.release_formula.ex`
 - **Company cap sums global agent slugs, enabling cross-company DoS** — The new CompanyCap module computes company usage by listing agent directory names and summing Budget rows where agent_slug is in that list. The budgets table is keyed only by agent_slug and year_month, with no company field. If two companies share an agent…
   *Paths:* `lib/glorbo/budget/company_cap.ex, lib/glorbo/budget.ex`
 - **Unbounded ETS cache of task titles can exhaust memory** — Glorbo.Search now lazily creates a named, public ETS table and caches every task title by path+mtime. Titles are taken directly from frontmatter and inserted into ETS with no size checks or eviction. Because agent-authored tasks only require a non-empty…
@@ -193,14 +194,8 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/inbox_live.ex, lib/glorbo/security/acl_mapper.ex`
 - **Auto-mounting CLI binary dirs leaks host paths into sandbox** — `cli_binary_binds/1` now auto-detects the provider’s resolved binary path and ro-binds both the symlink’s parent directory and the symlink target’s parent into the sandbox at the same absolute paths. Because `resolved_path` comes from PATH or a user-defined…
   *Paths:* `lib/glorbo/agent/dispatch.ex`
-- **Kanban open_task allows arbitrary project file reads** — The new KanbanLive open_task handler trusts the client-supplied "path" and calls File.read/1 after resolve_task_path/2, which only enforces a "projects/" prefix and absence of "..". It does not require a tasks/ path, a .md extension, or a regular file, and…
-  *Paths:* `lib/glorbo_web/live/kanban_live.ex`
 - **Erlang cookie exposed via console command-line arguments** — `Glorbo.CLI.Console.launch/2` builds an argv list that embeds the Erlang distribution cookie and spawns `iex` with those arguments. On many systems, command-line arguments are visible to other local users via `ps`/`/proc`, so a different OS user can read the…
   *Paths:* `lib/glorbo/cli/console.ex`
-- **Backup archive permissions set after creation allow local read race** — Glorbo.Backup creates the archive via :erl_tar.create, which uses the process umask (often 0644) when creating the file. The code only applies chmod 0600 after successful creation. This leaves a race window where a local user with access to the output…
-  *Paths:* `lib/glorbo/backup.ex`
-- **Agent scaffold writes unsupported budget key, cap ignored** — The new `glorbo new agent` scaffold writes `budget:\n monthly_usd: 10.00` into `agent.md`. The runtime parser and budget tracker only look for `budget_usd_cents_month`, so the cap is parsed as `nil` and enforcement is skipped. This means freshly scaffolded…
-  *Paths:* `lib/glorbo/cli/scaffold/agent.ex, lib/glorbo/agent/parser.ex`
 - **Unbounded stdout buffering enables dashboard DoS** — The new AgentLive starts a StdoutStreamer and inserts each stdout line into a LiveView stream. StdoutStreamer concatenates new bytes onto an in-memory buffer and only trims it when a newline arrives; there is no cap on the buffer or per-line size. A sandboxed…
   *Paths:* `lib/glorbo_web/live/agent_live.ex, lib/glorbo_web/stdout_streamer.ex`
 - **Approvals.Gate activation allows self‑approval of tasks** — The commit wires Glorbo.Approvals.Gate into the per‑company supervision tree, making the approval flow live. Gate subscribes to project task file events and resolves approvals whenever it sees a task status set to "approved" or "denied". Because there is no…
