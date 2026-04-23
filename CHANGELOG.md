@@ -10,6 +10,32 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — docs quality pass (round-3 drift sweep)
+
+Drift caught by codex + opencode round-3 reviews against the code
+that actually shipped. History in frozen decision logs (GEP-5,
+GEP-31, GEP-32) left alone — those are time-stamped records, not
+live claims.
+
+- `CLAUDE.md §Project status` bumped v0.3.0 → v0.6.0 (was stale
+  across three release cycles).
+- `docs/DESIGN.md §Network policy` renamed enum to
+  `loopback | proxy | full` (GEP-23 D1 shipped months ago). Same
+  rename in the §Security summary. Also updated the bwrap baseline
+  flag list to drop the `-try` suffix and add `--clearenv` the
+  round-1/3 sweeps actually shipped.
+- `docs/DESIGN.md §Permissions` example updated: dropped
+  `agents:list` (rejected at parse since round-3) and
+  `proposals:write:*` (replaced by `proposals:propose:*` /
+  `proposals:decide:*` in GEP-28). Kernel-mount table updated
+  to match.
+- `docs/geps/0010-agent-and-skill-templates.md` template dropped
+  `agents:list` the runtime now rejects.
+- `docs/geps/0028-agent-created-proposals.md` body line that said
+  "This GEP is Draft" updated — frontmatter flipped to Implemented
+  long ago; the stale body line was misleading to a first-time
+  reader.
+
 ### Security — harness + dispatcher TOCTOU hardening
 
 - **[HIGH]** `Glorbo.CLI.Harness.Tools.resolve_tool_path/2` now

@@ -168,7 +168,6 @@ permissions:
   - projects:write:{{ default_project }}
   - tasks:create:{{ default_project }}
   - tasks:update:{{ default_project }}
-  - agents:list
   - agents:message:{{ reports_to }}
   - chat:write:engineering
   - chat:read:*

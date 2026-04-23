@@ -455,8 +455,8 @@ standing container, no long-lived namespace, no privileged daemon.
 
 **Network policy (enforced at bwrap launch):**
 
-- `network: none` (default) — `--unshare-net`: no network namespace access,
-  kernel-enforced.
+- `network: loopback` (default) — `--unshare-net`: no network namespace
+  access, kernel-enforced. Renamed from `:none` in GEP-23 D1.
 - `network: proxy` — on Linux, Glorbo wraps the bwrap launch in
   `pasta --splice-only` and forwards only the per-company proxy port
   into the agent netns. `HTTP_PROXY` / `HTTPS_PROXY` point at that
@@ -464,7 +464,8 @@ standing container, no long-lived namespace, no privileged daemon.
   blocked. If `pasta` is missing, proxy dispatch is refused. On macOS,
   proxy remains a degraded unsandboxed limitation alongside the wider
   no-bwrap fallback.
-- `network: open` — host netns inherited (no `--unshare-net`). Explicit opt-in.
+- `network: full` — host netns inherited (no `--unshare-net`).
+  Explicit opt-in. Renamed from `:open` in GEP-23 D1.
 
 Sibling agents and other companies are **not mounted** — company
 isolation is therefore absolute by construction: there is no path
@@ -476,7 +477,7 @@ runtime exposes only the proxy port inside the agent netns, so
 dashboard/MCP loopback services are no longer reachable from proxy
 agents by direct connect.
 
-A missing `network:` field in AGENT.md still defaults to `:none`
+A missing `network:` field in AGENT.md still defaults to `:loopback`
 (kernel-enforced). Templates that legitimately need egress (CLI
 providers, editor agents) declare `network: proxy` explicitly.
 
@@ -528,11 +529,11 @@ permissions:
   - projects:write:website-redesign
   - tasks:create:website-redesign
   - tasks:update:website-redesign
-  - agents:list
   - agents:message:cto
   - chat:write:engineering
   - chat:read:*
-  - proposals:write:*          # Can create hiring/budget/project proposals
+  - proposals:propose:*        # Can file hiring/budget/project proposals via outbox (GEP-28)
+  - proposals:decide:*         # Can approve/deny proposals the agent didn't propose
   - tools:execute:code-runner
   - budget:read:self
 ---
@@ -756,13 +757,14 @@ permissions:
   - projects:read:*                          → --ro-bind <co>/projects /projects
   - projects:write:website-redesign          → --bind    <co>/projects/website-redesign /projects/website-redesign
   - chat:read:*                              → --ro-bind <co>/channels /channels
-  - proposals:write:*                        → --bind    <co>/proposals /proposals
+  - proposals:read:*                         → --ro-bind <co>/proposals /proposals
+  # proposals:propose:* / proposals:decide:* → no kernel mount; Router-mediated via outbox (GEP-28)
   # (no agents:read:ceo)                     → <co>/agents/ceo NOT mounted — invisible
 ```
 
-`network:` declarations map to `--unshare-net` (none), `pasta`
+`network:` declarations map to `--unshare-net` (loopback), `pasta`
 loopback-only forwarding to the HTTPS CONNECT allowlist proxy
-(proxy), or inherited host netns (open). A write attempt into
+(proxy), or inherited host netns (full). A write attempt into
 `/projects/other-project` from inside the sandboxed CLI fails with
 `EACCES` at the kernel — not at the Elixir layer.
 
@@ -1034,11 +1036,14 @@ glorbo up
 - **No Python anywhere:** Glorbo doesn't install or invoke Python on
   the host or in any sandbox. Agent execution is a sandboxed CLI tool
   invocation — nothing more. (GEP-5 D6.)
-- **Unprivileged sandboxes:** bwrap runs with `--unshare-user-try
-  --cap-drop ALL` and no setuid helpers.
-- **Network isolation:** Agents default to `network: none` —
+- **Unprivileged sandboxes:** bwrap runs with `--unshare-user
+  --cap-drop ALL --clearenv` and no setuid helpers. (Round-1/-3
+  sweeps dropped the `-try` suffix: silent fallback would have
+  downgraded a kernel boundary to best-effort.)
+- **Network isolation:** Agents default to `network: loopback` —
   `--unshare-net` is a kernel netns shutdown; egress is physically
-  blocked. `proxy` and `open` must be explicitly opted into.
+  blocked. `proxy` and `full` must be explicitly opted into
+  (GEP-23 D1 renamed from `:none` and `:open`).
 - **Read-only mounts:** bwrap binds everything but the agent's own
   workspace and outbox as `--ro-bind`. Sibling agents and other
   companies are not mounted at all.

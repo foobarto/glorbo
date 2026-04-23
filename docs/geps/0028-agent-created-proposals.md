@@ -367,7 +367,8 @@ However, the dashboard may only render rich UI for known subtypes.
 
 ## Implementation status (2026-04-22)
 
-This GEP is **Draft**. Landed in the scaffolding commit:
+This GEP has since flipped to **Implemented** (see frontmatter
+history). Landed in the scaffolding commit:
 
 - `FileSpec.ProposalMd` (spec + canonical key order + docs)
 - `proposals:{read,propose,decide}:*` permission namespace
