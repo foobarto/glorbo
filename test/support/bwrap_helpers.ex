@@ -54,8 +54,16 @@ defmodule Glorbo.Test.BwrapHelpers do
   end
 
   @doc """
-  True iff the `pasta` binary is on PATH and responds to `--version`
-  with exit 0.
+  True iff the `pasta` binary is on PATH, responds to `--version`, AND
+  recognises the `--splice-only` flag that GEP-31 relies on.
+
+  Older `passt`/`pasta` packages (including the one currently shipped
+  on GitHub-hosted ubuntu-24.04 runners) don't know `--splice-only` and
+  print help text to stderr when invoked with it, which would cause
+  the GEP-31 integration tests to fail rather than skip. Scanning
+  `pasta --help` text catches that case so the test suite skips
+  cleanly when the runtime isn't new enough to exercise the enforced
+  netns path.
   """
   @spec pasta_available?() :: boolean()
   def pasta_available? do
@@ -65,12 +73,16 @@ defmodule Glorbo.Test.BwrapHelpers do
 
       path ->
         try do
-          case System.cmd(path, ["--version"], stderr_to_stdout: true) do
-            {_out, 0} -> true
+          with {_, 0} <- System.cmd(path, ["--version"], stderr_to_stdout: true),
+               {help, _} <- System.cmd(path, ["--help"], stderr_to_stdout: true) do
+            String.contains?(help, "--splice-only")
+          else
             _ -> false
           end
         rescue
           _ -> false
+        catch
+          _, _ -> false
         end
     end
   end

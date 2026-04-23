@@ -427,7 +427,9 @@ defmodule Glorbo.Doctor do
   @spec check_pasta(keyword()) :: {:ok | :fail, String.t(), String.t()}
   defp check_pasta(deps) do
     which = Keyword.get(deps, :which_fun, &System.find_executable/1)
-    required = "pasta (passt package) for enforced network: proxy agents"
+
+    required =
+      "pasta (passt package) w/ --splice-only support for enforced network: proxy agents"
 
     case which.("pasta") do
       nil ->
@@ -436,8 +438,16 @@ defmodule Glorbo.Doctor do
       path ->
         cmd = Keyword.get(deps, :cmd_fun, &default_cmd3/3)
 
-        case invoke_cmd(cmd, path, ["--version"], stderr_to_stdout: true) do
-          {output, 0} -> {:ok, String.trim(output), required}
+        with {version, 0} <- invoke_cmd(cmd, path, ["--version"], stderr_to_stdout: true),
+             {help, _} <- invoke_cmd(cmd, path, ["--help"], stderr_to_stdout: true) do
+          if String.contains?(help, "--splice-only") do
+            {:ok, String.trim(version), required}
+          else
+            {:fail,
+             "pasta on PATH lacks --splice-only (upgrade passt — older Debian/Ubuntu ships a pre-2024 release)",
+             required}
+          end
+        else
           {output, code} -> {:fail, "pasta --version exit #{code}: #{output}", required}
         end
     end

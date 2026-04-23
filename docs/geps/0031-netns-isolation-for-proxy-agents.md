@@ -17,6 +17,9 @@ history:
   - date: 2026-04-23
     status: Implemented
     note: "Implementation landed on the same day: Linux `network: proxy` now wraps `bwrap` in `pasta --splice-only` with only the proxy port forwarded, doctor checks `pasta`, and proxy dispatches are refused when the prerequisite is missing."
+  - date: 2026-04-23
+    status: Implemented
+    note: "Pasta probe tightened: `Glorbo.Sandbox.Bwrap.pasta_availability/0` + doctor's `check_pasta/1` + test-helper `pasta_available?/0` now all scan `pasta --help` for `--splice-only` before declaring pasta usable. Older `passt` packages (e.g. the one on GHA ubuntu-24.04) answer `pasta --version` fine but don't recognise `--splice-only`, which silently broke proxy dispatch and caused integration-test diff noise. Now doctor flags the upgrade requirement explicitly and integration tests skip cleanly on hosts that predate the flag."
 ---
 
 # GEP-31: Network-namespace isolation for `:proxy` agents

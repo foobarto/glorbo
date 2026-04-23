@@ -180,9 +180,33 @@ defmodule Glorbo.Sandbox.Bwrap do
   Linux `network: proxy` dispatches require `pasta` so the proxy path is
   enforced by a private network namespace rather than hinted by env vars.
   """
-  @spec pasta_availability() :: :ok | {:error, :unavailable}
+  @spec pasta_availability() :: :ok | {:error, :unavailable | :too_old}
   def pasta_availability do
-    if System.find_executable("pasta"), do: :ok, else: {:error, :unavailable}
+    case System.find_executable("pasta") do
+      nil ->
+        {:error, :unavailable}
+
+      path ->
+        # GEP-31 depends on `pasta --splice-only`; older `passt` packages
+        # on some distros don't know that flag. Scanning `pasta --help`
+        # lets `glorbo doctor` flag the upgrade requirement cleanly
+        # instead of failing at first proxy dispatch.
+        try do
+          case System.cmd(path, ["--help"], stderr_to_stdout: true) do
+            {help, _} ->
+              if String.contains?(help, "--splice-only"),
+                do: :ok,
+                else: {:error, :too_old}
+
+            _ ->
+              {:error, :too_old}
+          end
+        rescue
+          _ -> {:error, :too_old}
+        catch
+          _, _ -> {:error, :too_old}
+        end
+    end
   end
 
   # ---------------------------------------------------------------------------

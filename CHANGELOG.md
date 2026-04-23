@@ -23,6 +23,19 @@ change between minor versions. Pin exact versions in downstream usage.
   and `Formatter.format_content/2` is idempotent (`:unchanged` + stable
   round-trip).
 
+### Fixed — pasta-availability probe requires --splice-only support
+
+- `Glorbo.Sandbox.Bwrap.pasta_availability/0` and the test-helper
+  `BwrapHelpers.pasta_available?/0` both now scan `pasta --help` for
+  the `--splice-only` token before declaring pasta usable. Older
+  passt packages (including the one shipped on GitHub-hosted
+  ubuntu-24.04 runners) don't know that flag, which GEP-31 relies
+  on. The old probes returned `:ok` regardless, so integration
+  tests that shell out to the real sandbox failed with pasta's
+  help text in the assertion diff. `glorbo doctor` now surfaces
+  the upgrade requirement directly ("pasta on PATH lacks
+  --splice-only").
+
 ### Fixed — AgentLive config editor network dropdown
 
 - Config form's `<select name="network">` was offering `none` and
