@@ -175,6 +175,11 @@ it's been in CHANGELOG for a cycle.
   on the release surface, along with the follow-up medium hardening
   batch that closed proxy mailbox, console cookie, stdout streamer,
   search cache, archive list, and stuck-sentinel findings.
+- [x] **Threatmodel medium queue cleared (2026-04-23).** Wave 8 closed
+  the remaining three medium findings: MCP session lifecycle bounds,
+  file-only provider binary binds, and GitHub Action SHA pinning.
+- [x] **v0.4.1 shipped.** Patch release for the completed medium sweep
+  and the earlier budget-ledger scoping fix.
 - [x] **v0.2.0 shipped.** Second pre-1.0 minor: GEP-32 phase 2a is now
   on the release surface.
 - [x] **GEP-31 shipped (2026-04-23).** Linux `network: proxy` now

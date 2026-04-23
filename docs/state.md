@@ -11,7 +11,7 @@ Last updated: 2026-04-23
 - Branch: `main`
 - Worktree status: check with `git status --short`
 - HEAD: check with `git log -1 --oneline`
-- Latest shipped version: `v0.4.0`
+- Latest shipped version: `v0.4.1`
 
 ## Implementation Status
 
@@ -31,7 +31,8 @@ Last updated: 2026-04-23
 - Budget ledger rows are now company-scoped, so per-agent caps,
   company caps, and spend widgets do not bleed across companies that
   reuse the same agent slug.
-- Threatmodel waves 1-7 are complete.
+- Threatmodel waves 1-8 are complete, and the medium-severity queue is
+  now at zero.
 - GEP-33 exists as a draft only; it is not implemented yet.
 - Core docs are aligned with the current release surface:
   `CHANGELOG.md`, `README.md`, `docs/DESIGN.md`,
@@ -39,22 +40,23 @@ Last updated: 2026-04-23
 
 ## Security Status
 
-- Open findings in `docs/testing/threatmodel.md`: `66`
-- Breakdown: `0` critical, `0` high, `3` medium, `39` low,
+- Open findings in `docs/testing/threatmodel.md`: `63`
+- Breakdown: `0` critical, `0` high, `0` medium, `39` low,
   `24` informational
 
 ## Next Implementation Target
 
-- Primary next coding target: **resume the remaining medium
-  threatmodel findings**
-- Planned scope: drive the open medium count below `3` while the new
-  native phase 2b surface bakes on `main`
-- Secondary feature target: later GEP-32 phases (model discovery,
-  cache/SQLite projection, `detect-providers`)
+- Primary next coding target: **resume the low-severity threatmodel
+  queue**
+- Planned scope: keep closing bounded DoS / integrity gaps now that the
+  open medium count is `0`
+- Secondary feature target: GEP-33 remains draft-only and is the next
+  larger design/implementation track once the next hardening batch is
+  chosen
 
 ## Remaining Work Themes
 
-- Close the remaining open threatmodel findings
+- Close the remaining low/informational threatmodel findings
 - Extend the native harness beyond the phase 2b tool/runtime batch
 - Address follow-up scheduler/performance and UI polish items from
   `docs/todo.md`

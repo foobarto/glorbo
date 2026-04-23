@@ -483,6 +483,27 @@ stop/alert path and the spend widgets. The durable fix is to scope the
 ledger row itself by `{company_slug, agent_slug, year_month}` and make
 every reader go through that boundary.
 
+### CLI binary binds need separate host and sandbox paths
+
+Closing the binary-dir leak in `Agent.Dispatch` looked like a pure
+"bind only the file" change until the macOS fallback entered the
+picture. The sandboxed launch wants a synthetic in-sandbox path
+(`/tmp/glorbo-cli-...`), but `Glorbo.Sandbox.Unsandboxed` still has to
+exec the real host path when bwrap is unavailable. The load-bearing
+contract is therefore two paths, not one: `host_cli_binary` for the
+degraded host runner, `cli_binary` for the bwrap-mounted sandbox view.
+
+### MCP session cap was already split across two layers
+
+The MCP session DoS fix was not "add a max_children" — that limit was
+already present on `GlorboWeb.MCP.SessionSupervisor`. The missing pieces
+were the operational ones around it: idle sessions with no SSE stream
+had no TTL, per-session subscriptions were unbounded, and hitting the
+supervisor cap surfaced as an unstructured initialize failure instead of
+a clean JSON-RPC `503`. When touching MCP session lifecycle again, treat
+session-count bounding, idle reaping, and capacity error reporting as a
+single invariant.
+
 ---
 
 ## What belongs in this file vs elsewhere

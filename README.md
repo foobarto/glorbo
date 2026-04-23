@@ -652,8 +652,16 @@ captures the project's design philosophy in one page.
 
 ## Project Status
 
-Pre-1.0. Latest release is **v0.4.0** (2026-04-23); the release trail so
+Pre-1.0. Latest release is **v0.4.1** (2026-04-23); the release trail so
 far, newest first:
+
+**v0.4.1** shipped 2026-04-23:
+
+- **Threatmodel wave 8** ✓ — the final medium-severity findings from
+  the 2026-04-22/23 scan are now closed: MCP session state is bounded
+  and fails cleanly at capacity, provider executables no longer leak
+  host directory layouts into the sandbox, and CI/Pages workflows pin
+  every third-party action to an exact commit SHA.
 
 **v0.4.0** shipped 2026-04-23:
 

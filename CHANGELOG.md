@@ -10,8 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-04-23
+
 ### Fixed
 
+- MCP sessions now defend their own lifecycle instead of relying on
+  client-behaved DELETEs: detached sessions reap after an idle timeout,
+  per-session resource subscriptions are capped, and `initialize` now
+  returns a structured JSON-RPC `503` when the session supervisor is at
+  capacity.
+- `Agent.Dispatch` no longer ro-binds provider binary directories into
+  the sandbox at their host paths. Dispatch now resolves the final
+  regular executable file, binds only that file into a fixed sandbox
+  path under `/tmp`, and keeps the real host path only for the
+  macOS/bwrap-unavailable fallback.
+- CI and Pages workflows now pin every third-party GitHub Action to an
+  exact upstream commit SHA, closing the mutable-tag supply-chain gap on
+  the release path.
 - Budget ledger rows are now scoped by `{company, agent, year_month}`
   instead of raw agent slug alone. Same-slug agents in different
   companies no longer share per-agent budget state, inflate company
