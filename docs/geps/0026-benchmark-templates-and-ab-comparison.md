@@ -2,7 +2,7 @@
 gep: 0026
 title: Benchmark company templates and provider A/B comparison
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 history:
@@ -36,6 +36,24 @@ history:
       directories are hand-assembled (or via external tooling), then
       surface in the LV automatically. The UI is independently
       useful once the runs exist.
+  - date: 2026-04-23
+    status: Implemented
+    note: |
+      Phase B dispatch orchestrator shipped:
+      `Glorbo.Benchmarks.Orchestrator.run/4` forks one shadow company
+      per provider at `companies/_bench-<run-id>-<provider>/`, pins
+      each agent's `provider:` (and substitutes `{{ provider }}` /
+      `{{ model }}` placeholders in AGENT.md), fires the named task
+      through `Glorbo.Agent.Dispatch.execute/3`, and writes outputs
+      as `kind: benchmark-output/v1` under
+      `~/.glorbo/benchmarks/runs/<run-id>/providers/<p>/output.md`.
+      A `manifest.json` is written up-front with
+      `status: in-progress` and flipped to `completed|failed` after
+      fan-out; per-provider failures leave `dispatch-error.txt` for
+      triage. Shadow companies are deleted on success unless
+      `--keep-shadow` is passed. `glorbo bench run` CLI wires the
+      orchestrator to `Glorbo.CLI.Bench` with ✓/✗ summary rendering.
+      Status flips Draft → Implemented.
 requires: [2, 4, 8, 10, 25]
 see-also: [16, 18, 19, 20]
 ---

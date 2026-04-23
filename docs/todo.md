@@ -236,10 +236,12 @@ it's been in CHANGELOG for a cycle.
   Needs the per-dispatch `Proxy-Authorization` token infrastructure
   GEP-23 §Proxy daemon §5 describes — not yet wired into
   `Agent.Dispatch`.
-- [ ] **GEP-26 Phase B dispatch orchestrator** (`glorbo bench run
-  <template> <task-id> --providers a,b,c`). Forks N shadow
-  companies rooted at the template, fires the task at each pinned
-  to one provider, collects outputs into
-  `benchmarks/runs/<id>/providers/`, flips manifest `status:`.
-  Scoring UI (shipped v0.6.0) is independently useful once a run
-  exists.
+- [x] **GEP-26 Phase B dispatch orchestrator** (shipped 2026-04-23).
+  `glorbo bench run <template> <task-id> --providers a,b,c
+  [--keep-shadow]` now forks N shadow companies rooted at the
+  template, pins each agent's `provider:` + substitutes AGENT.md
+  placeholders, fires the task through `Agent.Dispatch.execute/3`,
+  and writes outputs as `kind: benchmark-output/v1` under
+  `benchmarks/runs/<id>/providers/<p>/output.md`. Manifest
+  `status:` flips `in-progress → completed|failed`. GEP-26 →
+  Implemented.

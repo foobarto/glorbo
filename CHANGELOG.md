@@ -10,6 +10,32 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-26 Phase B dispatch orchestrator
+
+- `glorbo bench run <template> <task-id> --providers a,b,c
+  [--keep-shadow]` now actually fires the named task against
+  one shadow company per provider and collects outputs under
+  `~/.glorbo/benchmarks/runs/<run-id>/`. Shadow companies are
+  forked from the template, the per-agent `provider:` (and
+  `{{ provider }}` / `{{ model }}` placeholders) are pinned
+  per fork, and a `manifest.json` is written with
+  `status: in-progress → completed|failed`. The
+  `/benchmarks/<run-id>` scoring UI (GEP-26 Phase C) picks the
+  run up automatically.
+- `Glorbo.Benchmarks.Orchestrator.run/4` is the underlying
+  API; `Glorbo.CLI.Bench` is a thin wrapper with ✓/✗ summary
+  rendering. Shadow companies are deleted on success unless
+  `--keep-shadow` is passed; failures leave `dispatch-error.txt`
+  under `providers/<p>/` for triage.
+
+### Fixed
+
+- `Glorbo.Network.Proxy.stop/1` now tolerates a dead pid
+  (`{:noproc, _}` / `:noproc`) instead of propagating the
+  exit — removed a TOCTOU race in test teardowns where
+  `Process.alive?/1` returned `true` but the proxy
+  terminated before `GenServer.stop` sent its message.
+
 ### Changed — GEP-23 D1 network enum rename (BREAKING)
 
 - `network:` frontmatter values now `loopback | proxy | full`

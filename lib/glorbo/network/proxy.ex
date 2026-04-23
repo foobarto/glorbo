@@ -102,7 +102,12 @@ defmodule Glorbo.Network.Proxy do
   def port(server), do: GenServer.call(server, :port)
 
   @spec stop(GenServer.server()) :: :ok
-  def stop(server), do: GenServer.stop(server)
+  def stop(server) do
+    GenServer.stop(server)
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, :noproc -> :ok
+  end
 
   # ---------------------------------------------------------------------------
   # GenServer callbacks
