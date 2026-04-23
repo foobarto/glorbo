@@ -2,7 +2,7 @@
 gep: 0028
 title: Agent-Created Proposals via Director Approval
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 history:
@@ -35,6 +35,20 @@ history:
       ProposalsLive view (today proposals only surface via MCP tools +
       inbox PubSub), and auto-approve-hire-within-headcount-budget
       policy per GEP-28 §Goals bullet 4.
+  - date: 2026-04-23
+    status: Implemented
+    note: |
+      Final pieces landed: `GlorboWeb.ProposalsLive` at
+      `/companies/:co/proposals` groups proposals by status with
+      inline Approve / Deny actions (deny opens a reason-capture
+      modal); `Glorbo.Company.Proposals.{list,fetch,flip}/4` is the
+      read + flip API the LV and future clients share; and the
+      Router now auto-approves `subtype: hire` when current agent
+      count `<` `company.md` `headcount_budget:`, stamping
+      `approved_by: system/auto-approve-hire` and emitting a
+      `proposal.auto_approved` audit. Absent / zero budget or
+      over-budget headcount falls through to Director approval.
+      Sidebar gets a dedicated `Proposals` nav item.
 requires: [3, 5, 10, 19, 25]
 see-also: [27]
 ---

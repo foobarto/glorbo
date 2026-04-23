@@ -52,6 +52,10 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/audit", AuditLive
     # paperclip-ux-gaps §7 — dedicated goals page.
     live "/companies/:company/goals", GoalsLive
+    # GEP-28 — agent-created proposals (hire, fire, budget, project,
+    # custom). Mirrors the approval queue shape but lives on its own
+    # route so the unified inbox isn't the only entry point.
+    live "/companies/:company/proposals", ProposalsLive
     # paperclip-ux-gaps §9 — skills marketplace / bundle view.
     # Read-only listing of skills available to this company's agents;
     # "builtin" = ships with Glorbo under priv/templates/skills,

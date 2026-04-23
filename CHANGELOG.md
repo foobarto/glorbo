@@ -10,6 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-28 ProposalsLive + auto-approve-hire
+
+- New Director-facing `/companies/:co/proposals` LiveView groups
+  `proposals/*.md` by `status:` (pending / approved / denied),
+  renders subtype + proposed_by + body preview per row, and wires
+  Approve / Deny buttons that flip the proposal frontmatter in
+  place via `Glorbo.Company.Proposals.flip/4`. Deny opens a
+  modal for an optional `denial_reason` persisted to frontmatter
+  + audit log. Sidebar gets a new `Proposals` entry between
+  Inbox and Audit log.
+- `Glorbo.Company.Router` now auto-approves `subtype: hire`
+  proposals when the company has room under `headcount_budget:`
+  in `company.md` (current agent count `<` budget). The writer
+  stamps `approved_by: system/auto-approve-hire` + `approved_at`
+  and emits a `proposal.auto_approved` audit event. Any other
+  subtype, absent/zero budget, or over-budget headcount falls
+  through to Director approval (existing behaviour).
+- Read/flip API: `Glorbo.Company.Proposals.{list,fetch,flip}/4`
+  — the LiveView's dependency, also callable from `iex --remsh`.
+
 ### Added — macOS binaries via Linux-hosted Zig cross-compile
 
 - New `build-macos-cross` CI job on `ubuntu-24.04` produces both

@@ -1477,4 +1477,205 @@ defmodule Glorbo.Company.RouterTest do
       refute content =~ "\"weird.key\""
     end
   end
+
+  describe "GEP-28 auto-approve-hire within headcount_budget" do
+    setup do
+      base = TmpGlorboHome.setup()
+      scaffold_company(base, ["ceo"])
+      File.mkdir_p!(Path.join([base, "companies", @company, "proposals"]))
+      ceo_outbox = Path.join([base, "companies", @company, "agents/ceo/outbox/proposals"])
+      File.mkdir_p!(ceo_outbox)
+
+      {:ok,
+       base: base,
+       ceo_outbox: ceo_outbox,
+       proposals_dir: Path.join([base, "companies", @company, "proposals"])}
+    end
+
+    defp write_company_md!(base, frontmatter) do
+      path = Path.join([base, "companies", @company, "company.md"])
+      File.write!(path, frontmatter)
+      path
+    end
+
+    defp start_hire_router!(base, captured_audits) do
+      perms_fun = fn
+        "ceo", _state -> {:ok, [{"proposals", "propose", "*"}]}
+        _, _state -> {:ok, []}
+      end
+
+      audit_fun = fn _co, record ->
+        Agent.update(captured_audits, &[record | &1])
+        :ok
+      end
+
+      name = Glorbo.Test.UniqueName.gen("router")
+
+      pid =
+        start_supervised!(
+          {Router,
+           [
+             name: name,
+             company: @company,
+             base: base,
+             audit_fun: audit_fun,
+             agent_permissions_fun: perms_fun
+           ]}
+        )
+
+      {name, pid}
+    end
+
+    defp wait_for_proposal(router), do: _ = :sys.get_state(router)
+
+    test "hire under budget → proposal written with status=approved + audit emits proposal.auto_approved",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      write_company_md!(base, """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      headcount_budget: 3
+      ---
+      """)
+
+      {:ok, audits} = Agent.start_link(fn -> [] end)
+      {name, _pid} = start_hire_router!(base, audits)
+
+      File.write!(Path.join(ceo_outbox, "hire-writer.md"), """
+      ---
+      kind: proposal/v1
+      id: hire-writer
+      subtype: hire
+      status: pending-approval
+      ---
+      Need a Writer to cover weekly posts.
+      """)
+
+      send(name, {:file_event, "agents/ceo/outbox/proposals/hire-writer.md", [:created]})
+      wait_for_proposal(name)
+
+      dest = Path.join(proposals_dir, "hire-writer.md")
+      assert File.exists?(dest)
+
+      content = File.read!(dest)
+      assert content =~ "status: approved"
+      assert content =~ "approved_by: system/auto-approve-hire"
+      assert content =~ ~r/approved_at: "?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+      assert content =~ "proposed_by: ceo"
+      assert content =~ "Need a Writer"
+
+      recorded = Agent.get(audits, &Enum.reverse/1)
+
+      assert Enum.any?(recorded, fn row ->
+               row.actor == "system/auto-approve-hire" and
+                 row.action == "proposal.auto_approved" and
+                 row.target == "proposals/hire-writer.md"
+             end)
+    end
+
+    test "hire at exactly budget cap → still pending-approval (no auto-approve)",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      # One agent on disk + budget=1 → current == budget, not `<`.
+      write_company_md!(base, """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      headcount_budget: 1
+      ---
+      """)
+
+      File.write!(
+        Path.join([base, "companies", @company, "agents/ceo/AGENT.md"]),
+        "---\nkind: agent/v1\nslug: ceo\nrole: CEO\nprovider: claude-code\nnetwork: proxy\n---\n"
+      )
+
+      {:ok, audits} = Agent.start_link(fn -> [] end)
+      {name, _pid} = start_hire_router!(base, audits)
+
+      File.write!(Path.join(ceo_outbox, "hire-writer.md"), """
+      ---
+      kind: proposal/v1
+      id: hire-writer
+      subtype: hire
+      status: pending-approval
+      ---
+      Need a Writer.
+      """)
+
+      send(name, {:file_event, "agents/ceo/outbox/proposals/hire-writer.md", [:created]})
+      wait_for_proposal(name)
+
+      dest = Path.join(proposals_dir, "hire-writer.md")
+      assert File.exists?(dest)
+      content = File.read!(dest)
+      assert content =~ "status: pending-approval"
+      refute content =~ "approved_by: system/auto-approve-hire"
+    end
+
+    test "non-hire subtype → director approval still required",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      write_company_md!(base, """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      headcount_budget: 5
+      ---
+      """)
+
+      {:ok, audits} = Agent.start_link(fn -> [] end)
+      {name, _pid} = start_hire_router!(base, audits)
+
+      File.write!(Path.join(ceo_outbox, "bump-budget.md"), """
+      ---
+      kind: proposal/v1
+      id: bump-budget
+      subtype: budget
+      status: pending-approval
+      ---
+      Need an extra $50.
+      """)
+
+      send(name, {:file_event, "agents/ceo/outbox/proposals/bump-budget.md", [:created]})
+      wait_for_proposal(name)
+
+      content = File.read!(Path.join(proposals_dir, "bump-budget.md"))
+      assert content =~ "status: pending-approval"
+      refute content =~ "approved_by:"
+    end
+
+    test "no headcount_budget in company.md → director approval required even for hire",
+         %{base: base, ceo_outbox: ceo_outbox, proposals_dir: proposals_dir} do
+      # Company.md without the field — safer default is NOT auto-approving.
+      write_company_md!(base, """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      ---
+      """)
+
+      {:ok, audits} = Agent.start_link(fn -> [] end)
+      {name, _pid} = start_hire_router!(base, audits)
+
+      File.write!(Path.join(ceo_outbox, "hire-writer.md"), """
+      ---
+      kind: proposal/v1
+      id: hire-writer
+      subtype: hire
+      status: pending-approval
+      ---
+      Need a Writer.
+      """)
+
+      send(name, {:file_event, "agents/ceo/outbox/proposals/hire-writer.md", [:created]})
+      wait_for_proposal(name)
+
+      content = File.read!(Path.join(proposals_dir, "hire-writer.md"))
+      assert content =~ "status: pending-approval"
+      refute content =~ "approved_by:"
+    end
+  end
 end

@@ -24,8 +24,8 @@ defmodule GlorboWeb.Components.Sidebar do
 
     * `:current_company` — slug string or nil.
     * `:active` — one of `:overview | :kanban | :chat |
-      :inbox | :audit | :goals | :skills | :braindump | :providers |
-      :costs | nil`; drives the active-row highlight.
+      :inbox | :audit | :goals | :skills | :braindump | :proposals |
+      :providers | :costs | nil`; drives the active-row highlight.
   """
   use Phoenix.Component
   use GlorboWeb, :verified_routes
@@ -41,6 +41,7 @@ defmodule GlorboWeb.Components.Sidebar do
     # the pending-approvals badge now lives on the Inbox item.
     # Backlog #14 rationale: one feed, not two.
     {:inbox, "☷", "Inbox", :company},
+    {:proposals, "☴", "Proposals", :company},
     {:audit, "≡", "Audit log", :company},
     {:goals, "◇", "Goals", :company},
     {:skills, "◉", "Skills", :company},
@@ -230,6 +231,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(:kanban, slug), do: ~p"/companies/#{slug}/kanban"
   defp nav_href(:chat, slug), do: ~p"/companies/#{slug}/channels/general"
   defp nav_href(:inbox, slug), do: ~p"/companies/#{slug}/inbox"
+  defp nav_href(:proposals, slug), do: ~p"/companies/#{slug}/proposals"
   defp nav_href(:audit, slug), do: ~p"/companies/#{slug}/audit"
   defp nav_href(:goals, slug), do: ~p"/companies/#{slug}/goals"
   defp nav_href(:skills, slug), do: ~p"/companies/#{slug}/skills"

@@ -1200,9 +1200,10 @@ defmodule Glorbo.Company.Router do
     # because we couldn't clean the outbox source — the proposal is
     # already on disk.
     case validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
-      {:ok, final_content} ->
+      {:ok, final_content, outcome} ->
         :ok = File.mkdir_p(Path.dirname(dest_path))
         :ok = atomic_write(dest_path, final_content)
+        maybe_audit_auto_approve(outcome, sender, id, state)
         cleanup_outbox_source(abs_path, sender, id, state)
         :ok
 
@@ -1231,9 +1232,9 @@ defmodule Glorbo.Company.Router do
          :ok <- require_proposal_id_match(meta, id),
          :ok <- require_proposal_subtype(meta),
          {:ok, perms} <- lookup_permissions(sender, state),
-         {:ok, merged_meta, final_body} <-
-           validate_and_merge_proposal(meta, body, dest_path, sender, perms) do
-      {:ok, serialize_proposal(merged_meta, final_body)}
+         {:ok, merged_meta, final_body, outcome} <-
+           validate_and_merge_proposal(meta, body, dest_path, sender, perms, state) do
+      {:ok, serialize_proposal(merged_meta, final_body), outcome}
     end
   end
 
@@ -1284,15 +1285,18 @@ defmodule Glorbo.Company.Router do
   # preserves the existing body (agents can't rewrite a proposal's
   # rationale when deciding it); the create path uses the incoming
   # body verbatim.
-  defp validate_and_merge_proposal(meta, body, dest_path, sender, perms) do
+  defp validate_and_merge_proposal(meta, body, dest_path, sender, perms, state) do
     if File.exists?(dest_path) do
-      flip_proposal(meta, dest_path, sender, perms)
+      case flip_proposal(meta, dest_path, sender, perms) do
+        {:ok, merged, flipped_body} -> {:ok, merged, flipped_body, :flipped}
+        other -> other
+      end
     else
-      create_proposal(meta, body, sender, perms)
+      create_proposal(meta, body, sender, perms, state)
     end
   end
 
-  defp create_proposal(meta, body, sender, perms) do
+  defp create_proposal(meta, body, sender, perms, state) do
     with :ok <- ACLMapper.check_action(perms, {"proposals", "propose", "*"}),
          :ok <- require_create_status(meta),
          :ok <- require_nil_approval_fields(meta) do
@@ -1302,9 +1306,89 @@ defmodule Glorbo.Company.Router do
         |> Map.put_new_lazy("proposed_at", &iso_now/0)
         |> Map.put("requires_approval", Map.get(meta, "requires_approval", "director"))
 
-      {:ok, stamped, body}
+      case maybe_auto_approve_hire(stamped, state) do
+        {:auto_approved, auto_meta} -> {:ok, auto_meta, body, :auto_approved}
+        :no -> {:ok, stamped, body, :created}
+      end
     end
   end
+
+  # GEP-28 §Goals #4 — auto-approve a `hire` proposal when the
+  # company has room under `headcount_budget`. Any other subtype,
+  # no budget, or an over-budget count falls through to Director
+  # approval (existing behaviour). Counts CURRENT agents on disk
+  # as the source of truth; "+1 for the incoming hire" is implied
+  # by treating `current < budget` as the condition, not
+  # `current + 1 <= budget` — a proposal that would push you
+  # exactly to the budget cap is allowed, a proposal that exceeds
+  # it is not. The proposed agent isn't written yet (the proposal
+  # is the trigger for the Director to run `glorbo new agent`), so
+  # we don't double-count.
+  defp maybe_auto_approve_hire(%{"subtype" => "hire"} = meta, state) do
+    with {:ok, budget} <- read_headcount_budget(state),
+         true <- is_integer(budget) and budget > 0,
+         current <- count_current_agents(state),
+         true <- current < budget do
+      auto_meta =
+        meta
+        |> Map.put("status", "approved")
+        |> Map.put("approved_by", "system/auto-approve-hire")
+        |> Map.put("approved_at", iso_now())
+        |> Map.put("denial_reason", nil)
+        |> Map.put("superseded_by", nil)
+
+      {:auto_approved, auto_meta}
+    else
+      _ -> :no
+    end
+  end
+
+  defp maybe_auto_approve_hire(_meta, _state), do: :no
+
+  defp read_headcount_budget(state) do
+    path = Path.join([state.base, "companies", state.company, "company.md"])
+
+    case File.read(path) do
+      {:ok, content} ->
+        case Frontmatter.parse(content) do
+          {:ok, meta, _body} -> {:ok, Map.get(meta, "headcount_budget")}
+          _ -> {:ok, nil}
+        end
+
+      _ ->
+        {:ok, nil}
+    end
+  end
+
+  defp count_current_agents(state) do
+    agents_dir = Path.join([state.base, "companies", state.company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.count(fn entry ->
+          File.dir?(Path.join(agents_dir, entry)) and
+            File.regular?(Path.join([agents_dir, entry, "AGENT.md"]))
+        end)
+
+      _ ->
+        0
+    end
+  end
+
+  defp maybe_audit_auto_approve(:auto_approved, sender, id, state) do
+    _ =
+      state.audit_fun.(state.company, %{
+        actor: "system/auto-approve-hire",
+        action: "proposal.auto_approved",
+        target: "proposals/#{id}.md",
+        detail: %{proposed_by: sender, reason: "within headcount_budget"}
+      })
+
+    :ok
+  end
+
+  defp maybe_audit_auto_approve(_outcome, _sender, _id, _state), do: :ok
 
   defp flip_proposal(meta, dest_path, sender, perms) do
     with :ok <- ACLMapper.check_action(perms, {"proposals", "decide", "*"}),
