@@ -10,6 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — reindex correctness (codex + opencode round-3)
+
+- **[HIGH]** `Glorbo.Filesystem.Reindex.upsert_agent/2` now resolves
+  the parent company via the canonical `file_path`, not via the
+  mutable `Company.name` frontmatter value. A prior version called
+  `Repo.get_by(Company, name: <dir_slug>)` which cross-wired two
+  companies with matching `name:` frontmatter, and broke whenever
+  the directory slug diverged from the frontmatter name.
+- **[HIGH]** `safe_markdown_files/1` adds an ancestor-chain symlink
+  check on top of its lexical `Path.expand/1` escape test. Lexical
+  expansion does not follow symlinks, so a symlinked directory
+  under `companies/<co>/` could smuggle external content into the
+  reindex. The new `Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?/1`
+  helper walks the full ancestor chain with `File.lstat` and refuses
+  any segment that's a symlink. Two new regression tests pin this.
+
 ### Security — scope validation + atomic_write hardening
 
 - **[HIGH]** `Glorbo.Sandbox.PermissionMapper.permission_to_flags/2`

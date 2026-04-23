@@ -106,4 +106,41 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
       {:error, reason} -> {:error, {:read_failed, reason}}
     end
   end
+
+  @doc """
+  Return `true` if ANY ancestor segment of `path` (including `path`
+  itself) is a symlink. Use to decide whether a path the filesystem
+  walker discovered actually lives inside its expected tree or was
+  smuggled in via a symlinked directory.
+
+  Rationale: `Path.expand/1` only resolves `..` / `.` lexically, so
+  `/real/path/to/x` and `/real/path/to/x` where some mid-segment is
+  a symlink out of the tree look identical after expansion. A
+  realpath resolver doesn't exist in OTP; walking segments with
+  `File.lstat` is the portable approximation.
+  """
+  @spec any_symlink_in_path?(Path.t()) :: boolean()
+  def any_symlink_in_path?(path) when is_binary(path) do
+    Enum.any?(ancestor_paths(path), &symlink?/1)
+  end
+
+  defp ancestor_paths(path) do
+    path
+    |> Path.split()
+    |> Enum.reduce([], fn
+      "/", acc -> ["/" | acc]
+      seg, [] -> [seg]
+      seg, [head | _] = acc -> [Path.join(head, seg) | acc]
+    end)
+    |> Enum.reverse()
+  end
+
+  defp symlink?(""), do: false
+
+  defp symlink?(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :symlink}} -> true
+      _ -> false
+    end
+  end
 end

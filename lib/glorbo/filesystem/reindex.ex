@@ -150,8 +150,12 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
-  # Collect *.md under companies_dir; reject any path whose realpath escapes
-  # companies_dir (symlink-escape defence per T-2-03).
+  # Collect *.md under companies_dir; reject any path whose lexical
+  # ancestor escape or whose ancestor chain contains a symlink (T-2-03
+  # symlink-escape defence). The lexical check alone was bypassable
+  # via a symlinked directory under `companies/<co>/` that points at
+  # `/etc`: Path.expand/1 doesn't follow symlinks, so the escape was
+  # invisible. Codex + opencode round-3 flagged.
   defp safe_markdown_files(companies_dir) do
     companies_abs = Path.expand(companies_dir)
 
@@ -161,11 +165,17 @@ defmodule Glorbo.Filesystem.Reindex do
     |> Enum.filter(fn path ->
       expanded = Path.expand(path)
 
-      if String.starts_with?(expanded, companies_abs <> "/") or expanded == companies_abs do
-        true
-      else
-        Logger.warning("reindex rejected path (escapes companies_dir): #{path}")
-        false
+      cond do
+        not (String.starts_with?(expanded, companies_abs <> "/") or expanded == companies_abs) ->
+          Logger.warning("reindex rejected path (lexical escape of companies_dir): #{path}")
+          false
+
+        Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(expanded) ->
+          Logger.warning("reindex rejected path (symlinked ancestor segment): #{path}")
+          false
+
+        true ->
+          true
       end
     end)
   end
@@ -277,8 +287,13 @@ defmodule Glorbo.Filesystem.Reindex do
     role = meta["role"]
     provider = meta["provider"]
     model = meta["model"]
-    company_name = infer_company_name_from_agent_path(path)
-    company_id = Repo.get_by(Company, name: company_name) |> maybe_id()
+    # Resolve the parent company row by path, NOT by frontmatter `name:`.
+    # A prior version looked up `Repo.get_by(Company, name: <slug>)`
+    # which cross-wired two companies whenever their `name:` frontmatter
+    # matched, and broke after a `name:` rename. The on-disk directory
+    # slug IS the company identity (filesystem-as-source-of-truth);
+    # derive the company row's file_path from it and look up there.
+    company_id = company_id_from_agent_path(path)
 
     Repo.insert!(
       %Agent{
@@ -294,6 +309,13 @@ defmodule Glorbo.Filesystem.Reindex do
     )
   end
 
+  # .../companies/<co>/agents/<slug>/AGENT.md → .../companies/<co>/company.md
+  defp company_id_from_agent_path(path) do
+    company_dir = path |> Path.dirname() |> Path.dirname() |> Path.dirname()
+    company_md = Path.join(company_dir, "company.md")
+    Repo.get_by(Company, file_path: company_md) |> maybe_id()
+  end
+
   defp maybe_id(nil), do: nil
   defp maybe_id(%{id: id}), do: id
 
@@ -305,16 +327,6 @@ defmodule Glorbo.Filesystem.Reindex do
   # Given .../companies/<co>/agents/<name>/agent.md → "<name>"
   defp infer_agent_name(path) do
     path |> Path.split() |> Enum.reverse() |> Enum.at(1)
-  end
-
-  # Given .../companies/<co>/agents/<name>/agent.md → "<co>"
-  defp infer_company_name_from_agent_path(path) do
-    segments = Path.split(path)
-
-    case Enum.reverse(segments) do
-      [_agent_md, _agent_name, "agents", co | _] -> co
-      _ -> nil
-    end
   end
 
   defp cleanup_vanished(seen_files) do

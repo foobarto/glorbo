@@ -142,7 +142,7 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert Repo.all(Agent) == []
     end
 
-    test "symlinked markdown file is skipped during full reindex" do
+    test "symlinked markdown file is refused by safe_markdown_files filter" do
       base = TmpGlorboHome.setup()
       external = write!(base, "outside/company.md", "---\nname: leak\n---\n")
       company_dir = Path.join(base, "companies/acme")
@@ -156,9 +156,38 @@ defmodule Glorbo.Filesystem.ReindexTest do
           Reindex.run(base: base)
         end)
 
-      assert {:ok, %{indexed: 0, skipped: 1, deleted: 0}} = result
-      assert log =~ "not_regular_file"
+      # The file-collector filters out paths with a symlinked ancestor
+      # before process_file/1 even sees them, so it neither indexes nor
+      # counts as a "skipped" processing — it's just not picked up.
+      # The log message comes from safe_markdown_files's warning.
+      assert {:ok, %{indexed: 0, skipped: 0, deleted: 0}} = result
+      assert log =~ "symlinked ancestor segment" or log =~ "not_regular_file"
       assert Repo.all(Company) == []
+    end
+
+    test "symlinked directory ANCESTOR rejected (codex/opencode round-3)" do
+      base = TmpGlorboHome.setup()
+      # External target that smuggles a company.md with bad content.
+      outside = Path.join(base, "attacker-tree/companies/smuggled")
+      File.mkdir_p!(outside)
+      File.write!(Path.join(outside, "company.md"), "---\nname: smuggled\n---\n")
+
+      # Symlink companies/smuggled → attacker-tree/companies/smuggled.
+      File.mkdir_p!(Path.join(base, "companies"))
+      link = Path.join([base, "companies", "smuggled"])
+      File.ln_s!(outside, link)
+
+      import ExUnit.CaptureLog
+
+      {result, log} =
+        with_log(fn ->
+          Reindex.run(base: base)
+        end)
+
+      assert {:ok, %{indexed: 0, skipped: 0, deleted: 0}} = result
+      assert log =~ "symlinked ancestor segment"
+      # Smuggled company stayed out of the DB.
+      assert Repo.all(Company) |> Enum.any?(&(&1.name == "smuggled")) == false
     end
   end
 
