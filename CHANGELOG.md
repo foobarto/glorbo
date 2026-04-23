@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — proxy hostname parser hardening
+
+- **[HIGH]** `Glorbo.Network.Proxy` now rejects non-ASCII hostnames
+  in CONNECT lines. A CONNECT containing an IDN-homograph hostname
+  (e.g. `аpi.anthropic.com` — Cyrillic `а` + latin rest) would
+  previously be `String.downcase`d and compared byte-for-byte
+  against an ASCII allowlist; no match, but also not rejected at
+  the parser layer. Full IDN support needs an `:idna` library
+  and careful normalisation; until we take that on, ASCII-only
+  hostnames are the safe stance.
+- **[MED]** Trailing-dot FQDN form is now stripped before the
+  allowlist lookup. `api.anthropic.com` and `api.anthropic.com.`
+  resolve identically at DNS, but without normalisation the latter
+  would miss an exact-match allowlist entry and fall through to the
+  smart classifier. Two new regression tests P8a (non-ASCII refusal)
+  and P8b (trailing-dot match) pin the contract.
+
 ### Changed — `GlorboWeb.Slug` → `Glorbo.Slug` (dependency direction)
 
 - **[BREAKING]** Moved `GlorboWeb.Slug` to `Glorbo.Slug`.

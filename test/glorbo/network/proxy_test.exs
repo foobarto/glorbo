@@ -140,6 +140,42 @@ defmodule Glorbo.Network.ProxyTest do
       {_sock, response} = connect_and_send(port, "CONNECT api.anthropic.com HTTP/1.1\r\n\r\n")
       assert response =~ "400 Bad Request"
     end
+
+    # IDN-homograph defense (codex + opencode round-2). A
+    # Cyrillic-а + latin rest hostname encoded as UTF-8 bytes in the
+    # CONNECT line must be rejected as malformed. Until full IDN
+    # support lands behind an :idna dep, accepting ASCII-only DNS
+    # names is the only safe stance.
+    test "P8a: non-ASCII host in CONNECT is refused as malformed" do
+      {_pid, port} = start_proxy(["api.anthropic.com"])
+      # "аpi.anthropic.com" — first char is Cyrillic U+0430.
+      cyrillic_host = <<0xD0, 0xB0>> <> "pi.anthropic.com"
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT #{cyrillic_host}:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "400 Bad Request"
+    end
+
+    # Trailing-dot normalisation (codex round-1 LOW + opencode HIGH).
+    # `api.anthropic.com.` and `api.anthropic.com` are the same DNS
+    # name. Without normalisation, allowlist lookup would miss on the
+    # trailing-dot variant and the request would fall through to the
+    # classifier. This assertion pins the parser's normalisation —
+    # with the FQDN suffix stripped the CONNECT passes the allowlist
+    # check; it only fails downstream (no upstream listening on
+    # 127.0.0.1:443). A plain 403 would mean the allowlist rejected.
+    test "P8b: CONNECT host trailing dot is stripped before allowlist lookup" do
+      {_pid, port} = start_proxy(["api.anthropic.com"])
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT api.anthropic.com.:443 HTTP/1.1\r\n\r\n")
+
+      # Not a 403 — allowlist matched on the normalised host. The
+      # downstream upstream-connect may 502 but the allowlist
+      # boundary is the point.
+      refute response =~ "403 Forbidden"
+    end
   end
 
   describe "P2, P10: upstream tunnel" do

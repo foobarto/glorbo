@@ -336,14 +336,35 @@ defmodule Glorbo.Network.Proxy do
   defp parse_connect_line("CONNECT " <> rest) do
     with [host_port, _http_version] <- String.split(rest, " ", parts: 2),
          [host, port_str] when host != "" <- String.split(host_port, ":", parts: 2),
-         {port, ""} when port > 0 and port <= 65_535 <- Integer.parse(port_str) do
-      {:ok, String.downcase(host), port}
+         {port, ""} when port > 0 and port <= 65_535 <- Integer.parse(port_str),
+         :ok <- validate_connect_host(host) do
+      {:ok, host |> String.trim_trailing(".") |> String.downcase(), port}
     else
       _ -> {:error, :malformed}
     end
   end
 
   defp parse_connect_line(_), do: {:error, :not_connect}
+
+  # Reject non-ASCII hosts up front. IDN homographs
+  # (e.g. `аpi.anthropic.com` with a Cyrillic `а`) would otherwise pass
+  # allowlist lookup against the ASCII-punycoded form if naïvely
+  # downcased. Full IDN/Punycode support needs an `:idna` library and
+  # careful normalisation; until we take that on, only accept plain
+  # ASCII DNS names so the allowlist's equality check is meaningful.
+  # Also strip FQDN trailing dots (`example.com.` == `example.com`)
+  # so operators can't be bypassed by appending a `.`.
+  defp validate_connect_host(host) do
+    cond do
+      not String.printable?(host, :infinity) -> {:error, :non_printable_host}
+      not ascii_only?(host) -> {:error, :non_ascii_host}
+      true -> :ok
+    end
+  end
+
+  defp ascii_only?(binary) when is_binary(binary) do
+    Enum.all?(:binary.bin_to_list(binary), &(&1 < 128))
+  end
 
   defp evaluate_and_tunnel(host, port, client_sock, policy, task_sup) do
     cond do
