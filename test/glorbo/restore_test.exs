@@ -140,6 +140,80 @@ defmodule Glorbo.RestoreTest do
                File.read!(Path.join([b, "companies", "acme", "agents", "ceo", "AGENT.md"]))
     end
 
+    # Codex round-2 regression. The prior extract-into-base path would
+    # overwrite a pre-existing file (e.g. the user's config.md) before
+    # verifying archive integrity, then only wipe top-level names
+    # that didn't exist beforehand. An archive with one regular file
+    # (overwriting `config.md`) + one escaping symlink caused permanent
+    # loss of the pre-existing config.
+    #
+    # The transactional staging extract must leave base untouched on
+    # rejection: config.md stays put with its original content.
+    test "rejection leaves pre-existing files untouched (no partial overwrite)",
+         %{host_b: b} do
+      # Seed a pre-existing config.md the agent would replace.
+      File.mkdir_p!(b)
+      pre_config = Path.join(b, "config.md")
+      File.write!(pre_config, "ORIGINAL-DO-NOT-CLOBBER\n")
+
+      # Craft a malicious archive: overwrite config.md + drop an
+      # escaping symlink so verify rejects after extract.
+      bad_archive =
+        Path.join(
+          System.tmp_dir!(),
+          "evil-overlay-#{System.unique_integer([:positive])}.tar.gz"
+        )
+
+      on_exit(fn -> File.rm_rf!(bad_archive) end)
+
+      # Build the archive from a real on-disk tree so :erl_tar sees the
+      # symlink as a symlink (the tuple-form symlink API is not exposed
+      # by erl_tar.create/3 the same way in every OTP release).
+      archive_root =
+        Path.join(
+          System.tmp_dir!(),
+          "evil-src-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(archive_root)
+      File.write!(Path.join(archive_root, "config.md"), "OVERWRITE-CONTENT\n")
+      :ok = File.ln_s("../../etc/passwd", Path.join(archive_root, "escape-link"))
+
+      {:ok, tar} = :erl_tar.open(String.to_charlist(bad_archive), [:write, :compressed])
+
+      :ok =
+        :erl_tar.add(
+          tar,
+          String.to_charlist(Path.join(archive_root, "config.md")),
+          ~c"config.md",
+          []
+        )
+
+      :ok =
+        :erl_tar.add(
+          tar,
+          String.to_charlist(Path.join(archive_root, "escape-link")),
+          ~c"escape-link",
+          []
+        )
+
+      :ok = :erl_tar.close(tar)
+      File.rm_rf!(archive_root)
+
+      # Restore with --force so the non-empty-base guard doesn't pre-empt
+      # the test; the transactional extract should reject on the escape
+      # and leave config.md intact.
+      assert {:error, _reason} =
+               Glorbo.Restore.run(bad_archive,
+                 base: b,
+                 force: true,
+                 skip_migrate: true,
+                 skip_fixer: true
+               )
+
+      assert File.read!(pre_config) == "ORIGINAL-DO-NOT-CLOBBER\n"
+    end
+
     test "archive_not_found returns :archive_not_found", %{host_b: b} do
       missing =
         "/tmp/does-not-exist-#{System.unique_integer([:positive])}.tar.gz"

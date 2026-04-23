@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — Restore transactional extract (rollback-safe)
+
+- **[HIGH]** `Glorbo.Restore.extract/2` now unpacks archives into a
+  sibling `<base>.restore-<ts>/` staging directory first, verifies
+  symlink containment there, and only moves the contents into
+  `base` on success. On rejection, the staging dir is wiped and
+  `base` is untouched. The previous path extracted directly into
+  `base` and, on verify-rejection, only removed top-level entries
+  that didn't exist before — pre-existing files the archive
+  overwrote were already lost (codex round-2). New regression test
+  locks in: a malicious archive overwriting `config.md` + an
+  escaping symlink leaves the original `config.md` byte-identical.
+
 ### Security — PathRequestGate symlink-segment check (GEP-27 compliance)
 
 - **[HIGH]** `Glorbo.PathRequestGate.do_approve` now refuses to grant

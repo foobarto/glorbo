@@ -180,58 +180,72 @@ defmodule Glorbo.Restore do
   end
 
   defp extract(archive, base) do
-    # Snapshot pre-extract contents so we can distinguish an escape-
-    # rejection on a fresh base (safe to wipe) from one layered over
-    # existing user data (must NOT wipe — TODO.md Important #6).
-    preexisting = existing_entries(base)
+    # Transactional extract: unpack into a sibling staging directory
+    # first, verify archive integrity + symlink containment, THEN move
+    # the contents into `base`. A prior version extracted directly into
+    # `base` and only rolled back newly-created top-level entries on
+    # rejection, which meant any existing file the archive overwrote
+    # was already clobbered before verification ran (codex round-2).
     File.mkdir_p!(base)
+    staging = staging_dir_for(base)
+    File.mkdir_p!(staging)
 
+    try do
+      with :ok <- extract_into(archive, staging),
+           :ok <- verify_no_escaping_symlinks(staging) do
+        move_staging_into_base(staging, base)
+      end
+    after
+      # Best-effort wipe. Successful moves leave `staging` empty; a
+      # verify-rejection leaves the malicious tree under `staging`.
+      # Either way, nothing under `base` is touched by this cleanup.
+      _ = File.rm_rf(staging)
+    end
+  end
+
+  defp staging_dir_for(base) do
+    ts = System.system_time(:microsecond)
+    Path.expand(base) <> ".restore-#{ts}"
+  end
+
+  defp extract_into(archive, cwd) do
     case :erl_tar.extract(
            String.to_charlist(archive),
-           [:compressed, {:cwd, String.to_charlist(base)}]
+           [:compressed, {:cwd, String.to_charlist(cwd)}]
          ) do
-      :ok ->
-        # CR-01: :erl_tar.table does not surface symlink link-targets, so
-        # a malicious archive with a benign name but escaping linkname
-        # passes traversal_guard. Post-extract, walk the tree and reject
-        # any symlink whose resolved target escapes base. On rejection,
-        # remove ONLY the extracted contents; preserve anything that
-        # was there pre-extract (the --force case).
-        case verify_no_escaping_symlinks(base) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            clean_up_extract(base, preexisting)
-            {:error, reason}
-        end
-
-      {:error, reason} ->
-        {:error, {:extract_failed, reason}}
+      :ok -> :ok
+      {:error, reason} -> {:error, {:extract_failed, reason}}
     end
   end
 
-  # Top-level listing captured before extract begins.
-  defp existing_entries(base) do
-    case File.ls(base) do
-      {:ok, entries} -> MapSet.new(entries)
-      _ -> MapSet.new()
-    end
-  end
+  defp move_staging_into_base(staging, base) do
+    case File.ls(staging) do
+      {:ok, entries} ->
+        Enum.each(entries, fn name ->
+          src = Path.join(staging, name)
+          dst = Path.join(base, name)
+          # Replace any pre-existing top-level entry atomically from the
+          # user's perspective. rename/2 fails across filesystems; fall
+          # back to rm + cp_r if that happens.
+          _ = File.rm_rf(dst)
 
-  # Remove entries that appeared during this extract; leave pre-existing
-  # user data alone. On an empty base, this is equivalent to wiping base.
-  defp clean_up_extract(base, preexisting) do
-    case File.ls(base) do
-      {:ok, current} ->
-        Enum.each(current, fn name ->
-          unless MapSet.member?(preexisting, name) do
-            File.rm_rf!(Path.join(base, name))
+          case File.rename(src, dst) do
+            :ok ->
+              :ok
+
+            {:error, :exdev} ->
+              File.cp_r!(src, dst)
+              File.rm_rf!(src)
+
+            {:error, reason} ->
+              raise "restore: rename #{src} -> #{dst} failed: #{inspect(reason)}"
           end
         end)
 
-      _ ->
         :ok
+
+      {:error, reason} ->
+        {:error, {:staging_listing_failed, reason}}
     end
   end
 
