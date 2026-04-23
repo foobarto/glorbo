@@ -158,7 +158,7 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **74 open** ·
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **73 open** ·
 48 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
@@ -175,7 +175,7 @@ validation, agent budget block enforcement, backup temp+rename
 already fixed by earlier waves
 (false-positive Codex flags; verified against HEAD).
 
-Breakdown: 0 critical, 0 high, 11 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 10 medium, 39 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
@@ -200,8 +200,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/agent_live.ex, lib/glorbo_web/stdout_streamer.ex`
 - **Approvals.Gate activation allows self‑approval of tasks** — The commit wires Glorbo.Approvals.Gate into the per‑company supervision tree, making the approval flow live. Gate subscribes to project task file events and resolves approvals whenever it sees a task status set to "approved" or "denied". Because there is no…
   *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/approvals/gate.ex, lib/glorbo/security/acl_mapper.ex`
-- **Proxy connection tasks leak mailbox messages causing DoS** — The commit switches per-connection handling from Task.Supervisor.start_child/2 to Task.Supervisor.async_nolink/2 inside the accept loop. async_nolink delivers {ref, result} and :DOWN messages to its caller (the acceptor task), but the acceptor never receives…
-  *Paths:* `lib/glorbo/network/proxy.ex`
 - **CI workflow uses unpinned GitHub Action tags** — The added workflow uses multiple `uses: ...@vX` references to third‑party actions without pinning them to commit SHAs. GitHub Action tags are mutable; if any upstream action is compromised or retagged, the workflow will execute attacker‑controlled code. This…
   *Paths:* `github/workflows/ci.yml`
 

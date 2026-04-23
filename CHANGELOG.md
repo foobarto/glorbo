@@ -33,6 +33,14 @@ change between minor versions. Pin exact versions in downstream usage.
   HTTP 429, and HTTP 5xx; honor integer `Retry-After`; fail fast on
   other 4xx.
 
+### Fixed
+
+- `Network.Proxy` no longer spawns per-connection tunnel handlers with
+  `Task.Supervisor.async_nolink/2`, which leaked task bookkeeping
+  messages into the acceptor mailbox under repeated CONNECT traffic.
+  Fire-and-forget handlers now use `start_child/2`, and the regression
+  suite asserts the acceptor queue stays drained.
+
 ## [0.3.0] — 2026-04-23
 
 Third pre-1.0 minor on the same day: GEP-31 lands and makes Linux

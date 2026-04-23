@@ -150,7 +150,7 @@ defmodule Glorbo.Network.Proxy do
           {ts, false}
       end
 
-    acceptor_ref = start_acceptor(listen_sock, policy, task_sup)
+    {acceptor_ref, acceptor_pid} = start_acceptor(listen_sock, policy, task_sup)
 
     {:ok, bound_port} = :inet.port(listen_sock)
 
@@ -162,6 +162,7 @@ defmodule Glorbo.Network.Proxy do
        task_sup: task_sup,
        owns_task_sup?: owns_task_sup?,
        acceptor_ref: acceptor_ref,
+       acceptor_pid: acceptor_pid,
        port: bound_port
      }}
   end
@@ -198,8 +199,8 @@ defmodule Glorbo.Network.Proxy do
       Logger.warning("[network.proxy] acceptor died: #{inspect(reason)} — restarting acceptor")
     end
 
-    new_ref = start_acceptor(state.listen_sock, state.policy, state.task_sup)
-    {:noreply, %{state | acceptor_ref: new_ref}}
+    {new_ref, new_pid} = start_acceptor(state.listen_sock, state.policy, state.task_sup)
+    {:noreply, %{state | acceptor_ref: new_ref, acceptor_pid: new_pid}}
   end
 
   # Tunnel-task :DOWN — log abnormal exits so proxy failures are observable.
@@ -224,7 +225,7 @@ defmodule Glorbo.Network.Proxy do
         accept_loop(listen_sock, policy, task_sup)
       end)
 
-    task.ref
+    {task.ref, task.pid}
   end
 
   # ---------------------------------------------------------------------------
@@ -238,8 +239,8 @@ defmodule Glorbo.Network.Proxy do
         # :DOWN (logged + discarded). start_child used to link the failure to
         # the Task.Supervisor itself (see CR-02), which could cascade to the
         # acceptor and silently kill new-connection handling.
-        _task =
-          Task.Supervisor.async_nolink(task_sup, fn ->
+        {:ok, _pid} =
+          Task.Supervisor.start_child(task_sup, fn ->
             handle_connection(client_sock, policy, task_sup)
           end)
 

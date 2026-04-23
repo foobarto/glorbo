@@ -408,6 +408,17 @@ audit replay metadata in `usage.json`. That means phase 2b needs a
 UTF-8 guard, not just a byte cap: invalid text now falls back to
 base64 fields instead of crashing `Jason.encode!/1` on binary output.
 
+### Network.Proxy — `async_nolink` is wrong for fire-and-forget accept loops
+
+`Task.Supervisor.async_nolink/2` is only safe when the caller will
+actually receive the task's `{ref, result}` and `:DOWN` messages. In
+`Network.Proxy.accept_loop/3`, the acceptor task never drains those
+messages, so using `async_nolink` for per-connection handlers quietly
+turns every CONNECT request into mailbox growth. Fire-and-forget tunnel
+handlers should use `Task.Supervisor.start_child/2`; keep
+`async_nolink/2` only for the one acceptor task the GenServer itself
+monitors and re-arms.
+
 ---
 
 ## What belongs in this file vs elsewhere

@@ -218,6 +218,22 @@ defmodule Glorbo.Network.ProxyTest do
         assert resp =~ "403"
       end)
     end
+
+    test "acceptor mailbox stays drained after repeated connection handling" do
+      {pid, port} = start_proxy(["api.anthropic.com"])
+
+      Enum.each(1..20, fn _ ->
+        {_sock, response} =
+          connect_and_send(port, "CONNECT evil.example.com:443 HTTP/1.1\r\n\r\n")
+
+        assert response =~ "403 Forbidden"
+      end)
+
+      acceptor_pid = :sys.get_state(pid).acceptor_pid
+      assert is_pid(acceptor_pid)
+
+      assert {:message_queue_len, 0} = Process.info(acceptor_pid, :message_queue_len)
+    end
   end
 
   describe "P12: stop/1" do
