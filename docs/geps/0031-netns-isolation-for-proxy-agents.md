@@ -2,7 +2,7 @@
 gep: 31
 title: "Network-namespace isolation for `:proxy` agents"
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-22
 requires: [5, 23]
@@ -15,7 +15,7 @@ history:
     status: Draft
     note: "Tighten rollout semantics: no pre-1.0 flags, Linux `network: proxy` becomes enforced-or-refused, and product framing stays \"security-minded\" rather than \"security tool\"."
   - date: 2026-04-23
-    status: Accepted
+    status: Implemented
     note: "Implementation landed on the same day: Linux `network: proxy` now wraps `bwrap` in `pasta --splice-only` with only the proxy port forwarded, doctor checks `pasta`, and proxy dispatches are refused when the prerequisite is missing."
 ---
 

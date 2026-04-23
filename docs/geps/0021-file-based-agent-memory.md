@@ -2,7 +2,7 @@
 gep: 21
 title: File-based Agent Memory
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 requires: [2, 3, 5, 15, 16]
@@ -11,6 +11,9 @@ history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft capturing the memory-per-agent design agreed in the /loop session.
+  - date: 2026-04-21
+    status: Implemented
+    note: "R17 shipped the memory read path (compose_prompt threads a memory digest). R17b shipped the write path — outbox classifier, atomic writes, MEMORY.md upsert, audit trail. R17c proved both ends via live qwen dispatch (read + write). R20/R22 added the sidebar memory-count badge UX."
 ---
 
 # GEP-21: File-based Agent Memory

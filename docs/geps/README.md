@@ -44,7 +44,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0018 | [agentcompanies/v1 interop — adopt paperclip.ai schema?](./0018-agentcompanies-v1-interop.md) | Informational | Placeholder |
 | 0019 | [Director Approval Workflow Protocol](./0019-director-approval-workflow.md)              | Informational | Implemented |
 | 0020 | [Director Dashboard UX Sweep — Rounds 2+3](./0020-round-2-3-ux-sweep.md)                  | Informational | Implemented |
-| 0021 | [File-based Agent Memory](./0021-file-based-agent-memory.md)                             | Standards     | Draft       |
+| 0021 | [File-based Agent Memory](./0021-file-based-agent-memory.md)                             | Standards     | Implemented |
 | 0022 | [skills.sh Registry — Browse and Install Skills](./0022-skills-registry-browse-install.md) | Standards     | Draft       |
 | 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Draft       |
 | 0024 | [Task Scheduler — Firing Scheduled Dispatches](./0024-task-scheduler.md)                 | Informational | Implemented |
@@ -54,7 +54,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0028 | [Agent-Created Proposals via Director Approval](./0028-agent-created-proposals.md)        | Standards     | Draft       |
 | 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Implemented |
 | 0030 | [Director Dashboard TUI Redesign (V1)](./0030-tui-redesign.md)                             | Standards     | Implemented |
-| 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Accepted    |
+| 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Implemented |
 | 0032 | [Native Agent Harness — OpenAI v1-Compatible Provider](./0032-native-agent-harness.md)     | Standards     | Accepted    |
 | 0033 | [Git History Layer for Glorbo Home](./0033-git-history-layer-for-glorbo-home.md)           | Standards     | Draft       |
 
