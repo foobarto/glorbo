@@ -27,7 +27,41 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormulaTest do
     end
   end
 
-  test "validate_assets!/1 rejects malformed required digests" do
+  test "validate_assets!/1 rejects malformed required Linux digests" do
+    shas = %{
+      "glorbo-linux-x86_64" => "bogus",
+      "glorbo-linux-aarch64" => String.duplicate("b", 64)
+    }
+
+    assert_raise Mix.Error, ~r/invalid sha256 for required asset `glorbo-linux-x86_64`/, fn ->
+      ReleaseFormulaTask.validate_assets!(shas)
+    end
+  end
+
+  test "validate_assets!/1 accepts Linux-only SHA sets (darwin optional)" do
+    shas = %{
+      "glorbo-linux-x86_64" => String.duplicate("a", 64),
+      "glorbo-linux-aarch64" => String.duplicate("b", 64)
+    }
+
+    assert :ok = ReleaseFormulaTask.validate_assets!(shas)
+    refute ReleaseFormulaTask.darwin_present?(shas)
+  end
+
+  test "validate_assets!/1 rejects partial darwin sets" do
+    shas = %{
+      "glorbo-linux-x86_64" => String.duplicate("a", 64),
+      "glorbo-linux-aarch64" => String.duplicate("b", 64),
+      "glorbo-darwin-x86_64" => String.duplicate("c", 64)
+      # missing darwin-arm64
+    }
+
+    assert_raise Mix.Error, ~r/only some darwin assets/, fn ->
+      ReleaseFormulaTask.validate_assets!(shas)
+    end
+  end
+
+  test "validate_assets!/1 rejects invalid darwin SHA in a full set" do
     shas = %{
       "glorbo-linux-x86_64" => String.duplicate("a", 64),
       "glorbo-linux-aarch64" => String.duplicate("b", 64),
@@ -35,8 +69,19 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormulaTest do
       "glorbo-darwin-arm64" => String.duplicate("d", 64)
     }
 
-    assert_raise Mix.Error, ~r/invalid sha256 for required asset `glorbo-darwin-x86_64`/, fn ->
+    assert_raise Mix.Error, ~r/invalid sha256 for one of the darwin assets/, fn ->
       ReleaseFormulaTask.validate_assets!(shas)
     end
+  end
+
+  test "darwin_present?/1 true only when both darwin SHAs are set" do
+    full = %{
+      "glorbo-darwin-x86_64" => String.duplicate("c", 64),
+      "glorbo-darwin-arm64" => String.duplicate("d", 64)
+    }
+
+    assert ReleaseFormulaTask.darwin_present?(full)
+    refute ReleaseFormulaTask.darwin_present?(%{"glorbo-darwin-x86_64" => "x"})
+    refute ReleaseFormulaTask.darwin_present?(%{})
   end
 end

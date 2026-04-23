@@ -23,6 +23,21 @@ change between minor versions. Pin exact versions in downstream usage.
   and `Formatter.format_content/2` is idempotent (`:unchanged` + stable
   round-trip).
 
+### Changed — `mix glorbo.release_formula` tolerates Linux-only releases
+
+- The Homebrew formula generator now emits a Linux-only formula
+  (with `depends_on :linux`) when `SHA256SUMS` lacks the darwin
+  assets — which matches the current shipped state while
+  `build-macos` is disabled in CI. When darwin SHAs reappear, the
+  generator auto-detects them and rebuilds the old dual-platform
+  formula. Partial darwin sets (one arch present, the other
+  missing) still fail loudly. Added `--version X.Y.Z` flag so the
+  generator can target a specific published release for smoke
+  testing.
+- New runbook at `docs/releasing.md` walks the full tag → CI
+  release → `foobarto/homebrew-tap` refresh flow end-to-end,
+  including the sanity checks and the current `build-macos` gap.
+
 ### Fixed — pasta-availability probe requires --splice-only support
 
 - `Glorbo.Sandbox.Bwrap.pasta_availability/0` and the test-helper

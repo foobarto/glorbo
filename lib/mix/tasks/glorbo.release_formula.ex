@@ -31,9 +31,18 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
   @repo "foobarto/glorbo"
   @tap_formula_path "Formula/glorbo.rb"
   @sha256_re ~r/\A[0-9a-f]{64}\z/i
-  @required_assets [
+  # Linux binaries are the minimum shipped set; the `build-macos` CI
+  # job is currently disabled (see `.github/workflows/ci.yml`), so
+  # darwin SHAs are optional. When they're present the formula
+  # includes `on_macos do` blocks; when they're absent the formula
+  # is Linux-only and `depends_on :linux` keeps `brew install` from
+  # trying on macOS. Restore darwin to `@required_linux_assets` once
+  # `build-macos` is re-enabled.
+  @required_linux_assets [
     "glorbo-linux-x86_64",
-    "glorbo-linux-aarch64",
+    "glorbo-linux-aarch64"
+  ]
+  @optional_darwin_assets [
     "glorbo-darwin-x86_64",
     "glorbo-darwin-arm64"
   ]
@@ -41,9 +50,11 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
   @impl Mix.Task
   def run(argv) do
     {opts, _argv, _invalid} =
-      OptionParser.parse(argv, strict: [tap_path: :string, write: :boolean])
+      OptionParser.parse(argv,
+        strict: [tap_path: :string, write: :boolean, version: :string]
+      )
 
-    version = Mix.Project.config()[:version]
+    version = Keyword.get(opts, :version) || Mix.Project.config()[:version]
     tap_path = Keyword.get(opts, :tap_path, "../homebrew-tap")
 
     Application.ensure_all_started(:inets)
@@ -117,11 +128,11 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
 
   @doc false
   def validate_assets!(shas) do
-    for asset <- @required_assets do
+    for asset <- @required_linux_assets do
       unless Map.has_key?(shas, asset) do
         Mix.raise(
           "SHA256SUMS missing required asset `#{asset}` — did the release " <>
-            "ship both x86_64 and aarch64 Burrito binaries?"
+            "ship both x86_64 and aarch64 Linux Burrito binaries?"
         )
       end
 
@@ -130,7 +141,32 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
       end
     end
 
-    :ok
+    # Darwin assets are optional while `build-macos` is disabled in CI.
+    # If either is present, both must be present AND valid — a half
+    # set would generate a broken macOS formula branch.
+    darwin_present = Enum.filter(@optional_darwin_assets, &Map.has_key?(shas, &1))
+
+    cond do
+      darwin_present == [] ->
+        :ok
+
+      length(darwin_present) != length(@optional_darwin_assets) ->
+        Mix.raise(
+          "SHA256SUMS has only some darwin assets; expected all of " <>
+            "#{inspect(@optional_darwin_assets)} or none"
+        )
+
+      Enum.any?(@optional_darwin_assets, fn a -> not valid_sha256?(Map.fetch!(shas, a)) end) ->
+        Mix.raise("SHA256SUMS contains invalid sha256 for one of the darwin assets")
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc false
+  def darwin_present?(shas) do
+    Enum.all?(@optional_darwin_assets, &Map.has_key?(shas, &1))
   end
 
   defp valid_sha256?(sha) when is_binary(sha), do: Regex.match?(@sha256_re, sha)
@@ -143,10 +179,46 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
   defp render_formula(version, shas) do
     linux_x86 = Map.fetch!(shas, "glorbo-linux-x86_64")
     linux_arm = Map.fetch!(shas, "glorbo-linux-aarch64")
-    macos_x86 = Map.fetch!(shas, "glorbo-darwin-x86_64")
-    macos_arm = Map.fetch!(shas, "glorbo-darwin-arm64")
+    darwin? = darwin_present?(shas)
 
     version_regex = String.replace(version, ".", "\\\\.")
+
+    header = formula_header(version, darwin?)
+    linux_block = linux_block(version, linux_x86, linux_arm)
+    macos_block = if darwin?, do: macos_block(version, shas), else: ""
+    linux_gate = if darwin?, do: "", else: "  depends_on :linux\n\n"
+    install_block = install_block(darwin?)
+    caveats = caveats_block(darwin?)
+    test_block = test_block(version_regex)
+
+    """
+    #{header}
+    class Glorbo < Formula
+      desc "Filesystem-first agent orchestration (Elixir/OTP + Phoenix LiveView)"
+      homepage "https://github.com/foobarto/glorbo"
+      version "#{version}"
+      license "Apache-2.0"
+
+    #{linux_gate}#{linux_block}#{macos_block}#{install_block}
+
+    #{caveats}
+
+    #{test_block}
+    end
+    """
+  end
+
+  defp formula_header(_version, darwin?) do
+    platform_line =
+      if darwin? do
+        "# Pre-1.0. Linux: full kernel-sandboxed agent runtime via bwrap\n" <>
+          "# (GEP-5). macOS: degraded mode — agents run unsandboxed because\n" <>
+          "# bwrap has no macOS equivalent yet. See caveats."
+      else
+        "# Pre-1.0. Linux-only while the CI `build-macos` matrix is\n" <>
+          "# disabled (see .github/workflows/ci.yml). macOS users build\n" <>
+          "# from source via `mix release` until it's re-enabled."
+      end
 
     """
     # typed: false
@@ -154,25 +226,23 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
 
     # Homebrew formula for Glorbo — filesystem-first agent orchestration.
     #
-    # Pre-1.0. Linux: full kernel-sandboxed agent runtime via bwrap
-    # (GEP-5). macOS: degraded mode — agents run unsandboxed because
-    # bwrap has no macOS equivalent yet. See caveats.
+    #{platform_line}
     #
     # AUTO-GENERATED by `mix glorbo.release_formula` — do not edit
     # by hand. Regenerate after each release:
     #
     #   gh release create vX.Y.Z ...
     #   mix glorbo.release_formula --write
-    class Glorbo < Formula
-      desc "Filesystem-first agent orchestration (Elixir/OTP + Phoenix LiveView)"
-      homepage "https://github.com/foobarto/glorbo"
-      version "#{version}"
-      license "Apache-2.0"
+    """
+    |> String.trim_trailing()
+  end
 
+  defp linux_block(version, linux_x86, linux_arm) do
+    """
       on_linux do
         # bwrap is the kernel-enforced sandbox around every agent
         # subprocess (GEP-5 D4). Linux-only: macOS has no equivalent
-        # yet, so the formula omits the dependency there.
+        # yet.
         depends_on "bubblewrap"
 
         on_intel do
@@ -185,6 +255,14 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
           sha256 "#{linux_arm}"
         end
       end
+    """
+  end
+
+  defp macos_block(version, shas) do
+    macos_x86 = Map.fetch!(shas, "glorbo-darwin-x86_64")
+    macos_arm = Map.fetch!(shas, "glorbo-darwin-arm64")
+
+    """
 
       on_macos do
         on_intel do
@@ -197,21 +275,65 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
           sha256 "#{macos_arm}"
         end
       end
+    """
+  end
 
-      def install
-        # Burrito ships a single self-contained binary. Pick the right
-        # downloaded file by OS + CPU and rename to `glorbo`.
-        binary =
-          if OS.mac?
-            Hardware::CPU.intel? ? "glorbo-darwin-x86_64" : "glorbo-darwin-arm64"
-          else
-            Hardware::CPU.intel? ? "glorbo-linux-x86_64" : "glorbo-linux-aarch64"
-          end
+  defp install_block(darwin?) do
+    if darwin? do
+      """
 
-        bin.install binary => "glorbo"
-        chmod 0755, bin/"glorbo"
+        def install
+          # Burrito ships a single self-contained binary. Pick the right
+          # downloaded file by OS + CPU and rename to `glorbo`.
+          binary =
+            if OS.mac?
+              Hardware::CPU.intel? ? "glorbo-darwin-x86_64" : "glorbo-darwin-arm64"
+            else
+              Hardware::CPU.intel? ? "glorbo-linux-x86_64" : "glorbo-linux-aarch64"
+            end
+
+          bin.install binary => "glorbo"
+          chmod 0755, bin/"glorbo"
+        end
+      """
+    else
+      """
+
+        def install
+          # Burrito ships a single self-contained binary. Only Linux
+          # binaries are published right now; `depends_on :linux`
+          # guards against running this branch on macOS.
+          binary = Hardware::CPU.intel? ? "glorbo-linux-x86_64" : "glorbo-linux-aarch64"
+          bin.install binary => "glorbo"
+          chmod 0755, bin/"glorbo"
+        end
+      """
+    end
+  end
+
+  defp caveats_block(darwin?) do
+    platform_notes =
+      if darwin? do
+        """
+              Linux  — agents run in a bwrap-sandboxed subprocess (GEP-5).
+                       `brew install bubblewrap` is declared as a dep.
+
+              macOS  — experimental. Agents run UNSANDBOXED because bwrap
+                       has no macOS equivalent yet. `glorbo doctor` flags
+                       this with a warning; a single audit row lands at
+                       first dispatch (`agent.sandbox_unavailable`).
+                       FSEvents covers the filesystem-watcher side.
+        """
+      else
+        """
+              Linux-only build — `build-macos` in the glorbo CI matrix
+              is disabled while GHA macOS runners queue indefinitely.
+              macOS users can build from source (`mix release`) until
+              it's re-enabled.
+        """
       end
 
+    """
       def caveats
         <<~EOS
           Glorbo is pre-1.0. APIs, CLI flags, on-disk layout, and the
@@ -224,26 +346,24 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
 
           Platform notes:
 
-            Linux  — agents run in a bwrap-sandboxed subprocess (GEP-5).
-                     `brew install bubblewrap` is declared as a dep.
-
-            macOS  — experimental. Agents run UNSANDBOXED because bwrap
-                     has no macOS equivalent yet. `glorbo doctor` flags
-                     this with a warning; a single audit row lands at
-                     first dispatch (`agent.sandbox_unavailable`).
-                     FSEvents covers the filesystem-watcher side.
+    #{String.trim_trailing(platform_notes)}
 
           Docs: \#{homepage}
         EOS
       end
+    """
+    |> String.trim_trailing()
+  end
 
+  defp test_block(version_regex) do
+    """
       test do
         # Doctor in JSON mode returns the version + check list.
         output = shell_output("\#{bin}/glorbo doctor --json")
         assert_match(/"version":\\s*"#{version_regex}"/, output)
         assert_match(/"checks":/, output)
       end
-    end
     """
+    |> String.trim_trailing()
   end
 end
