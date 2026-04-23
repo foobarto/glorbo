@@ -147,6 +147,20 @@ defmodule Glorbo.Agent.Dispatch do
         fun when is_function(fun, 0) -> fun.()
       end
 
+    # GEP-23 Phase 5: allocate the per-dispatch proxy token BEFORE the
+    # with-pipeline so the `after` at the bottom can revoke it on any
+    # exit — success, error, or exception. `proxy_token_result` is
+    # `{:ok, url, token}` for `:proxy` agents, `{:ok, nil, nil}` for
+    # others, `{:error, _}` for registration / URL-builder failure.
+    dispatch_timeout_s = Map.get(spec, :timeout_seconds, 300)
+    proxy_token_result = resolve_proxy_url(spec, invocation_id, dispatch_timeout_s, opts)
+
+    proxy_token =
+      case proxy_token_result do
+        {:ok, _url, token} -> token
+        _ -> nil
+      end
+
     result =
       with :ok <- check_emergency_stop(spec, opts),
            :ok <- check_prompt_size(task.prompt),
@@ -155,7 +169,7 @@ defmodule Glorbo.Agent.Dispatch do
            {:ok, provider} <- resolve_provider(spec, task, opts),
            :ok <- check_untracked_allowed(spec, provider, opts),
            :ok <- verify_installed(spec, provider, opts),
-           {:ok, proxy_url} <- resolve_proxy_url(spec, opts),
+           {:ok, proxy_url, _token} <- proxy_token_result,
            {:ok, cli_binary} <- resolve_cli_binary(provider, opts),
            {:ok, workspace} <- ensure_workspace(spec, opts),
            :ok <- materialize_skills(spec, run_dir, opts),
@@ -224,6 +238,12 @@ defmodule Glorbo.Agent.Dispatch do
     # GEP-27: revoke any approved external paths after dispatch completes
     # (success or failure). Grants are task-scoped and ephemeral.
     _ = Glorbo.PathGrantStore.revoke(spec.company, spec.slug, task.task_id)
+
+    # GEP-23 Phase 5: revoke the per-dispatch proxy token. Tokens
+    # have a 2× timeout expiry as a failsafe, but immediate revocation
+    # keeps the in-memory registry size proportional to concurrent
+    # dispatches, not cumulative ones.
+    if proxy_token, do: _ = Glorbo.Network.ProxyTokens.revoke(proxy_token)
 
     result
   end
@@ -472,25 +492,59 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp resolve_proxy_url(%{network: :proxy, company: company}, opts) do
+  # GEP-23 Phase 5. For `:proxy` agents, allocate a per-dispatch
+  # token via `Glorbo.Network.ProxyTokens` and embed it in the
+  # `HTTPS_PROXY` URL's userinfo. The proxy reads the token from
+  # the incoming CONNECT's `Proxy-Authorization: Basic` header
+  # and resolves `{company, agent, dispatch_id}`. `nil` in the
+  # `proxy_token_fun` opts skips token allocation — used by tests
+  # that don't exercise the auth layer. The `{url, token}` tuple
+  # flows through `do_execute/4`'s `after` block so the token is
+  # revoked on completion.
+  defp resolve_proxy_url(
+         %{network: :proxy, company: company, slug: slug},
+         dispatch_id,
+         timeout_s,
+         opts
+       ) do
     fun = Keyword.get(opts, :proxy_url_fun, &default_proxy_url/1)
+    token_fun = Keyword.get(opts, :proxy_token_fun, &register_proxy_token/4)
 
-    case fun.(company) do
-      url when is_binary(url) ->
-        {:ok, url}
-
-      {:ok, url} when is_binary(url) ->
-        {:ok, url}
-
-      {:error, _} = err ->
-        err
-
-      other ->
-        {:error, {:proxy_url_bad_return, other}}
+    with {:ok, base_url} <- normalize_proxy_url_fn(fun.(company)),
+         {:ok, token} <- token_fun.(company, slug, dispatch_id, timeout_s) do
+      {:ok, apply_token_to_url(base_url, token), token}
     end
   end
 
-  defp resolve_proxy_url(_spec, _opts), do: {:ok, nil}
+  defp resolve_proxy_url(_spec, _dispatch_id, _timeout_s, _opts), do: {:ok, nil, nil}
+
+  defp normalize_proxy_url_fn(url) when is_binary(url), do: {:ok, url}
+  defp normalize_proxy_url_fn({:ok, url}) when is_binary(url), do: {:ok, url}
+  defp normalize_proxy_url_fn({:error, _} = err), do: err
+  defp normalize_proxy_url_fn(other), do: {:error, {:proxy_url_bad_return, other}}
+
+  # `nil` token skips auth (backward-compat + test injection). A
+  # string token is embedded as userinfo.
+  defp apply_token_to_url(url, nil), do: url
+
+  defp apply_token_to_url("http://" <> rest, token) when is_binary(token) do
+    "http://#{token}@" <> rest
+  end
+
+  defp apply_token_to_url(url, _token), do: url
+
+  defp register_proxy_token(company, agent, dispatch_id, timeout_s) do
+    # Tokens expire at 2× the dispatch timeout. A dispatch that
+    # overruns its timeout will still have a token briefly valid
+    # during teardown — caller is expected to `revoke/1` at the end
+    # of `do_execute/4`.
+    Glorbo.Network.ProxyTokens.register(%{
+      company: company,
+      agent: agent,
+      dispatch_id: dispatch_id,
+      expires_in_ms: timeout_s * 2_000
+    })
+  end
 
   defp default_proxy_url(company) do
     proxy = Glorbo.Company.Supervisor.via(company, :network_proxy)

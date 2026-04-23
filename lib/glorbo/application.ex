@@ -88,6 +88,11 @@ defmodule Glorbo.Application do
       Glorbo.CLI.Registry,
       # GEP-32 phase 3: host-side native-provider model catalog cache.
       Glorbo.Providers.ModelCatalog,
+      # GEP-23 Phase 5: ephemeral per-dispatch Proxy-Authorization tokens.
+      # Reaper GenServer also owns the ETS table; starts before
+      # CompanySupervisor so the first dispatch can register + the
+      # Proxy can resolve without racing table creation.
+      Glorbo.Network.ProxyTokens,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       # M-series fix: enumerate companies on disk at boot and start a
       # per-company supervisor for each. Without this, the dashboard

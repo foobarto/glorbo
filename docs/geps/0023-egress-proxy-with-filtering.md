@@ -58,6 +58,31 @@ history:
       Implemented for the proxy + history + `egress:` frontmatter + enum
       surface; the throttle lives as a scoped-out extension rather than
       a GEP-23 blocker.
+  - date: 2026-04-24
+    status: Implemented
+    note: |
+      Phase 5 — per-dispatch `Proxy-Authorization` tokens — shipped.
+      `Glorbo.Network.ProxyTokens` is an ETS-backed ephemeral-token
+      registry with a reaper GenServer (started under
+      `Glorbo.Application` ahead of `CompanySupervisor`). Tokens are
+      32 bytes url-safe-base64, registered at
+      `Glorbo.Agent.Dispatch.resolve_proxy_url/4` with a 2×dispatch-
+      timeout TTL and embedded in the `HTTPS_PROXY` userinfo slot
+      (`http://<token>@127.0.0.1:<port>`); `Dispatch.do_execute/4`
+      revokes on completion. The proxy parses
+      `Proxy-Authorization: Basic <base64(token:)>` (raw tokens also
+      accepted), resolves through `ProxyTokens.resolve/1`, and
+      stamps `{company, agent, dispatch_id}` onto the decision
+      context for logs + future per-agent allowlists.
+
+      Back-compat: absent or invalid tokens fall back to
+      `:anonymous` and hit the existing company-scoped allowlist.
+      Tokens are audit context, not authorisation — the allowlist
+      is still the gate.
+
+      This unblocks the `kbps_cap` per-dispatch throttle: the
+      token registry is now the per-dispatch identifier a token
+      bucket can key on. Throttle itself is a separate follow-up.
 ---
 
 # GEP-23: Egress Proxy with Host Filtering and Smart Mode

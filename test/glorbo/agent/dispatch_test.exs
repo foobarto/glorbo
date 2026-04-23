@@ -627,7 +627,10 @@ defmodule Glorbo.Agent.DispatchTest do
     assert_received {:proxy_ctx, env, bwrap_opts}
     assert is_binary(env["GLORBO_REPLY_PATH"])
     assert bwrap_opts.network_policy == :proxy
-    assert bwrap_opts.proxy_url == "http://localhost:4321"
+    # GEP-23 Phase 5: proxy_url now embeds a per-dispatch token in
+    # the userinfo slot (`http://<token>@localhost:4321`). Assert the
+    # shape rather than exact equality.
+    assert bwrap_opts.proxy_url =~ ~r{\Ahttp://[A-Za-z0-9_\-]+@localhost:4321\z}
     assert bwrap_opts.company == "acme"
   end
 

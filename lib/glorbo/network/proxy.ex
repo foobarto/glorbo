@@ -316,10 +316,19 @@ defmodule Glorbo.Network.Proxy do
   end
 
   defp dispatch_request(head, client_sock, policy, task_sup) do
-    [first_line | _rest] = String.split(head, "\r\n", parts: 2)
+    [first_line | rest] = String.split(head, "\r\n", parts: 2)
 
     case parse_connect_line(first_line) do
       {:ok, host, port} ->
+        # GEP-23 Phase 5: look up the per-dispatch caller context
+        # from the `Proxy-Authorization: Basic <token>` header.
+        # Token absent = legacy dispatch; proxy falls back to the
+        # company-level allowlist (which is already scoped to this
+        # proxy's company by the supervisor). Token present + valid
+        # tags the decision with the specific agent + dispatch_id
+        # so audit events can attribute the egress precisely.
+        caller_ctx = resolve_caller_from_headers(rest)
+        policy = Map.put(policy, :caller_ctx, caller_ctx)
         evaluate_and_tunnel(host, port, client_sock, policy, task_sup)
 
       {:error, :not_connect} ->
@@ -329,6 +338,69 @@ defmodule Glorbo.Network.Proxy do
       {:error, :malformed} ->
         write_response(client_sock, "HTTP/1.1 400 Bad Request\r\n\r\n")
         safe_close(client_sock)
+    end
+  end
+
+  # Pull `Proxy-Authorization: Basic <base64(token:)>` out of the
+  # request head if present. Returns `{:ok, entry}` with the
+  # ProxyTokens resolve result, or `:anonymous` when no valid token
+  # accompanies the CONNECT. Invalid tokens (present but expired or
+  # unknown) are treated as `:anonymous` so the proxy's company-
+  # scoped allowlist is still the ultimate gate — the token
+  # attaches AUDIT CONTEXT, not AUTHORISATION.
+  defp resolve_caller_from_headers([]), do: :anonymous
+
+  defp resolve_caller_from_headers([headers_blob]) do
+    header_line = find_header(headers_blob, "proxy-authorization")
+
+    with line when is_binary(line) <- header_line,
+         {:ok, basic_payload} <- parse_basic_auth(line),
+         {:ok, token} <- extract_token_from_basic(basic_payload),
+         {:ok, ctx} <- Glorbo.Network.ProxyTokens.resolve(token) do
+      {:ok, ctx}
+    else
+      _ -> :anonymous
+    end
+  end
+
+  defp find_header(blob, want) do
+    blob
+    |> String.split("\r\n")
+    |> Enum.find_value(fn line ->
+      case String.split(line, ":", parts: 2) do
+        [name, value] ->
+          if String.downcase(String.trim(name)) == want do
+            String.trim(value)
+          else
+            nil
+          end
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
+  defp parse_basic_auth("Basic " <> encoded), do: {:ok, String.trim(encoded)}
+  defp parse_basic_auth("basic " <> encoded), do: {:ok, String.trim(encoded)}
+  defp parse_basic_auth(_), do: :error
+
+  # Our tokens are already url-safe base64, but the standard Basic
+  # Auth scheme wraps `user:pass` in base64. Agents that put the
+  # token in userinfo with no password produce `Basic
+  # base64(<token>:)`. Accept both forms.
+  defp extract_token_from_basic(encoded) do
+    case Base.decode64(encoded) do
+      {:ok, decoded} ->
+        case String.split(decoded, ":", parts: 2) do
+          [token, _pass] when token != "" -> {:ok, token}
+          [token] when token != "" -> {:ok, token}
+          _ -> :error
+        end
+
+      :error ->
+        # Token passed raw, not Basic-wrapped. Accept as-is.
+        {:ok, encoded}
     end
   end
 
@@ -374,12 +446,27 @@ defmodule Glorbo.Network.Proxy do
         safe_close(client_sock)
 
       MapSet.member?(policy.allowlist, host) ->
+        Logger.debug(
+          "[network.proxy] allowlist-allow host=#{host} #{format_caller(policy[:caller_ctx])}"
+        )
+
         open_and_splice(host, port, client_sock, task_sup)
 
       true ->
         classify_unlisted(host, port, client_sock, policy, task_sup)
     end
   end
+
+  # GEP-23 Phase 5: render the per-dispatch caller for logging +
+  # audit. Returns a short tag the log pipeline can include.
+  defp format_caller(:anonymous), do: "caller=anonymous"
+  defp format_caller(nil), do: ""
+
+  defp format_caller({:ok, %{company: co, agent: ag, dispatch_id: id}}) do
+    "caller=#{co}/#{ag} dispatch=#{id}"
+  end
+
+  defp format_caller(_), do: "caller=unknown"
 
   # Host is not in the company allowlist. Without a classifier this
   # is the historic behaviour — 403 Forbidden. With a classifier
@@ -410,7 +497,10 @@ defmodule Glorbo.Network.Proxy do
   defp run_classifier(host, port, client_sock, policy, task_sup) do
     case policy.classifier_fun do
       nil ->
-        Logger.info("[network.proxy] reject host-not-in-allowlist host=#{host}")
+        Logger.info(
+          "[network.proxy] reject host-not-in-allowlist host=#{host} #{format_caller(policy[:caller_ctx])}"
+        )
+
         write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
         safe_close(client_sock)
 

@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-23 Phase 5: per-dispatch `Proxy-Authorization` tokens
+
+- **[FEATURE]** `Glorbo.Network.ProxyTokens` is a new ETS-backed
+  registry for ephemeral proxy credentials. `Glorbo.Agent.Dispatch`
+  allocates a 32-byte url-safe token per dispatch, embeds it in the
+  agent's `HTTPS_PROXY` URL (`http://<token>@127.0.0.1:<port>`),
+  and revokes it when the dispatch ends. TTL = 2× dispatch timeout
+  as a failsafe; a reaper GenServer sweeps expired entries every
+  minute.
+- **[FEATURE]** `Glorbo.Network.Proxy` parses `Proxy-Authorization:
+  Basic <base64(token:)>` on the CONNECT head and resolves via
+  `ProxyTokens.resolve/1`, tagging decisions with
+  `{company, agent, dispatch_id}` for audit attribution. Raw tokens
+  (no Basic wrapper) also accepted.
+- **Backward-compat.** Absent or invalid tokens fall back to
+  `:anonymous` and the existing company-scoped allowlist runs
+  unchanged. Tokens are audit context, not authorisation — the
+  allowlist remains the gate.
+- **Unblocks `kbps_cap`.** The per-dispatch throttle in the GEP-23
+  D-list was deferred because the proxy had no dispatch identifier
+  to key a token bucket on. Now it does. Throttle itself is a
+  separate follow-up.
+- GEP-23 history entry + CHANGELOG + `Glorbo.Application`
+  supervision tree updated; ProxyTokens starts before
+  `CompanySupervisor` so the first dispatch can't race table
+  creation.
+
 ### Security — round-4 batch 2
 
 - **[MED]** `Glorbo.Approvals.Gate.resolve_denied/3` now checks the

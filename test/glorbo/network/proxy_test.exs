@@ -285,6 +285,93 @@ defmodule Glorbo.Network.ProxyTest do
     end
   end
 
+  # GEP-23 Phase 5 — per-dispatch Proxy-Authorization token.
+  # The proxy reads `Proxy-Authorization: Basic <base64>` from the
+  # CONNECT head and resolves the token through `ProxyTokens.resolve/1`.
+  # Token presence adds caller-context to logs/audits but does NOT
+  # change the authorization decision — the company allowlist is
+  # still the gate. Absent/invalid token falls back to :anonymous.
+  describe "Phase 5: Proxy-Authorization token resolution" do
+    alias Glorbo.Network.ProxyTokens
+
+    setup do
+      ProxyTokens.ensure_started()
+      :ets.delete_all_objects(:glorbo_proxy_tokens)
+      :ok
+    end
+
+    test "CONNECT with a valid token and an allowed host tunnels" do
+      {:ok, token} =
+        ProxyTokens.register(%{
+          company: "test",
+          agent: "ceo",
+          dispatch_id: "d-ok",
+          expires_in_ms: 60_000
+        })
+
+      {_pid, port} = start_proxy(["api.anthropic.com"])
+
+      basic = Base.encode64("#{token}:")
+
+      {_sock, response} =
+        connect_and_send(
+          port,
+          "CONNECT api.anthropic.com:443 HTTP/1.1\r\n" <>
+            "Proxy-Authorization: Basic #{basic}\r\n\r\n"
+        )
+
+      # Allowlist decision (not token decision) drives the outcome.
+      # Upstream connect may 502 but the allowlist line was matched.
+      refute response =~ "403 Forbidden"
+    end
+
+    test "CONNECT with an unknown token to a DENIED host still 403s" do
+      {_pid, port} = start_proxy([])
+      basic = Base.encode64("not-a-real-token:")
+
+      {_sock, response} =
+        connect_and_send(
+          port,
+          "CONNECT api.anthropic.com:443 HTTP/1.1\r\n" <>
+            "Proxy-Authorization: Basic #{basic}\r\n\r\n"
+        )
+
+      assert response =~ "403 Forbidden"
+    end
+
+    test "CONNECT with NO Proxy-Authorization header still works (backward compat)" do
+      {_pid, port} = start_proxy(["api.anthropic.com"])
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n")
+
+      refute response =~ "403 Forbidden"
+    end
+
+    test "raw token (not Basic-wrapped) is still accepted" do
+      {:ok, token} =
+        ProxyTokens.register(%{
+          company: "test",
+          agent: "ceo",
+          dispatch_id: "d-raw",
+          expires_in_ms: 60_000
+        })
+
+      {_pid, port} = start_proxy(["api.anthropic.com"])
+
+      # Some HTTP clients put a raw token on the header without the
+      # `Basic base64(...)` envelope. The parser accepts both.
+      {_sock, response} =
+        connect_and_send(
+          port,
+          "CONNECT api.anthropic.com:443 HTTP/1.1\r\n" <>
+            "Proxy-Authorization: Basic #{token}\r\n\r\n"
+        )
+
+      refute response =~ "403 Forbidden"
+    end
+  end
+
   describe "allowlist default composition" do
     test "absent :allowlist_fun uses config :network_policy base allowlist" do
       {:ok, pid} =
