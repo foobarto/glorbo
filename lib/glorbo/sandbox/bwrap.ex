@@ -60,10 +60,11 @@ defmodule Glorbo.Sandbox.Bwrap do
   ## Network policy (D-15, D-17)
 
     * `:none` → `--unshare-net` (kernel-enforced egress block).
-    * `:proxy` → inherits host netns, but `HTTPS_PROXY` and `HTTP_PROXY`
-      env vars point at a `Glorbo.Network.Proxy` listener with a hostname
-      allowlist. Advisory-only (RESEARCH Pitfall 7) — motivated agents can
-      bypass by ignoring the env.
+    * `:proxy` → launches bwrap under `pasta --splice-only -T <proxy_port>`
+      so the child gets a private network namespace where only the
+      Glorbo-managed proxy port is reachable on loopback. `HTTPS_PROXY`
+      and `HTTP_PROXY` point at that loopback address. On Linux this is
+      enforced-or-refused: if `pasta` is unavailable, the dispatch fails.
     * `:open` → inherits host netns; no proxy.
 
   ## Process cleanup
@@ -110,6 +111,7 @@ defmodule Glorbo.Sandbox.Bwrap do
           optional(:cli_auth_binds) => [{String.t(), String.t()}],
           optional(:cli_env) => %{String.t() => String.t()},
           optional(:proxy_url) => String.t() | nil,
+          optional(:proxy_port) => pos_integer(),
           optional(:timeout_seconds) => pos_integer()
         }
 
@@ -170,6 +172,17 @@ defmodule Glorbo.Sandbox.Bwrap do
   @spec availability() :: :ok | {:error, :unavailable}
   def availability do
     if System.find_executable("bwrap"), do: :ok, else: {:error, :unavailable}
+  end
+
+  @doc """
+  Non-raising probe for pasta availability.
+
+  Linux `network: proxy` dispatches require `pasta` so the proxy path is
+  enforced by a private network namespace rather than hinted by env vars.
+  """
+  @spec pasta_availability() :: :ok | {:error, :unavailable}
+  def pasta_availability do
+    if System.find_executable("pasta"), do: :ok, else: {:error, :unavailable}
   end
 
   # ---------------------------------------------------------------------------
@@ -421,17 +434,19 @@ defmodule Glorbo.Sandbox.Bwrap do
   """
   @spec start(invocation_opts(), run_opts()) :: start_result()
   def start(%{} = opts, run_opts) when is_list(run_opts) do
-    bwrap_bin = Keyword.get(run_opts, :bwrap_binary, default_binary())
-    cli_bin = Keyword.fetch!(run_opts, :cli_binary)
-    cli_args = Keyword.get(run_opts, :cli_args, [])
-    prompt = Keyword.get(run_opts, :prompt, "")
-    usage_dir = Keyword.get(run_opts, :usage_dir)
-    stdout_log = Keyword.get(run_opts, :stdout_log)
-    timeout_s = Map.get(opts, :timeout_seconds, @default_timeout_seconds)
+    with {:ok, normalized_opts} <- normalize_proxy_opts(opts) do
+      bwrap_bin = Keyword.get(run_opts, :bwrap_binary, default_binary())
+      cli_bin = Keyword.fetch!(run_opts, :cli_binary)
+      cli_args = Keyword.get(run_opts, :cli_args, [])
+      prompt = Keyword.get(run_opts, :prompt, "")
+      usage_dir = Keyword.get(run_opts, :usage_dir)
+      stdout_log = Keyword.get(run_opts, :stdout_log)
+      timeout_s = Map.get(normalized_opts, :timeout_seconds, @default_timeout_seconds)
 
-    argv = build_argv(opts) ++ ["--", cli_bin] ++ cli_args
+      argv = build_argv(normalized_opts) ++ ["--", cli_bin] ++ cli_args
 
-    run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log)
+      run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log, normalized_opts)
+    end
   end
 
   # Invoke bwrap via a `/bin/sh -c 'exec bwrap "$@" < prompt_file'` wrapper.
@@ -456,11 +471,11 @@ defmodule Glorbo.Sandbox.Bwrap do
   #
   # The prompt tempfile is deleted via `File.rm/1` in an after-clause so the
   # cleanup runs on both normal exit and exception paths.
-  defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log) do
+  defp run_via_port(bwrap_bin, argv, prompt, timeout_s, usage_dir, stdout_log, opts) do
     case write_prompt_tempfile(prompt) do
       {:ok, prompt_file} ->
         try do
-          do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log)
+          do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log, opts)
         after
           _ = File.rm(prompt_file)
         end
@@ -486,7 +501,7 @@ defmodule Glorbo.Sandbox.Bwrap do
     end
   end
 
-  defp do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log) do
+  defp do_run_via_port(bwrap_bin, argv, prompt_file, timeout_s, usage_dir, stdout_log, opts) do
     sh_path = System.find_executable("sh") || "/bin/sh"
 
     # The shell script:
@@ -499,38 +514,139 @@ defmodule Glorbo.Sandbox.Bwrap do
     # bash-ism that dash (Ubuntu's /bin/sh) rejects with "Bad substitution".
     sh_script = ~s|b="$1"; p="$2"; shift 2; exec "$b" "$@" < "$p"|
 
-    port_args = [sh_script, "glorbo-bwrap-launcher", bwrap_bin, prompt_file | argv]
+    sh_args = ["-c", sh_script, "glorbo-bwrap-launcher", bwrap_bin, prompt_file | argv]
 
-    port_opts = [
-      :binary,
-      :exit_status,
-      :stderr_to_stdout,
-      :hide,
-      {:args, ["-c" | port_args]}
-    ]
+    with {:ok, launcher_bin, launcher_args} <- launcher_spec(opts, sh_path, sh_args) do
+      port_opts = [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        :hide,
+        {:args, launcher_args}
+      ]
 
-    port = Port.open({:spawn_executable, sh_path}, port_opts)
+      port = Port.open({:spawn_executable, launcher_bin}, port_opts)
 
-    tee_io = open_stdout_tee(stdout_log)
-    write_tee_header(tee_io)
+      tee_io = open_stdout_tee(stdout_log)
+      write_tee_header(tee_io)
 
-    try do
-      case drain_port(port, timeout_s, <<>>, tee_io) do
-        {:ok, exit_status, output} ->
-          write_tee_footer(tee_io, exit_status)
-          {:ok, %{exit_status: exit_status, stdout: output, usage_dir: usage_dir}}
+      try do
+        case drain_port(port, timeout_s, <<>>, tee_io) do
+          {:ok, exit_status, output} ->
+            write_tee_footer(tee_io, exit_status)
+            {:ok, %{exit_status: exit_status, stdout: output, usage_dir: usage_dir}}
 
-        {:error, :timeout} ->
-          Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
-          safe_port_close(port)
-          {:error, :timeout}
+          {:error, :timeout} ->
+            Logger.warning("bwrap invocation exceeded #{timeout_s}s — brutal_kill issued")
+            safe_port_close(port)
+            {:error, :timeout}
 
-        {:error, reason} ->
-          safe_port_close(port)
-          {:error, reason}
+          {:error, reason} ->
+            safe_port_close(port)
+            {:error, reason}
+        end
+      after
+        close_stdout_tee(tee_io)
       end
-    after
-      close_stdout_tee(tee_io)
+    end
+  end
+
+  defp launcher_spec(%{network_policy: :proxy, proxy_port: proxy_port}, sh_path, sh_args)
+       when is_integer(proxy_port) and proxy_port > 0 do
+    with :ok <- pasta_availability(),
+         {:ok, pasta_bin} <- fetch_pasta_binary(),
+         {:ok, runas} <- current_uid_gid() do
+      {:ok, pasta_bin,
+       [
+         "-q",
+         "-f",
+         "--runas",
+         runas,
+         "--splice-only",
+         "-t",
+         "none",
+         "-u",
+         "none",
+         "-T",
+         Integer.to_string(proxy_port),
+         "-U",
+         "none",
+         "--",
+         sh_path
+         | sh_args
+       ]}
+    end
+  end
+
+  defp launcher_spec(_opts, sh_path, sh_args), do: {:ok, sh_path, sh_args}
+
+  defp fetch_pasta_binary do
+    case System.find_executable("pasta") do
+      nil -> {:error, :unavailable}
+      path -> {:ok, path}
+    end
+  end
+
+  defp current_uid_gid do
+    with {:ok, uid} <- current_id_value("-u"),
+         {:ok, gid} <- current_id_value("-g") do
+      {:ok, "#{uid}:#{gid}"}
+    end
+  end
+
+  defp current_id_value(flag) do
+    case System.cmd("id", [flag], stderr_to_stdout: true) do
+      {output, 0} ->
+        {:ok, String.trim(output)}
+
+      {output, code} ->
+        {:error, {:id_lookup_failed, "#{flag} exit #{code}: #{String.trim(output)}"}}
+    end
+  rescue
+    e -> {:error, {:id_lookup_failed, Exception.message(e)}}
+  end
+
+  defp normalize_proxy_opts(%{network_policy: :proxy, proxy_url: url} = opts)
+       when is_binary(url) do
+    case parse_proxy_url(url) do
+      {:ok, canonical_url, port} ->
+        {:ok, opts |> Map.put(:proxy_url, canonical_url) |> Map.put(:proxy_port, port)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp normalize_proxy_opts(%{network_policy: :proxy}), do: {:error, :proxy_url_missing}
+  defp normalize_proxy_opts(opts), do: {:ok, opts}
+
+  defp parse_proxy_url(url) when is_binary(url) do
+    uri = URI.parse(url)
+
+    cond do
+      uri.scheme != "http" ->
+        {:error, {:invalid_proxy_url, url}}
+
+      uri.host not in ["127.0.0.1", "localhost"] ->
+        {:error, {:invalid_proxy_url, url}}
+
+      not is_integer(uri.port) or uri.port <= 0 ->
+        {:error, {:invalid_proxy_url, url}}
+
+      uri.userinfo not in [nil, ""] ->
+        {:error, {:invalid_proxy_url, url}}
+
+      uri.query not in [nil, ""] ->
+        {:error, {:invalid_proxy_url, url}}
+
+      uri.fragment not in [nil, ""] ->
+        {:error, {:invalid_proxy_url, url}}
+
+      uri.path not in [nil, "", "/"] ->
+        {:error, {:invalid_proxy_url, url}}
+
+      true ->
+        {:ok, "http://127.0.0.1:#{uri.port}", uri.port}
     end
   end
 

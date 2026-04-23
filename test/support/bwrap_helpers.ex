@@ -52,4 +52,26 @@ defmodule Glorbo.Test.BwrapHelpers do
   def bwrap_path! do
     System.find_executable("bwrap") || raise "bwrap not on PATH"
   end
+
+  @doc """
+  True iff the `pasta` binary is on PATH and responds to `--version`
+  with exit 0.
+  """
+  @spec pasta_available?() :: boolean()
+  def pasta_available? do
+    case System.find_executable("pasta") do
+      nil ->
+        false
+
+      path ->
+        try do
+          case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+            {_out, 0} -> true
+            _ -> false
+          end
+        rescue
+          _ -> false
+        end
+    end
+  end
 end

@@ -270,9 +270,9 @@ defmodule Glorbo.Agent.ParserTest do
     end
 
     test "P9: missing network defaults to :none (threatmodel M16)", ctx do
-      # threatmodel M16: defaulting to :proxy silently opted agents
-      # into egress (advisory-only until GEP-31). Default is now
-      # :none; templates that need egress set `network: proxy`
+      # threatmodel M16: defaulting to :proxy would silently opt agents
+      # into egress. Default stays :none even after GEP-31 because
+      # templates that need proxy-only egress should declare it
       # explicitly.
       content = """
       ---

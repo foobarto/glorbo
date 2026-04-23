@@ -546,6 +546,49 @@ defmodule Glorbo.Agent.DispatchTest do
                      }}
   end
 
+  test "network: proxy resolves proxy_url into bwrap opts before run_fun", ctx do
+    proxy_spec = %{ctx.spec | network: :proxy}
+    parent = self()
+
+    run_fun = fn _args, env, bwrap_opts, _run_opts ->
+      send(parent, {:proxy_ctx, env, bwrap_opts})
+      File.write!(env["GLORBO_REPLY_PATH"], "proxy ok")
+      {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+    end
+
+    assert {:ok, %{reply: "proxy ok"}} =
+             Dispatch.execute(proxy_spec, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               proxy_url_fun: fn "acme" -> {:ok, "http://localhost:4321"} end,
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: ctx.audit_fun
+             )
+
+    assert_received {:proxy_ctx, env, bwrap_opts}
+    assert is_binary(env["GLORBO_REPLY_PATH"])
+    assert bwrap_opts.network_policy == :proxy
+    assert bwrap_opts.proxy_url == "http://localhost:4321"
+    assert bwrap_opts.company == "acme"
+  end
+
+  test "network: proxy rejects invalid proxy_url_fun returns before run_fun", ctx do
+    proxy_spec = %{ctx.spec | network: :proxy}
+
+    run_fun = fn _args, _env, _bwrap_opts, _run_opts ->
+      flunk("run_fun should not be called when proxy_url resolution fails")
+    end
+
+    assert {:error, {:proxy_url_bad_return, :wat}} =
+             Dispatch.execute(proxy_spec, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               proxy_url_fun: fn "acme" -> :wat end,
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: ctx.audit_fun
+             )
+  end
+
   # ---------------------------------------------------------------------------
   # D9 — unknown provider (not in registry)
   # ---------------------------------------------------------------------------

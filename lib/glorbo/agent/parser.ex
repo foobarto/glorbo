@@ -28,9 +28,10 @@ defmodule Glorbo.Agent.Parser do
       permissions is valid; it just can't route anything).
     * `network:` defaults to `:none` (threatmodel M16 —
       secure-by-default). Templates that need egress set
-      `network: proxy` explicitly. Until GEP-31 ships kernel-level
-      netns enforcement, `:proxy` is advisory (env-var hint) so we
-      don't silently opt agents into it when the field is missing.
+      `network: proxy` explicitly. We still don't silently opt agents
+      into egress when the field is missing, even though GEP-31 now
+      enforces proxy-only Linux networking, because `:none` remains the
+      honest least-privilege default.
     * `timeout_seconds:` defaults to 300 (D-06).
     * `budget.monthly_usd:` defaults to `nil` (P11 — no cap == no
       hard-stop, matches BudgetTracker semantics). Legacy

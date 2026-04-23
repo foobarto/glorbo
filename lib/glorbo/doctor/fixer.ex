@@ -31,7 +31,8 @@ defmodule Glorbo.Doctor.Fixer do
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
     "private_files" => &__MODULE__.fix_private_files/1,
-    "bwrap" => &__MODULE__.explain_bwrap/1
+    "bwrap" => &__MODULE__.explain_bwrap/1,
+    "pasta" => &__MODULE__.explain_pasta/1
   }
 
   @doc "Public accessor for the fixer registry (tests introspect this)."
@@ -303,6 +304,20 @@ defmodule Glorbo.Doctor.Fixer do
        fedora:  sudo dnf install bubblewrap
        debian:  sudo apt install bubblewrap
        arch:    sudo pacman -S bubblewrap
+
+     Then re-run `glorbo doctor`.
+     """}
+  end
+
+  @doc false
+  def explain_pasta(_check) do
+    {:explain,
+     """
+     pasta is required on Linux for enforced `network: proxy` agents. Install via your package manager:
+
+       fedora:  sudo dnf install passt
+       debian:  sudo apt install passt
+       arch:    sudo pacman -S passt
 
      Then re-run `glorbo doctor`.
      """}

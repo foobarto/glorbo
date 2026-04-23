@@ -378,3 +378,15 @@ boxes above).
   real proof the round-6 work shipped correctly.
 - **Artefacts:** 14 screenshots under
   `.reports/uat-r7/*.png`.
+
+---
+
+## O. Proxy-only egress enforcement (headless)
+
+- [ ] **O1** — Linux host with `pasta` installed: an agent on
+  `network: proxy` can still reach an allowed destination through
+  `HTTPS_PROXY`.
+- [ ] **O2** — The same agent cannot reach an unrelated host loopback
+  listener directly (`127.0.0.1:<non-proxy-port>` fails).
+- [ ] **O3** — Linux host without `pasta`: `network: proxy` dispatch is
+  refused, and the audit log records `agent.netns_unavailable`.

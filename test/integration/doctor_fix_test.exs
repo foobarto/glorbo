@@ -24,7 +24,7 @@ defmodule Glorbo.Integration.DoctorFixTest do
 
   describe "individual fixer end-to-end" do
     test "fix_glorbo_dir creates ~/.glorbo if absent (idempotent when present)" do
-      target = Path.expand("~/.glorbo")
+      target = Glorbo.Filesystem.Hierarchy.default_root()
       # Don't delete; just confirm it becomes :ok regardless of prior state.
       assert {:ok, detail} = Glorbo.Doctor.Fixer.fix_glorbo_dir(%{name: "glorbo_dir"})
       assert File.exists?(target)
@@ -32,7 +32,7 @@ defmodule Glorbo.Integration.DoctorFixTest do
     end
 
     test "fix_audit_dir creates ~/.glorbo/audit/_system" do
-      target = Path.expand("~/.glorbo/audit/_system")
+      target = Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "audit/_system")
       File.rm_rf!(target)
 
       assert {:ok, _} = Glorbo.Doctor.Fixer.fix_audit_dir(%{name: "audit_dir"})
@@ -40,7 +40,7 @@ defmodule Glorbo.Integration.DoctorFixTest do
     end
 
     test "fix_sockets_dir creates ~/.glorbo/runtime/sockets at mode 0700" do
-      target = Path.expand("~/.glorbo/runtime/sockets")
+      target = Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "runtime/sockets")
       File.rm_rf!(target)
 
       assert {:ok, _} = Glorbo.Doctor.Fixer.fix_sockets_dir(%{name: "sockets_dir"})
@@ -53,6 +53,11 @@ defmodule Glorbo.Integration.DoctorFixTest do
     test "explain_bwrap returns :explain tuple regardless of host state" do
       assert {:explain, guidance} = Glorbo.Doctor.Fixer.explain_bwrap(%{name: "bwrap"})
       assert guidance =~ "bubblewrap"
+    end
+
+    test "explain_pasta returns :explain tuple regardless of host state" do
+      assert {:explain, guidance} = Glorbo.Doctor.Fixer.explain_pasta(%{name: "pasta"})
+      assert guidance =~ "passt"
     end
   end
 

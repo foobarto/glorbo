@@ -3,9 +3,9 @@ defmodule Glorbo.DoctorPhase3Test do
 
   alias Glorbo.Doctor
 
-  # Only override the Phase-3 specific deps (bwrap which + userns read);
+  # Only override the Phase-3 specific deps (bwrap/pasta which + userns read);
   # Phase-1/2 checks use their production defaults against the host. Tests
-  # here focus on the shape of the two new checks.
+  # here focus on the shape of the three Linux runtime checks.
   defp phase3_deps(overrides \\ []) do
     defaults = [
       read_fun: fn
@@ -18,14 +18,15 @@ defmodule Glorbo.DoctorPhase3Test do
   end
 
   describe "D1: run_checks count (post-GEP-5 D6 pruning)" do
-    test "GEP-5 D6 removed 4 podman/ollama checks; count is 11 with private_files" do
+    test "GEP-31 adds pasta; count is 12 with private_files" do
       checks = Doctor.run_checks(phase3_deps())
       names = Enum.map(checks, & &1.name) |> MapSet.new()
 
       assert "bwrap" in names
+      assert "pasta" in names
       assert "user_namespaces" in names
       assert "private_files" in names
-      assert length(checks) == 11
+      assert length(checks) == 12
     end
   end
 
@@ -98,6 +99,16 @@ defmodule Glorbo.DoctorPhase3Test do
     end
   end
 
+  describe "D4b: pasta check" do
+    test "pasta check is present and warning-scoped" do
+      checks = Doctor.run_checks(phase3_deps())
+      pasta_check = Enum.find(checks, &(&1.name == "pasta"))
+
+      refute is_nil(pasta_check)
+      assert pasta_check.severity == :warning
+    end
+  end
+
   describe "D5: JSON schema additive-only" do
     test "Phase 1 + Phase 2 check names all present in extended run_checks" do
       checks = Doctor.run_checks(phase3_deps())
@@ -118,6 +129,7 @@ defmodule Glorbo.DoctorPhase3Test do
 
       # Phase 3 additions
       assert "bwrap" in names
+      assert "pasta" in names
       assert "user_namespaces" in names
     end
   end

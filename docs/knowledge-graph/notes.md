@@ -378,6 +378,18 @@ both tool-count names and audit action names the harness itself emits,
 and strips `detail` values down to simple scalar keys; anything else is
 dropped before Dispatch can replay it into the company audit log.
 
+### GEP-31 implementation — `network: proxy` enforcement lives in the launcher, not argv
+
+`Glorbo.Sandbox.Bwrap.build_argv/1` still does **not** show the whole
+proxy isolation story. The Linux enforcement lives in `Bwrap.start/2`,
+which now wraps the existing bwrap command in `pasta -q -f --splice-only
+-T <proxy_port> ...` and normalizes the proxy env to
+`http://127.0.0.1:<port>`. Future reviews should not conclude "`proxy`
+is still advisory" just because the pure argv builder lacks
+`--unshare-net` for that mode; the network boundary moved to the outer
+launcher process, while bwrap still owns the filesystem sandbox inside
+that netns.
+
 ---
 
 ## What belongs in this file vs elsewhere

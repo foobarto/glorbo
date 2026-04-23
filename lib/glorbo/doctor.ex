@@ -55,9 +55,9 @@ defmodule Glorbo.Doctor do
   def run_checks(deps) when is_list(deps) do
     # R30.2: on darwin, the linux-only kernel / namespace / bwrap
     # checks can't pass meaningfully. We keep the check list length
-    # stable (10) but reclassify them to `:info` severity with a
+    # stable (12) but reclassify them to `:info` severity with a
     # `skipped_on: <os>` detail so:
-    #   * existing tests asserting length == 10 still pass
+    #   * existing tests asserting length == 12 still pass
     #   * macOS directors see which checks were skipped + why
     #   * exit-code math is unaffected (info passes are not blockers)
     linux_only =
@@ -76,6 +76,7 @@ defmodule Glorbo.Doctor do
       run(:private_files, :warning, fn -> check_private_files(deps) end),
       run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end),
       linux_only.(:bwrap, :blocker, fn -> check_bwrap(deps) end),
+      linux_only.(:pasta, :warning, fn -> check_pasta(deps) end),
       linux_only.(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
     ]
   end
@@ -419,6 +420,25 @@ defmodule Glorbo.Doctor do
         case invoke_cmd(cmd, path, ["--version"], stderr_to_stdout: true) do
           {output, 0} -> {:ok, String.trim(output), required}
           {output, code} -> {:fail, "bwrap --version exit #{code}: #{output}", required}
+        end
+    end
+  end
+
+  @spec check_pasta(keyword()) :: {:ok | :fail, String.t(), String.t()}
+  defp check_pasta(deps) do
+    which = Keyword.get(deps, :which_fun, &System.find_executable/1)
+    required = "pasta (passt package) for enforced network: proxy agents"
+
+    case which.("pasta") do
+      nil ->
+        {:fail, "pasta not found in PATH (install the `passt` package)", required}
+
+      path ->
+        cmd = Keyword.get(deps, :cmd_fun, &default_cmd3/3)
+
+        case invoke_cmd(cmd, path, ["--version"], stderr_to_stdout: true) do
+          {output, 0} -> {:ok, String.trim(output), required}
+          {output, code} -> {:fail, "pasta --version exit #{code}: #{output}", required}
         end
     end
   end

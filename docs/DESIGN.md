@@ -457,30 +457,28 @@ standing container, no long-lived namespace, no privileged daemon.
 
 - `network: none` (default) — `--unshare-net`: no network namespace access,
   kernel-enforced.
-- `network: proxy` — shared netns + `HTTP_PROXY`/`HTTPS_PROXY`
-  pointed at a Glorbo-managed HTTPS CONNECT allowlist proxy. Currently
-  advisory (a determined agent could ignore the env vars); a dedicated
-  netns + `nftables` hardening iteration is planned to make the
-  allowlist kernel-enforced.
+- `network: proxy` — on Linux, Glorbo wraps the bwrap launch in
+  `pasta --splice-only` and forwards only the per-company proxy port
+  into the agent netns. `HTTP_PROXY` / `HTTPS_PROXY` point at that
+  loopback port, and direct access to other host loopback services is
+  blocked. If `pasta` is missing, proxy dispatch is refused. On macOS,
+  proxy remains a degraded unsandboxed limitation alongside the wider
+  no-bwrap fallback.
 - `network: open` — host netns inherited (no `--unshare-net`). Explicit opt-in.
 
 Sibling agents and other companies are **not mounted** — company
 isolation is therefore absolute by construction: there is no path
 inside the sandbox that could reach another company's data.
 
-**Planned hardening (GEP-31, Draft):** `network: proxy` currently
-inherits the host netns plus a `HTTPS_PROXY` env var pointing at
-the per-company hostname-allowlist proxy. This is advisory — a
-determined agent could ignore the env vars. GEP-31 will move
-`proxy` agents into a per-dispatch netns with `pasta` forwarding
-only the proxy port, making the allowlist kernel-enforced like
-`none` already is.
+**GEP-31 shipped:** `network: proxy` is now Linux kernel-enforced via
+`pasta --splice-only` wrapped around the existing bwrap launch. The
+runtime exposes only the proxy port inside the agent netns, so
+dashboard/MCP loopback services are no longer reachable from proxy
+agents by direct connect.
 
-Until that ships, a missing `network:` field in AGENT.md defaults
-to `:none` (kernel-enforced) rather than `:proxy` (advisory) —
-see threatmodel wave-3 M16. Templates that legitimately need
-egress (CLI providers, editor agents) declare `network: proxy`
-explicitly.
+A missing `network:` field in AGENT.md still defaults to `:none`
+(kernel-enforced). Templates that legitimately need egress (CLI
+providers, editor agents) declare `network: proxy` explicitly.
 
 ### 4.5  SQLite — The Index
 
@@ -762,11 +760,11 @@ permissions:
   # (no agents:read:ceo)                     → <co>/agents/ceo NOT mounted — invisible
 ```
 
-`network:` declarations map to `--unshare-net` (none), a shared netns +
-HTTPS CONNECT allowlist proxy env (proxy), or inherited host netns
-(open). A write attempt into `/projects/other-project` from inside the
-sandboxed CLI fails with `EACCES` at the kernel — not at the Elixir
-layer.
+`network:` declarations map to `--unshare-net` (none), `pasta`
+loopback-only forwarding to the HTTPS CONNECT allowlist proxy
+(proxy), or inherited host netns (open). A write attempt into
+`/projects/other-project` from inside the sandboxed CLI fails with
+`EACCES` at the kernel — not at the Elixir layer.
 
 Defence in depth: the Router says no, and if the Router is wrong, the
 kernel says no.
@@ -949,8 +947,9 @@ glorbo init
 
 1. Creates `~/.glorbo/` directory structure.
 2. Runs the pre-doctor pass (`linux_kernel`, `uidmap`, `disk_space`,
-   `glorbo_dir`, `erts_version`, `audit_dir`, `sockets_dir`, `tar_zstd`,
-   `bwrap`, `user_namespaces`). Blocker failures abort init.
+   `glorbo_dir`, `erts_version`, `audit_dir`, `sockets_dir`,
+   `private_files`, `tar_zstd`, `bwrap`, `pasta`, `user_namespaces`).
+   Blocker failures abort init.
 3. Writes `~/.glorbo/config.md` with a generated secret and default
    host/port (`127.0.0.1:4000`).
 4. Bootstraps `state/.erl_cookie` (mode 0600) for `glorbo console` remsh.
@@ -965,6 +964,7 @@ glorbo init
 |------------------|----------|---------------------------------|----------------------------------|
 | Linux kernel ≥ 5.13 | Yes   | your distro                     | user namespaces, bwrap           |
 | `bubblewrap`     | Yes      | distro package (`apt`/`dnf`/…)  | kernel-level agent sandboxing    |
+| `passt` / `pasta`| Proxy-only | distro package                 | enforced `network: proxy` on Linux |
 | `uidmap`         | Yes      | `uidmap` or `shadow` package    | `newuidmap`/`newgidmap` helpers  |
 | `inotify-tools`  | Yes      | distro package                  | filesystem watcher               |
 | One or more provider runtimes | Yes | install a CLI or configure native credentials | `claude`, `gemini`, `codex`, or `credentials/<provider>.toml` |

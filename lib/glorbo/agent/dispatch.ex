@@ -155,12 +155,14 @@ defmodule Glorbo.Agent.Dispatch do
            {:ok, provider} <- resolve_provider(spec, task, opts),
            :ok <- check_untracked_allowed(spec, provider, opts),
            :ok <- verify_installed(spec, provider, opts),
+           {:ok, proxy_url} <- resolve_proxy_url(spec, opts),
            {:ok, workspace} <- ensure_workspace(spec, opts),
            :ok <- materialize_skills(spec, run_dir, opts),
            :ok <- write_prompt(run_dir, task.prompt, opts),
            :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
            start <- clock(opts),
-           ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id, opts),
+           ctx <-
+             build_ctx(spec, task, workspace, run_dir, provider, proxy_url, invocation_id, opts),
            {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
            :ok <- check_runtime_untracked_allowed(spec, dispatcher_result, opts),
            duration_ms <- compute_duration(start, opts),
@@ -457,7 +459,37 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp build_ctx(spec, task, workspace, run_dir, provider, invocation_id, opts) do
+  defp resolve_proxy_url(%{network: :proxy, company: company}, opts) do
+    fun = Keyword.get(opts, :proxy_url_fun, &default_proxy_url/1)
+
+    case fun.(company) do
+      url when is_binary(url) ->
+        {:ok, url}
+
+      {:ok, url} when is_binary(url) ->
+        {:ok, url}
+
+      {:error, _} = err ->
+        err
+
+      other ->
+        {:error, {:proxy_url_bad_return, other}}
+    end
+  end
+
+  defp resolve_proxy_url(_spec, _opts), do: {:ok, nil}
+
+  defp default_proxy_url(company) do
+    proxy = Glorbo.Company.Supervisor.via(company, :network_proxy)
+
+    try do
+      "http://127.0.0.1:#{Glorbo.Network.Proxy.port(proxy)}"
+    catch
+      :exit, _ -> {:error, :proxy_unavailable}
+    end
+  end
+
+  defp build_ctx(spec, task, workspace, run_dir, provider, proxy_url, invocation_id, opts) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -496,12 +528,14 @@ defmodule Glorbo.Agent.Dispatch do
       company: spec.company,
       native_binary: native_binary,
       bwrap_opts: %{
+        company: spec.company,
         agent_workspace: workspace,
         inbox_path: Path.join(agent_root, "inbox"),
         outbox_path: Path.join(agent_root, "outbox"),
         company_path: Path.dirname(Path.dirname(agent_root)),
         permissions: spec.permissions,
         network_policy: spec.network,
+        proxy_url: proxy_url,
         timeout_seconds: spec.timeout_seconds,
         cli_auth_binds:
           resolve_auth_binds(provider) ++
@@ -662,7 +696,12 @@ defmodule Glorbo.Agent.Dispatch do
     # prominent audit event. macOS keeps the fallback.
     case Glorbo.Sandbox.Bwrap.availability() do
       :ok ->
-        Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
+        if proxy_netns_unavailable?(bwrap_opts) do
+          emit_netns_unavailable_audit_once(bwrap_opts)
+          {:error, :netns_unavailable}
+        else
+          Glorbo.Sandbox.Bwrap.start(invocation_opts, run_opts)
+        end
 
       {:error, :unavailable} ->
         if linux?() do
@@ -679,6 +718,14 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp linux?, do: match?({:unix, :linux}, :os.type())
+
+  defp proxy_netns_required?(%{network_policy: :proxy}), do: true
+  defp proxy_netns_required?(_), do: false
+
+  defp proxy_netns_unavailable?(bwrap_opts) do
+    linux?() and proxy_netns_required?(bwrap_opts) and
+      Glorbo.Sandbox.Bwrap.pasta_availability() != :ok
+  end
 
   # On Linux, bwrap missing is treated as a hard failure. We still
   # emit an audit so directors see *why* dispatch failed.
@@ -723,6 +770,33 @@ defmodule Glorbo.Agent.Dispatch do
         detail: %{
           os: to_string(:os.type() |> elem(1)),
           note: "bwrap not on PATH; agents running unsandboxed (pre-1.0 macOS fallback)"
+        }
+      }
+
+      try do
+        audit_fun(base: nil).(company, entry)
+      rescue
+        _ -> :ok
+      catch
+        :exit, _ -> :ok
+      end
+    end
+  end
+
+  defp emit_netns_unavailable_audit_once(%{} = bwrap_opts) do
+    company = Map.get(bwrap_opts, :company) || "_system"
+    key = {__MODULE__, :netns_unavailable_notified, company}
+
+    unless :persistent_term.get(key, false) do
+      :persistent_term.put(key, true)
+
+      entry = %{
+        action: "agent.netns_unavailable",
+        actor: "system",
+        target: nil,
+        detail: %{
+          os: "linux",
+          note: "pasta not on PATH; network: proxy dispatches refused until passt is installed"
         }
       }
 

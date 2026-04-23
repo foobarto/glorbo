@@ -14,7 +14,7 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 
 ### Attacker-controlled inputs
 - Agent output files in `agents/<slug>/outbox/`, `workspace/`, and reply files; filenames and markdown bodies are fully attacker-controlled.
-- Network egress from agents when `network: open` or `api-only` is configured.
+- Network egress from agents when `network: open` or `network: proxy` is configured.
 - HTTP requests to the dashboard or MCP endpoint (if accessible on the host).
 - Files and logs written by provider CLIs (usage JSONL, stdout, etc.).
 - Any file placed under `~/.glorbo` by external processes running as the same OS user.
@@ -42,12 +42,12 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 - Per-permission mounts enforce **sibling invisibility**; only permitted project/channel paths are mounted (`lib/glorbo/sandbox/permission_mapper.ex`).
 - Application-layer permission checks via `Glorbo.Security.ACLMapper` + `Company.Router` provide defense in depth.
 - `Agent.Parser` uses allowlists, slug regexes, and avoids atom creation on user input; it rejects `agents:create` permissions (`lib/glorbo/agent/parser.ex`).
-- `network: none` unshares the netns; `api-only` uses an allowlist proxy (`lib/glorbo/network/proxy.ex`) but is advisory if the CLI ignores proxy env vars.
+- `network: none` unshares the netns; `network: proxy` uses an allowlist proxy (`lib/glorbo/network/proxy.ex`) exposed inside a pasta-created private netns on Linux, so direct access to unrelated host loopback ports is blocked.
 - Execution timeouts kill runaway CLI processes; reply file contracts and audit events capture failures.
 
 **Attacker stories:**
 - A malicious agent attempts to read or write outside its allowed project using path traversal in permission scopes or symlinks in its workspace.
-- A compromised CLI ignores proxy env vars to exfiltrate data even in `api-only` mode.
+- A compromised CLI with `network: proxy` is still limited by the proxy path on Linux, but `network: open` remains fully trusted egress and macOS stays in the documented unsandboxed degraded mode.
 - On macOS, the unsandboxed fallback could allow full host access if a malicious agent runs.
 
 ### Router & filesystem routing

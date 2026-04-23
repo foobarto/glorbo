@@ -179,9 +179,10 @@ defmodule Glorbo.DoctorTest do
         )
 
       results = Doctor.run_checks(deps)
-      # GEP-5 D6 + row 61: 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11
+      # GEP-31 adds `pasta` as a Linux-only check: 5 Phase-1 + 4 Phase-2 +
+      # 3 Phase-3 = 12 total checks.
       # (podman/ollama/ollama_daemon/runtime_image/runtime_exec dropped)
-      assert length(results) == 11
+      assert length(results) == 12
 
       Enum.each(results, fn r ->
         assert Map.has_key?(r, :name)
@@ -207,6 +208,7 @@ defmodule Glorbo.DoctorTest do
                  "private_files",
                  "tar_zstd",
                  "bwrap",
+                 "pasta",
                  "user_namespaces"
                ]
     end
@@ -302,7 +304,8 @@ defmodule Glorbo.DoctorTest do
             "disk_space",
             "sockets_dir",
             "private_files",
-            "tar_zstd"
+            "tar_zstd",
+            "pasta"
           ] do
         assert by_name[name] == :warning, "#{name} should be :warning"
       end
@@ -516,8 +519,9 @@ defmodule Glorbo.DoctorTest do
       results = Doctor.run_checks(deps)
       decoded = results |> Formatter.to_json() |> Jason.decode!()
 
-      # GEP-5 D6 + row 61: 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11
-      assert length(decoded["checks"]) == 11
+      # GEP-31 adds `pasta` as a Linux-only check: 5 Phase-1 + 4 Phase-2 +
+      # 3 Phase-3 = 12 total checks.
+      assert length(decoded["checks"]) == 12
       # Top-level envelope keys all still present
       for k <- ["version", "checks", "all_passed", "passed_count", "total_count", "exit_code"] do
         assert Map.has_key?(decoded, k), "envelope key #{k} missing"

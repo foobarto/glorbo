@@ -324,7 +324,7 @@ own shell tools do the same.
 | `network:` value | Native meaning |
 |---|---|
 | `none` | **Invalid.** Rejected at `Agent.Parser` parse time with a config error. A native agent with no network cannot reach its endpoint. Structurally impossible; we fail fast rather than at dispatch time. |
-| `proxy` | Declarable in v1; `HTTPS_PROXY` / `HTTP_PROXY` env vars plumbed into the harness. **Advisory** until GEP-23's proxy daemon + GEP-31's netns are both shipped, at which point it becomes kernel-enforced. Documented limitation for v1. |
+| `proxy` | Declarable in v1; `HTTPS_PROXY` / `HTTP_PROXY` env vars are plumbed into the harness, and on Linux the outer launcher now wraps the sandbox in GEP-31's `pasta` netns so only the proxy port is reachable. On macOS it remains part of the documented unsandboxed degraded mode. |
 | `open` | Supported. `bash` tool can reach any host the sandbox permits. `web_fetch` is filter-aware and always audits. |
 
 No stub proxy module is required for v1 — `:httpc` honours
@@ -769,17 +769,18 @@ process under the existing `Agent.Dispatch` supervisor.
   can't reach its endpoint. Parse-time rejection beats runtime
   surprise.
 
-### D16. `network: proxy` declarable now, kernel-enforced later
+### D16. `network: proxy` declarable now, kernel-enforced on Linux
 
 - **Decided:** `network: proxy` is declarable in v1; harness plumbs
   `HTTPS_PROXY` / `HTTP_PROXY` via env vars. Functional under
-  GEP-23's proxy daemon. Kernel-enforced once GEP-31 lands.
+  GEP-23's proxy daemon and now kernel-enforced on Linux via GEP-31's
+  `pasta` launcher path.
 - **Alternatives:** Block `network: proxy` on native until GEP-23 or
   GEP-31 ships. Require a stub filter module in v1.
 - **Why:** `:httpc` honours proxy env vars natively — no stub
-  required. Lets Directors declare intent now; enforcement layers on
-  without requiring an agent-config rewrite later. Soft dependency
-  documented.
+  required. The runtime can therefore share the same proxy semantics as
+  CLI-backed agents, and Linux now gets the same kernel-enforced
+  boundary through the outer launcher without an agent-config rewrite.
 
 ### D17. `network: open` accepts the `bash` bypass of `web_fetch` filter
 
@@ -936,5 +937,5 @@ process under the existing `Agent.Dispatch` supervisor.
   `Glorbo.Egress.Filter.classify/4` when GEP-23 lands; `network:
   proxy` becomes functional at the same point.
 - **GEP-31** — Network-namespace Isolation for `:proxy` Agents.
-  Soft dependency — `network: proxy` is declarable in v1 and
-  kernel-enforced once GEP-31 ships.
+  Soft dependency at draft time; now landed for Linux, so native
+  `network: proxy` shares the same enforced proxy-only path there.

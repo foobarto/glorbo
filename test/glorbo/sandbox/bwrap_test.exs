@@ -107,6 +107,21 @@ defmodule Glorbo.Sandbox.BwrapTest do
       refute Enum.any?(argv, &(&1 == "HTTPS_PROXY"))
       refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
     end
+
+    test "start/2 rejects network: :proxy without proxy_url" do
+      assert {:error, :proxy_url_missing} =
+               Bwrap.start(base_opts(%{network_policy: :proxy, proxy_url: nil}),
+                 cli_binary: "/bin/true"
+               )
+    end
+
+    test "start/2 rejects non-loopback proxy URLs" do
+      assert {:error, {:invalid_proxy_url, "http://example.com:9999"}} =
+               Bwrap.start(
+                 base_opts(%{network_policy: :proxy, proxy_url: "http://example.com:9999"}),
+                 cli_binary: "/bin/true"
+               )
+    end
   end
 
   describe "build_argv/1 — permissions + auth binds + env (B4, B5, B6)" do

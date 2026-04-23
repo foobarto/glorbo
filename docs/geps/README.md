@@ -54,7 +54,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0028 | [Agent-Created Proposals via Director Approval](./0028-agent-created-proposals.md)        | Standards     | Draft       |
 | 0029 | [Glorbo as MCP Server (Localhost HTTP-SSE, R/W)](./0029-mcp-server-for-glorbo.md)         | Standards     | Implemented |
 | 0030 | [Director Dashboard TUI Redesign (V1)](./0030-tui-redesign.md)                             | Standards     | Implemented |
-| 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Draft       |
+| 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Accepted    |
 | 0032 | [Native Agent Harness — OpenAI v1-Compatible Provider](./0032-native-agent-harness.md)     | Standards     | Accepted    |
 | 0033 | [Git History Layer for Glorbo Home](./0033-git-history-layer-for-glorbo-home.md)           | Standards     | Draft       |
 

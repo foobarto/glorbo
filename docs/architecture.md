@@ -46,8 +46,10 @@ sandbox to either an external CLI runtime (`claude`, `gemini`,
 `codex`, etc.) or the first-party `glorbo harness` native-provider
 subcommand. It then reads the reply file, parses provider telemetry,
 and for native runs can replay sanitized tool-audit events back into
-the company audit log before recording cost + outcome. See GEP-4,
-GEP-5, GEP-8, and GEP-32.
+the company audit log before recording cost + outcome. On Linux,
+`network: proxy` dispatches now wrap that launch in `pasta` so only
+the per-company proxy port is reachable inside the agent netns. See
+GEP-4, GEP-5, GEP-8, GEP-31, and GEP-32.
 
 Supporting modules: `Glorbo.Agent.Parser` (validates AGENT.md),
 `Glorbo.Agent.Spec` (struct), `Glorbo.Agent.FileLayout`

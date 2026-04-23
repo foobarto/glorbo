@@ -16,7 +16,7 @@ defmodule Glorbo.Doctor.FixerTest do
       registered = Fixer.fixers() |> Map.keys() |> Enum.sort()
 
       expected =
-        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap)
+        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap pasta)
         |> Enum.sort()
 
       assert registered == expected
@@ -38,6 +38,12 @@ defmodule Glorbo.Doctor.FixerTest do
     test "explain_bwrap returns an :explain tuple with install guidance" do
       assert {:explain, guidance} = Fixer.explain_bwrap(%{name: "bwrap"})
       assert guidance =~ "bubblewrap"
+      assert guidance =~ "fedora"
+    end
+
+    test "explain_pasta returns an :explain tuple with install guidance" do
+      assert {:explain, guidance} = Fixer.explain_pasta(%{name: "pasta"})
+      assert guidance =~ "passt"
       assert guidance =~ "fedora"
     end
 

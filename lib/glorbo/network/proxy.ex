@@ -1,7 +1,7 @@
 defmodule Glorbo.Network.Proxy do
   @moduledoc """
   HTTPS CONNECT allowlist proxy for `network: proxy` agents (D-17;
-  SEC-03; T-03-33; advisory-only per T-03-34 / Pitfall 7).
+  SEC-03; T-03-33).
 
   A small (~150 LOC target) OTP-native proxy that accepts HTTPS CONNECT
   tunnels to a hostname allowlist and rejects everything else. One proxy
@@ -24,11 +24,11 @@ defmodule Glorbo.Network.Proxy do
     * **Mitigated:** hostname spoofing (exact-match, case-folded).
     * **Mitigated:** method abuse (CONNECT-only — 405 for GET/POST/etc).
     * **Mitigated:** port abuse (443-only; plain HTTP on :80 is rejected).
-    * **Accepted (advisory):** HTTPS_PROXY env var bypass. A motivated
-      agent ignoring the env var (e.g. `curl --noproxy '*'`) reaches the
-      internet directly via the host netns. Users needing hard egress
-      control should pick `network: none` (kernel-enforced).
-      netns+nftables is the hardening iteration (deferred).
+    * **Boundary note:** On Linux, GEP-31 now wraps `network: proxy`
+      dispatches in a `pasta` netns so the proxy is the only reachable
+      host listener. This module still owns only hostname allowlist /
+      CONNECT semantics; the netns enforcement lives in
+      `Glorbo.Sandbox.Bwrap`.
 
   ## Allowlist composition
 

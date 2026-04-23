@@ -1,8 +1,8 @@
 ---
 gep: 31
-title: Network-namespace isolation for `:proxy` agents
+title: "Network-namespace isolation for `:proxy` agents"
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-22
 requires: [5, 23]
@@ -11,6 +11,12 @@ history:
   - date: 2026-04-22
     status: Draft
     note: Initial draft — identifies the loopback-escape gap found during threatmodel work + UAT on 2026-04-22, proposes per-agent netns + pasta as the enforcement mechanism.
+  - date: 2026-04-23
+    status: Draft
+    note: "Tighten rollout semantics: no pre-1.0 flags, Linux `network: proxy` becomes enforced-or-refused, and product framing stays \"security-minded\" rather than \"security tool\"."
+  - date: 2026-04-23
+    status: Accepted
+    note: "Implementation landed on the same day: Linux `network: proxy` now wraps `bwrap` in `pasta --splice-only` with only the proxy port forwarded, doctor checks `pasta`, and proxy dispatches are refused when the prerequisite is missing."
 ---
 
 # GEP-31: Network-namespace isolation for `:proxy` agents
@@ -68,6 +74,19 @@ a kernel-enforced constraint.
   proxy port, DNS over UDP/53 fails and the agent must rely on
   the proxy's HTTP CONNECT (hostname-based) path. Acceptable.
 
+## Product posture
+
+Glorbo is **not** a hardened security product or a multi-tenant
+containment system. It is a user-friendly local automation tool that
+tries to stay security-minded and honest about its boundaries.
+
+That framing cuts *toward* stricter semantics here, not away from
+them. A friendly tool should not present `network: proxy` as if it
+were a boundary when it is only a convention. After this GEP,
+`network: proxy` on Linux should either mean "proxy-only, kernel-
+enforced" or be unavailable. No silent downgrade, no rollout flag,
+no "best effort" wording standing in for a real guarantee.
+
 ## Design
 
 Use **`pasta` (from the `passt` project)** as the userspace network
@@ -75,7 +94,7 @@ stack for each agent on `network: proxy`. Pasta is designed for
 unprivileged per-process netns bridging and supports port-level
 allowlisting.
 
-### Proposed architecture
+### Implemented architecture
 
 ```
            ┌─────────────────────────────────────┐
@@ -89,26 +108,25 @@ allowlisting.
                              │
            ┌─────────────────▼───────────────────┐
            │ agent netns (per-dispatch)          │
-           │  127.0.0.222:<PROXY_PORT> ◄ pasta   │
-           │  HTTPS_PROXY=http://127.0.0.222:<P> │
+           │  127.0.0.1:<PROXY_PORT> ◄ pasta     │
+           │  HTTPS_PROXY=http://127.0.0.1:<P>   │
            │                                     │
            │  (nothing else reachable)           │
            └─────────────────────────────────────┘
 ```
 
-1. `bwrap` launches the agent with `--unshare-net` (already part of
-   the `network: none` codepath; extend to `network: proxy`).
-2. Before the agent CLI runs, `pasta` wraps the process (or we enter
-   the netns from an outer process and launch pasta there). Pasta
-   accepts `--tcp-ports 443` / `--tcp-ns <ns>` and only forwards the
-   specific port back to the host.
-3. Inside the agent netns, a single TCP listener is reachable at
-   `127.0.0.222:<PROXY_PORT>` (the choice of `.222` is arbitrary
-   but consistent — see D-4).
-4. The agent's `HTTPS_PROXY` env var points at that address.
-5. Any `connect(host, port)` from the agent goes through the
-   netns's routing table — which has **no default route** except
-   through pasta, which only honours the forwarded port.
+1. `Agent.Dispatch` resolves the per-company proxy listener and passes
+   its loopback URL into `Glorbo.Sandbox.Bwrap.start/2`.
+2. On Linux, `Bwrap.start/2` normalizes that URL to
+   `http://127.0.0.1:<PROXY_PORT>` and launches `/bin/sh` via
+   `pasta -q -f --runas <uid>:<gid> --splice-only -t none -u none -T <PROXY_PORT> -U none -- ...`.
+3. `pasta --splice-only` creates a private netns with loopback-only
+   forwarding; the only reachable host listener is the forwarded proxy
+   port.
+4. `bwrap` still owns the filesystem sandbox inside that netns. We do
+   not replace bwrap; we wrap it.
+5. Any direct `connect(127.0.0.1, other_port)` from the agent fails,
+   while `curl --proxy "$HTTPS_PROXY"` still reaches the Glorbo proxy.
 
 ### Fallback when `pasta` isn't installed
 
@@ -118,17 +136,18 @@ and audit a degraded-mode event" when the kernel primitives are
 absent. Mirror it: the `Doctor` check adds `pasta --version`, and if
 unavailable:
 
-- On Linux: emit `agent.netns_unavailable` audit event at company
-  boot, log a big warning, fall back to **today's** behavior (shared
-  netns + env vars). Operator sees a persistent banner in the
-  dashboard until pasta is installed.
+- On Linux: `network: proxy` dispatches are **refused**. Emit an
+  `agent.netns_unavailable` audit event, surface a loud doctor
+  warning/install hint, and tell the operator to install `pasta`.
+  `network: none` and `network: open` remain available.
 - On macOS: not applicable — macOS runs unsandboxed (GEP-5 D6) and
   inherits this limitation. Future work (GEP-TBD) can investigate
-  pf firewall rules or Network Extension hooks.
+  `pf` firewall rules or Network Extension hooks, but this GEP does
+  not promise equivalent enforcement there.
 
-This keeps installation friction low (pasta is a `dnf/apt install`
-away on every major distro that has Glorbo users) while preventing
-a silent security downgrade.
+This is deliberately fail-closed. Glorbo is not trying to sell
+"security theater"; if a policy sounds like a boundary, the runtime
+should either enforce it or refuse it.
 
 ## Decision log
 
@@ -146,21 +165,17 @@ a silent security downgrade.
   out per-agent persistent netns because it requires lifecycle
   tracking we don't have reason to add.
 
-- **D-3 (accept):** The agent-side proxy bind address is
-  `127.0.0.222:<PROXY_PORT>`. Arbitrary choice within 127.0.0.0/8
-  that's visually distinct from 127.0.0.1 and easy to grep for in
-  audit trails. Pasta's forwarding is a simple `--tcp-ports
-  <PROXY_PORT>` with a per-netns SNAT to `127.0.0.222`. Using `.1`
-  would work but confuses debugging ("is this my host or the sandbox
-  seeing 127.0.0.1?").
+- **D-3 (accept):** Keep the agent-side proxy address at
+  `127.0.0.1:<PROXY_PORT>`. The important property is "only this port
+  is forwarded", not "special loopback IP". A standard loopback
+  address keeps CLI/tool compatibility simple and matched the real
+  `pasta` behaviour validated during implementation.
 
-- **D-4 (accept):** The host-side proxy listener moves to a
-  non-default loopback address (e.g. `127.0.0.222`). Even though
-  kernel enforcement is the primary defense, obscuring the proxy
-  port from the default `127.0.0.1:4000` neighborhood raises the
-  bar against accidental collisions with other local services and
-  makes netfilter/capture rules clearer ("traffic to 127.0.0.222 is
-  the proxy").
+- **D-4 (reject):** Move the host-side proxy listener to a special
+  loopback alias such as `127.0.0.222`. Rejected as unnecessary once
+  `pasta --splice-only -T <PROXY_PORT>` proved sufficient: kernel
+  enforcement comes from the private netns and single-port forwarding,
+  not from obscuring the host-side bind address.
 
 - **D-5 (accept, reluctant):** No equivalent enforcement on macOS.
   pasta is Linux-only; macOS lacks user-namespace netns support.
@@ -193,6 +208,13 @@ a silent security downgrade.
   that HTTP-calls from the agent process back to a test HTTP server
   on the host breaks — intentionally.
 
+- **D-10 (accept):** **No rollout flags pre-1.0.** Linux
+  `network: proxy` semantics change atomically from "advisory env
+  vars" to "enforced via netns+pasta or refused". Ruled out staged
+  `GLORBO_NETNS=1/0` rollout because it prolongs misleading policy
+  semantics and adds a second runtime path we already know we want
+  to delete.
+
 ## Load-bearing invariants after this GEP
 
 - **`network: proxy` means "can only reach the proxy".** Policy and
@@ -207,50 +229,40 @@ a silent security downgrade.
 
 ## Migration notes
 
-- Pre-1.0 (≤ v0.0.4): atomic cut, no deprecation window. Existing
-  `:proxy` (née `:api_only`) agents get netns enforcement the
-  moment they start under a Glorbo build that includes this GEP.
-- New `Doctor` check reports pasta status + version. `glorbo
-  doctor --fix` cannot install pasta (package-manager action), but
-  can print the platform-appropriate install command.
-- Company supervisor emits `agent.netns_unavailable` audit event
-  once per boot when pasta is missing, so operators know they're in
-  degraded mode.
+- Pre-1.0: atomic cut, no deprecation window and no rollout flags.
+  Existing `:proxy` (née `:api_only`) agents switch from advisory
+  behavior to enforced-or-refused the moment they run under a build
+  that includes this GEP.
+- On Linux, hosts that run `network: proxy` agents must have
+  `pasta` installed. Missing `pasta` is a hard prerequisite failure
+  for those dispatches, not a degraded fallback to shared-netns
+  behavior.
+- New `Doctor` check reports `pasta` status + version and can print
+  the platform-appropriate install command, but it does not install
+  packages itself.
+- `Agent.Dispatch` emits a once-per-company `agent.netns_unavailable`
+  audit event when Linux `network: proxy` dispatches are refused for a
+  missing `pasta` prerequisite, so the operator sees a concrete failure
+  instead of a silent downgrade.
 
-## Rollout phases
+## Implementation shape
 
-1. **Phase A — plumbing (no behavior change):** add pasta detection
-   to `Doctor`; plumb a `netns_enforced?: bool` flag through
-   `Sandbox.Bwrap.run/2`'s opts; add the `agent.netns_unavailable`
-   audit emit. No user-visible behavior yet.
-
-2. **Phase B — enforcement behind a flag:** add `GLORBO_NETNS=1`
-   opt-in env var that enables the pasta invocation path for
-   `:proxy` agents. Ship behind the flag in one release so users can
-   smoke-test without breaking workflows.
-
-3. **Phase C — flip to default:** make netns enforcement the default
-   on Linux when pasta is present. `GLORBO_NETNS=0` opts out for
-   emergency rollback.
-
-4. **Phase D — drop the flag:** once C has been stable for one
-   release, drop `GLORBO_NETNS` entirely. The only knob left is
-   "pasta installed or not".
-
-5. **Phase E — macOS investigation:** separate GEP. Evaluates
-   `packetfilter` rules as a weaker-but-nonzero substitute.
+1. Add `pasta` detection to `Doctor` and fail closed for Linux
+   `network: proxy` dispatches when it is missing.
+2. Extend the `bwrap` launcher so `:proxy` wraps the existing bwrap
+   command in `pasta --splice-only` with only the proxy port exposed.
+3. Rewrite the proxy integration tests to assert negative reachability
+   of host loopback services, not just happy-path proxy use.
+4. Update dashboard/docs copy so `network: proxy` is described as
+   enforced on Linux and unavailable there when prerequisites are
+   missing.
 
 ## Open questions
 
-- **Q1:** Does pasta's `--tcp-ports` accept a host-side IP filter, or
-  only a port number? Need to verify whether we can force the
-  forward to bind `127.0.0.222` rather than `127.0.0.1` on the agent
-  side without extra nft rules. (Reading the man page suggests yes
-  via `--map-host-loopback`.)
-- **Q2:** Performance overhead of pasta on high-throughput
+- **Q1:** Performance overhead of pasta on high-throughput
   scenarios (long-context LLM streaming). Expected negligible
   (<5% vs direct netns) based on Red Hat benchmarks, but needs
   measurement once plumbing lands.
-- **Q3:** Interaction with `GEP-27` path requests. Path-request
+- **Q2:** Interaction with `GEP-27` path requests. Path-request
   file mounts are filesystem-level and unrelated to netns, so no
   interaction expected — confirm with an integration test.
