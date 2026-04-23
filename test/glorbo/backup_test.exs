@@ -100,6 +100,20 @@ defmodule Glorbo.BackupTest do
       mode = File.stat!(archive).mode |> band(0o777)
       assert mode == 0o600, "archive mode should be 0600, got #{Integer.to_string(mode, 8)}"
     end
+
+    test "success leaves no temporary archive beside the final output",
+         %{home: home, archive: archive} do
+      assert {:ok, _} =
+               Glorbo.Backup.run(base: home, output: archive, skip_checkpoint: true)
+
+      leftovers =
+        archive
+        |> Path.dirname()
+        |> File.ls!()
+        |> Enum.filter(&String.starts_with?(&1, Path.basename(archive) <> ".tmp."))
+
+      assert leftovers == []
+    end
   end
 
   describe "Glorbo.Backup.run_cli/1" do

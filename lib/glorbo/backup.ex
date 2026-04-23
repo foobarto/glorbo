@@ -13,7 +13,8 @@ defmodule Glorbo.Backup do
 
   Security:
 
-    * Output archive is `chmod 0600` after create (T-05-06 mitigation).
+    * Output archive is written to a private temp path, `chmod 0600`,
+      then atomically renamed into place (T-05-06 mitigation).
     * Symlinks are preserved as symlinks (no `:dereference` passed).
 
   See `.planning/phases/05-cli-completeness-backup-restore-portability/
@@ -53,7 +54,6 @@ defmodule Glorbo.Backup do
          :ok <- maybe_checkpoint(base, repo, skip_checkpoint?),
          :ok <- recheck_down(base, force_live?),
          :ok <- write_archive(base, output) do
-      File.chmod!(output, 0o600)
       {:ok, output}
     end
   end
@@ -175,10 +175,22 @@ defmodule Glorbo.Backup do
       end)
 
     File.mkdir_p!(Path.dirname(output))
+    tmp = output <> ".tmp." <> Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
-    case :erl_tar.create(String.to_charlist(output), files, [:compressed, :write]) do
-      :ok -> :ok
-      {:error, reason} -> {:error, {:tar_failed, reason}}
+    case :erl_tar.create(String.to_charlist(tmp), files, [:compressed, :write]) do
+      :ok ->
+        with :ok <- File.chmod(tmp, 0o600),
+             :ok <- File.rename(tmp, output) do
+          :ok
+        else
+          {:error, reason} ->
+            _ = File.rm(tmp)
+            {:error, {:archive_finalize_failed, reason}}
+        end
+
+      {:error, reason} ->
+        _ = File.rm(tmp)
+        {:error, {:tar_failed, reason}}
     end
   end
 
