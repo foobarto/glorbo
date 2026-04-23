@@ -44,12 +44,14 @@ fires or an inbox message lands, `Agent.Server` enters `:dispatching`
 and hands off to `Agent.Dispatch`, which shells out inside a bwrap
 sandbox to either an external CLI runtime (`claude`, `gemini`,
 `codex`, etc.) or the first-party `glorbo harness` native-provider
-subcommand. It then reads the reply file and audits cost + outcome.
-See GEP-4, GEP-5, GEP-8, and GEP-32.
+subcommand. It then reads the reply file, parses provider telemetry,
+and for native runs can replay sanitized tool-audit events back into
+the company audit log before recording cost + outcome. See GEP-4,
+GEP-5, GEP-8, and GEP-32.
 
 Supporting modules: `Glorbo.Agent.Parser` (validates AGENT.md),
 `Glorbo.Agent.Spec` (struct), `Glorbo.Agent.FileLayout`
-(filename resolution).
+(filename resolution), `Glorbo.Agent.RunLog` (persisted run metadata).
 
 ### 3. Filesystem & FileSpec — `lib/glorbo/filesystem/` + `lib/glorbo/file_spec/`
 
@@ -134,7 +136,10 @@ inside bwrap via the `harness` subcommand instead of requiring a
 separate external CLI install. As of GEP-32 phase 2a, the harness's
 tool catalog is factored under `Glorbo.CLI.Harness.Tools` and ships the
 filesystem batch (`read_file`, `write_file`, `edit_file`, `glob`,
-`grep`) with audit replay back into `Agent.Dispatch`.
+`grep`) with audit replay back into `Agent.Dispatch`. The same
+subsystem also owns `Glorbo.CLI.Registry` and its built-in/user TOML
+provider loading, so provider schema changes tend to touch CLI code
+even when the Director experience is in LiveView.
 
 ## Graph caveats
 
@@ -177,6 +182,7 @@ Reading the knowledge graph well means knowing what's noise:
 | How is audit written? | `Glorbo.Company.AuditLog.append/2` → `audit/YYYY-MM.jsonl` |
 | How does MCP dispatch to a tool? | `GlorboWeb.MCP.Plug → Server.dispatch/3 → tool module.call/2` |
 | What's the filesystem source of truth? | `~/.glorbo/companies/<co>/` tree documented in GEP-3 |
+| Where do native provider tool audits come from? | `Glorbo.CLI.Harness` → `Parsers.NativeV1` → `Agent.Dispatch.emit_tool_audits/5` |
 
 ## Related
 

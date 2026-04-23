@@ -158,7 +158,7 @@ prompt instructions.
 ~/.glorbo/
 ├── glorbo                          # Elixir release binary (self-contained BEAM)
 ├── config.md                       # Global settings (host, port, dashboard token)
-├── providers.toml                  # (optional) user-declared CLI providers (GEP-8)
+├── providers.toml                  # (optional) user-declared provider registry entries
 ├── glorbo.db                       # SQLite index (rebuildable, disposable)
 │
 ├── state/
@@ -309,8 +309,8 @@ For each agent wake, Elixir:
    (`.glorbo-skills/`, `.glorbo-run/<task-id>/task-prompt.md`).
 2. Resolves the agent's `provider:` through `Glorbo.CLI.Registry` to a
    `Provider` struct: either a CLI binary + argv template, or a native
-   endpoint + auth contract, plus env overrides, reply-path template,
-   and an optional usage-parser binding.
+   endpoint + auth + model-list contract, plus env overrides, reply
+   contract, auth binds, and a usage-parser binding.
 3. Builds a `bwrap` argv from the agent's `permissions:` and `network:`
    declarations (see §4.4).
 4. Calls `Glorbo.CLI.Dispatcher.invoke/3`, which expands the provider's
@@ -319,8 +319,10 @@ For each agent wake, Elixir:
    `Port.open`, pipes the task prompt on stdin, tails stdout to
    `agents/<name>/stdout.log`.
 5. On exit, reads the reply file at `$GLORBO_REPLY_PATH` (see §4.2.1),
-   runs the bound usage-parser for token/cost telemetry, moves outbox
-   files through the Router, and cleans up per-invocation scratch.
+   runs the bound usage-parser for token/cost telemetry, replays any
+   sanitized native-tool audit events through `Agent.Dispatch`, moves
+   outbox files through the Router, and cleans up per-invocation
+   scratch.
 
 The provider runtime is trusted, but Glorbo still does not run an
 in-process SDK client. CLI providers manage their own credentials
@@ -331,6 +333,12 @@ company directory sees no API keys. Complex orchestration logic lives in
 Elixir; the runtime's job is: receive a prompt on stdin, do the work
 inside its sandbox view of the workspace, write its final answer to
 `$GLORBO_REPLY_PATH`, exit.
+
+Native `usage.json` is treated as untrusted sandbox output rather than a
+host-authoritative control channel. The `native-v1` parser only accepts
+the fixed token/duration fields, allowlisted tool-count names, and a
+small allowlist of replayable audit actions before anything reaches the
+budget ledger or Director-visible audit log.
 
 #### 4.2.1  Reply-file contract (GEP-8 D1)
 
@@ -358,11 +366,15 @@ researcher on Claude Code, an engineer on Codex, a copywriter on Gemini.
 Providers are config-driven, not code-driven (GEP-8 D6). Each provider
 is a TOML entry declaring:
 
-- Its binary name (PATH) or absolute path
-- An argv template and prompt delivery mode
+- Its kind (`cli` or `native`)
+- Either a CLI binary + argv template + prompt delivery mode, or a
+  native endpoint + auth mode + optional model-list contract
 - An env-var override block (e.g. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`)
 - The reply contract (dir + filename template + size cap)
-- An optional usage-parser binding (for budget tracking)
+- A usage-parser binding (for budget tracking; native providers must be
+  tracked)
+- Optional auth binds for host-side credentials that need a read-only
+  sandbox mount
 - Optional named path transforms (e.g. Claude's `/`→`-` workspace
   encoding)
 - A version probe flag + regex (opt-in for user-declared entries)
@@ -370,8 +382,10 @@ is a TOML entry declaring:
 Built-in providers ship under `priv/providers/*.toml`. User-declared
 providers drop in at `~/.glorbo/providers.toml`. `Glorbo.CLI.Registry`
 loads both at boot, PATH-detects CLI binaries, classifies native
-providers, and caches the snapshot. The `/providers` LiveView surfaces
-the current state; `glorbo doctor --probe` triggers CLI version probes.
+providers, and caches the snapshot. The `/providers` LiveView and
+doctor surface the current state; explicit version probes go through
+`Glorbo.CLI.Registry.refresh_with_version_probe/0` rather than the
+default boot path.
 
 **Shipped providers:**
 
@@ -784,7 +798,7 @@ result into the SQLite budget ledger:
 | `claude-code`  | `claude_jsonl`   | `$CLAUDE_CONFIG_DIR/projects/<encoded>/*.jsonl`      |
 | `codex`        | `codex_jsonl`    | `$CODEX_HOME/sessions/**/rollout-*.jsonl`            |
 | `gemini-cli`   | `gemini_stdout`  | gemini's `--output-format json` stdout blob          |
-| `openai` / `openrouter` | `native_v1` | `$GLORBO_USAGE_PATH` JSON emitted by `glorbo harness` |
+| `openai` / `openrouter` | `native-v1` | `$GLORBO_USAGE_PATH` JSON emitted by `glorbo harness` |
 | `hermes`/`opencode`/`pi` | `none` | (no parser — untracked; agent must opt in)        |
 
 Cost in USD is computed by Elixir via a per-model rate table
@@ -879,36 +893,37 @@ inotify trigger PubSub broadcasts.  The dashboard updates without polling.
 > *Pre-schleemed. Zero hizzard leakage. One command.*
 
 ```
-glorbo init [--force]           # First-time setup: create ~/.glorbo/,
-     [--no-example]              # verify deps via `glorbo doctor`,
-                                # optionally scaffold example company (acme).
-
+glorbo init [--force] [--skip-pull] [--example|--no-example]
+                                # Bootstrap ~/.glorbo/ and verify deps.
 glorbo up                       # Start detached daemon (dashboard +
-                                # supervision tree). Idempotent via pidfile.
+                                # supervision tree).
 glorbo down                     # Graceful SIGTERM → 10s grace → SIGKILL.
 glorbo status                   # Pidfile state + uptime.
 glorbo serve                    # Foreground supervision (for systemd).
 glorbo run <script>             # One-shot script execution.
 
 glorbo new company <slug>       # Scaffold a new company directory.
-glorbo new agent <co>/<slug>    # Scaffold a new agent.md with defaults +
-                                # reply-contract system prompt (GEP-8).
+glorbo new agent <co>/<slug>    # Scaffold a new agent (--template supported).
 glorbo new project <co>/<slug>  # Scaffold a new project.
+glorbo new skill <co> <name>    # Scaffold a new skill (--template supported).
+glorbo templates list [kind]    # List agent/skill templates.
+glorbo templates show <kind> <name>
+                                # Print a template's contents.
+glorbo import paperclip <src>   # Import a paperclip.ai agentcompanies tree.
 
+glorbo logs <co> [agent] [--follow]
+                                # Tail audit log or agent stdout.
+glorbo doctor [--json] [--fix] [--dry-run]
+                                # Host prerequisite checks + auto-fixers.
 glorbo reindex                  # Rebuild SQLite from filesystem.
 glorbo migrate                  # Run pending Ecto migrations.
-glorbo doctor [--json] [--fix]  # Host prerequisite checks + auto-fixers.
-glorbo doctor --probe           # Version-probe the provider registry.
-
-glorbo logs <co> [agent]        # Tail audit log or agent stdout
-  [--follow]                    # (inotify-backed live tail).
 glorbo console                  # Elixir remote console against the
                                 # running daemon.
 
 glorbo backup [--output <path>] # tar.gz of ~/.glorbo/ with WAL checkpoint.
-glorbo restore <archive>        # Extract + migrate + reindex + doctor --fix.
-  [--force]                     #
-
+glorbo restore <archive> [--force]
+                                # Extract + migrate + reindex + doctor --fix.
+glorbo harness ...              # Internal native-provider runtime (GEP-32).
 glorbo help [<verb>]            # Usage text.
 ```
 
@@ -957,11 +972,14 @@ glorbo init
 
 Agents can use local models via CLIs that wrap them (e.g. `pi`,
 `opencode` against a local backend) or cloud providers like Anthropic
-(Claude), OpenAI, and Google (Gemini). GEP-32 phase 1 also ships
+(Claude), OpenAI, and Google (Gemini). GEP-32 phase 2a also ships
 native OpenAI-compatible providers (`openai`, `openrouter`) with no
-external CLI install. All of these are configured per agent in
-`agent.md` and resolve through the provider registry. Local providers
-are the default-friendly choice; cloud providers are opt-in.
+external CLI install; they own the current native filesystem-tool batch
+(`read_file`, `write_file`, `edit_file`, `glob`, `grep`) and emit
+tracked usage/audit telemetry through `usage.json`. All of these are
+configured per agent in `agent.md` and resolve through the provider
+registry. Local providers are the default-friendly choice; cloud
+providers are opt-in.
 
 Python is **not** a host dependency. There is no container runtime.
 Glorbo bundles neither Podman nor Ollama — those were part of a

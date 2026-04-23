@@ -79,7 +79,7 @@ it's been in CHANGELOG for a cycle.
 
 ---
 
-## Shipped this cycle (2026-04-21)
+## Shipped this cycle (2026-04-21 to 2026-04-23)
 
 - [x] #264 TaskLive history panel + AuditLive ?q= deep-link
 - [x] #268 TaskScheduler fires scheduled dispatches
@@ -152,8 +152,8 @@ it's been in CHANGELOG for a cycle.
 - [x] **GEP-32 phase 1 (2026-04-23).** Shipped native-provider
   runtime support inside the existing bwrap dispatch path:
   `kind = "native"` providers, internal `glorbo harness`,
-  built-in `openai` + `openrouter`, runtime `tracked: false`
-  budget gating, and a `read_file` tool loop with usage JSON.
+  built-in `openai` + `openrouter`, tracked native usage JSON, and
+  the initial `read_file` tool loop.
 - [x] **v0.1.0 shipped.** First minor since v0.0.4: GEP-32 phase 1
   plus the post-v0.0.4 threatmodel hardening batches are now rolled
   into the release docs/version surface.
