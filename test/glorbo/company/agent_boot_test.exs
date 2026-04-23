@@ -46,7 +46,7 @@ defmodule Glorbo.Company.AgentBootTest do
     role: "Test agent"
     provider: claude-code
     model: claude-sonnet-4-5
-    network: none
+    network: loopback
     #{heartbeat_line}
     permissions: []
     budget:

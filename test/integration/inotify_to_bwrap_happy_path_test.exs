@@ -67,7 +67,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       model: "claude-sonnet-4-5",
       permissions: [],
       heartbeat: nil,
-      network: :none,
+      network: :loopback,
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 60,
@@ -201,7 +201,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     # produce.
     assert "--die-with-parent" in bwrap_argv
     assert "--unshare-pid" in bwrap_argv
-    # network: :none → --unshare-net
+    # network: :loopback → --unshare-net
     assert "--unshare-net" in bwrap_argv
     # workspace bound rw, inbox ro (one-way flow invariant)
     assert bwrap_argv

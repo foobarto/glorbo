@@ -10,6 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — GEP-23 D1 network enum rename (BREAKING)
+
+- `network:` frontmatter values now `loopback | proxy | full`
+  (was `none | proxy | open`). Parser rejects the old values
+  with `{:invalid_network, _}`; no back-compat reader — pre-1.0
+  atomic cut per GEP-23 D1. Bwrap typespec + `network_flag/1`,
+  AgentLive config-editor dropdown, sandbox-view rendering,
+  CompanyLive default, and every test fixture were migrated in
+  the same commit.
+- GEP-23 frontmatter flipped Draft → Implemented. `kbps_cap`
+  per-dispatch throttle is deferred to a dedicated follow-up
+  (needs the per-dispatch `Proxy-Authorization` token
+  machinery that GEP-23 §Proxy daemon §5 describes).
+- **Migration:** every AGENT.md on disk needs a one-line edit:
+  `network: none → network: loopback`, `network: open →
+  network: full`. Director-run `glorbo fmt --write` does NOT
+  migrate the values (formatter is syntactic only); use
+  `sed -i 's/^network: none$/network: loopback/; s/^network: open$/network: full/' ~/.glorbo/companies/*/agents/*/AGENT.md`
+  or equivalent.
+
 ## [0.6.0] — 2026-04-23
 
 Sixth pre-1.0 minor. Five shipping flags beyond v0.5.0: macOS

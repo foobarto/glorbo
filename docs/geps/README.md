@@ -46,7 +46,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0020 | [Director Dashboard UX Sweep — Rounds 2+3](./0020-round-2-3-ux-sweep.md)                  | Informational | Implemented |
 | 0021 | [File-based Agent Memory](./0021-file-based-agent-memory.md)                             | Standards     | Implemented |
 | 0022 | [skills.sh Registry — Browse and Install Skills](./0022-skills-registry-browse-install.md) | Standards     | Draft       |
-| 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Draft       |
+| 0023 | [Egress Proxy with Host Filtering and Smart Mode](./0023-egress-proxy-with-filtering.md) | Standards     | Implemented |
 | 0024 | [Task Scheduler — Firing Scheduled Dispatches](./0024-task-scheduler.md)                 | Informational | Implemented |
 | 0025 | [On-disk File Format Specs, `glorbo validate`, `glorbo fmt`](./0025-file-format-spec-and-tooling.md) | Standards     | Implemented |
 | 0026 | [Benchmark Templates and Provider A/B Comparison](./0026-benchmark-templates-and-ab-comparison.md) | Standards     | Draft       |

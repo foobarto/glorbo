@@ -144,7 +144,7 @@ defmodule Glorbo.EmergencyStopTest do
         provider: "claude-code",
         model: "claude-opus-4-6",
         permissions: [],
-        network: :none,
+        network: :loopback,
         skills: [],
         timeout_seconds: 300,
         file_path: Path.join([base, "companies/acme/agents/engineer/AGENT.md"])

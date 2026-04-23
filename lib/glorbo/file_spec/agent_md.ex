@@ -37,7 +37,7 @@ defmodule Glorbo.FileSpec.AgentMd do
         :autonomy
       ],
       enums: %{
-        network: ["none", "proxy", "full"],
+        network: ["loopback", "proxy", "full"],
         autonomy: ["supervised", "semi-autonomous", "autonomous"]
       },
       patterns: %{

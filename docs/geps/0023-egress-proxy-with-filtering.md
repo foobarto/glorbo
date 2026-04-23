@@ -2,7 +2,7 @@
 gep: 23
 title: Egress Proxy with Host Filtering and Smart Mode
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-21
 requires: [2, 5, 19]
@@ -41,6 +41,23 @@ history:
       site blast radius, still open), and `egress.kbps_cap` per-dispatch
       throttle (needs the per-dispatch Proxy-Authorization token
       infrastructure that §Proxy daemon §5 describes — not yet built).
+  - date: 2026-04-23
+    status: Implemented
+    note: |
+      D1 `network:` enum rename atomic cut landed. `:none → :loopback` and
+      `:open → :full` at the parser, bwrap sandbox, Spec typespec, all UI
+      layers (AgentLive select, sandbox-view rendering, CompanyLive
+      default), and every test fixture in one commit. Pre-1.0 no-kid-
+      gloves — `Glorbo.Agent.Parser.validate_network/3` rejects the old
+      string values with `{:invalid_network, _}`, no back-compat reader.
+      The `kbps_cap` per-dispatch throttle is deferred — it needs the
+      per-dispatch `Proxy-Authorization` token mechanism from §Proxy
+      daemon §5 that isn't wired yet; tracked in `docs/todo.md` as a
+      dedicated follow-up so GEP-23 can flip to Implemented without
+      waiting on that separate piece of machinery. GEP-23 is now
+      Implemented for the proxy + history + `egress:` frontmatter + enum
+      surface; the throttle lives as a scoped-out extension rather than
+      a GEP-23 blocker.
 ---
 
 # GEP-23: Egress Proxy with Host Filtering and Smart Mode

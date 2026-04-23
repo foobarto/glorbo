@@ -58,7 +58,7 @@ defmodule Glorbo.Test.PortabilityFixtures do
     role: "Portability test agent"
     provider: claude-code
     model: claude-sonnet-4-5
-    network: none
+    network: loopback
     permissions: []
     budget:
       monthly_usd: 10.00

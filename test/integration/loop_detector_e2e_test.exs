@@ -66,7 +66,7 @@ defmodule Glorbo.Integration.LoopDetectorE2ETest do
       model: "claude-sonnet-4-5",
       permissions: [],
       heartbeat: nil,
-      network: :none,
+      network: :loopback,
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 60,

@@ -18,7 +18,9 @@ defmodule Glorbo.Agent.Parser do
 
     * `@fallback_provider_kinds` — compile-time fallback when the live
       registry is unavailable.
-    * `@network_map` — `"none" → :none | "proxy" → :proxy | "open" → :open`.
+    * `@network_map` — `"loopback" → :loopback | "proxy" → :proxy | "full" → :full`
+      (GEP-23 D1 rename; pre-1.0 atomic cut away from the older
+      `none | proxy | open` set).
     * `@skill_name_regex` / `@slug_regex` — `~r/\A[a-z][a-z0-9_-]{0,63}\z/`
       (T-03-19 path-traversal block; bounds slug to kebab-case ASCII).
     * `model:` is REQUIRED for all three providers (LLM-04 single-model
@@ -26,12 +28,12 @@ defmodule Glorbo.Agent.Parser do
       `{:error, :multiple_models_not_supported}`.
     * `permissions:` defaults to `[]` when absent (P7 — agent with no granted
       permissions is valid; it just can't route anything).
-    * `network:` defaults to `:none` (threatmodel M16 —
+    * `network:` defaults to `:loopback` (threatmodel M16 —
       secure-by-default). Templates that need egress set
       `network: proxy` explicitly. We still don't silently opt agents
       into egress when the field is missing, even though GEP-31 now
-      enforces proxy-only Linux networking, because `:none` remains the
-      honest least-privilege default.
+      enforces proxy-only Linux networking, because `:loopback`
+      remains the honest least-privilege default.
     * `timeout_seconds:` defaults to 300 (D-06).
     * `http_timeout_s:` defaults to 120; `http_max_retries:` to 3;
       `web_fetch_timeout_s:` to 30; `max_tool_calls_per_turn:` to 50
@@ -67,7 +69,11 @@ defmodule Glorbo.Agent.Parser do
     "openrouter" => :native
   }
   @fallback_providers Map.keys(@fallback_provider_kinds)
-  @network_map %{"none" => :none, "proxy" => :proxy, "open" => :open}
+  # GEP-23 D1 rename: `none → loopback` and `open → full`. The
+  # atoms inside Glorbo are the new names; the string keys accept
+  # ONLY the new names too (pre-1.0 atomic cut — no back-compat
+  # reader).
+  @network_map %{"loopback" => :loopback, "proxy" => :proxy, "full" => :full}
   @default_timeout_seconds 300
   @default_http_timeout_s 120
   @default_http_max_retries 3
@@ -459,19 +465,20 @@ defmodule Glorbo.Agent.Parser do
   end
 
   # Native providers make real HTTPS requests to their endpoint from
-  # inside the harness, so `network: none` is structurally impossible.
-  # Reject it at parse time instead of letting dispatch fail later.
+  # inside the harness, so `network: loopback` is structurally
+  # impossible. Reject it at parse time instead of letting dispatch
+  # fail later.
   defp validate_network(nil, provider, :native),
     do: {:error, {:native_provider_requires_network, provider}}
 
   defp validate_network("", provider, :native),
     do: {:error, {:native_provider_requires_network, provider}}
 
-  defp validate_network("none", provider, :native),
+  defp validate_network("loopback", provider, :native),
     do: {:error, {:native_provider_requires_network, provider}}
 
-  defp validate_network(nil, _provider, _kind), do: {:ok, :none}
-  defp validate_network("", _provider, _kind), do: {:ok, :none}
+  defp validate_network(nil, _provider, _kind), do: {:ok, :loopback}
+  defp validate_network("", _provider, _kind), do: {:ok, :loopback}
 
   defp validate_network(raw, _provider, _kind) when is_binary(raw) do
     case Map.fetch(@network_map, raw) do

@@ -15,7 +15,7 @@ defmodule Glorbo.Agent.Spec do
   """
 
   @type permission :: {String.t(), String.t(), String.t()}
-  @type network_policy :: :none | :proxy | :open
+  @type network_policy :: :loopback | :proxy | :full
 
   @typedoc """
   Named autonomy tier (T1-F). Maps to existing primitives the

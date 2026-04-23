@@ -16,7 +16,7 @@ defmodule Glorbo.Integration.SandboxNetworkNoneTest do
   end
 
   describe "BS4: --unshare-net kernel-enforced egress block (SEC-03)" do
-    test "network: :none blocks curl to any external host" do
+    test "network: :loopback blocks curl to any external host" do
       base = TmpGlorboHome.setup()
       root = Path.join([base, "companies", "acme"])
 
@@ -30,7 +30,7 @@ defmodule Glorbo.Integration.SandboxNetworkNoneTest do
         outbox_path: Path.join([root, "agents/engineer/outbox"]),
         company_path: root,
         permissions: [],
-        network_policy: :none,
+        network_policy: :loopback,
         cli_auth_binds: [],
         cli_env: %{},
         proxy_url: nil,

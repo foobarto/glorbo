@@ -20,7 +20,7 @@ defmodule Glorbo.Integration.BudgetHardStopE2ETest do
       model: "claude-sonnet-4-5",
       permissions: [],
       heartbeat: nil,
-      network: :none,
+      network: :loopback,
       skills: [],
       budget_usd_cents_month: Keyword.get(opts, :cap, 100),
       timeout_seconds: 60,

@@ -20,7 +20,7 @@ bwrap), skills, and optional per-agent allowlist extensions
 | Key | Allowed values |
 |-----|----------------|
 | `autonomy` | `supervised`, `semi-autonomous`, `autonomous` |
-| `network` | `none`, `proxy`, `full` |
+| `network` | `loopback`, `proxy`, `full` |
 
 ### Patterns
 

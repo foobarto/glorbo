@@ -59,7 +59,7 @@ defmodule Glorbo.Test.Fixtures do
     role: "Chief Executive Officer"
     provider: claude-code
     model: claude-sonnet-4-5
-    network: none
+    network: loopback
     heartbeat: null
     permissions:
       - projects:read:*

@@ -15,7 +15,7 @@ defmodule Glorbo.Agent.ServerTest do
       model: "claude-opus-4-6",
       permissions: [],
       heartbeat: nil,
-      network: :none,
+      network: :loopback,
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 300,

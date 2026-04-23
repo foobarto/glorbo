@@ -57,15 +57,16 @@ defmodule Glorbo.Sandbox.Bwrap do
     * `cli_env` map (from adapter) — per-provider session redirects
       (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) and optional proxy env.
 
-  ## Network policy (D-15, D-17)
+  ## Network policy (D-15, D-17; GEP-23 D1 rename)
 
-    * `:none` → `--unshare-net` (kernel-enforced egress block).
+    * `:loopback` → `--unshare-net` (kernel-enforced egress block;
+      bwrap creates a fresh netns with `lo` up inside it).
     * `:proxy` → launches bwrap under `pasta --splice-only -T <proxy_port>`
       so the child gets a private network namespace where only the
       Glorbo-managed proxy port is reachable on loopback. `HTTPS_PROXY`
       and `HTTP_PROXY` point at that loopback address. On Linux this is
       enforced-or-refused: if `pasta` is unavailable, the dispatch fails.
-    * `:open` → inherits host netns; no proxy.
+    * `:full` → inherits host netns; no proxy.
 
   ## Process cleanup
 
@@ -99,7 +100,7 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   alias Glorbo.Sandbox.PermissionMapper
 
-  @type network_policy :: :none | :proxy | :open
+  @type network_policy :: :loopback | :proxy | :full
 
   @type invocation_opts :: %{
           required(:agent_workspace) => String.t(),
@@ -231,9 +232,9 @@ defmodule Glorbo.Sandbox.Bwrap do
   # Network policy (D-15, D-17)
   # ---------------------------------------------------------------------------
 
-  defp network_flag(:none), do: ["--unshare-net"]
+  defp network_flag(:loopback), do: ["--unshare-net"]
   defp network_flag(:proxy), do: []
-  defp network_flag(:open), do: []
+  defp network_flag(:full), do: []
 
   # ---------------------------------------------------------------------------
   # Root FS binds (D-09)

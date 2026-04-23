@@ -1366,7 +1366,7 @@ defmodule GlorboWeb.CompanyLive do
       activity: activity_hint(agent_path, meta),
       provider: meta[:provider] || "—",
       model: meta[:model] || "",
-      network: meta[:network] || "none",
+      network: meta[:network] || "loopback",
       reports_to: meta[:reports_to],
       budget_used: used,
       budget_cap: cap,

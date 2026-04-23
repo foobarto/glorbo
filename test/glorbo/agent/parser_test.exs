@@ -231,19 +231,19 @@ defmodule Glorbo.Agent.ParserTest do
   # ---------------------------------------------------------------------------
 
   describe "network validation (P8, P9)" do
-    test "P8a: network: none → :none", ctx do
+    test "P8a: network: loopback → :loopback", ctx do
       content = ~s"""
       ---
       kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
-      network: none
+      network: loopback
       ---
       """
 
       path = write_agent(ctx, "a", content)
-      assert {:ok, %{network: :none}} = Parser.parse_file(path)
+      assert {:ok, %{network: :loopback}} = Parser.parse_file(path)
     end
 
     test "P8b: network: proxy → :proxy", ctx do
@@ -261,19 +261,19 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:ok, %{network: :proxy}} = Parser.parse_file(path)
     end
 
-    test "P8c: network: open → :open", ctx do
+    test "P8c: network: full → :full", ctx do
       content = ~s"""
       ---
       kind: agent/v1
       role: x
       provider: claude-code
       model: claude-opus-4-6
-      network: open
+      network: full
       ---
       """
 
       path = write_agent(ctx, "c", content)
-      assert {:ok, %{network: :open}} = Parser.parse_file(path)
+      assert {:ok, %{network: :full}} = Parser.parse_file(path)
     end
 
     test "P8d: unknown network → {:invalid_network, _}", ctx do
@@ -291,11 +291,11 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:invalid_network, "bogus"}} = Parser.parse_file(path)
     end
 
-    test "P9: missing network defaults to :none (threatmodel M16)", ctx do
+    test "P9: missing network defaults to :loopback (threatmodel M16)", ctx do
       # threatmodel M16: defaulting to :proxy would silently opt agents
-      # into egress. Default stays :none even after GEP-31 because
-      # templates that need proxy-only egress should declare it
-      # explicitly.
+      # into egress. Default stays `:loopback` (GEP-23 D1 rename) even
+      # after GEP-31 because templates that need proxy-only egress
+      # should declare it explicitly.
       content = """
       ---
       kind: agent/v1
@@ -306,10 +306,10 @@ defmodule Glorbo.Agent.ParserTest do
       """
 
       path = write_agent(ctx, "e", content)
-      assert {:ok, %{network: :none}} = Parser.parse_file(path)
+      assert {:ok, %{network: :loopback}} = Parser.parse_file(path)
     end
 
-    test "native providers reject missing network because :none is impossible", ctx do
+    test "native providers reject missing network because :loopback is impossible", ctx do
       content = """
       ---
       kind: agent/v1
@@ -324,14 +324,14 @@ defmodule Glorbo.Agent.ParserTest do
       assert {:error, {:native_provider_requires_network, "openai"}} = Parser.parse_file(path)
     end
 
-    test "native providers reject explicit network: none", ctx do
+    test "native providers reject explicit network: loopback", ctx do
       content = """
       ---
       kind: agent/v1
       role: x
       provider: openrouter
       model: openai/gpt-4.1
-      network: none
+      network: loopback
       ---
       """
 
@@ -341,7 +341,7 @@ defmodule Glorbo.Agent.ParserTest do
                Parser.parse_file(path)
     end
 
-    test "native providers accept proxy and open network modes", ctx do
+    test "native providers accept proxy and full network modes", ctx do
       proxy = """
       ---
       kind: agent/v1
@@ -358,7 +358,7 @@ defmodule Glorbo.Agent.ParserTest do
       role: x
       provider: openrouter
       model: openai/gpt-4.1
-      network: open
+      network: full
       ---
       """
 
@@ -366,7 +366,7 @@ defmodule Glorbo.Agent.ParserTest do
       open_path = write_agent(ctx, "native-open", open)
 
       assert {:ok, %{network: :proxy}} = Parser.parse_file(proxy_path)
-      assert {:ok, %{network: :open}} = Parser.parse_file(open_path)
+      assert {:ok, %{network: :full}} = Parser.parse_file(open_path)
     end
   end
 

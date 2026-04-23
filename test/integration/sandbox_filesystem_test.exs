@@ -42,7 +42,7 @@ defmodule Glorbo.Integration.SandboxFilesystemTest do
         outbox_path: ctx.outbox,
         company_path: ctx.company_path,
         permissions: [],
-        network_policy: :none,
+        network_policy: :loopback,
         cli_auth_binds: [],
         cli_env: %{},
         proxy_url: nil,

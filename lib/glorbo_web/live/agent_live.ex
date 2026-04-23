@@ -1312,9 +1312,11 @@ defmodule GlorboWeb.AgentLive do
                 <label class="gl-form__row">
                   <span class="gl-form__label">network</span>
                   <select name="network" class="gl-input">
-                    <option value="none" selected={@detail.network == "none"}>none</option>
+                    <option value="loopback" selected={@detail.network == "loopback"}>
+                      loopback
+                    </option>
                     <option value="proxy" selected={@detail.network == "proxy"}>proxy</option>
-                    <option value="open" selected={@detail.network == "open"}>open</option>
+                    <option value="full" selected={@detail.network == "full"}>full</option>
                   </select>
                 </label>
                 <label class="gl-form__row">
@@ -1538,7 +1540,7 @@ defmodule GlorboWeb.AgentLive do
       model: (spec && spec.model) || "",
       reports_to: spec && spec.reports_to,
       heartbeat: spec && spec.heartbeat,
-      network: (spec && to_string(spec.network)) || "none",
+      network: (spec && to_string(spec.network)) || "loopback",
       autonomy: (spec && to_string(spec.autonomy)) || "supervised",
       skills: (spec && spec.skills) || [],
       permissions: classify_permissions(spec),
@@ -1879,7 +1881,7 @@ defmodule GlorboWeb.AgentLive do
       |> Kernel.||([])
       |> Enum.map(&permission_sandbox_line/1)
 
-    network = (spec && to_string(spec.network)) || "none"
+    network = (spec && to_string(spec.network)) || "loopback"
     {network_flag, network_comment} = network_line(network)
 
     %{
@@ -1940,7 +1942,7 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
-  defp network_line("none"),
+  defp network_line("loopback"),
     do: {"--unshare-net", "# kernel netns shutdown — no egress possible"}
 
   defp network_line("proxy"),
@@ -1948,7 +1950,7 @@ defmodule GlorboWeb.AgentLive do
       {"pasta --splice-only -T <proxy-port> --",
        "# private netns; only the allowlisted HTTPS CONNECT proxy port is reachable"}
 
-  defp network_line("open"),
+  defp network_line("full"),
     do: {"# host netns inherited", "# explicit opt-in"}
 
   defp network_line(other), do: {"# network: #{other}", ""}

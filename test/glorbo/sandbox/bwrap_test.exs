@@ -11,7 +11,7 @@ defmodule Glorbo.Sandbox.BwrapTest do
         outbox_path: "/tmp/out",
         company_path: "/tmp/co",
         permissions: [],
-        network_policy: :none,
+        network_policy: :loopback,
         cli_auth_binds: [],
         cli_env: %{},
         proxy_url: nil,
@@ -85,8 +85,8 @@ defmodule Glorbo.Sandbox.BwrapTest do
   end
 
   describe "build_argv/1 — network policy (B2, B3; D-15, D-17)" do
-    test "network: :none → --unshare-net present, no HTTP_PROXY env" do
-      argv = Bwrap.build_argv(base_opts(%{network_policy: :none}))
+    test "network: :loopback → --unshare-net present, no HTTP_PROXY env" do
+      argv = Bwrap.build_argv(base_opts(%{network_policy: :loopback}))
       assert "--unshare-net" in argv
       refute Enum.any?(argv, &(&1 == "HTTPS_PROXY"))
       refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
@@ -101,8 +101,8 @@ defmodule Glorbo.Sandbox.BwrapTest do
       assert_subsequence(argv, ["--setenv", "HTTP_PROXY", "http://localhost:9999"])
     end
 
-    test "B3: network: :open → neither --unshare-net nor HTTP_PROXY" do
-      argv = Bwrap.build_argv(base_opts(%{network_policy: :open}))
+    test "B3: network: :full → neither --unshare-net nor HTTP_PROXY" do
+      argv = Bwrap.build_argv(base_opts(%{network_policy: :full}))
       refute "--unshare-net" in argv
       refute Enum.any?(argv, &(&1 == "HTTPS_PROXY"))
       refute Enum.any?(argv, &(&1 == "HTTP_PROXY"))
@@ -236,7 +236,7 @@ defmodule Glorbo.Sandbox.BwrapTest do
           outbox_path: ctx.outbox,
           company_path: ctx.company_path,
           permissions: [],
-          network_policy: :none,
+          network_policy: :loopback,
           cli_auth_binds: [],
           cli_env: %{},
           proxy_url: nil,
