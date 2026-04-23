@@ -35,6 +35,9 @@ history:
   - date: 2026-04-23
     status: Implemented
     note: "Release-surface catch-up: `mix glorbo.release_formula` now handles the Linux-only shipped state (previously hard-required darwin SHAs, which blocked tap refreshes after the 2026-04-22 macOS-runner freeze), and a new `publish-homebrew-tap` job auto-pushes `foobarto/homebrew-tap` after every signed release, closing the Linux tag → tap loop end-to-end. Attempt to re-enable `build-macos` on the same day was reverted after the first run (24852774115) queued indefinitely with no job ever scheduled — macOS matrix gated off again until GHA capacity returns."
+  - date: 2026-04-23
+    status: Implemented
+    note: "macOS builds resurrected via Burrito's Zig cross-compile path from Linux. New `build-macos-cross` ubuntu-24.04 matrix produces both Mach-O arches (universal ERTS from BEAM machine CDN, `zig cc -target <arch>-macos` for the `exqlite` NIF, Zig launcher wrap, `file` smoke check per arch). Host-macOS `build-macos` job retired. Darwin SHAs + signatures back in the release bundle; tap auto-publish pulls them into the formula on the next tag push."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider

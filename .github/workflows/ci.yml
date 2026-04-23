@@ -166,32 +166,31 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  # R30 — macOS builds. Agents run unsandboxed here (bwrap has no
-  # macOS equivalent pre-1.0); Glorbo.Sandbox.Bwrap.availability/0
-  # returns {:error, :unavailable} and dispatches warn via audit.
-  # Filesystem watcher uses FSEvents via the file_system package —
-  # transparent.
-  build-macos:
-    name: ${{ matrix.arch }} macOS build
-    # Disabled 2026-04-23 (second time): attempted re-enable landed
-    # but the run queued indefinitely again (24852774115 — no job
-    # scheduled for 25+ minutes). GHA macOS capacity hasn't
-    # recovered. Flip `if: false` and restore `build-macos` to the
-    # release job's `needs:` list when runners are available again.
-    if: false
+  # R30 — macOS builds, via Burrito's Zig-based cross-compile from
+  # Linux. Burrito downloads the universal macOS ERTS tarball from
+  # `beam-machine-universal.b-cdn.net`, `zig cc -target <arch>-macos`
+  # recompiles any :elixir_make NIF (exqlite), and `archiver.zig`
+  # wraps the whole payload in a darwin-targeted launcher. No macOS
+  # runner needed — the GHA free-tier macOS queue has backed up
+  # twice this week (incidents 2026-04-22 + 2026-04-23), so staying
+  # on ubuntu-24.04 for darwin keeps the release path predictable.
+  build-macos-cross:
+    name: ${{ matrix.arch }} macOS cross-build (from Linux)
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - target: macos_x86_64
             arch: x86_64
+            triple: x86_64-macos
             binary_name: glorbo-darwin-x86_64
             burrito_out: glorbo_macos_x86_64
-          - runner: macos-latest
+          - target: macos_arm64
             arch: arm64
+            triple: aarch64-macos
             binary_name: glorbo-darwin-arm64
             burrito_out: glorbo_macos_arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -200,6 +199,7 @@ jobs:
         with:
           elixir-version: '1.18.4'
           otp-version: '28.0.2'
+          version-type: strict
 
       - name: Cache mix deps + build
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -207,27 +207,24 @@ jobs:
           path: |
             deps
             _build
-          key: mix-macos-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
-          restore-keys: mix-macos-${{ matrix.arch }}-
+          key: mix-darwin-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-darwin-${{ matrix.arch }}-
 
       - name: Fetch deps
         run: mix deps.get
-
-      - name: Compile (warnings as errors)
-        run: mix compile --warnings-as-errors
-
-      # No `mix test` on macOS yet — the test suite seeds bwrap-gated
-      # integration tests that need a Linux kernel. R30.2 will split
-      # tests by tag so a macOS-safe subset runs here.
 
       - name: Install Zig 0.15.2
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
           version: 0.15.2
 
-      - name: Build release (prod)
+      - name: Install xz
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+
+      - name: Cross-compile release for ${{ matrix.target }}
         env:
           MIX_ENV: prod
+          BURRITO_TARGET: ${{ matrix.target }}
         run: |
           mix deps.get --only prod
           mix compile --warnings-as-errors
@@ -242,19 +239,23 @@ jobs:
           mv "burrito_out/$BURRITO_OUT" "burrito_out/$BINARY_NAME"
           test -x "burrito_out/$BINARY_NAME"
 
-      - name: Smoke-test binary
+      - name: Verify binary is a Mach-O executable for ${{ matrix.arch }}
         env:
           BINARY_NAME: ${{ matrix.binary_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
-          expected_version=$(grep -E '^\s*version:' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Expected version: $expected_version"
-          "./burrito_out/$BINARY_NAME" doctor --json | jq -e --arg v "$expected_version" '.version == $v'
-          out=$("./burrito_out/$BINARY_NAME") && echo "$out" | grep -q USAGE
-          set +e
-          "./burrito_out/$BINARY_NAME" bogus >/dev/null 2>&1
-          ec=$?
-          set -e
-          test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
+          # `file` recognises Mach-O; assert the reported arch matches
+          # the matrix cell so a cross-compile misconfiguration (wrong
+          # BURRITO_TARGET, stale deps cache, bad Zig toolchain) shows
+          # up here rather than at runtime on an actual Mac.
+          file_out=$(file "./burrito_out/$BINARY_NAME")
+          echo "$file_out"
+          echo "$file_out" | grep -q "Mach-O" || { echo "not a Mach-O binary"; exit 1; }
+          case "$EXPECTED_ARCH" in
+            x86_64) echo "$file_out" | grep -q "x86_64" ;;
+            arm64)  echo "$file_out" | grep -qE "arm64|aarch64" ;;
+            *) echo "unknown arch: $EXPECTED_ARCH"; exit 1 ;;
+          esac
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -267,9 +268,7 @@ jobs:
   release:
     name: Publish signed release
     if: startsWith(github.ref, 'refs/tags/v')
-    # build-macos is disabled (see job above); restore it here when
-    # re-enabling macOS CI.
-    needs: [build-and-test]
+    needs: [build-and-test, build-macos-cross]
     runs-on: ubuntu-24.04
     permissions:
       contents: write   # create the GitHub Release
@@ -286,10 +285,8 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: artifacts/
         run: |
-          # macOS darwin artifacts are excluded while build-macos is
-          # disabled. Restore glorbo-darwin-x86_64 / glorbo-darwin-arm64
-          # below when re-enabling the macOS job.
           sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 \
+                    glorbo-darwin-x86_64 glorbo-darwin-arm64 \
                     > SHA256SUMS
           cat SHA256SUMS
 
@@ -305,9 +302,10 @@ jobs:
       - name: Sign each binary (keyless, Sigstore OIDC)
         working-directory: artifacts/
         run: |
-          # macOS signing lines removed while build-macos is disabled.
           cosign sign-blob --yes --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64
           cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
+          cosign sign-blob --yes --bundle glorbo-darwin-x86_64.sig glorbo-darwin-x86_64
+          cosign sign-blob --yes --bundle glorbo-darwin-arm64.sig glorbo-darwin-arm64
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
@@ -317,6 +315,10 @@ jobs:
             artifacts/glorbo-linux-x86_64.sig
             artifacts/glorbo-linux-aarch64
             artifacts/glorbo-linux-aarch64.sig
+            artifacts/glorbo-darwin-x86_64
+            artifacts/glorbo-darwin-x86_64.sig
+            artifacts/glorbo-darwin-arm64
+            artifacts/glorbo-darwin-arm64.sig
             artifacts/SHA256SUMS
             artifacts/SHA256SUMS.sig
           generate_release_notes: true

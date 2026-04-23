@@ -215,9 +215,8 @@ it's been in CHANGELOG for a cycle.
   pasta probe tightened to require `--splice-only`, CI release
   path repaired (setup-beam v1.24.0, skip-pattern fix), Homebrew
   tap auto-publish job via `HOMEBREW_TAP_TOKEN`.
-- [ ] **macOS cross-compile from Linux (GEP-32 phase 5?).** Burrito
-  already downloads a universal macOS ERTS tarball from the BEAM
-  machine CDN; Zig 0.15 supports `x86_64-macos` / `aarch64-macos`
-  targets. Spike a `build-macos-cross` CI job that runs on
-  `ubuntu-24.04` with Zig installed and produces both darwin
-  binaries without needing GHA macOS runners.
+- [x] **macOS cross-compile from Linux.** Shipped `build-macos-cross`
+  ubuntu-24.04 matrix that produces both darwin Mach-O binaries
+  via Burrito's Zig cross-compile path. Verified with `file` check
+  per arch; artifacts + signatures + tap formula all flow through
+  the normal release plumbing.

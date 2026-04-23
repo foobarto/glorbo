@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — macOS binaries via Linux-hosted Zig cross-compile
+
+- New `build-macos-cross` CI job on `ubuntu-24.04` produces both
+  `glorbo-darwin-x86_64` and `glorbo-darwin-arm64` using Burrito's
+  built-in cross-compile path: a universal macOS ERTS tarball from
+  `beam-machine-universal.b-cdn.net`, `zig cc -target <arch>-macos`
+  for the `exqlite` elixir_make NIF, and a Zig-compiled launcher
+  wrap. The `build-macos` host-macOS job is gone — the GHA free-
+  tier macOS queue backed up twice this cycle, and staying on
+  ubuntu-24.04 for darwin keeps release cadence predictable.
+- Darwin artifacts are back in the signed-release bundle
+  (SHA256SUMS, cosign `.sig` blobs, GH Release file list). The
+  `publish-homebrew-tap` job picks them up automatically via the
+  formula generator's darwin-present branch, so the tap formula
+  goes dual-platform again on the next release.
+- `file` is the post-build smoke check — confirms each artifact
+  is Mach-O and the arch matches the matrix cell before upload.
+
 ## [0.5.0] — 2026-04-23
 
 Fifth pre-1.0 minor. Three major user-visible surface additions

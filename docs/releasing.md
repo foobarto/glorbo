@@ -9,10 +9,13 @@ Pre-1.0 Glorbo releases publish Linux binaries (x86_64 + aarch64)
 via a signed GitHub Release, and the `foobarto/homebrew-tap` tap
 serves `brew install foobarto/tap/glorbo` on those machines.
 
-macOS binaries are declared in `mix.exs` Burrito targets but the
-GHA `build-macos` matrix is currently disabled (queue-indefinitely
-issue, see `.github/workflows/ci.yml` comment); until that flag is
-flipped, macOS users build from source.
+macOS binaries are produced by the `build-macos-cross` CI job on
+`ubuntu-24.04` via Burrito's Zig cross-compile: a universal macOS
+ERTS tarball + `zig cc -target <arch>-macos` for the exqlite NIF +
+a Zig darwin launcher. No GHA macOS runners are involved — the
+free-tier macOS queue is unreliable, so we stay on Linux end-to-
+end. Both `glorbo-darwin-x86_64` and `glorbo-darwin-arm64` land in
+the signed release bundle alongside the Linux binaries.
 
 ## The short version
 
@@ -102,9 +105,11 @@ The `publish` job in `.github/workflows/ci.yml`:
   5. Uploads all artifacts + creates the GitHub Release with the
      `CHANGELOG.md` section as the body.
 
-`build-macos` is disabled (`if: false`); until it's re-enabled the
-release is Linux-only. The release-bundling step in `ci.yml`
-documents which lines to restore when flipping the flag.
+`build-macos-cross` runs in parallel with `build-and-test`; the
+`release` job waits on both. If Burrito's darwin fetch ever breaks
+(CDN outage, OTP version not yet published), flip the matrix to
+`if: false` and drop it from `release`'s `needs:` so the Linux
+release still cuts.
 
 If the release job fails, fix the cause, re-tag (`git tag -d
 vX.Y.Z && git push origin :refs/tags/vX.Y.Z && git tag -a vX.Y.Z
