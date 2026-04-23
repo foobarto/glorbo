@@ -146,7 +146,7 @@ Credentials live outside `~/.glorbo/` in
 `~/.local/etc/glorbo/credentials/<provider>.toml`, so naïve backups of
 `~/.glorbo/` do not sweep API keys into archives.
 
-On `main`, phase 2b is now landed: native agents also honor
+As of **v0.4.0**, native agents also honor
 `http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
 `max_tool_calls_per_turn` from `agent.md`, and the harness retries
 transient HTTP failures instead of single-shot failing every provider or
@@ -347,8 +347,8 @@ Then point an agent at `provider: openai` or `provider: openrouter` in
 - `web_fetch`
 
 Those tools run inside the same sandbox mount view as CLI-backed agents,
-and their activity is replayed into the company audit log. On `main`,
-phase 2b also wires the native runtime knobs from `agent.md`:
+and their activity is replayed into the company audit log. `v0.4.0`
+also wires the native runtime knobs from `agent.md`:
 `http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
 `max_tool_calls_per_turn`.
 
@@ -504,7 +504,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.3.0:
+All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.4.0:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -652,8 +652,18 @@ captures the project's design philosophy in one page.
 
 ## Project Status
 
-Pre-1.0. Latest release is **v0.3.0** (2026-04-23); the release trail so
+Pre-1.0. Latest release is **v0.4.0** (2026-04-23); the release trail so
 far, newest first:
+
+**v0.4.0** shipped 2026-04-23:
+
+- **GEP-32 — native agent harness** ✓ (Phase 2b) — the native tool
+  catalog now includes `bash` and `web_fetch`, per-agent HTTP/runtime
+  knobs from `agent.md` are wired end to end, provider and tool HTTP
+  requests share the same retry policy, and the release also folds in
+  six medium-severity hardening closures across proxy handling, console
+  cookie transport, stdout streaming, search caching, archive browsing,
+  and stuck-sentinel validation.
 
 **v0.3.0** shipped 2026-04-23:
 

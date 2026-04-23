@@ -10,7 +10,9 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Added — GEP-32 native agent harness (phase 2b on `main`)
+## [0.4.0] — 2026-04-23
+
+### Added — GEP-32 native agent harness (phase 2b)
 
 - Native providers now ship the next native tool tranche: `bash` and
   `web_fetch` join `read_file`, `write_file`, `edit_file`, `glob`, and
@@ -2747,7 +2749,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/foobarto/glorbo/releases/tag/v0.4.0
 [0.3.0]: https://github.com/foobarto/glorbo/releases/tag/v0.3.0
 [0.2.0]: https://github.com/foobarto/glorbo/releases/tag/v0.2.0
 [0.1.0]: https://github.com/foobarto/glorbo/releases/tag/v0.1.0

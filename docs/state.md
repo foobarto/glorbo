@@ -11,11 +11,11 @@ Last updated: 2026-04-23
 - Branch: `main`
 - Worktree status: check with `git status --short`
 - HEAD: check with `git log -1 --oneline`
-- Latest shipped version: `v0.3.0`
+- Latest shipped version: `v0.4.0`
 
 ## Implementation Status
 
-- GEP-32 is implemented through **phase 2b on `main`**.
+- GEP-32 is implemented through **phase 2b** and shipped in `v0.4.0`.
 - GEP-31 is shipped on Linux: `network: proxy` now wraps the sandbox
   launch in `pasta`, so only the per-company proxy port is reachable
   inside the agent netns.

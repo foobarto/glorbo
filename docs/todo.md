@@ -166,11 +166,15 @@ it's been in CHANGELOG for a cycle.
   alongside `read_file`; the native usage contract gained sanitized
   `audit_events`, and Dispatch replays those tool audits into the
   company audit log.
-- [x] **GEP-32 phase 2b (2026-04-23, landed on `main`).** Native
+- [x] **GEP-32 phase 2b (2026-04-23).** Native
   `bash` and `web_fetch` now run inside the existing sandbox/runtime
   contract; provider + tool HTTP requests honor per-agent timeout/retry
   knobs; and `tool.bash` / `egress.web_fetch` events replay through the
   same sanitized `usage.json` path.
+- [x] **v0.4.0 shipped.** Fourth pre-1.0 minor: GEP-32 phase 2b is now
+  on the release surface, along with the follow-up medium hardening
+  batch that closed proxy mailbox, console cookie, stdout streamer,
+  search cache, archive list, and stuck-sentinel findings.
 - [x] **v0.2.0 shipped.** Second pre-1.0 minor: GEP-32 phase 2a is now
   on the release surface.
 - [x] **GEP-31 shipped (2026-04-23).** Linux `network: proxy` now
