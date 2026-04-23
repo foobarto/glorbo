@@ -9,6 +9,16 @@ history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft — cross-provider A/B benchmarking. Phase-A (templates) to ship with this GEP; Phase-B (UI scoring) tracked as D9 follow-up.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      Phase A is on `main` — `priv/templates/companies/{bench-softdev,
+      bench-tech-blog,bench-scifi-publisher}/`, `glorbo new company
+      --template`, `glorbo bench list`, and `Glorbo.CLI.Bench` dispatcher.
+      Phase B (side-by-side dispatch + blind scoring UI +
+      `benchmarks/runs/<id>/scores.md` persistence) is queued; the stub
+      message in `glorbo bench run` stays in place until the Live view
+      ships.
 requires: [2, 4, 8, 10, 25]
 see-also: [16, 18, 19, 20]
 ---

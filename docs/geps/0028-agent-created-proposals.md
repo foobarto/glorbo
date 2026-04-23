@@ -17,6 +17,24 @@ history:
       the Router via `agents/<sender>/outbox/proposals/<id>.md`.
       `proposals:write:*` replaced by `proposals:propose:*` and
       `proposals:decide:*`. Adds D7.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      Protocol is on `main`; holding in Draft until UI + auto-approve
+      land. Shipped: `Glorbo.FileSpec.ProposalMd` (`proposal/v1`),
+      `Glorbo.Company.ProposalsSink` audit emitter, Router classifier
+      with per-field validation (`require_proposal_kind`,
+      `require_proposal_id_match`, `require_proposal_subtype`,
+      `check_proposal_create_status`, `reject_self_approval`),
+      `proposals:{propose,decide}:*` permission namespace mounted
+      by `Glorbo.Sandbox.PermissionMapper`, `Watcher` classification
+      broadcasting on `company:<co>:proposals` PubSub topic, MCP tools
+      (`glorbo.list_proposals`, `glorbo.get_proposal`,
+      `glorbo.create_proposal`), and the `headcount_budget:` field
+      plumbed through `company.md` + MCP. Still open: dedicated
+      ProposalsLive view (today proposals only surface via MCP tools +
+      inbox PubSub), and auto-approve-hire-within-headcount-budget
+      policy per GEP-28 §Goals bullet 4.
 requires: [3, 5, 10, 19, 25]
 see-also: [27]
 ---

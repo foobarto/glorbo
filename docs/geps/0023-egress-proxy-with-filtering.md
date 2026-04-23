@@ -11,6 +11,20 @@ history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft — introduces CONNECT proxy + sandbox namespace changes + LLM-driven smart filtering.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      Partial implementation on `main` — staying in Draft until the
+      rename + history + kbps cap items land. Shipped: `Glorbo.Network.Proxy`
+      (ranch listener on loopback, CONNECT handling, audit events, per-company
+      classifier hook), `Glorbo.Network.SmartClassifier` (rule-first LLM
+      fallthrough), `egress:` frontmatter block with `mode: allow | deny | strict | smart`,
+      `network_allow:` per-agent extensions, and `network: proxy` netns
+      wrapping via GEP-31 `pasta` integration. Still open: the
+      `none → loopback` / `open → full` value rename (current enum is
+      `none | proxy | open`), a dedicated `Egress.History` module as
+      defined in §Proxy daemon, and `egress.kbps_cap` per-dispatch token
+      bucket.
 ---
 
 # GEP-23: Egress Proxy with Host Filtering and Smart Mode

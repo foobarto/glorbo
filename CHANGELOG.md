@@ -10,6 +10,44 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-25 R26.2b golden fixtures
+
+- Per-kind minimal-valid fixture tree under
+  `test/fixtures/file-formats/` now covers 12 kinds: `agent/v1`,
+  `task/v1`, `company/v1`, `project/v1`, `agent-memory/v1`,
+  `sentinel-approval/v1`, `braindump/v1`, `agent-heartbeat/v1`,
+  `agent-soul/v1`, `channel-log/v1`, `goal/v1`, and `skill/v1`.
+- `Glorbo.FileSpec.GoldenFixturesTest` auto-discovers every fixture
+  and asserts three properties: `classify_by_path/1` routes to the
+  right spec, `Validator.findings/1` returns zero `:error` findings,
+  and `Formatter.format_content/2` is idempotent (`:unchanged` + stable
+  round-trip).
+
+### Fixed — AgentLive config editor network dropdown
+
+- Config form's `<select name="network">` was offering `none` and
+  `outgoing` (not a real parser value); agents with the canonical
+  `network: proxy` rendered as `none`, and any save silently clobbered
+  the policy. Dropdown now lists `none | proxy | open` per
+  `Glorbo.Agent.Parser.@network_map`, with the agent's current value
+  pre-selected. Found via the 2026-04-23 UAT sweep.
+
+### Docs
+
+- README rewritten from 868 lines to 314: pitch + install + native
+  provider + hire + start focus; per-version release detail moved to
+  this file; the local-development walkthrough to `CONTRIBUTING.md`.
+  Canonical links preserved so no content disappears.
+- README macOS install story corrected: binaries are currently
+  Linux-only because CI `build-macos` is disabled pending GHA runner
+  capacity. macOS users build from source via `MIX_ENV=prod mix
+  release` until the matrix is re-enabled.
+- GEP-12 (no-user-input atoms), GEP-15 (ALLCAPS), GEP-21 (file-based
+  agent memory), GEP-31 (proxy netns), and GEP-32 (native harness)
+  all flipped to `Implemented`; the partial GEPs (17, 23, 25, 26,
+  28) got history entries documenting what's shipped vs what's still
+  queued.
+
 ### Changed — GEP-15 ALLCAPS convention — soft fallback dropped
 
 - `Glorbo.Agent.FileLayout.agent_md/1` now unconditionally returns
@@ -19,9 +57,6 @@ change between minor versions. Pin exact versions in downstream usage.
   path guard that already rejects lowercase `agent.md` at the
   FileSpec boundary. The `agent_md_candidates/0` public getter is
   removed (it had no callers outside the module itself).
-- GEP-12 (no user-input atoms) and GEP-15 (ALLCAPS convention) are
-  frontmatter-flipped to `Implemented` to match the shipped code;
-  README index follows.
 
 ### Added — GEP-32 native agent harness (phase 4)
 

@@ -11,6 +11,27 @@ history:
   - date: 2026-04-21
     status: Draft
     note: Initial draft.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      Majority of the GEP landed on `main`; staying in Draft until the
+      R26.2b parser enforcement sweep closes. Shipped: `Glorbo.FileSpec`
+      behaviour + 22 per-kind spec modules, `classify_by_path/1`,
+      `FileSpec.Validator` with 10 check codes + NDJSON output,
+      `FileSpec.Formatter` with idempotent canonical key ordering,
+      `glorbo validate` + `glorbo fmt` CLI verbs (with `--check` /
+      `--write` / `--json` / `--summary` / `--kind` / `--severity`),
+      `mix glorbo.docs.file_formats` generator wired into precommit,
+      `kind:` discriminator on every Glorbo writer, Router-boundary
+      `kind:` enforcement on task + memory outboxes, and per-kind
+      golden fixtures for 12 kinds (agent/task/company/project/
+      agent-memory/sentinel-approval/braindump/agent-heartbeat/
+      agent-soul/channel-log/goal/skill). Still open: the
+      `TaskDefinition.parse_file` / `Agent.Parser.parse_file`
+      `kind:` enforcement sweep (gated on migrating ~50 inline test
+      fixtures); maximal-valid + per-error-condition fixture variants;
+      and fixtures for the 4 remaining kinds (audit-event, inbox-archive,
+      sentinel-stuck, sentinel-resolution).
 ---
 
 # GEP-25: On-disk file format specs, `glorbo validate`, `glorbo fmt`

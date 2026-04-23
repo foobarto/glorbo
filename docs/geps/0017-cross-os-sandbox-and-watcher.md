@@ -10,6 +10,19 @@ history:
   - date: 2026-04-18
     status: Draft
     note: Pure research GEP — captures the cross-OS sandbox + filesystem-watcher landscape so any future macOS/Windows port has a baseline reference. No decisions, no roadmap commitments. Draft and may stay that way until a port is actually attempted.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      R30 shipped an opportunistic macOS runtime fallback
+      (`Glorbo.Sandbox.Unsandboxed` + `Glorbo.Sandbox.Bwrap.availability/0`
+      + Burrito darwin targets + doctor OS-aware reclassification +
+      Homebrew `on_macos do` blocks) without adopting this GEP's
+      abstraction framework. The CI `build-macos` matrix is still
+      disabled pending GHA runner capacity; macOS users build from
+      source. This GEP stays Draft as research baseline — any future
+      "real" cross-OS port would still need a decision log around
+      `sandbox-exec` vs Seatbelt-extended-attribute profiles vs
+      hypothetical podman-machine fallback.
 ---
 
 # GEP-17: Cross-OS Sandbox and Filesystem Watcher Landscape
