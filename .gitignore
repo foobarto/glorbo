@@ -108,3 +108,4 @@ coverage/
 graphify-out/
 **/graphify-out/
 .codex
+.reviews/

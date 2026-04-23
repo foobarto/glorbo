@@ -10,6 +10,7 @@ defmodule GlorboWeb.MCP.Tools.CreateChannel do
   """
   @behaviour GlorboWeb.MCP.Tool
 
+  alias Glorbo.Filesystem.FrontmatterWriter
   alias GlorboWeb.MCP.Args
 
   @impl true
@@ -71,7 +72,7 @@ defmodule GlorboWeb.MCP.Tools.CreateChannel do
 
         """
 
-        case File.write(path, content) do
+        case FrontmatterWriter.atomic_write(path, content) do
           :ok -> {:ok, %{"channel" => channel, "status" => "created"}}
           {:error, reason} -> {:error, {:write_failed, reason}}
         end

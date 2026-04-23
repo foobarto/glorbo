@@ -39,15 +39,19 @@ defmodule Glorbo.Sandbox.BwrapTest do
     test "B1: minimal invocation emits every D-08 baseline flag + root FS + agent-owned + env" do
       argv = Bwrap.build_argv(base_opts())
 
-      # Namespace flags (D-08)
+      # Namespace flags (D-08). No `-try` fallbacks — every supported
+      # kernel implements user + cgroup namespaces; silent fallback would
+      # convert a kernel boundary into a best-effort one.
       assert "--die-with-parent" in argv
-      assert "--unshare-user-try" in argv
+      assert "--unshare-user" in argv
       assert "--unshare-ipc" in argv
       assert "--unshare-pid" in argv
       assert "--unshare-uts" in argv
-      assert "--unshare-cgroup-try" in argv
+      assert "--unshare-cgroup" in argv
       assert "--new-session" in argv
       assert_subsequence(argv, ["--cap-drop", "ALL"])
+      # Inherited BEAM env is wiped before any --setenv.
+      assert "--clearenv" in argv
 
       # Root FS (D-09)
       assert_subsequence(argv, ["--ro-bind", "/usr", "/usr"])
@@ -81,6 +85,12 @@ defmodule Glorbo.Sandbox.BwrapTest do
       # Working dir + env
       assert_subsequence(argv, ["--chdir", "/workspace"])
       assert_subsequence(argv, ["--setenv", "HOME", "/workspace"])
+      # Minimum env after --clearenv wipes everything else.
+      assert_subsequence(argv, ["--setenv", "PATH", "/usr/bin:/bin"])
+      assert_subsequence(argv, ["--setenv", "LANG", "C.UTF-8"])
+      assert_subsequence(argv, ["--setenv", "LC_ALL", "C.UTF-8"])
+      assert_subsequence(argv, ["--setenv", "TERM", "dumb"])
+      assert_subsequence(argv, ["--setenv", "TMPDIR", "/tmp"])
     end
   end
 
@@ -179,10 +189,22 @@ defmodule Glorbo.Sandbox.BwrapTest do
       refute "--cap-add" in argv
     end
 
-    test "B10: `--unshare-user-try` used, never bare `--unshare-user`" do
+    test "B10: bare `--unshare-user` + `--unshare-cgroup`, never `-try` fallbacks" do
       argv = Bwrap.build_argv(base_opts())
-      assert "--unshare-user-try" in argv
-      refute "--unshare-user" in argv
+      assert "--unshare-user" in argv
+      assert "--unshare-cgroup" in argv
+      refute "--unshare-user-try" in argv
+      refute "--unshare-cgroup-try" in argv
+    end
+
+    test "B11: --clearenv wipes BEAM env, then explicit --setenv whitelist only" do
+      argv = Bwrap.build_argv(base_opts())
+      # --clearenv must come before any --setenv or those setenvs get cleared.
+      clearenv_idx = Enum.find_index(argv, &(&1 == "--clearenv"))
+      first_setenv_idx = Enum.find_index(argv, &(&1 == "--setenv"))
+      assert is_integer(clearenv_idx)
+      assert is_integer(first_setenv_idx)
+      assert clearenv_idx < first_setenv_idx
     end
   end
 

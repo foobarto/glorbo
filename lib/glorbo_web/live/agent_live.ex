@@ -262,7 +262,7 @@ defmodule GlorboWeb.AgentLive do
   end
 
   def handle_event("stop", _params, socket) do
-    case find_agent_server(socket.assigns.agent_slug) do
+    case find_agent_server(socket.assigns.company_slug, socket.assigns.agent_slug) do
       nil ->
         {:noreply, put_flash(socket, :info, "Agent is not running.")}
 
@@ -675,7 +675,7 @@ defmodule GlorboWeb.AgentLive do
   defp do_retire(socket, company, slug) do
     # Stop any in-flight dispatch first so we don't rename a live dir.
     _ =
-      case find_agent_server(slug) do
+      case find_agent_server(company, slug) do
         nil -> :ok
         pid -> Glorbo.Agent.Server.stop_inflight(pid)
       end
@@ -1560,7 +1560,7 @@ defmodule GlorboWeb.AgentLive do
       sandbox: build_sandbox_preview(spec, co, ag),
       soul: load_soul(ag_dir),
       files: scan_agent_files(ag_dir),
-      runtime: load_runtime_status(ag)
+      runtime: load_runtime_status(co, ag)
     }
   end
 
@@ -1568,8 +1568,8 @@ defmodule GlorboWeb.AgentLive do
   # Only useful when the server is alive; nil otherwise (agent dir
   # exists on disk but not booted — e.g. failed to parse AGENT.md,
   # or Glorbo is running but this agent's sub-supervisor crashed).
-  defp load_runtime_status(slug) do
-    case find_agent_server(slug) do
+  defp load_runtime_status(company, slug) do
+    case find_agent_server(company, slug) do
       nil ->
         nil
 
@@ -2242,8 +2242,12 @@ defmodule GlorboWeb.AgentLive do
   defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
   defp stringify_keys(other), do: other
 
-  defp find_agent_server(slug) do
-    case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
+  # Company-scoped lookup. Matching `{:agent_server, :_, slug}` would
+  # surface whichever company's agent happened to register first — a
+  # hostile result when two companies both have `ceo` or `engineer`.
+  # Pin the tuple key to the current company.
+  defp find_agent_server(company, slug) do
+    case Registry.match(Glorbo.Agent.Registry, {:agent_server, company, slug}, :_) do
       [{pid, _} | _] when is_pid(pid) -> pid
       _ -> nil
     end

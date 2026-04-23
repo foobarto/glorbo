@@ -736,8 +736,10 @@ defmodule Glorbo.Company.Router do
   end
 
   # Best-effort frontmatter peek — safe on unreadable / non-md files.
+  # Uses the lstat-guarded reader so a symlinked outbox entry can't
+  # trick us into reading arbitrary host files during classification.
   defp task_kind_frontmatter?(abs_path) do
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       to_string(Map.get(fm, "kind", "")) == "task/v1"
     else
@@ -766,7 +768,7 @@ defmodule Glorbo.Company.Router do
     dest_path = Path.join(project_tasks_dir, "#{task_id}.md")
     project_md = Path.join([Path.dirname(project_tasks_dir), "project.md"])
 
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, meta, _body} <- Frontmatter.parse(content),
          :ok <- require_task_kind(meta),
          :ok <- require_task_title(meta),
@@ -935,7 +937,7 @@ defmodule Glorbo.Company.Router do
   # company by dropping a comment file. Check the sender's
   # permissions against the *resolved* project slug before writing.
   defp handle_outbox_comment(abs_path, sender, task_id, state) do
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, body} <- strip_frontmatter(content),
          {:ok, task_path} <- find_task_file(task_id, state),
          project = project_from_task_path(task_path),
@@ -1006,10 +1008,14 @@ defmodule Glorbo.Company.Router do
     end
   end
 
+  # GEP-30 D8 — task comments land in the sibling `.comments.md`
+  # thread file, not the task body. TaskLive/KanbanLive read only
+  # the thread file; appending to `task.md` here would make
+  # agent-filed comments vanish from the UI.
   defp append_task_comment(task_path, sender, body) do
-    ts = DateTime.utc_now() |> DateTime.to_iso8601()
-    entry = "\n## #{ts} | #{sender}\n#{String.trim(body)}\n"
-    File.write(task_path, entry, [:append, :sync])
+    thread_path = Glorbo.TaskComments.path_for(task_path)
+    task_id = Path.basename(task_path, ".md")
+    Glorbo.TaskComments.append(thread_path, sender, body, task_id: task_id)
   end
 
   defp emit_comment_route_audit(sender, task_id, state) do
@@ -1125,7 +1131,7 @@ defmodule Glorbo.Company.Router do
   # validates, and forwards to PathRequestGate. The outbox file is
   # archived on accept, dropped on reject.
   defp handle_outbox_path_request(abs_path, sender, task_id, state) do
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, meta, _body} <- Frontmatter.parse(content),
          :ok <- require_path_request_kind(meta),
          :ok <- require_path_request_paths(meta),
@@ -1226,7 +1232,7 @@ defmodule Glorbo.Company.Router do
   end
 
   defp validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, meta, body} <- Frontmatter.parse(content),
          :ok <- require_proposal_kind(meta),
          :ok <- require_proposal_id_match(meta, id),
@@ -1604,6 +1610,18 @@ defmodule Glorbo.Company.Router do
     end
   end
 
+  # Read an agent-writable file after enforcing the M03 lstat guard.
+  # A bare `File.read(path)` on a symlink planted by the agent would
+  # follow into arbitrary host files; every outbox reader uses this
+  # helper instead.
+  defp read_agent_writable_file(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> File.read(path)
+      {:ok, %File.Stat{type: type}} -> {:error, {:not_a_regular_file, type}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # Rewrite MEMORY.md: replace an existing line for this filename
   # (matched by the `(filename)` marker in the markdown link), or
   # append a new line at the end. All other lines preserved verbatim.
@@ -1721,7 +1739,7 @@ defmodule Glorbo.Company.Router do
   # channel or agent slug. Rejected messages land in
   # `history/<msg_id>.rejected.md` per the original pipeline.
   defp handle_outbox_message(abs_path, sender, state) do
-    with {:ok, content} <- File.read(abs_path),
+    with {:ok, content} <- read_agent_writable_file(abs_path),
          {:ok, meta, body} <- Frontmatter.parse(content),
          {:ok, to} <- extract_to(meta),
          {:ok, perms} <- lookup_permissions(sender, state) do

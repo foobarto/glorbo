@@ -579,7 +579,48 @@ defmodule Glorbo.Company.RouterTest do
     refute File.exists?(dest)
   end
 
-  test "R-outbox-5: comments/<task-id>.md appends to the matching task file" do
+  # threatmodel M03 regression. An agent can write into its own
+  # outbox — including planting a symlink that points at an arbitrary
+  # host file. Every outbox reader must lstat before reading or a
+  # malicious symlink at `outbox/tasks/blog/blog-7.md → ~/.ssh/id_rsa`
+  # turns the Router into a confused deputy that materialises the
+  # pointed-at file as a task.
+  test "R-outbox-symlink: symlinked outbox file is refused (no materialisation)" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    # Simulate a sensitive host file the symlink points at.
+    secret_path = Path.join(base, "secret.md")
+
+    File.write!(secret_path, """
+    ---
+    kind: task/v1
+    title: exfiltrated
+    status: todo
+    ---
+    attacker-controlled body
+    """)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+    symlink_path = Path.join(src_dir, "blog-7.md")
+    :ok = File.ln_s(secret_path, symlink_path)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-7.md", [:created]})
+    _ = :sys.get_state(name)
+
+    dest = Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-7.md"])
+    refute File.exists?(dest)
+    # Sensitive source was not touched.
+    assert File.read!(secret_path) =~ "attacker-controlled body"
+  end
+
+  test "R-outbox-5: comments/<task-id>.md lands in the sibling `.comments.md` thread (GEP-30 D8)" do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo"])
     seed_project!(base, "blog")
@@ -604,9 +645,18 @@ defmodule Glorbo.Company.RouterTest do
     send(name, {:file_event, "agents/ceo/outbox/comments/blog-2.md", [:created]})
     _ = :sys.get_state(name)
 
-    content = File.read!(task_path)
-    assert content =~ ~r/^## \d{4}-\d{2}-\d{2}T.*\| ceo$/m
-    assert content =~ "Researcher done"
+    # The task body itself stays unchanged — comments live in the
+    # sibling thread file (GEP-30 D8), not inline.
+    assert File.read!(task_path) == "---\ntitle: existing task\n---\nPrompt body\n"
+
+    thread_path =
+      Path.join([base, "companies", @company, "projects", "blog", "tasks", "blog-2.comments.md"])
+
+    thread = File.read!(thread_path)
+    assert thread =~ "kind: task-comments/v1"
+    assert thread =~ "task_id: blog-2"
+    assert thread =~ ~r/^## \d{4}-\d{2}-\d{2}T.*\| ceo$/m
+    assert thread =~ "Researcher done"
 
     refute File.exists?(Path.join(comments_dir, "blog-2.md"))
     assert_receive {:audit, %{action: "task.comment", target: "blog-2"}}

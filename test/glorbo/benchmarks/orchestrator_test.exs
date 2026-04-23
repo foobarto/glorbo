@@ -144,6 +144,44 @@ defmodule Glorbo.Benchmarks.OrchestratorTest do
                Orchestrator.run(@template, @task_id, [])
     end
 
+    test "rejects provider strings that break the slug contract" do
+      # YAML injection shapes + path traversal + leading digit + empty
+      # trimmed. Each of these would contaminate shadow-company slugs
+      # or the manifest frontmatter.
+      bad = [
+        # leading digit (fails @provider_slug_re)
+        "9codex",
+        # YAML newline injection
+        "foo\nrole: pwned",
+        # path traversal
+        "../../../etc",
+        # shell metachars
+        "foo;rm",
+        # colon breaks YAML inline value
+        "foo:bar"
+      ]
+
+      for b <- bad do
+        assert {:error, {:providers_invalid_slug, [^b]}} =
+                 Orchestrator.run(@template, @task_id, [b])
+      end
+    end
+
+    test "rejects duplicate providers" do
+      assert {:error, {:providers_duplicate, ["claude-code"]}} =
+               Orchestrator.run(@template, @task_id, ["claude-code", "claude-code"])
+    end
+
+    test "rejects fan-out above the 32-provider cap" do
+      # Each provider is a full shadow-company fork; a director
+      # accidentally pasting a 100-item list should bounce at argv
+      # parse, not fill the disk.
+      many = for i <- 1..33, do: "provider-#{i}"
+
+      assert {:error, {:providers_too_many, 33, 32}} =
+               Orchestrator.run(@template, @task_id, many)
+    end
+
     test "rejects unknown template", ctx do
       base = tmp_base(ctx)
 

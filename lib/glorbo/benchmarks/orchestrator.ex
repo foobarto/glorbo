@@ -345,8 +345,41 @@ defmodule Glorbo.Benchmarks.Orchestrator do
   # Validation + paths
   # ------------------------------------------------------------------
 
+  # Provider strings land in shadow-company slugs
+  # (`_bench-<run-id>-<provider>/`), manifest YAML, output.md
+  # frontmatter, and are substituted into AGENT.md. Every sink needs
+  # a slug-safe string, so reject anything that isn't.
+  @provider_slug_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
+  # Cap fan-out — each provider is a full shadow-company fork. 32 is
+  # more than any practical A/B comparison while keeping a bad CLI
+  # invocation from filling the disk.
+  @max_providers 32
+
   defp validate_providers([]), do: {:error, :providers_list_empty}
-  defp validate_providers(_list), do: :ok
+
+  defp validate_providers(list) when length(list) > @max_providers do
+    {:error, {:providers_too_many, length(list), @max_providers}}
+  end
+
+  defp validate_providers(list) do
+    with :ok <- validate_provider_slugs(list) do
+      validate_no_duplicates(list)
+    end
+  end
+
+  defp validate_provider_slugs(list) do
+    case Enum.reject(list, &Regex.match?(@provider_slug_re, &1)) do
+      [] -> :ok
+      bad -> {:error, {:providers_invalid_slug, bad}}
+    end
+  end
+
+  defp validate_no_duplicates(list) do
+    case list -- Enum.uniq(list) do
+      [] -> :ok
+      dups -> {:error, {:providers_duplicate, Enum.uniq(dups)}}
+    end
+  end
 
   defp validate_template_exists(dir) do
     cond do

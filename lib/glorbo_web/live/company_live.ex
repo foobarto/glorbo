@@ -1374,8 +1374,8 @@ defmodule GlorboWeb.CompanyLive do
       budget_cls: cls,
       budget_tracked?: tracked?,
       last_wake: Map.get(audit_map, agent_slug, "—"),
-      pill_status: agent_pill_status(meta, pct, tracked?, agent_slug),
-      pill_label: agent_pill_label(meta, pct, tracked?, agent_slug)
+      pill_status: agent_pill_status(meta, pct, tracked?, company_slug, agent_slug),
+      pill_label: agent_pill_label(meta, pct, tracked?, company_slug, agent_slug)
     }
   end
 
@@ -1416,35 +1416,31 @@ defmodule GlorboWeb.CompanyLive do
   # UAT4: the previous version documented "check the Registry" but
   # never actually did — so the agents-running stat was stuck at 0
   # even after `glorbo up` started the full supervision tree.
-  defp agent_pill_status(_meta, pct, tracked?, _slug) when tracked? and pct > 90, do: :warn
+  defp agent_pill_status(_meta, pct, tracked?, _co, _slug) when tracked? and pct > 90, do: :warn
 
-  defp agent_pill_status(_meta, _pct, _tracked?, slug) do
+  defp agent_pill_status(_meta, _pct, _tracked?, company, slug) do
     # Match sidebar semantics: :alive only for actively busy dispatch;
     # registered-but-quiet is :idle, non-zero exit is :stop.
-    agent_runtime_status(slug)
+    agent_runtime_status(company, slug)
   end
 
-  defp agent_pill_label(_meta, pct, tracked?, _slug) when tracked? and pct > 90,
+  defp agent_pill_label(_meta, pct, tracked?, _co, _slug) when tracked? and pct > 90,
     do: "budget #{pct}%"
 
-  defp agent_pill_label(_meta, _pct, _tracked?, slug) do
-    case agent_runtime_status(slug) do
+  defp agent_pill_label(_meta, _pct, _tracked?, company, slug) do
+    case agent_runtime_status(company, slug) do
       :alive -> "alive"
       :stop -> "stop"
       _ -> "idle"
     end
   end
 
-  # Lookup is by slug across all companies because the LV is already
-  # scoped to a company via the URL — we could pipe company through
-  # and match `{:agent_server, company, slug}` if this ever needs
-  # cross-company disambiguation. Today the Registry's uniqueness
-  # guarantees safety for a single company/agent pair.
-  # Richer pill state: :alive when actively dispatching, :stop on
-  # non-zero exit, :idle when registered-but-quiet or no server.
-  # Matches GlorboWeb.Components.Sidebar.live_status/2.
-  defp agent_runtime_status(slug) do
-    case Registry.match(Glorbo.Agent.Registry, {:agent_server, :_, slug}, :_) do
+  # Company-scoped lookup. A bare `slug`-only match across the
+  # Registry would surface whichever company's agent happened to
+  # register first — hostile when two companies have an agent named
+  # `ceo`. Pin the tuple key to the current company.
+  defp agent_runtime_status(company, slug) do
+    case Registry.match(Glorbo.Agent.Registry, {:agent_server, company, slug}, :_) do
       [{pid, _} | _] when is_pid(pid) ->
         try do
           classify_runtime_status(Glorbo.Agent.Server.status(pid))

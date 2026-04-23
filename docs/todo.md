@@ -228,10 +228,10 @@ it's been in CHANGELOG for a cycle.
   BenchLive); GEP-25 R26.2b parser enforcement (kind: agent/v1 +
   task/v1 now required on every agent/task frontmatter; GEP-25 →
   Implemented); GEP-23 Egress.History per-company verdict cache.
-- [ ] **GEP-23 `network:` enum rename** (`none → loopback`, `open →
-  full`). Cosmetic-only (79 callsites); keep deferred until the
-  `kbps_cap` follow-up is also ready, so the two ship as a single
-  atomic cut.
+- [x] **GEP-23 `network:` enum rename** (shipped 2026-04-23 in
+  `802bc25`). Atomic cut: parser, bwrap typespec + `network_flag/1`,
+  AgentLive/CompanyLive editors, AgentMd FileSpec enum, ~20 test
+  fixtures. `kbps_cap` throttle ships separately.
 - [ ] **GEP-23 `egress.kbps_cap`** per-dispatch token-bucket throttle.
   Needs the per-dispatch `Proxy-Authorization` token infrastructure
   GEP-23 §Proxy daemon §5 describes — not yet wired into

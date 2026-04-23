@@ -10,6 +10,50 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — post-review hardening sweep (codex + claude review)
+
+- **[CRITICAL fix]** Router outbox readers now `lstat` every
+  agent-writable file before `File.read`. Without this an agent
+  could plant a symlink at `outbox/comments/<task>.md` pointing at
+  arbitrary host files (e.g. `~/.ssh/id_rsa`) and the Router would
+  ingest the target content into task comments, proposals, or
+  memory. Fix: new `read_agent_writable_file/1` helper guards the
+  task/comment/message/proposal/path-request/classification sites;
+  regression test `R-outbox-symlink` added.
+- **[HIGH fix]** bwrap baseline gains `--clearenv` + an explicit
+  `--setenv` whitelist (`PATH`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`).
+  Previously the sandboxed CLI inherited the BEAM's environment,
+  including any `*_PROXY` / provider tokens in the director's
+  shell. New test B11 asserts `--clearenv` precedes every
+  `--setenv`.
+- **[HIGH fix]** Dropped `--unshare-user-try` / `--unshare-cgroup-try`
+  silent fallbacks in favour of the bare `--unshare-user` /
+  `--unshare-cgroup`. Every supported kernel implements both
+  namespaces; the `-try` suffix converted a kernel boundary into a
+  best-effort one.
+- **[HIGH fix]** `GlorboWeb.AgentLive` + `GlorboWeb.CompanyLive`
+  now pin Registry lookups to `{:agent_server, company, slug}`
+  instead of the cross-company `{:agent_server, :_, slug}`
+  wildcard. Two companies with an agent of the same slug (e.g.
+  both have `ceo`) previously surfaced whichever registered
+  first.
+- **[HIGH fix]** `Glorbo.Benchmarks.Orchestrator.validate_providers/1`
+  now enforces the shared slug regex
+  (`~r/\A[a-z][a-z0-9_-]{0,63}\z/`), rejects duplicates, and caps
+  fan-out at 32. Previously any provider string — including
+  newline-injected YAML, path traversal, or shell metacharacters —
+  flowed unescaped into shadow-company slugs, manifest YAML, and
+  AGENT.md placeholder substitution.
+- **[HIGH fix]** Agent-filed task comments now land in the
+  sibling `.comments.md` thread (GEP-30 D8), not appended inline
+  to `task.md`. TaskLive/KanbanLive only read the thread file, so
+  comments previously filed by agents were silently invisible in
+  the UI.
+- **[MED fix]** `GlorboWeb.MCP.Tools.CreateChannel` uses
+  `Glorbo.Filesystem.FrontmatterWriter.atomic_write/2` instead of
+  `File.write/2`. A crash mid-write no longer leaves a truncated
+  `channels/<channel>.md` that the watcher would ingest.
+
 ### Added — GEP-26 Phase B dispatch orchestrator
 
 - `glorbo bench run <template> <task-id> --providers a,b,c

@@ -16,11 +16,17 @@ defmodule Glorbo.Sandbox.Bwrap do
   ## Baseline sandbox (D-08)
 
   Every invocation drops all capabilities and enters fresh mount, pid, ipc,
-  uts, user and cgroup namespaces:
+  uts, user and cgroup namespaces, and wipes the inherited environment:
 
-      --die-with-parent --unshare-user-try --unshare-ipc
-      --unshare-pid --unshare-uts --unshare-cgroup-try
-      --new-session --cap-drop ALL
+      --die-with-parent --unshare-user --unshare-ipc
+      --unshare-pid --unshare-uts --unshare-cgroup
+      --new-session --cap-drop ALL --clearenv
+
+  `--clearenv` is load-bearing: without it the sandboxed CLI inherits the
+  BEAM's env (PATH, `*_PROXY`, whatever the director's shell happened to
+  export — potentially including unrelated provider tokens). The only
+  env inside the sandbox is what Glorbo explicitly `--setenv`s after the
+  clear — see `default_env_flags/0` for the minimal whitelist.
 
   ## Filesystem binds (D-09)
 
@@ -141,6 +147,7 @@ defmodule Glorbo.Sandbox.Bwrap do
       PermissionMapper.to_argv(opts.permissions, opts.company_path),
       approved_path_flags(Map.get(opts, :approved_paths, [])),
       working_dir_flags(),
+      default_env_flags(),
       env_flags(opts)
     ]
     |> List.flatten()
@@ -217,14 +224,41 @@ defmodule Glorbo.Sandbox.Bwrap do
   defp baseline_flags do
     [
       "--die-with-parent",
-      "--unshare-user-try",
+      "--unshare-user",
       "--unshare-ipc",
       "--unshare-pid",
       "--unshare-uts",
-      "--unshare-cgroup-try",
+      "--unshare-cgroup",
       "--new-session",
       "--cap-drop",
-      "ALL"
+      "ALL",
+      "--clearenv"
+    ]
+  end
+
+  # Minimum env a sandboxed CLI needs after --clearenv wipes everything.
+  # `PATH` points at the root_fs_flags merged-/usr layout. `LANG`/`LC_ALL`
+  # pin UTF-8 so CLI stdout round-trips through the port. `TERM=dumb`
+  # suppresses ANSI escapes that would corrupt parsed replies.
+  # `TMPDIR=/tmp` matches the `--tmpfs /tmp` baseline mount.
+  # HOME is set separately by `working_dir_flags/0` to `/workspace`.
+  defp default_env_flags do
+    [
+      "--setenv",
+      "PATH",
+      "/usr/bin:/bin",
+      "--setenv",
+      "LANG",
+      "C.UTF-8",
+      "--setenv",
+      "LC_ALL",
+      "C.UTF-8",
+      "--setenv",
+      "TERM",
+      "dumb",
+      "--setenv",
+      "TMPDIR",
+      "/tmp"
     ]
   end
 
