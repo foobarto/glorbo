@@ -22,6 +22,10 @@ next explicit tranche.
 - Native `glorbo harness` now ships four more filesystem tools:
   `write_file`, `edit_file`, `glob`, and `grep`, alongside the
   previously shipped `read_file`.
+- The new filesystem-tool batch is intentionally narrow and sandbox-
+  scoped: file reads/writes still rely on the existing bwrap mount view
+  for isolation, and `bash` / `web_fetch` remain explicitly deferred to
+  the next native-tools tranche instead of quietly sneaking in here.
 - Tool execution is now factored through `Glorbo.CLI.Harness.Tools`,
   giving the harness one owned tool catalog instead of ad hoc inline
   logic in the runtime loop.
@@ -30,6 +34,9 @@ next explicit tranche.
 - `Agent.Dispatch` replays those parsed tool events into the company
   audit log, so native-tool activity is director-visible instead of
   existing only inside provider transcripts.
+- The `native_v1` parser now treats `usage.json` as untrusted sandbox
+  output: both tool-count names and replayable audit actions are
+  allowlisted before anything reaches Director-visible audit state.
 
 ## [0.1.0] — 2026-04-23
 

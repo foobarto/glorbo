@@ -106,7 +106,7 @@ Back up with `tar`. Version-control with `git`. Move to another machine with
   </tr>
   <tr>
     <td align="center"><sub><code>/companies/&lt;co&gt;/approvals</code> — prompt diff · <kbd>j</kbd>/<kbd>k</kbd>/<kbd>y</kbd>/<kbd>n</kbd></sub></td>
-    <td align="center"><sub><code>/providers</code> — config-driven provider registry (GEP-8, GEP-32 phase 1)</sub></td>
+    <td align="center"><sub><code>/providers</code> — config-driven provider registry (GEP-8, GEP-32 phase 2a)</sub></td>
   </tr>
 </table>
 
@@ -135,16 +135,21 @@ registered CLI installs already on your machine. Their credentials are
 OpenAI and OpenRouter now run through a first-party `glorbo harness`
 subcommand inside the same bwrap sandbox. The shipped native tool loop
 now covers `read_file`, `write_file`, `edit_file`, `glob`, and `grep`,
-and those tool calls replay into the company audit log. Credentials
-live outside `~/.glorbo/` in
-`~/.local/etc/glorbo/credentials/<provider>.toml`.
+and those tool calls replay into the company audit log. Native usage is
+still metered through Glorbo-owned `usage.json`; providers that omit
+token telemetry remain gated behind `allow_untracked_budget: true`.
+Credentials live outside `~/.glorbo/` in
+`~/.local/etc/glorbo/credentials/<provider>.toml`, so naïve backups of
+`~/.glorbo/` do not sweep API keys into archives.
 
-**Config-driven providers (GEP-8, extended in GEP-32 phase 1)** — Each
+**Config-driven providers (GEP-8, extended in GEP-32 phase 2a)** — Each
 provider is a TOML entry declaring either how to invoke a CLI or how a
 native OpenAI-compatible endpoint should be reached and metered.
 Built-in providers ship under `priv/providers/*.toml`; drop your own
 into `~/.glorbo/providers.toml`. The `/providers` LiveView shows what's
-routable. No Elixir code needed to register a new provider.
+routable. Native entries can declare endpoint, auth mode, usage parser,
+and model-list shape. No Elixir code is needed to register a new
+provider.
 
 **Local-first LLMs** — Agents use whichever runtime you have: a host CLI
 (`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
@@ -243,8 +248,11 @@ a functional install on a fresh host (verified end-to-end by
   `/usr/bin/bwrap` (the kernel blocks unprivileged user-namespace network
   operations otherwise; see `.github/workflows/ci.yml` for the canonical
   profile).
-- At least one of: Claude Code CLI, Gemini CLI, or Codex CLI installed and
-  authenticated.
+- At least one provider runtime:
+  - a supported CLI installed and authenticated (`claude`, `gemini`,
+    `codex`, `opencode`, etc.), or
+  - a native credentials file for a built-in/provider-registry native
+    endpoint such as `openai` or `openrouter`.
 
 No Python. No Erlang. No Node.js. `glorbo init` verifies the rest and
 bootstraps `~/.glorbo/`.
@@ -291,6 +299,44 @@ useful Windows equivalents.
 
 `glorbo init` creates the directory hierarchy, verifies prerequisites via
 `glorbo doctor`, and optionally scaffolds an example company.
+
+### Native provider quick setup
+
+You do **not** need a separate CLI install to run the built-in native
+providers. For OpenAI or OpenRouter, create a credentials file on the
+host:
+
+```bash
+mkdir -p ~/.local/etc/glorbo/credentials
+chmod 700 ~/.local/etc/glorbo/credentials
+```
+
+```toml
+# ~/.local/etc/glorbo/credentials/openai.toml
+api_key = "sk-..."
+
+# optional: override the built-in endpoint
+# endpoint = "https://api.openai.com/v1"
+```
+
+```toml
+# ~/.local/etc/glorbo/credentials/openrouter.toml
+api_key = "sk-or-v1-..."
+```
+
+Then point an agent at `provider: openai` or `provider: openrouter` in
+`AGENT.md`. The current native tool catalog is:
+
+- `read_file`
+- `write_file`
+- `edit_file`
+- `glob`
+- `grep`
+
+Those tools run inside the same sandbox mount view as CLI-backed agents,
+and their activity is replayed into the company audit log. The next
+native-tools tranche is `bash` + `web_fetch`; they are not shipped in
+`v0.2.0`.
 
 ### Local development
 
@@ -386,6 +432,10 @@ GlorboWeb.Actions.wake_agent("acme", "ceo", "dev smoke test")
 Stdout streams into the `/companies/acme/agents/ceo` LiveView. Every
 invocation appends to `audit/YYYY-MM.jsonl` — check that file if you
 don't see what you expect in the dashboard.
+
+For native providers, the same dev loop applies: the sandboxed runtime
+is still the Glorbo binary, just invoked as `glorbo harness ...` with
+the provider contract passed in via env and bind-mounted credentials.
 
 ### Verify
 
@@ -493,11 +543,20 @@ dashboard renders them as real-time chat.
    tempfile; either an external CLI tool (`claude -p`, `gemini -p`,
    `codex exec -`) or the internal `glorbo harness` runs inside the
    sandbox.
-4. The CLI writes results to the agent's workspace/outbox.
+4. The runtime writes its final reply to the Glorbo reply-file contract;
+   native providers additionally emit structured `usage.json`
+   telemetry, and the native tool loop may read/write the workspace
+   before producing the final answer.
 5. Glorbo detects the output via inotify, routes messages, updates the
    index, appends to the audit log, and records token usage against the
    agent's budget.
 6. The sandbox exits.
+
+Today the native harness owns the filesystem tool batch
+`read_file` / `write_file` / `edit_file` / `glob` / `grep`. Each tool
+result is counted in usage telemetry, and replayable tool-audit events
+flow back through `Agent.Dispatch` so Director-visible audit state
+captures native tool activity rather than only the final reply.
 
 ### Sandboxing
 
@@ -573,72 +632,17 @@ captures the project's design philosophy in one page.
 
 ## Project Status
 
-Pre-1.0. **v0.0.2** shipped 2026-04-16 and closed Milestone 01 (CLI-agent
-runtime):
-
-- Phase 01 — Compilable skeleton + CI + signed releases ✓
-- Phase 02 — Filesystem foundation, doctor, `glorbo init` ✓
-- Phase 03 — Agents, router, kernel permissions, budgets ✓
-- Phase 04 — LiveView dashboard + Channels + PubSub ✓
-- Phase 05 — CLI completeness + backup/restore + portability ✓
-
-**v0.0.3** shipped 2026-04-19:
-
-- **GEP-8 — provider registry + CLI auto-detect** ✓
-- **GEP-10 — agent and skill templates** ✓ (`--template` on
-  `glorbo new agent` + `glorbo new skill`, CEO/engineer/researcher
-  templates built in, role-specific SOUL.md and HEARTBEAT.md
-  auto-wired)
-- **GEP-12 — no user-input atoms** ✓
-- **GEP-13 — project-prefixed task IDs** ✓
-- **GEP-14 — agent heartbeat semantics + HEARTBEAT.md** ✓
-- **GEP-15 — ALLCAPS agent-facing markdown convention** ✓
-- **GEP-16 — agent wake + dispatch pipeline** ✓
-- **GEP-19 — director approval workflow protocol** ✓
-- Reply-file contract (breaking — existing agents need an
-  updated system prompt; `glorbo new agent` scaffolds this
-  automatically).
-- **`glorbo import paperclip <src>`** — import paperclip.ai
-  `agentcompanies` trees; wraps each agent's `AGENTS.md` in
-  Glorbo frontmatter, preserves HEARTBEAT/SOUL/TOOLS verbatim,
-  prints a hint report naming every paperclip-ism the Director
-  should hand-fix.
-- **Dashboard UX overhaul** (M-series) ✓ — mockup-aligned shell
-  (260px tri-section sidebar, topbar with `▚ GLORBO` + company
-  picker, terminal-TUI phosphor tokens), company overview with
-  stat cards + agent roster + org chart, agent-detail
-  three-column layout with a right-panel collapse rail (auto
-  on viewports < 1200px), Kanban drag-and-drop with `status:`
-  frontmatter writeback, chat channel switcher + DM thread
-  enumeration, approvals prompt-diff with `j/k/y/n` keyboard,
-  audit unified free-text search, providers card grid with TOML
-  snippet, global `g o/h/p` shortcuts, TWEAKS drawer, themed
-  scrollbars, `+ new company/agent/task` entry points.
-- **Approval workflow polish** — director/agent `assigned_to`
-  swap on approval-request/grant/deny (preserved across the
-  Gate daemon and UI-direct code paths), denial reason
-  persisted into task frontmatter and audit, Escape closes all
-  modals, Gate audit events now use canonical `target:` key.
-- **Stdout streamer hardening** — CR / OSC / BEL stripping so
-  terminal noise doesn't leak into the UI, autoscroll that
-  unpins when the user scrolls up to read older output.
-- **Accessibility sweep** — every `role="button"` surface gained
-  `phx-keydown="Enter"` activation and a descriptive
-  aria-label (task cards, agent table rows, approval rows,
-  permission rows, file-tree actions as real `<button>`s).
-- Dashboard hardening ✓ — auto-start company supervisors at app
-  boot (fixes AuditLog-not-registered crash on every Director
-  write-action).
-- Tests: 895/895 green · `mix credo --strict` clean ·
-  `mix gep.validate` clean
+Pre-1.0. Latest release is **v0.2.0** (2026-04-23); the release trail so
+far, newest first:
 
 **v0.2.0** shipped 2026-04-23:
 
 - **GEP-32 — native agent harness** ✓ (Phase 2a) — the first native
   filesystem-tool batch ships: `write_file`, `edit_file`, `glob`, and
   `grep` join `read_file`, tool counts stay in the native usage JSON,
-  and sanitized per-tool audit events replay into the company audit log
-  through Dispatch.
+  sanitized per-tool audit events replay into the company audit log
+  through Dispatch, and the parser now treats `usage.json` as untrusted
+  sandbox output rather than a privileged host control channel.
 
 **v0.1.0** shipped 2026-04-23:
 
@@ -709,6 +713,65 @@ runtime):
   rotation + archive browser, named autonomy tiers.
 - Tests: 1439/1439 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
+
+**v0.0.3** shipped 2026-04-19:
+
+- **GEP-8 — provider registry + CLI auto-detect** ✓
+- **GEP-10 — agent and skill templates** ✓ (`--template` on
+  `glorbo new agent` + `glorbo new skill`, CEO/engineer/researcher
+  templates built in, role-specific SOUL.md and HEARTBEAT.md
+  auto-wired)
+- **GEP-12 — no user-input atoms** ✓
+- **GEP-13 — project-prefixed task IDs** ✓
+- **GEP-14 — agent heartbeat semantics + HEARTBEAT.md** ✓
+- **GEP-15 — ALLCAPS agent-facing markdown convention** ✓
+- **GEP-16 — agent wake + dispatch pipeline** ✓
+- **GEP-19 — director approval workflow protocol** ✓
+- Reply-file contract (breaking — existing agents need an
+  updated system prompt; `glorbo new agent` scaffolds this
+  automatically).
+- **`glorbo import paperclip <src>`** — import paperclip.ai
+  `agentcompanies` trees; wraps each agent's `AGENTS.md` in
+  Glorbo frontmatter, preserves HEARTBEAT/SOUL/TOOLS verbatim,
+  prints a hint report naming every paperclip-ism the Director
+  should hand-fix.
+- **Dashboard UX overhaul** (M-series) ✓ — mockup-aligned shell
+  (260px tri-section sidebar, topbar with `▚ GLORBO` + company
+  picker, terminal-TUI phosphor tokens), company overview with
+  stat cards + agent roster + org chart, agent-detail
+  three-column layout with a right-panel collapse rail (auto
+  on viewports < 1200px), Kanban drag-and-drop with `status:`
+  frontmatter writeback, chat channel switcher + DM thread
+  enumeration, approvals prompt-diff with `j/k/y/n` keyboard,
+  audit unified free-text search, providers card grid with TOML
+  snippet, global `g o/h/p` shortcuts, TWEAKS drawer, themed
+  scrollbars, `+ new company/agent/task` entry points.
+- **Approval workflow polish** — director/agent `assigned_to`
+  swap on approval-request/grant/deny (preserved across the
+  Gate daemon and UI-direct code paths), denial reason
+  persisted into task frontmatter and audit, Escape closes all
+  modals, Gate audit events now use canonical `target:` key.
+- **Stdout streamer hardening** — CR / OSC / BEL stripping so
+  terminal noise doesn't leak into the UI, autoscroll that
+  unpins when the user scrolls up to read older output.
+- **Accessibility sweep** — every `role="button"` surface gained
+  `phx-keydown="Enter"` activation and a descriptive
+  aria-label (task cards, agent table rows, approval rows,
+  permission rows, file-tree actions as real `<button>`s).
+- Dashboard hardening ✓ — auto-start company supervisors at app
+  boot (fixes AuditLog-not-registered crash on every Director
+  write-action).
+- Tests: 895/895 green · `mix credo --strict` clean ·
+  `mix gep.validate` clean
+
+**v0.0.2** shipped 2026-04-16 and closed Milestone 01 (CLI-agent
+runtime):
+
+- Phase 01 — Compilable skeleton + CI + signed releases ✓
+- Phase 02 — Filesystem foundation, doctor, `glorbo init` ✓
+- Phase 03 — Agents, router, kernel permissions, budgets ✓
+- Phase 04 — LiveView dashboard + Channels + PubSub ✓
+- Phase 05 — CLI completeness + backup/restore + portability ✓
 
 Pending for a later release: GEP-23 Phase 4 (real LLM dispatch
 for smart-mode classifier + director-approval sentinels for
