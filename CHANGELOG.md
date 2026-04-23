@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — PathRequestGate symlink-segment check (GEP-27 compliance)
+
+- **[HIGH]** `Glorbo.PathRequestGate.do_approve` now refuses to grant
+  any path whose ancestor chain contains a symlink segment.
+  Previously the validator only checked the path string lexically
+  (absolute, no `..`, not under `/proc|/sys|/dev`), so an operator
+  could approve `/home/user/data` only to have a pre-planted
+  symlink elsewhere in the path resolve to `/etc` at bwrap bind
+  time. GEP-27 §Approval validation §2 required this check — now it
+  ships. 4 regression tests (`validate_no_symlink_segments/1`:
+  regular file, absent path, direct-symlink refusal, ancestor-
+  symlink refusal).
+
 ### Security — proxy hostname parser hardening
 
 - **[HIGH]** `Glorbo.Network.Proxy` now rejects non-ASCII hostnames

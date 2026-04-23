@@ -183,6 +183,7 @@ defmodule Glorbo.PathRequestGate do
   defp do_approve(agent_slug, task_id, granted_paths, state) do
     with {:ok, _sentinel} <- find_pending_sentinel(agent_slug, task_id, state),
          :ok <- validate_granted_paths(granted_paths),
+         :ok <- validate_no_symlink_segments(granted_paths),
          :ok <- write_grant(agent_slug, task_id, granted_paths, state),
          :ok <- archive_request(agent_slug, task_id, state) do
       emit_audit(state, "path_access.approved", "director", %{
@@ -280,6 +281,63 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp valid_granted_path?(_), do: false
+
+  # GEP-27 §Approval validation §2: an approved path must not reach
+  # the bwrap bind layer through a symlink segment. The lexical
+  # checks above only catch `..` in the STRING; a `/home/user/foo`
+  # that is secretly a symlink to `/etc` would still be bound into
+  # the sandbox as `/etc`. Walk each segment with `File.lstat` and
+  # refuse anything non-regular/non-dir.
+  #
+  # Non-existent trailing segments are allowed (operator may grant a
+  # path they intend to create). The walk stops at the first
+  # `:enoent`.
+  @doc false
+  @spec validate_no_symlink_segments([%{path: Path.t(), mode: :read | :write}]) ::
+          :ok | {:error, {:granted_path_has_symlink_segment, term()}}
+  def validate_no_symlink_segments(paths) when is_list(paths) do
+    case Enum.find(paths, &path_has_symlink_segment?/1) do
+      nil -> :ok
+      bad -> {:error, {:granted_path_has_symlink_segment, bad}}
+    end
+  end
+
+  defp path_has_symlink_segment?(%{path: p}) when is_binary(p) do
+    p
+    |> walk_ancestor_paths()
+    |> Enum.any?(&segment_is_symlink?/1)
+  end
+
+  defp path_has_symlink_segment?(_), do: true
+
+  # Build a descending list of path prefixes from `/` down to the full
+  # path. `Enum.scan` + `Path.join` can't be used directly — `Path.join("", "/")`
+  # returns `""`, which silently loses the root. Build segments by hand.
+  defp walk_ancestor_paths(path) when is_binary(path) do
+    path
+    |> Path.split()
+    |> Enum.reduce([], fn
+      "/", acc -> ["/" | acc]
+      seg, [] -> [seg]
+      seg, [head | _] = acc -> [Path.join(head, seg) | acc]
+    end)
+    |> Enum.reverse()
+  end
+
+  defp segment_is_symlink?(""), do: false
+
+  defp segment_is_symlink?(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :symlink}} -> true
+      {:ok, _} -> false
+      # Missing path is allowed — operator may be granting a
+      # to-be-created path.
+      {:error, :enoent} -> false
+      # Any other stat failure (permission denied etc.) is safer to
+      # treat as a refusal.
+      {:error, _} -> true
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Filesystem operations

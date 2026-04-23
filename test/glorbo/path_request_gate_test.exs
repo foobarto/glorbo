@@ -9,6 +9,7 @@ defmodule Glorbo.PathRequestGateTest do
   use ExUnit.Case, async: true
 
   alias Glorbo.PathRequestGate
+  alias Glorbo.Test.TmpGlorboHome
 
   @base "/fake/home/.glorbo"
 
@@ -61,6 +62,56 @@ defmodule Glorbo.PathRequestGateTest do
 
       assert :read ==
                PathRequestGate.resolve_cross_company_mode(other, :write, @base, "acme")
+    end
+  end
+
+  # GEP-27 §Approval validation §2. At approval time, any granted
+  # path whose segments include a symlink must be refused — otherwise
+  # the bwrap bind would resolve through the symlink at mount time,
+  # exposing whatever the symlink points at.
+  describe "validate_no_symlink_segments/1 — T-27-02 symlink-target check" do
+    test "regular file is allowed" do
+      tmp = TmpGlorboHome.setup()
+      real = Path.join(tmp, "real.txt")
+      File.write!(real, "ok")
+
+      assert :ok =
+               PathRequestGate.validate_no_symlink_segments([%{path: real, mode: :read}])
+    end
+
+    test "absent path is allowed (operator may grant a to-be-created path)" do
+      tmp = TmpGlorboHome.setup()
+      absent = Path.join(tmp, "will-be-created.txt")
+
+      assert :ok =
+               PathRequestGate.validate_no_symlink_segments([%{path: absent, mode: :write}])
+    end
+
+    test "path that IS a symlink is refused" do
+      tmp = TmpGlorboHome.setup()
+      target = Path.join(tmp, "target.txt")
+      File.write!(target, "real")
+      link = Path.join(tmp, "link.txt")
+      :ok = File.ln_s(target, link)
+
+      assert {:error, {:granted_path_has_symlink_segment, %{path: ^link}}} =
+               PathRequestGate.validate_no_symlink_segments([%{path: link, mode: :read}])
+    end
+
+    test "path whose parent segment is a symlink is refused" do
+      tmp = TmpGlorboHome.setup()
+      real_dir = Path.join(tmp, "real-dir")
+      File.mkdir_p!(real_dir)
+      File.write!(Path.join(real_dir, "inside.txt"), "sensitive")
+
+      linked_dir = Path.join(tmp, "aliased-dir")
+      :ok = File.ln_s(real_dir, linked_dir)
+      path_via_symlink = Path.join(linked_dir, "inside.txt")
+
+      assert {:error, {:granted_path_has_symlink_segment, _}} =
+               PathRequestGate.validate_no_symlink_segments([
+                 %{path: path_via_symlink, mode: :read}
+               ])
     end
   end
 end
