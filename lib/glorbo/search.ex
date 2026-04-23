@@ -91,6 +91,9 @@ defmodule Glorbo.Search do
   # ETS cache table name. Public + named so any process can read/write
   # without passing a reference. Created lazily in `ensure_cache/0`.
   @cache_table :glorbo_search_title_cache
+  @cache_cap 1_000
+  @title_max_bytes 512
+  @truncated_suffix "... [truncated]"
 
   defp read_task(tasks_dir, filename) do
     path = Path.join(tasks_dir, filename)
@@ -118,7 +121,7 @@ defmodule Glorbo.Search do
 
       _ ->
         title = parse_title(path, task_id)
-        :ets.insert(@cache_table, {path, mtime, title})
+        maybe_cache_title(path, mtime, title)
         title
     end
   end
@@ -127,13 +130,55 @@ defmodule Glorbo.Search do
     case File.read(path) do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, fm, _body} -> to_string(fm["title"] || task_id)
-          _ -> task_id
+          {:ok, fm, _body} -> truncate_title(to_string(fm["title"] || task_id))
+          _ -> truncate_title(task_id)
         end
 
       _ ->
-        task_id
+        truncate_title(task_id)
     end
+  end
+
+  defp maybe_cache_title(path, mtime, title) do
+    if :ets.member(@cache_table, path) or cache_room?() do
+      :ets.insert(@cache_table, {path, mtime, title})
+    end
+  end
+
+  defp cache_room? do
+    case :ets.info(@cache_table, :size) do
+      size when is_integer(size) -> size < @cache_cap
+      _ -> false
+    end
+  end
+
+  defp truncate_title(title) when byte_size(title) <= @title_max_bytes, do: title
+
+  defp truncate_title(title) do
+    keep = max(@title_max_bytes - byte_size(@truncated_suffix), 0)
+    valid_utf8_prefix(title, keep) <> @truncated_suffix
+  end
+
+  defp valid_utf8_prefix(_title, max_bytes) when max_bytes <= 0, do: ""
+
+  defp valid_utf8_prefix(title, max_bytes) do
+    size = min(byte_size(title), max_bytes)
+    prefix = :binary.part(title, 0, size)
+
+    if String.valid?(prefix) do
+      prefix
+    else
+      trim_invalid_utf8_suffix(prefix)
+    end
+  end
+
+  defp trim_invalid_utf8_suffix(prefix) do
+    size = byte_size(prefix)
+
+    Enum.find_value(0..3, "", fn drop ->
+      candidate = :binary.part(prefix, 0, max(size - drop, 0))
+      if String.valid?(candidate), do: candidate
+    end)
   end
 
   defp ensure_cache do

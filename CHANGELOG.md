@@ -48,6 +48,10 @@ change between minor versions. Pin exact versions in downstream usage.
   buffer and final per-line payload size. A sandboxed agent can no
   longer grow the streamer's heap indefinitely by writing one huge
   newline-free stdout line.
+- `Glorbo.Search` now truncates cached task titles and stops inserting
+  new ETS entries once the title cache reaches its hard ceiling, so
+  agent-authored task metadata can no longer grow the named cache table
+  without bound.
 
 ## [0.3.0] — 2026-04-23
 

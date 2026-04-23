@@ -437,6 +437,15 @@ line grow the GenServer heap forever. The fix is to cap the pending
 line itself, mark it truncated, and drop the overflow until the next
 newline resets framing.
 
+### Search — a bounded cache can stop caching new keys
+
+For `Glorbo.Search`, the simplest safe fix is not a real eviction
+policy. The named ETS table can stay useful for hot paths if it
+updates existing keys and inserts only while under a hard cap; once the
+table is full, later paths still parse live and return correct search
+results, they just stop being cached. That is enough to turn the memory
+growth bug into a bounded perf tradeoff.
+
 ---
 
 ## What belongs in this file vs elsewhere

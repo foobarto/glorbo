@@ -1,14 +1,22 @@
 defmodule Glorbo.SearchTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Glorbo.Search
 
+  @cache_table :glorbo_search_title_cache
+
   setup do
+    clear_cache()
+
     base = Path.join(System.tmp_dir!(), "glorbo-search-#{System.unique_integer([:positive])}")
     company = "acme"
     tasks_dir = Path.join([base, "companies", company, "projects", "foo", "tasks"])
     File.mkdir_p!(tasks_dir)
-    on_exit(fn -> File.rm_rf!(base) end)
+
+    on_exit(fn ->
+      File.rm_rf!(base)
+      clear_cache()
+    end)
 
     File.write!(Path.join(tasks_dir, "foo-1.md"), """
     ---
@@ -35,6 +43,13 @@ defmodule Glorbo.SearchTest do
     """)
 
     {:ok, base: base, company: company}
+  end
+
+  defp clear_cache do
+    case :ets.whereis(@cache_table) do
+      :undefined -> :ok
+      _ -> :ets.delete_all_objects(@cache_table)
+    end
   end
 
   test "empty query returns []", %{base: base, company: co} do
@@ -186,5 +201,40 @@ defmodule Glorbo.SearchTest do
     File.touch!(path, future_mtime)
     assert [] = Search.search(base, co, "refactor")
     assert [_] = Search.search(base, co, "totally new")
+  end
+
+  test "truncates oversized task titles before labeling and caching", %{base: base, company: co} do
+    path = Path.join([base, "companies", co, "projects", "foo", "tasks", "foo-4.md"])
+    long_title = String.duplicate("A", 2_000)
+
+    File.write!(path, """
+    ---
+    title: #{long_title}
+    status: todo
+    ---
+    body
+    """)
+
+    [hit] = Search.search(base, co, "aaaa")
+    assert hit.label =~ "... [truncated]"
+    assert byte_size(hit.label) <= 512 + byte_size("foo-4 · ")
+  end
+
+  test "title cache stops growing after the hard cap", %{base: base, company: co} do
+    tasks_dir = Path.join([base, "companies", co, "projects", "foo", "tasks"])
+
+    for idx <- 4..1_150 do
+      File.write!(Path.join(tasks_dir, "foo-#{idx}.md"), """
+      ---
+      title: Search cache task #{idx}
+      status: todo
+      ---
+      body
+      """)
+    end
+
+    _ = Search.search(base, co, "search cache task")
+
+    assert :ets.info(@cache_table, :size) <= 1_000
   end
 end
