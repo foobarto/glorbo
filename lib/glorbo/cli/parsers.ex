@@ -23,7 +23,8 @@ defmodule Glorbo.CLI.Parsers do
           required(:completion_tokens) => non_neg_integer(),
           required(:model) => String.t() | nil,
           optional(:tracked) => boolean(),
-          optional(:tool_calls) => %{optional(String.t()) => non_neg_integer()}
+          optional(:tool_calls) => %{optional(String.t()) => non_neg_integer()},
+          optional(:audit_events) => [map()]
         }
 
   @type source ::

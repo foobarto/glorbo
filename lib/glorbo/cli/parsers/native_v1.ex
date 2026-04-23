@@ -16,6 +16,7 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
   duration separately and remains the authority for audit/UI timing.
   """
 
+  alias Glorbo.CLI.Harness.Tools
   alias Glorbo.CLI.Parsers
 
   @spec parse(Parsers.source()) :: {:ok, Parsers.usage()} | {:error, term()}
@@ -49,7 +50,8 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
        prompt_tokens: prompt,
        completion_tokens: completion,
        model: parse_model(Map.get(map, "model")),
-       tool_calls: parse_tool_calls(Map.get(map, "tool_calls", %{}))
+       tool_calls: parse_tool_calls(Map.get(map, "tool_calls", %{})),
+       audit_events: parse_audit_events(Map.get(map, "audit_events", []))
      }}
   end
 
@@ -60,10 +62,16 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
   defp parse_model(_), do: nil
 
   defp parse_tool_calls(map) when is_map(map) do
+    allowed = MapSet.new(Tools.known_tool_names())
+
     map
     |> Enum.reduce(%{}, fn
       {name, count}, acc when is_binary(name) and is_integer(count) and count >= 0 ->
-        Map.put(acc, name, count)
+        if MapSet.member?(allowed, name) do
+          Map.put(acc, name, count)
+        else
+          acc
+        end
 
       _, acc ->
         acc
@@ -71,4 +79,57 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
   end
 
   defp parse_tool_calls(_), do: %{}
+
+  defp parse_audit_events(events) when is_list(events) do
+    allowed = MapSet.new(Tools.known_audit_actions())
+
+    events
+    |> Enum.reduce([], fn
+      %{"action" => action} = event, acc when is_binary(action) ->
+        if MapSet.member?(allowed, action) do
+          detail =
+            case Map.get(event, "detail") do
+              map when is_map(map) -> sanitize_detail(map)
+              _ -> %{}
+            end
+
+          parsed =
+            %{action: action}
+            |> maybe_put_target(Map.get(event, "target"))
+            |> Map.put(:detail, detail)
+
+          acc ++ [parsed]
+        else
+          acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp parse_audit_events(_), do: []
+
+  defp maybe_put_target(event, target) when is_binary(target), do: Map.put(event, :target, target)
+  defp maybe_put_target(event, _target), do: event
+
+  defp sanitize_detail(detail) do
+    detail
+    |> Enum.reduce(%{}, fn
+      {key, value}, acc when is_binary(key) and is_binary(value) ->
+        Map.put(acc, key, value)
+
+      {key, value}, acc when is_binary(key) and is_boolean(value) ->
+        Map.put(acc, key, value)
+
+      {key, value}, acc when is_binary(key) and is_integer(value) ->
+        Map.put(acc, key, value)
+
+      {key, nil}, acc when is_binary(key) ->
+        Map.put(acc, key, nil)
+
+      _, acc ->
+        acc
+    end)
+  end
 end

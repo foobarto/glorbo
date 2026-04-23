@@ -11,6 +11,7 @@ defmodule Glorbo.CLI.Harness do
   `$GLORBO_USAGE_PATH`.
   """
 
+  alias Glorbo.CLI.Harness.Tools
   alias Glorbo.CLI.Registry.Loader
   alias Glorbo.CLI.Registry.Provider
 
@@ -178,7 +179,7 @@ defmodule Glorbo.CLI.Harness do
     initial_usage = %{tracked?: true, prompt_tokens: 0, completion_tokens: 0, model: nil}
 
     with {:ok, %{reply: reply, usage: usage}} <-
-           loop(initial_messages, config, initial_usage, %{}, 0, opts) do
+           loop(initial_messages, config, initial_usage, %{}, [], 0, opts) do
       duration_ms = max(monotonic_ms(opts) - started_at, 0)
 
       {:ok,
@@ -194,7 +195,7 @@ defmodule Glorbo.CLI.Harness do
     end
   end
 
-  defp loop(messages, config, usage_acc, tool_counts, total_tool_calls, opts) do
+  defp loop(messages, config, usage_acc, tool_counts, audit_events, total_tool_calls, opts) do
     with {:ok, response} <- chat_completion(messages, config, opts),
          {:ok, message, next_usage_acc} <- extract_message(response, usage_acc) do
       tool_calls = Map.get(message, "tool_calls") || []
@@ -206,7 +207,11 @@ defmodule Glorbo.CLI.Harness do
               {:error, :empty_reply}
 
             reply ->
-              {:ok, %{reply: reply, usage: build_usage(next_usage_acc, tool_counts, config)}}
+              {:ok,
+               %{
+                 reply: reply,
+                 usage: build_usage(next_usage_acc, tool_counts, audit_events, config)
+               }}
           end
 
         calls when is_list(calls) ->
@@ -221,13 +226,15 @@ defmodule Glorbo.CLI.Harness do
               "tool_calls" => calls
             }
 
-            {tool_messages, next_counts} = execute_tool_calls(calls, tool_counts, config, opts)
+            {tool_messages, next_counts, next_events} =
+              execute_tool_calls(calls, tool_counts, config, opts)
 
             loop(
               messages ++ [assistant_message] ++ tool_messages,
               config,
               next_usage_acc,
               next_counts,
+              audit_events ++ next_events,
               next_total,
               opts
             )
@@ -243,7 +250,7 @@ defmodule Glorbo.CLI.Harness do
       body: %{
         "model" => config.model,
         "messages" => messages,
-        "tools" => [read_file_tool()],
+        "tools" => Tools.tool_specs(),
         "tool_choice" => "auto",
         "stream" => false
       },
@@ -422,7 +429,7 @@ defmodule Glorbo.CLI.Harness do
     end
   end
 
-  defp build_usage(%{tracked?: false, model: model}, tool_counts, config) do
+  defp build_usage(%{tracked?: false, model: model}, tool_counts, audit_events, config) do
     %{
       tracked: false,
       prompt_tokens: 0,
@@ -430,9 +437,10 @@ defmodule Glorbo.CLI.Harness do
       model: model || config.model,
       tool_calls: tool_counts
     }
+    |> maybe_put_audit_events(audit_events)
   end
 
-  defp build_usage(acc, tool_counts, config) do
+  defp build_usage(acc, tool_counts, audit_events, config) do
     %{
       tracked: true,
       prompt_tokens: acc.prompt_tokens,
@@ -440,17 +448,25 @@ defmodule Glorbo.CLI.Harness do
       model: acc.model || config.model,
       tool_calls: tool_counts
     }
+    |> maybe_put_audit_events(audit_events)
   end
 
   defp execute_tool_calls(calls, tool_counts, config, opts) do
-    Enum.map_reduce(calls, tool_counts, fn call, acc ->
-      {tool_result(call, config, opts), count_tool_call(acc, tool_name(call))}
-    end)
+    {messages, {counts, audit_events}} =
+      Enum.map_reduce(calls, {tool_counts, []}, fn call, {counts, audit_events} ->
+        result = Tools.execute(call, config, opts)
+
+        {
+          tool_result(call, result.payload),
+          {count_tool_call(counts, result.tool_name),
+           maybe_append_event(audit_events, Map.get(result, :audit_event))}
+        }
+      end)
+
+    {messages, counts, audit_events}
   end
 
-  defp tool_result(%{"id" => id} = call, config, opts) do
-    payload = execute_tool(call, config, opts)
-
+  defp tool_result(%{"id" => id}, payload) do
     %{
       "role" => "tool",
       "tool_call_id" => id,
@@ -458,7 +474,7 @@ defmodule Glorbo.CLI.Harness do
     }
   end
 
-  defp tool_result(call, _config, _opts) do
+  defp tool_result(call, _payload) do
     %{
       "role" => "tool",
       "tool_call_id" => Map.get(call, "id", "missing"),
@@ -466,70 +482,17 @@ defmodule Glorbo.CLI.Harness do
     }
   end
 
-  defp execute_tool(
-         %{"function" => %{"name" => "read_file", "arguments" => arguments}},
-         config,
-         opts
-       ) do
-    case Jason.decode(arguments) do
-      {:ok, %{"path" => raw_path}} when is_binary(raw_path) and raw_path != "" ->
-        path = resolve_tool_path(raw_path, config.workspace)
-        read_fun = Keyword.get(opts, :file_read_fun, &File.read/1)
-
-        case read_fun.(path) do
-          {:ok, contents} -> %{"ok" => true, "path" => path, "contents" => contents}
-          {:error, reason} -> %{"ok" => false, "path" => path, "error" => inspect(reason)}
-        end
-
-      {:ok, _bad_args} ->
-        %{"ok" => false, "error" => "missing_path"}
-
-      {:error, _reason} ->
-        %{"ok" => false, "error" => "invalid_arguments"}
-    end
-  end
-
-  defp execute_tool(%{"function" => %{"name" => name}}, _config, _opts) do
-    %{"ok" => false, "error" => "unknown_tool:#{name}"}
-  end
-
-  defp execute_tool(_call, _config, _opts), do: %{"ok" => false, "error" => "invalid_tool_call"}
-
-  defp tool_name(%{"function" => %{"name" => name}}) when is_binary(name), do: name
-  defp tool_name(_), do: "unknown"
-
   defp count_tool_call(counts, name) do
     Map.update(counts, name, 1, &(&1 + 1))
   end
 
-  defp resolve_tool_path(path, workspace) do
-    if Path.type(path) == :absolute do
-      path
-    else
-      Path.expand(path, workspace)
-    end
-  end
+  defp maybe_append_event(events, nil), do: events
+  defp maybe_append_event(events, event), do: events ++ [event]
 
-  defp read_file_tool do
-    %{
-      "type" => "function",
-      "function" => %{
-        "name" => "read_file",
-        "description" => "Read a file visible inside the current sandbox.",
-        "parameters" => %{
-          "type" => "object",
-          "properties" => %{
-            "path" => %{
-              "type" => "string",
-              "description" => "Absolute sandbox path or path relative to the workspace."
-            }
-          },
-          "required" => ["path"],
-          "additionalProperties" => false
-        }
-      }
-    }
-  end
+  defp maybe_put_audit_events(usage, []), do: usage
+
+  defp maybe_put_audit_events(usage, audit_events),
+    do: Map.put(usage, :audit_events, audit_events)
 
   defp auth_headers(config) do
     [{"content-type", "application/json"}, {"accept", "application/json"}] ++

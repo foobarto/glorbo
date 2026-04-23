@@ -5,9 +5,20 @@ defmodule Glorbo.CLI.Parsers.NativeV1Test do
 
   test "parses tracked usage from json_file" do
     path =
-      tmp_json!(
-        ~s({"tracked":true,"prompt_tokens":12,"completion_tokens":34,"model":"gpt-4.1","tool_calls":{"read_file":2}})
-      )
+      tmp_json!(~s({
+        "tracked": true,
+        "prompt_tokens": 12,
+        "completion_tokens": 34,
+        "model": "gpt-4.1",
+        "tool_calls": {"read_file": 2},
+        "audit_events": [
+          {
+            "action": "tool.read_file",
+            "target": "notes.md",
+            "detail": {"ok": true, "bytes": 42}
+          }
+        ]
+      }))
 
     assert {:ok, usage} = NativeV1.parse({:json_file, path})
     assert usage.tracked == true
@@ -15,6 +26,38 @@ defmodule Glorbo.CLI.Parsers.NativeV1Test do
     assert usage.completion_tokens == 34
     assert usage.model == "gpt-4.1"
     assert usage.tool_calls == %{"read_file" => 2}
+
+    assert usage.audit_events == [
+             %{
+               action: "tool.read_file",
+               target: "notes.md",
+               detail: %{"ok" => true, "bytes" => 42}
+             }
+           ]
+  end
+
+  test "drops unknown or malformed audit events" do
+    path =
+      tmp_json!(~s({
+        "tracked": true,
+        "prompt_tokens": 1,
+        "completion_tokens": 2,
+        "tool_calls": {"write_file": 1, "made_up": 99},
+        "audit_events": [
+          {"action": "tool.write_file", "target": "notes.md", "detail": {"ok": true}},
+          {"action": "tool.made_up", "target": "bad.md", "detail": {"ok": true}},
+          {"action": "tool.grep", "detail": {"ok": true, "nested": {"nope": 1}}}
+        ]
+      }))
+
+    assert {:ok, usage} = NativeV1.parse({:json_file, path})
+
+    assert usage.audit_events == [
+             %{action: "tool.write_file", target: "notes.md", detail: %{"ok" => true}},
+             %{action: "tool.grep", detail: %{"ok" => true}}
+           ]
+
+    assert usage.tool_calls == %{"write_file" => 1}
   end
 
   test "parses untracked usage from json_file" do

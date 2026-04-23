@@ -48,6 +48,17 @@ defmodule Glorbo.CLI.HarnessTest do
     )
   end
 
+  defp queued_chat_fun(responses) do
+    fn request ->
+      send(self(), {:request, request})
+
+      Agent.get_and_update(responses, fn
+        [next | rest] -> {next, rest}
+        [] -> {{:error, :no_more_responses}, []}
+      end)
+    end
+  end
+
   test "writes reply + tracked usage for a direct assistant response", ctx do
     File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
 
@@ -96,6 +107,14 @@ defmodule Glorbo.CLI.HarnessTest do
     assert_received {:request, request}
     assert request.url == "https://api.openai.com/v1/chat/completions"
     assert {"authorization", "Bearer sk-test"} in request.headers
+
+    assert Enum.map(request.body["tools"], & &1["function"]["name"]) == [
+             "read_file",
+             "write_file",
+             "edit_file",
+             "glob",
+             "grep"
+           ]
   end
 
   test "executes read_file tool calls and records tool counts", ctx do
@@ -141,15 +160,6 @@ defmodule Glorbo.CLI.HarnessTest do
         ]
       end)
 
-    chat_fun = fn request ->
-      send(self(), {:request, request})
-
-      Agent.get_and_update(responses, fn
-        [next | rest] -> {next, rest}
-        [] -> {{:error, :no_more_responses}, []}
-      end)
-    end
-
     assert {:harness, 0, ""} =
              Harness.run(
                [
@@ -165,7 +175,7 @@ defmodule Glorbo.CLI.HarnessTest do
                prompt_fun: fn -> "inspect the workspace" end,
                env_fun: env_fun(ctx.env),
                provider_fun: fn _ -> native_provider() end,
-               chat_fun: chat_fun
+               chat_fun: queued_chat_fun(responses)
              )
 
     assert File.read!(ctx.reply_path) == "tool result acknowledged"
@@ -175,6 +185,14 @@ defmodule Glorbo.CLI.HarnessTest do
     assert usage["prompt_tokens"] == 4
     assert usage["completion_tokens"] == 6
     assert usage["tool_calls"] == %{"read_file" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "tool.read_file",
+               "target" => "notes.md",
+               "detail" => %{"ok" => true, "bytes" => 14}
+             }
+           ]
 
     assert_received {:request, first_request}
     assert_received {:request, second_request}
@@ -191,6 +209,208 @@ defmodule Glorbo.CLI.HarnessTest do
     decoded_tool = Jason.decode!(tool_content)
     assert decoded_tool["ok"] == true
     assert decoded_tool["contents"] == "workspace note"
+  end
+
+  test "executes write_file and edit_file tool calls with audit events", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-1",
+                         "function" => %{
+                           "name" => "write_file",
+                           "arguments" => ~s({"path":"draft.md","contents":"hello world"})
+                         }
+                       },
+                       %{
+                         "id" => "call-2",
+                         "function" => %{
+                           "name" => "edit_file",
+                           "arguments" =>
+                             ~s({"path":"draft.md","old_text":"world","new_text":"native"})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 3},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "file edits complete"}}],
+               "usage" => %{"prompt_tokens" => 4, "completion_tokens" => 5},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3a",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "create and update a draft" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses)
+             )
+
+    assert File.read!(Path.join(ctx.workspace, "draft.md")) == "hello native"
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tool_calls"] == %{"edit_file" => 1, "write_file" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "tool.write_file",
+               "target" => "draft.md",
+               "detail" => %{"ok" => true, "bytes_written" => 11}
+             },
+             %{
+               "action" => "tool.edit_file",
+               "target" => "draft.md",
+               "detail" => %{"ok" => true, "replacements" => 1, "bytes_written" => 12}
+             }
+           ]
+  end
+
+  test "executes glob and grep tool calls with structured results", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+    File.mkdir_p!(Path.join(ctx.workspace, "docs"))
+    File.write!(Path.join(ctx.workspace, "docs/one.md"), "first needle\n")
+    File.write!(Path.join(ctx.workspace, "docs/two.md"), "second NEEDLE\n")
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-1",
+                         "function" => %{
+                           "name" => "glob",
+                           "arguments" => ~s({"pattern":"docs/**/*.md"})
+                         }
+                       },
+                       %{
+                         "id" => "call-2",
+                         "function" => %{
+                           "name" => "grep",
+                           "arguments" =>
+                             ~s({"pattern":"needle","path":"docs/**/*.md","case_sensitive":false})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 3, "completion_tokens" => 2},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "search complete"}}],
+               "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 1},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3b",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "search docs" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: queued_chat_fun(responses)
+             )
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tool_calls"] == %{"glob" => 1, "grep" => 1}
+
+    assert usage["audit_events"] == [
+             %{
+               "action" => "tool.glob",
+               "target" => "docs/**/*.md",
+               "detail" => %{"ok" => true, "matches" => 2, "truncated" => false}
+             },
+             %{
+               "action" => "tool.grep",
+               "target" => "docs/**/*.md",
+               "detail" => %{
+                 "ok" => true,
+                 "matches" => 2,
+                 "searched_files" => 2,
+                 "skipped_files" => 0,
+                 "truncated" => false
+               }
+             }
+           ]
+
+    assert_received {:request, _first_request}
+    assert_received {:request, second_request}
+
+    tool_payloads =
+      second_request.body["messages"]
+      |> Enum.filter(&(&1["role"] == "tool"))
+      |> Enum.map(&Jason.decode!(&1["content"]))
+
+    assert Enum.any?(tool_payloads, fn payload ->
+             payload["pattern"] == "docs/**/*.md" and
+               payload["matches"] == ["docs/one.md", "docs/two.md"]
+           end)
+
+    assert Enum.any?(tool_payloads, fn payload ->
+             payload["pattern"] == "needle" and payload["match_count"] == 2 and
+               Enum.any?(
+                 payload["matches"],
+                 &(&1["line_number"] == 1 and &1["path"] == "docs/one.md")
+               )
+           end)
   end
 
   test "returns a clear error when bearer credentials are missing", ctx do

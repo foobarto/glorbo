@@ -490,6 +490,62 @@ defmodule Glorbo.Agent.DispatchTest do
              )
   end
 
+  test "native usage audit events are replayed into the company audit log", ctx do
+    native_provider =
+      stub_provider(
+        name: "openai",
+        kind: :native,
+        binary: nil,
+        resolved_path: nil,
+        usage_parser: "native-v1",
+        usage_path: %{kind: :json_file, path: "{workspace}/.glorbo-run/{task_id}/usage.json"}
+      )
+
+    run_fun = fn _args, env, _bwrap, run_opts ->
+      usage_path = Path.join(run_opts.usage_dir, "usage.json")
+      File.mkdir_p!(Path.dirname(usage_path))
+
+      File.write!(
+        usage_path,
+        ~s({
+          "tracked": true,
+          "prompt_tokens": 2,
+          "completion_tokens": 3,
+          "tool_calls": {"write_file": 1},
+          "audit_events": [
+            {
+              "action": "tool.write_file",
+              "target": "draft.md",
+              "detail": {"ok": true, "bytes_written": 11}
+            }
+          ]
+        })
+      )
+
+      File.write!(env["GLORBO_REPLY_PATH"], "native ok")
+      {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+    end
+
+    assert {:ok, %{reply: "native ok"}} =
+             Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               provider_fun: fn _ -> native_provider end,
+               self_binary_fun: fn -> "/fake/glorbo" end,
+               audit_fun: ctx.audit_fun
+             )
+
+    assert_received {:audit,
+                     %{
+                       action: "tool.write_file",
+                       actor: "engineer",
+                       agent: "engineer",
+                       task_path: "projects/foo/tasks/t-001.md",
+                       target: "draft.md",
+                       detail: %{"ok" => true, "bytes_written" => 11}
+                     }}
+  end
+
   # ---------------------------------------------------------------------------
   # D9 — unknown provider (not in registry)
   # ---------------------------------------------------------------------------

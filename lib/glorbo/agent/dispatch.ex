@@ -166,6 +166,7 @@ defmodule Glorbo.Agent.Dispatch do
            duration_ms <- compute_duration(start, opts),
            usage <- finalize_usage(dispatcher_result, spec, task),
            :ok <- record_usage(spec, task, usage, opts),
+           :ok <- emit_tool_audits(spec, task, usage, invocation_id, opts),
            merged_result <- Map.put(dispatcher_result, :usage, usage),
            :ok <-
              emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
@@ -942,12 +943,47 @@ defmodule Glorbo.Agent.Dispatch do
   defp extract_tool_calls(%{usage: %{tool_calls: calls}}) when is_map(calls), do: calls
   defp extract_tool_calls(_), do: nil
 
+  defp emit_tool_audits(spec, task, %{audit_events: events}, invocation_id, opts)
+       when is_list(events) do
+    audit = audit_fun(opts)
+
+    Enum.each(events, fn event ->
+      entry =
+        %{
+          actor: spec.slug,
+          action: event.action,
+          agent: spec.slug,
+          task_path: task.task_path,
+          invocation_id: invocation_id
+        }
+        |> maybe_put_target(Map.get(event, :target))
+        |> maybe_put_detail(Map.get(event, :detail))
+
+      audit.(spec.company, entry)
+    end)
+
+    :ok
+  rescue
+    e ->
+      Logger.warning("dispatch tool audit emit failed: #{Exception.message(e)}")
+      :ok
+  end
+
+  defp emit_tool_audits(_spec, _task, _usage, _invocation_id, _opts), do: :ok
+
   defp maybe_put_tool_calls(entry, nil), do: entry
 
   defp maybe_put_tool_calls(entry, calls) when calls == %{}, do: entry
 
   defp maybe_put_tool_calls(entry, calls) when is_map(calls),
     do: Map.put(entry, :tool_calls, calls)
+
+  defp maybe_put_target(entry, target) when is_binary(target), do: Map.put(entry, :target, target)
+  defp maybe_put_target(entry, _target), do: entry
+
+  defp maybe_put_detail(entry, detail) when detail == %{}, do: entry
+  defp maybe_put_detail(entry, detail) when is_map(detail), do: Map.put(entry, :detail, detail)
+  defp maybe_put_detail(entry, _detail), do: entry
 
   # Post-dispatch loop check — reads this month's audit jsonl for
   # consecutive failures on the same task_path and, on threshold,
