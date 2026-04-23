@@ -383,4 +383,146 @@ defmodule Glorbo.Network.ProxyTest do
       refute response =~ "403 Forbidden"
     end
   end
+
+  describe "history cache short-circuit (GEP-23 §Proxy daemon)" do
+    # The cache is a map keyed by {host, port} → {verdict, reason}.
+    # `history_fun` / `history_put_fun` are called by the Proxy on
+    # every non-allowlist hit. In production both talk to
+    # `Glorbo.Network.History`; here we stub with a local Agent so
+    # we can assert the classifier ran zero times on cache-hit.
+    defp spy_history do
+      {:ok, store} = Agent.start_link(fn -> %{} end)
+
+      fetch_fun = fn host, port ->
+        case Agent.get(store, &Map.get(&1, {host, port})) do
+          nil -> :miss
+          {verdict, reason} -> {:hit, verdict, reason}
+        end
+      end
+
+      put_fun = fn host, port, verdict, reason ->
+        Agent.update(store, &Map.put(&1, {host, port}, {verdict, reason}))
+        :ok
+      end
+
+      {store, fetch_fun, put_fun}
+    end
+
+    test "cached :allow verdict short-circuits the classifier" do
+      {_store, fetch_fun, put_fun} = spy_history()
+      _ = put_fun.("cached.example.com", 443, :allow, :prior_decision)
+
+      calls = self()
+
+      classifier = fn host, port ->
+        send(calls, {:classifier_called, host, port})
+        {:allow, :should_not_be_asked}
+      end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier,
+          history_fun: fetch_fun,
+          history_put_fun: put_fun
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT cached.example.com:443 HTTP/1.1\r\n\r\n")
+
+      refute response =~ "403 Forbidden",
+             "cache hit should have opened the tunnel, got: #{inspect(response)}"
+
+      refute_receive {:classifier_called, _, _}, 50
+    end
+
+    test "cached :deny verdict short-circuits to 403 without classifier" do
+      {_store, fetch_fun, put_fun} = spy_history()
+      _ = put_fun.("blocked.example.com", 443, :deny, :prior_decision)
+
+      calls = self()
+
+      classifier = fn host, port ->
+        send(calls, {:classifier_called, host, port})
+        {:allow, :should_not_be_asked}
+      end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier,
+          history_fun: fetch_fun,
+          history_put_fun: put_fun
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT blocked.example.com:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "403 Forbidden"
+      refute_receive {:classifier_called, _, _}, 50
+    end
+
+    test "cache miss → classifier runs → verdict stored" do
+      {store, fetch_fun, put_fun} = spy_history()
+
+      classifier = fn _host, _port -> {:deny, :policy_match} end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier,
+          history_fun: fetch_fun,
+          history_put_fun: put_fun
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, response} =
+        connect_and_send(port, "CONNECT fresh.example.com:443 HTTP/1.1\r\n\r\n")
+
+      assert response =~ "403 Forbidden"
+
+      # Verdict was recorded.
+      assert %{{"fresh.example.com", 443} => {:deny, :policy_match}} =
+               Agent.get(store, & &1)
+    end
+
+    test ":unknown verdict is NOT cached (pending Director approval)" do
+      {store, fetch_fun, put_fun} = spy_history()
+
+      classifier = fn _host, _port -> {:unknown, :no_match} end
+
+      {:ok, pid} =
+        Proxy.start_link(
+          company: "test",
+          port: 0,
+          allowlist_fun: fn _co -> [] end,
+          classifier_fun: classifier,
+          history_fun: fetch_fun,
+          history_put_fun: put_fun
+        )
+
+      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      port = Proxy.port(pid)
+
+      {_sock, _response} =
+        connect_and_send(port, "CONNECT mystery.example.com:443 HTTP/1.1\r\n\r\n")
+
+      # Nothing written to the cache.
+      assert Agent.get(store, & &1) == %{}
+    end
+  end
 end

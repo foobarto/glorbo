@@ -25,6 +25,22 @@ history:
       `none | proxy | open`), a dedicated `Egress.History` module as
       defined in §Proxy daemon, and `egress.kbps_cap` per-dispatch token
       bucket.
+  - date: 2026-04-23
+    status: Draft
+    note: |
+      `Glorbo.Network.History` landed — the per-company ETS-backed decision
+      cache from §Proxy daemon. On every non-allowlist CONNECT the Proxy
+      now consults `history_fun` first; a hit (`:allow` or `:deny`) skips
+      the classifier entirely and opens/403s the tunnel. On miss, the
+      classifier runs and the verdict is written back via `history_put_fun`
+      with a 6-hour default TTL. `:unknown` verdicts are deliberately NOT
+      cached — they want Director approval as the resolution path, and
+      caching would deny-by-default forever. Expired entries evict on
+      `fetch/3` so the table self-bounds. Remaining GEP-23 work: the
+      `none`/`loopback` + `open`/`full` enum rename (cosmetic; 79-call-
+      site blast radius, still open), and `egress.kbps_cap` per-dispatch
+      throttle (needs the per-dispatch Proxy-Authorization token
+      infrastructure that §Proxy daemon §5 describes — not yet built).
 ---
 
 # GEP-23: Egress Proxy with Host Filtering and Smart Mode

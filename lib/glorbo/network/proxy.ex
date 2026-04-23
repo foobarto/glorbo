@@ -122,7 +122,21 @@ defmodule Glorbo.Network.Proxy do
 
     classifier_fun = Keyword.get(opts, :classifier_fun)
 
-    policy = %{allowlist: allowlist, classifier_fun: classifier_fun}
+    # GEP-23 §Proxy daemon — optional per-company decision cache. When
+    # `:history_server` is supplied the proxy consults it on every
+    # non-allowlist-hit and caches verdicts on the way back. `nil`
+    # opts out; no cache interaction at all. Tests can pass the two
+    # `fun` shortcuts directly when they don't want to wire a real
+    # History GenServer.
+    history_fun = Keyword.get(opts, :history_fun, build_history_fun(opts))
+    history_put_fun = Keyword.get(opts, :history_put_fun, build_history_put_fun(opts))
+
+    policy = %{
+      allowlist: allowlist,
+      classifier_fun: classifier_fun,
+      history_fun: history_fun,
+      history_put_fun: history_put_fun
+    }
 
     {:ok, listen_sock} =
       :gen_tcp.listen(requested_port, [
@@ -346,7 +360,28 @@ defmodule Glorbo.Network.Proxy do
   # (GEP-23 Phase 2+), hand the decision off; allow opens the
   # tunnel, deny/unknown both 403 for now. Phase 3 makes :unknown
   # surface a director approval sentinel instead of an outright 403.
+  #
+  # GEP-23 §Proxy daemon — hit `Glorbo.Network.History` first so a
+  # classifier-verdict cache entry short-circuits the (potentially
+  # LLM-backed) classifier. `history_fun` is the per-company cache
+  # handle (nil opts out of caching entirely; tests pass nil).
   defp classify_unlisted(host, port, client_sock, policy, task_sup) do
+    case history_hit(policy, host, port) do
+      {:hit, :allow, reason} ->
+        Logger.debug("[network.proxy] cache-allow host=#{host} reason=#{reason}")
+        open_and_splice(host, port, client_sock, task_sup)
+
+      {:hit, :deny, reason} ->
+        Logger.debug("[network.proxy] cache-deny host=#{host} reason=#{reason}")
+        write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
+        safe_close(client_sock)
+
+      :miss ->
+        run_classifier(host, port, client_sock, policy, task_sup)
+    end
+  end
+
+  defp run_classifier(host, port, client_sock, policy, task_sup) do
     case policy.classifier_fun do
       nil ->
         Logger.info("[network.proxy] reject host-not-in-allowlist host=#{host}")
@@ -357,10 +392,12 @@ defmodule Glorbo.Network.Proxy do
         case safe_classify(fun, host, port) do
           {:allow, reason} ->
             Logger.info("[network.proxy] smart-allow host=#{host} reason=#{reason}")
+            history_put(policy, host, port, :allow, reason)
             open_and_splice(host, port, client_sock, task_sup)
 
           {:deny, reason} ->
             Logger.info("[network.proxy] smart-deny host=#{host} reason=#{reason}")
+            history_put(policy, host, port, :deny, reason)
             write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
             safe_close(client_sock)
 
@@ -369,11 +406,26 @@ defmodule Glorbo.Network.Proxy do
               "[network.proxy] smart-unknown host=#{host} reason=#{reason} (treated as deny pending director sentinel)"
             )
 
+            # Don't cache :unknown — Director approval is the
+            # resolution path, and we want every request to surface
+            # that sentinel trigger. Phase 3's sentinel handling
+            # will flip the entry when the Director approves/denies.
             write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
             safe_close(client_sock)
         end
     end
   end
+
+  defp history_hit(%{history_fun: fun}, host, port) when is_function(fun, 2),
+    do: fun.(host, port)
+
+  defp history_hit(_policy, _host, _port), do: :miss
+
+  defp history_put(%{history_put_fun: fun}, host, port, verdict, reason)
+       when is_function(fun, 4),
+       do: fun.(host, port, verdict, reason)
+
+  defp history_put(_policy, _host, _port, _verdict, _reason), do: :ok
 
   # Treat any classifier crash OR malformed return as `:unknown` —
   # fail-safe so a broken classifier never results in silently allowing
@@ -474,6 +526,45 @@ defmodule Glorbo.Network.Proxy do
 
   defp write_response(sock, payload), do: _ = :gen_tcp.send(sock, payload)
   defp safe_close(sock), do: _ = :gen_tcp.close(sock)
+
+  # History-cache wiring: if a server name/pid was passed via the
+  # `:history_server` opt, wrap the two cache ops; otherwise return
+  # nils that `history_hit/3` + `history_put/5` no-op on.
+  defp build_history_fun(opts) do
+    case Keyword.get(opts, :history_server) do
+      nil ->
+        nil
+
+      server ->
+        fn host, port ->
+          try do
+            Glorbo.Network.History.fetch(server, host, port)
+          rescue
+            _ -> :miss
+          catch
+            _, _ -> :miss
+          end
+        end
+    end
+  end
+
+  defp build_history_put_fun(opts) do
+    case Keyword.get(opts, :history_server) do
+      nil ->
+        nil
+
+      server ->
+        fn host, port, verdict, reason ->
+          try do
+            Glorbo.Network.History.put(server, host, port, verdict, reason)
+          rescue
+            _ -> :ok
+          catch
+            _, _ -> :ok
+          end
+        end
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Allowlist default

@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-23 per-company egress decision cache
+
+- `Glorbo.Network.History` — per-company ETS-backed cache of
+  classifier verdicts keyed by `{host, port}`, with per-entry TTL
+  (6-hour default) and lazy eviction on `fetch/4`.
+- `Glorbo.Network.Proxy.classify_unlisted/5` now consults the cache
+  via injected `history_fun` / `history_put_fun` handles before
+  invoking the classifier; a hit (`:allow` or `:deny`) short-
+  circuits without re-running the classifier. `:unknown` verdicts
+  are deliberately NOT cached — they need Director approval as the
+  resolution path.
+- 11 new tests: 7 in `Glorbo.Network.History` covering round-trip
+  semantics + TTL expiry + flush, 4 in `Glorbo.Network.Proxy`
+  verifying cache-hit short-circuits and unknown-verdict skip.
+
 ### Changed — GEP-25 R26.2b parser enforcement sweep
 
 - `Glorbo.Agent.Parser.validate/4` now requires `kind: agent/v1`
