@@ -503,6 +503,27 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute html =~ "gl-task-detail"
   end
 
+  test "open_task rejects non-task project files", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+
+    html = render_click(view, "open_task", %{"path" => "projects/website/project.md"})
+
+    assert html =~ "Invalid task path"
+    refute html =~ "gl-task-detail"
+  end
+
+  test "open_task rejects symlinked task files", %{conn: conn, base: base} do
+    tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
+    trap = Path.join(tasks_dir, "trap.md")
+    File.ln_s!(Path.join(base, "config.md"), trap)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    html = render_click(view, "open_task", %{"path" => "projects/website/tasks/trap.md"})
+
+    assert html =~ "Invalid task path"
+    refute html =~ "gl-task-detail"
+  end
+
   test "new_task_create rejects an unknown project", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "new_task")

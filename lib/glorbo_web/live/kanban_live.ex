@@ -29,7 +29,8 @@ defmodule GlorboWeb.KanbanLive do
   alias GlorboWeb.Components.TaskCard
   alias GlorboWeb.Components.TaskDetailForm
 
-  @task_path_re ~r{\Aprojects/.+/tasks/.+\.md\z}
+  @task_event_re ~r{\Aprojects/.+/tasks/.+\.md\z}
+  @task_path_re ~r{\Aprojects/[a-z0-9-]+/tasks/[a-z0-9-]+\.md\z}
 
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
@@ -213,7 +214,7 @@ defmodule GlorboWeb.KanbanLive do
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
 
     cond do
-      Regex.match?(@task_path_re, rel_path) ->
+      Regex.match?(@task_event_re, rel_path) ->
         base = base_dir()
         slug = socket.assigns.company_slug
 
@@ -1539,14 +1540,24 @@ defmodule GlorboWeb.KanbanLive do
   defp column_to_status(_), do: :error
 
   defp resolve_task_path(rel, company) when is_binary(rel) do
-    if String.starts_with?(rel, "projects/") and not String.contains?(rel, "..") do
-      {:ok, Path.join([base_dir(), "companies", company, rel])}
+    abs = Path.join([base_dir(), "companies", company, rel])
+
+    with true <- Regex.match?(@task_path_re, rel),
+         :ok <- ensure_regular_file(abs) do
+      {:ok, abs}
     else
-      :error
+      _ -> :error
     end
   end
 
   defp resolve_task_path(_, _), do: :error
+
+  defp ensure_regular_file(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> :ok
+      _ -> :error
+    end
+  end
 
   defp load_tasks(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])
