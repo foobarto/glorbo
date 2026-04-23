@@ -28,9 +28,17 @@ it's been in CHANGELOG for a cycle.
   catalog chip (status / model count / refreshed), and failure
   classification matches the spec matrix (`:auth` / `:unreachable` /
   `:stale` / `:shape`).
-- [ ] **GEP-32 phase 4 — `glorbo detect-providers` CLI verb + agent-
-  wizard model combobox.** Phase 3's cache is live and queryable,
-  so this tranche is unblocked.
+- [x] **GEP-32 phase 4 — `glorbo detect-providers` CLI verb + agent-
+  wizard model combobox.** Shipped the localhost probe (ollama,
+  llama.cpp, LocalAI, vLLM, LM Studio) with shape + Server-header +
+  body fingerprints, ProvidersLive `scan localhost` button, and
+  AgentLive `model` datalist backed by the `provider_models` cache.
+- [ ] **GEP-32 phase 4 follow-up — auto-activate discovered providers
+  via `Enable` flow.** Append-to-`~/.glorbo/providers.toml` when the
+  Director clicks "Enable" on a scan result.
+- [ ] **GEP-32 phase 4 follow-up — model combobox on KanbanLive
+  new-task quick-add.** Mirror AgentLive's provider-aware datalist
+  in the task-creation dropdown.
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.

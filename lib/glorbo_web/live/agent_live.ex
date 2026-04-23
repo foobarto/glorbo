@@ -39,6 +39,8 @@ defmodule GlorboWeb.AgentLive do
     only: [base_dir: 0, current_year_month: 0, two_dp: 1, zero_dp: 1]
 
   alias Glorbo.CLI.Registry, as: CLIRegistry
+  alias Glorbo.ProviderModel
+  alias Glorbo.Repo
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{StatusPill, StdoutTail}
 
@@ -90,6 +92,7 @@ defmodule GlorboWeb.AgentLive do
         |> assign(:wake_open?, false)
         |> assign(:config_editing?, false)
         |> assign(:provider_options, provider_options())
+        |> assign(:model_options, [])
         |> stream(:stdout, [], limit: -1000)
         |> ChatDrawer.State.wire_drawer()
 
@@ -402,11 +405,21 @@ defmodule GlorboWeb.AgentLive do
   # paperclip-ux-gaps §5 — the config panel is read-only on mount; the
   # director clicks "edit" to flip to a structured form that writes the
   # allow-listed keys back to AGENT.md frontmatter atomically.
-  def handle_event("config_edit", _params, socket),
-    do: {:noreply, assign(socket, :config_editing?, true)}
+  def handle_event("config_edit", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:config_editing?, true)
+     |> assign(:model_options, model_options(socket.assigns.detail.provider))}
+  end
 
   def handle_event("config_cancel", _params, socket),
     do: {:noreply, assign(socket, :config_editing?, false)}
+
+  # Live-update the model datalist whenever the provider field changes
+  # in the config form (GEP-32 phase 4).
+  def handle_event("config_form_change", params, socket) do
+    {:noreply, assign(socket, :model_options, model_options(params["provider"]))}
+  end
 
   def handle_event("config_save", params, socket) do
     # #277 — validate heartbeat cron before touching disk. A
@@ -1242,7 +1255,12 @@ defmodule GlorboWeb.AgentLive do
                 <dt>skills</dt>
                 <dd>{Enum.join(@detail.skills, ", ")}</dd>
               </dl>
-              <form :if={@config_editing?} phx-submit="config_save" class="gl-agent-config-form">
+              <form
+                :if={@config_editing?}
+                phx-submit="config_save"
+                phx-change="config_form_change"
+                class="gl-agent-config-form"
+              >
                 <label class="gl-form__row">
                   <span class="gl-form__label">provider</span>
                   <input
@@ -1259,7 +1277,17 @@ defmodule GlorboWeb.AgentLive do
                 </label>
                 <label class="gl-form__row">
                   <span class="gl-form__label">model</span>
-                  <input type="text" name="model" value={@detail.model} class="gl-input" required />
+                  <input
+                    type="text"
+                    name="model"
+                    value={@detail.model}
+                    class="gl-input"
+                    list="gl-agent-model-options"
+                    required
+                  />
+                  <datalist id="gl-agent-model-options">
+                    <option :for={m <- @model_options} value={m}></option>
+                  </datalist>
                 </label>
                 <label class="gl-form__row">
                   <span class="gl-form__label">reports_to</span>
@@ -2231,5 +2259,29 @@ defmodule GlorboWeb.AgentLive do
     |> Enum.sort()
   rescue
     _ -> ~w(claude-code codex gemini-cli hermes opencode pi)
+  end
+
+  # GEP-32 phase 4 — model combobox: return the cached model IDs for
+  # the given native provider alias (empty for CLI providers or
+  # anything the ModelCatalog hasn't refreshed yet). Read straight
+  # from the SQLite projection so the UI survives a catalog-process
+  # restart and renders identically after `glorbo reindex`.
+  defp model_options(nil), do: []
+  defp model_options(""), do: []
+
+  defp model_options(provider) when is_binary(provider) do
+    import Ecto.Query, only: [from: 2]
+
+    query =
+      from pm in ProviderModel,
+        where: pm.alias == ^provider,
+        select: pm.model_id,
+        order_by: [asc: pm.model_id]
+
+    Repo.all(query)
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
   end
 end

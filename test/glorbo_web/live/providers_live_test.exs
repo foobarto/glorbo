@@ -78,6 +78,25 @@ defmodule GlorboWeb.ProvidersLiveTest do
     end
   end
 
+  describe "localhost scan (GEP-32 phase 4)" do
+    @tag :capture_log
+    test "scan button surfaces probe results without crashing",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/providers")
+
+      # Nothing is listening on the detect-providers probe ports during
+      # tests; we just assert the handler wires through to Detect.run/0
+      # and surfaces the advisory block in the rendered HTML.
+      html = view |> element("button", "⌕ scan localhost") |> render_click()
+
+      assert html =~ "localhost scan"
+      # Each of the 5 canonical aliases should appear in the results.
+      Enum.each(["ollama", "llamacpp", "localai", "vllm", "lm-studio"], fn alias_name ->
+        assert html =~ alias_name
+      end)
+    end
+  end
+
   describe "version probing" do
     @tag :capture_log
     test "probe all button triggers Registry.refresh_with_version_probe/0",

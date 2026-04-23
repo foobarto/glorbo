@@ -93,6 +93,35 @@ defmodule Glorbo.CLITest do
     assert output2 =~ "0 changed"
   end
 
+  # GEP-32 phase 4 — `detect-providers` verb. We don't control what's
+  # running on the host at test time; assert only the wiring:
+  # verb routes, exit code is 0 or 1, and human output includes the
+  # expected header. Per-fingerprint tests live in
+  # test/glorbo/providers/detect_test.exs.
+  test ~S|dispatch(["detect-providers"]) routes to the probe + reports results| do
+    {verb, code, output} = CLI.dispatch(["detect-providers"])
+    assert verb == :detect_providers
+    assert code in [0, 1]
+    assert output =~ "probed"
+  end
+
+  test ~S|dispatch(["detect-providers", "--json"]) emits one JSON object per line| do
+    {verb, _code, output} = CLI.dispatch(["detect-providers", "--json"])
+    assert verb == :detect_providers
+
+    lines = output |> String.split("\n", trim: true)
+    assert lines != []
+
+    Enum.each(lines, fn line ->
+      assert {:ok, %{"alias" => _, "status" => _}} = Jason.decode(line)
+    end)
+  end
+
+  test ~S|dispatch(["detect-providers"]) surfaces in help text| do
+    {:help, 0, help} = CLI.dispatch([])
+    assert help =~ "detect-providers"
+  end
+
   test ~S|dispatch(["validate", PATH, "--json"]) emits NDJSON summary| do
     base =
       Path.join(

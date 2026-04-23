@@ -121,6 +121,45 @@ defmodule GlorboWeb.AgentLiveTest do
       assert agent_md =~ "provider: claude-code"
     end
 
+    # GEP-32 phase 4 — model datalist is populated from the cached
+    # `provider_models` projection for the currently-selected provider,
+    # so the director gets autocomplete suggestions alongside the free
+    # text fallback.
+    test "model datalist lists cached models for current provider",
+         %{conn: conn} do
+      Glorbo.Repo.insert_all(Glorbo.ProviderModel, [
+        %{
+          alias: "openai",
+          model_id: "gpt-5-alpha",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        },
+        %{
+          alias: "openai",
+          model_id: "gpt-4o",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        },
+        %{
+          alias: "openrouter",
+          model_id: "other/model",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        }
+      ])
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+      # Flip the agent over to the openai provider so model_options loads its cache.
+      render_click(view, "config_edit", %{})
+      html = render_change(view, "config_form_change", %{"provider" => "openai", "model" => ""})
+
+      assert html =~ ~s(id="gl-agent-model-options")
+      assert html =~ "gpt-4o"
+      assert html =~ "gpt-5-alpha"
+      refute html =~ "other/model"
+    end
+
     test "cancel returns to read-only view without writing", %{conn: conn, base: base} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
       render_click(view, "config_edit", %{})

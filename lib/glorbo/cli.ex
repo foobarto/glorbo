@@ -233,11 +233,46 @@ defmodule Glorbo.CLI do
     {:fmt, exit_code, output}
   end
 
+  # GEP-32 phase 4 — localhost auto-detect for native providers.
+  # Probes the known-port ladder, reports what's running. No side
+  # effects; activation (creating the provider TOML override) is a
+  # separate Director-triggered step.
+  @detect_switches [json: :boolean]
+  def dispatch(["detect-providers" | rest]) do
+    {opts, _argv, _invalid} = OptionParser.parse(rest, strict: @detect_switches)
+
+    detections = Glorbo.Providers.Detect.run()
+
+    output =
+      if opts[:json] do
+        detections
+        |> Enum.map_join("\n", fn det ->
+          det
+          |> Map.update!(:status, &Atom.to_string/1)
+          |> Map.update!(:detail, &normalize_detail_for_json/1)
+          |> Jason.encode!()
+        end)
+        |> Kernel.<>("\n")
+      else
+        header = "glorbo detect-providers — probed #{length(detections)} localhost candidate(s)\n"
+        body = Enum.map_join(detections, "\n", &Glorbo.Providers.Detect.format_line/1)
+        header <> body <> "\n"
+      end
+
+    exit_code = if Enum.any?(detections, &(&1.status == :ready)), do: 0, else: 1
+    {:detect_providers, exit_code, output}
+  end
+
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
     {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
   end
+
+  defp normalize_detail_for_json(nil), do: nil
+  defp normalize_detail_for_json(value) when is_binary(value), do: value
+  defp normalize_detail_for_json(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize_detail_for_json(value), do: inspect(value)
 
   defp render_fmt_output(opts, changed, stats) do
     mode = if opts[:write], do: "write", else: "check"
@@ -299,6 +334,8 @@ defmodule Glorbo.CLI do
                                Flags: --json, --summary, --severity lvl, --kind kind
       fmt [PATH]               Normalise YAML frontmatter key order + fences (GEP-25)
                                Flags: --check (default, exits 1 on drift), --write
+      detect-providers         Probe localhost for native providers (ollama, llama.cpp,
+                               LocalAI, vLLM, LM Studio). No side effects. Flags: --json
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 

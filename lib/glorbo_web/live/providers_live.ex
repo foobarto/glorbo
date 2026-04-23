@@ -22,6 +22,7 @@ defmodule GlorboWeb.ProvidersLive do
 
   alias Glorbo.CLI.Registry
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Providers.Detect
   alias Glorbo.Providers.ModelCatalog
 
   @impl true
@@ -36,6 +37,8 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign(:sidebar_active, :providers)
      |> assign(:probing, false)
      |> assign(:refreshing_models, false)
+     |> assign(:scanning, false)
+     |> assign(:scan_results, [])
      |> assign_registry_snapshot()}
   end
 
@@ -77,6 +80,20 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign_registry_snapshot()}
   end
 
+  # GEP-32 phase 4 — probe localhost for native providers. Results are
+  # advisory: discovering a provider does not auto-enable it; the
+  # Director still has to add the matching TOML entry before Glorbo
+  # will route dispatches at it.
+  def handle_event("scan_localhost", _params, socket) do
+    socket = assign(socket, :scanning, true)
+    results = detect_safe()
+
+    {:noreply,
+     socket
+     |> assign(:scanning, false)
+     |> assign(:scan_results, results)}
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -103,11 +120,36 @@ defmodule GlorboWeb.ProvidersLive do
           >
             {if @refreshing_models, do: "⟳ refreshing models…", else: "↻ refresh models"}
           </button>
+          <button
+            type="button"
+            class="gl-btn"
+            phx-click="scan_localhost"
+            disabled={@scanning}
+          >
+            {if @scanning, do: "⟳ scanning…", else: "⌕ scan localhost"}
+          </button>
           <button type="button" class="gl-btn gl-btn--primary" phx-click="probe" disabled={@probing}>
             {if @probing, do: "⟳ probing…", else: "⌕ probe all"}
           </button>
         </div>
       </header>
+
+      <section :if={@scan_results != []} class="gl-providers__scan">
+        <h2 class="gl-heading gl-heading--section">localhost scan</h2>
+        <p class="gl-overview__quote">
+          // Advisory only — add a matching TOML entry to route dispatches.
+        </p>
+        <ul class="gl-providers__scan-list">
+          <li
+            :for={r <- @scan_results}
+            class={"gl-providers__scan-row gl-providers__scan-row--" <> Atom.to_string(r.status)}
+          >
+            <span class="gl-tabular">{r.alias}</span>
+            <span class="gl-muted">{r.endpoint}</span>
+            <span>{scan_status_label(r.status)}</span>
+          </li>
+        </ul>
+      </section>
 
       <section class="gl-providers__summary">
         <span class="gl-pill gl-pill--alive">
@@ -225,6 +267,20 @@ defmodule GlorboWeb.ProvidersLive do
   catch
     _, _ -> %{}
   end
+
+  defp detect_safe do
+    Detect.run()
+  rescue
+    _ -> []
+  catch
+    _, _ -> []
+  end
+
+  defp scan_status_label(:ready), do: "reachable"
+  defp scan_status_label(:unreachable), do: "not listening"
+  defp scan_status_label(:shape_mismatch), do: "responded · unknown service"
+  defp scan_status_label(:wrong_fingerprint), do: "responded · other service"
+  defp scan_status_label(other), do: Atom.to_string(other)
 
   defp count_by_status(providers) do
     Enum.reduce(providers, %{routable: 0, untracked: 0, missing: 0}, fn p, acc ->

@@ -26,6 +26,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: "Phase 3 host-side ModelCatalog GenServer landed: per-provider `/v1/models` + Ollama `/api/tags` probes on explicit refresh, `~/.glorbo/cache/providers/*.json` cache, derived `provider_models` SQLite projection, reindex rebuild without network calls, `AgentBoot` soft-warn on unknown model, ProvidersLive model-count + catalog-status chip, and shared `Glorbo.Providers.NativeConfig` helpers extracted from Harness. Phase 4 (`glorbo detect-providers`, agent-wizard model combobox) remains open."
+  - date: 2026-04-23
+    status: Accepted
+    note: "Phase 4 partial: `glorbo detect-providers` CLI verb + ProvidersLive `scan localhost` button ship localhost auto-detection across ollama/llama.cpp/LocalAI/vLLM/LM Studio with shape + Server-header + body fingerprints. AgentLive config editor now renders a `model` datalist populated from the `provider_models` cache for the currently-selected provider. Auto-activation (append-to-`providers.toml` on Enable) and the KanbanLive new-task quick-add combobox are still open, but Director-driven discovery + manual enablement is now end-to-end."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
