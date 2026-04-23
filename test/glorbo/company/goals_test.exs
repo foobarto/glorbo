@@ -67,7 +67,12 @@ defmodule Glorbo.Company.GoalsTest do
       assert :ok =
                Goals.add_goal(path, %{slug: "a", title: "A", description: "why we care"})
 
-      assert File.read!(path) =~ "description: why we care"
+      # After yaml_scalar was unified on `FrontmatterWriter.yaml_scalar/1`
+      # (round-4 sweep), bare strings containing whitespace are quoted —
+      # the canonical escaper is strict-by-default. Either the quoted or
+      # the original bare form is a valid YAML emission; assert on
+      # what the canonical escaper produces today.
+      assert File.read!(path) =~ ~s(description: "why we care")
     end
 
     test "rejects empty slug", %{dir: dir} do

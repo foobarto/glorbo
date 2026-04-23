@@ -339,9 +339,13 @@ defmodule Glorbo.Restore do
       _ = Ecto.Migrator.run(repo, migrations_path, :up, all: true)
       :ok
     rescue
-      e -> {:error, {:migrate_failed, Exception.message(e)}}
+      e ->
+        Logger.debug("restore: migrate failed — #{inspect(e)}")
+        {:error, {:migrate_failed, Exception.message(e)}}
     catch
-      :exit, reason -> {:error, {:migrate_failed, inspect(reason)}}
+      :exit, reason ->
+        Logger.debug("restore: migrate exited — #{inspect(reason)}")
+        {:error, :migrate_failed}
     end
   end
 
@@ -352,10 +356,17 @@ defmodule Glorbo.Restore do
     {:ok, _} = Glorbo.Filesystem.Reindex.run(base: base)
     :ok
   rescue
-    e -> {:error, {:reindex_failed, Exception.message(e)}}
+    e ->
+      Logger.debug("restore: reindex raised — #{inspect(e)}")
+      {:error, {:reindex_failed, Exception.message(e)}}
   catch
-    :exit, reason -> {:error, {:reindex_failed, inspect(reason)}}
-    kind, reason -> {:error, {:reindex_failed, {kind, inspect(reason)}}}
+    :exit, reason ->
+      Logger.debug("restore: reindex exited — #{inspect(reason)}")
+      {:error, :reindex_failed}
+
+    kind, reason ->
+      Logger.debug("restore: reindex caught #{kind} — #{inspect(reason)}")
+      {:error, :reindex_failed}
   end
 
   defp maybe_fixer(true), do: :ok

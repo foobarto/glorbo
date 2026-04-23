@@ -1503,16 +1503,7 @@ defmodule GlorboWeb.KanbanLive do
     end <> attach_block
   end
 
-  defp yaml_scalar(s) when is_binary(s) do
-    if String.contains?(s, [":", "#", "[", "]", "\"", "'", "\n"]) do
-      escaped = s |> String.replace("\\", "\\\\") |> String.replace(~s("), ~s(\\"))
-      ~s("#{escaped}")
-    else
-      s
-    end
-  end
-
-  defp yaml_scalar(other), do: inspect(other)
+  defp yaml_scalar(v), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)
 
   defp default_new_task_form do
     %{project: "", title: "", assigned_to: "", priority: "", severity: "", description: ""}

@@ -401,7 +401,10 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  defp validate_provider(other), do: {:error, {:invalid_provider, inspect(other)}}
+  # Non-binary providers (YAML number, list, map) should report a safe
+  # shape tag rather than leak the struct contents via `inspect/1`
+  # into an error tuple that callers may surface to the Director.
+  defp validate_provider(other), do: {:error, {:invalid_provider, shape_tag(other)}}
 
   # Union of registry-loaded provider names and the static fallback.
   # If the registry Agent isn't running (common in unit tests) we fall
@@ -487,7 +490,8 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  defp validate_network(other, _provider, _kind), do: {:error, {:invalid_network, inspect(other)}}
+  defp validate_network(other, _provider, _kind),
+    do: {:error, {:invalid_network, shape_tag(other)}}
 
   defp provider_kind(provider_name) when is_binary(provider_name) do
     registry_kinds =
@@ -534,7 +538,24 @@ defmodule Glorbo.Agent.Parser do
   end
 
   defp validate_one_skill(other),
-    do: {:error, {:invalid_skill_name, inspect(other)}}
+    do: {:error, {:invalid_skill_name, shape_tag(other)}}
+
+  # Map a non-binary value to an opaque shape tag the Director can
+  # safely see without leaking struct/PID/path contents from
+  # `inspect/1`. Callers reach this only when the YAML was valid but
+  # the value has the wrong TYPE — which is what the caller cares
+  # about anyway.
+  defp shape_tag(v) when is_atom(v), do: {:atom, v}
+  defp shape_tag(v) when is_integer(v), do: :integer
+  defp shape_tag(v) when is_float(v), do: :float
+  defp shape_tag(v) when is_list(v), do: :list
+  defp shape_tag(v) when is_map(v), do: :map
+  defp shape_tag(v) when is_tuple(v), do: :tuple
+  defp shape_tag(v) when is_pid(v), do: :pid
+  defp shape_tag(v) when is_reference(v), do: :reference
+  defp shape_tag(v) when is_function(v), do: :function
+  defp shape_tag(nil), do: nil
+  defp shape_tag(_), do: :unknown
 
   # Heartbeat: cron string or nil. Validation of cron SHAPE is the Scheduler's
   # job at register-time; here we only check it's a binary or absent.

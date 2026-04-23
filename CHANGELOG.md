@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — consolidated YAML scalar escaping + error-tuple hygiene
+
+- **[MED]** `Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1` is
+  now the single canonical YAML-scalar quoter. Four private
+  copies (`TaskDefinition`, `Actions`, `Goals`, `KanbanLive`) were
+  delegating through a subtly-different local regex each — a
+  seam for escape-drift bugs. All now thin-delegate. The merged
+  implementation is the stricter of the set: quotes on
+  whitespace / reserved words / control chars, escapes
+  `\\`/`"`/`\n`/`\r`/`\t`, strips remaining control bytes.
+  Existing test that asserted bare-scalar output on a
+  whitespace-containing string was updated to match the now-
+  always-quoted emission — the unquoted form was valid YAML but
+  the quoted form is strictly safer.
+- **[MED]** Scrubbed `inspect(reason)` from two Elixir→caller
+  error-tuple paths that could leak internal state:
+  - `Glorbo.Restore.migrate/1` + `reindex/1` — downgrade the raw
+    exit reason to `Logger.debug` and return a bare
+    `{:error, :migrate_failed}` / `{:error, :reindex_failed}`.
+  - `Glorbo.Agent.Parser.validate_provider/1`,
+    `validate_network/3`, `validate_one_skill/1` — now return
+    opaque shape tags (`:atom`, `:integer`, `:list`, etc.) when
+    the value has the wrong type, instead of `inspect()`-ing the
+    struct contents into the error tuple.
+
 ### Security — Restore transactional extract (rollback-safe)
 
 - **[HIGH]** `Glorbo.Restore.extract/2` now unpacks archives into a

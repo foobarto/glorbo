@@ -131,15 +131,5 @@ defmodule Glorbo.Company.Goals do
       if description == "", do: [], else: ["    description: #{yaml_scalar(description)}"]
   end
 
-  defp yaml_scalar(s) do
-    needs_quote? =
-      String.contains?(s, [":", "#", "[", "]", "\"", "'", "\n"]) or
-        String.starts_with?(s, " ") or String.ends_with?(s, " ")
-
-    if needs_quote? do
-      ~s("#{String.replace(s, "\"", "\\\"")}")
-    else
-      s
-    end
-  end
+  defp yaml_scalar(s), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(s)
 end

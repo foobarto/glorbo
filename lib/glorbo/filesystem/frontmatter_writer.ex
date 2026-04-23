@@ -109,15 +109,38 @@ defmodule Glorbo.Filesystem.FrontmatterWriter do
   end
 
   @doc """
-  YAML-scalar quoter — mirrors `TaskDefinition.yaml_scalar/1`. Values
-  that look like booleans / nulls / contain YAML-special characters
-  are double-quoted; simple identifiers fall through verbatim.
+  YAML-scalar quoter. The canonical implementation; every other
+  `yaml_scalar` in the codebase should delegate here.
+
+  Behaviour:
+
+    * `nil` → the bare YAML token `null`.
+    * Integer / float → `to_string/1` (YAML parses these unambiguously).
+    * Empty string → `""` (bare `` would parse as null).
+    * Binary containing YAML-ambiguous characters (spaces, `#`, `:`,
+      brackets, flow indicators), reserved words (true/false/null/
+      yes/no), or ASCII control chars (`\\x00..\\x1f`) is
+      double-quoted with standard escapes (`\\`, `\\\"`, `\\n`, `\\r`,
+      `\\t`). Any remaining control byte is stripped so the scalar
+      stays single-line.
+    * Binary without ambiguity falls through verbatim — `status: approved`
+      stays unquoted.
+    * Anything else → `to_string/1` then recurse.
   """
   def yaml_scalar(nil), do: "null"
+  def yaml_scalar(""), do: ~s("")
 
   def yaml_scalar(v) when is_binary(v) do
-    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z/ do
-      escaped = String.replace(v, ~s("), ~s(\\"))
+    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z|[\x00-\x1f]/ do
+      escaped =
+        v
+        |> String.replace("\\", "\\\\")
+        |> String.replace(~s("), ~s(\\"))
+        |> String.replace("\n", "\\n")
+        |> String.replace("\r", "\\r")
+        |> String.replace("\t", "\\t")
+        |> String.replace(~r/[\x00-\x1f]/, "")
+
       ~s("#{escaped}")
     else
       v

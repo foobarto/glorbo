@@ -667,29 +667,7 @@ defmodule GlorboWeb.Actions do
   defp validate_reason(r) when is_binary(r), do: :ok
   defp validate_reason(_), do: {:error, :invalid_reason}
 
-  # WR-05: YAML scalar emitter matching Glorbo.TaskDefinition.yaml_scalar/1
-  # semantics — quotes when the value contains YAML-ambiguous chars or a
-  # reserved word, and escapes `\` / `"` / newlines / control chars so the
-  # resulting frontmatter is always parse-safe. Empty strings emit `""`.
-  defp yaml_scalar(""), do: ~s("")
-
-  defp yaml_scalar(v) when is_binary(v) do
-    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z|[\x00-\x1f]/ do
-      escaped =
-        v
-        |> String.replace("\\", "\\\\")
-        |> String.replace(~s("), ~s(\\"))
-        |> String.replace("\n", "\\n")
-        |> String.replace("\r", "\\r")
-        |> String.replace("\t", "\\t")
-        # Strip any remaining control chars to keep scalars single-line.
-        |> String.replace(~r/[\x00-\x1f]/, "")
-
-      ~s("#{escaped}")
-    else
-      v
-    end
-  end
+  defp yaml_scalar(v), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)
 
   defp validate_task_path(p) when is_binary(p) do
     cond do

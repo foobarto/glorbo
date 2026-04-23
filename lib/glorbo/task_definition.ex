@@ -498,22 +498,7 @@ defmodule Glorbo.TaskDefinition do
     end
   end
 
-  # Quote scalars that could be YAML-ambiguous (spaces, reserved words,
-  # special punctuation). Unquoted simple identifiers fall through verbatim
-  # so `status: approved` stays `status: approved` rather than `status: "approved"`.
-  defp yaml_scalar(nil), do: "null"
-
-  defp yaml_scalar(v) when is_binary(v) do
-    if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z/ do
-      escaped = String.replace(v, ~s("), ~s(\\"))
-      ~s("#{escaped}")
-    else
-      v
-    end
-  end
-
-  defp yaml_scalar(v) when is_integer(v) or is_float(v), do: to_string(v)
-  defp yaml_scalar(v), do: yaml_scalar(to_string(v))
+  defp yaml_scalar(v), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)
 
   # ---------------------------------------------------------------------------
   # Internals
