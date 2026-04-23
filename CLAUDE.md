@@ -6,7 +6,7 @@ repo. Kept deliberately short — load-bearing detail lives in
 
 ## Project status
 
-Glorbo is at **v0.2.0** (pre-1.0). Source under `lib/` (`glorbo`,
+Glorbo is at **v0.3.0** (pre-1.0). Source under `lib/` (`glorbo`,
 `glorbo_web`). No Python runtime, no container runtime.
 
 ## Feature development — six-phase checklist

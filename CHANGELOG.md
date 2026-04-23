@@ -10,6 +10,34 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-23
+
+Third pre-1.0 minor on the same day: GEP-31 lands and makes Linux
+`network: proxy` honest. Proxy agents no longer share the host netns;
+they run under a `pasta`-created private netns where only the Glorbo
+proxy port is reachable.
+
+### Added — GEP-31 network-namespace isolation for `network: proxy`
+
+- Linux `network: proxy` dispatches now wrap the existing `bwrap`
+  launch in `pasta --splice-only ... -T <proxy_port>`, so only the
+  per-company proxy listener is reachable on loopback inside the agent
+  namespace.
+- `Agent.Dispatch` now resolves the per-company proxy listener and
+  passes it through to the sandbox launcher. The sandbox normalizes the
+  proxy URL to `http://127.0.0.1:<port>` so CLI-backed and native
+  providers share the same loopback-only contract inside the netns.
+- If `pasta` is missing on Linux, `network: proxy` dispatches are now
+  refused instead of silently degrading to the old advisory host-netns
+  behavior. Dispatch emits a once-per-company `agent.netns_unavailable`
+  audit event so operators see the prerequisite failure.
+- `glorbo doctor` now probes `pasta` and `glorbo doctor --fix` can
+  explain the install step (`passt` package) even though it cannot
+  install distro packages itself.
+- The proxy integration suite now asserts the real load-bearing
+  property: unrelated host loopback ports are blocked while the proxy
+  port remains reachable.
+
 ## [0.2.0] — 2026-04-23
 
 Second pre-1.0 minor on the same day: GEP-32's native harness moves
@@ -2668,7 +2696,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/foobarto/glorbo/releases/tag/v0.3.0
 [0.2.0]: https://github.com/foobarto/glorbo/releases/tag/v0.2.0
 [0.1.0]: https://github.com/foobarto/glorbo/releases/tag/v0.1.0
 [0.0.4]: https://github.com/foobarto/glorbo/releases/tag/v0.0.4

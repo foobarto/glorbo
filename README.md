@@ -37,6 +37,9 @@ files — because that's all there is.
 No cloud. No SaaS. No Kubernetes. No database cluster. Just a folder, some
 sandboxes, and an Elixir process that keeps the office running.
 
+Glorbo is not a security product. It is a user-friendly local tool that
+tries to stay security-minded and honest about its boundaries.
+
 ```
 ~/.glorbo/
 ├── glorbo                    # Single binary. That's the app.
@@ -243,6 +246,7 @@ a functional install on a fresh host (verified end-to-end by
 
 - Linux (x86_64 or aarch64)
 - `bubblewrap` (`bwrap`) — available in every major distro's package manager
+- `passt` / `pasta` if you want enforced `network: proxy` on Linux
 - `inotify-tools`
 - On Ubuntu 24.04 / Debian 13, an unconfined AppArmor profile for
   `/usr/bin/bwrap` (the kernel blocks unprivileged user-namespace network
@@ -337,6 +341,12 @@ Those tools run inside the same sandbox mount view as CLI-backed agents,
 and their activity is replayed into the company audit log. The next
 native-tools tranche is `bash` + `web_fetch`; they are not shipped in
 `v0.2.0`.
+
+**Proxy-only egress enforcement (v0.3.0, GEP-31)** — On Linux,
+`network: proxy` now wraps the existing bwrap launch in `pasta` so only
+the Glorbo proxy port is reachable inside the agent netns. If `pasta`
+is missing, proxy dispatch is refused instead of silently degrading to
+host-network access.
 
 ### Local development
 
@@ -484,7 +494,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.2.0:
+All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.3.0:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -579,8 +589,8 @@ Network policy:
 
 ```
 network: none        # --unshare-net (kernel-enforced egress block)
-network: proxy       # Inherits host netns; HTTP(S)_PROXY points at an
-                     #   allowlisted hostname proxy (advisory)
+network: proxy       # Linux: wraps bwrap in pasta and exposes only the
+                     #   allowlisted proxy port inside the agent netns
 network: open        # Inherits host netns; no proxy
 ```
 
@@ -632,8 +642,16 @@ captures the project's design philosophy in one page.
 
 ## Project Status
 
-Pre-1.0. Latest release is **v0.2.0** (2026-04-23); the release trail so
+Pre-1.0. Latest release is **v0.3.0** (2026-04-23); the release trail so
 far, newest first:
+
+**v0.3.0** shipped 2026-04-23:
+
+- **GEP-31 — proxy netns enforcement** ✓ — Linux `network: proxy`
+  now wraps the existing bwrap launch in `pasta --splice-only`, exposes
+  only the per-company proxy port inside the agent netns, refuses proxy
+  dispatch when `pasta` is missing, and adds doctor/install guidance
+  for the new prerequisite.
 
 **v0.2.0** shipped 2026-04-23:
 
@@ -776,8 +794,7 @@ runtime):
 Pending for a later release: GEP-23 Phase 4 (real LLM dispatch
 for smart-mode classifier + director-approval sentinels for
 `:unknown`); GEP-26 Phase B (multi-provider blind A/B scoring
-UI); `proxy` netns + nftables egress hardening; the wider
-GEP-9 (MCP/ACP protocol integration); optional GEP-18
+UI); the wider GEP-9 (MCP/ACP protocol integration); optional GEP-18
 agentcompanies/v1 schema convergence.
 
 Active design work lives in `docs/geps/`. Historical phase plans

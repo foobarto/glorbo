@@ -168,3 +168,10 @@ it's been in CHANGELOG for a cycle.
   company audit log.
 - [x] **v0.2.0 shipped.** Second pre-1.0 minor: GEP-32 phase 2a is now
   on the release surface.
+- [x] **GEP-31 shipped (2026-04-23).** Linux `network: proxy` now
+  wraps the existing bwrap launch in `pasta --splice-only`, exposes
+  only the per-company proxy port inside the agent netns, refuses
+  proxy dispatch when `pasta` is missing, and rewrites the proxy
+  integration suite around blocked host loopback reachability.
+- [x] **v0.3.0 shipped.** Third pre-1.0 minor: GEP-31's enforced
+  proxy-only Linux networking is now on the release surface.
