@@ -75,6 +75,8 @@ defmodule GlorboWeb.MCP.Session do
     * `:client` — `mcp:<slug>` actor string (informational)
     * `:base`   — `~/.glorbo` root, used by the Session if it ever
       needs to read filesystem state directly.
+    * `:idle_timeout_ms` — idle reap window while no SSE stream is
+      attached (default: 5 minutes).
   """
   @spec start_session(map()) :: {:ok, String.t()} | {:error, term()}
   def start_session(opts \\ %{}) do
@@ -202,17 +204,30 @@ defmodule GlorboWeb.MCP.Session do
     GenServer.start_link(__MODULE__, opts, name: via(session_id))
   end
 
+  # Threatmodel T5: sessions are client-owned, but the server still
+  # needs to reap abandoned ones when the client never sends DELETE.
+  # Five minutes is generous for editor reconnects and human-driven
+  # pauses, while still guaranteeing a dead local client cannot pin the
+  # full session pool indefinitely.
+  @default_idle_timeout_ms 5 * 60 * 1_000
+
   @impl true
   def init(opts) do
-    state = %{
-      session_id: Map.fetch!(opts, :session_id),
-      client: Map.get(opts, :client, "unknown"),
-      base: Map.get(opts, :base),
-      subscribed_uris: MapSet.new(),
-      topics: %{},
-      sse_pid: nil,
-      sse_monitor_ref: nil
-    }
+    state =
+      %{
+        session_id: Map.fetch!(opts, :session_id),
+        client: Map.get(opts, :client, "unknown"),
+        base: Map.get(opts, :base),
+        subscribed_uris: MapSet.new(),
+        topics: %{},
+        sse_pid: nil,
+        sse_monitor_ref: nil,
+        idle_timeout_ms:
+          normalise_idle_timeout(Map.get(opts, :idle_timeout_ms, @default_idle_timeout_ms)),
+        idle_token: nil,
+        idle_timer_ref: nil
+      }
+      |> schedule_idle_timeout()
 
     {:ok, state}
   end
@@ -230,29 +245,30 @@ defmodule GlorboWeb.MCP.Session do
     cond do
       MapSet.member?(state.subscribed_uris, uri) ->
         # Idempotent: already subscribed, no-op.
-        {:reply, :ok, state}
+        {:reply, :ok, touch(state)}
 
       MapSet.size(state.subscribed_uris) >= @max_subscriptions_per_session ->
-        {:reply, {:error, :subscription_cap_reached}, state}
+        {:reply, {:error, :subscription_cap_reached}, touch(state)}
 
       true ->
         case uri_to_topic(uri) do
           {:ok, topic} ->
-            {:reply, :ok, add_subscription(state, uri, topic)}
+            {:reply, :ok, state |> add_subscription(uri, topic) |> touch()}
 
           {:error, reason} ->
-            {:reply, {:error, reason}, state}
+            {:reply, {:error, reason}, touch(state)}
         end
     end
   end
 
   def handle_call({:unsubscribe, uri}, _from, state) do
-    {:reply, :ok, drop_subscription(state, uri)}
+    {:reply, :ok, state |> drop_subscription(uri) |> touch()}
   end
 
   def handle_call({:attach_sse, pid}, _from, state) do
     state =
       state
+      |> cancel_idle_timeout()
       |> demonitor_sse()
       |> Map.put(:sse_pid, pid)
       |> Map.put(:sse_monitor_ref, Process.monitor(pid))
@@ -261,18 +277,18 @@ defmodule GlorboWeb.MCP.Session do
   end
 
   def handle_call({:detach_sse, pid}, _from, %{sse_pid: pid} = state) do
-    {:reply, :ok, demonitor_sse(state) |> Map.put(:sse_pid, nil)}
+    {:reply, :ok, state |> demonitor_sse() |> Map.put(:sse_pid, nil) |> schedule_idle_timeout()}
   end
 
   def handle_call({:detach_sse, _other}, _from, state) do
-    {:reply, :ok, state}
+    {:reply, :ok, touch(state)}
   end
 
   def handle_call(:subscribed_uris, _from, state) do
-    {:reply, state.subscribed_uris |> MapSet.to_list() |> Enum.sort(), state}
+    {:reply, state.subscribed_uris |> MapSet.to_list() |> Enum.sort(), touch(state)}
   end
 
-  def handle_call(:ping, _from, state), do: {:reply, :pong, state}
+  def handle_call(:ping, _from, state), do: {:reply, :pong, touch(state)}
 
   @impl true
   def handle_info({:file_event, rel, _events}, state) do
@@ -294,10 +310,18 @@ defmodule GlorboWeb.MCP.Session do
 
   def handle_info({:DOWN, ref, :process, pid, _reason}, %{sse_monitor_ref: ref} = state) do
     if state.sse_pid == pid do
-      {:noreply, state |> demonitor_sse() |> Map.put(:sse_pid, nil)}
+      {:noreply,
+       state
+       |> demonitor_sse()
+       |> Map.put(:sse_pid, nil)
+       |> schedule_idle_timeout()}
     else
       {:noreply, state}
     end
+  end
+
+  def handle_info({:idle_timeout, token}, %{idle_token: token, sse_pid: nil} = state) do
+    {:stop, :normal, cancel_idle_timeout(state)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -397,6 +421,34 @@ defmodule GlorboWeb.MCP.Session do
     Process.demonitor(ref, [:flush])
     %{state | sse_monitor_ref: nil}
   end
+
+  defp touch(%{sse_pid: nil} = state), do: schedule_idle_timeout(state)
+  defp touch(state), do: state
+
+  defp schedule_idle_timeout(%{idle_timeout_ms: nil} = state), do: state
+  defp schedule_idle_timeout(%{sse_pid: pid} = state) when is_pid(pid), do: cancel_idle_timeout(state)
+
+  defp schedule_idle_timeout(state) do
+    token = make_ref()
+    timer_ref = Process.send_after(self(), {:idle_timeout, token}, state.idle_timeout_ms)
+
+    state
+    |> cancel_idle_timeout()
+    |> Map.put(:idle_token, token)
+    |> Map.put(:idle_timer_ref, timer_ref)
+  end
+
+  defp cancel_idle_timeout(%{idle_timer_ref: nil} = state), do: %{state | idle_token: nil}
+
+  defp cancel_idle_timeout(%{idle_timer_ref: timer_ref} = state) do
+    _ = Process.cancel_timer(timer_ref)
+    %{state | idle_token: nil, idle_timer_ref: nil}
+  end
+
+  defp normalise_idle_timeout(timeout_ms) when is_integer(timeout_ms) and timeout_ms > 0,
+    do: timeout_ms
+
+  defp normalise_idle_timeout(_), do: nil
 
   defp notify_matching(%{sse_pid: nil}, _filter), do: :ok
 

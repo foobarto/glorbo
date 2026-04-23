@@ -119,7 +119,7 @@ defmodule GlorboWeb.MCP.Plug do
     with {:ok, envelope, conn} <- read_envelope(conn),
          {:ok, method, params, id} <- extract_request(envelope),
          :ok <- validate_protocol_version(conn, method),
-         {:ok, session_id, conn} <- ensure_session(conn, method) do
+         {:ok, session_id, conn} <- ensure_session(conn, method, id) do
       context = build_context(conn, session_id)
 
       if is_nil(id) do
@@ -193,6 +193,21 @@ defmodule GlorboWeb.MCP.Plug do
             )
           )
         )
+
+      {:error, {:session_start_failed, id, reason}} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          503,
+          Jason.encode!(
+            rpc_error(
+              id,
+              -32_000,
+              "Server error",
+              %{"reason" => "session_start_failed", "detail" => inspect(reason)}
+            )
+          )
+        )
     end
   end
 
@@ -200,7 +215,7 @@ defmodule GlorboWeb.MCP.Plug do
   # arrive with an `Mcp-Session-Id` header that maps to a live
   # Session GenServer. Returning `{:error, {:unknown_session, id}}`
   # bubbles up to `handle_post/1` as a 404 JSON-RPC error.
-  defp ensure_session(conn, "initialize") do
+  defp ensure_session(conn, "initialize", id) do
     context_opts = %{
       client: client_name(conn),
       base: Glorbo.Filesystem.Hierarchy.default_root()
@@ -208,11 +223,11 @@ defmodule GlorboWeb.MCP.Plug do
 
     case Session.start_session(context_opts) do
       {:ok, session_id} -> {:ok, session_id, conn}
-      {:error, reason} -> {:error, {:session_start_failed, reason}}
+      {:error, reason} -> {:error, {:session_start_failed, id, reason}}
     end
   end
 
-  defp ensure_session(conn, _method) do
+  defp ensure_session(conn, _method, _id) do
     case get_req_header(conn, "mcp-session-id") do
       [session_id | _] when is_binary(session_id) and session_id != "" ->
         if Session.exists?(session_id) do

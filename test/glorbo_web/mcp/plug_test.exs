@@ -465,5 +465,45 @@ defmodule GlorboWeb.MCP.PlugTest do
       assert %{"error" => %{"code" => -32_002, "message" => "No active session"}} =
                Jason.decode!(conn.resp_body)
     end
+
+    test "initialize returns 503 when the session supervisor is at capacity" do
+      active = DynamicSupervisor.count_children(GlorboWeb.MCP.SessionSupervisor).active
+
+      session_ids =
+        for _ <- 1..max(256 - active, 0) do
+          {:ok, session_id} =
+            GlorboWeb.MCP.Session.start_session(%{
+              client: "test",
+              base: "/tmp",
+              idle_timeout_ms: 5_000
+            })
+
+          session_id
+        end
+
+      on_exit(fn ->
+        Enum.each(session_ids, &GlorboWeb.MCP.Session.terminate_session/1)
+      end)
+
+      conn =
+        post_json(%{
+          "jsonrpc" => "2.0",
+          "id" => 99,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "2025-06-18"}
+        })
+        |> McpPlug.call(@opts)
+
+      assert conn.status == 503
+
+      assert %{
+               "id" => 99,
+               "error" => %{
+                 "code" => -32_000,
+                 "message" => "Server error",
+                 "data" => %{"reason" => "session_start_failed"}
+               }
+             } = Jason.decode!(conn.resp_body)
+    end
   end
 end

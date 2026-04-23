@@ -9,8 +9,14 @@ defmodule GlorboWeb.MCP.SessionTest do
   alias GlorboWeb.MCP.Server
   alias GlorboWeb.MCP.Session
 
-  defp start_session(base) do
-    {:ok, session_id} = Session.start_session(%{client: "test", base: base})
+  defp start_session(base, opts \\ []) do
+    session_opts =
+      opts
+      |> Enum.into(%{})
+      |> Map.put(:client, "test")
+      |> Map.put(:base, base)
+
+    {:ok, session_id} = Session.start_session(session_opts)
 
     on_exit(fn -> Session.terminate_session(session_id) end)
 
@@ -28,6 +34,28 @@ defmodule GlorboWeb.MCP.SessionTest do
 
       assert Session.exists?(session_id)
       refute Session.exists?("no-such-session")
+    end
+
+    test "idle session auto-expires without an attached SSE stream" do
+      base = TmpGlorboHome.setup()
+      session_id = start_session(base, idle_timeout_ms: 40)
+
+      assert Session.exists?(session_id)
+      Process.sleep(80)
+      refute Session.exists?(session_id)
+    end
+
+    test "attached SSE stream suppresses idle expiry until detach" do
+      base = TmpGlorboHome.setup()
+      session_id = start_session(base, idle_timeout_ms: 40)
+
+      :ok = Session.attach_sse(session_id, self())
+      Process.sleep(80)
+      assert Session.exists?(session_id)
+
+      :ok = Session.detach_sse(session_id, self())
+      Process.sleep(80)
+      refute Session.exists?(session_id)
     end
   end
 
@@ -64,6 +92,24 @@ defmodule GlorboWeb.MCP.SessionTest do
       assert length(uris) == 4
       assert "glorbo://audit/acme" in uris
       assert "glorbo://chat/acme/general" in uris
+    end
+
+    test "caps subscriptions per session" do
+      base = TmpGlorboHome.setup()
+      session_id = start_session(base)
+
+      for i <- 1..64 do
+        uri = "glorbo://audit/co#{i}"
+        assert {:reply, %{}} = dispatch("resources/subscribe", %{"uri" => uri}, base, session_id)
+      end
+
+      assert {:error, -32_602, "Invalid params", %{"reason" => ":subscription_cap_reached"}} =
+               dispatch(
+                 "resources/subscribe",
+                 %{"uri" => "glorbo://audit/overflow"},
+                 base,
+                 session_id
+               )
     end
 
     test "rejects an unsupported URI with -32602" do
