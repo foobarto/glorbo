@@ -1313,9 +1313,8 @@ defmodule GlorboWeb.AgentLive do
                   <span class="gl-form__label">network</span>
                   <select name="network" class="gl-input">
                     <option value="none" selected={@detail.network == "none"}>none</option>
-                    <option value="outgoing" selected={@detail.network == "outgoing"}>
-                      outgoing
-                    </option>
+                    <option value="proxy" selected={@detail.network == "proxy"}>proxy</option>
+                    <option value="open" selected={@detail.network == "open"}>open</option>
                   </select>
                 </label>
                 <label class="gl-form__row">

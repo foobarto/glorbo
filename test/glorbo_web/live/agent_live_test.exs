@@ -64,14 +64,14 @@ defmodule GlorboWeb.AgentLiveTest do
         "model" => "lmstudio/qwen/qwen3.6-35b-a3b",
         "reports_to" => "",
         "heartbeat" => "* * * * *",
-        "network" => "outgoing"
+        "network" => "proxy"
       })
 
       agent_md = Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"])
       content = File.read!(agent_md)
       assert content =~ "provider: opencode"
       assert content =~ "model: lmstudio/qwen/qwen3.6-35b-a3b"
-      assert content =~ "network: outgoing"
+      assert content =~ "network: proxy"
     end
 
     # #277 — reject an invalid heartbeat cron before it reaches disk.
@@ -88,7 +88,7 @@ defmodule GlorboWeb.AgentLiveTest do
           "model" => "claude-sonnet-4-5",
           "reports_to" => "",
           "heartbeat" => "wutang-clan",
-          "network" => "outgoing"
+          "network" => "proxy"
         })
 
       assert html =~ "Invalid heartbeat cron"
@@ -112,7 +112,7 @@ defmodule GlorboWeb.AgentLiveTest do
         "model" => "claude-sonnet-4-5",
         "reports_to" => "",
         "heartbeat" => "",
-        "network" => "outgoing"
+        "network" => "proxy"
       })
 
       agent_md =
