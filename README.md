@@ -7,11 +7,7 @@
   <a href="https://github.com/foobarto/glorbo/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/foobarto/glorbo?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
   <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.18.4-6E4A7E?logo=elixir&logoColor=white"></a>
-  <a href="https://erlang.org"><img alt="OTP" src="https://img.shields.io/badge/otp-28.0-A90533?logo=erlang&logoColor=white"></a>
-  <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-linux%20x86__64%20%7C%20aarch64-lightgrey"></a>
   <a href="SECURITY.md"><img alt="Security Policy" src="https://img.shields.io/badge/security-policy-informational"></a>
-  <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"></a>
-  <a href="https://github.com/foobarto/glorbo/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/foobarto/glorbo"></a>
 </p>
 
 # Glorbo
@@ -19,258 +15,97 @@
 > *Finally, a grumbo-compatible agent orchestrator. The fleeb juice is included.*
 
 Glorbo is a self-hosted agent orchestration platform that models companies as
-real organisations — with org charts, goals, budgets, governance, and
-communication — and runs AI agents as employees inside kernel-level sandboxes.
+real organisations — org charts, goals, budgets, governance, chat — and runs
+AI agents as employees inside kernel-level sandboxes.
 
 **Like Obsidian, but for your agents.** Everything is markdown. Everything is a
-file. Everyone has a Glorbo in their home directory.
-
----
-
-## What Is This
-
-You define a company. You hire agents. You give them jobs. They do the jobs.
-They talk to each other through chat channels and task boards. You supervise
-from a real-time dashboard. If something goes wrong, you check the markdown
-files — because that's all there is.
-
-No cloud. No SaaS. No Kubernetes. No database cluster. Just a folder, some
-sandboxes, and an Elixir process that keeps the office running.
-
-Glorbo is not a security product. It is a user-friendly local tool that
-tries to stay security-minded and honest about its boundaries.
+file. No cloud, no SaaS, no Kubernetes — just a folder, some `bwrap` sandboxes,
+and an Elixir process.
 
 ```
 ~/.glorbo/
 ├── glorbo                    # Single binary. That's the app.
-├── glorbo.db                 # SQLite index. Rebuildable. Disposable.
-└── companies/
-    └── acme/
-        ├── company.md        # Mission, budget, settings
-        ├── agents/
-        │   ├── ceo/
-        │   │   ├── agent.md  # Identity, permissions, model config
-        │   │   ├── inbox/    # Tasks and messages land here
-        │   │   ├── outbox/   # Agent writes here, Glorbo routes
-        │   │   └── workspace/
-        │   └── engineer/
-        ├── channels/
-        │   ├── general.md    # Append-only chat logs
-        │   └── engineering.md
-        ├── projects/
-        │   └── website-redesign/
-        │       ├── project.md
-        │       └── tasks/
-        └── audit/
-            └── 2026-04.jsonl # Append-only. Never modified. Never deleted.
+├── glorbo.db                 # SQLite index. Rebuildable.
+└── companies/acme/
+    ├── company.md            # Mission, budget, settings
+    ├── agents/ceo/AGENT.md   # Identity, permissions, model
+    ├── channels/general.md   # Append-only chat logs
+    ├── projects/<slug>/tasks/
+    └── audit/2026-04.jsonl   # Append-only. Never modified.
 ```
 
-Back up with `tar`. Version-control with `git`. Move to another machine with
-`scp`. Debug with `cat`.
+Back up with `tar`. Version-control with `git`. Move with `scp`. Debug with
+`cat`.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td><img src="assets/screenshots/overview.png" alt="Overview: company cards + next-step hint" width="100%"></td>
-    <td><img src="assets/screenshots/company.png" alt="Company page: stat cards, 14-day rollup strip, agent roster, org chart" width="100%"></td>
+    <td><img src="assets/screenshots/overview.png" alt="Overview" width="100%"></td>
+    <td><img src="assets/screenshots/company.png" alt="Company" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><code>/companies</code> — overview grid with inline slug-availability probe</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;</code> — 14-day rollups: runs / success rate / tasks by status / by priority</sub></td>
+    <td align="center"><sub><code>/companies</code></sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;</code> — rollups, roster, org chart</sub></td>
   </tr>
   <tr>
-    <td><img src="assets/screenshots/kanban.png" alt="Kanban board with goal filter and drag-drop lanes" width="100%"></td>
-    <td><img src="assets/screenshots/agent.png" alt="Agent detail: identity, stdout tail, sandbox argv, config edit form" width="100%"></td>
+    <td><img src="assets/screenshots/kanban.png" alt="Kanban" width="100%"></td>
+    <td><img src="assets/screenshots/agent.png" alt="Agent" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/kanban?goal=&lt;slug&gt;</code> — goal-scoped board</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/agents/&lt;slug&gt;</code> — runs tab w/ tool-call counts, inline config edit</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/kanban</code></sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/agents/&lt;slug&gt;</code></sub></td>
   </tr>
   <tr>
-    <td><img src="assets/screenshots/goals.png" alt="Goals page: per-goal roll-up with status breakdown" width="100%"></td>
-    <td><img src="assets/screenshots/skills.png" alt="Skills marketplace: builtin / custom / shadowed" width="100%"></td>
+    <td><img src="assets/screenshots/inbox.png" alt="Inbox" width="100%"></td>
+    <td><img src="assets/screenshots/providers.png" alt="Providers" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/goals</code> — goal-scoped task rollups (v0.0.3)</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/skills</code> — builtin + custom skills with used-by counts (v0.0.3)</sub></td>
-  </tr>
-  <tr>
-    <td><img src="assets/screenshots/inbox.png" alt="Unified director inbox with approve / deny / archive" width="100%"></td>
-    <td><img src="assets/screenshots/audit.png" alt="Audit feed with two-letter actor avatars" width="100%"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/inbox</code> — Mine / Recent / All / Archive (v0.0.3)</sub></td>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/audit</code> — <em>&lt;actor&gt; &lt;verb&gt; &lt;object&gt;</em> sentence rendering + avatars</sub></td>
-  </tr>
-  <tr>
-    <td><img src="assets/screenshots/approvals.png" alt="Approval queue with prompt diff and j/k/y/n keyboard" width="100%"></td>
-    <td><img src="assets/screenshots/providers.png" alt="Provider registry: CLI and native providers" width="100%"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub><code>/companies/&lt;co&gt;/approvals</code> — prompt diff · <kbd>j</kbd>/<kbd>k</kbd>/<kbd>y</kbd>/<kbd>n</kbd></sub></td>
-    <td align="center"><sub><code>/providers</code> — config-driven provider registry (GEP-8, GEP-32 phase 2a)</sub></td>
+    <td align="center"><sub><code>/companies/&lt;co&gt;/inbox</code> — unified approvals</sub></td>
+    <td align="center"><sub><code>/providers</code> — CLI + native registry</sub></td>
   </tr>
 </table>
 
-Terminal phosphor aesthetic throughout — monospace, OKLCH tokens,
-lowercase-slash panel headers. No JS framework, no build step for the
-CSS.
+Terminal phosphor aesthetic — monospace, OKLCH tokens, lowercase-slash panel
+headers. No JS framework, no CSS build step.
 
 ## Features
 
-**Filesystem-first architecture** — Agents, tasks, chat, permissions, goals,
-and audit logs are all markdown and JSONL files on disk. SQLite exists only as
-a rebuildable index for dashboard queries. Delete it anytime; `glorbo reindex`
-brings it back in seconds.
-
-**Kernel-sandboxed agents** — Every agent wake is a fresh `bwrap`
-sandbox: `--unshare-user-try --unshare-ipc --unshare-pid --unshare-net
---die-with-parent --cap-drop ALL`. The workspace is `--bind`-mounted writable;
-nothing else is visible. Network isolation is kernel-enforced, not
-policy-enforced.
-
-**CLI-tool agents** — Use the Claude Code, Gemini CLI, Codex, or other
-registered CLI installs already on your machine. Their credentials are
-`--ro-bind`ed into the sandbox; session state stays on the host.
-
-**Native OpenAI-compatible providers (v0.2.0+, GEP-32)** —
-OpenAI and OpenRouter now run through a first-party `glorbo harness`
-subcommand inside the same bwrap sandbox. The shipped native tool loop
-now covers `read_file`, `write_file`, `edit_file`, `glob`, `grep`,
-`bash`, and `web_fetch`, and those tool calls replay into the company
-audit log. Native usage is still metered through Glorbo-owned
-`usage.json`; providers that omit token telemetry remain gated behind
-`allow_untracked_budget: true`.
-Credentials live outside `~/.glorbo/` in
-`~/.local/etc/glorbo/credentials/<provider>.toml`, so naïve backups of
-`~/.glorbo/` do not sweep API keys into archives.
-
-As of **v0.4.0**, native agents also honor
-`http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
-`max_tool_calls_per_turn` from `agent.md`, and the harness retries
-transient HTTP failures instead of single-shot failing every provider or
-`web_fetch` call.
-
-**Config-driven providers (GEP-8, extended in GEP-32)** — Each
-provider is a TOML entry declaring either how to invoke a CLI or how a
-native OpenAI-compatible endpoint should be reached and metered.
-Built-in providers ship under `priv/providers/*.toml`; drop your own
-into `~/.glorbo/providers.toml`. The `/providers` LiveView shows what's
-routable. Native entries can declare endpoint, auth mode, usage parser,
-and model-list shape. No Elixir code is needed to register a new
-provider.
-
-**Local-first LLMs** — Agents use whichever runtime you have: a host CLI
-(`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
-`hermes`, `pi`) or a native OpenAI-compatible endpoint. Add a local
-model by installing its CLI or exposing a compatible endpoint. No
-bundled Python runtime, no in-process SDK layer.
-
-**Reply-file contract (v0.0.3, GEP-8)** — Every sandboxed invocation
-ends with Glorbo reading the file at `$GLORBO_REPLY_PATH`. Agents
-scaffolded by `glorbo new agent` are pre-populated with a system prompt
-that instructs the CLI to write its final answer there. Failures
-(missing / empty / too-large) surface as structured dispatch errors
-in the audit log.
-
-**Real-time dashboard** — Phoenix LiveView at `http://127.0.0.1:4000`
-provides company overview, kanban board, agent monitoring with stdout
-streaming, chat, approval queue, audit viewer, system health, and a
-provider-registry panel at `/providers` (v0.0.3). Inotify events
-repaint the UI in under a second with no polling. No JavaScript
-framework. No build step.
-
-**Director-centric surfaces (v0.0.3, GEP-20)** — Unified `/inbox`
-with Mine/Recent/All/Archive tabs aggregating approvals + audit
-activity; dedicated `/goals` page roll-up per company-declared
-goal; `/skills` bundle view listing builtin + user-override
-skills with used-by counts; inline AgentLive config edit form
-that writes AGENT.md frontmatter in place; 14-day rollup strip
-on every company dashboard (runs / success rate / tasks by
-status / by priority); two-letter actor avatars on audit,
-channel, and inbox rows; inline slug-availability probe on the
-new-company modal; `⌘K` command palette with per-company
-destinations + director actions; tool-call counts on Claude-Code
-runs (`Bash×1, Read×2` on the Runs tab).
-
-**Director safety + speed (v0.0.3-dev, loop session)** —
-**Emergency stop** (topbar kill switch that halts every running
-dispatch and refuses new ones until cleared);
-**cost ledger** at `/costs` showing per-agent monthly spend for
-the last 12 months; **Ctrl+K content search** covers task titles
-across the focused company (cached by mtime); **brain dump**
-surface (`g b`) captures throwaway thoughts into a daily log and
-converts any entry to a task; **recurring tasks** (`schedule:`
-frontmatter with cron or `hourly`/`daily`/`weekly`/`monthly`
-aliases) fire scheduled dispatches via a per-company
-`TaskScheduler`, auto-reset to `todo` on `done`, and render a
-`↻` pill on the kanban; **chat rotation** archives channel logs into
-`channels/archive/<channel>/<ts>.md` when size / line thresholds
-trip, with an in-page archive browser; **per-task model /
-provider override** and **named model aliases** on agents let
-one task pin a specific LLM without editing the agent;
-**natural-language heartbeat** compiles `"every morning at 9am"`
-to cron at parse time; **per-task audit history panel** on every
-task page shows a live-refreshing slice of the audit log scoped
-to that task (dispatch / retry / scheduled-fire / update) with a
-deep-link into the full audit view pre-filtered to the task id.
-
-**Agent chat** — Talk to your agents. Agents talk to each other. Channels are
-append-only markdown files underneath. Phoenix Channels handles real-time
-delivery.
-
-**Company isolation** — Each company's data lives in its own directory under
-`~/.glorbo/companies/`. The bwrap sandbox bind-mounts only the active
-company's directory; sibling companies are simply not in the mount list.
-
-**Permission model** — Declared in markdown frontmatter, enforced at two
-layers by design: the Elixir Router (application) and the Linux kernel
-via `bwrap` mount namespaces. An agent without `projects:write:foo`
-literally cannot write there.
-
-**Budget governance** — Per-agent AND per-company monthly budgets
-declared in markdown frontmatter (`budget_usd_cents_month:` on
-`AGENT.md` or `company.md`). Dispatch refuses new work at 100%,
-warns at 80%. No runaway API bills at 3 AM.
-
-**Approval gates** — Tasks can require Director approval before execution.
-The agent pauses, you review, one click to approve.
-
-**OTP supervision** — If an agent crashes, only that agent restarts. If a
-company crashes, only that company's agents restart. The dashboard and other
-companies are unaffected. That's just what the BEAM does.
-
-**Portable** — Deploy by copying a binary. Upgrade by replacing it. Move by
-tarring the directory. The BEAM VM is bundled in the release via Burrito.
-`glorbo backup` → `scp` → `glorbo restore` + `glorbo doctor --fix` reproduces
-a functional install on a fresh host (verified end-to-end by
-`test/integration/portability_test.exs`).
+- **Filesystem-first.** Agents, tasks, chat, permissions, goals, and audit
+  logs are markdown + JSONL on disk. SQLite is a rebuildable index
+  (`glorbo reindex`).
+- **Kernel-sandboxed agents.** Every wake is a fresh `bwrap` process with
+  user/IPC/PID/net/UTS namespaces unshared and `--cap-drop ALL`. Nothing
+  escapes the bind-mount list.
+- **Two provider kinds.** CLI adapters for `claude`, `gemini`, `codex`,
+  `opencode`, `hermes`, `pi`, etc., plus native OpenAI-compatible endpoints
+  (`openai`, `openrouter`, drop-in LM Studio / Ollama / llama.cpp / LocalAI /
+  vLLM via `glorbo detect-providers` + `+ enable`). See GEP-32.
+- **Budget governance.** Per-agent AND per-company monthly budgets in
+  frontmatter; dispatch refuses at 100%, warns at 80%.
+- **Permission model.** Declared in `AGENT.md`, enforced at both the Elixir
+  router AND the kernel via bwrap mounts. No bind-mount → no access.
+- **Real-time dashboard.** Phoenix LiveView at
+  `http://127.0.0.1:4000`. Inotify repaints in under a second.
+- **Approval + audit trail.** Tasks can require Director approval. Every
+  decision writes a structured `YYYY-MM.jsonl` row.
+- **Portable.** `glorbo backup | scp | glorbo restore` reproduces a working
+  install on a fresh host.
 
 ## Quick Start
 
-### Prerequisites
+### Prerequisites (Linux)
 
-- Linux (x86_64 or aarch64)
-- `bubblewrap` (`bwrap`) — available in every major distro's package manager
-- `passt` / `pasta` if you want enforced `network: proxy` on Linux
-- `inotify-tools`
-- On Ubuntu 24.04 / Debian 13, an unconfined AppArmor profile for
-  `/usr/bin/bwrap` (the kernel blocks unprivileged user-namespace network
-  operations otherwise; see `.github/workflows/ci.yml` for the canonical
-  profile).
-- At least one provider runtime:
-  - a supported CLI installed and authenticated (`claude`, `gemini`,
-    `codex`, `opencode`, etc.), or
-  - a native credentials file for a built-in/provider-registry native
-    endpoint such as `openai` or `openrouter`.
+- `bubblewrap` (`bwrap`), `passt` (for enforced `network: proxy`), `inotify-tools`.
+- Ubuntu 24.04 / Debian 13: an unconfined AppArmor profile for `/usr/bin/bwrap`
+  (template in `.github/workflows/ci.yml`).
+- Either a provider CLI on `$PATH` or a native credentials file (see below).
 
-No Python. No Erlang. No Node.js. `glorbo init` verifies the rest and
-bootstraps `~/.glorbo/`.
+`glorbo doctor` checks and, with `--fix`, repairs what it can.
 
 ### Install
 
-**Homebrew (Linux — x86_64 and aarch64):**
+**Homebrew (Linux x86_64 / aarch64):**
 
 ```bash
 brew tap foobarto/tap
@@ -278,223 +113,66 @@ brew install glorbo
 glorbo init
 ```
 
-**Manual (direct binary):**
+**Manual:**
 
 ```bash
 curl -L https://github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m) \
   -o ~/.local/bin/glorbo
 chmod +x ~/.local/bin/glorbo
-
 glorbo init
 ```
 
-**macOS** (Intel + Apple Silicon) — the runtime is macOS-ready
-(Burrito targets `macos_x86_64` + `macos_arm64`, `file_system`
-uses FSEvents transparently, and `Glorbo.Sandbox.Bwrap.availability/0`
-detects the missing kernel primitives and falls back to
-unsandboxed agent execution with a one-time
-`agent.sandbox_unavailable` audit per company boot). The Homebrew
-formula already carries `on_macos do` blocks for both architectures.
-
-**Published binaries are currently Linux-only.** The macOS build
-matrix (`build-macos` in `.github/workflows/ci.yml`) was disabled
-on 2026-04-22 because GitHub-hosted macOS runners were queuing
-indefinitely; re-enable by dropping the `if: false` guard when the
-queue clears. Until then, macOS users build from source:
-
-```bash
-git clone https://github.com/foobarto/glorbo
-cd glorbo
-mix deps.get
-MIX_ENV=prod mix release
-./burrito_out/glorbo_macos_arm64 init   # or glorbo_macos_x86_64
-```
-
-Every feature other than the Linux-kernel sandbox works unchanged
-on macOS — dashboard, routing, scheduling, approval gates, MCP
-server, and audit log all behave identically.
-
-**Windows** is supported via [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).
-The Linux binaries above run unchanged inside a WSL2 distro
-(Ubuntu, Fedora, etc.) — that's the supported way to run Glorbo
-on a Windows host. There are no native Windows builds and none
-are planned; the agent runtime depends on Linux kernel primitives
-(bwrap sandboxing, inotify, user namespaces) that don't have
-useful Windows equivalents.
-
-`glorbo init` creates the directory hierarchy, verifies prerequisites via
-`glorbo doctor`, and optionally scaffolds an example company.
-
-### Native provider quick setup
-
-You do **not** need a separate CLI install to run the built-in native
-providers. For OpenAI or OpenRouter, create a credentials file on the
-host:
-
-```bash
-mkdir -p ~/.local/etc/glorbo/credentials
-chmod 700 ~/.local/etc/glorbo/credentials
-```
-
-```toml
-# ~/.local/etc/glorbo/credentials/openai.toml
-api_key = "sk-..."
-
-# optional: override the built-in endpoint
-# endpoint = "https://api.openai.com/v1"
-```
-
-```toml
-# ~/.local/etc/glorbo/credentials/openrouter.toml
-api_key = "sk-or-v1-..."
-```
-
-Then point an agent at `provider: openai` or `provider: openrouter` in
-`AGENT.md`. The current native tool catalog is:
-
-- `read_file`
-- `write_file`
-- `edit_file`
-- `glob`
-- `grep`
-- `bash`
-- `web_fetch`
-
-Those tools run inside the same sandbox mount view as CLI-backed agents,
-and their activity is replayed into the company audit log. `v0.4.0`
-also wires the native runtime knobs from `agent.md`:
-`http_timeout_s`, `http_max_retries`, `web_fetch_timeout_s`, and
-`max_tool_calls_per_turn`.
-
-**Proxy-only egress enforcement (v0.3.0, GEP-31)** — On Linux,
-`network: proxy` now wraps the existing bwrap launch in `pasta` so only
-the Glorbo proxy port is reachable inside the agent netns. If `pasta`
-is missing, proxy dispatch is refused instead of silently degrading to
-host-network access.
-
-### Local development
-
-Build, run, and iterate on the code without touching the shipped binary.
-
-**Prerequisites (dev-only, on top of the runtime ones above):**
-
-- Elixir 1.18.4 / OTP 28.0.2 — pinned in `.tool-versions`; the recommended
-  way to get them is [mise](https://mise.jdx.dev):
-  ```bash
-  mise install   # reads .tool-versions, installs both
-  mise activate bash  # or zsh; add to your shell rc
-  ```
-- A C toolchain for native NIFs (`build-essential` / `base-devel` /
-  equivalent).
-- `inotify-tools` on the host — the LiveView watcher needs it for
-  sub-second UI refresh.
-
-No Node.js, no npm. Esbuild is shipped as a Hex package and runs
-through `mix assets.build`.
-
-**Clone + bootstrap:**
+**macOS** — runtime is ready (Burrito targets, FSEvents watcher,
+`Glorbo.Sandbox.Unsandboxed` fallback with a one-time
+`agent.sandbox_unavailable` audit). Published binaries are currently
+**Linux-only**: the CI `build-macos` matrix is disabled (`if: false`) while
+GHA macOS runners queue indefinitely. Build from source until it's
+re-enabled:
 
 ```bash
 git clone https://github.com/foobarto/glorbo && cd glorbo
-mix setup   # fetches deps, creates/migrates dev DB, installs esbuild
+mix deps.get && MIX_ENV=prod mix release
+./burrito_out/glorbo_macos_arm64 init
 ```
 
-**Run the dev server:**
+**Windows** — run the Linux binary inside
+[WSL2](https://learn.microsoft.com/en-us/windows/wsl/install). No native
+Windows port planned (bwrap / inotify / user namespaces).
+
+### Add a native provider
 
 ```bash
-mix phx.server
-# Dashboard at http://localhost:4000, live-reloaded on file change.
+mkdir -p ~/.local/etc/glorbo/credentials && chmod 700 $_
+cat > ~/.local/etc/glorbo/credentials/openai.toml <<'EOF'
+api_key = "sk-..."
+EOF
 ```
 
-Dev-mode data lives in `~/.glorbo/`; the dashboard reads the same
-filesystem as the installed binary. Scaffold a test company with
-`mix run -e 'Glorbo.Init.run([])'` or — easier — invoke the CLI
-subcommands directly from iex:
+Then point an agent at `provider: openai` (or `openrouter`) in `AGENT.md`.
+The native tool catalog is `read_file` / `write_file` / `edit_file` / `glob`
+/ `grep` / `bash` / `web_fetch`. See GEP-32 for the contract.
+
+Or auto-detect a local server:
 
 ```bash
-iex -S mix phx.server
-# iex> Glorbo.CLI.dispatch(["new", "company", "acme"])
+glorbo detect-providers     # probes ollama, llama.cpp, LocalAI, vLLM, LM Studio
 ```
 
-**Test + lint gates:**
+### Hire an agent
 
-```bash
-mix test                 # full suite; creates/migrates test DB first
-mix credo --strict       # zero-findings bar; CI fails on exit code 8
-mix format --check-formatted
-mix precommit            # compile --warnings-as-errors + format + test
-```
-
-Run `mix precommit` before pushing non-trivial changes — CI runs the
-same gates and refuses red.
-
-**Build a release:**
-
-```bash
-mix release              # Burrito-wrapped single binary → burrito_out/
-```
-
-The release binary embeds the BEAM runtime and is the same shape the
-GitHub release ships.
-
-**Project layout at a glance:**
-
-| Path                        | What                                                    |
-| --------------------------- | ------------------------------------------------------- |
-| `lib/glorbo/`               | Kernel, CLI, agent runtime, filesystem, budget, doctor  |
-| `lib/glorbo_web/`           | Phoenix endpoint, router, LiveViews, components         |
-| `priv/providers/*.toml`     | Bundled provider manifests (CLI + native)               |
-| `assets/css/` + `assets/js/` | Dashboard styles + the small JS bundle (hooks + shortcuts) |
-| `docs/geps/`                | Design decision records — start with GEP-1              |
-| `test/`                     | ExUnit suite, integration tests tagged `:integration`   |
-| `CLAUDE.md`                 | Codebase invariants + common commands (load-bearing)    |
-
-**Agent-runtime dev loop:**
-
-Agent dispatch needs `bwrap` and either a provider CLI or a native
-provider credentials file configured on the host. From inside
-`iex -S mix phx.server`:
-
-```elixir
-# Poke the provider registry
-Glorbo.CLI.Registry.list()
-
-# Wake an agent (writes state/wake-request.md, the supervisor picks up)
-GlorboWeb.Actions.wake_agent("acme", "ceo", "dev smoke test")
-```
-
-Stdout streams into the `/companies/acme/agents/ceo` LiveView. Every
-invocation appends to `audit/YYYY-MM.jsonl` — check that file if you
-don't see what you expect in the dashboard.
-
-For native providers, the same dev loop applies: the sandboxed runtime
-is still the Glorbo binary, just invoked as `glorbo harness ...` with
-the provider contract passed in via env and bind-mounted credentials.
-
-### Verify
-
-```bash
-glorbo doctor
-```
-
-Reports on the full dependency chain: kernel version, `uidmap`, disk space,
-`~/.glorbo/` layout, ERTS, bwrap, user namespaces, installed CLI tools
-(Claude Code, Gemini CLI, Codex, etc.), and tar-zstd.
-
-### Hire an Agent
-
-Edit `~/.glorbo/companies/acme/agents/ceo/agent.md`:
+Edit `~/.glorbo/companies/acme/agents/ceo/AGENT.md`:
 
 ```markdown
 ---
-name: CEO
+kind: agent/v1
+slug: ceo
 role: Chief Executive Officer
-provider: claude-code            # claude-code | gemini-cli | codex | openai | openrouter
-model: claude-opus-4-6           # Provider-specific
+provider: claude-code     # or openai / openrouter / ...
+model: claude-sonnet-4-5
+network: proxy            # none | proxy | open
 budget:
   monthly_usd: 100.00
 heartbeat: "*/30 * * * *"
-network: proxy                   # none | proxy | open
 permissions:
   - projects:read:*
   - projects:write:*
@@ -503,359 +181,127 @@ permissions:
   - chat:write:*
 ---
 
-You are the CEO of {{ company.name }}.
-Your mission: {{ company.mission }}
+You are the CEO of {{ company.name }}. Your mission: {{ company.mission }}.
 ```
 
 ### Start
 
 ```bash
 glorbo up              # Detached daemon — dashboard at http://127.0.0.1:4000
-glorbo status          # Check daemon pid + uptime
+glorbo status
 glorbo logs acme ceo --follow
-glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
+glorbo down
 ```
 
 ## CLI Reference
 
-All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.4.0:
+```
+glorbo init [--force] [--no-example]    Bootstrap ~/.glorbo/ and verify deps
+glorbo up | down | status | serve       Daemon lifecycle
+glorbo new company|agent|project|skill  Scaffold
+glorbo doctor [--fix]                   Verify host prerequisites
+glorbo detect-providers [--json]        Probe localhost for native providers
+glorbo validate [PATH]                  Check files against FileSpec (GEP-25)
+glorbo fmt [PATH] [--write]             Normalise frontmatter (GEP-25)
+glorbo reindex                          Rebuild SQLite index from filesystem
+glorbo backup | restore                 tar.gz roundtrip
+glorbo logs <co> [agent] [--follow]     Tail audit or stdout
+glorbo console                          iex --remsh into the running daemon
+glorbo help [<verb>]
+```
 
-```
-glorbo init [--force] [--skip-pull] [--example|--no-example]
-                                  Bootstrap ~/.glorbo/ and verify deps
-glorbo up                         Start detached daemon (dashboard + supervision)
-glorbo down                       Graceful shutdown via SIGTERM → SIGKILL
-glorbo status                     Pidfile state + uptime
-glorbo serve                      Foreground-blocking supervision (for systemd)
-glorbo run <script>               One-shot script execution
-glorbo new company <slug>         Scaffold a new company directory
-glorbo new agent <co>/<slug>      Scaffold a new agent (--template supported)
-glorbo new project <co>/<slug>    Scaffold a new project
-glorbo new skill <co> <name>      Scaffold a new skill (--template supported)
-glorbo templates list [kind]      List agent/skill templates (GEP-10)
-glorbo templates show <kind> <name>
-                                  Print a template's contents
-glorbo import paperclip <src>     Import a paperclip.ai agentcompanies tree
-glorbo logs <co> [agent] [--follow]
-                                  Tail audit log or agent stdout (inotify-backed)
-glorbo doctor [--json] [--fix]    Verify host prerequisites; 7 auto-fixers
-glorbo reindex                    Rebuild SQLite index from filesystem
-glorbo migrate                    Run pending Ecto migrations
-glorbo backup [--output <path>]   tar.gz of ~/.glorbo/ with WAL checkpoint
-glorbo restore <archive> [--force]
-                                  Extract + migrate + reindex + doctor --fix
-glorbo console                    iex --remsh into the running daemon
-glorbo harness ...                Internal native-provider runtime (GEP-32)
-glorbo help                       Print usage
-```
+The built-in `glorbo harness` subcommand is the internal native-provider
+runtime invoked inside bwrap (GEP-32); Directors don't call it directly.
 
 ## How It Works
 
-### The Director
+**Director + agents.** You are the Director. You own companies. Agents work
+for you. The CEO agent is just the first employee.
 
-You are the **Director**. You own the company. You hire agents, set the
-mission, approve budgets, and intervene when needed. The CEO agent works for
-you, not the other way around.
+**Inbox / outbox.** Agents write to their `outbox/`; Glorbo routes via the
+Elixir router (permission-checked, atomic) into the recipient's `inbox/` or
+a channel file. Agents never touch each other's directories directly.
 
-### Communication
+**Execution.** An event (inbox item, heartbeat cron, channel mention) wakes
+an agent. Glorbo composes a `bwrap` argv from the agent's permissions +
+network policy, invokes the provider CLI or `glorbo harness` inside the
+sandbox with the prompt on stdin, and reads the answer from
+`$GLORBO_REPLY_PATH` when the process exits. Native providers additionally
+emit `usage.json` for token accounting and per-tool audit events.
 
-**Inbox/Outbox** — An agent writes a markdown file to its `outbox/`. Glorbo
-picks it up via `inotify`, checks permissions, and delivers it to the
-recipient's `inbox/` or appends it to a channel. Agents never touch each
-other's files directly — the Elixir Router mediates every transfer.
-
-**Channels** — Append-only markdown files. Every message is a timestamped
-section. Glorbo is the only writer (atomic, permission-checked). The
-dashboard renders them as real-time chat.
-
-### Execution
-
-1. An event triggers an agent (new inbox item, heartbeat, channel mention).
-2. Glorbo composes a bwrap argv for the agent's declared permissions,
-   network policy, and provider runtime.
-3. `Port.open/2` invokes `bwrap` with the prompt fed on stdin from a
-   tempfile; either an external CLI tool (`claude -p`, `gemini -p`,
-   `codex exec -`) or the internal `glorbo harness` runs inside the
-   sandbox.
-4. The runtime writes its final reply to the Glorbo reply-file contract;
-   native providers additionally emit structured `usage.json`
-   telemetry, and the native tool loop may read/write the workspace
-   before producing the final answer.
-5. Glorbo detects the output via inotify, routes messages, updates the
-   index, appends to the audit log, and records token usage against the
-   agent's budget.
-6. The sandbox exits.
-
-Today the native harness owns the filesystem tool batch
-`read_file` / `write_file` / `edit_file` / `glob` / `grep`. Each tool
-result is counted in usage telemetry, and replayable tool-audit events
-flow back through `Agent.Dispatch` so Director-visible audit state
-captures native tool activity rather than only the final reply.
-
-### Sandboxing
-
-Every agent wake is a short-lived `bwrap` process:
-
-- Baseline: `--die-with-parent --unshare-user-try --unshare-ipc --unshare-pid
-  --unshare-uts --unshare-cgroup-try --new-session --cap-drop ALL`.
-- Root filesystem: `--ro-bind /usr /usr`, merged-/usr symlinks, minimal
-  `/etc` (resolv.conf, hosts, passwd, group, ssl certs) on top of a
-  `--tmpfs /etc`.
-- Agent-owned: workspace bind-mounted `rw`, outbox `rw`, inbox `ro`.
-- Per-permission mounts spliced in from the `agent.md` frontmatter.
-- CLI provider credentials (`~/.claude`, `~/.config/gemini`,
-  `~/.codex`) or native credentials
-  (`~/.local/etc/glorbo/credentials/<provider>.toml`) bind-mounted `ro`,
-  redirected via per-provider env (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
-  `GLORBO_NATIVE_CREDENTIALS_PATH`).
-
-Network policy:
+**Sandboxing baseline:**
 
 ```
-network: none        # --unshare-net (kernel-enforced egress block)
-network: proxy       # Linux: wraps bwrap in pasta and exposes only the
-                     #   allowlisted proxy port inside the agent netns
-network: open        # Inherits host netns; no proxy
+--die-with-parent --unshare-user-try --unshare-ipc --unshare-pid
+--unshare-uts --unshare-cgroup-try --new-session --cap-drop ALL
 ```
 
-### Permissions
+Plus workspace `rw`, outbox `rw`, inbox `ro`, per-permission mounts from
+`AGENT.md`, and provider credentials bind-mounted `ro` with the right env
+redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`GLORBO_NATIVE_CREDENTIALS_PATH`).
 
-Declared in `agent.md`, enforced at two layers:
+**Network policy:**
 
-```yaml
-permissions:
-  - projects:read:*
-  - projects:write:website-redesign
-  - tasks:create:website-redesign
-  - agents:message:cto
-  - chat:write:engineering
-  - tools:execute:code-runner
-  - budget:read:self
+```
+network: none    # --unshare-net (no egress possible)
+network: proxy   # Linux: pasta-wrapped, only the Glorbo proxy port visible
+network: open    # Inherits host netns
 ```
 
-The kernel layer is the bwrap argv: denied paths aren't bind-mounted.
-The application layer (Elixir Router) validates cross-directory
-transfers as belt-and-braces above the kernel.
+**Two-layer permissions.** The kernel layer is the bwrap mount list:
+denied paths are simply not mounted. The Elixir router enforces the same
+rules as belt-and-braces for cross-directory transfers.
 
 ## Tech Stack
 
-| Component      | Technology                  | Why                                             |
-|----------------|-----------------------------|-------------------------------------------------|
-| Orchestration  | Elixir/OTP                  | Supervision trees, fault tolerance, concurrency |
-| Dashboard      | Phoenix LiveView            | Real-time UI, no JS framework                   |
-| Agent Chat     | Phoenix Channels            | WebSocket pub/sub, built-in                     |
-| Agent Runtime  | `bwrap(1)` + provider runtimes | External CLIs or `glorbo harness`; no Python, no in-process SDKs |
-| LLMs           | CLI or OpenAI-compatible endpoint | `claude`, `gemini`, `codex`, `opencode`, `openai`, `openrouter`, etc. |
-| Filesystem     | `inotify` + file_system     | Event-driven watcher                            |
-| Database       | SQLite (via `ecto_sqlite3`) | Single file, zero setup, disposable             |
-| Config/Data    | Markdown + YAML frontmatter | Human-readable, git-friendly, greppable         |
-| Audit          | JSONL files                 | Append-only, never modified                     |
-| Binary         | Burrito + bundled ERTS      | Single binary, no Erlang dependency             |
+| Component | Technology |
+|-----------|------------|
+| Orchestration | Elixir / OTP |
+| Dashboard | Phoenix LiveView |
+| Agent Runtime | `bwrap(1)` + provider CLI OR `glorbo harness` |
+| LLMs | CLI (`claude`, `gemini`, `codex`, ...) or OpenAI-compatible endpoint |
+| Filesystem | `inotify` + `file_system` (FSEvents on macOS) |
+| Database | SQLite (via `ecto_sqlite3`) |
+| Config / Data | Markdown + YAML frontmatter |
+| Audit | JSONL files (append-only) |
+| Binary | Burrito + bundled ERTS |
 
 ## Design Documents
 
-For the full living architecture, see [docs/DESIGN.md](docs/DESIGN.md). When
-`docs/DESIGN.md` and this README disagree, `docs/DESIGN.md` wins.
-
-For the *why* behind major design decisions, see the **Glorbo
-Enhancement Proposals** under [`docs/geps/`](docs/geps/) — numbered,
-append-only design records. [GEP-1](docs/geps/0001-gep-purpose-and-guidelines.md)
-explains the process; [GEP-2](docs/geps/0002-architecture-overview.md)
-is the architectural overview. The [Zen of Glorbo](docs/geps/0011-zen-of-glorbo.md)
-captures the project's design philosophy in one page.
+- **[docs/DESIGN.md](docs/DESIGN.md)** — full living architecture.
+- **[docs/geps/](docs/geps/)** — Glorbo Enhancement Proposals (numbered,
+  append-only design records). Start with
+  [GEP-1](docs/geps/0001-gep-purpose-and-guidelines.md),
+  [GEP-2](docs/geps/0002-architecture-overview.md), and the
+  [Zen of Glorbo](docs/geps/0011-zen-of-glorbo.md).
+- **[docs/architecture.md](docs/architecture.md)** — module map + graph
+  caveats (read before greping 200+ modules).
+- **[CHANGELOG.md](CHANGELOG.md)** — full release history.
 
 ## Project Status
 
-Pre-1.0. Latest release is **v0.4.1** (2026-04-23); the release trail so
-far, newest first:
-
-**v0.4.1** shipped 2026-04-23:
-
-- **Threatmodel wave 8** ✓ — the final medium-severity findings from
-  the 2026-04-22/23 scan are now closed: MCP session state is bounded
-  and fails cleanly at capacity, provider executables no longer leak
-  host directory layouts into the sandbox, and CI/Pages workflows pin
-  every third-party action to an exact commit SHA.
-
-**v0.4.0** shipped 2026-04-23:
-
-- **GEP-32 — native agent harness** ✓ (Phase 2b) — the native tool
-  catalog now includes `bash` and `web_fetch`, per-agent HTTP/runtime
-  knobs from `agent.md` are wired end to end, provider and tool HTTP
-  requests share the same retry policy, and the release also folds in
-  six medium-severity hardening closures across proxy handling, console
-  cookie transport, stdout streaming, search caching, archive browsing,
-  and stuck-sentinel validation.
-
-**v0.3.0** shipped 2026-04-23:
-
-- **GEP-31 — proxy netns enforcement** ✓ — Linux `network: proxy`
-  now wraps the existing bwrap launch in `pasta --splice-only`, exposes
-  only the per-company proxy port inside the agent netns, refuses proxy
-  dispatch when `pasta` is missing, and adds doctor/install guidance
-  for the new prerequisite.
-
-**v0.2.0** shipped 2026-04-23:
-
-- **GEP-32 — native agent harness** ✓ (Phase 2a) — the first native
-  filesystem-tool batch ships: `write_file`, `edit_file`, `glob`, and
-  `grep` join `read_file`, tool counts stay in the native usage JSON,
-  sanitized per-tool audit events replay into the company audit log
-  through Dispatch, and the parser now treats `usage.json` as untrusted
-  sandbox output rather than a privileged host control channel.
-
-**v0.1.0** shipped 2026-04-23:
-
-- **GEP-32 — native agent harness** ✓ (Phase 1) — provider registry
-  gains `kind = "native"`, the existing single binary now exposes an
-  internal `glorbo harness` subcommand that runs inside bwrap, built-in
-  `openai` + `openrouter` providers ship, usage telemetry lands in a
-  native JSON contract, and user-defined native providers work via the
-  env-driven runtime contract inside the sandbox.
-- **Threatmodel waves 1–7** ✓ — post-v0.0.4 hardening across dispatch,
-  router, LiveViews, watcher/reindex, ACL mapping, backup/restore, and
-  provider/formula edges; major path-traversal, symlink, and YAML/CSV
-  injection closures landed on `main`.
-
-**v0.0.4** shipped 2026-04-21:
-
-- **GEP-20 — Director dashboard UX sweep** ✓ — unified `/inbox`
-  (Mine/Recent/All/Archive), `/goals` page with progress bars,
-  `/skills` marketplace, per-goal Kanban filter, agent config
-  edit form, 14-day rollup strip, create-company wizard, two-letter
-  actor avatars, inline slug-availability probe, `⌘K` command
-  palette, tool-call counts on Runs tab, activity sentences on
-  audit rows.
-- **GEP-21 — file-based agent memory** ✓ — `compose/3` reads
-  `memory/` into prompts; outbox → Router → atomic memory write
-  + MEMORY.md index upsert; Memory tab on AgentLive; E2E live-model
-  tests against LM Studio qwen.
-- **GEP-23 — egress proxy with smart mode** ✓ (Phases 1–3) —
-  `SmartClassifier` rule-based + LLM-fallback host classifier;
-  `egress:` frontmatter block on AGENT.md; per-agent `network_allow:`
-  extensions; Proxy `classifier_fun:` hook; supervisor composes
-  per-company classifier at boot.
-- **GEP-24 — task scheduler firing** ✓ — `schedule:` frontmatter
-  (cron or `hourly`/`daily`/`weekly`/`monthly`) actually fires
-  scheduled dispatches via per-company `TaskScheduler`.
-- **GEP-25 — file format specs + validator + formatter** ✓ —
-  22 `FileSpec` kinds, `glorbo validate`, `glorbo fmt`,
-  `mix glorbo.docs.file_formats` with `--check` wired into
-  `mix precommit`.
-- **GEP-26 — benchmark templates** ✓ (Phase A) — `bench-softdev`
-  (Elixir/Python/Go), `bench-tech-blog`, `bench-scifi-publisher`;
-  `glorbo new company --template`; `glorbo bench list`.
-- **GEP-27 — agent sandbox path requests** ✓ — agents request
-  external path access via outbox sentinel; director approves
-  with per-path mode downgrade; task-scoped bwrap mount under
-  `/external/`; revoked automatically after dispatch.
-- **GEP-28 — agent-created proposals** (scaffolding + watcher
-  classification shipped; Inbox UI + auto-approval queued) —
-  agents write `proposals/<id>.md` with `proposal/v1` frontmatter
-  to propose hiring, firing, budget bumps, and new projects;
-  `proposals:{read,write}:*` permission namespace with bwrap mount
-  rules; CEO template ships with proposal authoring guidance;
-  Watcher broadcasts on `company:<co>:proposals` PubSub topic.
-- **R29 — Homebrew tap** ✓ — `brew install foobarto/tap/glorbo`
-  with Linux x86_64 + aarch64 binaries.
-- **R30 — macOS runtime** ✓ — Burrito targets `macos_x86_64` +
-  `macos_arm64`; `Glorbo.Sandbox.Unsandboxed` fallback; `glorbo
-  doctor` OS-aware reclassification; Homebrew formula ships
-  `on_macos do` blocks. CI `build-macos` job is currently
-  **disabled** (`if: false`) pending GHA macOS runner capacity;
-  macOS users build from source via `mix release` until it's
-  re-enabled.
-- **Director safety + speed** — emergency stop, cost ledger
-  (`/costs`), per-company + per-task budget caps, session
-  resilience (auto-retry on timeout / missing reply), audit CSV
-  export, date-range filter, task history panel, goal progress
-  bar, audit → task conversion, scheduled-task "next fire"
-  indicator, natural-language heartbeat parser, `Ctrl+K` audit
-  search, per-task model/provider override, agent model aliases,
-  brain dump (`g b`), recurring tasks (`↻` pill), channel log
-  rotation + archive browser, named autonomy tiers.
-- Tests: 1439/1439 green · `mix credo --strict` clean ·
-  `mix gep.validate` clean
-
-**v0.0.3** shipped 2026-04-19:
-
-- **GEP-8 — provider registry + CLI auto-detect** ✓
-- **GEP-10 — agent and skill templates** ✓ (`--template` on
-  `glorbo new agent` + `glorbo new skill`, CEO/engineer/researcher
-  templates built in, role-specific SOUL.md and HEARTBEAT.md
-  auto-wired)
-- **GEP-12 — no user-input atoms** ✓
-- **GEP-13 — project-prefixed task IDs** ✓
-- **GEP-14 — agent heartbeat semantics + HEARTBEAT.md** ✓
-- **GEP-15 — ALLCAPS agent-facing markdown convention** ✓
-- **GEP-16 — agent wake + dispatch pipeline** ✓
-- **GEP-19 — director approval workflow protocol** ✓
-- Reply-file contract (breaking — existing agents need an
-  updated system prompt; `glorbo new agent` scaffolds this
-  automatically).
-- **`glorbo import paperclip <src>`** — import paperclip.ai
-  `agentcompanies` trees; wraps each agent's `AGENTS.md` in
-  Glorbo frontmatter, preserves HEARTBEAT/SOUL/TOOLS verbatim,
-  prints a hint report naming every paperclip-ism the Director
-  should hand-fix.
-- **Dashboard UX overhaul** (M-series) ✓ — mockup-aligned shell
-  (260px tri-section sidebar, topbar with `▚ GLORBO` + company
-  picker, terminal-TUI phosphor tokens), company overview with
-  stat cards + agent roster + org chart, agent-detail
-  three-column layout with a right-panel collapse rail (auto
-  on viewports < 1200px), Kanban drag-and-drop with `status:`
-  frontmatter writeback, chat channel switcher + DM thread
-  enumeration, approvals prompt-diff with `j/k/y/n` keyboard,
-  audit unified free-text search, providers card grid with TOML
-  snippet, global `g o/h/p` shortcuts, TWEAKS drawer, themed
-  scrollbars, `+ new company/agent/task` entry points.
-- **Approval workflow polish** — director/agent `assigned_to`
-  swap on approval-request/grant/deny (preserved across the
-  Gate daemon and UI-direct code paths), denial reason
-  persisted into task frontmatter and audit, Escape closes all
-  modals, Gate audit events now use canonical `target:` key.
-- **Stdout streamer hardening** — CR / OSC / BEL stripping so
-  terminal noise doesn't leak into the UI, autoscroll that
-  unpins when the user scrolls up to read older output.
-- **Accessibility sweep** — every `role="button"` surface gained
-  `phx-keydown="Enter"` activation and a descriptive
-  aria-label (task cards, agent table rows, approval rows,
-  permission rows, file-tree actions as real `<button>`s).
-- Dashboard hardening ✓ — auto-start company supervisors at app
-  boot (fixes AuditLog-not-registered crash on every Director
-  write-action).
-- Tests: 895/895 green · `mix credo --strict` clean ·
-  `mix gep.validate` clean
-
-**v0.0.2** shipped 2026-04-16 and closed Milestone 01 (CLI-agent
-runtime):
-
-- Phase 01 — Compilable skeleton + CI + signed releases ✓
-- Phase 02 — Filesystem foundation, doctor, `glorbo init` ✓
-- Phase 03 — Agents, router, kernel permissions, budgets ✓
-- Phase 04 — LiveView dashboard + Channels + PubSub ✓
-- Phase 05 — CLI completeness + backup/restore + portability ✓
-
-Pending for a later release: GEP-23 Phase 4 (real LLM dispatch
-for smart-mode classifier + director-approval sentinels for
-`:unknown`); GEP-26 Phase B (multi-provider blind A/B scoring
-UI); the wider GEP-9 (MCP/ACP protocol integration); optional GEP-18
-agentcompanies/v1 schema convergence.
-
-Active design work lives in `docs/geps/`. Historical phase plans
-are in `git log` for anyone who needs the archaeology.
+Pre-1.0. Latest release **v0.4.1** (2026-04-23). APIs, CLI flags, on-disk
+layout, and SQLite schema may change between minor versions. See
+[CHANGELOG.md](CHANGELOG.md) for the full release trail; see
+[`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /
+Implemented.
 
 ## Contributing
 
-Contributions welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
-submitting a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
 
-Security reports: see [SECURITY.md](SECURITY.md). Please don't file
-sandbox-escape findings as public issues.
+Local dev loop:
 
-The project is Elixir through and through. Familiarity with OTP
-supervision trees and Phoenix LiveView is helpful but not required — the
-codebase is intentionally straightforward.
+```bash
+git clone https://github.com/foobarto/glorbo && cd glorbo
+mix setup           # deps + db + esbuild
+mix phx.server      # dashboard on :4000
+mix precommit       # format + compile-warn + credo + tests
+```
+
+Runtime is Elixir 1.18.4 / OTP 28.0 (pinned in `.tool-versions` —
+`mise install` picks them up).
 
 ## License
 
