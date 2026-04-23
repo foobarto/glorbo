@@ -17,6 +17,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: "Phase 1 landed in v0.1.0: native registry kind, `glorbo harness`, built-in `openai` + `openrouter`, runtime untracked gate, and `read_file` tool loop. Phases 2–4 remain open."
+  - date: 2026-04-23
+    status: Accepted
+    note: "Phase 2a landed in v0.2.0: `write_file`, `edit_file`, `glob`, and `grep` join the native tool loop, and sanitized per-tool audit events replay through `Agent.Dispatch`. `bash`, `web_fetch`, and later phases remain open."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider

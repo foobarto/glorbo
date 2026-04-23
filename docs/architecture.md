@@ -131,7 +131,10 @@ scaffold companies/agents, run the doctor, reindex SQLite,
 validate GEPs and file formats. Dispatch from `bin/glorbo` is
 handled by `Glorbo.CLI`; native providers reuse the same binary
 inside bwrap via the `harness` subcommand instead of requiring a
-separate external CLI install.
+separate external CLI install. As of GEP-32 phase 2a, the harness's
+tool catalog is factored under `Glorbo.CLI.Harness.Tools` and ships the
+filesystem batch (`read_file`, `write_file`, `edit_file`, `glob`,
+`grep`) with audit replay back into `Agent.Dispatch`.
 
 ## Graph caveats
 

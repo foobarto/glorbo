@@ -367,6 +367,17 @@ module is drift bait. `Glorbo.Filesystem.Hierarchy.native_credentials_dir/0`
 is now the single source of truth; future native-provider work should
 reuse it instead of re-encoding the path policy.
 
+### GEP-32 phase 2a — usage JSON is still untrusted input
+
+Phase 2a extends native `usage.json` with `audit_events` so the
+harness can report per-tool activity back to `Agent.Dispatch`, but the
+file still lives under the sandbox-visible run dir. That means the
+parser must treat it like any other agent-adjacent artifact, not like a
+trusted host-side control channel. `NativeV1.parse/1` now allowlists
+both tool-count names and audit action names the harness itself emits,
+and strips `detail` values down to simple scalar keys; anything else is
+dropped before Dispatch can replay it into the company audit log.
+
 ---
 
 ## What belongs in this file vs elsewhere

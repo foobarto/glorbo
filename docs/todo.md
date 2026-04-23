@@ -20,10 +20,10 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **GEP-32 phase 2 — full native tool catalog.** Phase 1 ships
-  `glorbo harness` + OpenAI/OpenRouter + `read_file`; next cut adds
-  `write_file`, `edit_file`, `glob`, `grep`, `bash`, `web_fetch`,
-  plus per-tool audit events.
+- [ ] **GEP-32 phase 2b — native network tools.** Phase 2a now ships
+  `glorbo harness` + OpenAI/OpenRouter + `read_file` / `write_file` /
+  `edit_file` / `glob` / `grep` plus per-tool audit replay; next cut
+  adds `bash` and `web_fetch` on top of the same audit path.
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.
@@ -161,3 +161,10 @@ it's been in CHANGELOG for a cycle.
   `private_files` now covers `~/.local/etc/glorbo/credentials/*.toml`
   (or `GLORBO_CREDENTIALS_DIR`), and the fixer chmods those files to
   `0600` alongside `config.md` and `logs/glorbo.log`.
+- [x] **GEP-32 phase 2a (2026-04-23).** Native harness filesystem
+  tools now cover `write_file`, `edit_file`, `glob`, and `grep`
+  alongside `read_file`; the native usage contract gained sanitized
+  `audit_events`, and Dispatch replays those tool audits into the
+  company audit log.
+- [x] **v0.2.0 shipped.** Second pre-1.0 minor: GEP-32 phase 2a is now
+  on the release surface.

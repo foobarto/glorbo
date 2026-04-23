@@ -10,6 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-23
+
+Second pre-1.0 minor on the same day: GEP-32's native harness moves
+past the "single read tool" stage and now ships a real first filesystem
+tool batch with audit replay, while keeping `bash` / `web_fetch` as the
+next explicit tranche.
+
+### Added — GEP-32 native agent harness (phase 2a)
+
+- Native `glorbo harness` now ships four more filesystem tools:
+  `write_file`, `edit_file`, `glob`, and `grep`, alongside the
+  previously shipped `read_file`.
+- Tool execution is now factored through `Glorbo.CLI.Harness.Tools`,
+  giving the harness one owned tool catalog instead of ad hoc inline
+  logic in the runtime loop.
+- Native `usage.json` now supports a sanitized `audit_events` list in
+  addition to token counts and `tool_calls`.
+- `Agent.Dispatch` replays those parsed tool events into the company
+  audit log, so native-tool activity is director-visible instead of
+  existing only inside provider transcripts.
+
 ## [0.1.0] — 2026-04-23
 
 First pre-1.0 minor after v0.0.4. Headline work: GEP-32 phase 1 lands a
@@ -2640,7 +2661,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/foobarto/glorbo/releases/tag/v0.2.0
 [0.1.0]: https://github.com/foobarto/glorbo/releases/tag/v0.1.0
 [0.0.4]: https://github.com/foobarto/glorbo/releases/tag/v0.0.4
 [0.0.3]: https://github.com/foobarto/glorbo/releases/tag/v0.0.3

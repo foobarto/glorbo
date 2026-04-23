@@ -131,10 +131,13 @@ policy-enforced.
 registered CLI installs already on your machine. Their credentials are
 `--ro-bind`ed into the sandbox; session state stays on the host.
 
-**Native OpenAI-compatible providers (v0.1.0, GEP-32 phase 1)** —
+**Native OpenAI-compatible providers (v0.2.0, GEP-32 phase 2a)** —
 OpenAI and OpenRouter now run through a first-party `glorbo harness`
-subcommand inside the same bwrap sandbox. Credentials live outside
-`~/.glorbo/` in `~/.local/etc/glorbo/credentials/<provider>.toml`.
+subcommand inside the same bwrap sandbox. The shipped native tool loop
+now covers `read_file`, `write_file`, `edit_file`, `glob`, and `grep`,
+and those tool calls replay into the company audit log. Credentials
+live outside `~/.glorbo/` in
+`~/.local/etc/glorbo/credentials/<provider>.toml`.
 
 **Config-driven providers (GEP-8, extended in GEP-32 phase 1)** — Each
 provider is a TOML entry declaring either how to invoke a CLI or how a
@@ -431,7 +434,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.1.0:
+All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.2.0:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -628,6 +631,14 @@ runtime):
   write-action).
 - Tests: 895/895 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
+
+**v0.2.0** shipped 2026-04-23:
+
+- **GEP-32 — native agent harness** ✓ (Phase 2a) — the first native
+  filesystem-tool batch ships: `write_file`, `edit_file`, `glob`, and
+  `grep` join `read_file`, tool counts stay in the native usage JSON,
+  and sanitized per-tool audit events replay into the company audit log
+  through Dispatch.
 
 **v0.1.0** shipped 2026-04-23:
 

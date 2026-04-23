@@ -299,7 +299,9 @@ AI tools (Claude Code, Gemini CLI, Codex, and any other CLI provider
 registered via GEP-8) or its own `glorbo harness` native-provider
 subcommand as short-lived sandboxed processes. External CLIs keep their
 own model access, auth, and tool-use loop; the native harness speaks an
-OpenAI-compatible HTTP API from inside the same bwrap tree.
+OpenAI-compatible HTTP API from inside the same bwrap tree and now owns
+its first native filesystem-tool batch (`read_file`, `write_file`,
+`edit_file`, `glob`, `grep`) plus per-tool audit replay.
 
 For each agent wake, Elixir:
 
