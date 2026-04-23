@@ -85,6 +85,33 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                p.path_transforms
     end
 
+    test "parses a native provider with auth + model_list", %{builtin_dir: dir} do
+      write!(dir, "native.toml", """
+      name         = "lmstudio"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      auth         = "none"
+      usage_parser = "native-v1"
+      usage_path   = { kind = "json_file", path = "{workspace}/.glorbo/run/usage.json" }
+
+      [model_list]
+      path  = "/v1/models"
+      shape = "openai"
+      """)
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+      assert p.kind == :native
+      assert p.endpoint == "http://127.0.0.1:1234/v1"
+      assert p.auth == :none
+      assert p.usage_parser == "native-v1"
+      assert p.usage_path == %{kind: :json_file, path: "{workspace}/.glorbo/run/usage.json"}
+      assert p.model_list == %{shape: :openai, path: "/v1/models"}
+      assert p.binary == nil
+      assert p.args == []
+      assert p.reply_dir == nil
+      assert p.reply_filename_template == nil
+    end
+
     test "parses auth_binds array-of-tables", %{builtin_dir: dir} do
       write!(dir, "with-auth.toml", """
       name   = "with-auth"
@@ -285,6 +312,87 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
       """)
 
       assert {:error, {:missing_field, _, "binary"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "invalid kind", %{builtin_dir: dir} do
+      write!(dir, "bad-kind.toml", """
+      name = "bad-kind"
+      kind = "carrier-pigeon"
+      """)
+
+      assert {:error, {:invalid_kind, _, "carrier-pigeon"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "native provider requires auth", %{builtin_dir: dir} do
+      write!(dir, "missing-auth.toml", """
+      name         = "native"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:missing_field, _, "auth"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "native provider rejects auth outside closed set", %{builtin_dir: dir} do
+      write!(dir, "bad-auth.toml", """
+      name         = "native"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      auth         = "session-cookie"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:invalid_auth, _, "session-cookie"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "native provider rejects usage_parser = none", %{builtin_dir: dir} do
+      write!(dir, "bad-usage.toml", """
+      name         = "native"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      auth         = "none"
+      usage_parser = "none"
+      """)
+
+      assert {:error, {:invalid_native_usage_parser, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "native provider rejects invalid model_list shape", %{builtin_dir: dir} do
+      write!(dir, "bad-model-list.toml", """
+      name         = "native"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      auth         = "none"
+      usage_parser = "native-v1"
+
+      [model_list]
+      path  = "/v1/models"
+      shape = "vendor-secret"
+      """)
+
+      assert {:error, {:invalid_model_list, _, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "native provider requires model_list.path when shape != none", %{builtin_dir: dir} do
+      write!(dir, "missing-model-list-path.toml", """
+      name         = "native"
+      kind         = "native"
+      endpoint     = "http://127.0.0.1:1234/v1"
+      auth         = "none"
+      usage_parser = "native-v1"
+
+      [model_list]
+      shape = "openai"
+      """)
+
+      assert {:error, {:invalid_model_list, _, "path is required when shape != \"none\""}} =
                Loader.load_all(builtin_dir: dir, user_file: nil)
     end
 

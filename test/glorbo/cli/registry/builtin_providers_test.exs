@@ -29,6 +29,7 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
 
     for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
       assert Map.has_key?(p, name), "missing built-in provider: #{name}"
+      assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
     end
   end
 

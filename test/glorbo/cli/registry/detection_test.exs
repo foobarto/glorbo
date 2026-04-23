@@ -20,6 +20,15 @@ defmodule Glorbo.CLI.Registry.DetectionTest do
   end
 
   describe "detect_all/2 — PATH resolution" do
+    test "native providers are always marked installed" do
+      p = provider(kind: :native, binary: nil)
+
+      [result] = Detection.detect_all([p])
+
+      assert result.installed? == true
+      assert result.resolved_path == nil
+    end
+
     test "marks installed? true when binary is on PATH" do
       p = provider(binary: "echo")
 
@@ -144,6 +153,22 @@ defmodule Glorbo.CLI.Registry.DetectionTest do
   end
 
   describe "probe_versions/2 — version probing" do
+    test "native providers do not probe versions by default" do
+      p =
+        provider(
+          kind: :native,
+          binary: nil,
+          installed?: true,
+          version_flag: "--version",
+          allow_version_probe: true
+        )
+
+      cmd_fun = fn _, _, _ -> flunk("native providers should not invoke version probes") end
+
+      [result] = Detection.probe_versions([p], system_cmd_fun: cmd_fun)
+      assert result.version == nil
+    end
+
     test "runs probes only for allow_version_probe: true" do
       opted_in =
         provider(

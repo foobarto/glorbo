@@ -22,7 +22,9 @@ defmodule Glorbo.CLI.Registry.Loader do
   alias Glorbo.CLI.PathTransforms
   alias Glorbo.CLI.Registry.Provider
 
-  @required_fields ~w(name binary args reply_dir reply_filename_template)
+  @common_required_fields ~w(name)
+  @cli_required_fields ~w(binary args reply_dir reply_filename_template)
+  @native_required_fields ~w(endpoint auth usage_parser)
 
   @type load_result :: {:ok, [Provider.t()]} | {:error, term()}
 
@@ -156,26 +158,37 @@ defmodule Glorbo.CLI.Registry.Loader do
   # ---------------------------------------------------------------------------
 
   defp build_provider(raw, path, source) when is_map(raw) do
-    with :ok <- check_required(raw, path),
+    with {:ok, kind} <- parse_kind(raw, path),
+         :ok <- check_required(raw, path, kind),
+         {:ok, binary} <- parse_binary(raw, path, kind),
          {:ok, prompt_mode} <- parse_prompt_mode(raw, path),
-         {:ok, args} <- parse_args(raw, path),
+         {:ok, args} <- parse_args(raw, path, kind),
          {:ok, env} <- parse_env(raw, path),
+         {:ok, reply_dir} <- parse_reply_dir(raw, path, kind),
+         {:ok, reply_filename_template} <- parse_reply_filename_template(raw, path, kind),
          {:ok, reply_max_bytes} <- parse_reply_max_bytes(raw, path),
+         {:ok, endpoint} <- parse_endpoint(raw, path, kind),
+         {:ok, auth} <- parse_auth(raw, path, kind),
+         {:ok, model_list} <- parse_model_list(raw, path),
          {:ok, version_regex} <- parse_version_regex(raw, path),
-         {:ok, usage_parser} <- parse_usage_parser(raw, path),
+         {:ok, usage_parser} <- parse_usage_parser(raw, path, kind),
          {:ok, usage_path} <- parse_usage_path(raw, path),
          {:ok, path_transforms} <- parse_path_transforms(raw, path),
          {:ok, auth_binds} <- parse_auth_binds(raw, path),
          {:ok, fallback_paths} <- parse_fallback_paths(raw, path) do
       provider = %Provider{
         name: raw["name"],
-        binary: raw["binary"],
+        kind: kind,
+        binary: binary,
         args: args,
         prompt_mode: prompt_mode,
         env: env,
-        reply_dir: raw["reply_dir"],
-        reply_filename_template: raw["reply_filename_template"],
+        reply_dir: reply_dir,
+        reply_filename_template: reply_filename_template,
         reply_max_bytes: reply_max_bytes,
+        endpoint: endpoint,
+        auth: auth,
+        model_list: model_list,
         version_flag: raw["version_flag"] || "",
         version_regex: version_regex,
         allow_version_probe: parse_allow_probe(raw, source),
@@ -192,13 +205,44 @@ defmodule Glorbo.CLI.Registry.Loader do
     end
   end
 
-  defp check_required(raw, path) do
-    missing = Enum.reject(@required_fields, &Map.has_key?(raw, &1))
+  defp parse_kind(raw, path) do
+    value = Map.get(raw, "kind", "cli")
+
+    case provider_kind_from_string(value) do
+      {:ok, kind} -> {:ok, kind}
+      :error -> {:error, {:invalid_kind, path, value}}
+    end
+  end
+
+  defp provider_kind_from_string("cli"), do: {:ok, :cli}
+  defp provider_kind_from_string("native"), do: {:ok, :native}
+  defp provider_kind_from_string(_), do: :error
+
+  defp check_required(raw, path, kind) do
+    missing =
+      kind
+      |> required_fields_for()
+      |> Enum.reject(&Map.has_key?(raw, &1))
 
     case missing do
       [] -> :ok
       [field | _] -> {:error, {:missing_field, path, field}}
     end
+  end
+
+  defp required_fields_for(:cli), do: @common_required_fields ++ @cli_required_fields
+  defp required_fields_for(:native), do: @common_required_fields ++ @native_required_fields
+
+  defp parse_binary(%{"binary" => value}, _path, _kind) when is_binary(value), do: {:ok, value}
+
+  defp parse_binary(%{"binary" => _}, path, _kind) do
+    {:error, {:invalid_binary, path, "`binary` must be a string"}}
+  end
+
+  defp parse_binary(_raw, _path, :native), do: {:ok, nil}
+
+  defp parse_binary(_raw, path, :cli) do
+    {:error, {:missing_field, path, "binary"}}
   end
 
   # GEP-12 compliance: map TOML strings to atoms via a closed set, never
@@ -219,7 +263,7 @@ defmodule Glorbo.CLI.Registry.Loader do
     end
   end
 
-  defp parse_args(%{"args" => list}, path) when is_list(list) do
+  defp parse_args(%{"args" => list}, path, _kind) when is_list(list) do
     if Enum.all?(list, &is_binary/1) do
       {:ok, list}
     else
@@ -227,8 +271,14 @@ defmodule Glorbo.CLI.Registry.Loader do
     end
   end
 
-  defp parse_args(_raw, path) do
+  defp parse_args(%{"args" => _other}, path, _kind) do
     {:error, {:invalid_args, path, "`args` must be a list"}}
+  end
+
+  defp parse_args(_raw, _path, :native), do: {:ok, []}
+
+  defp parse_args(_raw, path, :cli) do
+    {:error, {:missing_field, path, "args"}}
   end
 
   defp parse_env(%{"env" => map}, path) when is_map(map) do
@@ -245,6 +295,34 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp parse_env(_raw, _path), do: {:ok, %{}}
 
+  defp parse_reply_dir(%{"reply_dir" => value}, _path, _kind) when is_binary(value),
+    do: {:ok, value}
+
+  defp parse_reply_dir(%{"reply_dir" => _}, path, _kind) do
+    {:error, {:invalid_reply_dir, path, "`reply_dir` must be a string"}}
+  end
+
+  defp parse_reply_dir(_raw, _path, :native), do: {:ok, nil}
+
+  defp parse_reply_dir(_raw, path, :cli) do
+    {:error, {:missing_field, path, "reply_dir"}}
+  end
+
+  defp parse_reply_filename_template(%{"reply_filename_template" => value}, _path, _kind)
+       when is_binary(value),
+       do: {:ok, value}
+
+  defp parse_reply_filename_template(%{"reply_filename_template" => _}, path, _kind) do
+    {:error,
+     {:invalid_reply_filename_template, path, "`reply_filename_template` must be a string"}}
+  end
+
+  defp parse_reply_filename_template(_raw, _path, :native), do: {:ok, nil}
+
+  defp parse_reply_filename_template(_raw, path, :cli) do
+    {:error, {:missing_field, path, "reply_filename_template"}}
+  end
+
   defp parse_reply_max_bytes(%{"reply_max_bytes" => n}, _path)
        when is_integer(n) and n > 0 do
     {:ok, n}
@@ -255,6 +333,79 @@ defmodule Glorbo.CLI.Registry.Loader do
   end
 
   defp parse_reply_max_bytes(_raw, _path), do: {:ok, 1_048_576}
+
+  defp parse_endpoint(%{"endpoint" => value}, _path, _kind) when is_binary(value),
+    do: {:ok, value}
+
+  defp parse_endpoint(%{"endpoint" => _}, path, _kind) do
+    {:error, {:invalid_endpoint, path, "`endpoint` must be a string"}}
+  end
+
+  defp parse_endpoint(_raw, _path, :cli), do: {:ok, nil}
+
+  defp parse_endpoint(_raw, path, :native) do
+    {:error, {:missing_field, path, "endpoint"}}
+  end
+
+  @auth_map %{"none" => :none, "bearer" => :bearer, "api-key" => :api_key}
+
+  defp parse_auth(%{"auth" => value}, path, _kind) when is_binary(value) do
+    case Map.fetch(@auth_map, value) do
+      {:ok, auth} -> {:ok, auth}
+      :error -> {:error, {:invalid_auth, path, value}}
+    end
+  end
+
+  defp parse_auth(%{"auth" => _}, path, _kind) do
+    {:error, {:invalid_auth, path, "must be a string"}}
+  end
+
+  defp parse_auth(_raw, _path, :cli), do: {:ok, nil}
+
+  defp parse_auth(_raw, path, :native) do
+    {:error, {:missing_field, path, "auth"}}
+  end
+
+  @model_list_shapes %{"openai" => :openai, "ollama" => :ollama, "none" => :none}
+
+  defp parse_model_list(%{"model_list" => map}, path) when is_map(map) do
+    shape_raw = Map.get(map, "shape", "none")
+    path_raw = Map.get(map, "path")
+
+    with {:ok, shape} <- parse_model_list_shape(shape_raw, path),
+         :ok <- validate_model_list_path(shape, path_raw, path) do
+      {:ok, %{shape: shape, path: path_raw}}
+    end
+  end
+
+  defp parse_model_list(%{"model_list" => _}, path) do
+    {:error, {:invalid_model_list, path, "`model_list` must be a table"}}
+  end
+
+  defp parse_model_list(_raw, _path), do: {:ok, nil}
+
+  defp parse_model_list_shape(raw, path) do
+    case Map.fetch(@model_list_shapes, raw) do
+      {:ok, shape} -> {:ok, shape}
+      :error -> {:error, {:invalid_model_list, path, "shape #{inspect(raw)} not supported"}}
+    end
+  end
+
+  defp validate_model_list_path(shape, nil, _path) when shape in [:none], do: :ok
+
+  defp validate_model_list_path(shape, value, _path)
+       when shape in [:openai, :ollama] and is_binary(value),
+       do: :ok
+
+  defp validate_model_list_path(_shape, value, _path) when is_binary(value), do: :ok
+
+  defp validate_model_list_path(shape, nil, path) when shape in [:openai, :ollama] do
+    {:error, {:invalid_model_list, path, "path is required when shape != \"none\""}}
+  end
+
+  defp validate_model_list_path(_shape, _value, path) do
+    {:error, {:invalid_model_list, path, "`model_list.path` must be a string"}}
+  end
 
   defp parse_version_regex(%{"version_regex" => pattern}, path) when is_binary(pattern) do
     case Regex.compile(pattern) do
@@ -269,20 +420,28 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp parse_version_regex(_raw, _path), do: {:ok, nil}
 
-  defp parse_usage_parser(raw, path) do
+  defp parse_usage_parser(raw, path, kind) do
     name = Map.get(raw, "usage_parser", "none")
 
-    if is_binary(name) and Parsers.known?(name) do
-      {:ok, name}
-    else
-      {:error, {:unknown_usage_parser, path, name}}
+    cond do
+      not is_binary(name) ->
+        {:error, {:unknown_usage_parser, path, name}}
+
+      not Parsers.known?(name) ->
+        {:error, {:unknown_usage_parser, path, name}}
+
+      kind == :native and name == "none" ->
+        {:error, {:invalid_native_usage_parser, path}}
+
+      true ->
+        {:ok, name}
     end
   end
 
   defp parse_usage_path(%{"usage_path" => map}, path) when is_map(map) do
     kind_str = Map.get(map, "kind")
 
-    case kind_from_string(kind_str) do
+    case usage_path_kind_from_string(kind_str) do
       {:ok, kind} ->
         {:ok, %{kind: kind, path: Map.get(map, "path")}}
 
@@ -293,10 +452,11 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp parse_usage_path(_raw, _path), do: {:ok, nil}
 
-  defp kind_from_string("jsonl_latest_in_dir"), do: {:ok, :jsonl_latest_in_dir}
-  defp kind_from_string("jsonl_file"), do: {:ok, :jsonl_file}
-  defp kind_from_string("stdout"), do: {:ok, :stdout}
-  defp kind_from_string(_), do: :error
+  defp usage_path_kind_from_string("jsonl_latest_in_dir"), do: {:ok, :jsonl_latest_in_dir}
+  defp usage_path_kind_from_string("jsonl_file"), do: {:ok, :jsonl_file}
+  defp usage_path_kind_from_string("json_file"), do: {:ok, :json_file}
+  defp usage_path_kind_from_string("stdout"), do: {:ok, :stdout}
+  defp usage_path_kind_from_string(_), do: :error
 
   defp parse_path_transforms(%{"path_transforms" => map}, path) when is_map(map) do
     Enum.reduce_while(map, {:ok, []}, fn {name, spec}, {:ok, acc} ->
@@ -450,6 +610,13 @@ defmodule Glorbo.CLI.Registry.Loader do
   def format_error({:missing_field, path, field}),
     do: "providers config error: #{path} missing required field `#{field}`"
 
+  def format_error({:invalid_kind, path, value}),
+    do:
+      "providers config error: #{path} kind #{inspect(value)} not in #{inspect(Provider.kinds())}"
+
+  def format_error({:invalid_binary, path, detail}),
+    do: "providers config error: #{path} #{detail}"
+
   def format_error({:invalid_prompt_mode, path, value}),
     do:
       "providers config error: #{path} prompt_mode #{inspect(value)} not in #{inspect(Provider.prompt_modes())}"
@@ -460,14 +627,33 @@ defmodule Glorbo.CLI.Registry.Loader do
   def format_error({:invalid_env, path, detail}),
     do: "providers config error: #{path} #{detail}"
 
+  def format_error({:invalid_reply_dir, path, detail}),
+    do: "providers config error: #{path} #{detail}"
+
+  def format_error({:invalid_reply_filename_template, path, detail}),
+    do: "providers config error: #{path} #{detail}"
+
   def format_error({:invalid_reply_max_bytes, path, detail}),
     do: "providers config error: #{path} reply_max_bytes #{detail}"
+
+  def format_error({:invalid_endpoint, path, detail}),
+    do: "providers config error: #{path} endpoint #{detail}"
+
+  def format_error({:invalid_auth, path, value}),
+    do:
+      "providers config error: #{path} auth #{inspect(value)} not in #{inspect(Provider.auth_modes())}"
+
+  def format_error({:invalid_model_list, path, detail}),
+    do: "providers config error: #{path} model_list: #{detail}"
 
   def format_error({:invalid_version_regex, path, reason}),
     do: "providers config error: #{path} invalid version_regex: #{inspect(reason)}"
 
   def format_error({:unknown_usage_parser, path, name}),
     do: "providers config error: #{path} unknown usage_parser #{inspect(name)}"
+
+  def format_error({:invalid_native_usage_parser, path}),
+    do: "providers config error: #{path} native providers must declare a tracked usage_parser"
 
   def format_error({:invalid_usage_path, path, detail}),
     do: "providers config error: #{path} usage_path: #{detail}"

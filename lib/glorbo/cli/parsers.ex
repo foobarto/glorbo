@@ -14,18 +14,21 @@ defmodule Glorbo.CLI.Parsers do
     "none" => Glorbo.CLI.Parsers.None,
     "claude_jsonl" => Glorbo.CLI.Parsers.ClaudeJsonl,
     "gemini_stdout" => Glorbo.CLI.Parsers.GeminiStdout,
-    "codex_jsonl" => Glorbo.CLI.Parsers.CodexJsonl
+    "codex_jsonl" => Glorbo.CLI.Parsers.CodexJsonl,
+    "native-v1" => Glorbo.CLI.Parsers.NativeV1
   }
 
   @type usage :: %{
           required(:prompt_tokens) => non_neg_integer(),
           required(:completion_tokens) => non_neg_integer(),
           required(:model) => String.t() | nil,
+          optional(:tracked) => boolean(),
           optional(:tool_calls) => %{optional(String.t()) => non_neg_integer()}
         }
 
   @type source ::
           {:jsonl_file, String.t()}
+          | {:json_file, String.t()}
           | {:stdout, binary()}
 
   @doc "True if `name` is a registered parser."

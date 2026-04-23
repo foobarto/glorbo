@@ -273,6 +273,37 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert {:ok, %{usage: nil, usage_error: :json_decode_error}} =
                Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
     end
+
+    test "json_file kind forwards to parser with expanded path" do
+      ws = tmp_workspace()
+
+      p =
+        base_provider(
+          usage_parser: "native-v1",
+          usage_path: %{kind: :json_file, path: "{workspace}/.glorbo/run/usage.json"}
+        )
+
+      fun = fn _a, env, _b, run_opts ->
+        usage_path = Path.join(run_opts.usage_dir, "usage.json")
+        File.mkdir_p!(Path.dirname(usage_path))
+
+        File.write!(
+          usage_path,
+          ~s({"tracked":true,"prompt_tokens":5,"completion_tokens":8,"model":"native-model"})
+        )
+
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+      end
+
+      assert {:ok, %{usage: usage, usage_error: nil}} =
+               Dispatcher.invoke(p, base_ctx(ws), run_fun: fun)
+
+      assert usage.tracked == true
+      assert usage.prompt_tokens == 5
+      assert usage.completion_tokens == 8
+      assert usage.model == "native-model"
+    end
   end
 
   # ---------------------------------------------------------------------------

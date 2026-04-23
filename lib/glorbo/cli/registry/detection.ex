@@ -50,6 +50,10 @@ defmodule Glorbo.CLI.Registry.Detection do
     Enum.map(providers, &detect_one(&1, find_fun, stat_fun))
   end
 
+  defp detect_one(%Provider{kind: :native} = p, _find_fun, _stat_fun) do
+    %{p | installed?: true, resolved_path: nil}
+  end
+
   defp detect_one(%Provider{binary: binary} = p, find_fun, stat_fun) do
     if absolute?(binary) do
       case stat_fun.(binary) do
@@ -124,6 +128,8 @@ defmodule Glorbo.CLI.Registry.Detection do
 
     probed ++ passthrough
   end
+
+  defp probeable?(%Provider{kind: :native}), do: false
 
   defp probeable?(%Provider{installed?: true, allow_version_probe: true, version_flag: f})
        when is_binary(f) and f != "",

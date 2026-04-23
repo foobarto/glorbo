@@ -335,6 +335,10 @@ defmodule Glorbo.CLI.Dispatcher do
     path |> expand(base_substitutions(ctx)) |> Path.dirname()
   end
 
+  defp usage_dir_for(%Provider{usage_path: %{kind: :json_file, path: path}}, ctx) do
+    path |> expand(base_substitutions(ctx)) |> Path.dirname()
+  end
+
   defp usage_dir_for(%Provider{usage_path: %{kind: :stdout}}, _ctx), do: nil
 
   defp base_substitutions(ctx) do
@@ -378,6 +382,10 @@ defmodule Glorbo.CLI.Dispatcher do
 
   defp resolve_source(%{kind: :jsonl_file, path: path}, _run_result, ctx, subs, _provider) do
     {:jsonl_file, expand(path, Map.merge(base_substitutions(ctx), subs))}
+  end
+
+  defp resolve_source(%{kind: :json_file, path: path}, _run_result, ctx, subs, _provider) do
+    {:json_file, expand(path, Map.merge(base_substitutions(ctx), subs))}
   end
 
   defp resolve_source(
