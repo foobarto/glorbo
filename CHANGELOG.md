@@ -56,6 +56,10 @@ change between minor versions. Pin exact versions in downstream usage.
   segment summaries from filename + `File.stat/1` and stops reading
   every archive body on each refresh. Full archive content is only
   loaded when the director explicitly opens a segment.
+- `InboxLive` now rejects malformed or spoofed stuck-sentinel files
+  while building the inbox list. Agent-written `state/stuck-on-*.md`
+  files must carry a matching agent slug, a valid in-company task path,
+  and a real regular task target before they render as actionable rows.
 
 ## [0.3.0] — 2026-04-23
 

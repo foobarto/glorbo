@@ -364,16 +364,50 @@ defmodule GlorboWeb.InboxLive do
 
   defp validate_relative_sentinel_path(_), do: {:error, :invalid}
 
+  @stuck_task_path_re ~r{\Aprojects/[a-z0-9][a-z0-9-]*/tasks/[a-z0-9][a-z0-9._-]*\.md\z}
+
+  defp validate_stuck_task_path(task_path, task_id)
+       when is_binary(task_path) and is_binary(task_id) do
+    segments = Path.split(task_path)
+
+    cond do
+      task_path == "" -> {:error, :invalid}
+      String.contains?(task_path, <<0>>) -> {:error, :invalid}
+      Path.type(task_path) != :relative -> {:error, :invalid}
+      ".." in segments -> {:error, :invalid}
+      not Regex.match?(@stuck_task_path_re, task_path) -> {:error, :invalid}
+      Path.basename(task_path, ".md") != task_id -> {:error, :invalid}
+      true -> :ok
+    end
+  end
+
+  defp validate_stuck_task_path(_, _), do: {:error, :invalid}
+
+  defp agent_slug_from_sentinel_path(sentinel_path, co_dir) do
+    case Path.relative_to(sentinel_path, co_dir) |> Path.split() do
+      ["agents", agent_slug, "state", _filename] ->
+        if GlorboWeb.Slug.valid?(agent_slug), do: agent_slug, else: nil
+
+      _ ->
+        nil
+    end
+  end
+
   defp stuck_row(sentinel_path, co_dir) do
     filename = Path.basename(sentinel_path, ".md")
 
     with [_, task_id] when task_id != "" <- String.split(filename, "stuck-on-", parts: 2),
+         agent_slug when is_binary(agent_slug) <-
+           agent_slug_from_sentinel_path(sentinel_path, co_dir),
          {:ok, content} <- File.read(sentinel_path),
-         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         agent = to_string(fm["agent"] || ""),
+         true <- agent == agent_slug,
+         task_path = to_string(fm["task_path"] || ""),
+         :ok <- validate_stuck_task_path(task_path, task_id),
+         abs_task = Path.join(co_dir, task_path),
+         {:ok, %File.Stat{type: :regular}} <- File.lstat(abs_task) do
       # Sentinel carries agent + task_path in frontmatter.
-      agent = to_string(fm["agent"] || "")
-      task_path = to_string(fm["task_path"] || "")
-
       %{
         task_id: task_id,
         task_path: task_path,

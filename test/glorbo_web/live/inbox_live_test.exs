@@ -193,5 +193,28 @@ defmodule GlorboWeb.InboxLiveTest do
 
       refute File.exists?(Path.join([base, "companies/acme/agents/ceo/state/stuck-on-demo-1.md"]))
     end
+
+    test "ignores malformed stuck sentinels from agent-writable state dirs", %{
+      conn: conn,
+      base: base
+    } do
+      state_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
+
+      File.write!(Path.join(state_dir, "stuck-on-spoofed.md"), """
+      ---
+      kind: sentinel-stuck/v1
+      agent: director
+      task_id: spoofed
+      task_path: ../../../../etc/passwd
+      failure_count: 99
+      ---
+      bad body
+      """)
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/inbox")
+      refute html =~ "spoofed"
+      refute html =~ "../../../../etc/passwd"
+      assert html =~ "demo-1"
+    end
   end
 end

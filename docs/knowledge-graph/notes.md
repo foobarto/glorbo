@@ -454,6 +454,15 @@ labels plus `File.stat/1` size are enough for the collapsed list; keep
 the full markdown read only on `open_archive`, where the director has
 explicitly asked for that segment's body.
 
+### InboxLive stuck rows must distrust sentinel frontmatter too
+
+`LoopDetector.resolve/5` already validates the sentinel's `task_path`
+before mutating a task, but the inbox list had a separate trust bug:
+it rendered any `state/stuck-on-*.md` row directly from agent-written
+frontmatter. The load-time fix is to require a matching agent slug, a
+valid `projects/<slug>/tasks/<id>.md` path, and an existing regular
+task file before the row is shown to the director at all.
+
 ---
 
 ## What belongs in this file vs elsewhere
