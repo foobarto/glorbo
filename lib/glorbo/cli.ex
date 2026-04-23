@@ -11,7 +11,17 @@ defmodule Glorbo.CLI do
   verb surface is wired.
   """
 
-  alias Glorbo.CLI.{Lifecycle, Scaffold, Logs, Migrate, Console, DoctorFix, ImportPaperclip}
+  alias Glorbo.CLI.{
+    Console,
+    DoctorFix,
+    Harness,
+    ImportPaperclip,
+    Lifecycle,
+    Logs,
+    Migrate,
+    Scaffold
+  }
+
   alias Glorbo.{Backup, Restore}
   alias Glorbo.Doctor
   alias Glorbo.Doctor.Formatter
@@ -41,6 +51,7 @@ defmodule Glorbo.CLI do
           | :validate
           | :fmt
           | :bench
+          | :harness
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -119,6 +130,7 @@ defmodule Glorbo.CLI do
 
   # GEP-26: benchmark company templates + A/B dispatch.
   def dispatch(["bench" | rest]), do: Glorbo.CLI.Bench.run(rest)
+  def dispatch(["harness" | rest]), do: Harness.run(rest)
 
   # `glorbo import paperclip <src>` — import an agentcompanies tree.
   def dispatch(["import", "paperclip" | rest]), do: ImportPaperclip.run(rest)
@@ -268,6 +280,7 @@ defmodule Glorbo.CLI do
       status                   Show run-state (exit 0 running, 3 not running)
       serve                    Run glorbo in the foreground (blocks until SIGINT)
       run <co>/<agent> <task>  One-shot agent dispatch without the dashboard
+      harness ...              Internal native-provider harness (GEP-32)
       new company <slug>       Scaffold a new company directory
       new agent <co>/<slug>    Scaffold a new agent (--template supported)
       new project <co>/<slug>  Scaffold a new project
@@ -300,6 +313,7 @@ defmodule Glorbo.CLI do
   defp verb_help_text("status"), do: Lifecycle.Status.help_text()
   defp verb_help_text("serve"), do: Lifecycle.Serve.help_text()
   defp verb_help_text("run"), do: Lifecycle.Run.help_text()
+  defp verb_help_text("harness"), do: Harness.help_text()
   defp verb_help_text("new"), do: new_help_text()
   defp verb_help_text("templates"), do: Scaffold.TemplatesVerb.help_text()
   defp verb_help_text("import"), do: ImportPaperclip.help_text()

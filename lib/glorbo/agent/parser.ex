@@ -16,7 +16,8 @@ defmodule Glorbo.Agent.Parser do
 
   ## Allowlists + invariants
 
-    * `@allowed_providers` — `["claude-code", "gemini-cli", "codex"]` (D-02).
+    * `@fallback_provider_kinds` — compile-time fallback when the live
+      registry is unavailable.
     * `@network_map` — `"none" → :none | "proxy" → :proxy | "open" → :open`.
     * `@skill_name_regex` / `@slug_regex` — `~r/\A[a-z][a-z0-9_-]{0,63}\z/`
       (T-03-19 path-traversal block; bounds slug to kebab-case ASCII).
@@ -54,7 +55,14 @@ defmodule Glorbo.Agent.Parser do
   # whatever `Glorbo.CLI.Registry.list/0` reports — opencode, hermes,
   # pi, etc., all qualify, matching what the director sees on
   # `/providers`.
-  @fallback_providers ["claude-code", "gemini-cli", "codex"]
+  @fallback_provider_kinds %{
+    "claude-code" => :cli,
+    "gemini-cli" => :cli,
+    "codex" => :cli,
+    "openai" => :native,
+    "openrouter" => :native
+  }
+  @fallback_providers Map.keys(@fallback_provider_kinds)
   @network_map %{"none" => :none, "proxy" => :proxy, "open" => :open}
   @default_timeout_seconds 300
   @slug_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
@@ -66,6 +74,7 @@ defmodule Glorbo.Agent.Parser do
           | :multiple_models_not_supported
           | {:invalid_permission, String.t()}
           | {:invalid_network, String.t()}
+          | {:native_provider_requires_network, String.t()}
           | {:invalid_autonomy, String.t()}
           | {:invalid_skill_name, String.t()}
           | {:invalid_slug, String.t()}
@@ -118,7 +127,7 @@ defmodule Glorbo.Agent.Parser do
          {:ok, models} <- validate_models_aliases(meta["models"]),
          {:ok, permissions} <- validate_permissions(meta["permissions"] || []),
          :ok <- reject_agents_create(permissions),
-         {:ok, network} <- validate_network(meta["network"]),
+         {:ok, network} <- validate_network(meta["network"], provider, provider_kind(provider)),
          {:ok, skills} <- validate_skills(meta["skills"]),
          {:ok, heartbeat} <- validate_heartbeat(meta["heartbeat"]),
          {:ok, budget} <- validate_budget(meta["budget"], meta["budget_usd_cents_month"]),
@@ -418,21 +427,41 @@ defmodule Glorbo.Agent.Parser do
     end
   end
 
-  # Network policy. Nil defaults to :proxy — CLI-provider agents need
-  # egress to their hosted API endpoint (api.anthropic.com etc). :none was
-  # the earlier secure-by-default but it silently bricks every claude-code
-  # dispatch; opt-in explicitly in `agent.md` if you really want airgapped.
-  defp validate_network(nil), do: {:ok, :none}
-  defp validate_network(""), do: {:ok, :none}
+  # Native providers make real HTTPS requests to their endpoint from
+  # inside the harness, so `network: none` is structurally impossible.
+  # Reject it at parse time instead of letting dispatch fail later.
+  defp validate_network(nil, provider, :native),
+    do: {:error, {:native_provider_requires_network, provider}}
 
-  defp validate_network(raw) when is_binary(raw) do
+  defp validate_network("", provider, :native),
+    do: {:error, {:native_provider_requires_network, provider}}
+
+  defp validate_network("none", provider, :native),
+    do: {:error, {:native_provider_requires_network, provider}}
+
+  defp validate_network(nil, _provider, _kind), do: {:ok, :none}
+  defp validate_network("", _provider, _kind), do: {:ok, :none}
+
+  defp validate_network(raw, _provider, _kind) when is_binary(raw) do
     case Map.fetch(@network_map, raw) do
       {:ok, atom} -> {:ok, atom}
       :error -> {:error, {:invalid_network, raw}}
     end
   end
 
-  defp validate_network(other), do: {:error, {:invalid_network, inspect(other)}}
+  defp validate_network(other, _provider, _kind), do: {:error, {:invalid_network, inspect(other)}}
+
+  defp provider_kind(provider_name) when is_binary(provider_name) do
+    registry_kinds =
+      try do
+        Glorbo.CLI.Registry.list()
+        |> Map.new(fn provider -> {provider.name, provider.kind} end)
+      catch
+        :exit, _ -> %{}
+      end
+
+    Map.get(registry_kinds, provider_name, Map.get(@fallback_provider_kinds, provider_name, :cli))
+  end
 
   # Skills list normalisation: nil → []; scalar "foo" → ["foo"]; list as-is.
   # Each entry must pass the skill-name regex (T-03-19 path-traversal gate).

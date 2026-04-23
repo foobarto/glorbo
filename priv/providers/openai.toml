@@ -1,0 +1,10 @@
+# OpenAI native harness provider (GEP-32 phase 1).
+
+name         = "openai"
+kind         = "native"
+endpoint     = "https://api.openai.com/v1"
+auth         = "bearer"
+usage_parser = "native-v1"
+usage_path   = { kind = "json_file", path = "{workspace}/.glorbo-run/{task_id}/usage.json" }
+
+model_list = { path = "/v1/models", shape = "openai" }

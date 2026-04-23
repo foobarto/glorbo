@@ -76,6 +76,20 @@ defmodule Glorbo.Agent.ParserTest do
   # ---------------------------------------------------------------------------
 
   describe "provider validation (D-02 P2, P15)" do
+    test "native built-ins are accepted when the live registry is unavailable", ctx do
+      content = """
+      ---
+      role: x
+      provider: openai
+      model: gpt-4.1
+      network: proxy
+      ---
+      """
+
+      path = write_agent(ctx, "engineer", content)
+      assert {:ok, %Spec{provider: "openai"}} = Parser.parse_file(path)
+    end
+
     test "P2: unknown provider rejected with {:invalid_provider, _}", ctx do
       content = """
       ---
@@ -270,6 +284,62 @@ defmodule Glorbo.Agent.ParserTest do
 
       path = write_agent(ctx, "e", content)
       assert {:ok, %{network: :none}} = Parser.parse_file(path)
+    end
+
+    test "native providers reject missing network because :none is impossible", ctx do
+      content = """
+      ---
+      role: x
+      provider: openai
+      model: gpt-4.1
+      ---
+      """
+
+      path = write_agent(ctx, "native-missing-network", content)
+
+      assert {:error, {:native_provider_requires_network, "openai"}} = Parser.parse_file(path)
+    end
+
+    test "native providers reject explicit network: none", ctx do
+      content = """
+      ---
+      role: x
+      provider: openrouter
+      model: openai/gpt-4.1
+      network: none
+      ---
+      """
+
+      path = write_agent(ctx, "native-none-network", content)
+
+      assert {:error, {:native_provider_requires_network, "openrouter"}} =
+               Parser.parse_file(path)
+    end
+
+    test "native providers accept proxy and open network modes", ctx do
+      proxy = """
+      ---
+      role: x
+      provider: openai
+      model: gpt-4.1
+      network: proxy
+      ---
+      """
+
+      open = """
+      ---
+      role: x
+      provider: openrouter
+      model: openai/gpt-4.1
+      network: open
+      ---
+      """
+
+      proxy_path = write_agent(ctx, "native-proxy", proxy)
+      open_path = write_agent(ctx, "native-open", open)
+
+      assert {:ok, %{network: :proxy}} = Parser.parse_file(proxy_path)
+      assert {:ok, %{network: :open}} = Parser.parse_file(open_path)
     end
   end
 

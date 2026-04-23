@@ -10,7 +10,7 @@ defmodule GlorboWeb.ProvidersLiveTest do
     test "renders the registry snapshot", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/providers")
 
-      # The app-wide Registry boots with the 6 shipped providers
+      # The app-wide Registry boots with the shipped built-ins.
       assert html =~ "Providers"
       assert html =~ "claude-code"
       assert html =~ "codex"
@@ -18,6 +18,8 @@ defmodule GlorboWeb.ProvidersLiveTest do
       assert html =~ "hermes"
       assert html =~ "opencode"
       assert html =~ "pi"
+      assert html =~ "openai"
+      assert html =~ "openrouter"
     end
 
     test "shows status badges label for the installed_untracked branch" do
@@ -55,6 +57,7 @@ defmodule GlorboWeb.ProvidersLiveTest do
       {:ok, view, _html} = live(conn, "/providers")
       html = view |> element("button", "↻ refresh PATH") |> render_click()
       assert html =~ "claude-code"
+      assert html =~ "openai"
     end
 
     # M4.5 — card grid + TOML snippet.
@@ -97,7 +100,7 @@ defmodule GlorboWeb.ProvidersLiveTest do
       File.mkdir_p!(tmp)
       on_exit(fn -> File.rm_rf!(tmp) end)
 
-      # If the global registry already ships 6 providers, this test isn't
+      # If the global registry already ships built-ins, this test isn't
       # meaningful — so we verify the happy path renders instead and
       # leave the empty-state unit assertion to the LV's internal logic.
       {:ok, _view, html} = live(conn, "/providers")

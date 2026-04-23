@@ -54,7 +54,8 @@ defmodule GlorboWeb.ProvidersLive do
 
   def handle_event("probe", _params, socket) do
     socket = assign(socket, :probing, true)
-    # Run in the LV process — fine for ≤ 6 providers × 3 s cap.
+    # Run in the LV process — fine for the current built-in set and the
+    # 3 s per-provider probe cap.
     # Larger registries could Task.async this off the mount pid.
     Registry.refresh_with_version_probe()
 
@@ -113,15 +114,24 @@ defmodule GlorboWeb.ProvidersLive do
             </span>
           </header>
           <dl class="gl-kv gl-provider-card__kv">
-            <dt>binary</dt>
-            <dd class="gl-tabular">{p.binary}</dd>
-            <dt>path</dt>
-            <dd class={[
-              "gl-tabular",
-              if(p.resolved_path, do: "gl-accent-text", else: "gl-danger-text")
-            ]}>
+            <dt>kind</dt>
+            <dd class="gl-tabular">{p.kind}</dd>
+            <dt :if={p.kind == :cli}>binary</dt>
+            <dd :if={p.kind == :cli} class="gl-tabular">{p.binary}</dd>
+            <dt :if={p.kind == :cli}>path</dt>
+            <dd
+              :if={p.kind == :cli}
+              class={[
+                "gl-tabular",
+                if(p.resolved_path, do: "gl-accent-text", else: "gl-danger-text")
+              ]}
+            >
               {p.resolved_path || "(not found on PATH)"}
             </dd>
+            <dt :if={p.kind == :native}>endpoint</dt>
+            <dd :if={p.kind == :native} class="gl-tabular gl-cyan-text">{p.endpoint}</dd>
+            <dt :if={p.kind == :native}>auth</dt>
+            <dd :if={p.kind == :native} class="gl-tabular">{p.auth}</dd>
             <dt>version</dt>
             <dd class="gl-tabular">{version_display(p)}</dd>
             <dt>parser</dt>

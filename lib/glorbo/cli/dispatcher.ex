@@ -40,6 +40,7 @@ defmodule Glorbo.CLI.Dispatcher do
 
   require Logger
 
+  alias Glorbo.CLI.Lifecycle.Daemon
   alias Glorbo.CLI.Parsers
   alias Glorbo.CLI.PathTransforms
   alias Glorbo.CLI.Registry.Provider
@@ -88,6 +89,10 @@ defmodule Glorbo.CLI.Dispatcher do
       "model" => ctx.model,
       "workspace" => ctx.workspace,
       "prompt_path" => ctx.prompt_path,
+      "provider" => provider.name,
+      "agent_slug" => Map.get(ctx, :agent_slug, ""),
+      "company" => Map.get(ctx, :company, ""),
+      "task_id" => Map.get(ctx, :task_id, ""),
       "timestamp" => timestamp,
       "invocation_id" => invocation_id
     }
@@ -101,7 +106,7 @@ defmodule Glorbo.CLI.Dispatcher do
 
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
-         env <- build_env(provider.env, substitutions, reply_path, invocation_id, ctx),
+         env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),
          {:ok, run_result} <- run(provider, args, env, ctx, opts),
          :ok <- maybe_log_run_output(provider, run_result, reply_path, fs),
          :ok <- maybe_stdout_to_reply(run_result, reply_path, provider.reply_max_bytes, fs),
@@ -284,13 +289,14 @@ defmodule Glorbo.CLI.Dispatcher do
   # Env composition
   # ---------------------------------------------------------------------------
 
-  defp build_env(provider_env, substitutions, reply_path, invocation_id, ctx) do
+  defp build_env(provider, provider_env, substitutions, reply_path, invocation_id, ctx) do
     expanded =
       Map.new(provider_env, fn {k, v} -> {k, expand(v, substitutions)} end)
 
-    Map.merge(expanded, %{
+    base_env = %{
       "GLORBO_TASK_ID" => Map.get(ctx, :task_id, ""),
       "GLORBO_INVOCATION_ID" => invocation_id,
+      "GLORBO_PROVIDER" => provider.name,
       "GLORBO_REPLY_PATH" => reply_path,
       "GLORBO_WORKSPACE" => ctx.workspace,
       "GLORBO_INBOX" => "/inbox",
@@ -301,7 +307,34 @@ defmodule Glorbo.CLI.Dispatcher do
       "GLORBO_AGENT" => Map.get(ctx, :agent_slug, ""),
       "GLORBO_COMPANY" => Map.get(ctx, :company, ""),
       "GLORBO_TIMESTAMP" => Map.get(substitutions, "timestamp", "")
-    })
+    }
+
+    usage_env =
+      case provider.usage_path do
+        %{kind: :json_file, path: path} ->
+          %{
+            "GLORBO_USAGE_PATH" => expand(path, Map.merge(base_substitutions(ctx), substitutions))
+          }
+
+        _ ->
+          %{}
+      end
+
+    native_env =
+      if provider.kind == :native do
+        %{
+          "GLORBO_NATIVE_ENDPOINT" => provider.endpoint || "",
+          "GLORBO_NATIVE_AUTH" => to_string(provider.auth || ""),
+          "GLORBO_NATIVE_CREDENTIALS_PATH" => "/creds/provider.toml"
+        }
+      else
+        %{}
+      end
+
+    expanded
+    |> Map.merge(base_env)
+    |> Map.merge(usage_env)
+    |> Map.merge(native_env)
   end
 
   # ---------------------------------------------------------------------------
@@ -311,18 +344,44 @@ defmodule Glorbo.CLI.Dispatcher do
   defp run(provider, args, env, ctx, opts) do
     run_fun = Keyword.get(opts, :run_fun, &default_run_fun/4)
 
-    run_opts_map = %{
-      cli_binary: provider.resolved_path || provider.binary,
-      cli_args: args,
-      prompt: Map.get(ctx, :prompt, ""),
-      usage_dir: usage_dir_for(provider, ctx)
-    }
+    run_opts_map =
+      case provider.kind do
+        :native ->
+          %{
+            cli_binary: Map.get(ctx, :native_binary) || Daemon.self_binary(),
+            cli_args: native_args(provider, ctx),
+            prompt: Map.get(ctx, :prompt, ""),
+            usage_dir: usage_dir_for(provider, ctx)
+          }
+
+        _ ->
+          %{
+            cli_binary: provider.resolved_path || provider.binary,
+            cli_args: args,
+            prompt: Map.get(ctx, :prompt, ""),
+            usage_dir: usage_dir_for(provider, ctx)
+          }
+      end
 
     case run_fun.(args, env, Map.get(ctx, :bwrap_opts, %{}), run_opts_map) do
       {:ok, m} when is_map(m) -> {:ok, m}
       {:error, _} = err -> err
       other -> {:error, {:run_fun_bad_return, other}}
     end
+  end
+
+  defp native_args(provider, ctx) do
+    [
+      "harness",
+      "--provider",
+      provider.name,
+      "--agent",
+      Map.get(ctx, :agent_slug, ""),
+      "--task",
+      Map.get(ctx, :task_id, ""),
+      "--model",
+      Map.get(ctx, :model, "")
+    ]
   end
 
   defp usage_dir_for(%Provider{usage_path: nil}, _ctx), do: nil
@@ -345,7 +404,11 @@ defmodule Glorbo.CLI.Dispatcher do
     %{
       "model" => Map.get(ctx, :model, ""),
       "workspace" => ctx.workspace,
-      "prompt_path" => Map.get(ctx, :prompt_path, "")
+      "prompt_path" => Map.get(ctx, :prompt_path, ""),
+      "provider" => Map.get(ctx, :provider, ""),
+      "agent_slug" => Map.get(ctx, :agent_slug, ""),
+      "company" => Map.get(ctx, :company, ""),
+      "task_id" => Map.get(ctx, :task_id, "")
     }
   end
 

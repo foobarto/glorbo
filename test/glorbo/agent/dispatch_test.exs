@@ -443,6 +443,53 @@ defmodule Glorbo.Agent.DispatchTest do
     refute :ets.member(run_called, :x)
   end
 
+  test "D8b: native providers do not require resolved_path once installed", ctx do
+    native_provider =
+      stub_provider(
+        name: "openai",
+        kind: :native,
+        binary: nil,
+        resolved_path: nil,
+        usage_parser: "native-v1",
+        usage_path: %{kind: :json_file, path: "{workspace}/.glorbo-run/{task_id}/usage.json"}
+      )
+
+    run_fun = fn _args, env, _bwrap, run_opts ->
+      assert run_opts.cli_binary == "/fake/glorbo"
+
+      assert run_opts.cli_args == [
+               "harness",
+               "--provider",
+               "openai",
+               "--agent",
+               "engineer",
+               "--task",
+               "t-001",
+               "--model",
+               "claude-opus-4-6"
+             ]
+
+      assert env["GLORBO_NATIVE_ENDPOINT"] == ""
+      assert env["GLORBO_NATIVE_AUTH"] == ""
+      assert env["GLORBO_NATIVE_CREDENTIALS_PATH"] == "/creds/provider.toml"
+
+      usage_path = Path.join(run_opts.usage_dir, "usage.json")
+      File.mkdir_p!(Path.dirname(usage_path))
+      File.write!(usage_path, ~s({"tracked":true,"prompt_tokens":2,"completion_tokens":3}))
+      File.write!(env["GLORBO_REPLY_PATH"], "native ok")
+      {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+    end
+
+    assert {:ok, %{reply: "native ok", usage: %{prompt_tokens: 2, completion_tokens: 3}}} =
+             Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               provider_fun: fn _ -> native_provider end,
+               self_binary_fun: fn -> "/fake/glorbo" end,
+               audit_fun: ctx.audit_fun
+             )
+  end
+
   # ---------------------------------------------------------------------------
   # D9 — unknown provider (not in registry)
   # ---------------------------------------------------------------------------
@@ -481,6 +528,35 @@ defmodule Glorbo.Agent.DispatchTest do
                base: ctx.base,
                run_fun: writer(),
                provider_fun: fn _ -> untracked end,
+               audit_fun: ctx.audit_fun
+             )
+  end
+
+  test "runtime tracked:false still requires allow_untracked_budget for native providers", ctx do
+    native_provider =
+      stub_provider(
+        name: "openai",
+        kind: :native,
+        binary: nil,
+        resolved_path: nil,
+        usage_parser: "native-v1",
+        usage_path: %{kind: :json_file, path: "{workspace}/.glorbo-run/{task_id}/usage.json"}
+      )
+
+    run_fun = fn _args, env, _bwrap, run_opts ->
+      usage_path = Path.join(run_opts.usage_dir, "usage.json")
+      File.mkdir_p!(Path.dirname(usage_path))
+      File.write!(usage_path, ~s({"tracked":false,"prompt_tokens":0,"completion_tokens":0}))
+      File.write!(env["GLORBO_REPLY_PATH"], "native ok")
+      {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+    end
+
+    assert {:error, :untracked_disallowed} =
+             Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               provider_fun: fn _ -> native_provider end,
+               self_binary_fun: fn -> "/fake/glorbo" end,
                audit_fun: ctx.audit_fun
              )
   end

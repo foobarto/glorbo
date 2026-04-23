@@ -116,13 +116,22 @@ defmodule Glorbo.CLI.Lifecycle.Daemon do
   @doc """
   Discover the path to the currently-running Burrito binary. Reads
   `__BURRITO_BIN_PATH` when set; falls back to `GLORBO_BINARY_PATH` (a
-  test-only override) and finally raises a descriptive error when
-  neither is available (dev / mix-test runs that don't stub this).
+  test-only override), then a local `./glorbo` build-local symlink, then
+  a PATH lookup, and finally raises a descriptive error when none of
+  those are available.
   """
   @spec self_binary() :: Path.t()
   def self_binary do
     System.get_env("__BURRITO_BIN_PATH") ||
       System.get_env("GLORBO_BINARY_PATH") ||
-      raise "Cannot locate Glorbo binary; set __BURRITO_BIN_PATH (Burrito) or GLORBO_BINARY_PATH (test)."
+      local_glorbo_binary() ||
+      System.find_executable("glorbo") ||
+      raise "Cannot locate Glorbo binary; set __BURRITO_BIN_PATH, GLORBO_BINARY_PATH, build ./glorbo, or install glorbo on PATH."
+  end
+
+  defp local_glorbo_binary do
+    path = Path.expand("glorbo", File.cwd!())
+
+    if executable?(path), do: path, else: nil
   end
 end

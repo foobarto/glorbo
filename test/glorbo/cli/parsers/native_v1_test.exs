@@ -5,13 +5,16 @@ defmodule Glorbo.CLI.Parsers.NativeV1Test do
 
   test "parses tracked usage from json_file" do
     path =
-      tmp_json!(~s({"tracked":true,"prompt_tokens":12,"completion_tokens":34,"model":"gpt-4.1"}))
+      tmp_json!(
+        ~s({"tracked":true,"prompt_tokens":12,"completion_tokens":34,"model":"gpt-4.1","tool_calls":{"read_file":2}})
+      )
 
     assert {:ok, usage} = NativeV1.parse({:json_file, path})
     assert usage.tracked == true
     assert usage.prompt_tokens == 12
     assert usage.completion_tokens == 34
     assert usage.model == "gpt-4.1"
+    assert usage.tool_calls == %{"read_file" => 2}
   end
 
   test "parses untracked usage from json_file" do

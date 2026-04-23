@@ -160,7 +160,7 @@ defmodule Glorbo.CLITest do
     {verb, _code, output} = CLI.dispatch(["doctor", "--json"])
     assert verb == :doctor
     decoded = Jason.decode!(output)
-    assert decoded["version"] == "0.0.4"
+    assert decoded["version"] == to_string(Application.spec(:glorbo, :vsn))
     # GEP-5 D6 pruned podman/ollama/runtime_image/runtime_exec:
     # 5 Phase-1 + 4 Phase-2 + 2 Phase-3 = 11 checks.
     assert length(decoded["checks"]) == 11
@@ -208,6 +208,17 @@ defmodule Glorbo.CLITest do
   test "help_text advertises the init verb (Plan 04 D-22)" do
     assert CLI.help_text() =~ "init"
     assert CLI.help_text() =~ "--force"
+  end
+
+  test "help_text advertises the native harness verb" do
+    assert CLI.help_text() =~ "harness"
+    assert CLI.help_text() =~ "GEP-32"
+  end
+
+  test ~S|dispatch(["harness", "--help"]) returns harness help| do
+    assert {:harness, 0, out} = CLI.dispatch(["harness", "--help"])
+    assert out =~ "glorbo harness"
+    assert out =~ "GLORBO_REPLY_PATH"
   end
 
   describe ~S{dispatch(["init" | ...]) (Plan 04, D-22, D-23)} do

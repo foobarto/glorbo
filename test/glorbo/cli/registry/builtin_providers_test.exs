@@ -24,12 +24,19 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     {:ok, providers: Map.new(providers, &{&1.name, &1})}
   end
 
-  test "all six built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 6
+  test "all built-in providers load without error", %{providers: p} do
+    assert map_size(p) == 8
+
+    for name <- ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter) do
+      assert Map.has_key?(p, name), "missing built-in provider: #{name}"
+    end
 
     for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
-      assert Map.has_key?(p, name), "missing built-in provider: #{name}"
       assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
+    end
+
+    for name <- ~w(openai openrouter) do
+      assert p[name].kind == :native, "#{name} must stay on the native registry path"
     end
   end
 
@@ -84,14 +91,36 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     assert gemini.env == %{}
   end
 
-  test "all built-ins opt into version probes and set a 1 MiB reply cap", %{providers: p} do
+  test "native built-ins use the harness usage contract", %{providers: p} do
+    for name <- ~w(openai openrouter) do
+      prov = p[name]
+      assert prov.binary == nil
+      assert prov.reply_dir == "{workspace}/.glorbo/outbox"
+      assert prov.reply_filename_template == "{timestamp}-{invocation_id}.md"
+      assert prov.usage_parser == "native-v1"
+
+      assert prov.usage_path == %{
+               kind: :json_file,
+               path: "{workspace}/.glorbo-run/{task_id}/usage.json"
+             }
+
+      assert prov.model_list == %{shape: :openai, path: "/v1/models"}
+    end
+  end
+
+  test "built-ins keep the shared reply cap; CLI built-ins still opt into version probes", %{
+    providers: p
+  } do
     for {_name, %Provider{} = prov} <- p do
       assert prov.source == :builtin
-      assert prov.allow_version_probe == true, "built-in #{prov.name} must allow probes"
 
       assert prov.reply_max_bytes == 1_048_576,
              "built-in #{prov.name} reply cap must match default"
+    end
 
+    for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
+      prov = p[name]
+      assert prov.allow_version_probe == true, "built-in #{prov.name} must allow probes"
       assert prov.version_flag == "--version"
       assert prov.version_regex == "(\\d+\\.\\d+\\.\\d+)"
     end

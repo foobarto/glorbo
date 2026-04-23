@@ -160,8 +160,9 @@ defmodule Glorbo.Agent.Dispatch do
            :ok <- write_prompt(run_dir, task.prompt, opts),
            :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
            start <- clock(opts),
-           ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id),
+           ctx <- build_ctx(spec, task, workspace, run_dir, provider, invocation_id, opts),
            {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
+           :ok <- check_runtime_untracked_allowed(spec, dispatcher_result, opts),
            duration_ms <- compute_duration(start, opts),
            usage <- finalize_usage(dispatcher_result, spec, task),
            :ok <- record_usage(spec, task, usage, opts),
@@ -332,13 +333,33 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp check_untracked_allowed(_spec, _provider, _opts), do: :ok
 
+  defp check_runtime_untracked_allowed(spec, %{usage: %{tracked: false}}, _opts) do
+    if Map.get(spec, :allow_untracked_budget) == true do
+      :ok
+    else
+      Logger.warning(
+        "dispatch: agent #{spec.slug} lacks allow_untracked_budget; runtime usage was untracked"
+      )
+
+      {:error, :untracked_disallowed}
+    end
+  end
+
+  defp check_runtime_untracked_allowed(_spec, _dispatcher_result, _opts), do: :ok
+
   defp verify_installed(spec, provider, opts) do
-    if Map.get(provider, :installed?, false) and not is_nil(Map.get(provider, :resolved_path)) do
+    if provider_available?(provider) do
       :ok
     else
       emit_unavailable_audit(spec, provider, opts)
       {:error, :provider_unavailable}
     end
+  end
+
+  defp provider_available?(%{kind: :native, installed?: true}), do: true
+
+  defp provider_available?(provider) do
+    Map.get(provider, :installed?, false) and not is_nil(Map.get(provider, :resolved_path))
   end
 
   defp ensure_workspace(spec, opts) do
@@ -435,7 +456,7 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp build_ctx(spec, task, workspace, run_dir, provider, invocation_id) do
+  defp build_ctx(spec, task, workspace, run_dir, provider, invocation_id, opts) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -455,15 +476,24 @@ defmodule Glorbo.Agent.Dispatch do
         :not_found -> []
       end
 
+    native_binary =
+      if provider.kind == :native do
+        resolve_self_binary(opts)
+      else
+        nil
+      end
+
     %{
       task_id: task.task_id,
       model: model,
+      provider: provider.name,
       workspace: workspace,
       prompt: task.prompt,
       prompt_path: prompt_path(run_dir),
       invocation_id: invocation_id,
       agent_slug: spec.slug,
       company: spec.company,
+      native_binary: native_binary,
       bwrap_opts: %{
         agent_workspace: workspace,
         inbox_path: Path.join(agent_root, "inbox"),
@@ -472,10 +502,20 @@ defmodule Glorbo.Agent.Dispatch do
         permissions: spec.permissions,
         network_policy: spec.network,
         timeout_seconds: spec.timeout_seconds,
-        cli_auth_binds: resolve_auth_binds(provider) ++ cli_binary_binds(provider),
+        cli_auth_binds:
+          resolve_auth_binds(provider) ++
+            native_credentials_binds(provider) ++
+            cli_binary_binds(provider, native_binary),
         approved_paths: approved_paths
       }
     }
+  end
+
+  defp resolve_self_binary(opts) do
+    case Keyword.get(opts, :self_binary_fun) do
+      nil -> Glorbo.CLI.Lifecycle.Daemon.self_binary()
+      fun when is_function(fun, 0) -> fun.()
+    end
   end
 
   # 12-char lowercase-hex id; unique-enough across a single dispatch
@@ -498,7 +538,17 @@ defmodule Glorbo.Agent.Dispatch do
   # the symlink but the real file still has to exist for the kernel to
   # resolve it. Same-dir host+sandbox so `$PATH` resolution inside the
   # sandbox matches the outside view.
-  defp cli_binary_binds(%{resolved_path: path}) when is_binary(path) do
+  defp cli_binary_binds(%{kind: :native}, path) when is_binary(path) do
+    binary_dir_binds(path)
+  end
+
+  defp cli_binary_binds(%{resolved_path: path}, _native_binary) when is_binary(path) do
+    binary_dir_binds(path)
+  end
+
+  defp cli_binary_binds(_, _), do: []
+
+  defp binary_dir_binds(path) do
     symlink_parent = Path.dirname(path) |> Path.expand()
 
     target_parent =
@@ -519,7 +569,24 @@ defmodule Glorbo.Agent.Dispatch do
     |> Enum.map(fn dir -> {dir, dir} end)
   end
 
-  defp cli_binary_binds(_), do: []
+  defp native_credentials_binds(%{kind: :native} = provider) do
+    case native_credentials_path(provider) do
+      nil -> []
+      path -> [{path, "/creds/provider.toml"}]
+    end
+  end
+
+  defp native_credentials_binds(_), do: []
+
+  defp native_credentials_path(%{name: name}) when is_binary(name) do
+    path =
+      System.get_env("GLORBO_CREDENTIALS_DIR") ||
+        Path.expand("~/.local/etc/glorbo/credentials")
+
+    candidate = Path.join(path, "#{name}.toml")
+
+    if File.exists?(candidate), do: candidate, else: nil
+  end
 
   # GEP-8 auth_binds → bwrap's `{host, sandbox}` tuple list.
   #

@@ -108,8 +108,8 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
       assert p.model_list == %{shape: :openai, path: "/v1/models"}
       assert p.binary == nil
       assert p.args == []
-      assert p.reply_dir == nil
-      assert p.reply_filename_template == nil
+      assert p.reply_dir == "{workspace}/.glorbo/outbox"
+      assert p.reply_filename_template == "{timestamp}-{invocation_id}.md"
     end
 
     test "parses auth_binds array-of-tables", %{builtin_dir: dir} do

@@ -1,0 +1,307 @@
+defmodule Glorbo.CLI.HarnessTest do
+  use ExUnit.Case, async: true
+
+  alias Glorbo.CLI.Harness
+  alias Glorbo.CLI.Registry.Provider
+
+  setup do
+    root = Path.join(System.tmp_dir!(), "glorbo-harness-#{System.unique_integer([:positive])}")
+    workspace = Path.join(root, "workspace")
+    reply_path = Path.join(root, "reply.md")
+    usage_path = Path.join(root, "usage.json")
+    creds_path = Path.join(root, "openai.toml")
+
+    File.mkdir_p!(workspace)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    env = %{
+      "GLORBO_REPLY_PATH" => reply_path,
+      "GLORBO_USAGE_PATH" => usage_path,
+      "GLORBO_WORKSPACE" => workspace,
+      "GLORBO_NATIVE_CREDENTIALS_PATH" => creds_path,
+      "GLORBO_NATIVE_ENDPOINT" => "https://api.openai.com/v1",
+      "GLORBO_NATIVE_AUTH" => "bearer"
+    }
+
+    {:ok,
+     root: root,
+     workspace: workspace,
+     reply_path: reply_path,
+     usage_path: usage_path,
+     creds_path: creds_path,
+     env: env}
+  end
+
+  defp env_fun(map), do: fn key -> Map.get(map, key) end
+
+  defp native_provider(overrides \\ []) do
+    struct!(
+      %Provider{
+        name: "openai",
+        kind: :native,
+        endpoint: "https://api.openai.com/v1",
+        auth: :bearer,
+        source: :builtin,
+        source_file: "<test>"
+      },
+      overrides
+    )
+  end
+
+  test "writes reply + tracked usage for a direct assistant response", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    chat_fun = fn request ->
+      send(self(), {:request, request})
+
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "choices" => [%{"message" => %{"content" => "hello from native"}}],
+           "usage" => %{"prompt_tokens" => 3, "completion_tokens" => 4},
+           "model" => "gpt-4.1"
+         }
+       }}
+    end
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-1",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "say hi" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: chat_fun
+             )
+
+    assert File.read!(ctx.reply_path) == "hello from native"
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tracked"] == true
+    assert usage["prompt_tokens"] == 3
+    assert usage["completion_tokens"] == 4
+    assert usage["model"] == "gpt-4.1"
+    assert usage["duration_ms"] >= 0
+    assert usage["tool_calls"] == %{}
+
+    assert_received {:request, request}
+    assert request.url == "https://api.openai.com/v1/chat/completions"
+    assert {"authorization", "Bearer sk-test"} in request.headers
+  end
+
+  test "executes read_file tool calls and records tool counts", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+    File.write!(Path.join(ctx.workspace, "notes.md"), "workspace note")
+
+    {:ok, responses} =
+      Agent.start_link(fn ->
+        [
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{
+                     "content" => nil,
+                     "tool_calls" => [
+                       %{
+                         "id" => "call-1",
+                         "function" => %{
+                           "name" => "read_file",
+                           "arguments" => ~s({"path":"notes.md"})
+                         }
+                       }
+                     ]
+                   }
+                 }
+               ],
+               "usage" => %{"prompt_tokens" => 1, "completion_tokens" => 2},
+               "model" => "gpt-4.1"
+             }
+           }},
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "choices" => [%{"message" => %{"content" => "tool result acknowledged"}}],
+               "usage" => %{"prompt_tokens" => 3, "completion_tokens" => 4},
+               "model" => "gpt-4.1"
+             }
+           }}
+        ]
+      end)
+
+    chat_fun = fn request ->
+      send(self(), {:request, request})
+
+      Agent.get_and_update(responses, fn
+        [next | rest] -> {next, rest}
+        [] -> {{:error, :no_more_responses}, []}
+      end)
+    end
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-2",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "inspect the workspace" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: chat_fun
+             )
+
+    assert File.read!(ctx.reply_path) == "tool result acknowledged"
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tracked"] == true
+    assert usage["prompt_tokens"] == 4
+    assert usage["completion_tokens"] == 6
+    assert usage["tool_calls"] == %{"read_file" => 1}
+
+    assert_received {:request, first_request}
+    assert_received {:request, second_request}
+
+    first_body = first_request.body
+    second_body = second_request.body
+
+    assert Enum.count(first_body["messages"]) == 1
+    assert Enum.count(second_body["messages"]) == 3
+
+    [%{"content" => tool_content, "role" => "tool"}] =
+      Enum.filter(second_body["messages"], &(&1["role"] == "tool"))
+
+    decoded_tool = Jason.decode!(tool_content)
+    assert decoded_tool["ok"] == true
+    assert decoded_tool["contents"] == "workspace note"
+  end
+
+  test "returns a clear error when bearer credentials are missing", ctx do
+    chat_fun = fn _request -> flunk("chat_fun must not run without credentials") end
+
+    assert {:harness, 2, output} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-3",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "say hi" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: chat_fun
+             )
+
+    assert output =~ "missing api_key"
+    refute File.exists?(ctx.reply_path)
+    refute File.exists?(ctx.usage_path)
+  end
+
+  test "missing provider usage marks the dispatch untracked", ctx do
+    File.write!(ctx.creds_path, ~s(api_key = "sk-test"))
+
+    chat_fun = fn _request ->
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "choices" => [%{"message" => %{"content" => "ok without usage"}}],
+           "model" => "gpt-4.1"
+         }
+       }}
+    end
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "openai",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-4",
+                 "--model",
+                 "gpt-4.1"
+               ],
+               prompt_fun: fn -> "say hi" end,
+               env_fun: env_fun(ctx.env),
+               provider_fun: fn _ -> native_provider() end,
+               chat_fun: chat_fun
+             )
+
+    usage = Jason.decode!(File.read!(ctx.usage_path))
+    assert usage["tracked"] == false
+    assert usage["prompt_tokens"] == 0
+    assert usage["completion_tokens"] == 0
+  end
+
+  test "falls back to runtime env for user-defined native providers", ctx do
+    custom_env =
+      Map.merge(ctx.env, %{
+        "GLORBO_NATIVE_ENDPOINT" => "https://example.test/v1",
+        "GLORBO_NATIVE_AUTH" => "bearer",
+        "GLORBO_NATIVE_CREDENTIALS_PATH" => Path.join(ctx.root, "acme.toml")
+      })
+
+    File.write!(custom_env["GLORBO_NATIVE_CREDENTIALS_PATH"], ~s(api_key = "sk-custom"))
+
+    chat_fun = fn request ->
+      send(self(), {:request, request})
+
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "choices" => [%{"message" => %{"content" => "custom provider reply"}}],
+           "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 5},
+           "model" => "custom-model"
+         }
+       }}
+    end
+
+    assert {:harness, 0, ""} =
+             Harness.run(
+               [
+                 "--provider",
+                 "acme-native",
+                 "--agent",
+                 "engineer",
+                 "--task",
+                 "t-5",
+                 "--model",
+                 "custom-model"
+               ],
+               prompt_fun: fn -> "say hi" end,
+               env_fun: env_fun(custom_env),
+               provider_fun: fn _ -> nil end,
+               chat_fun: chat_fun
+             )
+
+    assert File.read!(ctx.reply_path) == "custom provider reply"
+    assert_received {:request, request}
+    assert request.url == "https://example.test/v1/chat/completions"
+    assert {"authorization", "Bearer sk-custom"} in request.headers
+  end
+end

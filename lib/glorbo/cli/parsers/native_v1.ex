@@ -48,7 +48,8 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
        tracked: tracked,
        prompt_tokens: prompt,
        completion_tokens: completion,
-       model: parse_model(Map.get(map, "model"))
+       model: parse_model(Map.get(map, "model")),
+       tool_calls: parse_tool_calls(Map.get(map, "tool_calls", %{}))
      }}
   end
 
@@ -57,4 +58,17 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
   defp parse_model(nil), do: nil
   defp parse_model(model) when is_binary(model), do: model
   defp parse_model(_), do: nil
+
+  defp parse_tool_calls(map) when is_map(map) do
+    map
+    |> Enum.reduce(%{}, fn
+      {name, count}, acc when is_binary(name) and is_integer(count) and count >= 0 ->
+        Map.put(acc, name, count)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp parse_tool_calls(_), do: %{}
 end

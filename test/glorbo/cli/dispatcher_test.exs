@@ -344,6 +344,74 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert [{:args, ["--print", "--model", "m-1"]}] = :ets.lookup(spy, :args)
       assert [{:binary, "/bin/fake"}] = :ets.lookup(spy, :binary)
     end
+
+    test "native providers invoke the harness with synthesized args" do
+      ws = tmp_workspace()
+
+      p =
+        base_provider(
+          name: "openai",
+          kind: :native,
+          binary: nil,
+          resolved_path: nil,
+          endpoint: "https://api.openai.com/v1",
+          auth: :bearer,
+          args: [],
+          usage_parser: "native-v1",
+          usage_path: %{kind: :json_file, path: "{workspace}/.glorbo-run/{task_id}/usage.json"}
+        )
+
+      ctx =
+        base_ctx(ws,
+          agent_slug: "engineer",
+          company: "acme",
+          native_binary: "/fake/glorbo"
+        )
+
+      spy = :ets.new(:native_spy, [:public, :set])
+
+      fun = fn args, env, _b, run_opts ->
+        :ets.insert(spy, {:args, args})
+        :ets.insert(spy, {:binary, run_opts.cli_binary})
+        :ets.insert(spy, {:cli_args, run_opts.cli_args})
+        :ets.insert(spy, {:env, env})
+        File.mkdir_p!(run_opts.usage_dir)
+
+        File.write!(
+          Path.join(run_opts.usage_dir, "usage.json"),
+          ~s({"tracked":true,"prompt_tokens":1,"completion_tokens":2})
+        )
+
+        File.write!(env["GLORBO_REPLY_PATH"], "native ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+      end
+
+      assert {:ok, %{reply: "native ok"}} = Dispatcher.invoke(p, ctx, run_fun: fun)
+      assert [{:args, []}] = :ets.lookup(spy, :args)
+      assert [{:binary, "/fake/glorbo"}] = :ets.lookup(spy, :binary)
+
+      assert [
+               {:cli_args,
+                [
+                  "harness",
+                  "--provider",
+                  "openai",
+                  "--agent",
+                  "engineer",
+                  "--task",
+                  "task-1",
+                  "--model",
+                  "m-1"
+                ]}
+             ] = :ets.lookup(spy, :cli_args)
+
+      [{:env, env}] = :ets.lookup(spy, :env)
+      assert env["GLORBO_PROVIDER"] == "openai"
+      assert env["GLORBO_NATIVE_ENDPOINT"] == "https://api.openai.com/v1"
+      assert env["GLORBO_NATIVE_AUTH"] == "bearer"
+      assert env["GLORBO_NATIVE_CREDENTIALS_PATH"] == "/creds/provider.toml"
+      assert env["GLORBO_USAGE_PATH"] == Path.join([ws, ".glorbo-run", "task-1", "usage.json"])
+    end
   end
 
   describe "strip_ansi/1" do

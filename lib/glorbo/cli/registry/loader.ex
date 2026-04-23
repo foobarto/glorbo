@@ -302,7 +302,7 @@ defmodule Glorbo.CLI.Registry.Loader do
     {:error, {:invalid_reply_dir, path, "`reply_dir` must be a string"}}
   end
 
-  defp parse_reply_dir(_raw, _path, :native), do: {:ok, nil}
+  defp parse_reply_dir(_raw, _path, :native), do: {:ok, "{workspace}/.glorbo/outbox"}
 
   defp parse_reply_dir(_raw, path, :cli) do
     {:error, {:missing_field, path, "reply_dir"}}
@@ -317,7 +317,8 @@ defmodule Glorbo.CLI.Registry.Loader do
      {:invalid_reply_filename_template, path, "`reply_filename_template` must be a string"}}
   end
 
-  defp parse_reply_filename_template(_raw, _path, :native), do: {:ok, nil}
+  defp parse_reply_filename_template(_raw, _path, :native),
+    do: {:ok, "{timestamp}-{invocation_id}.md"}
 
   defp parse_reply_filename_template(_raw, path, :cli) do
     {:error, {:missing_field, path, "reply_filename_template"}}
