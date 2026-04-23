@@ -220,3 +220,26 @@ it's been in CHANGELOG for a cycle.
   via Burrito's Zig cross-compile path. Verified with `file` check
   per arch; artifacts + signatures + tap formula all flow through
   the normal release plumbing.
+- [x] **v0.6.0 shipped (2026-04-23).** Sixth pre-1.0 minor. Five
+  shipping flags beyond v0.5.0: macOS binaries via Linux-hosted Zig
+  cross-compile; GEP-28 ProposalsLive + auto-approve-hire-within-
+  headcount-budget (GEP-28 → Implemented); GEP-26 Phase B
+  Director-facing scoring slice (`/benchmarks` + blind A/B
+  BenchLive); GEP-25 R26.2b parser enforcement (kind: agent/v1 +
+  task/v1 now required on every agent/task frontmatter; GEP-25 →
+  Implemented); GEP-23 Egress.History per-company verdict cache.
+- [ ] **GEP-23 `network:` enum rename** (`none → loopback`, `open →
+  full`). Cosmetic-only (79 callsites); keep deferred until the
+  `kbps_cap` follow-up is also ready, so the two ship as a single
+  atomic cut.
+- [ ] **GEP-23 `egress.kbps_cap`** per-dispatch token-bucket throttle.
+  Needs the per-dispatch `Proxy-Authorization` token infrastructure
+  GEP-23 §Proxy daemon §5 describes — not yet wired into
+  `Agent.Dispatch`.
+- [ ] **GEP-26 Phase B dispatch orchestrator** (`glorbo bench run
+  <template> <task-id> --providers a,b,c`). Forks N shadow
+  companies rooted at the template, fires the task at each pinned
+  to one provider, collects outputs into
+  `benchmarks/runs/<id>/providers/`, flips manifest `status:`.
+  Scoring UI (shipped v0.6.0) is independently useful once a run
+  exists.

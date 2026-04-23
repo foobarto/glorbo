@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-23
+
+Sixth pre-1.0 minor. Five shipping flags beyond v0.5.0: macOS
+binaries via Linux-hosted Zig cross-compile (no more GHA macOS
+runners); GEP-28 ProposalsLive + auto-approve-hire-within-
+headcount-budget (GEP-28 → Implemented); GEP-26 Phase B
+Director-facing scoring slice (`/benchmarks` + blind A/B
+BenchLive); GEP-25 R26.2b parser enforcement (kind: agent/v1 +
+task/v1 now required; 31 fixture files migrated; GEP-25 →
+Implemented); GEP-23 Egress.History per-company decision cache
+(GEP-23 still Draft pending the `network:` enum rename +
+`kbps_cap` throttle).
+
 ### Added — GEP-23 per-company egress decision cache
 
 - `Glorbo.Network.History` — per-company ETS-backed cache of
