@@ -32,6 +32,9 @@ history:
   - date: 2026-04-23
     status: Implemented
     note: "Phase 4 Enable flow landed: `Glorbo.Providers.Enable.enable/2` appends a matching `[[providers]]` block to `~/.glorbo/providers.toml` (kind=native, auth=none, usage_parser=native-v1, correct model_list shape per alias) when the Director clicks `+ enable` on a `:ready` scan row. Action is idempotent — a second enable is a no-op. With that the four planned phases (registry schema + harness, full tool catalog, model catalog, auto-detect + Providers UX) are complete. KanbanLive quick-add model combobox remains as a polish follow-up tracked in `docs/todo.md`."
+  - date: 2026-04-23
+    status: Implemented
+    note: "Release-surface catch-up: `mix glorbo.release_formula` now handles the Linux-only shipped state (previously hard-required darwin SHAs, which blocked tap refreshes after the 2026-04-22 macOS-runner freeze); in parallel the `build-macos` CI matrix is re-enabled and a new `publish-homebrew-tap` job auto-pushes `foobarto/homebrew-tap` after every signed release, closing the tag → tap loop end-to-end."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider

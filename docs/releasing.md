@@ -180,14 +180,23 @@ All runs require internet (fetches
 the task fails loudly if the release isn't published or the asset
 list is incomplete.
 
+## Automation
+
+Steps 6–7 above are now handled automatically by the
+`publish-homebrew-tap` job in `.github/workflows/ci.yml`. On a
+successful tag-triggered `release`, the job clones
+`foobarto/homebrew-tap` with write access via the
+`HOMEBREW_TAP_TOKEN` repo secret, regenerates `Formula/glorbo.rb`
+against the just-published release's `SHA256SUMS`, commits if the
+render changed, and pushes. Manual steps are the fallback when the
+tap job itself fails.
+
 ## Known gaps
 
-- **No CI automation pushes the tap yet.** Manual steps 6+7 above
-  are the handoff. A future CI job could do this with a deploy
-  key + `gh api` push — tracked as a nice-to-have.
-- **build-macos disabled.** See `.github/workflows/ci.yml`
-  comments. Restore the `if: false` gate + the release-bundling
-  lines once GHA macOS runners have capacity.
 - **No rollback story.** If a release is bad, push a patch
   (`vX.Y.Z+1`) rather than trying to yank — `brew upgrade` picks
   up the newer one and old clients pin to whatever they installed.
+- **HOMEBREW_TAP_TOKEN rotation.** The token is a standard repo
+  secret; rotate per the Homebrew-tap repo's access policy. The
+  publish job fails loudly if the token is revoked, so bad pushes
+  won't silently succeed.

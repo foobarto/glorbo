@@ -122,18 +122,21 @@ chmod +x ~/.local/bin/glorbo
 glorbo init
 ```
 
-**macOS** — runtime is ready (Burrito targets, FSEvents watcher,
-`Glorbo.Sandbox.Unsandboxed` fallback with a one-time
-`agent.sandbox_unavailable` audit). Published binaries are currently
-**Linux-only**: the CI `build-macos` matrix is disabled (`if: false`) while
-GHA macOS runners queue indefinitely. Build from source until it's
-re-enabled:
+**macOS** (Intel + Apple Silicon):
 
 ```bash
-git clone https://github.com/foobarto/glorbo && cd glorbo
-mix deps.get && MIX_ENV=prod mix release
-./burrito_out/glorbo_macos_arm64 init
+brew tap foobarto/tap
+brew install glorbo
+glorbo init
 ```
+
+`bwrap` has no macOS equivalent, so agents run unsandboxed with a
+one-time `agent.sandbox_unavailable` audit per company boot; every
+other feature (dashboard, routing, scheduling, approval gates, MCP
+server, audit log) is identical to Linux. FSEvents powers the
+watcher, the Burrito binary bundles its own BEAM runtime, and both
+`macos_x86_64` + `macos_arm64` artifacts ship on every tagged
+release.
 
 **Windows** — run the Linux binary inside
 [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install). No native
