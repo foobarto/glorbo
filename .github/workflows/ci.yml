@@ -48,10 +48,10 @@ jobs:
             burrito_out: glorbo_linux_aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Erlang + Elixir
-        uses: erlef/setup-beam@v1
+        uses: erlef/setup-beam@988e02bfe678367a02564f65ca2e37726dc0268f # v1.9.0
         with:
           elixir-version: '1.18.4'
           otp-version: '28.0.2'
@@ -81,7 +81,7 @@ jobs:
           sudo systemctl reload apparmor
 
       - name: Cache mix deps + build
-        uses: actions/cache@v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
             deps
@@ -108,7 +108,7 @@ jobs:
         run: mix hex.audit
 
       - name: Install Zig 0.15.2
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
           version: 0.15.2
 
@@ -159,7 +159,7 @@ jobs:
           test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.binary_name }}
           path: burrito_out/${{ matrix.binary_name }}
@@ -193,16 +193,16 @@ jobs:
             burrito_out: glorbo_macos_arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Erlang + Elixir
-        uses: erlef/setup-beam@v1
+        uses: erlef/setup-beam@988e02bfe678367a02564f65ca2e37726dc0268f # v1.9.0
         with:
           elixir-version: '1.18.4'
           otp-version: '28.0.2'
 
       - name: Cache mix deps + build
-        uses: actions/cache@v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
             deps
@@ -221,7 +221,7 @@ jobs:
       # tests by tag so a macOS-safe subset runs here.
 
       - name: Install Zig 0.15.2
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
           version: 0.15.2
 
@@ -257,7 +257,7 @@ jobs:
           test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.binary_name }}
           path: burrito_out/${{ matrix.binary_name }}
@@ -275,7 +275,7 @@ jobs:
       contents: write   # create the GitHub Release
       id-token: write   # Sigstore OIDC token for keyless signing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts/
           merge-multiple: true
@@ -294,7 +294,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.1.1
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
         with:
           cosign-release: 'v3.0.6'
 
@@ -310,7 +310,7 @@ jobs:
           cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             artifacts/glorbo-linux-x86_64
