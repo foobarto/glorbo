@@ -288,17 +288,31 @@ chmod +x ~/.local/bin/glorbo
 glorbo init
 ```
 
-**macOS** (Intel + Apple Silicon) binaries ship alongside Linux
-builds since v0.0.4 (R30). `bwrap` is not available on macOS, so
-agent execution falls back to unsandboxed mode with a one-time
-`agent.sandbox_unavailable` audit warning per company boot. All
-other features (dashboard, routing, scheduling, approval gates)
-work unchanged. Install via the same Homebrew tap:
+**macOS** (Intel + Apple Silicon) — the runtime is macOS-ready
+(Burrito targets `macos_x86_64` + `macos_arm64`, `file_system`
+uses FSEvents transparently, and `Glorbo.Sandbox.Bwrap.availability/0`
+detects the missing kernel primitives and falls back to
+unsandboxed agent execution with a one-time
+`agent.sandbox_unavailable` audit per company boot). The Homebrew
+formula already carries `on_macos do` blocks for both architectures.
+
+**Published binaries are currently Linux-only.** The macOS build
+matrix (`build-macos` in `.github/workflows/ci.yml`) was disabled
+on 2026-04-22 because GitHub-hosted macOS runners were queuing
+indefinitely; re-enable by dropping the `if: false` guard when the
+queue clears. Until then, macOS users build from source:
 
 ```bash
-brew tap foobarto/tap
-brew install glorbo
+git clone https://github.com/foobarto/glorbo
+cd glorbo
+mix deps.get
+MIX_ENV=prod mix release
+./burrito_out/glorbo_macos_arm64 init   # or glorbo_macos_x86_64
 ```
+
+Every feature other than the Linux-kernel sandbox works unchanged
+on macOS — dashboard, routing, scheduling, approval gates, MCP
+server, and audit log all behave identically.
 
 **Windows** is supported via [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).
 The Linux binaries above run unchanged inside a WSL2 distro
@@ -744,10 +758,13 @@ far, newest first:
   Watcher broadcasts on `company:<co>:proposals` PubSub topic.
 - **R29 — Homebrew tap** ✓ — `brew install foobarto/tap/glorbo`
   with Linux x86_64 + aarch64 binaries.
-- **R30 — macOS builds** ✓ — Burrito targets `macos_x86_64` +
-  `macos_arm64`; CI matrix on `macos-13` + `macos-latest`;
-  `Glorbo.Sandbox.Unsandboxed` fallback; `glorbo doctor` OS-aware
-  reclassification.
+- **R30 — macOS runtime** ✓ — Burrito targets `macos_x86_64` +
+  `macos_arm64`; `Glorbo.Sandbox.Unsandboxed` fallback; `glorbo
+  doctor` OS-aware reclassification; Homebrew formula ships
+  `on_macos do` blocks. CI `build-macos` job is currently
+  **disabled** (`if: false`) pending GHA macOS runner capacity;
+  macOS users build from source via `mix release` until it's
+  re-enabled.
 - **Director safety + speed** — emergency stop, cost ledger
   (`/costs`), per-company + per-task budget caps, session
   resilience (auto-retry on timeout / missing reply), audit CSV
