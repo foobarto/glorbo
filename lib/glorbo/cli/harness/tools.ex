@@ -66,7 +66,23 @@ defmodule Glorbo.CLI.Harness.Tools do
       when is_binary(name) and is_binary(arguments) do
     case Jason.decode(arguments) do
       {:ok, args} when is_map(args) ->
-        execute_decoded(name, args, config, opts)
+        try do
+          execute_decoded(name, args, config, opts)
+        rescue
+          # Workspace-escape from `resolve_tool_path/2` raises
+          # `ArgumentError` with a message starting `tool path escapes
+          # workspace:`. Surface as a structured tool error payload
+          # rather than bringing down the harness.
+          e in ArgumentError ->
+            if String.starts_with?(Exception.message(e), "tool path escapes workspace") do
+              %{
+                tool_name: name,
+                payload: %{"ok" => false, "error" => "path_escapes_workspace"}
+              }
+            else
+              reraise e, __STACKTRACE__
+            end
+        end
 
       {:ok, _bad_args} ->
         invalid_arguments_result(name)
@@ -659,11 +675,32 @@ defmodule Glorbo.CLI.Harness.Tools do
   defp replace_contents(contents, old_text, new_text, false),
     do: String.replace(contents, old_text, new_text, global: false)
 
+  # Workspace-contained resolver. The harness runs INSIDE a bwrap
+  # sandbox, so kernel mount scope is the primary boundary — but
+  # relying solely on that leaves a TOCTOU hole if a future
+  # `approved_paths` grant is wired up (the tool resolver runs
+  # pre-bwrap on some paths during unsandboxed-fallback execution).
+  # Belt-and-braces: refuse any path that expands outside the
+  # workspace directory. Absolute paths are only allowed if they
+  # start with `workspace`. Opencode round-3 flagged the previous
+  # "absolute paths pass through" shape.
   defp resolve_tool_path(path, workspace) do
-    if Path.type(path) == :absolute do
-      path
+    workspace_abs = Path.expand(workspace)
+
+    expanded =
+      if Path.type(path) == :absolute do
+        Path.expand(path)
+      else
+        Path.expand(path, workspace_abs)
+      end
+
+    if expanded == workspace_abs or
+         String.starts_with?(expanded, workspace_abs <> "/") do
+      expanded
     else
-      Path.expand(path, workspace)
+      raise ArgumentError,
+            "tool path escapes workspace: #{inspect(path)} → #{expanded} " <>
+              "(workspace=#{workspace_abs})"
     end
   end
 

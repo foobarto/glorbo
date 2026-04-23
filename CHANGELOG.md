@@ -10,6 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — harness + dispatcher TOCTOU hardening
+
+- **[HIGH]** `Glorbo.CLI.Harness.Tools.resolve_tool_path/2` now
+  refuses paths whose expansion escapes the workspace directory.
+  Bwrap mount scope is the primary boundary, but the harness tool
+  resolver runs pre-bwrap on some paths; a bare
+  `read_file("/etc/passwd")` passing absolute paths through was a
+  defense-in-depth miss. Raises `ArgumentError`, caught by
+  `execute/3` and surfaced as a structured
+  `{"error": "path_escapes_workspace"}` tool payload.
+- **[MED]** `Glorbo.CLI.Dispatcher.do_read_reply/3` previously
+  `lstat`ed the reply path, then `File.stat`ed it again for the
+  size cap (follows symlinks), then `File.read`. Two separate
+  stat calls were a TOCTOU window — collapsed to a single `lstat`
+  whose size result flows through to the reader. No re-follow.
+
 ### Fixed — reindex correctness (codex + opencode round-3)
 
 - **[HIGH]** `Glorbo.Filesystem.Reindex.upsert_agent/2` now resolves

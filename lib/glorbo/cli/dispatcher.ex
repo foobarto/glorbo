@@ -239,34 +239,27 @@ defmodule Glorbo.CLI.Dispatcher do
     # Threatmodel H1/H2 (wave 4): lstat first. The reply path lives inside
     # the agent workspace, so an untrusted CLI can pre-create it as a
     # symlink to a host file (e.g. `~/.glorbo/config.md`). `File.stat`
-    # follows the link; `File.lstat` sees the symlink itself.
+    # follows the link; `File.lstat` sees the symlink itself. Use the
+    # `lstat` size for the cap check too — a second `File.stat` call
+    # before `File.read` would re-follow the link and re-open a TOCTOU
+    # window. Opencode round-3 flagged this.
     case File.lstat(path) do
-      {:ok, %{type: :regular}} -> do_read_reply(path, max_bytes, fs)
+      {:ok, %{type: :regular, size: size}} -> do_read_reply(path, size, max_bytes, fs)
       {:ok, %{type: other}} -> {:error, {:reply_file_not_regular, other}}
       {:error, :enoent} -> {:error, :reply_file_missing}
       {:error, reason} -> {:error, {:reply_file_stat_error, reason}}
     end
   end
 
-  defp do_read_reply(path, max_bytes, fs) do
-    case fs.stat.(path) do
-      {:ok, %{size: 0}} ->
-        {:error, :reply_file_empty}
+  defp do_read_reply(_path, 0, _max_bytes, _fs), do: {:error, :reply_file_empty}
 
-      {:ok, %{size: size}} when size > max_bytes ->
-        {:error, {:reply_file_too_large, size, max_bytes}}
+  defp do_read_reply(_path, size, max_bytes, _fs) when size > max_bytes,
+    do: {:error, {:reply_file_too_large, size, max_bytes}}
 
-      {:ok, %{size: size}} when size <= max_bytes ->
-        case fs.read.(path) do
-          {:ok, contents} -> {:ok, strip_ansi(contents)}
-          {:error, reason} -> {:error, {:reply_file_read_error, reason}}
-        end
-
-      {:error, :enoent} ->
-        {:error, :reply_file_missing}
-
-      {:error, reason} ->
-        {:error, {:reply_file_stat_error, reason}}
+  defp do_read_reply(path, _size, _max_bytes, fs) do
+    case fs.read.(path) do
+      {:ok, contents} -> {:ok, strip_ansi(contents)}
+      {:error, reason} -> {:error, {:reply_file_read_error, reason}}
     end
   end
 
