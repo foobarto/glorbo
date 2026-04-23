@@ -47,11 +47,13 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   defp stub_provider(overrides \\ []) do
+    resolved = System.find_executable("sh") || "/bin/sh"
+
     struct!(
       %Provider{
         name: "claude-code",
-        binary: "/fake/claude",
-        resolved_path: "/fake/claude",
+        binary: resolved,
+        resolved_path: resolved,
         installed?: true,
         args: ["--print"],
         reply_dir: "{workspace}/.glorbo/outbox",
@@ -444,6 +446,10 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   test "D8b: native providers do not require resolved_path once installed", ctx do
+    self_binary = Path.join(ctx.base, "fake-glorbo")
+    File.write!(self_binary, "#!/bin/sh\n")
+    File.chmod!(self_binary, 0o755)
+
     native_provider =
       stub_provider(
         name: "openai",
@@ -455,7 +461,7 @@ defmodule Glorbo.Agent.DispatchTest do
       )
 
     run_fun = fn _args, env, _bwrap, run_opts ->
-      assert run_opts.cli_binary == "/fake/glorbo"
+      assert run_opts.cli_binary == "/tmp/glorbo-cli-native-harness-fake-glorbo"
 
       assert run_opts.cli_args == [
                "harness",
@@ -498,12 +504,16 @@ defmodule Glorbo.Agent.DispatchTest do
                base: ctx.base,
                run_fun: run_fun,
                provider_fun: fn _ -> native_provider end,
-               self_binary_fun: fn -> "/fake/glorbo" end,
+               self_binary_fun: fn -> self_binary end,
                audit_fun: ctx.audit_fun
              )
   end
 
   test "native usage audit events are replayed into the company audit log", ctx do
+    self_binary = Path.join(ctx.base, "fake-glorbo")
+    File.write!(self_binary, "#!/bin/sh\n")
+    File.chmod!(self_binary, 0o755)
+
     native_provider =
       stub_provider(
         name: "openai",
@@ -544,7 +554,7 @@ defmodule Glorbo.Agent.DispatchTest do
                base: ctx.base,
                run_fun: run_fun,
                provider_fun: fn _ -> native_provider end,
-               self_binary_fun: fn -> "/fake/glorbo" end,
+               self_binary_fun: fn -> self_binary end,
                audit_fun: ctx.audit_fun
              )
 
@@ -557,6 +567,42 @@ defmodule Glorbo.Agent.DispatchTest do
                        target: "draft.md",
                        detail: %{"ok" => true, "bytes_written" => 11}
                      }}
+  end
+
+  test "provider binaries are bound as a single sandbox file, not parent dirs", ctx do
+    host_dir = Path.join(ctx.base, "host-tools")
+    link_dir = Path.join(ctx.base, "link-bin")
+    File.mkdir_p!(host_dir)
+    File.mkdir_p!(link_dir)
+
+    host_binary = Path.join(host_dir, "claude-real")
+    File.write!(host_binary, "#!/bin/sh\n")
+    File.chmod!(host_binary, 0o755)
+
+    symlink_path = Path.join(link_dir, "claude")
+    File.ln_s!(host_binary, symlink_path)
+
+    provider = stub_provider(binary: symlink_path, resolved_path: symlink_path)
+    parent = self()
+
+    run_fun = fn _args, env, bwrap_opts, run_opts ->
+      send(parent, {:cli_binary_ctx, bwrap_opts.cli_auth_binds, run_opts.cli_binary})
+      File.write!(env["GLORBO_REPLY_PATH"], "ok")
+      {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+    end
+
+    assert {:ok, %{reply: "ok"}} =
+             Dispatch.execute(ctx.spec, ctx.task,
+               base: ctx.base,
+               run_fun: run_fun,
+               provider_fun: fn _ -> provider end,
+               audit_fun: ctx.audit_fun
+             )
+
+    assert_received {:cli_binary_ctx, binds, cli_binary}
+    assert cli_binary == "/tmp/glorbo-cli-claude-code-claude-real"
+    assert {host_binary, cli_binary} in binds
+    refute Enum.any?(binds, fn {host, _sandbox} -> host == host_dir or host == link_dir end)
   end
 
   test "network: proxy resolves proxy_url into bwrap opts before run_fun", ctx do
@@ -645,6 +691,10 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   test "runtime tracked:false still requires allow_untracked_budget for native providers", ctx do
+    self_binary = Path.join(ctx.base, "fake-glorbo")
+    File.write!(self_binary, "#!/bin/sh\n")
+    File.chmod!(self_binary, 0o755)
+
     native_provider =
       stub_provider(
         name: "openai",
@@ -668,7 +718,7 @@ defmodule Glorbo.Agent.DispatchTest do
                base: ctx.base,
                run_fun: run_fun,
                provider_fun: fn _ -> native_provider end,
-               self_binary_fun: fn -> "/fake/glorbo" end,
+               self_binary_fun: fn -> self_binary end,
                audit_fun: ctx.audit_fun
              )
   end

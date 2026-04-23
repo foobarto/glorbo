@@ -70,6 +70,7 @@ defmodule Glorbo.CLI.DispatcherTest do
         :ets.insert(captured, {:args, args})
         :ets.insert(captured, {:env, env})
         :ets.insert(captured, {:cli_binary, run_opts.cli_binary})
+        :ets.insert(captured, {:host_cli_binary, run_opts.host_cli_binary})
         File.write!(env["GLORBO_REPLY_PATH"], "reply body")
         {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
       end
@@ -80,6 +81,7 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       assert [{:args, ["--model", "m-1"]}] = :ets.lookup(captured, :args)
       assert [{:cli_binary, "/bin/fake"}] = :ets.lookup(captured, :cli_binary)
+      assert [{:host_cli_binary, "/bin/fake"}] = :ets.lookup(captured, :host_cli_binary)
 
       [{:env, env}] = :ets.lookup(captured, :env)
       assert env["GLORBO_TASK_ID"] == "task-1"
@@ -377,6 +379,7 @@ defmodule Glorbo.CLI.DispatcherTest do
       fun = fn args, env, _b, run_opts ->
         :ets.insert(spy, {:args, args})
         :ets.insert(spy, {:binary, run_opts.cli_binary})
+        :ets.insert(spy, {:host_binary, run_opts.host_cli_binary})
         :ets.insert(spy, {:cli_args, run_opts.cli_args})
         :ets.insert(spy, {:env, env})
         File.mkdir_p!(run_opts.usage_dir)
@@ -393,6 +396,7 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert {:ok, %{reply: "native ok"}} = Dispatcher.invoke(p, ctx, run_fun: fun)
       assert [{:args, []}] = :ets.lookup(spy, :args)
       assert [{:binary, "/fake/glorbo"}] = :ets.lookup(spy, :binary)
+      assert [{:host_binary, "/fake/glorbo"}] = :ets.lookup(spy, :host_binary)
 
       assert [
                {:cli_args,

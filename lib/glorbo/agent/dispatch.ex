@@ -156,13 +156,24 @@ defmodule Glorbo.Agent.Dispatch do
            :ok <- check_untracked_allowed(spec, provider, opts),
            :ok <- verify_installed(spec, provider, opts),
            {:ok, proxy_url} <- resolve_proxy_url(spec, opts),
+           {:ok, cli_binary} <- resolve_cli_binary(provider, opts),
            {:ok, workspace} <- ensure_workspace(spec, opts),
            :ok <- materialize_skills(spec, run_dir, opts),
            :ok <- write_prompt(run_dir, task.prompt, opts),
            :ok <- emit_dispatch_audit(spec, task, provider, invocation_id, opts),
            start <- clock(opts),
            ctx <-
-             build_ctx(spec, task, workspace, run_dir, provider, proxy_url, invocation_id, opts),
+             build_ctx(
+               spec,
+               task,
+               workspace,
+               run_dir,
+               provider,
+               proxy_url,
+               invocation_id,
+               cli_binary,
+               opts
+             ),
            {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
            :ok <- check_runtime_untracked_allowed(spec, dispatcher_result, opts),
            duration_ms <- compute_duration(start, opts),
@@ -489,7 +500,17 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp build_ctx(spec, task, workspace, run_dir, provider, proxy_url, invocation_id, opts) do
+  defp build_ctx(
+         spec,
+         task,
+         workspace,
+         run_dir,
+         provider,
+         proxy_url,
+         invocation_id,
+         cli_binary,
+         _opts
+       ) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -509,13 +530,6 @@ defmodule Glorbo.Agent.Dispatch do
         :not_found -> []
       end
 
-    native_binary =
-      if provider.kind == :native do
-        resolve_self_binary(opts)
-      else
-        nil
-      end
-
     %{
       task_id: task.task_id,
       model: model,
@@ -530,7 +544,8 @@ defmodule Glorbo.Agent.Dispatch do
       invocation_id: invocation_id,
       agent_slug: spec.slug,
       company: spec.company,
-      native_binary: native_binary,
+      host_cli_binary: cli_binary.host_path,
+      cli_binary: cli_binary.sandbox_path,
       bwrap_opts: %{
         company: spec.company,
         agent_workspace: workspace,
@@ -544,7 +559,7 @@ defmodule Glorbo.Agent.Dispatch do
         cli_auth_binds:
           resolve_auth_binds(provider) ++
             native_credentials_binds(provider) ++
-            cli_binary_binds(provider, native_binary),
+            [cli_binary_bind(cli_binary)],
         approved_paths: approved_paths
       }
     }
@@ -565,47 +580,75 @@ defmodule Glorbo.Agent.Dispatch do
     :crypto.strong_rand_bytes(6) |> Base.encode16(case: :lower)
   end
 
-  # Auto-detect the directory containing the provider's CLI binary and
-  # bind it read-only into the sandbox at the same path. This handles
-  # flatpak/nix/user-local installs where the binary lives outside
-  # `/usr/bin` — without this, bwrap exits with
-  # `execvp <path>: No such file or directory` because the baseline
-  # sandbox only mounts `/usr` and friends.
-  #
-  # We bind both the symlink's parent AND (when applicable) the symlink
-  # *target's* enclosing directory, since bwrap's `--ro-bind` preserves
-  # the symlink but the real file still has to exist for the kernel to
-  # resolve it. Same-dir host+sandbox so `$PATH` resolution inside the
-  # sandbox matches the outside view.
-  defp cli_binary_binds(%{kind: :native}, path) when is_binary(path) do
-    binary_dir_binds(path)
+  # Threatmodel T5: do not mirror arbitrary host directories into the
+  # sandbox just to make a CLI binary executable. Resolve the provider
+  # binary to its final regular file and bind only that file into a
+  # fixed sandbox path under /tmp, so agents cannot enumerate the
+  # binary's host-side parent directories.
+  defp resolve_cli_binary(%{kind: :native}, opts) do
+    resolve_cli_binary_path(resolve_self_binary(opts), "native-harness")
   end
 
-  defp cli_binary_binds(%{resolved_path: path}, _native_binary) when is_binary(path) do
-    binary_dir_binds(path)
+  defp resolve_cli_binary(%{resolved_path: path, name: name}, _opts) when is_binary(path) do
+    resolve_cli_binary_path(path, name)
   end
 
-  defp cli_binary_binds(_, _), do: []
+  defp resolve_cli_binary(_provider, _opts), do: {:error, :provider_unavailable}
 
-  defp binary_dir_binds(path) do
-    symlink_parent = Path.dirname(path) |> Path.expand()
+  defp resolve_cli_binary_path(path, provider_name) when is_binary(path) do
+    with {:ok, host_path} <- resolve_regular_binary(path) do
+      basename = Path.basename(host_path)
 
-    target_parent =
-      case File.read_link(path) do
-        {:ok, target} ->
-          # Resolve relative symlinks against the symlink's own dir.
-          abs_target = Path.expand(target, Path.dirname(path))
-          Path.dirname(abs_target)
+      {:ok,
+       %{
+         host_path: host_path,
+         sandbox_path: "/tmp/glorbo-cli-#{safe_cli_name(provider_name)}-#{basename}"
+       }}
+    else
+      _ -> {:error, :provider_unavailable}
+    end
+  end
 
-        _ ->
-          nil
+  defp cli_binary_bind(%{host_path: host_path, sandbox_path: sandbox_path}) do
+    {host_path, sandbox_path}
+  end
+
+  defp resolve_regular_binary(path), do: resolve_regular_binary(Path.expand(path), MapSet.new(), 0)
+
+  defp resolve_regular_binary(_path, _seen, depth) when depth >= 16,
+    do: {:error, :symlink_loop}
+
+  defp resolve_regular_binary(path, seen, depth) do
+    if MapSet.member?(seen, path) do
+      {:error, :symlink_loop}
+    else
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular}} ->
+          {:ok, path}
+
+        {:ok, %File.Stat{type: :symlink}} ->
+          case File.read_link(path) do
+            {:ok, target} ->
+              next = Path.expand(target, Path.dirname(path))
+              resolve_regular_binary(next, MapSet.put(seen, path), depth + 1)
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        {:ok, %File.Stat{}} ->
+          {:error, :not_a_regular_file}
+
+        {:error, reason} ->
+          {:error, reason}
       end
+    end
+  end
 
-    [symlink_parent, target_parent]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
-    |> Enum.filter(&File.exists?/1)
-    |> Enum.map(fn dir -> {dir, dir} end)
+  defp safe_cli_name(name) when is_binary(name) do
+    name
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9._-]+/, "-")
   end
 
   defp native_credentials_binds(%{kind: :native} = provider) do
@@ -685,6 +728,7 @@ defmodule Glorbo.Agent.Dispatch do
 
     run_opts = [
       cli_binary: Map.fetch!(run_opts_map, :cli_binary),
+      host_cli_binary: Map.get(run_opts_map, :host_cli_binary),
       cli_args: Map.get(run_opts_map, :cli_args, []),
       prompt: Map.get(run_opts_map, :prompt, ""),
       usage_dir: Map.get(run_opts_map, :usage_dir),
@@ -716,7 +760,15 @@ defmodule Glorbo.Agent.Dispatch do
             Map.put(bwrap_opts, :cli_env, merge_cli_env(bwrap_opts, env))
 
           emit_sandbox_unavailable_audit_once(bwrap_opts)
-          Glorbo.Sandbox.Unsandboxed.start(host_invocation_opts, run_opts)
+
+          host_run_opts =
+            Keyword.put(
+              run_opts,
+              :cli_binary,
+              Map.get(run_opts_map, :host_cli_binary, Map.fetch!(run_opts_map, :cli_binary))
+            )
+
+          Glorbo.Sandbox.Unsandboxed.start(host_invocation_opts, host_run_opts)
         end
     end
   end

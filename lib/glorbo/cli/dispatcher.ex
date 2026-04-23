@@ -354,7 +354,10 @@ defmodule Glorbo.CLI.Dispatcher do
       case provider.kind do
         :native ->
           %{
-            cli_binary: Map.get(ctx, :native_binary) || Daemon.self_binary(),
+            cli_binary:
+              Map.get(ctx, :cli_binary) || Map.get(ctx, :native_binary) || Daemon.self_binary(),
+            host_cli_binary:
+              Map.get(ctx, :host_cli_binary) || Map.get(ctx, :native_binary) || Daemon.self_binary(),
             cli_args: native_args(provider, ctx),
             prompt: Map.get(ctx, :prompt, ""),
             usage_dir: usage_dir_for(provider, ctx)
@@ -362,7 +365,9 @@ defmodule Glorbo.CLI.Dispatcher do
 
         _ ->
           %{
-            cli_binary: provider.resolved_path || provider.binary,
+            cli_binary: Map.get(ctx, :cli_binary) || provider.resolved_path || provider.binary,
+            host_cli_binary:
+              Map.get(ctx, :host_cli_binary) || provider.resolved_path || provider.binary,
             cli_args: args,
             prompt: Map.get(ctx, :prompt, ""),
             usage_dir: usage_dir_for(provider, ctx)
