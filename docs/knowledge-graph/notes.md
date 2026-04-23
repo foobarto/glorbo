@@ -493,6 +493,50 @@ exec the real host path when bwrap is unavailable. The load-bearing
 contract is therefore two paths, not one: `host_cli_binary` for the
 degraded host runner, `cli_binary` for the bwrap-mounted sandbox view.
 
+### `pasta --version` is a necessary-but-insufficient probe
+
+`Glorbo.Sandbox.Bwrap.pasta_availability/0` and the test helper
+previously gated on "does `pasta --version` exit 0?". On
+GitHub-hosted `ubuntu-24.04` that's true — the runner has an
+older `passt` package — but the same `pasta` doesn't recognise
+`--splice-only`, which GEP-31's proxy netns wrap depends on.
+Silent-pass ⇒ dispatch shells out, pasta prints its usage banner
+to stdout, the integration test diffs the banner against "403",
+and CI fails in a confusing way.
+
+All three probes (runtime `Bwrap.pasta_availability/0`, doctor's
+`check_pasta`, test helper `pasta_available?/0`) now scan
+`pasta --help` for the literal `--splice-only` token. Pattern
+for similar future probes: **a flag-support check must grep
+help/usage output for the flag, not just exit-code the binary**.
+"It runs" and "it understands the flag I'm about to pass" are
+different questions.
+
+### ExUnit 1.18 `setup` cannot return `{:skip, reason}`
+
+`setup do ... {:skip, "reason"} end` raises
+`ExUnit.Callbacks.raise_merge_failed!/3` wrapped as a test
+failure — not a skip. Setup callbacks only accept `:ok`, a
+keyword, or a map. To conditionally skip a whole module based
+on host state, gate at module-load with
+`cond do ... -> @moduletag skip: "reason" end`. The pattern
+caught 2026-04-23 when tightening the pasta probe exposed the
+pre-existing wrong skip in `sandbox_network_proxy_test.exs`.
+
+### GHA macOS runners queue indefinitely (recurring)
+
+Two incidents 48 hours apart (2026-04-22 + 2026-04-23). GHA's
+free-tier macOS runners have gone into a "pending forever"
+state twice when the `build-macos` matrix was enabled — runs
+sit in `status: pending` for 25+ minutes with no job ever
+scheduled, blocking the whole release → tap-publish chain
+behind them. Both times the fix was the same: flip `if: false`
+on `build-macos` and drop it from `release`'s `needs:` list.
+Future macOS builds should route through either
+`macos-latest-xlarge` (paid tier, separate queue) or Burrito's
+Zig-based darwin cross-compile from Linux (both tracked in
+`docs/todo.md`) — the free tier is not reliable at our cadence.
+
 ### MCP session cap was already split across two layers
 
 The MCP session DoS fix was not "add a max_children" — that limit was

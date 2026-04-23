@@ -917,6 +917,15 @@ glorbo reindex                  # Rebuild SQLite from filesystem.
 glorbo migrate                  # Run pending Ecto migrations.
 glorbo console                  # Elixir remote console against the
                                 # running daemon.
+glorbo validate [PATH] [--json] [--summary] [--kind k] [--severity s]
+                                # Check files against FileSpec (GEP-25).
+glorbo fmt [PATH] [--check] [--write]
+                                # Normalise YAML frontmatter (GEP-25).
+glorbo detect-providers [--json]
+                                # Probe localhost for native providers
+                                # (ollama, llama.cpp, LocalAI, vLLM,
+                                # LM Studio) with Server-header +
+                                # body fingerprints (GEP-32 phase 4).
 
 glorbo backup [--output <path>] # tar.gz of ~/.glorbo/ with WAL checkpoint.
 glorbo restore <archive> [--force]

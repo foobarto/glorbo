@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-23
+
+Fifth pre-1.0 minor. Three major user-visible surface additions
+(`glorbo detect-providers`, the Enable flow, the agent-wizard model
+combobox), GEP-32 phase 3+4 complete, the GEP-15 atomic cut,
+GEP-25 R26.2b golden-fixture coverage doubled, CI release path
+repaired end-to-end (setup-beam bump, pasta probe tightening,
+tap auto-publish, skip-pattern fix), and a honest README/macOS
+story.
+
 ### Added — GEP-25 R26.2b golden fixtures
 
 - Per-kind minimal-valid fixture tree under

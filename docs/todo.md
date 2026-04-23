@@ -204,3 +204,20 @@ it's been in CHANGELOG for a cycle.
   integration suite around blocked host loopback reachability.
 - [x] **v0.3.0 shipped.** Third pre-1.0 minor: GEP-31's enforced
   proxy-only Linux networking is now on the release surface.
+- [x] **v0.5.0 shipped (2026-04-23).** Fifth pre-1.0 minor:
+  GEP-32 phase 3+4 complete (`ModelCatalog` cache + `detect-providers`
+  CLI + Scan-localhost UI + Enable flow that appends to
+  `~/.glorbo/providers.toml`), GEP-25 R26.2b golden fixtures
+  expanded to 12 kinds, GEP-15 atomic cut (lowercase
+  `agent.md` fallback deleted), GEP-12/15/21/31/32 statuses flipped
+  to Implemented, AgentLive model combobox populated from
+  `provider_models`, AgentLive network dropdown fix (UAT finding),
+  pasta probe tightened to require `--splice-only`, CI release
+  path repaired (setup-beam v1.24.0, skip-pattern fix), Homebrew
+  tap auto-publish job via `HOMEBREW_TAP_TOKEN`.
+- [ ] **macOS cross-compile from Linux (GEP-32 phase 5?).** Burrito
+  already downloads a universal macOS ERTS tarball from the BEAM
+  machine CDN; Zig 0.15 supports `x86_64-macos` / `aarch64-macos`
+  targets. Spike a `build-macos-cross` CI job that runs on
+  `ubuntu-24.04` with Zig installed and produces both darwin
+  binaries without needing GHA macOS runners.
