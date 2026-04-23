@@ -102,11 +102,11 @@ Back up with `tar`. Version-control with `git`. Move to another machine with
   </tr>
   <tr>
     <td><img src="assets/screenshots/approvals.png" alt="Approval queue with prompt diff and j/k/y/n keyboard" width="100%"></td>
-    <td><img src="assets/screenshots/providers.png" alt="Provider registry: claude-code, codex, gemini-cli, hermes, opencode, pi" width="100%"></td>
+    <td><img src="assets/screenshots/providers.png" alt="Provider registry: CLI and native providers" width="100%"></td>
   </tr>
   <tr>
     <td align="center"><sub><code>/companies/&lt;co&gt;/approvals</code> — prompt diff · <kbd>j</kbd>/<kbd>k</kbd>/<kbd>y</kbd>/<kbd>n</kbd></sub></td>
-    <td align="center"><sub><code>/providers</code> — config-driven CLI registry (GEP-8)</sub></td>
+    <td align="center"><sub><code>/providers</code> — config-driven provider registry (GEP-8, GEP-32 phase 1)</sub></td>
   </tr>
 </table>
 
@@ -127,21 +127,27 @@ sandbox: `--unshare-user-try --unshare-ipc --unshare-pid --unshare-net
 nothing else is visible. Network isolation is kernel-enforced, not
 policy-enforced.
 
-**CLI-tool agents** — Use the Claude Code, Gemini CLI, or Codex installs
-already on your machine. Credentials are `--ro-bind`ed into the sandbox;
-session state stays on the host. No new API keys to manage.
+**CLI-tool agents** — Use the Claude Code, Gemini CLI, Codex, or other
+registered CLI installs already on your machine. Their credentials are
+`--ro-bind`ed into the sandbox; session state stays on the host.
 
-**Config-driven providers (v0.0.3, GEP-8)** — Each provider is a TOML
-entry declaring how to invoke a CLI and how to parse its usage. Built-in
-providers ship under `priv/providers/*.toml`; drop your own into
-`~/.glorbo/providers.toml`. The `/providers` LiveView shows what's
-routable. No Elixir code needed to register a new CLI.
+**Native OpenAI-compatible providers (v0.1.0, GEP-32 phase 1)** —
+OpenAI and OpenRouter now run through a first-party `glorbo harness`
+subcommand inside the same bwrap sandbox. Credentials live outside
+`~/.glorbo/` in `~/.local/etc/glorbo/credentials/<provider>.toml`.
 
-**Local-first LLMs** — Agents use whichever CLI is installed on your
-host (`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
-`hermes`, `pi`). Add a local model by installing its CLI; Glorbo detects
-it via `glorbo doctor` or the `/providers` panel. No bundled runtime,
-no SDK layer.
+**Config-driven providers (GEP-8, extended in GEP-32 phase 1)** — Each
+provider is a TOML entry declaring either how to invoke a CLI or how a
+native OpenAI-compatible endpoint should be reached and metered.
+Built-in providers ship under `priv/providers/*.toml`; drop your own
+into `~/.glorbo/providers.toml`. The `/providers` LiveView shows what's
+routable. No Elixir code needed to register a new provider.
+
+**Local-first LLMs** — Agents use whichever runtime you have: a host CLI
+(`claude`, `gemini`, `codex`, and OSS alternatives like `opencode`,
+`hermes`, `pi`) or a native OpenAI-compatible endpoint. Add a local
+model by installing its CLI or exposing a compatible endpoint. No
+bundled Python runtime, no in-process SDK layer.
 
 **Reply-file contract (v0.0.3, GEP-8)** — Every sandboxed invocation
 ends with Glorbo reading the file at `$GLORBO_REPLY_PATH`. Agents
@@ -354,7 +360,7 @@ GitHub release ships.
 | --------------------------- | ------------------------------------------------------- |
 | `lib/glorbo/`               | Kernel, CLI, agent runtime, filesystem, budget, doctor  |
 | `lib/glorbo_web/`           | Phoenix endpoint, router, LiveViews, components         |
-| `priv/providers/*.toml`     | Bundled CLI-provider manifests (GEP-8)                  |
+| `priv/providers/*.toml`     | Bundled provider manifests (CLI + native)               |
 | `assets/css/` + `assets/js/` | Dashboard styles + the small JS bundle (hooks + shortcuts) |
 | `docs/geps/`                | Design decision records — start with GEP-1              |
 | `test/`                     | ExUnit suite, integration tests tagged `:integration`   |
@@ -362,8 +368,9 @@ GitHub release ships.
 
 **Agent-runtime dev loop:**
 
-Agent dispatch needs `bwrap` and the provider CLI installed on the
-host. From inside `iex -S mix phx.server`:
+Agent dispatch needs `bwrap` and either a provider CLI or a native
+provider credentials file configured on the host. From inside
+`iex -S mix phx.server`:
 
 ```elixir
 # Poke the provider registry
@@ -395,12 +402,12 @@ Edit `~/.glorbo/companies/acme/agents/ceo/agent.md`:
 ---
 name: CEO
 role: Chief Executive Officer
-provider: claude-code            # claude-code | gemini | codex
+provider: claude-code            # claude-code | gemini-cli | codex | openai | openrouter
 model: claude-opus-4-6           # Provider-specific
 budget:
   monthly_usd: 100.00
 heartbeat: "*/30 * * * *"
-network: api-only                # none | api-only | open
+network: proxy                   # none | proxy | open
 permissions:
   - projects:read:*
   - projects:write:*
@@ -424,7 +431,7 @@ glorbo down            # Graceful SIGTERM → 10s grace → SIGKILL escalation
 
 ## CLI Reference
 
-All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.0.4:
+All verbs from `docs/DESIGN.md` §10 are wired; the shipped surface as of v0.1.0:
 
 ```
 glorbo init [--force] [--skip-pull] [--example|--no-example]
@@ -451,6 +458,7 @@ glorbo backup [--output <path>]   tar.gz of ~/.glorbo/ with WAL checkpoint
 glorbo restore <archive> [--force]
                                   Extract + migrate + reindex + doctor --fix
 glorbo console                    iex --remsh into the running daemon
+glorbo harness ...                Internal native-provider runtime (GEP-32)
 glorbo help                       Print usage
 ```
 
@@ -477,10 +485,11 @@ dashboard renders them as real-time chat.
 
 1. An event triggers an agent (new inbox item, heartbeat, channel mention).
 2. Glorbo composes a bwrap argv for the agent's declared permissions,
-   network policy, and CLI provider.
+   network policy, and provider runtime.
 3. `Port.open/2` invokes `bwrap` with the prompt fed on stdin from a
-   tempfile; the CLI tool (`claude -p`, `gemini -p`, `codex exec -`) runs
-   inside the sandbox.
+   tempfile; either an external CLI tool (`claude -p`, `gemini -p`,
+   `codex exec -`) or the internal `glorbo harness` runs inside the
+   sandbox.
 4. The CLI writes results to the agent's workspace/outbox.
 5. Glorbo detects the output via inotify, routes messages, updates the
    index, appends to the audit log, and records token usage against the
@@ -499,14 +508,16 @@ Every agent wake is a short-lived `bwrap` process:
 - Agent-owned: workspace bind-mounted `rw`, outbox `rw`, inbox `ro`.
 - Per-permission mounts spliced in from the `agent.md` frontmatter.
 - CLI provider credentials (`~/.claude`, `~/.config/gemini`,
-  `~/.codex`) bind-mounted `ro`, redirected via per-provider env
-  (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
+  `~/.codex`) or native credentials
+  (`~/.local/etc/glorbo/credentials/<provider>.toml`) bind-mounted `ro`,
+  redirected via per-provider env (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `GLORBO_NATIVE_CREDENTIALS_PATH`).
 
 Network policy:
 
 ```
 network: none        # --unshare-net (kernel-enforced egress block)
-network: api-only    # Inherits host netns; HTTP(S)_PROXY points at an
+network: proxy       # Inherits host netns; HTTP(S)_PROXY points at an
                      #   allowlisted hostname proxy (advisory)
 network: open        # Inherits host netns; no proxy
 ```
@@ -537,8 +548,8 @@ transfers as belt-and-braces above the kernel.
 | Orchestration  | Elixir/OTP                  | Supervision trees, fault tolerance, concurrency |
 | Dashboard      | Phoenix LiveView            | Real-time UI, no JS framework                   |
 | Agent Chat     | Phoenix Channels            | WebSocket pub/sub, built-in                     |
-| Agent Runtime  | `bwrap(1)` + CLI tools      | One binary per CLI install; no Python, no SDKs  |
-| LLMs           | Whatever CLI you install    | `claude`, `gemini`, `codex`, `opencode`, etc.   |
+| Agent Runtime  | `bwrap(1)` + provider runtimes | External CLIs or `glorbo harness`; no Python, no in-process SDKs |
+| LLMs           | CLI or OpenAI-compatible endpoint | `claude`, `gemini`, `codex`, `opencode`, `openai`, `openrouter`, etc. |
 | Filesystem     | `inotify` + file_system     | Event-driven watcher                            |
 | Database       | SQLite (via `ecto_sqlite3`) | Single file, zero setup, disposable             |
 | Config/Data    | Markdown + YAML frontmatter | Human-readable, git-friendly, greppable         |
@@ -618,6 +629,19 @@ runtime):
 - Tests: 895/895 green · `mix credo --strict` clean ·
   `mix gep.validate` clean
 
+**v0.1.0** shipped 2026-04-23:
+
+- **GEP-32 — native agent harness** ✓ (Phase 1) — provider registry
+  gains `kind = "native"`, the existing single binary now exposes an
+  internal `glorbo harness` subcommand that runs inside bwrap, built-in
+  `openai` + `openrouter` providers ship, usage telemetry lands in a
+  native JSON contract, and user-defined native providers work via the
+  env-driven runtime contract inside the sandbox.
+- **Threatmodel waves 1–7** ✓ — post-v0.0.4 hardening across dispatch,
+  router, LiveViews, watcher/reindex, ACL mapping, backup/restore, and
+  provider/formula edges; major path-traversal, symlink, and YAML/CSV
+  injection closures landed on `main`.
+
 **v0.0.4** shipped 2026-04-21:
 
 - **GEP-20 — Director dashboard UX sweep** ✓ — unified `/inbox`
@@ -678,7 +702,7 @@ runtime):
 Pending for a later release: GEP-23 Phase 4 (real LLM dispatch
 for smart-mode classifier + director-approval sentinels for
 `:unknown`); GEP-26 Phase B (multi-provider blind A/B scoring
-UI); `api-only` netns + nftables egress hardening; the wider
+UI); `proxy` netns + nftables egress hardening; the wider
 GEP-9 (MCP/ACP protocol integration); optional GEP-18
 agentcompanies/v1 schema convergence.
 

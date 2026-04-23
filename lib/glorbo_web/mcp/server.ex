@@ -62,7 +62,7 @@ defmodule GlorboWeb.MCP.Server do
   @default_protocol_version_when_missing "2025-03-26"
 
   @server_name "glorbo"
-  @server_version "0.0.4"
+  @server_version "0.1.0"
 
   # Tool registry — one module per tool.
   @tools [

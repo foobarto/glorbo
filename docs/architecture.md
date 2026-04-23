@@ -41,9 +41,11 @@ emits the audit event. Its classmates in the same supervision tree:
 
 The lifecycle of a single agent invocation. When the Scheduler
 fires or an inbox message lands, `Agent.Server` enters `:dispatching`
-and hands off to `Agent.Dispatch`, which shells out to the CLI
-runtime (`claude`, `gemini`, `codex`) inside a bwrap sandbox, reads
-the reply file, and audits cost + outcome. See GEP-4 and GEP-5.
+and hands off to `Agent.Dispatch`, which shells out inside a bwrap
+sandbox to either an external CLI runtime (`claude`, `gemini`,
+`codex`, etc.) or the first-party `glorbo harness` native-provider
+subcommand. It then reads the reply file and audits cost + outcome.
+See GEP-4, GEP-5, GEP-8, and GEP-32.
 
 Supporting modules: `Glorbo.Agent.Parser` (validates AGENT.md),
 `Glorbo.Agent.Spec` (struct), `Glorbo.Agent.FileLayout`
@@ -120,13 +122,16 @@ create_agent, create_channel, create_proposal, decide_proposal.
 ### 6. CLI — `lib/glorbo/cli/`
 
 **Entry points:** `Glorbo.CLI.dispatch/1` (verb router),
+`Glorbo.CLI.Harness` (internal native-provider runtime),
 `Glorbo.CLI.Scaffold.{Company,Agent}` (public `scaffold/2,3`
 exports for MCP + tests).
 
 The `glorbo` binary (Burrito-wrapped single executable). Verbs
 scaffold companies/agents, run the doctor, reindex SQLite,
 validate GEPs and file formats. Dispatch from `bin/glorbo` is
-handled by `Glorbo.CLI`.
+handled by `Glorbo.CLI`; native providers reuse the same binary
+inside bwrap via the `harness` subcommand instead of requiring a
+separate external CLI install.
 
 ## Graph caveats
 

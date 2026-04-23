@@ -10,6 +10,56 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-04-23
+
+First pre-1.0 minor after v0.0.4. Headline work: GEP-32 phase 1 lands a
+first-party native-provider runtime inside the existing bwrap dispatch
+path; the threat-model campaign closes waves 1–7 worth of high/medium
+findings; GEP-33 is drafted as the next major filesystem-history layer.
+
+### Added — GEP-32 native agent harness (phase 1)
+
+- Provider registry entries now support `kind = "native"` alongside the
+  existing CLI kind. Built-in `openai` and `openrouter` providers ship
+  out of the box.
+- New internal `glorbo harness` subcommand runs as a first-party wrapped
+  runtime inside the same bwrap sandbox existing CLI agents use. No
+  in-process SDK client was added.
+- Native dispatch writes a Glorbo-owned `usage.json` contract parsed by
+  the new `native_v1` parser. If a provider omits usage telemetry at
+  runtime, dispatch now hard-refuses unless the agent opted into
+  `allow_untracked_budget: true`.
+- Phase 1 ships a conservative tool loop with `read_file` only and a
+  hard `@max_tool_calls = 50` cap. The implementation is already wired
+  so future phases can add the broader tool catalog without a second
+  runtime split.
+- User-defined native providers from `~/.glorbo/providers.toml` now work
+  correctly inside the sandbox by treating the env-driven runtime
+  contract as authoritative; the harness does not rely on built-ins
+  being the only visible registry population.
+- Providers UI and tests are now kind-aware (`cli` vs `native`), and
+  native providers surface endpoint/auth metadata instead of fake binary
+  fields.
+
+### Security — Threat-model waves 6 and 7 (2026-04-23)
+
+- **Wave 6** — closed 4 medium findings across ACL permission-scope
+  validation, Skills resolver lstat-before-copy, watcher/reindex
+  regular-file discipline, and `config.md` / `logs/glorbo.log` private
+  permissions; also dropped 3 stale open rows that were already fixed at
+  HEAD.
+- **Wave 7** — closed 4 more medium findings across Kanban `open_task`
+  strict path + lstat guards, Homebrew formula SHA256 validation,
+  canonical `budget.monthly_usd` parsing/enforcement, and backup archive
+  creation via private temp path + atomic rename.
+
+### Docs — GEP-33 draft
+
+- Added `docs/geps/0033-git-history-layer-for-glorbo-home.md`, a long-
+  form proposal for an opt-in git-backed history layer under
+  `~/.glorbo/.git/`, with the kernel owning commits and audit JSONL
+  remaining authoritative.
+
 ### Security — Threat-model wave 3 (2026-04-22, mediums)
 
 Closed 16 medium-severity Codex findings. Path-traversal /
@@ -2590,7 +2640,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/foobarto/glorbo/releases/tag/v0.1.0
 [0.0.4]: https://github.com/foobarto/glorbo/releases/tag/v0.0.4
 [0.0.3]: https://github.com/foobarto/glorbo/releases/tag/v0.0.3
 [0.0.2]: https://github.com/foobarto/glorbo/releases/tag/v0.0.2

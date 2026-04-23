@@ -292,38 +292,43 @@ If an Agent process crashes, only that Agent restarts.  If a Company crashes,
 only that Company's agents restart.  The dashboard and other companies are
 unaffected.
 
-### 4.2  CLI Agents — The Hands
+### 4.2  Provider Runtimes — The Hands
 
-Python never runs on the host. Glorbo spawns existing terminal AI tools
-(Claude Code, Gemini CLI, Codex, and any provider registered via GEP-8)
-as short-lived sandboxed processes and lets each tool handle its own
-model access, auth, and tool-use loop.
+Python never runs on the host. Glorbo spawns either existing terminal
+AI tools (Claude Code, Gemini CLI, Codex, and any other CLI provider
+registered via GEP-8) or its own `glorbo harness` native-provider
+subcommand as short-lived sandboxed processes. External CLIs keep their
+own model access, auth, and tool-use loop; the native harness speaks an
+OpenAI-compatible HTTP API from inside the same bwrap tree.
 
 For each agent wake, Elixir:
 
 1. Materialises skills and the task prompt into the agent's workspace
    (`.glorbo-skills/`, `.glorbo-run/<task-id>/task-prompt.md`).
 2. Resolves the agent's `provider:` through `Glorbo.CLI.Registry` to a
-   `Provider` struct: binary path, argv template, env overrides,
-   reply-path template, and an optional usage-parser binding.
+   `Provider` struct: either a CLI binary + argv template, or a native
+   endpoint + auth contract, plus env overrides, reply-path template,
+   and an optional usage-parser binding.
 3. Builds a `bwrap` argv from the agent's `permissions:` and `network:`
    declarations (see §4.4).
 4. Calls `Glorbo.CLI.Dispatcher.invoke/3`, which expands the provider's
    argv/env templates, sets `$GLORBO_REPLY_PATH` to a unique per-
-   invocation file path, spawns `bwrap <sandbox-args> <cli-tool> …` via
+   invocation file path, spawns `bwrap <sandbox-args> <provider-runtime> …` via
    `Port.open`, pipes the task prompt on stdin, tails stdout to
    `agents/<name>/stdout.log`.
 5. On exit, reads the reply file at `$GLORBO_REPLY_PATH` (see §4.2.1),
    runs the bound usage-parser for token/cost telemetry, moves outbox
    files through the Router, and cleans up per-invocation scratch.
 
-The CLI tool is trusted; Glorbo doesn't ship its own LLM client. Each
-tool manages its own credentials (Claude Code's login,
-`gcloud`/`GEMINI_API_KEY`, `OPENAI_API_KEY`), and Glorbo never touches
-those secrets — the company directory sees no API keys. Complex
-orchestration logic lives in Elixir; the CLI tool's job is: receive a
-prompt on stdin, do the work inside its sandbox view of the workspace,
-write its final answer to `$GLORBO_REPLY_PATH`, exit.
+The provider runtime is trusted, but Glorbo still does not run an
+in-process SDK client. CLI providers manage their own credentials
+(Claude Code's login, `gcloud`/`GEMINI_API_KEY`, `OPENAI_API_KEY`);
+native providers read `~/.local/etc/glorbo/credentials/<provider>.toml`
+via a per-dispatch bind at `/creds/provider.toml`. In all cases the
+company directory sees no API keys. Complex orchestration logic lives in
+Elixir; the runtime's job is: receive a prompt on stdin, do the work
+inside its sandbox view of the workspace, write its final answer to
+`$GLORBO_REPLY_PATH`, exit.
 
 #### 4.2.1  Reply-file contract (GEP-8 D1)
 
@@ -362,20 +367,22 @@ is a TOML entry declaring:
 
 Built-in providers ship under `priv/providers/*.toml`. User-declared
 providers drop in at `~/.glorbo/providers.toml`. `Glorbo.CLI.Registry`
-loads both at boot, PATH-detects each binary, and caches the snapshot.
-The `/providers` LiveView surfaces the current state; `glorbo doctor
---probe` triggers version probes.
+loads both at boot, PATH-detects CLI binaries, classifies native
+providers, and caches the snapshot. The `/providers` LiveView surfaces
+the current state; `glorbo doctor --probe` triggers CLI version probes.
 
 **Shipped providers:**
 
-| `provider:`    | Binary     | Auth source                             | Usage tracked? |
-|----------------|------------|-----------------------------------------|----------------|
-| `claude-code`  | `claude`   | Claude Code's own login (`~/.claude/`)  | Yes (JSONL)    |
-| `codex`        | `codex`    | Codex CLI's own auth (`~/.codex/`)      | Yes (JSONL)    |
-| `gemini-cli`   | `gemini`   | `GEMINI_API_KEY` or `gcloud` ADC        | Yes (stdout)   |
-| `hermes`       | `hermes`   | Whatever hermes is configured against   | No             |
-| `opencode`     | `opencode` | Whatever opencode is configured against | No             |
-| `pi`           | `pi`       | Local (typically offline)               | No             |
+| `provider:`    | Kind     | Runtime            | Auth source                                        | Usage tracked? |
+|----------------|----------|--------------------|----------------------------------------------------|----------------|
+| `claude-code`  | CLI      | `claude`           | Claude Code's own login (`~/.claude/`)             | Yes (JSONL)    |
+| `codex`        | CLI      | `codex`            | Codex CLI's own auth (`~/.codex/`)                 | Yes (JSONL)    |
+| `gemini-cli`   | CLI      | `gemini`           | `GEMINI_API_KEY` or `gcloud` ADC                   | Yes (stdout)   |
+| `hermes`       | CLI      | `hermes`           | Whatever hermes is configured against              | No             |
+| `opencode`     | CLI      | `opencode`         | Whatever opencode is configured against            | No             |
+| `pi`           | CLI      | `pi`               | Local (typically offline)                          | No             |
+| `openai`       | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openai.toml`      | Yes (JSON)     |
+| `openrouter`   | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openrouter.toml`  | Yes (JSON)     |
 
 Untracked providers require the agent to opt in via
 `allow_untracked_budget: true` in its `agent.md` — dispatch refuses
@@ -384,11 +391,14 @@ of the box through `pi` and whatever other local-only CLIs the Director
 installs; adding a new local provider is a TOML file, not an Elixir
 module.
 
-Glorbo never handles API keys directly. Each CLI tool's credentials
-stay in the user's home directory and are bind-mounted read-only into
-the sandbox if the agent's provider requires them. The company
-directory holds no secrets. `~/.glorbo/config.md` stores dashboard
-settings (bind address, dashboard token) — not provider credentials.
+Glorbo never stores provider secrets in `~/.glorbo/`. CLI-tool
+credentials stay in the user's home directory and are bind-mounted
+read-only into the sandbox if the agent's provider requires them.
+Native-provider credentials live in
+`~/.local/etc/glorbo/credentials/<provider>.toml` and are also
+bind-mounted read-only. The company directory holds no secrets.
+`~/.glorbo/config.md` stores dashboard settings (bind address,
+dashboard token) — not provider credentials.
 
 ### 4.4  bwrap — The Kernel Guard
 
@@ -772,6 +782,7 @@ result into the SQLite budget ledger:
 | `claude-code`  | `claude_jsonl`   | `$CLAUDE_CONFIG_DIR/projects/<encoded>/*.jsonl`      |
 | `codex`        | `codex_jsonl`    | `$CODEX_HOME/sessions/**/rollout-*.jsonl`            |
 | `gemini-cli`   | `gemini_stdout`  | gemini's `--output-format json` stdout blob          |
+| `openai` / `openrouter` | `native_v1` | `$GLORBO_USAGE_PATH` JSON emitted by `glorbo harness` |
 | `hermes`/`opencode`/`pi` | `none` | (no parser — untracked; agent must opt in)        |
 
 Cost in USD is computed by Elixir via a per-model rate table
@@ -939,15 +950,16 @@ glorbo init
 | `bubblewrap`     | Yes      | distro package (`apt`/`dnf`/…)  | kernel-level agent sandboxing    |
 | `uidmap`         | Yes      | `uidmap` or `shadow` package    | `newuidmap`/`newgidmap` helpers  |
 | `inotify-tools`  | Yes      | distro package                  | filesystem watcher               |
-| One or more CLIs | Yes      | install separately              | `claude`, `gemini`, `codex`, …   |
+| One or more provider runtimes | Yes | install a CLI or configure native credentials | `claude`, `gemini`, `codex`, or `credentials/<provider>.toml` |
 | BEAM VM          | Bundled  | Burrito release                 | no Erlang install needed         |
 
 Agents can use local models via CLIs that wrap them (e.g. `pi`,
 `opencode` against a local backend) or cloud providers like Anthropic
-(Claude), OpenAI (Codex), and Google (Gemini). All of these are
-configured per agent in `agent.md` and resolve through the provider
-registry (GEP-8). Local providers are the default-friendly choice;
-cloud providers are opt-in.
+(Claude), OpenAI, and Google (Gemini). GEP-32 phase 1 also ships
+native OpenAI-compatible providers (`openai`, `openrouter`) with no
+external CLI install. All of these are configured per agent in
+`agent.md` and resolve through the provider registry. Local providers
+are the default-friendly choice; cloud providers are opt-in.
 
 Python is **not** a host dependency. There is no container runtime.
 Glorbo bundles neither Podman nor Ollama — those were part of a

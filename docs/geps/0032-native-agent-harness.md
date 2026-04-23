@@ -14,6 +14,9 @@ history:
   - date: 2026-04-23
     status: Accepted
     note: Accepted by Director on the same day as draft. 28 decision-log entries locked via prior brainstorm; no revisions requested.
+  - date: 2026-04-23
+    status: Accepted
+    note: "Phase 1 landed in v0.1.0: native registry kind, `glorbo harness`, built-in `openai` + `openrouter`, runtime untracked gate, and `read_file` tool loop. Phases 2–4 remain open."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider

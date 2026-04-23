@@ -1,12 +1,12 @@
 # Graph Report - lib  (2026-04-23)
 
 ## Corpus Check
-- 223 files · ~163,884 words
+- 225 files · ~167,448 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2606 nodes · 4920 edges · 102 communities detected
-- Extraction: 78% EXTRACTED · 22% INFERRED · 0% AMBIGUOUS · INFERRED: 1074 edges (avg confidence: 0.8)
+- 2681 nodes · 5076 edges · 101 communities detected
+- Extraction: 78% EXTRACTED · 22% INFERRED · 0% AMBIGUOUS · INFERRED: 1096 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -111,205 +111,204 @@
 - [[_COMMUNITY_Community 98|Community 98]]
 - [[_COMMUNITY_Community 99|Community 99]]
 - [[_COMMUNITY_Community 100|Community 100]]
-- [[_COMMUNITY_Community 101|Community 101]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `read()` - 112 edges
+1. `read()` - 115 edges
 2. `Glorbo.Company.Router` - 101 edges
-3. `parse()` - 95 edges
+3. `parse()` - 97 edges
 4. `default_root()` - 78 edges
 5. `GlorboWeb.AgentLive` - 78 edges
 6. `GlorboWeb.CompanyLive` - 70 edges
-7. `exists?()` - 67 edges
-8. `Glorbo.Agent.Dispatch` - 55 edges
+7. `exists?()` - 68 edges
+8. `Glorbo.Agent.Dispatch` - 60 edges
 9. `Glorbo.Agent.Server` - 53 edges
 10. `GlorboWeb.KanbanLive` - 51 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `check_erts_version()` --calls--> `parse()`  [INFERRED]
-  lib/glorbo/doctor.ex → lib/glorbo/cli/parsers/claude_jsonl.ex
 - `kill_running_agents()` --calls--> `stop_inflight()`  [INFERRED]
   lib/glorbo/emergency_stop.ex → lib/glorbo/agent/server.ex
-- `parse_port()` --calls--> `parse()`  [INFERRED]
-  lib/glorbo/config.ex → lib/glorbo/cli/parsers/claude_jsonl.ex
 - `stop_agent()` --calls--> `lookup()`  [INFERRED]
   lib/glorbo/company/agent_supervisor.ex → lib/glorbo/path_grant_store.ex
 - `resolve_audit_server()` --calls--> `lookup()`  [INFERRED]
   lib/glorbo/company/scheduler.ex → lib/glorbo/path_grant_store.ex
+- `resolve_audit_server()` --calls--> `lookup()`  [INFERRED]
+  lib/glorbo/company/proposals_sink.ex → lib/glorbo/path_grant_store.ex
+- `read_file()` --calls--> `read()`  [INFERRED]
+  lib/glorbo/task_definition.ex → lib/glorbo_web/mcp/resources.ex
 
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.02
-Nodes (126): parse(), Glorbo.Budget.CompanyCap, list_agent_slugs(), parse_cap(), read_cap(), used_this_month(), GlorboWeb.CompanyLive, activity_hint() (+118 more)
+Cohesion: 0.03
+Nodes (114): Glorbo.CLI.Scaffold.Agent, detect_missing_skills(), do_run(), do_scaffold(), glorbo_home(), help_text(), maybe_write_heartbeat(), maybe_write_soul() (+106 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (143): Glorbo.Security.ACLMapper, check_action(), Glorbo.DB.Bootstrap, child_spec(), do_migrate(), migrations_path(), start_link(), table_exists?() (+135 more)
+Nodes (110): load_runs(), GlorboWeb.BrainDumpLive, do_convert(), emit_audit(), flat_recent(), handle_event(), load_and_assign(), mount() (+102 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.03
-Nodes (109): load_runs(), GlorboWeb.BrainDumpLive, do_convert(), emit_audit(), flat_recent(), handle_event(), load_and_assign(), mount() (+101 more)
+Nodes (99): GlorboWeb.CompanyLive, activity_hint(), agent_pill_label(), agent_pill_status(), agent_runtime_status(), agent_used_usd(), append_if_nonempty(), audit_last_wakes() (+91 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.03
-Nodes (94): Glorbo.Company.AgentBoot, boot_one(), do_boot(), maybe_register_heartbeat(), run(), start_and_register(), Glorbo.Company.AgentSupervisor, init() (+86 more)
+Nodes (79): Glorbo.CLI.Scaffold.CompanyTemplate, check_min_glorbo_version(), compare_glorbo_version(), copy_rendered_files(), do_scaffold(), ensure_default_channel(), excluded_from_render?(), known_projects() (+71 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.03
-Nodes (64): GlorboWeb.MCP.Tools.ApproveTask, audit_opt(), do_call(), mcp_actor(), GlorboWeb.MCP.Tools.CaptureBrainDump, do_call(), GlorboWeb.MCP.Tools.DenyTask, audit_opt() (+56 more)
+Cohesion: 0.02
+Nodes (66): GlorboWeb.MCP.Tools.ApproveTask, audit_opt(), do_call(), mcp_actor(), GlorboWeb.MCP.Tools.CaptureBrainDump, do_call(), glorbo_home(), GlorboWeb.MCP.Tools.CreateCompany (+58 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.03
-Nodes (75): Glorbo.FileSpec.AgentMd, canonical_key_order(), docs(), frontmatter_schema(), kind(), Glorbo.FileSpec, classify_by_kind(), specs() (+67 more)
+Nodes (73): Glorbo.CLI.Lifecycle.Down, do_run(), glorbo_home(), help_text(), run(), stop_running(), wait_for_exit(), GlorboWeb.ErrorHTML (+65 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.03
-Nodes (66): Glorbo.CLI.Lifecycle.Down, do_run(), glorbo_home(), help_text(), run(), stop_running(), wait_for_exit(), GlorboWeb.ErrorHTML (+58 more)
+Cohesion: 0.04
+Nodes (102): Glorbo.Security.ACLMapper, check_action(), fs_fun(), request_approval(), rm(), Glorbo.Company.Router, append_line!(), append_task_comment() (+94 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.04
-Nodes (70): write(), Glorbo.BrainDump, apply_section_removal(), build_entry(), convert_to_task(), date_string(), delete_entry(), derive_title() (+62 more)
+Nodes (87): Glorbo.CLI.Lifecycle.Daemon, do_spawn(), executable?(), local_glorbo_binary(), self_binary(), validate_binary(), Glorbo.Agent.Dispatch, attempt_with_retries() (+79 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.05
-Nodes (69): GlorboWeb.AgentLive, action_class(), agent_dir(), agent_name(), agent_pill_label(), agent_pill_status(), audit_for_this_agent?(), backfill_stdout() (+61 more)
+Cohesion: 0.04
+Nodes (66): Glorbo.FileSpec.AgentMd, canonical_key_order(), docs(), frontmatter_schema(), kind(), Glorbo.FileSpec, classify_by_kind(), specs() (+58 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.04
-Nodes (68): Glorbo.Company.BudgetTracker, default_budgets_fun(), emit_alert_audit(), emit_audit(), emit_hard_stop(), extract_yaml_field(), fetch_used(), handle_call() (+60 more)
+Cohesion: 0.03
+Nodes (71): mark_director_approval(), Glorbo.Company.AgentBoot, boot_one(), do_boot(), maybe_register_heartbeat(), run(), start_and_register(), Glorbo.Company.AgentSupervisor (+63 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.05
-Nodes (77): Glorbo.Agent.Dispatch, attempt_with_retries(), audit_fun(), build_ctx(), build_retry_task(), check_budget(), check_company_budget(), check_emergency_stop() (+69 more)
+Cohesion: 0.04
+Nodes (70): GlorboWeb.AgentLive, action_class(), agent_dir(), agent_name(), agent_pill_label(), agent_pill_status(), audit_for_this_agent?(), backfill_stdout() (+62 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.04
-Nodes (59): GlorboWeb.AuditExportController, build_csv(), csv_cell(), detail_as_json(), export(), header_row(), needs_quoting?(), neutralise_formula() (+51 more)
+Nodes (64): write(), Glorbo.BrainDump, apply_section_removal(), build_entry(), convert_to_task(), date_string(), delete_entry(), derive_title() (+56 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.05
-Nodes (61): Glorbo.CLI.Scaffold.Agent, detect_missing_skills(), do_run(), do_scaffold(), glorbo_home(), help_text(), maybe_write_heartbeat(), maybe_write_soul() (+53 more)
+Cohesion: 0.04
+Nodes (63): Glorbo.DB.Bootstrap, child_spec(), do_migrate(), migrations_path(), start_link(), table_exists?(), Mix.Tasks.Glorbo.BuildLocal, run() (+55 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (55): Glorbo.Backup, default_output_path(), ensure_down(), format_cli_result(), help_text(), maybe_checkpoint(), recheck_down(), run() (+47 more)
+Cohesion: 0.04
+Nodes (57): GlorboWeb.AuditExportController, build_csv(), csv_cell(), detail_as_json(), export(), header_row(), needs_quoting?(), neutralise_formula() (+49 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.05
-Nodes (49): GlorboWeb.Actions, extract_frontmatter(), hire_argv(), hire_task?(), lookup_requesting_agent(), mark_director_approval(), maybe_put_assigned_to(), maybe_rotate_channel() (+41 more)
+Cohesion: 0.04
+Nodes (58): GlorboWeb.Actions, extract_frontmatter(), hire_argv(), hire_task?(), lookup_requesting_agent(), maybe_put_assigned_to(), maybe_rotate_channel(), maybe_scaffold_hired_agent() (+50 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.05
-Nodes (41): Glorbo.Agent.LoopDetector, agent_slug_from_state_path(), apply_one_resolution(), apply_resolution_files(), blank?(), decode_line(), default_fs_fun(), emit_loop_audit() (+33 more)
+Cohesion: 0.06
+Nodes (55): Glorbo.CLI.Bench, do_list(), run(), stub_run_message(), GlorboWeb.CoreComponents, icon(), Glorbo.CLI.Dispatcher, add_transform_substitutions() (+47 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.07
-Nodes (50): Glorbo.Filesystem.Reindex, accumulate_result(), cleanup_vanished(), company_prefix(), do_run(), infer_agent_name(), infer_company_name(), infer_company_name_from_agent_path() (+42 more)
+Cohesion: 0.04
+Nodes (33): Glorbo.CLI.Registry.Detection, apply_regex(), detect_all(), detect_one(), probe_one(), probe_versions(), try_fallback_paths(), Glorbo.CLI.Registry.Loader (+25 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.06
-Nodes (38): Glorbo.Inbox.Archive, list(), path(), GlorboWeb.AuditLive, action_match?(), actor_match?(), audit_path(), entry_id() (+30 more)
+Nodes (53): load_path_requests(), reload_config(), call(), GlorboWeb.InboxLive, approval_key(), audit_key(), decode_audit(), handle_event() (+45 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.06
-Nodes (30): Glorbo.CLI.Registry.Detection, apply_regex(), detect_all(), detect_one(), probe_one(), probe_versions(), try_fallback_paths(), Glorbo.CLI.Registry.Loader (+22 more)
+Nodes (40): Glorbo.Company.BudgetTracker, default_budgets_fun(), emit_alert_audit(), emit_audit(), emit_hard_stop(), extract_yaml_field(), fetch_used(), handle_call() (+32 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.07
-Nodes (40): Glorbo.Agent.Server, apply_task_actions(), broadcast_status(), call_inbox_scan(), compose_memory_section(), compose_prompt(), director_wake_task(), dispatch_result_to_exit_status() (+32 more)
+Cohesion: 0.05
+Nodes (39): Glorbo.Inbox.Archive, list(), path(), GlorboWeb.AuditLive, action_match?(), actor_match?(), audit_path(), entry_id() (+31 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.07
-Nodes (37): GlorboWeb.OverviewLive, agent_count(), agent_spend_usd(), alert_count(), company_goals(), company_name(), count_in_progress_in_project(), do_load_company() (+29 more)
+Nodes (40): Glorbo.Agent.Server, apply_task_actions(), broadcast_status(), call_inbox_scan(), compose_memory_section(), compose_prompt(), director_wake_task(), dispatch_result_to_exit_status() (+32 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.09
-Nodes (39): handle_delete(), valid_segment?(), GlorboWeb.MCP.Session, add_subscription(), alive_ping?(), call(), chat_topic(), company_topic() (+31 more)
+Cohesion: 0.06
+Nodes (36): Glorbo.Agent.LoopDetector, agent_slug_from_state_path(), apply_one_resolution(), apply_resolution_files(), blank?(), decode_line(), default_fs_fun(), emit_resolved_audit() (+28 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.1
-Nodes (38): load_path_requests(), reload_config(), call(), handle_event(), load_path_requests(), grant(), Glorbo.PathRequestGate, any_forbidden_path?() (+30 more)
+Cohesion: 0.09
+Nodes (46): Glorbo.CLI.Harness, auth_headers(), auth_headers_for(), blank_to_nil(), build_runtime_config(), build_usage(), chat_completion(), chat_url() (+38 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.08
-Nodes (35): Glorbo.CLI.Bench, do_list(), run(), stub_run_message(), load_rollups(), Gep.Formatter, format(), gep_label() (+27 more)
+Nodes (36): Glorbo.CLI, dispatch(), ensure_repo_started(), help_text(), render_fmt_output(), render_init_summary(), run_checks(), resolve_exit_code() (+28 more)
 
 ### Community 24 - "Community 24"
+Cohesion: 0.07
+Nodes (35): GlorboWeb.OverviewLive, agent_count(), agent_spend_usd(), alert_count(), company_goals(), company_name(), count_in_progress_in_project(), do_load_company() (+27 more)
+
+### Community 25 - "Community 25"
+Cohesion: 0.1
+Nodes (35): Glorbo.Filesystem.Reindex, accumulate_result(), cleanup_vanished(), company_prefix(), do_run(), infer_agent_name(), infer_company_name(), infer_company_name_from_agent_path() (+27 more)
+
+### Community 26 - "Community 26"
 Cohesion: 0.1
 Nodes (28): GlorboWeb.ChannelLive, archivable?(), archive_segment_path(), channel_path(), count_headers(), do_archive(), handle_event(), handle_info() (+20 more)
 
-### Community 25 - "Community 25"
-Cohesion: 0.08
-Nodes (20): GlorboWeb.MCP.Args, require_safe_identifier(), require_safe_yaml_scalar(), require_slug(), require_slugs(), Glorbo.CLI.Scaffold.Company, do_scaffold(), glorbo_home() (+12 more)
-
-### Community 26 - "Community 26"
+### Community 27 - "Community 27"
 Cohesion: 0.09
 Nodes (18): GlorboWeb.Components.Sidebar, agent_row(), classify_status(), count_memory_files(), count_pending_approvals(), count_sentinels_in(), count_stuck_sentinels(), first_company() (+10 more)
 
-### Community 27 - "Community 27"
+### Community 28 - "Community 28"
 Cohesion: 0.07
 Nodes (2): Glorbo.Agent.Parser, read_file()
 
-### Community 28 - "Community 28"
-Cohesion: 0.13
-Nodes (23): Glorbo.Config, atomic_write_secret!(), erl_cookie(), generate_cookie(), generate_secret(), handle_cookie(), load(), parse_port() (+15 more)
-
 ### Community 29 - "Community 29"
-Cohesion: 0.14
-Nodes (24): Glorbo.Init.ExampleCompany, ceo_agent_md(), ceo_heartbeat_md(), scaffold!(), Glorbo.Init.Orchestrator, audit_step(), bootstrap(), build_next_steps() (+16 more)
+Cohesion: 0.13
+Nodes (25): load_rollups(), Gep.Formatter, format(), gep_label(), Mix.Tasks.Gep.Validate, load_records(), run(), Glorbo.Activity.Rollup (+17 more)
 
 ### Community 30 - "Community 30"
+Cohesion: 0.12
+Nodes (22): Glorbo.Application, maybe_write_pidfile(), release_argv(), run_cli_and_halt(), running_standalone?(), start(), start_supervision_tree(), start_supervision_tree_for_serve() (+14 more)
+
+### Community 31 - "Community 31"
 Cohesion: 0.14
 Nodes (21): Glorbo.Sandbox.Bwrap, agent_owned_flags(), approved_path_flags(), baseline_flags(), build_argv(), close_stdout_tee(), do_run_via_port(), drain_port() (+13 more)
 
-### Community 31 - "Community 31"
+### Community 32 - "Community 32"
 Cohesion: 0.18
 Nodes (23): Glorbo.Network.Proxy, accept_loop(), classify_unlisted(), default_allowlist(), dispatch_request(), evaluate_and_tunnel(), handle_connection(), handle_info() (+15 more)
 
-### Community 32 - "Community 32"
-Cohesion: 0.13
-Nodes (14): Glorbo.Doctor, check_audit_dir(), check_disk_space(), check_erts_version(), check_glorbo_dir(), check_linux_kernel(), check_private_files(), check_sockets_dir() (+6 more)
-
 ### Community 33 - "Community 33"
+Cohesion: 0.15
+Nodes (19): Glorbo.Company.TaskScheduler, arm(), default_write_inbox(), do_scan(), emit_audit(), fire(), handle_call(), handle_info() (+11 more)
+
+### Community 34 - "Community 34"
 Cohesion: 0.13
 Nodes (13): Glorbo.FileSpec.Formatter, atomic_write(), build_stats(), check_one(), do_format(), emit_pair(), emit_pairs(), ensure_trailing_newline() (+5 more)
 
-### Community 34 - "Community 34"
-Cohesion: 0.19
-Nodes (18): GlorboWeb.CoreComponents, icon(), GlorboWeb.ProjectLive, ensure_and_load_meta(), ensure_project_md_writable(), first_paragraph(), handle_event(), handle_info() (+10 more)
-
 ### Community 35 - "Community 35"
-Cohesion: 0.15
-Nodes (13): GlorboWeb.CostsLive, build_company_caps(), build_rows(), format_ym(), list_all_agents(), load_and_assign(), mount(), offset_month() (+5 more)
+Cohesion: 0.19
+Nodes (18): GlorboWeb.StdoutStreamer, broadcast_payload(), build_payload(), classify_and_extract(), flush_lines(), handle_call(), handle_info(), init() (+10 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.15
 Nodes (8): GlorboWeb.Components.AuditEntry, action_phrase(), actor_initials(), actor_kind(), audit_entry(), describe_complete(), humanize_ms(), to_sentence()
 
 ### Community 37 - "Community 37"
-Cohesion: 0.25
-Nodes (13): Glorbo.Company.Scheduler, arm_timer(), cancel_timer_for(), compute_delay_ms(), default_heartbeat_lookup(), emit_audit(), handle_call(), handle_info() (+5 more)
+Cohesion: 0.16
+Nodes (10): GlorboWeb.MCP.Args, require_safe_identifier(), require_safe_yaml_scalar(), require_slug(), require_slugs(), GlorboWeb.MCP.Tools.CreateAgent, do_call(), maybe_put() (+2 more)
 
 ### Community 38 - "Community 38"
+Cohesion: 0.23
+Nodes (6): GlorboWeb.MCP.Tools.GetChannel, clamp_limit(), do_call(), maybe_filter_since(), nilify(), parse_iso()
+
+### Community 39 - "Community 39"
 Cohesion: 0.33
 Nodes (10): Glorbo.Sandbox.Unsandboxed, close_stdout_tee(), do_run_via_port(), drain_loop(), drain_port(), open_stdout_tee(), run_via_port(), safe_port_close() (+2 more)
 
-### Community 39 - "Community 39"
+### Community 40 - "Community 40"
 Cohesion: 0.2
 Nodes (5): GlorboWeb.Markdown.Linkify, html_escape(), linkify_text(), GlorboWeb.Markdown, detokenize_mentions()
 
-### Community 40 - "Community 40"
+### Community 41 - "Community 41"
 Cohesion: 0.33
 Nodes (9): GlorboWeb.Components.BudgetRing, aria_label(), budget_ring(), center_text(), color(), over_cap?(), ratio(), two_decimals() (+1 more)
 
-### Community 41 - "Community 41"
-Cohesion: 0.27
-Nodes (5): GlorboWeb.MCP.Tools.GetCompany, company_frontmatter(), count_md_files(), count_subdirs(), do_call()
-
 ### Community 42 - "Community 42"
-Cohesion: 0.31
-Nodes (5): GlorboWeb.MCP.Tools.ListCompanies, call(), default_base(), load(), parse_company_md()
+Cohesion: 0.29
+Nodes (1): Glorbo.CLI.Registry.Provider
 
 ### Community 43 - "Community 43"
 Cohesion: 0.29
@@ -436,121 +435,119 @@ Cohesion: 0.5
 Nodes (1): Glorbo.CLI.Parsers.GeminiStdout
 
 ### Community 74 - "Community 74"
-Cohesion: 0.5
-Nodes (1): Glorbo.CLI.Registry.Provider
-
-### Community 75 - "Community 75"
 Cohesion: 0.67
 Nodes (3): GlorboWeb.Components.Spark, normalize(), spark()
 
-### Community 76 - "Community 76"
+### Community 75 - "Community 75"
 Cohesion: 0.67
 Nodes (3): GlorboWeb.Components.ChannelMessage, author_kind(), channel_message()
 
-### Community 77 - "Community 77"
+### Community 76 - "Community 76"
 Cohesion: 0.5
 Nodes (1): GlorboWeb.Components.TaskDetailForm
 
-### Community 78 - "Community 78"
+### Community 77 - "Community 77"
 Cohesion: 0.5
 Nodes (1): GlorboWeb.Components.TaskCard
 
-### Community 79 - "Community 79"
+### Community 78 - "Community 78"
 Cohesion: 0.67
 Nodes (1): Glorbo.Init
 
-### Community 80 - "Community 80"
+### Community 79 - "Community 79"
 Cohesion: 0.67
 Nodes (1): Glorbo.Budget
 
-### Community 81 - "Community 81"
+### Community 80 - "Community 80"
 Cohesion: 0.67
 Nodes (1): Glorbo.CLI.PathTransforms
 
-### Community 82 - "Community 82"
+### Community 81 - "Community 81"
 Cohesion: 0.67
 Nodes (1): Glorbo.CLI.Parsers.None
 
-### Community 83 - "Community 83"
+### Community 82 - "Community 82"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.ErrorJSON
 
-### Community 84 - "Community 84"
+### Community 83 - "Community 83"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Components.AgentCard
 
-### Community 85 - "Community 85"
+### Community 84 - "Community 84"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Components.TabBar
 
-### Community 86 - "Community 86"
+### Community 85 - "Community 85"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Components.HealthDot
 
-### Community 87 - "Community 87"
+### Community 86 - "Community 86"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Layouts
 
-### Community 88 - "Community 88"
+### Community 87 - "Community 87"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Components.StatusPill
 
-### Community 89 - "Community 89"
+### Community 88 - "Community 88"
 Cohesion: 0.67
 Nodes (1): GlorboWeb.Components.StatCard
 
-### Community 90 - "Community 90"
+### Community 89 - "Community 89"
 Cohesion: 1.0
 Nodes (1): Glorbo
 
-### Community 91 - "Community 91"
+### Community 90 - "Community 90"
 Cohesion: 1.0
 Nodes (1): Glorbo.Repo
 
-### Community 92 - "Community 92"
+### Community 91 - "Community 91"
 Cohesion: 1.0
 Nodes (1): Glorbo.Company
 
-### Community 93 - "Community 93"
+### Community 92 - "Community 92"
 Cohesion: 1.0
 Nodes (1): Glorbo.AuditEvent
 
-### Community 94 - "Community 94"
+### Community 93 - "Community 93"
 Cohesion: 1.0
 Nodes (1): Glorbo.Agent
 
-### Community 95 - "Community 95"
+### Community 94 - "Community 94"
 Cohesion: 1.0
 Nodes (1): Glorbo.Agent.Spec
 
-### Community 96 - "Community 96"
+### Community 95 - "Community 95"
 Cohesion: 1.0
 Nodes (1): Glorbo.Filesystem.ReindexState
 
-### Community 97 - "Community 97"
+### Community 96 - "Community 96"
 Cohesion: 1.0
 Nodes (1): Glorbo.CLI.Audit
 
-### Community 98 - "Community 98"
+### Community 97 - "Community 97"
 Cohesion: 1.0
 Nodes (1): GlorboWeb.Endpoint
 
-### Community 99 - "Community 99"
+### Community 98 - "Community 98"
 Cohesion: 1.0
 Nodes (1): GlorboWeb.Router
 
-### Community 100 - "Community 100"
+### Community 99 - "Community 99"
 Cohesion: 1.0
 Nodes (1): GlorboWeb.MCP.Tool
 
-### Community 101 - "Community 101"
+### Community 100 - "Community 100"
 Cohesion: 1.0
 Nodes (1): Gep.Record
 
 ## Knowledge Gaps
 - **12 isolated node(s):** `Glorbo`, `Glorbo.Repo`, `Glorbo.Company`, `Glorbo.AuditEvent`, `Glorbo.Agent` (+7 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 27`** (30 nodes): `parser.ex`, `Glorbo.Agent.Parser`, `default_egress()`, `derive_company()`, `derive_slug()`, `parse_budget_monthly_usd()`, `parse_egress_mode()`, `parse_host_list()`, `parse_icon()`, `parse_legacy_budget_cents()`, `parse_reports_to()`, `parse_smart_model()`, `parse_untracked()`, `read_file()`, `reject_agents_create()`, `validate_autonomy()`, `validate_budget()`, `validate_egress()`, `validate_heartbeat()`, `validate_max_retries()`, `validate_model()`, `validate_models_aliases()`, `validate_network()`, `validate_one_permission()`, `validate_one_skill()`, `validate_permissions()`, `validate_provider()`, `validate_skills()`, `validate_slug()`, `validate_timeout()`
+- **Thin community `Community 28`** (30 nodes): `parser.ex`, `Glorbo.Agent.Parser`, `default_egress()`, `derive_company()`, `derive_slug()`, `parse_budget_monthly_usd()`, `parse_egress_mode()`, `parse_host_list()`, `parse_icon()`, `parse_legacy_budget_cents()`, `parse_reports_to()`, `parse_smart_model()`, `parse_untracked()`, `read_file()`, `reject_agents_create()`, `validate_autonomy()`, `validate_budget()`, `validate_egress()`, `validate_heartbeat()`, `validate_max_retries()`, `validate_model()`, `validate_models_aliases()`, `validate_network()`, `validate_one_permission()`, `validate_one_skill()`, `validate_permissions()`, `validate_provider()`, `validate_skills()`, `validate_slug()`, `validate_timeout()`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 42`** (7 nodes): `provider.ex`, `Glorbo.CLI.Registry.Provider`, `auth_modes()`, `kinds()`, `model_list_shapes()`, `prompt_modes()`, `status()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 43`** (7 nodes): `GlorboWeb.Components.CompanyCard`, `agent_label()`, `alert_label()`, `company_card()`, `goal_label()`, `progress_state()`, `company_card.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -610,72 +607,70 @@ Nodes (1): Gep.Record
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 73`** (4 nodes): `Glorbo.CLI.Parsers.GeminiStdout`, `parse()`, `reduce_models()`, `gemini_stdout.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (4 nodes): `provider.ex`, `Glorbo.CLI.Registry.Provider`, `prompt_modes()`, `status()`
+- **Thin community `Community 76`** (4 nodes): `task_detail_form.ex`, `GlorboWeb.Components.TaskDetailForm`, `linkify_body()`, `task_detail_form()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (4 nodes): `task_detail_form.ex`, `GlorboWeb.Components.TaskDetailForm`, `linkify_body()`, `task_detail_form()`
+- **Thin community `Community 77`** (4 nodes): `task_card.ex`, `GlorboWeb.Components.TaskCard`, `recurring?()`, `task_card()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (4 nodes): `task_card.ex`, `GlorboWeb.Components.TaskCard`, `recurring?()`, `task_card()`
+- **Thin community `Community 78`** (3 nodes): `init.ex`, `Glorbo.Init`, `run()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (3 nodes): `init.ex`, `Glorbo.Init`, `run()`
+- **Thin community `Community 79`** (3 nodes): `Glorbo.Budget`, `changeset()`, `budget.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (3 nodes): `Glorbo.Budget`, `changeset()`, `budget.ex`
+- **Thin community `Community 80`** (3 nodes): `path_transforms.ex`, `Glorbo.CLI.PathTransforms`, `known?()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (3 nodes): `path_transforms.ex`, `Glorbo.CLI.PathTransforms`, `known?()`
+- **Thin community `Community 81`** (3 nodes): `none.ex`, `Glorbo.CLI.Parsers.None`, `parse()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (3 nodes): `none.ex`, `Glorbo.CLI.Parsers.None`, `parse()`
+- **Thin community `Community 82`** (3 nodes): `GlorboWeb.ErrorJSON`, `render()`, `error_json.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (3 nodes): `GlorboWeb.ErrorJSON`, `render()`, `error_json.ex`
+- **Thin community `Community 83`** (3 nodes): `GlorboWeb.Components.AgentCard`, `agent_card()`, `agent_card.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (3 nodes): `GlorboWeb.Components.AgentCard`, `agent_card()`, `agent_card.ex`
+- **Thin community `Community 84`** (3 nodes): `tab_bar.ex`, `GlorboWeb.Components.TabBar`, `tab_bar()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (3 nodes): `tab_bar.ex`, `GlorboWeb.Components.TabBar`, `tab_bar()`
+- **Thin community `Community 85`** (3 nodes): `health_dot.ex`, `GlorboWeb.Components.HealthDot`, `health_dot()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (3 nodes): `health_dot.ex`, `GlorboWeb.Components.HealthDot`, `health_dot()`
+- **Thin community `Community 86`** (3 nodes): `layouts.ex`, `GlorboWeb.Layouts`, `on_mount()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (3 nodes): `layouts.ex`, `GlorboWeb.Layouts`, `on_mount()`
+- **Thin community `Community 87`** (3 nodes): `status_pill.ex`, `GlorboWeb.Components.StatusPill`, `status_pill()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (3 nodes): `status_pill.ex`, `GlorboWeb.Components.StatusPill`, `status_pill()`
+- **Thin community `Community 88`** (3 nodes): `stat_card.ex`, `GlorboWeb.Components.StatCard`, `stat_card()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (3 nodes): `stat_card.ex`, `GlorboWeb.Components.StatCard`, `stat_card()`
+- **Thin community `Community 89`** (2 nodes): `glorbo.ex`, `Glorbo`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (2 nodes): `glorbo.ex`, `Glorbo`
+- **Thin community `Community 90`** (2 nodes): `repo.ex`, `Glorbo.Repo`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (2 nodes): `repo.ex`, `Glorbo.Repo`
+- **Thin community `Community 91`** (2 nodes): `Glorbo.Company`, `company.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (2 nodes): `Glorbo.Company`, `company.ex`
+- **Thin community `Community 92`** (2 nodes): `Glorbo.AuditEvent`, `audit_event.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (2 nodes): `Glorbo.AuditEvent`, `audit_event.ex`
+- **Thin community `Community 93`** (2 nodes): `Glorbo.Agent`, `agent.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (2 nodes): `Glorbo.Agent`, `agent.ex`
+- **Thin community `Community 94`** (2 nodes): `spec.ex`, `Glorbo.Agent.Spec`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (2 nodes): `spec.ex`, `Glorbo.Agent.Spec`
+- **Thin community `Community 95`** (2 nodes): `reindex_state.ex`, `Glorbo.Filesystem.ReindexState`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (2 nodes): `reindex_state.ex`, `Glorbo.Filesystem.ReindexState`
+- **Thin community `Community 96`** (2 nodes): `Glorbo.CLI.Audit`, `audit.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (2 nodes): `Glorbo.CLI.Audit`, `audit.ex`
+- **Thin community `Community 97`** (2 nodes): `GlorboWeb.Endpoint`, `endpoint.ex`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (2 nodes): `GlorboWeb.Endpoint`, `endpoint.ex`
+- **Thin community `Community 98`** (2 nodes): `router.ex`, `GlorboWeb.Router`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (2 nodes): `router.ex`, `GlorboWeb.Router`
+- **Thin community `Community 99`** (2 nodes): `tool.ex`, `GlorboWeb.MCP.Tool`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (2 nodes): `tool.ex`, `GlorboWeb.MCP.Tool`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (2 nodes): `record.ex`, `Gep.Record`
+- **Thin community `Community 100`** (2 nodes): `record.ex`, `Gep.Record`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `read()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 24`, `Community 26`, `Community 27`, `Community 28`, `Community 32`, `Community 33`, `Community 34`, `Community 37`, `Community 41`, `Community 42`?**
-  _High betweenness centrality (0.162) - this node is a cross-community bridge._
-- **Why does `parse()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 19`, `Community 20`, `Community 22`, `Community 23`, `Community 25`, `Community 28`, `Community 31`, `Community 32`, `Community 33`, `Community 37`, `Community 41`, `Community 42`?**
-  _High betweenness centrality (0.150) - this node is a cross-community bridge._
-- **Why does `default_root()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 25`, `Community 26`, `Community 28`, `Community 29`, `Community 32`, `Community 37`, `Community 41`, `Community 42`?**
-  _High betweenness centrality (0.135) - this node is a cross-community bridge._
-- **Are the 111 inferred relationships involving `read()` (e.g. with `parse_title()` and `scan_audit()`) actually correct?**
-  _`read()` has 111 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 94 inferred relationships involving `parse()` (e.g. with `run_cli()` and `run_cli()`) actually correct?**
-  _`parse()` has 94 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `read()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 6`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 24`, `Community 26`, `Community 27`, `Community 28`, `Community 29`, `Community 33`, `Community 34`, `Community 35`, `Community 38`?**
+  _High betweenness centrality (0.204) - this node is a cross-community bridge._
+- **Why does `parse()` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 17`, `Community 18`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 24`, `Community 25`, `Community 29`, `Community 30`, `Community 32`, `Community 33`, `Community 34`?**
+  _High betweenness centrality (0.156) - this node is a cross-community bridge._
+- **Why does `default_root()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 19`, `Community 20`, `Community 23`, `Community 24`, `Community 25`, `Community 27`, `Community 30`, `Community 33`, `Community 35`, `Community 37`, `Community 38`?**
+  _High betweenness centrality (0.121) - this node is a cross-community bridge._
+- **Are the 114 inferred relationships involving `read()` (e.g. with `parse_title()` and `scan_audit()`) actually correct?**
+  _`read()` has 114 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 96 inferred relationships involving `parse()` (e.g. with `run_cli()` and `run_cli()`) actually correct?**
+  _`parse()` has 96 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 77 inferred relationships involving `default_root()` (e.g. with `run()` and `run()`) actually correct?**
   _`default_root()` has 77 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Glorbo`, `Glorbo.Repo`, `Glorbo.Company` to the rest of the system?**

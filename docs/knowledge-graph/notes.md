@@ -344,6 +344,18 @@ reads an agent budget directly from frontmatter should treat the
 nested `budget.monthly_usd` block as authoritative and only fall
 back to `budget_usd_cents_month` for compatibility.
 
+### GEP-32 phase 1 — the harness must not trust built-ins as the only registry
+
+Inside the sandbox, `glorbo harness` already receives the authoritative
+runtime contract from `Dispatcher.build_env/6`: endpoint, auth mode,
+reply path, usage path, and the per-provider credentials bind at
+`/creds/provider.toml`. A built-in registry lookup is useful for manual
+invocation, but it cannot be the only source of truth because
+user-declared native providers from `~/.glorbo/providers.toml` are not
+mounted into the sandbox. Rule: the harness may consult built-ins, but
+must fall back to the env-driven runtime contract or user-defined native
+providers will fail despite host-side registry resolution succeeding.
+
 ---
 
 ## What belongs in this file vs elsewhere

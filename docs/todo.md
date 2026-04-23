@@ -20,6 +20,10 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
+- [ ] **GEP-32 phase 2 — full native tool catalog.** Phase 1 ships
+  `glorbo harness` + OpenAI/OpenRouter + `read_file`; next cut adds
+  `write_file`, `edit_file`, `glob`, `grep`, `bash`, `web_fetch`,
+  plus per-tool audit events.
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.
@@ -145,3 +149,11 @@ it's been in CHANGELOG for a cycle.
   release-formula SHA256 validation, canonical agent budget block
   enforcement in Parser/BudgetTracker, and backup temp+rename
   0600 finalization.
+- [x] **GEP-32 phase 1 (2026-04-23).** Shipped native-provider
+  runtime support inside the existing bwrap dispatch path:
+  `kind = "native"` providers, internal `glorbo harness`,
+  built-in `openai` + `openrouter`, runtime `tracked: false`
+  budget gating, and a `read_file` tool loop with usage JSON.
+- [x] **v0.1.0 shipped.** First minor since v0.0.4: GEP-32 phase 1
+  plus the post-v0.0.4 threatmodel hardening batches are now rolled
+  into the release docs/version surface.
