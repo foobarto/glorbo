@@ -10,6 +10,35 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — audit-trail correctness (codex round-3)
+
+- **[HIGH]** `Glorbo.EmergencyStop.engage/2` + `clear/2` default
+  audit-fun previously called `AuditLog.append(entry)` which targets
+  the bare `AuditLog` module name. In production that registered
+  name has no pid — the call exited `:noproc` AFTER the sentinel
+  was written. The Director's emergency-stop button crashed mid-
+  action. Now uses `AuditLog.append_for(company, entry)`.
+- **[HIGH]** `Glorbo.PathRequestGate.emit_audit/4` now stamps the
+  entry with `company: state.company`. Without that key
+  `AuditLog.normalize_entry/1` bucketed path-access events under the
+  `_system` audit tree, invisible from the owning company's audit
+  log. Caught + logged path replaces the silent `catch _, _ -> :ok`.
+- **[MED]** `Glorbo.Company.Proposals.resolve_audit/1` was also
+  targeting the bare module — calling `AuditLog.append(co, record)`
+  with the company slug in the `server` slot. Approve/deny audits
+  were silently dropped. Now delegates to `append_for/2` which
+  resolves the per-company Registry target.
+
+### Security — audit log append lstat guard
+
+- **[MED]** `Glorbo.Company.AuditLog.handle_call({:append, _})` now
+  `lstat`s the target JSONL before `File.write!(:append)`. Normally
+  the audit/ tree is host-owned, but defense-in-depth: if anything
+  ever bind-mounts audit/ into an agent sandbox (GEP-27 path grant
+  misconfiguration, future feature), a pre-planted symlink could
+  redirect the append. Absent file + regular file pass; anything
+  else raises and is caught by the GenServer.
+
 ### Changed — `Glorbo.Filesystem.AgentWritableFile` seam
 
 - **[MED]** New `Glorbo.Filesystem.AgentWritableFile` module is the

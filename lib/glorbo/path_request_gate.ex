@@ -573,9 +573,30 @@ defmodule Glorbo.PathRequestGate do
     audit_server = state.audit_server
 
     try do
-      GenServer.call(audit_server, {:append, %{action: action, actor: actor, detail: detail}})
+      GenServer.call(
+        audit_server,
+        {:append,
+         %{
+           # Without the `company` key, `AuditLog.normalize_entry/1`
+           # buckets the event under the `_system` audit tree. Codex
+           # round-3 flagged it — path-access events were showing up
+           # outside their company's audit/YYYY-MM.jsonl.
+           company: state.company,
+           action: action,
+           actor: actor,
+           detail: detail
+         }}
+      )
     catch
-      _, _ -> :ok
+      kind, reason ->
+        require Logger
+
+        Logger.warning(
+          "[path_request_gate/#{state.company}] audit emit #{kind}: " <>
+            "#{inspect(reason)} action=#{action} actor=#{actor}"
+        )
+
+        :ok
     end
   end
 

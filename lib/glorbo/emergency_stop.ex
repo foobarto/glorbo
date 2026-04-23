@@ -48,7 +48,16 @@ defmodule Glorbo.EmergencyStop do
     actor = Keyword.get(opts, :actor, "director")
     reason = Keyword.get(opts, :reason)
     kill_fun = Keyword.get(opts, :kill_fun, &kill_running_agents/1)
-    audit_fun = Keyword.get(opts, :audit_fun, fn ^company, entry -> AuditLog.append(entry) end)
+    # Default fires into the per-company AuditLog GenServer (the
+    # `{:via, Registry, ...}` target `append_for/2` resolves). A prior
+    # version called `AuditLog.append(entry)` which targeted the bare
+    # module name — unregistered in production, so the director's
+    # emergency-stop button crashed with `:noproc` after writing the
+    # sentinel. Codex round-3 flagged it.
+    audit_fun =
+      Keyword.get(opts, :audit_fun, fn ^company, entry ->
+        AuditLog.append_for(company, entry)
+      end)
 
     path = sentinel_path(base, company)
     File.mkdir_p!(Path.dirname(path))
@@ -80,7 +89,16 @@ defmodule Glorbo.EmergencyStop do
   def clear(company, opts \\ []) when is_binary(company) do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
     actor = Keyword.get(opts, :actor, "director")
-    audit_fun = Keyword.get(opts, :audit_fun, fn ^company, entry -> AuditLog.append(entry) end)
+    # Default fires into the per-company AuditLog GenServer (the
+    # `{:via, Registry, ...}` target `append_for/2` resolves). A prior
+    # version called `AuditLog.append(entry)` which targeted the bare
+    # module name — unregistered in production, so the director's
+    # emergency-stop button crashed with `:noproc` after writing the
+    # sentinel. Codex round-3 flagged it.
+    audit_fun =
+      Keyword.get(opts, :audit_fun, fn ^company, entry ->
+        AuditLog.append_for(company, entry)
+      end)
 
     path = sentinel_path(base, company)
     _ = File.rm(path)

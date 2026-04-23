@@ -198,20 +198,16 @@ defmodule Glorbo.Company.Proposals do
     "---\n" <> fm_block <> "\n---\n" <> body
   end
 
-  # `AuditLog.append/2` talks to the per-company AuditLog GenServer
-  # via its Registry-registered name. In LiveView tests with no
-  # CompanySupervisor, that call errors out — catch it locally so
-  # the flip still succeeds (the proposal file already persisted
-  # on disk). Production callers always have the AuditLog up.
+  # `AuditLog.append_for/2` resolves the per-company AuditLog GenServer
+  # via its Registry-registered name and logs on failure. Codex round-3
+  # flagged a prior version that called `AuditLog.append(co, record)`
+  # — that positional first arg is treated as the `server` handle by
+  # `append/2`, which is a string slug, not a pid/module. Production
+  # approve/deny events were silently dropped.
   defp resolve_audit(_company) do
     fn co, record ->
-      try do
-        AuditLog.append(co, record)
-      rescue
-        _ -> :ok
-      catch
-        _, _ -> :ok
-      end
+      _ = AuditLog.append_for(co, record)
+      :ok
     end
   end
 end

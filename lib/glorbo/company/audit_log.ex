@@ -133,6 +133,20 @@ defmodule Glorbo.Company.AuditLog do
     json = Jason.encode!(record) <> "\n"
     path = jsonl_path(state.base, company, ts)
     File.mkdir_p!(Path.dirname(path))
+
+    # threatmodel M03: although the audit/ tree is host-owned, an
+    # agent with write access to `state/` or `outbox/` could relative-
+    # path a symlink via `company/audit/YYYY-MM.jsonl` if the audit
+    # directory is ever bind-mounted. `File.write!(:append)` follows
+    # symlinks; the lstat check below refuses any non-regular shape
+    # before writing. Absent file is the common case (first append
+    # of the month).
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:error, :enoent} -> :ok
+      {:ok, %File.Stat{type: type}} -> raise "audit path not regular: #{inspect(type)} at #{path}"
+    end
+
     # FS-05: source of truth — fsync after every line.
     :ok = File.write!(path, json, [:append, :sync])
 
