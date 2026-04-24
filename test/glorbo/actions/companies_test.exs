@@ -147,7 +147,7 @@ defmodule Glorbo.Actions.CompaniesTest do
 
     test "rejects invalid company slugs",
          %{base: base, audit: audit} do
-      assert {:error, {:invalid_slug, "../etc"}} =
+      assert {:error, {:invalid_slug, :company, "../etc"}} =
                Companies.update("../etc", %{"name" => "x"},
                  actor: "director",
                  base: base,

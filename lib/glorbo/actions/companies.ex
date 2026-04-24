@@ -17,9 +17,9 @@ defmodule Glorbo.Actions.Companies do
       production default falls back to `append_for/2`.
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
 
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
   @name_max_bytes 200
 
   @type update_params :: %{optional(String.t()) => any()}
@@ -59,10 +59,10 @@ defmodule Glorbo.Actions.Companies do
   def update(company, params, opts \\ [])
       when is_binary(company) and is_map(params) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company),
+    with :ok <- Support.validate_slug(company, :company),
          {:ok, fields} <- validate_params(company, params),
          abs_path = Path.join([base, "companies", company, "company.md"]),
          content = render(fields, params),
@@ -83,10 +83,6 @@ defmodule Glorbo.Actions.Companies do
         _ = File.rm(tmp)
         err
     end
-  end
-
-  defp validate_slug(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, slug}}
   end
 
   defp validate_params(slug, params) do
@@ -179,36 +175,10 @@ defmodule Glorbo.Actions.Companies do
         company: company,
         name: fields.name
       }
-      |> put_detail("description", fields.description)
-      |> put_detail("icon", fields.icon)
-      |> put_detail("monthly_usd", fields.monthly_usd)
+      |> Support.put_detail("description", fields.description)
+      |> Support.put_detail("icon", fields.icon)
+      |> Support.put_detail("monthly_usd", fields.monthly_usd)
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
-
-  # Audit routing — same logic as Actions.Tasks.append_audit/3.
-  # The production default (`AuditLog` module atom) routes through
-  # `append_for/2` which is per-company-named; explicit test sinks
-  # use `append/2` directly; the bare-module LiveCase AuditLog also
-  # works. If no audit process is up, swallow `:noproc` — the write
-  # already landed.
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
-  end
-
-  defp put_detail(map, _key, nil), do: map
-  defp put_detail(map, _key, ""), do: map
-  defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

@@ -31,9 +31,9 @@ defmodule Glorbo.Actions.Agents do
       `agent.file_trash` / `agent.retire` audit entries.
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
 
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
   @contract_files ~w(AGENT.md stdout.log)
 
   @type opts :: [actor: String.t(), base: Path.t(), audit: atom()]
@@ -48,11 +48,11 @@ defmodule Glorbo.Actions.Agents do
   def create_workspace_file(company, slug, rel_path, opts \\ [])
       when is_binary(company) and is_binary(slug) and is_binary(rel_path) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(slug, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(slug, :agent),
          :ok <- refuse_contract_write(rel_path),
          agent_root = agent_dir(base, company, slug),
          {:ok, abs_path} <- resolve_workspace_path(agent_root, rel_path),
@@ -77,11 +77,11 @@ defmodule Glorbo.Actions.Agents do
       when is_binary(company) and is_binary(slug) and is_binary(rel_path) and
              is_binary(content) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(slug, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(slug, :agent),
          :ok <- refuse_contract_write(rel_path),
          agent_root = agent_dir(base, company, slug),
          {:ok, abs_path} <- resolve_workspace_path(agent_root, rel_path),
@@ -102,11 +102,11 @@ defmodule Glorbo.Actions.Agents do
   def trash_workspace_file(company, slug, rel_path, opts \\ [])
       when is_binary(company) and is_binary(slug) and is_binary(rel_path) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(slug, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(slug, :agent),
          agent_root = agent_dir(base, company, slug),
          {:ok, abs_path} <- resolve_workspace_path(agent_root, rel_path),
          :ok <- ensure_no_symlink_on_path(abs_path, agent_root),
@@ -135,11 +135,11 @@ defmodule Glorbo.Actions.Agents do
   def retire(company, slug, opts \\ [])
       when is_binary(company) and is_binary(slug) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(slug, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(slug, :agent),
          src = agent_dir(base, company, slug),
          :ok <- guard_exists_dir(src) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(~r/[:.]/, "-")
@@ -211,10 +211,6 @@ defmodule Glorbo.Actions.Agents do
     if File.dir?(abs_path), do: :ok, else: {:error, :not_found}
   end
 
-  defp validate_slug(slug, kind) when is_binary(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
-  end
-
   defp emit_audit(audit, company, agent, action, rel_path, actor) do
     entry = %{
       actor: actor,
@@ -224,7 +220,7 @@ defmodule Glorbo.Actions.Agents do
       agent: agent
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   defp emit_trash_audit(audit, company, agent, rel_path, dest_rel, actor) do
@@ -237,7 +233,7 @@ defmodule Glorbo.Actions.Agents do
       dest: Path.join(["agents", agent, dest_rel])
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   defp emit_retire_audit(audit, company, agent, archive_rel, actor) do
@@ -250,22 +246,6 @@ defmodule Glorbo.Actions.Agents do
       dest: archive_rel
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
-
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
-  end
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

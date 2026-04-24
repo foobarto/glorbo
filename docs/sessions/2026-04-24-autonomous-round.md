@@ -2697,3 +2697,99 @@ Phase-2 work (deferred throughout M):
     auto-flip, Kanban awaiting-peer-review column.
   * GEP-42 CEO retrospectives, GEP-43 Provenance-Auditor
     auto-gate (phase-2 research GEPs).
+
+## Post-M refactor — extract Glorbo.Actions.Support
+
+Round M-6 CI green expected; while monitor runs, consolidate
+the 8 Actions modules' shared boilerplate into a new
+`Glorbo.Actions.Support`.
+
+### Task picked
+
+Every Action module (Tasks, Companies, Projects, Audit,
+Channels, Inbox, Attachments, Agents) carried its own copy of:
+
+- `@slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/`
+- `defp validate_slug(slug, kind)` (or `/1` in a couple
+  places)
+- `defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()`
+- `defp append_audit/3` (bare-module → `append_for`,
+  explicit atom/pid → `append`)
+- `defp safe_append_for/2` (swallows `:noproc`)
+- `defp put_detail/3` (drops nil/empty, stringifies)
+
+Rule of three was crossed mid-M (Round M-3). Deferred the
+extraction deliberately until after M-6 — interleaving a
+shared-module refactor with per-module migrations would have
+made each round harder to review.
+
+### What shipped
+
+- `lib/glorbo/actions/support.ex` — new module with public:
+  - `slug_re/0` — the canonical regex.
+  - `valid_slug?/1` — predicate variant.
+  - `validate_slug/2` — the `{:ok | {:error, {:invalid_slug,
+    kind, slug}}}` returning form all Actions now use.
+  - `default_base/0` — filesystem root lookup.
+  - `put_detail/3` — audit-entry detail insertion with
+    nil/empty drop.
+  - `append_audit/3` — AuditLog routing (bare module →
+    `append_for/2`, atom/pid → `append/2`, anything else →
+    `append/2`). Swallows `:noproc`.
+- Updated all 8 Action modules to `alias Glorbo.Actions.Support`
+  and call `Support.foo/N` at the sites that used the local
+  `defp`s. Removed ~30 lines of duplicated helper code per
+  module.
+- **Unified the `validate_slug` error shape.** Companies and
+  Audit previously used `{:error, {:invalid_slug, slug}}`
+  (2-tuple). They now use the 3-tuple
+  `{:error, {:invalid_slug, kind, slug}}` like everyone else.
+  No LiveView caller destructures this error, so the change
+  is invisible through the UI — only direct tests break.
+- Updated `companies_test.exs` + `audit_test.exs` to match
+  the 3-tuple shape.
+
+### Design calls I made without you
+
+- **Support functions are public, not a `use` macro.** Could
+  have written `use Glorbo.Actions.Support` that injects the
+  helpers as private aliases. Public functions are simpler,
+  traceable (grep `Support.validate_slug` finds every site),
+  and let each Action module keep its own namespace clean.
+- **Did NOT factor out `emit_audit` helpers.** Each Action
+  module still owns its `emit_X_audit/N` functions because
+  the audit entry's shape (keys + action string + target
+  path) is per-resource. Only the routing + put_detail +
+  slug-check helpers go shared.
+- **Kept `@task_id_re` local to Tasks + Attachments.** It's
+  not quite the same as `@slug_re` semantically (task ids
+  use the same regex but mean something different). One day
+  these might diverge; keeping them per-module is cheaper
+  than a second Support constant.
+- **Behavior unified where it was inconsistent.** Companies
+  previously rejected bad slugs with a 2-tuple; every other
+  Action used a 3-tuple. Pre-1.0 is the right time to
+  harmonize.
+
+### Gates
+
+- Compile --warnings-as-errors — green.
+- `mix test test/glorbo/actions/` — 74 passing.
+- `mix credo --strict` — 4989 mods/funs, 0 issues.
+- `mix precommit` — 2052 tests, 0 failures, 1 skipped.
+  (One flaky run on the first invocation — Ecto sandbox
+  ownership error across the CLI test suite; rerun clean.
+  Unrelated to the refactor.)
+
+### Skipped / not done
+
+- `use Glorbo.Actions.Support` macro — not needed.
+- Further consolidation (e.g. shared resolve-task-path,
+  shared ensure-regular-file): holding off; those touch
+  different invariants (H6/H10/M18) and each Action module
+  enforces them slightly differently. Premature
+  abstraction.
+
+### Commit(s)
+
+One commit to follow.

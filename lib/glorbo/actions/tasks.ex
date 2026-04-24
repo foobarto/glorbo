@@ -33,10 +33,10 @@ defmodule Glorbo.Actions.Tasks do
       `{:error, :audit_failed}`.
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.FrontmatterWriter
 
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
   @title_max_bytes 200
   @task_id_re ~r/\A[a-z0-9][a-z0-9-]*\z/
 
@@ -139,12 +139,12 @@ defmodule Glorbo.Actions.Tasks do
   def create(company, project, params, opts \\ [])
       when is_binary(company) and is_binary(project) and is_map(params) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
     attachments = Keyword.get(opts, :attachments, [])
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(project, :project),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(project, :project),
          title <- params |> Map.get("title", "") |> to_string() |> String.trim(),
          :ok <- validate_title(title),
          {:ok, task_id} <- resolve_task_id(opts, base, company, project),
@@ -168,8 +168,8 @@ defmodule Glorbo.Actions.Tasks do
           {:ok, String.t()} | {:error, term()}
   def next_task_id(base, company, project)
       when is_binary(base) and is_binary(company) and is_binary(project) do
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(project, :project) do
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(project, :project) do
       do_next_task_id(base, company, project)
     end
   end
@@ -197,10 +197,10 @@ defmodule Glorbo.Actions.Tasks do
   def trash(company, task_rel_path, opts \\ [])
       when is_binary(company) and is_binary(task_rel_path) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
+    with :ok <- Support.validate_slug(company, :company),
          {:ok, project} <- project_of(task_rel_path),
          abs_src = Path.join([base, "companies", company, task_rel_path]),
          :ok <- ensure_regular_file(abs_src),
@@ -239,10 +239,10 @@ defmodule Glorbo.Actions.Tasks do
   def archive_to_history(company, task_rel_path, opts \\ [])
       when is_binary(company) and is_binary(task_rel_path) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
+    with :ok <- Support.validate_slug(company, :company),
          {:ok, project} <- project_of(task_rel_path),
          abs_src = Path.join([base, "companies", company, task_rel_path]),
          :ok <- ensure_regular_file(abs_src),
@@ -354,7 +354,7 @@ defmodule Glorbo.Actions.Tasks do
       attachments_moved: to_string(moved)
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   @doc """
@@ -404,11 +404,11 @@ defmodule Glorbo.Actions.Tasks do
              is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
     reason = opts |> Keyword.fetch!(:reason) |> to_string() |> String.trim()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(to_agent, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(to_agent, :agent),
          :ok <- validate_reason(reason),
          {:ok, project} <- project_of(task_rel_path),
          abs_path = Path.join([base, "companies", company, task_rel_path]),
@@ -492,11 +492,11 @@ defmodule Glorbo.Actions.Tasks do
              verdict in [:approve, :revise, :block] and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
     note = opts |> Keyword.get(:note, "") |> to_string() |> String.trim()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(actor, :agent),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(actor, :agent),
          :ok <- validate_note(note),
          {:ok, _project} <- project_of(task_rel_path),
          abs_path = Path.join([base, "companies", company, task_rel_path]),
@@ -550,9 +550,9 @@ defmodule Glorbo.Actions.Tasks do
         company: company,
         verdict: verdict
       }
-      |> put_detail("note", note)
+      |> Support.put_detail("note", note)
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   defp validate_reason(""), do: {:error, :invalid_reason}
@@ -587,31 +587,10 @@ defmodule Glorbo.Actions.Tasks do
         from: from,
         to: to
       }
-      |> put_detail("reason", Keyword.get(opts, :reason))
-      |> put_detail("project", Keyword.get(opts, :project))
+      |> Support.put_detail("reason", Keyword.get(opts, :reason))
+      |> Support.put_detail("project", Keyword.get(opts, :project))
 
-    append_audit(audit, company, entry)
-  end
-
-  # Audit routing: explicit test sinks land through `AuditLog.append/2`
-  # (matches the FakeAudit pattern used across action unit tests);
-  # the production default falls back to `append_for/2` so the
-  # per-company OTP tree OR the bare-module LiveCase AuditLog both
-  # work. If neither is up (bare unit tests with no audit process),
-  # swallow the :noproc exit — the write already landed and failing
-  # the call would discard that successful mutation.
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
+    Support.append_audit(audit, company, entry)
   end
 
   defp resolve_task_id(opts, base, company, project) do
@@ -629,12 +608,6 @@ defmodule Glorbo.Actions.Tasks do
   # ---------------------------------------------------------------------------
   # Internals
   # ---------------------------------------------------------------------------
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
-
-  defp validate_slug(slug, kind) when is_binary(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
-  end
 
   defp validate_title(title) when is_binary(title) do
     cond do
@@ -773,17 +746,13 @@ defmodule Glorbo.Actions.Tasks do
         target: rel_path,
         company: company
       }
-      |> put_detail("title", title)
-      |> put_detail("assigned_to", Map.get(params, "assigned_to"))
-      |> put_detail("priority", Map.get(params, "priority"))
-      |> put_detail("severity", Map.get(params, "severity"))
+      |> Support.put_detail("title", title)
+      |> Support.put_detail("assigned_to", Map.get(params, "assigned_to"))
+      |> Support.put_detail("priority", Map.get(params, "priority"))
+      |> Support.put_detail("severity", Map.get(params, "severity"))
 
     AuditLog.append(audit, entry)
   end
-
-  defp put_detail(map, _key, nil), do: map
-  defp put_detail(map, _key, ""), do: map
-  defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
 
   # Derive `<project>` from a `projects/<project>/tasks/<id>.md` path.
   # Rejects anything else so callers can't trash a file outside a

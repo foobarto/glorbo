@@ -21,9 +21,9 @@ defmodule Glorbo.Actions.Attachments do
       (`File.mkdir_p/1`).
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
 
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
   @task_id_re ~r/\A[a-z0-9][a-z0-9-]*\z/
 
   @type ingest_opts ::
@@ -51,11 +51,11 @@ defmodule Glorbo.Actions.Attachments do
       when is_binary(company) and is_binary(project) and is_binary(task_id) and
              is_binary(tmp_path) and is_binary(client_name) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(project, :project),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(project, :project),
          :ok <- validate_task_id(task_id),
          safe = sanitize_filename(client_name),
          dest_dir =
@@ -82,10 +82,6 @@ defmodule Glorbo.Actions.Attachments do
     end
   end
 
-  defp validate_slug(slug, kind) when is_binary(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
-  end
-
   defp validate_task_id(id) when is_binary(id) do
     if Regex.match?(@task_id_re, id), do: :ok, else: {:error, {:invalid_task_id, id}}
   end
@@ -101,29 +97,8 @@ defmodule Glorbo.Actions.Attachments do
         task_id: task_id,
         filename: safe
       }
-      |> put_detail("client_name", client_name)
+      |> Support.put_detail("client_name", client_name)
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
-
-  # Audit routing — same pattern as Actions.Tasks.append_audit/3.
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
-  end
-
-  defp put_detail(map, _key, nil), do: map
-  defp put_detail(map, _key, ""), do: map
-  defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

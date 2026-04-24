@@ -22,9 +22,8 @@ defmodule Glorbo.Actions.Audit do
       `source: "audit"` + originating entry's action/ts as details.
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
-
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
 
   @type scaffold_opts ::
           [actor: String.t(), base: Path.t(), audit: atom()]
@@ -47,10 +46,10 @@ defmodule Glorbo.Actions.Audit do
   def scaffold_from_entry(company, entry, opts \\ [])
       when is_binary(company) and is_map(entry) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company),
+    with :ok <- Support.validate_slug(company, :company),
          {:ok, result} <- do_scaffold(base, company, entry) do
       :ok =
         emit_scaffold_audit(
@@ -178,35 +177,10 @@ defmodule Glorbo.Actions.Audit do
         company: company,
         project: "inbox"
       }
-      |> put_detail("source", "audit")
-      |> put_detail("origin_ts", entry_ts)
-      |> put_detail("origin_action", entry_action)
+      |> Support.put_detail("source", "audit")
+      |> Support.put_detail("origin_ts", entry_ts)
+      |> Support.put_detail("origin_action", entry_action)
 
-    append_audit(audit, company, map)
+    Support.append_audit(audit, company, map)
   end
-
-  defp validate_slug(slug) when is_binary(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, slug}}
-  end
-
-  # Audit routing — same pattern as Actions.Tasks.append_audit/3.
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
-  end
-
-  defp put_detail(map, _key, nil), do: map
-  defp put_detail(map, _key, ""), do: map
-  defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 end

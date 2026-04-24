@@ -146,7 +146,7 @@ defmodule Glorbo.Actions.AuditTest do
   describe "scaffold_from_entry/3 validation" do
     test "rejects invalid company slug",
          %{base: base, audit: audit} do
-      assert {:error, {:invalid_slug, "../etc"}} =
+      assert {:error, {:invalid_slug, :company, "../etc"}} =
                Audit.scaffold_from_entry("../etc", sample_entry(),
                  actor: "director",
                  base: base,

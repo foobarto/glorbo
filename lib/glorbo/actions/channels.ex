@@ -17,9 +17,8 @@ defmodule Glorbo.Actions.Channels do
     * Emits `channel.create` / `channel.archive` audit entries.
   """
 
+  alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
-
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
 
   @type create_opts :: [actor: String.t(), base: Path.t(), audit: atom()]
   @type archive_opts :: [actor: String.t(), base: Path.t(), audit: atom()]
@@ -36,11 +35,11 @@ defmodule Glorbo.Actions.Channels do
   def create(company, channel, opts \\ [])
       when is_binary(company) and is_binary(channel) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(channel, :channel),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(channel, :channel),
          abs = channel_path(base, company, channel),
          :ok <- guard_not_exists(abs),
          :ok <- File.mkdir_p(Path.dirname(abs)),
@@ -61,11 +60,11 @@ defmodule Glorbo.Actions.Channels do
   def archive(company, channel, opts \\ [])
       when is_binary(company) and is_binary(channel) and is_list(opts) do
     actor = opts |> Keyword.fetch!(:actor) |> to_string()
-    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- validate_slug(company, :company),
-         :ok <- validate_slug(channel, :channel),
+    with :ok <- Support.validate_slug(company, :company),
+         :ok <- Support.validate_slug(channel, :channel),
          :ok <- guard_archivable(channel),
          src = channel_path(base, company, channel),
          :ok <- guard_exists(src),
@@ -118,10 +117,6 @@ defmodule Glorbo.Actions.Channels do
 
   defp guard_archivable(_), do: {:error, :not_archivable}
 
-  defp validate_slug(slug, kind) when is_binary(slug) do
-    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
-  end
-
   defp emit_create_audit(audit, company, channel, actor) do
     entry = %{
       actor: actor,
@@ -131,7 +126,7 @@ defmodule Glorbo.Actions.Channels do
       channel: channel
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   defp emit_archive_audit(audit, company, channel, dest_rel, actor) do
@@ -144,23 +139,6 @@ defmodule Glorbo.Actions.Channels do
       dest: dest_rel
     }
 
-    append_audit(audit, company, entry)
+    Support.append_audit(audit, company, entry)
   end
-
-  # Audit routing — same pattern as Actions.Tasks.append_audit/3.
-  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
-
-  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
-    do: AuditLog.append(target, entry)
-
-  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
-
-  defp safe_append_for(company, entry) do
-    AuditLog.append_for(company, entry)
-  catch
-    :exit, {:noproc, _} -> :ok
-    :exit, {{:noproc, _}, _} -> :ok
-  end
-
-  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 end
