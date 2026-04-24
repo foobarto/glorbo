@@ -1,0 +1,327 @@
+# CLAUDE.md
+
+Guidance for Claude Code (and other LLM assistants) working in
+this repo. Kept deliberately short — load-bearing detail lives
+in `docs/`. This file is the map; the wiki is the territory.
+
+## Project status
+
+Glorbo is at **v0.7.0** (pre-1.0). Source under `lib/`
+(`glorbo`, `glorbo_web`). No Python runtime, no container
+runtime.
+
+## Governing principles (the backbone)
+
+Four principles, adapted from
+[Karpathy's guidelines](https://karpathy.bearblog.dev/dev/),
+that override the "move fast" impulse. Full text at
+[docs/workflow/governing-principles.md](docs/workflow/governing-principles.md);
+every other artefact in this repo is shaped to make following
+them easier.
+
+1. **Think before coding.** State assumptions, surface
+   tradeoffs. When a request has multiple interpretations,
+   pick one visibly — don't silently choose.
+2. **Simplicity first.** Minimum that solves the problem.
+   No speculative abstractions, no unrequested configurability,
+   no defensive handling for impossible scenarios.
+3. **Surgical changes.** Touch only what you must. Preserve
+   existing style. Every changed line should trace to the
+   user's request.
+4. **Goal-driven execution.** Define success concretely
+   before implementing. Loop until the test passes / the diff
+   is closed, not until you *feel* done.
+
+When any other rule in this file conflicts with a principle,
+the principle wins.
+
+## Session rhythm
+
+This project uses the [cairn](https://github.com/foobarto/cairn)
+workflow. Artefacts to touch every working session:
+
+| When                                       | Update                                                |
+|--------------------------------------------|-------------------------------------------------------|
+| Session start                              | Read today's `docs/sessions/<date>-<topic>.md` if any + `docs/project-profile.md` for stance + `docs/knowledge-graph/notes.md` for gotchas |
+| As you work                                | Append to today's `docs/sessions/<date>-<topic>.md`   |
+| When you notice something worth tracking   | `docs/todo.md` under the appropriate priority tier    |
+| When a stance settles                      | `docs/project-profile.md` (project-wide)              |
+| When you finish a feature                  | Every doc the change affects (see six-phase checklist)|
+
+**Session journal format** — per-task entries with
+`**Task picked** / **What shipped** / **Design calls I made
+without you** / **Gates** / **Skipped / not done** / **Commit(s)**`
+blocks, then a `## Things I'd like your review` question list
+at the end. Write as you go, not retroactively. Tracked in
+git — session journals are shared history, not ephemeral
+scratch.
+
+## Feature development — six-phase checklist
+
+Every non-trivial feature moves through six phases in order:
+**Spec → Plan → Build → Test → Review → Ship**. Full detail
+at [docs/workflow/six-phase-checklist.md](docs/workflow/six-phase-checklist.md).
+
+| # | Phase      | Artifact                                                    |
+|---|------------|-------------------------------------------------------------|
+| 1 | **Spec**   | GEP draft in `docs/geps/` (see `glorbo-new-gep` skill)      |
+| 2 | **Plan**   | GEP accepted with concrete implementation details           |
+| 3 | **Build**  | Code changes + adjacent doc updates                         |
+| 4 | **Test**   | Unit tests green + UAT checklist updated (`docs/testing/uat.md`) |
+| 5 | **Review** | Self-review + quality pass + security pass + second opinion |
+| 6 | **Ship**   | Commit + push, AND update every doc the change affects      |
+
+**Step 6 — docs to consider updating whenever something ships:**
+
+- `CHANGELOG.md` — what shipped, always.
+- `README.md` — if user-facing pitch or install story changes.
+- `docs/DESIGN.md` — if architecture, invariants, or stack
+  changes.
+- `docs/architecture.md` — if module map changes (new
+  subsystem, new god node, new invariant).
+- `docs/knowledge-graph/GRAPH_REPORT.md` — run
+  `graphify update lib && mv lib/graphify-out/GRAPH_REPORT.md
+  docs/knowledge-graph/ && rm -rf lib/graphify-out` if any
+  module was added / renamed / deleted.
+- `docs/knowledge-graph/notes.md` — if this session uncovered
+  a gotcha, graph false-positive, load-bearing invariant, or
+  surprising call chain, append a short dated entry.
+- `docs/geps/NNNN-…` — flip status if the GEP's
+  implementation landed.
+- `docs/todo.md` — cross off whatever this change addressed.
+- `docs/testing/uat.md` — if the change adds a UI surface
+  that needs UAT.
+
+Bug fixes, doc tweaks, and dep bumps may collapse phases 1–2
+(no GEP) but still need 3–6.
+
+## Pre-version release gate
+
+Before every version cut (`mix.exs` bump + `git tag`), execute
+this gate end-to-end. No shortcuts; no silent deferrals.
+
+1. **Doc-drift pass** — read CHANGELOG, README, DESIGN,
+   architecture.md, moduledocs on changed modules. Update
+   anything stale. (P0 smell per
+   `docs/project-profile.md`.)
+2. **Graphify refresh** — `graphify update lib && mv
+   lib/graphify-out/GRAPH_REPORT.md docs/knowledge-graph/ &&
+   rm -rf lib/graphify-out`. Append tacit-knowledge entries
+   to `docs/knowledge-graph/notes.md` for anything surprising.
+3. **`mix test`** — all green; integration-tag tests if the
+   change touches that surface.
+4. **E2E UAT** — walk `docs/testing/uat.md` in a real
+   browser. Green the cases that pass; note breakages.
+5. **Security review** — review the open rows in
+   `docs/testing/threatmodel.md`. Close or explicitly defer
+   with rationale inline. Unresolved security findings past
+   a version cut are P0 (per `docs/project-profile.md`).
+6. **Release flow** — tag → signed GH release + Burrito
+   binaries + Homebrew tap formula regen
+   (`docs/releasing.md`).
+
+Shortcuts caught during the gate are the whole point — the
+gate exists because we know cutting versions is when they
+surface.
+
+## Autonomous work — round vs loop
+
+When running unattended, pick the shape that matches the ask:
+
+- **Round** — one bounded cycle, stop when done. Triggered by
+  "do one task from the punch list", "finish X autonomously"
+  (scoped to one item), etc.
+- **Loop** — repeating rounds until a stop criterion.
+  Triggered by "keep going", "run overnight", "loop through
+  P1". 3-commit soft checkpoint, 5-commit hard stop.
+
+Full substance in
+[docs/workflow/autonomous-protocol.md](docs/workflow/autonomous-protocol.md)
+— autonomy levels (L0–L4, default **L2**), task-pick rules,
+gate requirements, hard rules, mid-cycle ask-anyway cases.
+
+First step of every round/loop: **calibrate autonomy level**.
+The project profile's risk tolerance ("Moderate to
+Aggressive") can cap the menu below the user's global
+preference.
+
+Hard rules (always, every level):
+
+- No pushes unless L4 + explicit authorisation.
+- No force-pushes or rewriting shared history.
+- No bypassing safety gates (`--no-verify`, `--no-gpg-sign`).
+- No deleting unfamiliar files/branches.
+- No messages to chat/ticket systems without authorisation.
+- One task per turn.
+
+## Review phase
+
+Phase 5 of the six-phase checklist. **Quality pass and
+security pass are both mandatory**; second opinion (codex,
+peer review) is expected on non-trivial changes and optional
+for small diffs.
+
+Security posture for this project is **Paranoid** (see
+`docs/project-profile.md`). When tools are absent for a
+security pass, fall back to a manual diff read against OWASP
+Top 10, secret handling, authz/authn boundaries, and input
+validation at system edges. Never skip the security step.
+
+## The wiki — `docs/`
+
+Browsable knowledge base. Read these when you need depth this
+file intentionally doesn't carry:
+
+| Need | Go to |
+|---|---|
+| **Architecture map + graph caveats (READ FIRST)** | **`docs/architecture.md`** |
+| **Machine-generated navigation map (READ FIRST)** | **`docs/knowledge-graph/GRAPH_REPORT.md`** |
+| **Project values / stances (READ FIRST for stance calls)** | **`docs/project-profile.md`** |
+| **Tacit knowledge: findings, gotchas, false positives** | **`docs/knowledge-graph/notes.md`** |
+| Governing principles (four Karpathy principles) | `docs/workflow/governing-principles.md` |
+| Six-phase checklist (detailed) | `docs/workflow/six-phase-checklist.md` |
+| Autonomous-work protocol (round + loop) | `docs/workflow/autonomous-protocol.md` |
+| Authoritative architecture spec  | `docs/DESIGN.md` |
+| Design decisions (what & why)    | `docs/geps/README.md` |
+| Browser UAT checklist            | `docs/testing/uat.md` |
+| End-user manual test plan        | `docs/testing/testplan.md` |
+| Rolling punch list               | `docs/todo.md` |
+| Release verification (cosign)    | `docs/verifying-releases.md` |
+| Detailed runtime log — session-by-session notes | `docs/sessions/` |
+| Archived design artifacts        | `docs/archived/` |
+| On-disk file format specs        | `docs/file-formats/` |
+
+**Consult the knowledge base before reading source files.**
+The two files marked READ FIRST exist specifically to save
+tokens on "where is X?" / "what calls Y?" / "how does Z fit
+together?" questions. Reading them is ~75× cheaper than
+grep-and-read across 200+ modules. They are maintained — if
+they don't cover the question, *then* reach for the code.
+
+## Context management — graphify + living notes
+
+The `docs/knowledge-graph/` directory is a two-layer memory
+system:
+
+1. **`GRAPH_REPORT.md`** — machine-generated structural map
+   (graphify AST + community clustering). Authoritative on
+   "what calls what"; refresh when modules change.
+2. **`notes.md`** — hand-curated tacit knowledge: gotchas,
+   false-positive patterns, architectural hot-spots, session
+   learnings. Authoritative on "why the graph lies about X"
+   and "watch out for Y". Living document; append-only is
+   fine.
+
+**Both must be maintained.** The graph tells you the code's
+shape; the notes tell you what the graph is wrong about and
+why. Together they are the fastest way to answer "where is
+X?" / "what calls Y?" / "how does Z fit?" without rereading
+200+ modules.
+
+**Session rhythm:**
+
+- **Session start:** skim `docs/architecture.md` +
+  `docs/knowledge-graph/notes.md`. Run `graphify update lib`
+  (then move the report into `docs/knowledge-graph/`) if the
+  graph is older than the last code change you care about.
+- **Mid-session / after `/compact`:** run
+  `graphify query "<current task>"` to re-anchor — bounded
+  output (~2000 tokens) beats rereading 20 files.
+- **When you discover something non-obvious** (a bogus
+  INFERRED edge, a tricky invariant, a dep gotcha): write one
+  short dated paragraph under today's heading in `notes.md`.
+  Don't rewrite old entries — append, supersede with a note
+  if needed.
+- **Before ending a session that touched non-trivial code:**
+  refresh both — rebuild the graph AND append any learnings
+  from the session to `notes.md`. Stale layers silently
+  mis-advise the next session.
+
+**Graph caveats — don't get fooled:** see
+`docs/architecture.md` §"Graph caveats" and
+`docs/knowledge-graph/notes.md` for the running list of
+false-positive patterns (generic function-name collisions,
+bogus INFERRED edges, thin-community flags on
+intentionally-isolated modules).
+
+Top-level conventions that stay in the root:
+
+| File              | Purpose                                        |
+|-------------------|------------------------------------------------|
+| `README.md`       | User-facing pitch + install                    |
+| `CHANGELOG.md`    | Shipped-release log                            |
+| `CONTRIBUTING.md` | Contributor guide                              |
+| `SECURITY.md`     | Security policy                                |
+| `LICENSE`         | Legal                                          |
+
+## Common commands
+
+- **Setup:** `mix setup` (deps + db + esbuild)
+- **Dev server:** `mix phx.server` → `http://localhost:4000`
+- **Tests:** `mix test`
+- **Precommit gate:** `mix precommit` (compile-warn-as-err,
+  format, docs check, tests)
+- **Credo:** `mix credo --strict` — zero findings is the
+  ship bar
+- **Release:** `mix release` (Burrito single binary in
+  `burrito_out/`)
+
+Elixir/OTP pinned in `.tool-versions`: Elixir 1.18.4 / OTP 28.0.
+
+## GEP workflow
+
+When about to build a non-trivial feature, open
+`docs/geps/0001-gep-purpose-and-guidelines.md` for the
+process, or invoke the `glorbo-new-gep` skill which walks the
+Q&A.
+
+**Proactively suggest a GEP** when the user describes a
+change that touches on-disk layout, CLI surface, permission
+model, or a load-bearing invariant. Don't wait to be asked.
+
+## Load-bearing invariants
+
+The full architecture is in `docs/DESIGN.md`. These are the
+constraints spanning multiple files that are easy to violate:
+
+- **The kernel is the policy engine** — every permission
+  enforced at BOTH the Elixir Router (application) AND the
+  Linux kernel via `bwrap` mount namespaces. Application-only
+  checks are a design bug. (GEP-5.)
+- **Filesystem is source of truth** — `~/.glorbo/companies/`
+  is user data, never modified by upgrades. SQLite
+  (`glorbo.db`) is derived and must be rebuildable from disk
+  via `glorbo reindex`. (GEP-3, GEP-7.)
+- **One-way inbox/outbox flow** — Elixir writes to inbox,
+  agent reads. Agent writes to outbox, Elixir reads. Never
+  the other direction, never cross-agent.
+- **Audit log is append-only** — `audit/YYYY-MM.jsonl`
+  entries are never modified or deleted.
+- **No Python anywhere** — neither on the host nor in any
+  container. GEP-5 D6.
+- **Company isolation is absolute** — no cross-company
+  access at any layer.
+- **Crash isolation follows the OTP supervision tree** —
+  agent crash → only that agent restarts; company crash →
+  only that company.
+
+## Browser UAT — Bazzite workaround
+
+The Playwright MCP server can't find Chrome on Bazzite, and
+`agent-browser`'s daemon mode breaks on HTTP nav. Full
+workaround (manual chromium launch + `--cdp 9222` attach +
+`npx agent-browser`) lives in `docs/testing/uat.md` §Bazzite.
+
+## Historical planning artifacts
+
+Previously used GSD v1 planning under `.planning/`. Archived
+2026-04-17; decisions are now in the GEPs above, remainder in
+git history. Do not run `/gsd-*` commands.
+
+## Off-topic
+
+- `.agents/skills/` (symlinked from `.claude/skills/`)
+  contains external Claude Code skills — not Glorbo source
+  code.
+- `assets/index.html` is the marketing landing page,
+  unrelated to the Phoenix app.

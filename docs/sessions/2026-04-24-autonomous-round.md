@@ -1048,6 +1048,108 @@ warrants a fresh round with clear head.
 **Scheduling next wakeup** in 45 min to pick up GEP-35 Draft
 promotion if no new user input arrives first.
 
+## 2026-04-24 later 2 — cairn files adopted; CLAUDE.md merge audit
+
+User greenlit both the missing-file adoption and the CLAUDE.md
+audit.
+
+**Shipped this sub-round:**
+
+- Four files copied verbatim from cairn:
+  `docs/sessions/README.md`, `docs/workflow/governing-principles.md`,
+  `docs/workflow/six-phase-checklist.md`,
+  `docs/workflow/autonomous-protocol.md`. All internal links
+  are relative and resolve inside `docs/workflow/`. No
+  cairn-specific paths leaked through. Audited + committed.
+- `CLAUDE.md.proposed` drafted at the repo root for your review
+  against the live `CLAUDE.md`. Not applied — audit first.
+
+## CLAUDE.md merge audit
+
+**Current** `CLAUDE.md`: 248 lines, 12 top-level sections.
+**Proposed** `CLAUDE.md.proposed`: 327 lines, 14 top-level
+sections.
+
+Net +79 lines, +2 sections. The file grows because adopting
+cairn means adding **Governing principles** as a top-level
+summary (was merged into "Coding discipline"), and four
+new sections that capture discipline Glorbo was already
+practicing but hadn't codified in CLAUDE.md: **Session
+rhythm**, **Autonomous work — round vs loop**, **Review
+phase**, and a row in the wiki table for the three new
+workflow docs. Existing Glorbo-specific content is preserved
+verbatim.
+
+**Side-by-side summary:**
+
+| Section | Current | Proposed | Verdict |
+|---|---|---|---|
+| Project status | ✓ | ✓ | Unchanged |
+| Governing principles | Inline in "Coding discipline" (end of file) | Near top, summary + link to dedicated file | **Moved + shrunk.** Four principles listed inline; full text now at `docs/workflow/governing-principles.md`. CLAUDE.md gains 3 lines but removes the duplicate inline version. |
+| Session rhythm | — (missing) | New section | **Added.** Describes the journal format + `docs/sessions/<date>-<topic>.md` convention. Glorbo has sessions but hadn't documented the format in CLAUDE.md. |
+| Feature development — six-phase checklist | Detailed inline table + Step 6 doc-update list | Same table, link out to dedicated file for details | **Shrunk.** Table stays; the Step-6 doc list stays (project-specific). Extra detail on each phase moves to `docs/workflow/six-phase-checklist.md`. |
+| Pre-version release gate | ✓ (added this round) | ✓ | Unchanged |
+| Coding discipline (inline four principles) | ✓ | **Removed** — superseded by "Governing principles" section near top | Dedupe |
+| Autonomous work — round vs loop | — (missing) | New section | **Added.** L2-default autonomy menu, hard rules summary, link to `docs/workflow/autonomous-protocol.md`. Codifies what Glorbo has been doing. |
+| Review phase | — (missing) | New short section | **Added.** 5-line note — quality + security passes mandatory; security manual fallback when no SAST; project-profile Paranoid stance. |
+| The wiki — `docs/` | ✓ (with project-profile row added this round) | ✓ + new rows for the 3 `docs/workflow/*.md` files | **Extended** with rows for governing-principles, six-phase-checklist, autonomous-protocol. |
+| Context management — graphify + living notes | ✓ | ✓ | Unchanged (Glorbo-specific, graphify) |
+| Common commands | ✓ | ✓ | Unchanged (Elixir/Phoenix-specific) |
+| GEP workflow | ✓ | ✓ | Unchanged (Glorbo-specific) |
+| Load-bearing invariants | ✓ | ✓ | Unchanged (Glorbo-specific) |
+| Browser UAT — Bazzite | ✓ | ✓ | Unchanged |
+| Historical planning artifacts | ✓ | ✓ | Unchanged |
+| Off-topic | ✓ | ✓ | Unchanged |
+
+**Design calls I'd highlight:**
+
+1. **"Governing principles" lives at the top**, not near the
+   bottom as "Coding discipline" did. Matches cairn's
+   template shape — principles are the backbone, read first.
+   The four principles are listed inline (not just a link) so
+   CLAUDE.md remains self-sufficient as a single file; the
+   linked file has the generalisation-beyond-code detail.
+2. **Session journal format inlined** — the per-task
+   sub-section shape (*Task picked* / *What shipped* / *Design
+   calls* / *Gates* / *Skipped* / *Commit(s)*) is short
+   enough to live in CLAUDE.md directly rather than linking
+   out. The session-log cairn skill and the session-template
+   are where the full detail lives, but the format is load-
+   bearing enough that a session-starter needs it immediately.
+3. **Autonomous-work section shrunk to two bullets +
+   hard-rule summary + link.** Full protocol at
+   `docs/workflow/autonomous-protocol.md`.
+4. **Review phase section is the smallest new addition** —
+   5 lines calling out mandatory quality + security + the
+   manual OWASP fallback + the Paranoid posture from the
+   project profile.
+5. **The Step-6 doc-update list in phase 6 of the six-phase
+   table stays in CLAUDE.md** — it's project-specific
+   (references `docs/knowledge-graph/`, `docs/architecture.md`,
+   the specific graphify command). Cairn's generic version
+   doesn't carry these.
+6. **Load-bearing invariants, Common commands, GEP workflow,
+   Bazzite note all preserved verbatim** — these are
+   Glorbo-specific and don't belong in cairn's template.
+
+**What I did NOT do:**
+
+- Apply the merge. `CLAUDE.md.proposed` is alongside
+  `CLAUDE.md` for your review; say "apply" and I `mv` it +
+  commit, or say "tweak X" and I adjust.
+- Touch the per-session workflow content inside cairn's
+  template. Glorbo's version will diverge slightly (the
+  session-rhythm table has a Glorbo-specific row about
+  `docs/knowledge-graph/notes.md`) — kept in the proposed
+  file because it's useful project-specific detail.
+
+**Commits this sub-round:**
+
+- `<next>` — adopt cairn workflow files verbatim
+  (docs/sessions/README.md + docs/workflow/ trio).
+- Proposed CLAUDE.md merge ready at `CLAUDE.md.proposed`;
+  not committed until you greenlight.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
