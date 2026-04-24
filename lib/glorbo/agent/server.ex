@@ -646,7 +646,7 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
-  @task_action_re ~r/^\s*-\s*(?<key>reassign_to|status)\s*:\s*(?<val>[^\s#][^\n]*?)\s*$/m
+  @task_action_re ~r/^\s*-\s*(?<key>reassign_to|status|verdict|note)\s*:\s*(?<val>[^\s#][^\n]*?)\s*$/m
 
   defp parse_task_actions(block) do
     @task_action_re
@@ -673,6 +673,19 @@ defmodule Glorbo.Agent.Server do
       apply_reassign(state, abs, task_id, slug)
     end
 
+    # GEP-41 Round J: a `verdict:` directive (only meaningful when
+    # the reviewer emitted it on a task with `peer_review_required:
+    # true`) routes through `Actions.Tasks.record_peer_review_verdict/4`.
+    # The accompanying `note:` directive travels with it — the parser
+    # sees both as separate ACTIONS entries.
+    case verdict_from(actions) do
+      {:ok, verdict} ->
+        apply_verdict(state, abs, task_id, verdict, note_from(actions))
+
+      :none ->
+        :ok
+    end
+
     status_updates =
       Enum.reduce(actions, %{}, fn
         {"status", status}, acc ->
@@ -696,6 +709,69 @@ defmodule Glorbo.Agent.Server do
           Logger.warning("task status apply failed: #{inspect(reason)}")
           :ok
       end
+    end
+  end
+
+  defp verdict_from(actions) do
+    Enum.find_value(actions, :none, fn
+      {"verdict", "approve"} -> {:ok, :approve}
+      {"verdict", "revise"} -> {:ok, :revise}
+      {"verdict", "block"} -> {:ok, :block}
+      _ -> nil
+    end)
+  end
+
+  defp note_from(actions) do
+    Enum.find_value(actions, "", fn
+      {"note", v} when is_binary(v) -> v
+      _ -> nil
+    end)
+  end
+
+  defp apply_verdict(state, abs, task_id, verdict, note) do
+    case rel_path_of(state, abs) do
+      {:ok, rel_path} ->
+        case Glorbo.Actions.Tasks.record_peer_review_verdict(
+               state.spec.company,
+               rel_path,
+               verdict,
+               actor: state.spec.slug,
+               note: note,
+               base: state.base
+             ) do
+          {:ok, _} ->
+            :ok
+
+          {:error, :not_required} ->
+            require Logger
+
+            Logger.warning("task verdict ignored (peer_review_required=false) for #{task_id}")
+
+            :ok
+
+          {:error, :already_decided} ->
+            require Logger
+
+            Logger.warning(
+              "task verdict rejected (already decided — GEP-41 D6 append-only) for #{task_id}"
+            )
+
+            :ok
+
+          {:error, reason} ->
+            require Logger
+
+            Logger.warning("task verdict apply failed for #{task_id}: #{inspect(reason)}")
+
+            :ok
+        end
+
+      :error ->
+        require Logger
+
+        Logger.warning("task verdict failed: cannot derive rel_path for #{task_id} at #{abs}")
+
+        :ok
     end
   end
 

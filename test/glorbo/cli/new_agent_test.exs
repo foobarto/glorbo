@@ -207,10 +207,15 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert spec.role == "Critique Ops"
 
       content = File.read!(path)
-      # The rubric surface — reviewer checks live citations before approving.
-      assert content =~ "APPROVE"
-      assert content =~ "BLOCK"
-      assert content =~ "REVISE"
+      # GEP-41 three-way verdict surface — reviewer emits one of
+      # approve / revise / block via the ACTIONS directive.
+      assert content =~ "verdict: approve"
+      assert content =~ "verdict: revise"
+      assert content =~ "verdict: block"
+      # Cairn-style sections present
+      assert content =~ "## Autonomy — L3"
+      assert content =~ "## Quality — no slop, no junk, no stuck"
+      assert content =~ "## Handoff & return-path discipline"
     end
 
     test "--reports-to fills the template reports_to placeholder", %{home: home} do

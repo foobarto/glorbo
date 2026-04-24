@@ -1728,3 +1728,78 @@ Allowlist unchanged (still the six LiveViews from Round F).
 - **/compact.** Still haven't; next natural seam is after
   Round J (template propagation) closes the GEP-41 phase.
 
+### Round J — CritiqueOps template + verdict directive parser
+
+Scope re-cut mid-round: the original Round J plan was
+"propagate cairn-style to five AGENT.md templates + add verdict
+directive." Propagating five templates in a single round dilutes
+focus and makes each change harder to review. Shipped the
+CritiqueOps update (the template most load-bearing for GEP-41)
++ the verdict directive path, and bumped the other four roster
+propagations to Round L.
+
+Delivered:
+
+- `priv/templates/agents/critiqueops.md` rewritten in cairn
+  style: System Prompt, Autonomy — L3, Quality — no slop/no
+  junk/no stuck, What you check (in order), Handoff &
+  return-path discipline, Reply contract (GEP-41).
+  Shipped the three-verdict directive contract explicitly:
+
+  ```
+  ACTIONS:
+  - verdict: approve|revise|block
+  - note: <rationale>
+  ```
+
+- `agent/server.ex` extended to parse the new directives.
+  `@task_action_re` now matches `verdict|note` in addition to
+  `reassign_to|status`. `apply_task_actions/4` splits verdict
+  into its own Actions-backed path via a new
+  `apply_verdict/5` helper; status + reassign keep their own
+  paths. `verdict_from/1` maps the directive string to the
+  atom expected by `record_peer_review_verdict/4`.
+
+- Error paths handled explicitly: `:not_required` (task
+  didn't have `peer_review_required: true` — log + continue),
+  `:already_decided` (append-only enforcement fired — log +
+  continue), `:noop` and other errors also logged without
+  crashing the agent.
+
+- New test `TA-4b` exercises the happy path: reviewer agent
+  emits an `approve` verdict on a `peer_review_required: true`
+  task, the frontmatter afterwards carries `verdict: approve`
+  / `verdict_by: <slug>` / `verdict_note: ...`. Full 37-test
+  agent suite stays green.
+
+- Updated the CLI template test to check for the new cairn
+  section headers (`## Autonomy — L3` etc.) + the three
+  verdict directive strings instead of the old
+  `APPROVE`/`BLOCK`/`REVISE` free-form convention. The old
+  convention is gone — the AGENT.md template shows the
+  directive-based contract as the canonical path.
+
+Landmine worth recording: first draft of the TA-4b test wrote
+`task_id: "verdict-review"` in the inbox file but stored the
+task file at `demo-99.md`, so `resolve_task_path/2` failed to
+find the task and the verdict directive silently no-op'd. Fix
+was to align inbox metadata with the task filename. This is
+the second time I've stepped on a task-lookup mismatch in a
+week; if it happens again, worth adding a "task_id matches
+existing file" validation at the inbox-write seam.
+
+Queued for Round L:
+
+- Propagate cairn-style sections to ceo.md, editor.md,
+  researcher.md, provenance-auditor.md. Each is role-specific
+  so mechanical copy-paste won't cut it; each needs an hour
+  of "what's the role's handoff shape, what can the role do
+  without asking" thinking.
+- Approvals.Gate integration (Round K) is technically ahead
+  of template propagation in terms of user impact — the
+  verdict gets written but nothing blocks on it yet. Round K
+  first, then L.
+
+Cairn log-before-commit discipline held this round.
+
+

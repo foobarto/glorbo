@@ -861,6 +861,80 @@ defmodule Glorbo.Agent.ServerTest do
       assert content =~ ~r/^status: "?todo"?$/m
     end
 
+    test "TA-4b: verdict directive routes through record_peer_review_verdict/4 (GEP-41)",
+         ctx do
+      base = Path.join(System.tmp_dir!(), "srv_verdict_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(base)
+
+      slug = ctx.spec.slug
+      co = ctx.spec.company
+      co_root = Path.join([base, "companies", co])
+
+      inbox_dir = Path.join([co_root, "agents", slug, "inbox"])
+      File.mkdir_p!(inbox_dir)
+      inbox_file = Path.join(inbox_dir, "1-task-verdict.md")
+
+      File.write!(inbox_file, """
+      ---
+      from: director
+      task_id: "demo-99"
+      kind: task_assignment
+      delivered_at: "2026-04-20T00:00:00Z"
+      ---
+
+      Please review.
+      """)
+
+      tasks_dir = Path.join([co_root, "projects", "demo", "tasks"])
+      File.mkdir_p!(tasks_dir)
+      task_path = Path.join(tasks_dir, "demo-99.md")
+
+      File.write!(task_path, """
+      ---
+      kind: task/v1
+      title: "needs review"
+      status: "pending-approval"
+      assigned_to: "engineer"
+      severity: "major"
+      peer_review_required: true
+      reviewer: "#{slug}"
+      ---
+
+      Body.
+      """)
+
+      reply = """
+      Looks solid, all checks pass.
+
+      ACTIONS:
+      - verdict: approve
+      - note: spot-checked 4 claims
+      """
+
+      dispatch_fun = fn _spec, _task, _opts ->
+        {:ok, %{exit_status: 0, reply: reply}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{
+        task_id: "demo-99",
+        task_path: "agents/#{slug}/inbox/1-task-verdict.md",
+        prompt: "x",
+        trigger: :inbox
+      }
+
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      content = File.read!(task_path)
+      assert content =~ ~r/^peer_review_verdict: approve$/m
+      assert content =~ ~r/^peer_review_verdict_by: #{slug}$/m
+      assert content =~ ~s(peer_review_verdict_note: "spot-checked 4 claims")
+
+      on_exit(fn -> File.rm_rf!(base) end)
+    end
+
     test "TA-5a: empty ACTIONS block (all non-matching lines) no-op but comment retained",
          ctx do
       reply = """
