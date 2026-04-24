@@ -103,11 +103,14 @@ it's been in CHANGELOG for a cycle.
   chain appender, `GlorboWeb.TaskChainLive` at
   `/companies/:co/tasks/:task_id/chain` with drift detection +
   peer-review event section. GEP-40 → Implemented.
-- [ ] **FileSpec.Formatter: preserve `|` block-scalar for
-  multi-line strings.** Currently `done_when:` with multi-line
-  content gets re-emitted as a double-quoted string with literal
-  newlines — valid YAML but ugly. Non-blocking; user-facing
-  fields deserve block-scalar. Low priority.
+- [x] **FileSpec.Formatter: preserve `|` block-scalar for
+  multi-line strings.** Shipped 2026-04-25 (autonomous L3).
+  `Glorbo.FileSpec.Formatter` now emits multi-line binary values
+  (top-level + nested in list-of-maps items) as YAML `|` block
+  scalars instead of double-quoted strings with literal `\n`.
+  Idempotent across round-trips; covers `done_when:`,
+  `handoff_chain[].reason`, and any other future paragraph
+  field. 5 new tests in `formatter_test.exs`.
 - [x] **GEP-41 implementation (crown-jewels phase 1b).** Shipped
   2026-04-24 across rounds J/K/N-1/N-2/N-3/O/P: CritiqueOps verb
   alignment, `Approvals.Gate` peer-review blocker + requested
@@ -285,10 +288,12 @@ it's been in CHANGELOG for a cycle.
   `802bc25`). Atomic cut: parser, bwrap typespec + `network_flag/1`,
   AgentLive/CompanyLive editors, AgentMd FileSpec enum, ~20 test
   fixtures. `kbps_cap` throttle ships separately.
-- [ ] **GEP-23 `egress.kbps_cap`** per-dispatch token-bucket throttle.
-  Needs the per-dispatch `Proxy-Authorization` token infrastructure
-  GEP-23 §Proxy daemon §5 describes — not yet wired into
-  `Agent.Dispatch`.
+- [x] **GEP-23 `egress.kbps_cap` — won't-fix (2026-04-25).**
+  Maintainer declined: kbps throttling is overkill for the single-
+  user, single-host posture Glorbo targets; the host-only proxy
+  isn't a transit point worth shaping. GEP-23 history updated to
+  record the decision; the spec line stays as a documented opt-out
+  but no implementation path is planned.
 - [x] **GEP-26 Phase B dispatch orchestrator** (shipped 2026-04-23).
   `glorbo bench run <template> <task-id> --providers a,b,c
   [--keep-shadow]` now forks N shadow companies rooted at the

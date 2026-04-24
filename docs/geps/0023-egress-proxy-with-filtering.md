@@ -83,6 +83,18 @@ history:
       This unblocks the `kbps_cap` per-dispatch throttle: the
       token registry is now the per-dispatch identifier a token
       bucket can key on. Throttle itself is a separate follow-up.
+  - date: 2026-04-25
+    status: Implemented
+    note: |
+      `egress.kbps_cap` per-dispatch throttle — won't-fix.
+      Maintainer declined the implementation: kbps shaping is
+      overkill for Glorbo's single-user, single-host posture. The
+      proxy isn't a transit point worth shaping; an agent that
+      misbehaves in volume is already caught by the company-level
+      allowlist + audit log. The spec line stays in §Proxy daemon
+      §7 as a documented opt-out, but no implementation path is
+      planned. GEP-23 stays Implemented; this entry records the
+      decision so future readers don't re-derive it.
 ---
 
 # GEP-23: Egress Proxy with Host Filtering and Smart Mode

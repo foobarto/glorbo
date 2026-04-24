@@ -279,6 +279,152 @@ defmodule Glorbo.FileSpec.FormatterTest do
     end
   end
 
+  describe "format_content/2 — block-scalar (`|`) for multi-line strings" do
+    # GEP-40 `done_when:` and `handoff_chain[].reason` are
+    # frequently written as paragraphs. Before this fix, multi-
+    # line strings round-tripped as `"line1\nline2"` (literal
+    # `\n` in a double-quoted scalar) — valid YAML but hostile
+    # to read. The formatter now emits the YAML `|` block-scalar
+    # form so paragraphs render naturally.
+    test "top-level multi-line string emits as `|` block scalar" do
+      content = """
+      ---
+      kind: task/v1
+      id: foo-1
+      title: t
+      status: todo
+      assigned_to: ceo
+      done_when: "Tests pass.\\nDocs updated."
+      ---
+      """
+
+      {:ok, :changed, out} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-1.md",
+          content
+        )
+
+      assert out =~ "done_when: |\n  Tests pass.\n  Docs updated.\n"
+      refute out =~ ~s|done_when: "Tests pass.\\nDocs updated."|
+    end
+
+    test "single-line strings still emit as plain scalars" do
+      content = """
+      ---
+      kind: task/v1
+      id: foo-2
+      title: single line
+      status: todo
+      assigned_to: ceo
+      done_when: Tests pass.
+      ---
+      """
+
+      {:ok, change, out} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-2.md",
+          content
+        )
+
+      assert change == :unchanged
+      assert out =~ "done_when: Tests pass.\n"
+      refute out =~ "done_when: |"
+    end
+
+    test "blank lines inside multi-line content survive the round-trip" do
+      content = """
+      ---
+      kind: task/v1
+      id: foo-3
+      title: blanks
+      status: todo
+      assigned_to: ceo
+      done_when: |
+        Phase 1 done.
+
+        Phase 2 done.
+      ---
+      """
+
+      {:ok, _, out1} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-3.md",
+          content
+        )
+
+      {:ok, change2, out2} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-3.md",
+          out1
+        )
+
+      assert change2 == :unchanged
+      assert out1 == out2
+      assert out1 =~ "done_when: |\n  Phase 1 done.\n\n  Phase 2 done.\n"
+    end
+
+    test "block-scalar output is idempotent" do
+      content = """
+      ---
+      kind: task/v1
+      id: foo-4
+      title: idem
+      status: todo
+      assigned_to: ceo
+      done_when: "first\\nsecond\\nthird"
+      ---
+      """
+
+      {:ok, _, once} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-4.md",
+          content
+        )
+
+      {:ok, :unchanged, twice} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-4.md",
+          once
+        )
+
+      assert once == twice
+    end
+
+    test "multi-line value inside a list-of-maps item uses block scalar" do
+      content = """
+      ---
+      kind: task/v1
+      id: foo-5
+      title: hop
+      status: in-progress
+      assigned_to: engineer
+      handoff_chain:
+        - from: director
+          to: engineer
+          ts: "2026-04-25T10:00:00Z"
+          reason: "Initial dispatch.\\nDeadline next Friday."
+      ---
+      """
+
+      {:ok, _, out1} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-5.md",
+          content
+        )
+
+      assert out1 =~ "    reason: |\n      Initial dispatch.\n      Deadline next Friday.\n"
+
+      {:ok, change2, out2} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/projects/foo/tasks/foo-5.md",
+          out1
+        )
+
+      assert change2 == :unchanged
+      assert out1 == out2
+    end
+  end
+
   describe "check_path/1 + write_path/1" do
     test "check_path reports drift but does not write", %{base: base} do
       path =

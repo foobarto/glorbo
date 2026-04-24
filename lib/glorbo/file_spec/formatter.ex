@@ -168,7 +168,11 @@ defmodule Glorbo.FileSpec.Formatter do
   defp emit_pair({k, v}, indent), do: emit_key_value(k, v, indent)
 
   defp emit_key_value(k, v, indent) when is_binary(v) do
-    [pad(indent), k, ": ", emit_scalar(v), "\n"]
+    if block_scalar?(v) do
+      [pad(indent), k, ": |\n", emit_block_scalar_body(v, indent + 2), "\n"]
+    else
+      [pad(indent), k, ": ", emit_scalar(v), "\n"]
+    end
   end
 
   defp emit_key_value(k, v, indent) when is_number(v) or is_boolean(v) or is_nil(v) do
@@ -227,16 +231,30 @@ defmodule Glorbo.FileSpec.Formatter do
         "{}"
 
       [{first_k, first_v} | rest] ->
-        first_line = [to_string(first_k), ": ", emit_leaf(first_v)]
+        first_line = emit_list_item_pair(first_k, first_v, indent + 2, :first)
 
         rest_lines =
           Enum.map(rest, fn {k, v} ->
-            ["\n", pad(indent + 2), to_string(k), ": ", emit_leaf(v)]
+            ["\n", pad(indent + 2), emit_list_item_pair(k, v, indent + 2, :rest)]
           end)
 
         [first_line, rest_lines]
     end
   end
+
+  # `kind` is unused today (both first + rest emit identically once
+  # the surrounding caller has prefixed the dash + indent). Multi-line
+  # values use a block scalar; everything else falls back to `emit_leaf`.
+  defp emit_list_item_pair(k, v, indent, _kind) when is_binary(v) do
+    if block_scalar?(v) do
+      [to_string(k), ": |\n", emit_block_scalar_body(v, indent + 2)]
+    else
+      [to_string(k), ": ", emit_leaf(v)]
+    end
+  end
+
+  defp emit_list_item_pair(k, v, _indent, _kind),
+    do: [to_string(k), ": ", emit_leaf(v)]
 
   # Scalar emission — quote only when the YAML parser might
   # otherwise reinterpret the value.
@@ -256,6 +274,36 @@ defmodule Glorbo.FileSpec.Formatter do
     do: emit_scalar(v)
 
   defp emit_leaf(v), do: inspect(v)
+
+  # Multi-line strings round-trip cleanly only via YAML `|`
+  # block scalars. Embedded `\n` characters in a double-quoted
+  # form are valid YAML but the resulting frontmatter is hostile
+  # to read (single-line `"line1\nline2"` instead of the natural
+  # paragraph shape). Pick `|` when the string contains an
+  # internal newline (a single trailing `\n` doesn't count — that
+  # gets normalised away by `String.trim_trailing/2` on emit).
+  defp block_scalar?(s) when is_binary(s) do
+    String.contains?(String.trim_trailing(s, "\n"), "\n")
+  end
+
+  # Render the body of a `|` block scalar at `indent` columns.
+  # Returns iodata for the indented lines joined by `\n` *without*
+  # a trailing newline — the caller adds whichever terminator fits
+  # the surrounding context (top-level pairs add `\n`, list-item
+  # pairs leave it to the outer separator). `|` (clip) chomping
+  # always produces a single trailing newline, so strip every
+  # trailing `\n` from the input first; the YAML reader will
+  # re-add exactly one when round-tripping.
+  defp emit_block_scalar_body(s, indent) do
+    s
+    |> String.trim_trailing("\n")
+    |> String.split("\n")
+    |> Enum.map(fn
+      "" -> ""
+      line -> [pad(indent), line]
+    end)
+    |> Enum.intersperse("\n")
+  end
 
   # Quote a scalar when (a) it's empty, (b) it collides with a YAML
   # special, or (c) it contains characters that wouldn't round-trip
