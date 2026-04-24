@@ -1853,6 +1853,17 @@ button { font-family: inherit; font-size: inherit; }
   vertical-align: bottom;
 }
 .gl-task-card__recurring ~ .gl-task-card__approval-tag { margin-left: 4px; }
+.gl-task-card__peer-review-tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--gl-accent);
+  color: var(--gl-accent);
+  background: color-mix(in oklch, var(--gl-accent) 18%, transparent);
+  white-space: nowrap;
+}
+.gl-task-card__approval-tag ~ .gl-task-card__peer-review-tag,
+.gl-task-card__recurring ~ .gl-task-card__peer-review-tag { margin-left: 4px; }
 .gl-task-card__title {
   color: var(--gl-fg);
   line-height: 1.4;

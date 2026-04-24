@@ -2860,3 +2860,87 @@ Add `apply_severity_auto_flip/1` to
 ### Commit(s)
 
 One commit to follow.
+
+## Round N-2 — Kanban peer-review pill
+
+Round N-1 CI still running in background. Continuing with
+visible evidence for Directors that a task is blocked on a
+peer reviewer.
+
+Chose a card-level pill over a full new column: the Review
+column is already the attention zone; within it, the
+blocked-on-reviewer subset needs a visual tell. Adding a
+column would have doubled header width for a marginal
+categorical gain.
+
+### Task picked
+
+Add a `⧗ peer-review` pill to `GlorboWeb.Components.TaskCard`
+that renders when `peer_review_required: true` and
+`peer_review_verdict:` is still nil.
+
+### What shipped
+
+- `lib/glorbo_web/components/task_card.ex` — new
+  `<span class="gl-task-card__peer-review-tag">⧗ peer-review</span>`
+  rendered conditionally via a private
+  `awaiting_peer_review?/1`. Tooltip cites GEP-41.
+- `assets/css/app.css` — `.gl-task-card__peer-review-tag`
+  rule: thinner border than the amber `approval-tag`,
+  accent (cyan-ish) color-mix background so it doesn't
+  clash with the warning hue. Sibling selectors add 4px
+  margin when rendered alongside `recurring` or `gated`
+  tags.
+- `test/glorbo_web/components/task_card_test.exs` — added
+  a `describe "peer-review pill (GEP-41)"` block with 4
+  tests: visible when required+no-verdict, hidden after
+  approve/block verdicts, hidden when not required,
+  coexists with the `⚠ gated` pill on approval-gated
+  tasks.
+
+### Design calls I made without you
+
+- **Pill over column.** A new column would make Kanban
+  headers narrower and force the Director to track 5
+  states. A pill keeps the "review" column as the single
+  decision zone and uses chrome to indicate why a
+  specific card is stuck.
+- **Hide on any verdict (approve/revise/block).** Once
+  the reviewer has acted, the peer-review step is done —
+  the task moves into the Director's hands (approve) or
+  back to research (revise/block). The pill
+  disappearing signals "reviewer has moved on."
+- **Color choice: accent, not warning.** The `gated`
+  pill already uses warning-amber for "director needs to
+  act." Peer-review is a different kind of block
+  (waiting on a named reviewer, not the director); using
+  the accent tone keeps them visually distinct.
+- **`awaiting_peer_review?/1` uses `Map.get/2`** rather
+  than struct pattern-match. The render caller is
+  sometimes a plain map (test fixtures) and sometimes a
+  `TaskDefinition` struct; `Map.get/2` works for both
+  without requiring the struct import.
+
+### Gates
+
+- `mix test test/glorbo_web/components/task_card_test.exs`
+  — 8 passing (existing 4 recurring-tag tests + 4 new
+  peer-review-pill tests).
+- `mix precommit` — 2061 tests, 0 failures, 1 skipped.
+- `mix credo --strict` — clean.
+
+### Skipped / not done
+
+- **Round N-3 (router-triggered reviewer dispatch)** —
+  needs a file-event observer that notices when a task
+  with `peer_review_required: true` hits
+  `status: pending-approval` and sends the reviewer an
+  inbox message. Next sub-round.
+- Manual chromium UAT of the new pill — styling is based
+  on the existing recurring + approval pill patterns;
+  worth a visual check later but not required for the
+  commit to land.
+
+### Commit(s)
+
+One commit to follow.

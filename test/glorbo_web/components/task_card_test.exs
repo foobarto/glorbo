@@ -29,6 +29,8 @@ defmodule GlorboWeb.Components.TaskCardTest do
       severity: nil,
       assigned_to: nil,
       requires_approval: nil,
+      peer_review_required: false,
+      peer_review_verdict: nil,
       schedule: nil
     }
   end
@@ -54,5 +56,52 @@ defmodule GlorboWeb.Components.TaskCardTest do
   test "whitespace-only schedule does not trigger the tag" do
     html = render_card(%{base_task() | schedule: "   "})
     refute html =~ "gl-task-card__recurring"
+  end
+
+  # GEP-41 Round N-2 — peer-review pill visibility.
+  describe "peer-review pill (GEP-41)" do
+    test "shows ⧗ peer-review when peer_review_required and no verdict" do
+      html = render_card(%{base_task() | peer_review_required: true})
+      assert html =~ "⧗ peer-review"
+      assert html =~ "gl-task-card__peer-review-tag"
+    end
+
+    test "hides the pill once a verdict is recorded" do
+      html =
+        render_card(%{
+          base_task()
+          | peer_review_required: true,
+            peer_review_verdict: "approve"
+        })
+
+      refute html =~ "⧗ peer-review"
+
+      html2 =
+        render_card(%{
+          base_task()
+          | peer_review_required: true,
+            peer_review_verdict: "block"
+        })
+
+      refute html2 =~ "⧗ peer-review"
+    end
+
+    test "does not show when peer_review_required is false" do
+      html = render_card(base_task())
+      refute html =~ "⧗ peer-review"
+    end
+
+    test "coexists with the ⚠ gated approval pill" do
+      html =
+        render_card(%{
+          base_task()
+          | peer_review_required: true,
+            requires_approval: :director,
+            status: "pending"
+        })
+
+      assert html =~ "⚠ gated"
+      assert html =~ "⧗ peer-review"
+    end
   end
 end

@@ -77,6 +77,13 @@ defmodule GlorboWeb.Components.TaskCard do
           ⚠ gated
         </span>
         <span
+          :if={awaiting_peer_review?(@task)}
+          class="gl-task-card__peer-review-tag"
+          title="Peer-review gated: the assigned reviewer must record approve/revise/block before director approval can clear (GEP-41)."
+        >
+          ⧗ peer-review
+        </span>
+        <span
           :if={recurring?(@task)}
           class="gl-task-card__recurring"
           title={"Recurring: " <> (Map.get(@task, :schedule) || "")}
@@ -109,5 +116,14 @@ defmodule GlorboWeb.Components.TaskCard do
   defp recurring?(task) do
     value = Map.get(task, :schedule)
     is_binary(value) and String.trim(value) != ""
+  end
+
+  # GEP-41 Round N-2: tasks with peer_review_required = true and no
+  # verdict yet show the peer-review pill. Once the reviewer records
+  # approve/revise/block, the pill drops — the verdict is what the
+  # Director acts on.
+  defp awaiting_peer_review?(task) do
+    Map.get(task, :peer_review_required) == true and
+      is_nil(Map.get(task, :peer_review_verdict))
   end
 end
