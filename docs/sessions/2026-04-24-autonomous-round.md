@@ -715,8 +715,9 @@ Final pass before closing the session:
   each phase*) so future sessions don't tick phases mechanically
   without applying the discipline.
 
-- **Saved consolidated user-profile memory** at
-  `~/.claude/projects/-var-home-foobarto-Dokumenty-glorbo/memory/user_thinking_profile.md`.
+- **Saved consolidated user-profile memory** as
+  `user_thinking_profile.md` in the Claude Code auto-memory
+  directory for this project.
   Synthesis of decision-making patterns, design values,
   communication style, collaboration posture, architectural
   instincts observed across this session. Written as observations
