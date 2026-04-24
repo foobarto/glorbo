@@ -250,4 +250,152 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # record_peer_review_verdict/4 (Round I — GEP-41)
+  # ---------------------------------------------------------------------------
+
+  describe "record_peer_review_verdict/4" do
+    setup %{tasks_dir: tasks_dir} do
+      src = Path.join(tasks_dir, "demo-99.md")
+
+      File.write!(src, """
+      ---
+      kind: task/v1
+      id: demo-99
+      title: needs review
+      status: pending-approval
+      assigned_to: engineer
+      severity: major
+      peer_review_required: true
+      reviewer: critiqueops
+      ---
+      body
+      """)
+
+      {:ok, src: src}
+    end
+
+    test "approve verdict: writes verdict fields and leaves status at pending-approval",
+         %{base: base, audit: audit, src: src} do
+      assert {:ok, %{verdict: :approve, next_status: "pending-approval"}} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "critiqueops",
+                 note: "looks good; ship it",
+                 base: base,
+                 audit: audit
+               )
+
+      content = File.read!(src)
+      assert content =~ ~r/^peer_review_verdict: approve$/m
+      assert content =~ ~r/^peer_review_verdict_by: critiqueops$/m
+      assert content =~ ~r/^peer_review_verdict_at:/m
+      assert content =~ ~s(peer_review_verdict_note: "looks good; ship it")
+      assert content =~ ~r/^status: pending-approval$/m
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "task.peer_review.approve"
+      assert event[:actor] == "critiqueops"
+    end
+
+    test "revise verdict flips status to in-progress",
+         %{base: base, audit: audit, src: src} do
+      assert {:ok, %{verdict: :revise, next_status: "in-progress"}} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :revise,
+                 actor: "critiqueops",
+                 note: "the error path mishandles nil",
+                 base: base,
+                 audit: audit
+               )
+
+      content = File.read!(src)
+      assert content =~ ~r/^status: in-progress$/m
+      assert content =~ ~r/^peer_review_verdict: revise$/m
+    end
+
+    test "block verdict flips status to denied", %{base: base, audit: audit} do
+      assert {:ok, %{verdict: :block, next_status: "denied"}} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :block,
+                 actor: "critiqueops",
+                 base: base,
+                 audit: audit
+               )
+    end
+
+    test "rejects when peer_review_required is false", %{base: base, audit: audit, src: src} do
+      File.write!(src, """
+      ---
+      kind: task/v1
+      id: demo-99
+      title: no review needed
+      status: done
+      ---
+      body
+      """)
+
+      assert {:error, :not_required} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "critiqueops",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects when a verdict was already recorded (append-only)",
+         %{base: base, audit: audit} do
+      # First verdict lands.
+      {:ok, _} =
+        Tasks.record_peer_review_verdict(
+          "acme",
+          "projects/demo/tasks/demo-99.md",
+          :revise,
+          actor: "critiqueops",
+          base: base,
+          audit: audit
+        )
+
+      # Second attempt is rejected.
+      assert {:error, :already_decided} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "critiqueops",
+                 base: base,
+                 audit: audit
+               )
+
+      # Only the first verdict emitted an audit event.
+      assert length(FakeAudit.calls(audit)) == 1
+    end
+
+    test "rejects oversized note", %{base: base, audit: audit} do
+      assert {:error, :invalid_note} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "critiqueops",
+                 note: String.duplicate("x", 501),
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+  end
 end

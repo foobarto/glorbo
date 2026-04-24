@@ -78,6 +78,17 @@ defmodule Glorbo.Actions.Tasks do
           handoff_chain_len: non_neg_integer()
         }
 
+  @type verdict :: :approve | :revise | :block
+  @type verdict_opts ::
+          [
+            actor: String.t(),
+            note: String.t(),
+            base: Path.t(),
+            audit: atom()
+          ]
+
+  @type verdict_result :: %{verdict: verdict(), next_status: String.t()}
+
   @doc """
   Create a new task file under `projects/<project>/tasks/<task_id>.md`.
 
@@ -269,6 +280,121 @@ defmodule Glorbo.Actions.Tasks do
          }}
       end
     end
+  end
+
+  @doc """
+  Record a peer-review verdict on a task (GEP-41). Flips
+  `peer_review_verdict:` + the verdict-metadata fields
+  (`_by`, `_at`, `_note`) atomically via `write_frontmatter/2`.
+  Side-effects `status:` based on the verdict so the next
+  consumer (Director approval gate, Kanban filter) sees a
+  single state transition:
+
+    * `:approve` → leaves status at `pending-approval`
+    * `:revise`  → flips status to `in-progress`
+    * `:block`   → flips status to `blocked` (new state is not
+      yet in the enum — for now we emit `denied` so the
+      existing board surfaces it; GEP-41 follow-up adds
+      `blocked` to the enum)
+
+  Required opts:
+
+    * `:actor` — reviewer slug (normally `"critiqueops"`; the
+      caller may pass a different slug if the task's
+      `reviewer:` field named one).
+
+  Optional opts:
+
+    * `:note` — free-text justification (≤500 bytes). When
+      present, stored in `peer_review_verdict_note:`.
+    * `:base`, `:audit` — test seams.
+
+  Rejects:
+
+    * `:not_required` — task's `peer_review_required:` is false.
+      Callers must check before invoking (the router will
+      short-circuit for the common case).
+    * `:already_decided` — a verdict was already recorded;
+      GEP-41 D6 (append-only semantics) forbids overwrite.
+      Callers handle re-review via a new task.
+
+  ## Audit
+
+  Emits `task.peer_review.<verdict>` with the note in detail.
+  """
+  @spec record_peer_review_verdict(
+          String.t(),
+          String.t(),
+          verdict(),
+          verdict_opts()
+        ) ::
+          {:ok, verdict_result()} | {:error, term()}
+  def record_peer_review_verdict(company, task_rel_path, verdict, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and
+             verdict in [:approve, :revise, :block] and is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    note = opts |> Keyword.get(:note, "") |> to_string() |> String.trim()
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    with :ok <- validate_slug(company, :company),
+         :ok <- validate_slug(actor, :agent),
+         :ok <- validate_note(note),
+         {:ok, _project} <- project_of(task_rel_path),
+         abs_path = Path.join([base, "companies", company, task_rel_path]),
+         {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+         :ok <- guard_review_required(task),
+         :ok <- guard_not_already_decided(task) do
+      verdict_str = Atom.to_string(verdict)
+      ts = DateTime.utc_now() |> DateTime.to_iso8601()
+      next_status = next_status_for(verdict, task.status)
+
+      updates =
+        %{
+          "peer_review_verdict" => verdict_str,
+          "peer_review_verdict_by" => actor,
+          "peer_review_verdict_at" => ts,
+          "status" => next_status
+        }
+        |> maybe_put("peer_review_verdict_note", note)
+
+      with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
+           :ok <-
+             emit_verdict_audit(audit, company, task_rel_path, verdict_str, actor, note) do
+        {:ok, %{verdict: verdict, next_status: next_status}}
+      end
+    end
+  end
+
+  defp validate_note(""), do: :ok
+  defp validate_note(v) when is_binary(v) and byte_size(v) <= 500, do: :ok
+  defp validate_note(_), do: {:error, :invalid_note}
+
+  defp guard_review_required(%Glorbo.TaskDefinition{peer_review_required: true}), do: :ok
+  defp guard_review_required(_), do: {:error, :not_required}
+
+  defp guard_not_already_decided(%Glorbo.TaskDefinition{peer_review_verdict: nil}), do: :ok
+  defp guard_not_already_decided(_), do: {:error, :already_decided}
+
+  defp next_status_for(:approve, current), do: current || "pending-approval"
+  defp next_status_for(:revise, _), do: "in-progress"
+  defp next_status_for(:block, _), do: "denied"
+
+  defp maybe_put(map, _k, ""), do: map
+  defp maybe_put(map, k, v), do: Map.put(map, k, v)
+
+  defp emit_verdict_audit(audit, company, rel_path, verdict, actor, note) do
+    entry =
+      %{
+        actor: actor,
+        action: "task.peer_review.#{verdict}",
+        target: rel_path,
+        company: company,
+        verdict: verdict
+      }
+      |> put_detail("note", note)
+
+    append_audit(audit, company, entry)
   end
 
   defp validate_reason(""), do: {:error, :invalid_reason}

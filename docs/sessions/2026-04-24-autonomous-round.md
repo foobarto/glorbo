@@ -1655,3 +1655,76 @@ pass. Functional first.
   the Credo allowlist by one file.
 - CSS polish pass on `gl-task-chain__*` classes.
 
+### Round I — peer-review verdict data layer
+
+Scope cut deliberate: the full GEP-41 gate (severity-driven
+router trigger + CritiqueOps agent dispatch + approvals.Gate
+integration) is multi-round work. This round ships only the
+data-layer pieces so Round J's template propagation has a
+concrete contract to target.
+
+Delivered:
+
+- `peer_review_verdict:` (enum: approve / revise / block),
+  plus `_by` / `_at` / `_note` metadata fields on the `task/v1`
+  FileSpec. Validator enum enforcement falls out of the
+  existing schema plumbing.
+- `Glorbo.TaskDefinition` struct + parse path + canonical key
+  order + editor-key allowlist + write-frontmatter lookup_key
+  all carry the new fields. Regenerated
+  `docs/file-formats/task_v1.md` via the mix docs task.
+- `Glorbo.Actions.Tasks.record_peer_review_verdict/4`. Atomic
+  write: flips verdict field + metadata + side-effect status
+  (`approve` → preserve pending-approval; `revise` →
+  in-progress; `block` → denied). GEP-41 D6 append-only
+  enforced via `guard_not_already_decided/1` — second verdict
+  returns `{:error, :already_decided}` without touching the
+  file.
+- Six unit tests: approve / revise / block happy paths,
+  reject-when-not-required, reject-when-already-decided,
+  reject-oversized-note. All green.
+
+Landmine I stepped on: added the 4 new struct fields + parse
+path but forgot to thread them through `finalize/4`, so
+`parse_file/2` read back `nil` for `peer_review_verdict` even
+though the file had `peer_review_verdict: revise` written.
+The `already_decided` test caught this immediately (second
+call returned `:ok` instead of rejecting). Fixed by extending
+finalize; would have been a silent prod bug if the test
+pattern had only covered the happy path.
+
+Deferred to Round I-follow-up / J / later:
+
+- Router-triggered invocation on `status: pending-approval` for
+  severity-major/critical tasks. Needs a `Glorbo.Actions.Reviews`
+  dispatcher that wakes the configured reviewer agent.
+- Approvals.Gate integration — the director-approval path
+  should block when `peer_review_required: true` and
+  `peer_review_verdict: nil` (awaiting review) or
+  `:block` (rejected). Hooks in
+  `lib/glorbo/approvals/gate.ex` around `run_ready?/1`.
+- CritiqueOps agent template — the three-verdict directive
+  contract (`- verdict: approve|revise|block`) needs to land
+  in the AGENT.md template + the agent's ACTIONS parser in
+  `apply_task_actions/4` must learn the verb.
+- GEP-41 D1 severity-auto-trigger (major/critical force
+  `peer_review_required: true` on task creation) — thin hook
+  in `Actions.Tasks.create/4`.
+
+The Credo ratchet invariant still holds: no new raw File.*
+calls appeared anywhere in `lib/glorbo_web/live/` this round.
+Allowlist unchanged (still the six LiveViews from Round F).
+
+### Cadence + discipline this round
+
+- **Log-before-commit restored.** Round I logged here before
+  the commit lands. Round G's prior "committed before log"
+  was a one-off I noted as a landmine in the previous entry;
+  not repeated.
+- **Scope discipline.** Originally planned Round I as the
+  full gate; pulled back to data-layer-only after the file
+  ran long. Shipping a correct narrow slice beats a sprawling
+  half-done one.
+- **/compact.** Still haven't; next natural seam is after
+  Round J (template propagation) closes the GEP-41 phase.
+

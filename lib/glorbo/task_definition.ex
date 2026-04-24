@@ -82,6 +82,10 @@ defmodule Glorbo.TaskDefinition do
           priority: priority(),
           severity: severity(),
           peer_review_required: boolean(),
+          peer_review_verdict: String.t() | nil,
+          peer_review_verdict_by: String.t() | nil,
+          peer_review_verdict_at: String.t() | nil,
+          peer_review_verdict_note: String.t() | nil,
           reviewer: String.t() | nil,
           done_when: String.t() | nil,
           handoff_chain: [handoff_entry()],
@@ -106,6 +110,10 @@ defmodule Glorbo.TaskDefinition do
             priority: nil,
             severity: nil,
             peer_review_required: false,
+            peer_review_verdict: nil,
+            peer_review_verdict_by: nil,
+            peer_review_verdict_at: nil,
+            peer_review_verdict_note: nil,
             reviewer: nil,
             done_when: nil,
             handoff_chain: [],
@@ -183,6 +191,10 @@ defmodule Glorbo.TaskDefinition do
          priority: coerce_priority(meta["priority"]),
          severity: coerce_severity(meta["severity"]),
          peer_review_required: coerce_peer_review_required(meta["peer_review_required"]),
+         peer_review_verdict: coerce_peer_review_verdict(meta["peer_review_verdict"]),
+         peer_review_verdict_by: as_string(meta["peer_review_verdict_by"]),
+         peer_review_verdict_at: as_string(meta["peer_review_verdict_at"]),
+         peer_review_verdict_note: as_string(meta["peer_review_verdict_note"]),
          reviewer: as_string(meta["reviewer"]),
          done_when: as_string(meta["done_when"]),
          handoff_chain: coerce_handoff_chain(meta["handoff_chain"]),
@@ -220,6 +232,11 @@ defmodule Glorbo.TaskDefinition do
   defp coerce_peer_review_required(true), do: true
   defp coerce_peer_review_required(false), do: false
   defp coerce_peer_review_required(_), do: false
+
+  # GEP-41 three-way verdict — normalized to the canonical lowercase
+  # spelling so renderers and the gate don't need to case-fold.
+  defp coerce_peer_review_verdict(v) when v in ["approve", "revise", "block"], do: v
+  defp coerce_peer_review_verdict(_), do: nil
 
   # GEP-40 handoff_chain — append-only list of {ts, from, to, reason}
   # entries. Coerces a parsed YAML list into a normalised list of
@@ -295,6 +312,10 @@ defmodule Glorbo.TaskDefinition do
     :severity,
     :goal,
     :peer_review_required,
+    :peer_review_verdict,
+    :peer_review_verdict_by,
+    :peer_review_verdict_at,
+    :peer_review_verdict_note,
     :reviewer,
     :done_when,
     "status",
@@ -306,6 +327,10 @@ defmodule Glorbo.TaskDefinition do
     "severity",
     "goal",
     "peer_review_required",
+    "peer_review_verdict",
+    "peer_review_verdict_by",
+    "peer_review_verdict_at",
+    "peer_review_verdict_note",
     "reviewer",
     "done_when"
   ]
@@ -468,6 +493,10 @@ defmodule Glorbo.TaskDefinition do
     severity
     requires_approval
     peer_review_required
+    peer_review_verdict
+    peer_review_verdict_by
+    peer_review_verdict_at
+    peer_review_verdict_note
     reviewer
     denial_reason
     done_when
@@ -654,6 +683,10 @@ defmodule Glorbo.TaskDefinition do
           "severity" -> Map.get(map, :severity)
           "requires_approval" -> Map.get(map, :requires_approval)
           "peer_review_required" -> Map.get(map, :peer_review_required)
+          "peer_review_verdict" -> Map.get(map, :peer_review_verdict)
+          "peer_review_verdict_by" -> Map.get(map, :peer_review_verdict_by)
+          "peer_review_verdict_at" -> Map.get(map, :peer_review_verdict_at)
+          "peer_review_verdict_note" -> Map.get(map, :peer_review_verdict_note)
           "reviewer" -> Map.get(map, :reviewer)
           "denial_reason" -> Map.get(map, :denial_reason)
           "done_when" -> Map.get(map, :done_when)
@@ -800,6 +833,10 @@ defmodule Glorbo.TaskDefinition do
        priority: partial.priority,
        severity: partial.severity,
        peer_review_required: partial[:peer_review_required] || false,
+       peer_review_verdict: partial[:peer_review_verdict],
+       peer_review_verdict_by: partial[:peer_review_verdict_by],
+       peer_review_verdict_at: partial[:peer_review_verdict_at],
+       peer_review_verdict_note: partial[:peer_review_verdict_note],
        reviewer: partial[:reviewer],
        done_when: partial[:done_when],
        handoff_chain: partial[:handoff_chain] || [],
