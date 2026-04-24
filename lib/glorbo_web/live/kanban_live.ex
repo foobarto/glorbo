@@ -390,8 +390,11 @@ defmodule GlorboWeb.KanbanLive do
   def handle_event("delete_task", %{"path" => path}, socket) do
     company = socket.assigns.company_slug
 
-    case delete_task_file(socket.assigns, path, company) do
-      :ok ->
+    case Glorbo.Actions.Tasks.archive_to_history(company, path,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} ->
         tasks =
           base_dir()
           |> load_tasks(company)
@@ -399,8 +402,6 @@ defmodule GlorboWeb.KanbanLive do
           |> apply_goal_filter(socket.assigns.goal_filter)
           |> apply_who_filter(socket.assigns.who_filter)
           |> apply_search_filter(socket.assigns.task_search)
-
-        emit_task_delete_audit(company, path)
 
         {:noreply,
          socket
@@ -1360,119 +1361,6 @@ defmodule GlorboWeb.KanbanLive do
       :ok
     else
       {:error, :invalid_project}
-    end
-  end
-
-  defp emit_task_delete_audit(company, rel_path) do
-    via =
-      case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
-        [{_pid, _}] ->
-          {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
-
-        _ ->
-          Glorbo.Company.AuditLog
-      end
-
-    try do
-      Glorbo.Company.AuditLog.append(via, %{
-        company: company,
-        actor: "director",
-        action: "task.delete",
-        target: rel_path
-      })
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
-
-    :ok
-  end
-
-  # Move the .md file + any attachments dir to projects/<p>/history/tasks/.
-  # Not a hard delete — audit trail + recoverability matter more than
-  # disk space for user task markdown.
-  defp delete_task_file(_assigns, rel_path, company) do
-    with {:ok, abs_path} <- resolve_task_path(rel_path, company) do
-      base = base_dir()
-      # rel_path looks like `projects/<p>/tasks/<id>.md`
-      [_, project, _, filename] = Path.split(rel_path)
-      task_id = String.replace_suffix(filename, ".md", "")
-
-      history_dir =
-        Path.join([base, "companies", company, "projects", project, "history", "tasks"])
-
-      # threatmodel M18: refuse to proceed if any segment on the
-      # history path is a symlink. `File.mkdir_p` + `File.rename`
-      # follow symlinked directories, so an agent with projects:write
-      # could redirect history → another company's tree and have the
-      # director move a task into it.
-      with :ok <- ensure_no_symlink_directory(history_dir),
-           :ok <- File.mkdir_p(history_dir),
-           history_md = Path.join(history_dir, filename),
-           :ok <- ensure_regular_file_or_absent(history_md),
-           :ok <- File.rename(abs_path, history_md) do
-        attach_src =
-          Path.join([base, "companies", company, "projects", project, "attachments", task_id])
-
-        attach_dst =
-          Path.join([
-            base,
-            "companies",
-            company,
-            "projects",
-            project,
-            "history",
-            "attachments",
-            task_id
-          ])
-
-        if File.dir?(attach_src) do
-          move_attachments_dir(attach_src, attach_dst)
-        end
-
-        :ok
-      end
-    end
-  end
-
-  defp move_attachments_dir(src, dst) do
-    case ensure_no_symlink_directory(Path.dirname(dst)) do
-      :ok ->
-        File.mkdir_p!(Path.dirname(dst))
-        File.rename(src, dst)
-
-      _ ->
-        :ok
-    end
-  end
-
-  # Walk each parent directory; refuse if any existing component is
-  # a symlink. `:enoent` is fine (directory will be created fresh).
-  defp ensure_no_symlink_directory(dir) do
-    Enum.reduce_while(Path.split(dir), "", fn seg, acc ->
-      next = if acc == "", do: seg, else: Path.join(acc, seg)
-
-      case File.lstat(next) do
-        {:ok, %File.Stat{type: :directory}} -> {:cont, next}
-        {:ok, %File.Stat{type: :symlink}} -> {:halt, {:error, :symlink_in_path}}
-        {:ok, %File.Stat{}} -> {:halt, {:error, :not_a_directory}}
-        {:error, :enoent} -> {:halt, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      :ok -> :ok
-      {:error, _} = err -> err
-      path when is_binary(path) -> :ok
-    end
-  end
-
-  defp ensure_regular_file_or_absent(path) do
-    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
-      :ok -> :ok
-      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
-      {:error, {:stat_failed, reason}} -> {:error, reason}
     end
   end
 

@@ -398,4 +398,122 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # archive_to_history/3 (Round M-5b)
+  # ---------------------------------------------------------------------------
+
+  describe "archive_to_history/3" do
+    test "moves task into projects/<p>/history/tasks/ and emits task.delete",
+         %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      src = Path.join(tasks_dir, "demo-05.md")
+      File.write!(src, "---\nkind: task/v1\ntitle: t\nstatus: done\n---\n")
+
+      assert {:ok, %{dest_rel_path: dest_rel, attachments_moved: false}} =
+               Tasks.archive_to_history("acme", "projects/demo/tasks/demo-05.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert dest_rel == "projects/demo/history/tasks/demo-05.md"
+      refute File.exists?(src)
+
+      abs_dest = Path.join([base, "companies", "acme", dest_rel])
+      assert File.exists?(abs_dest)
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "task.delete"
+      assert event[:actor] == "director"
+      assert event[:target] == "projects/demo/tasks/demo-05.md"
+      assert event[:dest] == dest_rel
+      assert event[:attachments_moved] == "false"
+    end
+
+    test "also moves the attachments directory when one exists",
+         %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      src = Path.join(tasks_dir, "demo-06.md")
+      File.write!(src, "---\nkind: task/v1\ntitle: t\nstatus: done\n---\n")
+
+      attach_dir =
+        Path.join([base, "companies", "acme", "projects", "demo", "attachments", "demo-06"])
+
+      File.mkdir_p!(attach_dir)
+      File.write!(Path.join(attach_dir, "notes.pdf"), "pdf-bytes")
+
+      assert {:ok, %{attachments_moved: true}} =
+               Tasks.archive_to_history("acme", "projects/demo/tasks/demo-06.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      dest_attach =
+        Path.join([
+          base,
+          "companies",
+          "acme",
+          "projects",
+          "demo",
+          "history",
+          "attachments",
+          "demo-06"
+        ])
+
+      assert File.exists?(Path.join(dest_attach, "notes.pdf"))
+      refute File.exists?(attach_dir)
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:attachments_moved] == "true"
+    end
+
+    test "refuses to proceed when any ancestor of history/ is a symlink",
+         %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      src = Path.join(tasks_dir, "demo-07.md")
+      File.write!(src, "---\nkind: task/v1\ntitle: t\nstatus: done\n---\n")
+
+      history_parent =
+        Path.join([base, "companies", "acme", "projects", "demo", "history"])
+
+      decoy =
+        Path.join([base, "companies", "acme", "projects", "demo", "decoy"])
+
+      File.mkdir_p!(decoy)
+      File.ln_s!(decoy, history_parent)
+
+      assert {:error, :symlink_in_path} =
+               Tasks.archive_to_history("acme", "projects/demo/tasks/demo-07.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.exists?(src)
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects invalid task_rel_path",
+         %{base: base, audit: audit} do
+      assert {:error, {:invalid_task_rel_path, _}} =
+               Tasks.archive_to_history("acme", "channels/general.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "returns :enoent-style error when source task is missing",
+         %{base: base, audit: audit} do
+      assert {:error, _} =
+               Tasks.archive_to_history("acme", "projects/demo/tasks/ghost.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+  end
 end

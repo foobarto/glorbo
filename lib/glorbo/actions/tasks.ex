@@ -64,6 +64,18 @@ defmodule Glorbo.Actions.Tasks do
 
   @type trash_result :: %{dest_rel_path: String.t()}
 
+  @type archive_opts ::
+          [
+            actor: String.t(),
+            base: Path.t(),
+            audit: atom()
+          ]
+
+  @type archive_result :: %{
+          dest_rel_path: String.t(),
+          attachments_moved: boolean()
+        }
+
   @type reassign_opts ::
           [
             actor: String.t(),
@@ -197,6 +209,152 @@ defmodule Glorbo.Actions.Tasks do
          :ok <- emit_trash_audit(audit, company, task_rel_path, dest_rel, actor) do
       {:ok, %{dest_rel_path: dest_rel}}
     end
+  end
+
+  @doc """
+  Archive a task into `projects/<p>/history/tasks/<id>.md`,
+  preserving its id and filename. Also moves its attachments dir
+  from `projects/<p>/attachments/<id>/` to
+  `projects/<p>/history/attachments/<id>/` if one exists.
+
+  Distinct from `trash/3` — trash is soft-delete with timestamped
+  destination; archive is treated as completion and keeps the
+  canonical filename so links still work for historical readers.
+
+  Enforces **threatmodel M18**: refuses to proceed if any segment
+  on the `history/` path is a symlink (which `File.mkdir_p` +
+  `File.rename` would follow and could redirect into another
+  company's tree).
+
+  `task_rel_path` is relative to `companies/<company>/`, e.g.
+  `projects/demo/tasks/demo-07.md`.
+
+  ## Audit
+
+  Emits `task.delete` (pre-migration KanbanLive label preserved).
+  Contains `target`, `dest`, and `attachments_moved: "true"/"false"`.
+  """
+  @spec archive_to_history(String.t(), String.t(), archive_opts()) ::
+          {:ok, archive_result()} | {:error, term()}
+  def archive_to_history(company, task_rel_path, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    with :ok <- validate_slug(company, :company),
+         {:ok, project} <- project_of(task_rel_path),
+         abs_src = Path.join([base, "companies", company, task_rel_path]),
+         :ok <- ensure_regular_file(abs_src),
+         {:ok, filename, task_id} <- parse_task_filename(task_rel_path),
+         history_dir =
+           Path.join([base, "companies", company, "projects", project, "history", "tasks"]),
+         :ok <- ensure_no_symlink_directory(history_dir),
+         :ok <- File.mkdir_p(history_dir),
+         history_md = Path.join(history_dir, filename),
+         :ok <- ensure_regular_file_or_absent(history_md),
+         :ok <- File.rename(abs_src, history_md) do
+      attachments_moved =
+        maybe_move_attachments(base, company, project, task_id)
+
+      dest_rel = "projects/#{project}/history/tasks/#{filename}"
+
+      :ok =
+        emit_archive_audit(
+          audit,
+          company,
+          task_rel_path,
+          dest_rel,
+          attachments_moved,
+          actor
+        )
+
+      {:ok, %{dest_rel_path: dest_rel, attachments_moved: attachments_moved}}
+    end
+  end
+
+  defp parse_task_filename(rel_path) do
+    case Path.split(rel_path) do
+      ["projects", _project, "tasks", filename] ->
+        {:ok, filename, String.replace_suffix(filename, ".md", "")}
+
+      _ ->
+        {:error, {:invalid_task_rel_path, rel_path}}
+    end
+  end
+
+  # threatmodel M18: refuse to recurse into symlinked directories.
+  defp ensure_no_symlink_directory(dir) do
+    Enum.reduce_while(Path.split(dir), "", fn seg, acc ->
+      next = if acc == "", do: seg, else: Path.join(acc, seg)
+
+      case File.lstat(next) do
+        {:ok, %File.Stat{type: :directory}} -> {:cont, next}
+        {:ok, %File.Stat{type: :symlink}} -> {:halt, {:error, :symlink_in_path}}
+        {:ok, %File.Stat{}} -> {:halt, {:error, :not_a_directory}}
+        {:error, :enoent} -> {:halt, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      :ok -> :ok
+      {:error, _} = err -> err
+      path when is_binary(path) -> :ok
+    end
+  end
+
+  defp ensure_regular_file_or_absent(path) do
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> :ok
+      {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
+      {:error, {:stat_failed, reason}} -> {:error, reason}
+    end
+  end
+
+  defp maybe_move_attachments(base, company, project, task_id) do
+    src =
+      Path.join([base, "companies", company, "projects", project, "attachments", task_id])
+
+    dst =
+      Path.join([
+        base,
+        "companies",
+        company,
+        "projects",
+        project,
+        "history",
+        "attachments",
+        task_id
+      ])
+
+    cond do
+      not File.dir?(src) ->
+        false
+
+      match?({:error, _}, ensure_no_symlink_directory(Path.dirname(dst))) ->
+        false
+
+      true ->
+        :ok = File.mkdir_p(Path.dirname(dst))
+
+        case File.rename(src, dst) do
+          :ok -> true
+          _ -> false
+        end
+    end
+  end
+
+  defp emit_archive_audit(audit, company, task_rel_path, dest_rel, moved, actor) do
+    entry = %{
+      actor: actor,
+      action: "task.delete",
+      target: task_rel_path,
+      company: company,
+      dest: dest_rel,
+      attachments_moved: to_string(moved)
+    }
+
+    append_audit(audit, company, entry)
   end
 
   @doc """

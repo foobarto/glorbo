@@ -2387,3 +2387,87 @@ Extract `do_notify_assignee/5`'s inbox-file write into
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-5b — KanbanLive history archive (GEP-36 ratchet)
+
+Round M-3 CI green (run 24909003093 → success). Continuing
+the KanbanLive split.
+
+### Task picked
+
+Extract `delete_task_file/3` + `move_attachments_dir/2` +
+their symlink-guard helpers from KanbanLive into
+`Glorbo.Actions.Tasks.archive_to_history/3`.
+
+### What shipped
+
+- `lib/glorbo/actions/tasks.ex` — added
+  `archive_to_history(company, task_rel_path, opts)`:
+  - Moves `projects/<p>/tasks/<id>.md` →
+    `projects/<p>/history/tasks/<id>.md` (preserves id —
+    distinct from `trash/3` which timestamps).
+  - Also moves
+    `projects/<p>/attachments/<id>/` →
+    `projects/<p>/history/attachments/<id>/` if one exists;
+    returns `attachments_moved: true | false`.
+  - Threatmodel M18 guard: refuses any symlinked segment on
+    the `history/` path.
+  - Emits `task.delete` audit (pre-migration label kept for
+    downstream consumer compatibility) with `dest:` and
+    `attachments_moved:` details.
+- `lib/glorbo_web/live/kanban_live.ex`:
+  - `handle_event("delete_task", ...)` now a thin dispatch
+    to `Actions.Tasks.archive_to_history/3`.
+  - Removed ~115 lines: `delete_task_file/3`,
+    `emit_task_delete_audit/2`, `move_attachments_dir/2`,
+    `ensure_no_symlink_directory/1`,
+    `ensure_regular_file_or_absent/1`.
+- `test/glorbo/actions/tasks_test.exs` — added 5 tests under
+  `describe "archive_to_history/3"`:
+  - happy-path move + task.delete audit + empty attachments.
+  - attachments dir moved when present + flag flips to true.
+  - symlink-in-ancestor refusal — source file preserved, no
+    audit.
+  - invalid rel_path shape rejection.
+  - missing source → ensure_regular_file's :enoent error.
+
+### Design calls I made without you
+
+- **`archive_to_history` is a separate function from
+  `trash`.** Same-ish filesystem pattern but different
+  destination (history/tasks vs history/deleted), different
+  audit action (task.delete vs task.trash), different
+  filename convention (preserves id vs timestamps). Two
+  operations, two functions.
+- **Audit action stays `task.delete`.** Pre-migration KanbanLive
+  emitted `task.delete` from this code path. Downstream
+  audit readers (AuditLive filter chips, metrics dashboards)
+  key on that label. Changing to `task.archive` would be a
+  silent contract break — not worth it for a name nuance.
+- **`attachments_moved` is a String audit detail.** Put through
+  `to_string/1` to fit the "string-keyed detail"
+  convention even for booleans. Future consumers that need
+  typed access can parse back.
+- **Threatmodel M18 helper moved to Actions.Tasks private.**
+  `ensure_no_symlink_directory/1` is only called from
+  `archive_to_history/3`; keeping it private avoids
+  polluting the public API.
+
+### Gates
+
+- `mix test test/glorbo/actions/tasks_test.exs` — 21 passing
+  (16 old + 5 new).
+- `mix test test/glorbo_web/live/kanban_live_test.exs` — 43
+  passing (no regressions).
+- `mix credo --strict` — 0 issues.
+- `mix precommit` — 2034 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- KanbanLive stays on Credo allowlist pending M-5c
+  (attachment-upload extraction).
+- Actions.Support extraction — still deferred.
+
+### Commit(s)
+
+One commit to follow.
