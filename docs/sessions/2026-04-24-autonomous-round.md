@@ -2558,3 +2558,142 @@ ops (mkdir + `File.cp!`) into
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-6 — AgentLive migration (GEP-36 ratchet closes)
+
+Rounds M-5a and M-5c CI both green (runs 24909406986,
+24909787125). Last LiveView standing.
+
+### Task picked
+
+Migrate AgentLive's four write sites into
+`Glorbo.Actions.Agents`:
+
+1. `handle_event("create_file", ...)` — create empty file
+   in agent dir.
+2. `soft_delete/2` — trash workspace file into
+   `history/deleted/<ts>-<name>`.
+3. `write_workspace_file/3` — overwrite existing file.
+4. `do_retire/3` — move entire agent dir to
+   `agents/.archive/<slug>-<ts>/`.
+
+### What shipped
+
+- `lib/glorbo/actions/agents.ex` — new module with four
+  public functions:
+  - `create_workspace_file/4` — mkdir_p + empty-file write,
+    refuses overwrite, refuses contract files, refuses
+    symlinked paths.
+  - `write_workspace_file/5` — content overwrite of an
+    existing file. Same H9/H10 guards as create.
+  - `trash_workspace_file/4` — soft-delete into the agent's
+    own `history/deleted/<ts>-<basename>`.
+  - `retire/3` — rename whole agent dir to
+    `.archive/<slug>-<ts>`. ISO-8601 timestamp with `:` and
+    `.` normalized to `-` for filename safety.
+  - All four emit namespaced audit actions: `agent.file_create`,
+    `agent.file_write`, `agent.file_trash`, `agent.retire`.
+- `lib/glorbo_web/live/agent_live.ex`:
+  - All four handlers swapped to Actions delegates.
+  - Removed `refuse_contract_write/1` (moved to Actions).
+  - Kept `resolve_workspace_path/2` + `ensure_no_symlink_on_path/2`
+    because `read_workspace_file/2` is a read path and
+    Credo's ratchet doesn't cover reads. Comment updated to
+    point at Actions for the write-side H9/H10
+    enforcement.
+- `.credo.exs` — **allowlist is now empty**. The GEP-36
+  ratchet is closed. Every raw File.* write in
+  `lib/glorbo_web/live/` will fail Credo going forward.
+- `test/glorbo/actions/agents_test.exs` — 12 tests covering:
+  - Happy-path create + audit. Refusal of overwrite,
+    contract files (AGENT.md + stdout.log), path traversal,
+    planted symlinks.
+  - Happy-path write + audit. Refusal of contract-file
+    overwrite.
+  - Happy-path trash + audit + dest path shape. :not_found
+    on missing file.
+  - Happy-path retire + audit + dest path shape. :not_found
+    + invalid-slug rejection.
+
+### Design calls I made without you
+
+- **Single module for all four operations.** Could have
+  split into `Actions.AgentWorkspace` (for files) +
+  `Actions.Agents` (for retire) but the two are joined at
+  the hip — both operate on the agent-dir subtree with the
+  same H9/H10 guards. One module reads more naturally.
+- **`resolve_workspace_path` intentionally duplicated.**
+  AgentLive's read path still needs the prefix + expand
+  dance; Actions.Agents re-implements the same logic
+  privately. Two ~10-line copies is cheaper than exporting
+  a public path-resolver + coupling the read + write
+  layers.
+- **Namespaced audit actions (`agent.*`).** Pre-migration
+  none of these sites emitted audit entries. Chose
+  `agent.file_create` / `agent.file_write` /
+  `agent.file_trash` / `agent.retire` to mirror the
+  `task.*` / `channel.*` / `project.*` / `company.*`
+  convention across the other Actions modules. A future
+  audit-timeline view can group by action prefix cleanly.
+- **Actions.Support extraction still deferred.** 6 modules
+  now share the routing helpers — every post-M migration
+  has preserved the pattern. That post-M-6 refactor round
+  is now ready; I'll pick it up as the next round.
+
+### Gates
+
+- `mix test test/glorbo/actions/agents_test.exs` — 12
+  passing.
+- `mix test test/glorbo_web/live/agent_live_test.exs` — 32
+  passing (no regressions).
+- `mix credo --strict` — 5031 mods/funs, 0 issues
+  (with **empty** allowlist).
+- `mix precommit` — 2052 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- Browser UAT — no.
+
+### Commit(s)
+
+One commit to follow.
+
+## GEP-36 ratchet — closing statement
+
+Round M — in six sub-rounds (M-1, M-2, M-3, M-4, M-5a,
+M-5b, M-5c, M-6) — migrated every raw File.* mutation in
+`lib/glorbo_web/live/` into the corresponding
+`Glorbo.Actions.*` module:
+
+| LiveView      | Actions module          | Functions extracted |
+|---------------|-------------------------|---------------------|
+| CompanyLive   | Actions.Companies       | `update/3`          |
+| ProjectLive   | Actions.Projects        | `ensure_stub/3`, `update/4` |
+| AuditLive     | Actions.Audit           | `scaffold_from_entry/3` |
+| ChannelLive   | Actions.Channels        | `create/3`, `archive/3` |
+| KanbanLive    | Actions.Inbox / Actions.Tasks / Actions.Attachments | `deliver_task_assignment/6`, `archive_to_history/3`, `ingest/6` |
+| AgentLive     | Actions.Agents          | `create_workspace_file/4`, `write_workspace_file/5`, `trash_workspace_file/4`, `retire/3` |
+
+The ratchet allowlist closed to empty. Every new Action
+function now:
+
+  1. validates slugs against a shared `@slug_re`
+  2. enforces module-specific symlink / contract-file /
+     archivable guards
+  3. writes atomically where the pattern calls for it
+  4. emits a namespaced audit entry before returning
+  5. routes audit via the common append_audit/safe_append_for
+     helpers
+
+The audit-routing boilerplate is duplicated across six
+modules (Tasks, Companies, Projects, Audit, Channels, Inbox,
+Attachments, Agents — eight if you count Tasks' and
+Attachments' light extras). Time to consolidate it —
+queued as the next round (post-M refactor: extract
+`Glorbo.Actions.Support`).
+
+Phase-2 work (deferred throughout M):
+  * GEP-41 router-triggered reviewer dispatch, severity
+    auto-flip, Kanban awaiting-peer-review column.
+  * GEP-42 CEO retrospectives, GEP-43 Provenance-Auditor
+    auto-gate (phase-2 research GEPs).

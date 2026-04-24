@@ -357,19 +357,21 @@ defmodule GlorboWeb.AgentLive do
   # Task #143 — create an empty file under the agent dir and open the
   # editor on it. Refuses to overwrite an existing file.
   def handle_event("create_file", %{"path" => rel}, socket) do
-    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
-         :ok <- refuse_contract_write(rel),
-         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)),
-         false <- File.exists?(abs_path),
-         :ok <- File.mkdir_p(Path.dirname(abs_path)),
-         :ok <- File.write(abs_path, "") do
-      {:noreply,
-       socket
-       |> assign(:detail, refresh_files(socket))
-       |> assign(:open_file, %{rel: rel, content: "", error: nil})
-       |> put_flash(:info, "Created #{rel}.")}
-    else
-      true ->
+    case Glorbo.Actions.Agents.create_workspace_file(
+           socket.assigns.company_slug,
+           socket.assigns.agent_slug,
+           rel,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:detail, refresh_files(socket))
+         |> assign(:open_file, %{rel: rel, content: "", error: nil})
+         |> put_flash(:info, "Created #{rel}.")}
+
+      {:error, :already_exists} ->
         {:noreply, put_flash(socket, :error, "File already exists.")}
 
       {:error, :invalid_path} ->
@@ -498,17 +500,15 @@ defmodule GlorboWeb.AgentLive do
   defp validate_heartbeat(_), do: {:error, "not a string"}
 
   defp soft_delete(socket, rel) do
-    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
-         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)),
-         true <- File.exists?(abs_path) do
-      ts = System.system_time(:millisecond)
-      trash_dir = Path.join([agent_dir(socket), "history", "deleted"])
-      File.mkdir_p!(trash_dir)
-      dst = Path.join(trash_dir, "#{ts}-#{Path.basename(rel)}")
-      File.rename(abs_path, dst)
-    else
-      false -> {:error, :not_found}
-      err -> err
+    case Glorbo.Actions.Agents.trash_workspace_file(
+           socket.assigns.company_slug,
+           socket.assigns.agent_slug,
+           rel,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
     end
   end
 
@@ -547,28 +547,23 @@ defmodule GlorboWeb.AgentLive do
   end
 
   defp write_workspace_file(socket, rel, content) do
-    with {:ok, abs_path} <- resolve_workspace_path(socket, rel),
-         :ok <- refuse_contract_write(rel),
-         :ok <- ensure_no_symlink_on_path(abs_path, agent_dir(socket)) do
-      File.write(abs_path, content)
+    case Glorbo.Actions.Agents.write_workspace_file(
+           socket.assigns.company_slug,
+           socket.assigns.agent_slug,
+           rel,
+           content,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
     end
   end
 
-  # threatmodel H9: AGENT.md is the agent's permission + network
-  # contract. The typed config editor (`save_config`) is the only
-  # sanctioned write path; the generic open/save/create flow must
-  # refuse to touch it so a dashboard user (or a network-enabled
-  # agent reaching a token-less LAN endpoint) can't self-escalate
-  # by rewriting permissions directly. `stdout.log` stays refused
-  # as runtime state — matches the existing delete-refuse list.
-  # SOUL.md / HEARTBEAT.md remain editable through the generic
-  # editor because they have no escalation surface.
-  @contract_files ~w(AGENT.md stdout.log)
-  defp refuse_contract_write(rel) do
-    if Path.basename(rel) in @contract_files,
-      do: {:error, :contract_file},
-      else: :ok
-  end
+  # threatmodel H9/H10 enforcement (contract-file refusal + symlink
+  # guard) now lives in Glorbo.Actions.Agents; the read path below
+  # keeps a local copy of the symlink walker because read-only
+  # access isn't flagged by the ratchet and Actions is write-only.
 
   # threatmodel H10: resolve_workspace_path only compares strings;
   # an attacker-planted symlink *under* the agent dir would pass the
@@ -680,18 +675,16 @@ defmodule GlorboWeb.AgentLive do
         pid -> Glorbo.Agent.Server.stop_inflight(pid)
       end
 
-    src = agent_dir(socket)
-    ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(~r/[:.]/, "-")
-    archive_root = Path.join([base_dir(), "companies", company, "agents", ".archive"])
-    dst = Path.join(archive_root, "#{slug}-#{ts}")
+    case Glorbo.Actions.Agents.retire(company, slug,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, %{archive_rel_path: archive_rel}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Retired #{slug}. Moved to #{archive_rel}.")
+         |> push_navigate(to: ~p"/companies/#{company}")}
 
-    with :ok <- File.mkdir_p(archive_root),
-         :ok <- File.rename(src, dst) do
-      {:noreply,
-       socket
-       |> put_flash(:info, "Retired #{slug}. Moved to agents/.archive/#{Path.basename(dst)}/.")
-       |> push_navigate(to: ~p"/companies/#{company}")}
-    else
       {:error, reason} ->
         require Logger
 
