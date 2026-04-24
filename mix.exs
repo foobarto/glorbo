@@ -33,7 +33,12 @@ defmodule Glorbo.MixProject do
   end
 
   # Specifies which paths to compile per environment.
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # `lib_dev/` holds custom Credo checks that depend on the Credo
+  # library — only available in :dev/:test. Keeping those out of
+  # `lib/` is what lets prod cross-builds (macOS / aarch64) succeed
+  # without pulling Credo as a runtime dep.
+  defp elixirc_paths(:test), do: ["lib", "lib_dev", "test/support"]
+  defp elixirc_paths(:dev), do: ["lib", "lib_dev"]
   defp elixirc_paths(_), do: ["lib"]
 
   # Specifies your project dependencies.

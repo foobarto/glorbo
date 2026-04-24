@@ -498,16 +498,22 @@ defmodule Glorbo.TaskDefinition do
           |> Enum.reject(fn {_, v} -> v in [nil, ""] end)
           |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{yaml_scalar(v)}" end)
 
-        # GEP-40 — preserve structured keys from original frontmatter
-        # that this function can't re-emit as scalars. `handoff_chain:`
-        # is the primary case; Router owns the authoritative append
-        # path via `Glorbo.Actions.Tasks.assign/4`, and
-        # `write_frontmatter/2` callers (kanban new-task form,
-        # Agent.Server acceptance ack, etc.) must not drop the chain
-        # when mutating an unrelated scalar field.
+        # GEP-40 — structured keys (currently just `handoff_chain:`)
+        # are either preserved verbatim from `old_fm` or re-emitted
+        # from a list value in `updates`. The re-emit path is what
+        # `Glorbo.Actions.Tasks.reassign/4` uses to append a new
+        # chain entry; scalar-only callers (KanbanLive save form,
+        # Agent.Server ack) pass no `handoff_chain` key and get the
+        # preservation path — so the chain survives unrelated
+        # mutations.
         preserved =
           @structured_keys
-          |> Enum.map(&extract_block(old_fm, &1))
+          |> Enum.map(fn key ->
+            case lookup_key(updates, key) do
+              list when is_list(list) -> emit_structured(key, list)
+              _ -> extract_block(old_fm, key)
+            end
+          end)
           |> Enum.reject(&(&1 == ""))
           |> Enum.join()
 
@@ -553,6 +559,47 @@ defmodule Glorbo.TaskDefinition do
       %{"block" => block} when is_binary(block) -> block
       _ -> ""
     end
+  end
+
+  # Canonical-form serializer for list-of-maps structured keys. Only
+  # `handoff_chain:` uses this path today; the item shape is
+  # `%{"from" => _, "to" => _, "reason" => _, "ts" => _}` — keys
+  # alphabetized per Formatter's canonical order, values run through
+  # `FrontmatterWriter.yaml_scalar/1` so string escapes match the
+  # rest of the frontmatter.
+  defp emit_structured(_key, []), do: ""
+
+  defp emit_structured(key, list) when is_list(list) do
+    items =
+      Enum.map_join(list, "\n", fn item ->
+        map =
+          Map.new(item, fn
+            {k, v} when is_atom(k) -> {Atom.to_string(k), v}
+            {k, v} -> {to_string(k), v}
+          end)
+
+        pairs = Enum.sort_by(map, fn {k, _} -> k end)
+
+        case pairs do
+          [] ->
+            "  - {}"
+
+          [{first_k, first_v} | rest] ->
+            first_line = "  - #{first_k}: #{yaml_scalar(first_v)}"
+
+            rest_lines =
+              Enum.map_join(rest, "\n", fn {k, v} ->
+                "    #{k}: #{yaml_scalar(v)}"
+              end)
+
+            case rest_lines do
+              "" -> first_line
+              lines -> first_line <> "\n" <> lines
+            end
+        end
+      end)
+
+    "#{key}:\n#{items}\n"
   end
 
   defp atomic_write(file_path, new_content) do

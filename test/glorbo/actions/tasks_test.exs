@@ -118,4 +118,136 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # reassign/4 (Round G — GEP-40)
+  # ---------------------------------------------------------------------------
+
+  describe "reassign/4" do
+    setup %{tasks_dir: tasks_dir} do
+      src = Path.join(tasks_dir, "demo-01.md")
+
+      File.write!(src, """
+      ---
+      kind: task/v1
+      id: demo-01
+      title: initial task
+      status: todo
+      assigned_to: engineer
+      priority: high
+      ---
+      body
+      """)
+
+      {:ok, src: src}
+    end
+
+    test "flips assigned_to and appends a handoff_chain entry", %{
+      base: base,
+      audit: audit,
+      src: src
+    } do
+      assert {:ok,
+              %{
+                from: "engineer",
+                to: "researcher",
+                handoff_chain_len: 1
+              }} =
+               Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "researcher",
+                 actor: "engineer",
+                 reason: "need a literature review",
+                 base: base,
+                 audit: audit
+               )
+
+      content = File.read!(src)
+      assert content =~ ~r/^assigned_to: researcher$/m
+      assert content =~ ~r/^handoff_chain:\n/m
+      assert content =~ ~r/^  - from: engineer$/m
+      assert content =~ ~r/^    to: researcher$/m
+
+      assert content =~ ~r/^    reason: "need a literature review"$/m
+
+      # title + priority survive the rewrite (title re-emitted
+      # via yaml_scalar so the space forces quotes).
+      assert content =~ ~s(title: "initial task")
+      assert content =~ "priority: high"
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "task.reassign"
+      assert event[:actor] == "engineer"
+      assert event[:from] == "engineer"
+      assert event[:to] == "researcher"
+      assert event[:target] == "projects/demo/tasks/demo-01.md"
+    end
+
+    test "subsequent reassigns append rather than replace chain", %{
+      base: base,
+      audit: audit
+    } do
+      {:ok, _} =
+        Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "researcher",
+          actor: "engineer",
+          reason: "plan first",
+          base: base,
+          audit: audit
+        )
+
+      {:ok, %{handoff_chain_len: 2}} =
+        Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "engineer",
+          actor: "researcher",
+          reason: "plan done, implement",
+          base: base,
+          audit: audit
+        )
+
+      {:ok, task} =
+        Glorbo.TaskDefinition.parse_file(
+          Path.join([base, "companies", "acme", "projects", "demo", "tasks", "demo-01.md"]),
+          base: base,
+          company: "acme"
+        )
+
+      assert length(task.handoff_chain) == 2
+      assert Enum.at(task.handoff_chain, 0)[:to] == "researcher"
+      assert Enum.at(task.handoff_chain, 1)[:to] == "engineer"
+      assert task.assigned_to == "engineer"
+    end
+
+    test "rejects a no-op reassignment to the same assignee", %{base: base, audit: audit} do
+      assert {:error, :noop} =
+               Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "engineer",
+                 actor: "engineer",
+                 reason: "whatever",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects invalid to_agent slug", %{base: base, audit: audit} do
+      assert {:error, {:invalid_slug, :agent, "../evil"}} =
+               Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "../evil",
+                 actor: "engineer",
+                 reason: "x",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects empty reason", %{base: base, audit: audit} do
+      assert {:error, :invalid_reason} =
+               Tasks.reassign("acme", "projects/demo/tasks/demo-01.md", "researcher",
+                 actor: "engineer",
+                 reason: "",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+  end
 end

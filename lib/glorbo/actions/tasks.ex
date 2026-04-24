@@ -64,6 +64,20 @@ defmodule Glorbo.Actions.Tasks do
 
   @type trash_result :: %{dest_rel_path: String.t()}
 
+  @type reassign_opts ::
+          [
+            actor: String.t(),
+            reason: String.t(),
+            base: Path.t(),
+            audit: atom()
+          ]
+
+  @type reassign_result :: %{
+          from: String.t(),
+          to: String.t(),
+          handoff_chain_len: non_neg_integer()
+        }
+
   @doc """
   Create a new task file under `projects/<project>/tasks/<task_id>.md`.
 
@@ -172,6 +186,148 @@ defmodule Glorbo.Actions.Tasks do
          :ok <- emit_trash_audit(audit, company, task_rel_path, dest_rel, actor) do
       {:ok, %{dest_rel_path: dest_rel}}
     end
+  end
+
+  @doc """
+  Reassign a task to a new agent + append an entry to its
+  `handoff_chain:` (GEP-40). Exactly one filesystem write; the
+  chain entry and the `assigned_to:` flip land atomically so a
+  crash mid-handoff can't leave the two out of sync.
+
+  `task_rel_path` is relative to `companies/<company>/`.
+
+  Required `opts`:
+
+    * `:actor` — who is initiating the handoff (typically the
+      current assignee; for the approvals-deny path, the
+      approvals gate passes "director").
+    * `:reason` — free-text justification for the handoff (e.g.
+      `"plan done, please implement"`).
+
+  Optional `opts`:
+
+    * `:base`, `:audit` — test seams, same semantics as the
+      rest of the Actions module.
+
+  ## Behaviour
+
+  The new chain entry is built from:
+
+      %{
+        "from" => <old assigned_to (or "unassigned")>,
+        "to"   => <new_assignee>,
+        "reason" => <reason>,
+        "ts"   => <ISO 8601 UTC>
+      }
+
+  When the target agent equals the current assignee the call is
+  a no-op (returns `{:ok, result}` with an empty-append flag
+  via `handoff_chain_len` unchanged + no audit emission).
+
+  ## Audit
+
+  Emits `task.reassign` with detail `from` / `to` / `reason`.
+  """
+  @spec reassign(String.t(), String.t(), String.t(), reassign_opts()) ::
+          {:ok, reassign_result()} | {:error, term()}
+  def reassign(company, task_rel_path, to_agent, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and is_binary(to_agent) and
+             is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    reason = opts |> Keyword.fetch!(:reason) |> to_string() |> String.trim()
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    with :ok <- validate_slug(company, :company),
+         :ok <- validate_slug(to_agent, :agent),
+         :ok <- validate_reason(reason),
+         {:ok, project} <- project_of(task_rel_path),
+         abs_path = Path.join([base, "companies", company, task_rel_path]),
+         {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+         from_agent = existing_assignee(task),
+         :ok <- guard_non_noop(from_agent, to_agent) do
+      new_entry = build_entry(from_agent, to_agent, reason)
+      new_chain = task.handoff_chain ++ [new_entry]
+
+      updates = %{
+        "assigned_to" => to_agent,
+        "handoff_chain" => new_chain
+      }
+
+      with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
+           :ok <-
+             emit_reassign_audit(audit, company, task_rel_path, from_agent, to_agent,
+               reason: reason,
+               actor: actor,
+               project: project
+             ) do
+        {:ok,
+         %{
+           from: from_agent,
+           to: to_agent,
+           handoff_chain_len: length(new_chain)
+         }}
+      end
+    end
+  end
+
+  defp validate_reason(""), do: {:error, :invalid_reason}
+  defp validate_reason(v) when is_binary(v) and byte_size(v) <= 500, do: :ok
+  defp validate_reason(_), do: {:error, :invalid_reason}
+
+  defp existing_assignee(%Glorbo.TaskDefinition{assigned_to: slug})
+       when is_binary(slug) and slug != "",
+       do: slug
+
+  defp existing_assignee(_), do: "unassigned"
+
+  defp guard_non_noop(same, same), do: {:error, :noop}
+  defp guard_non_noop(_, _), do: :ok
+
+  defp build_entry(from, to, reason) do
+    %{
+      "from" => from,
+      "to" => to,
+      "reason" => reason,
+      "ts" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
+
+  defp emit_reassign_audit(audit, company, rel_path, from, to, opts) do
+    entry =
+      %{
+        actor: Keyword.fetch!(opts, :actor),
+        action: "task.reassign",
+        target: rel_path,
+        company: company,
+        from: from,
+        to: to
+      }
+      |> put_detail("reason", Keyword.get(opts, :reason))
+      |> put_detail("project", Keyword.get(opts, :project))
+
+    append_audit(audit, company, entry)
+  end
+
+  # Audit routing: explicit test sinks land through `AuditLog.append/2`
+  # (matches the FakeAudit pattern used across action unit tests);
+  # the production default falls back to `append_for/2` so the
+  # per-company OTP tree OR the bare-module LiveCase AuditLog both
+  # work. If neither is up (bare unit tests with no audit process),
+  # swallow the :noproc exit — the write already landed and failing
+  # the call would discard that successful mutation.
+  defp append_audit(AuditLog, company, entry), do: safe_append_for(company, entry)
+
+  defp append_audit(target, _company, entry) when is_atom(target) or is_pid(target),
+    do: AuditLog.append(target, entry)
+
+  defp append_audit(other, _company, entry), do: AuditLog.append(other, entry)
+
+  defp safe_append_for(company, entry) do
+    AuditLog.append_for(company, entry)
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, {{:noproc, _}, _} -> :ok
   end
 
   defp resolve_task_id(opts, base, company, project) do

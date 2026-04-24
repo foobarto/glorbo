@@ -600,7 +600,7 @@ defmodule Glorbo.Agent.Server do
                task_id: task_id
              ) do
           :ok ->
-            apply_task_actions(abs_task, actions)
+            apply_task_actions(state, abs_task, task_id, actions)
             :ok
 
           {:error, reason} ->
@@ -654,7 +654,7 @@ defmodule Glorbo.Agent.Server do
     |> Enum.map(fn [key, val] -> {key, val} end)
   end
 
-  defp apply_task_actions(_abs, []), do: :ok
+  defp apply_task_actions(_state, _abs, _task_id, []), do: :ok
 
   # threatmodel H8: the reply ACTIONS block bypasses ACL/approval
   # gates — it writes straight to the task's frontmatter. Statuses
@@ -664,14 +664,17 @@ defmodule Glorbo.Agent.Server do
   # (progress/blocked/done) and validate the assignee slug.
   @agent_settable_statuses ~w(todo in_progress in-progress blocked done)
 
-  defp apply_task_actions(abs, actions) do
-    updates =
-      Enum.reduce(actions, %{}, fn
-        {"reassign_to", slug}, acc ->
-          if Glorbo.Slug.valid?(slug),
-            do: Map.put(acc, "assigned_to", slug),
-            else: acc
+  defp apply_task_actions(state, abs, task_id, actions) do
+    # Reassigns route through `Glorbo.Actions.Tasks.reassign/4` so
+    # the handoff_chain append + assigned_to flip + audit happen
+    # atomically (GEP-40 Round G). Status flips still go through
+    # write_frontmatter directly — they don't affect ownership.
+    for {"reassign_to", slug} <- actions, Glorbo.Slug.valid?(slug) do
+      apply_reassign(state, abs, task_id, slug)
+    end
 
+    status_updates =
+      Enum.reduce(actions, %{}, fn
         {"status", status}, acc ->
           if status in @agent_settable_statuses,
             do: Map.put(acc, "status", status),
@@ -681,39 +684,60 @@ defmodule Glorbo.Agent.Server do
           acc
       end)
 
-    if updates == %{} do
+    if status_updates == %{} do
       :ok
     else
-      # TaskDefinition.write_frontmatter replaces the whole frontmatter
-      # with whatever map it receives — keys it knows about, wiping the
-      # rest. Merge the updates into the existing frontmatter first so
-      # title/priority/severity/requires_approval survive a partial
-      # mutation (regression: UAT 2026-04-20 test II-6 caught this).
-      existing = read_existing_frontmatter(abs)
-      merged = Map.merge(existing, updates)
-
-      case Glorbo.TaskDefinition.write_frontmatter(abs, merged) do
+      case Glorbo.TaskDefinition.write_frontmatter(abs, status_updates) do
         :ok ->
           :ok
 
         {:error, reason} ->
           require Logger
-          Logger.warning("task action apply failed: #{inspect(reason)}")
+          Logger.warning("task status apply failed: #{inspect(reason)}")
           :ok
       end
     end
   end
 
-  defp read_existing_frontmatter(abs) do
-    with {:ok, content} <- File.read(abs),
-         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
-      meta
-      |> Map.new(fn
-        {k, v} when is_atom(k) -> {Atom.to_string(k), v}
-        {k, v} -> {k, v}
-      end)
-    else
-      _ -> %{}
+  defp apply_reassign(state, abs, task_id, slug) do
+    case rel_path_of(state, abs) do
+      {:ok, rel_path} ->
+        reason = "agent directive — #{state.spec.slug} → #{slug}"
+
+        case Glorbo.Actions.Tasks.reassign(state.spec.company, rel_path, slug,
+               actor: state.spec.slug,
+               reason: reason,
+               base: state.base
+             ) do
+          {:ok, _} ->
+            :ok
+
+          {:error, :noop} ->
+            :ok
+
+          {:error, reason} ->
+            require Logger
+
+            Logger.warning("task reassign failed for #{task_id} → #{slug}: #{inspect(reason)}")
+
+            :ok
+        end
+
+      :error ->
+        require Logger
+
+        Logger.warning("task reassign failed: cannot derive rel_path for #{task_id} at #{abs}")
+
+        :ok
+    end
+  end
+
+  defp rel_path_of(state, abs) do
+    prefix = Path.join([state.base, "companies", state.spec.company]) <> "/"
+
+    case String.split(abs, prefix, parts: 2) do
+      [_, rest] -> {:ok, rest}
+      _ -> :error
     end
   end
 
