@@ -224,6 +224,25 @@ no exceptions:
    Burrito binaries + Homebrew tap formula regen. See
    `docs/releasing.md`.
 
+## The crown jewels — non-negotiable quality axes
+
+Per the maintainer (2026-04-24): the four things that have to
+be top-notch, above all else:
+
+1. **Inter-agent interaction** — handoffs, collaboration,
+   knowing when to call another agent vs. do it yourself.
+2. **Director interaction** — when to escalate, how much to
+   bother the human, what earns their attention.
+3. **Deliverable quality** — the artifact has to be usably
+   good, not hand-wavy "done."
+4. **Anti-failure modes** — no slop (vague output), no junk
+   (superficially complete but wrong), no stuck (silent
+   looping, lost tasks).
+
+Web/shell surface flaws can be forgiven. Crown jewels
+cannot. Research + ranked intervention list at
+[`docs/research/crown-jewels.md`](research/crown-jewels.md).
+
 ## Design aesthetic
 
 - **Simplicity over cleverness.** Three-hundred lines of

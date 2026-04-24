@@ -113,6 +113,7 @@ this file intentionally doesn't carry:
 | Browser UAT checklist | `docs/testing/uat.md` |
 | End-user manual test plan | `docs/testing/testplan.md` |
 | Rolling punch list | `docs/todo.md` |
+| Research / planning (crown-jewels, etc.) | `docs/research/` |
 | Release mechanics (tag, sign, tap) | `docs/releasing.md` |
 | Release verification (cosign) | `docs/verifying-releases.md` |
 | Detailed runtime log — session notes | `docs/sessions/` |

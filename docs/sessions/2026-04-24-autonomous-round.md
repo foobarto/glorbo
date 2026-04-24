@@ -1265,6 +1265,68 @@ this audit entry. Not applied. Say "apply to all six" and
 I'll propagate; say "adjust X" and I'll iterate on the
 engineer sample first.
 
+## 2026-04-24 later 4 — crown-jewels research session
+
+User redirected mid-template-propagation: "do a deep
+research, thinking and planning session on your own on what
+will be needed to achieve that main goal of crown jewels /
+north star ... grill me once you have some solid research at
+very least done."
+
+**What I paused:** Propagation of cairn-style additions to
+the remaining 5 AGENT.md templates (ceo, editor, researcher,
+critiqueops, provenance-auditor). Engineer template (already
+committed in `fe658ee`) stands as reference impl.
+
+**What I shipped:**
+
+- `docs/research/crown-jewels.md` — research & planning doc
+  covering infrastructure inventory (10 dimensions summarised
+  from sub-agent deep scan), 10 quality dimensions for
+  multi-agent systems, external reference patterns (AutoGen /
+  LangGraph / Swarm / CrewAI / MetaGPT / Reflexion /
+  plan-and-execute), gap analysis (Glorbo now vs
+  state-of-the-art), ranked interventions (5 top-tier,
+  4 second-tier, 5 third-tier, 4 anti-patterns-to-avoid), and
+  8 open questions for maintainer steering.
+- `docs/project-profile.md` — new "The crown jewels —
+  non-negotiable quality axes" section inserted above
+  "Design aesthetic." Codifies the four non-negotiable
+  axes (inter-agent, director, deliverable quality, anti-
+  failure) as project stance. Links out to the research doc.
+- `CLAUDE.md` wiki table — new row for `docs/research/`.
+
+**Design calls made without you (in the research):**
+
+- **New `docs/research/` subdir** for planning/thinking
+  artifacts that aren't GEPs (formal decisions) or session
+  logs (operational narrative). Research docs live here;
+  CLAUDE.md wiki-indexed.
+- **Tier 1 interventions chosen:** `done_when:` field,
+  Provenance-Auditor auto-gate, auto peer-review, chain
+  audit view, chain performance metrics. Other candidates
+  relegated to tier 2/3.
+- **Anti-patterns called out explicitly:** no centralized
+  orchestrator agent, no in-memory chain state, no
+  mandatory-review-for-every-task, no automatic hiring
+  beyond GEP-28's existing guardrail.
+- **Differentiators preserved:** kernel-enforced isolation,
+  filesystem-first, single-user-per-instance, role-templating
+  with soul/heartbeat split. These are Glorbo's edge over
+  AutoGen/LangGraph/Swarm and should not be traded away.
+
+**Key finding from inventory:** Glorbo's infrastructure is
+substantially more mature than state-of-the-art open-source
+multi-agent frameworks on security/auditability. The gaps
+are almost entirely at the **quality-verification** and
+**chain-observability** layer — not at the routing/
+lifecycle/isolation layer. This means the crown-jewels work
+is additive, not a rewrite.
+
+**Next action from the user's side:** review the 8 open
+questions at the end of `docs/research/crown-jewels.md`;
+answers will shape the initial crown-jewels GEP(s).
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
