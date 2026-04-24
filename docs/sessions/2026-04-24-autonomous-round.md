@@ -1327,6 +1327,101 @@ is additive, not a rewrite.
 questions at the end of `docs/research/crown-jewels.md`;
 answers will shape the initial crown-jewels GEP(s).
 
+## 2026-04-24 later 5 — crown-jewels pivot: GEP-40 + GEP-41 drafted
+
+Maintainer answered the 8 grilling questions and greenlit the
+priority: **pivot to crown-jewels, defer `glorbo shell`.**
+
+**Shipped this sub-round:**
+
+- `docs/geps/0040-task-chain-observability.md` — Draft. Adds
+  `done_when:`, `handoff_chain:`, `requested_by:`, `severity:`,
+  `peer_review_required:` to the `task/v1` FileSpec. New
+  LiveView at `/companies/:co/tasks/:task_id/chain`. 6
+  decision-log entries covering structured-vs-body chain
+  representation, append-only vs stack, separate
+  `requested_by:` field, free-text `done_when:`, schema drift
+  fix (severity), nested chain-view route.
+- `docs/geps/0041-agent-peer-review-gate.md` — Draft.
+  Severity-based + opt-in escalation; CritiqueOps default
+  reviewer with per-company / per-task overrides; three-way
+  verdict (approve/revise/block); Router trigger rules +
+  routing. 7 decision-log entries.
+- `docs/geps/README.md` — rows for 0040, 0041.
+- `CHANGELOG.md` — Unreleased header rewritten to reflect
+  v0.8.0 = crown-jewels phase 1 (GEP-40 + 41 + Actions
+  cleanup); GEP-37 shell deferred to v0.9.0+; Added/Changed
+  sections updated.
+- `docs/todo.md` — P3 entry for GEP-37 impl marked
+  `DEFERRED`; new entries for GEP-40 / GEP-41 / template
+  propagation as v0.8.0 scope.
+- CI fix commit `a94259c` — engineer template line-wrap
+  fix; CI now green on HEAD (monitor fired while drafting
+  GEP-41).
+
+**Answers to maintainer's Q1-Q8 (summary):**
+
+- **Q1 priority:** picked GEP-40 + GEP-41 for v0.8.0
+  (schema foundation + first real quality gate + director-
+  visible chain view). Others queued phase-2.
+- **Q2 `done_when:`:** yes, added.
+- **Q3 peer-review trigger:** severity-based +
+  `peer_review_required: true` opt-in.
+- **Q4 PA auto-gate:** deferred to phase 2; my default pick
+  (only auto-gate Director-facing outputs) captured for
+  GEP-43 when it lands.
+- **Q5 retro-log:** CEO-authored per-chain retros, captured
+  as phase-2 GEP-42.
+- **Q6 chain metrics:** two-surface proposal (overview
+  tiles cheap; chain audit view detailed per-task). Chain
+  view ships now as part of GEP-40; aggregate tiles wait
+  for phase-2.
+- **Q7 `handoff_chain:`:** structured frontmatter field,
+  append-only audit-log style (GEP-40 D2 rejected stack
+  approach with reasoning).
+- **Q8 pivot:** applied — GEP-37 deferred.
+
+**Design calls I made without you during drafting:**
+
+- **GEP-40 D2** — append-only rather than stack, with
+  explicit rationale that a stack collapses
+  engineer→researcher→engineer visits into
+  [researcher, engineer] losing trajectory.
+- **GEP-40 D3** — `requested_by:` top-level field *in
+  addition* to `handoff_chain[0].from`. Redundant-by-design
+  for O(1) access; validator can enforce consistency.
+- **GEP-40 D4** — `done_when:` free-text, not structured.
+  LLMs are the right consumer for qualitative acceptance
+  criteria.
+- **GEP-40 D6** — chain audit view as nested task-route
+  (`/tasks/:task_id/chain`), not top-level listing. No
+  "list of chains" concept separate from list of tasks.
+- **GEP-41 D3** — single reviewer per invocation, not
+  voting. Token cost + orchestration complexity vs.
+  marginal benefit at single-user scale.
+- **GEP-41 D5** — peer review runs *before* Director
+  approval when both fire (sequential, not parallel).
+  Cheaper filter first.
+- **GEP-41 D6** — `peer_review_required` is append-only
+  (true→false rejected by Router). Preserves intent.
+
+**`mix gep.validate`:** 41/41 green.
+
+**Not done this round (intentionally, queued for next):**
+
+- Template propagation to the 5 non-engineer roles.
+  Waits for the GEP-40 schema to land in practice so
+  templates ship with the new fields from day one.
+- GEP-42 / GEP-43 (retro-log / PA auto-gate) drafts. Phase
+  2, after GEP-40/41 implementation lands.
+- GEP-36 Draft expansion. Still needs to happen; this
+  session's GEP-36 frontmatter note committed earlier
+  captures the maintainer's pure-module decision but the
+  full Draft body hasn't been written yet. Queued.
+
+**Commit plan:** single commit covering the two GEP drafts,
+README, CHANGELOG, todo.md, session log. Then push.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the

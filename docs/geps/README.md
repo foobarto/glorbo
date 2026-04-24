@@ -63,6 +63,8 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0037 | [`glorbo shell` — interactive terminal session for the Director](./0037-glorbo-shell.md) | Standards     | Accepted    |
 | 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Superseded  |
 | 0039 | [Configurable TUI keybinding schemes — Emacs, Vim, VS Code](./0039-configurable-tui-keybindings.md) | Standards | Placeholder |
+| 0040 | [Task chain observability — `done_when:`, `handoff_chain:`, chain audit view](./0040-task-chain-observability.md) | Standards | Draft       |
+| 0041 | [Agent peer-review gate — severity-based + opt-in escalation](./0041-agent-peer-review-gate.md) | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

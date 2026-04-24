@@ -10,9 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-Targeting **v0.8.0**, which will ship after the `Glorbo.Actions`
-write-seam carve-out (GEP-36, absorbing GEP-38) and the first
-cut of the `glorbo shell` (GEP-37) are both implemented.
+Targeting **v0.8.0** — **crown-jewels phase 1**. Maintainer
+pivot on 2026-04-24: "pivot to crown jewels now and defer
+glorbo shell until this is done." Scope:
+
+- **GEP-40** task chain observability (`done_when:`,
+  `handoff_chain:`, `severity:` + `peer_review_required:`
+  frontmatter + chain audit view LiveView).
+- **GEP-41** agent peer-review gate (severity-based +
+  opt-in trigger, CritiqueOps as default reviewer,
+  verdict-based routing).
+- `Glorbo.Actions` write-seam carve-out (GEP-36 absorbing
+  GEP-38) rides alongside since both crown-jewel GEPs build
+  on it.
+
+**Deferred behind v0.8.0:** `glorbo shell` implementation
+(GEP-37 stays Accepted; first cut of the shell now queued
+for v0.9.0 or later). Template propagation to remaining 5
+agent roles (ceo, editor, researcher, critiqueops,
+provenance-auditor) also waits for the GEP-40 schema to
+settle — templates will carry the new fields and handoff
+discipline in one coordinated cut rather than two.
 
 ### Added
 
@@ -53,6 +71,28 @@ cut of the `glorbo shell` (GEP-37) are both implemented.
 - **GEP-39 Placeholder** — configurable TUI keybinding
   schemes (Emacs default / Vim / VS Code); implementation
   gated on demand.
+- **GEP-40 Draft** — task chain observability. Frontmatter
+  additions (`done_when:`, `handoff_chain:`, `requested_by:`,
+  `severity:`, `peer_review_required:`) plus a new chain
+  audit LiveView at `/companies/:co/tasks/:task_id/chain`.
+  First of the crown-jewels GEP arc.
+- **GEP-41 Draft** — agent peer-review gate. Severity-based
+  automatic trigger + opt-in self-request. Default reviewer
+  `critiqueops`; verdict-based routing (approve / revise /
+  block). Depends on GEP-40's schema.
+- **Engineer agent template** rewritten cairn-style
+  (commit `fe658ee`): governing principles inline, L3
+  autonomy can/cannot, anti-slop discipline, handoff
+  return-path, structured reply. Reference impl; other 5
+  roles propagate in the v0.8.0 cut.
+- **`docs/project-profile.md`** extended with "The crown
+  jewels — non-negotiable quality axes" section codifying
+  the four axes (inter-agent, director, deliverable
+  quality, anti-failure) as project stance.
+- **`docs/research/crown-jewels.md`** — research + planning
+  doc backing the GEP-40/41 arc. Infrastructure inventory,
+  quality dimensions, external reference patterns,
+  gap analysis, ranked interventions.
 
 ### Changed
 

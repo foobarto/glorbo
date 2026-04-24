@@ -87,14 +87,28 @@ it's been in CHANGELOG for a cycle.
 
 ## P3 — thinking out loud
 
-- [ ] **GEP-37 `glorbo shell` implementation.** Drafted 2026-04-24. Once
-  accepted, phased shipping: (1) carve `Glorbo.Actions` out of
-  `GlorboWeb.Actions` + extract `create_task`/`move_task`/`trash_task`/
-  `dispatch_task`/`create_project`/`create_agent`; (2) `term_ui` dep
-  added, `Glorbo.Shell.Supervisor` + EventBus + Runtime wired under
-  `glorbo shell` subcommand; (3) views in drop-in parity order
-  (chat/approvals/tasks first, then agents, audit, health,
-  skills/goals). Most of GEP-36's write-seam cleanup arrives in (1).
+- [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
+  2026-04-24. Implementation queued **behind** the crown-jewels arc
+  (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer
+  direction. Once the chain-observability + peer-review infra lands
+  as v0.8.0, shell work resumes targeting v0.9.0. Phased shipping
+  plan unchanged: (1) `Glorbo.Actions` extraction (happens as part of
+  v0.8.0 anyway); (2) `term_ui` dep + Shell supervisor + Runtime
+  wired under `glorbo shell` subcommand; (3) views in drop-in parity
+  order.
+- [ ] **GEP-40 implementation (crown-jewels phase 1a).** Task
+  chain observability schema + chain audit view LiveView. Atomic
+  cut: FileSpec schema extension + Router handoff-chain appender
+  + `TaskChainLive` + template scaffolding updates. v0.8.0 scope.
+- [ ] **GEP-41 implementation (crown-jewels phase 1b).** Peer-review
+  gate. Router trigger rules + CritiqueOps routing + verdict parser
+  + chain-view inline rendering. Depends on GEP-40. v0.8.0 scope.
+- [ ] **Agent template propagation (crown-jewels phase 1c).**
+  Propagate cairn-style additions + handoff discipline + peer-review
+  opt-in paragraph from `engineer.md` to the other 5 role templates
+  (ceo, editor, researcher, critiqueops, provenance-auditor). Uses
+  GEP-40's new frontmatter fields. Bundled with v0.8.0 so templates
+  ship with the schema that supports them.
 - [x] **Global search should include scheduled-task tags.** Shipped
   2026-04-24 (autonomous round). `Glorbo.Search.scan_tasks/2` now
   reads `schedule:` alongside `title` (same ETS cache key), and
