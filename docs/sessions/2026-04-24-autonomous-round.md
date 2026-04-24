@@ -699,6 +699,56 @@ template references ep-kit.
 
 **Commit:** `85d9341` in `/home/user/Documents/cairn/`.
 
+## 2026-04-24 — session close-out
+
+Final pass before closing the session:
+
+- **Added Karpathy governing principles to cairn** (cairn commit
+  `de9f8a0` on `master`). Four principles — Think before coding
+  / Simplicity first / Surgical changes / Goal-driven execution
+  — now live as the backbone of cairn at
+  `templates/workflow/governing-principles.md`, foregrounded in
+  `templates/CLAUDE.md`, read-first-linked from
+  `templates/workflow/six-phase-checklist.md`, and summarised in
+  `README.md`. The doc explicitly names how principles interweave
+  with the six phases (phases = *when*, principles = *how within
+  each phase*) so future sessions don't tick phases mechanically
+  without applying the discipline.
+
+- **Saved consolidated user-profile memory** at
+  `~/.claude/projects/-var-home-foobarto-Dokumenty-glorbo/memory/user_thinking_profile.md`.
+  Synthesis of decision-making patterns, design values,
+  communication style, collaboration posture, architectural
+  instincts observed across this session. Written as observations
+  with evidence (not judgments); marked as re-synthesisable, not
+  blindly appendable. MEMORY.md index updated. This is the
+  Claude-Code-native version of what cairn v0.2.0 will add as
+  a portable artefact.
+
+- **Cairn v0.2.0 scope documented in the cairn CHANGELOG** so
+  the design session's shape isn't lost: autonomy menu (L2
+  default), round/loop split, planner + review-runner sub-agents,
+  review phase with tool-detection + mandatory quality + security
+  passes, dual user/project profiles. Not shipped this session.
+
+## Session-total commit trail (Glorbo `main`, all unpushed)
+
+1. `2b61eb4` GEP-37 Draft + GEP-38 Placeholder + validator patch.
+2. `4d4a27a` session log close-out (first draft).
+3. `b0af922` kanban new-task model combobox.
+4. `0cc4e69` search indexes `schedule:` frontmatter.
+5. `d48c18d` R26.2b golden fixtures + list-of-map formatter fix.
+6. `a1317eb` gitignore docs/sessions/ *(reverted by #7)*.
+7. `c0fa176` GEP-37 keybindings vim→Emacs + restore sessions tracking.
+8. `ebabe65` GEP-39 Placeholder for configurable keybindings.
+9. `f0b29e3` log creation of cairn standalone project.
+10. *(this commit)* session close-out.
+
+## Cairn commits (at `/path/to/cairn/`, `master`, unpushed)
+
+1. `85d9341` initial skeleton (workflow kit extracted from Glorbo).
+2. `de9f8a0` governing principles as the backbone.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
