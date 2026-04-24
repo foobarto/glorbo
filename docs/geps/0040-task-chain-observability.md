@@ -2,7 +2,7 @@
 gep: 0040
 title: "Task chain observability — `done_when:`, `handoff_chain:`, chain audit view"
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-24
 history:
@@ -14,6 +14,16 @@ history:
       shell until this is done" (2026-04-24 session). First of
       the crown-jewels GEP arc; GEP-41 follows with the
       peer-review gate that consumes this GEP's schema.
+  - date: 2026-04-24
+    status: Accepted
+    note: |
+      Accepted as part of the crown-jewels phase-1 bundle (with
+      GEP-36 + GEP-41) after maintainer sign-off on D1 (structured
+      handoff_chain field), D2 (append-only not stack),
+      D3 (separate requested_by field), D4 (free-text done_when),
+      D5 (severity schema drift fix), D6 (nested chain-route).
+      Implementation begins with the FileSpec schema additions;
+      Router + LiveView land in subsequent commits within v0.8.0.
 requires: [2, 3, 7, 25]
 see-also: [13, 19, 28, 30, 41]
 ---

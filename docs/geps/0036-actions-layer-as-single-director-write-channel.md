@@ -2,7 +2,7 @@
 gep: 0036
 title: Actions layer as the single Director-write channel
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-24
 history:
@@ -54,6 +54,17 @@ history:
       this GEP is the write-seam foundation that GEP-40/41 build
       on. Targeted for v0.8.0 alongside the observability +
       peer-review work.
+  - date: 2026-04-24
+    status: Accepted
+    note: |
+      Accepted as part of the crown-jewels phase-1 bundle (with
+      GEP-40 + GEP-41) after maintainer sign-off on D1 (pure
+      module + functions), D2 (lives in core, not glorbo_web),
+      D3-D7 (resource-organised submodules, delegation facade
+      with scheduled removal, Credo-blocks-CI enforcement,
+      mandatory :actor opt). Implementation starts with FileSpec
+      schema work driven by GEP-40; GEP-36's Actions extraction
+      follows in the same v0.8.0 cut.
 supersedes: [38]
 see-also: [6, 29, 37, 40, 41]
 ---

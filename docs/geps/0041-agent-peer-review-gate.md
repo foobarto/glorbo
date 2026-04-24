@@ -2,7 +2,7 @@
 gep: 0041
 title: "Agent peer-review gate — severity-based + opt-in escalation"
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-24
 history:
@@ -16,6 +16,18 @@ history:
       brief: severity-based automatic trigger with optional
       agent self-request ("peer review please"), using the
       existing CritiqueOps role as the reviewer.
+  - date: 2026-04-24
+    status: Accepted
+    note: |
+      Accepted as part of the crown-jewels phase-1 bundle (with
+      GEP-36 + GEP-40) after maintainer sign-off on D1
+      (severity + opt-in trigger), D2 (CritiqueOps default with
+      config overrides), D3 (single reviewer per invocation),
+      D4 (three-way verdict), D5 (peer review before Director
+      approval), D6 (append-only peer_review_required flag),
+      D7 (verb-list alignment to lower-case). Implementation
+      lands in v0.8.0 after GEP-36's Actions extraction + GEP-40's
+      schema additions.
 requires: [2, 19, 40]
 see-also: [6, 19, 28, 30, 36, 37]
 ---
