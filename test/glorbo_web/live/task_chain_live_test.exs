@@ -142,4 +142,146 @@ defmodule GlorboWeb.TaskChainLiveTest do
     assert {:error, {:live_redirect, %{to: "/companies/acme/kanban"}}} =
              live(conn, "/companies/acme/tasks/ghost-1/chain")
   end
+
+  # GEP-41 rollout item 6 — peer-review audits render inline in the
+  # chain view so directors see the full review lifecycle without
+  # navigating to the audit log.
+  describe "peer-review events section (GEP-41)" do
+    setup %{base: base} do
+      File.write!(
+        Path.join([base, "companies/acme/projects/foo/tasks/foo-77.md"]),
+        """
+        ---
+        kind: task/v1
+        id: foo-77
+        title: review-tracked task
+        status: pending-approval
+        assigned_to: engineer
+        severity: major
+        peer_review_required: true
+        ---
+        body
+        """
+      )
+
+      :ok
+    end
+
+    test "renders nothing when no peer_review audits recorded", %{conn: conn, base: _base} do
+      # No audit seed → section is absent.
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-77/chain")
+      refute html =~ "peer review · "
+      refute html =~ "review requested"
+    end
+
+    test "renders peer_review.requested with reviewer + severity detail", %{
+      conn: conn,
+      base: base
+    } do
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      File.mkdir_p!(audit_dir)
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      entry =
+        Jason.encode!(%{
+          "ts" => "2026-04-24T14:00:00Z",
+          "action" => "peer_review.requested",
+          "actor" => "system",
+          "target" => "projects/foo/tasks/foo-77.md",
+          "detail" => %{
+            "reviewer" => "critiqueops",
+            "severity" => "major"
+          }
+        })
+
+      File.write!(path, entry <> "\n")
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-77/chain")
+
+      assert html =~ "peer review · 1 event"
+      assert html =~ "review requested"
+      assert html =~ "reviewer critiqueops"
+      assert html =~ "severity major"
+    end
+
+    test "renders task.peer_review.approve with verdict note", %{conn: conn, base: base} do
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      File.mkdir_p!(audit_dir)
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      entry =
+        Jason.encode!(%{
+          "ts" => "2026-04-24T14:30:00Z",
+          "action" => "task.peer_review.approve",
+          "actor" => "critiqueops",
+          "target" => "projects/foo/tasks/foo-77.md",
+          "verdict" => "approve",
+          "detail" => %{
+            "note" => "verified citations live 2026-04-24"
+          }
+        })
+
+      File.write!(path, entry <> "\n")
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-77/chain")
+
+      assert html =~ "peer review · 1 event"
+      assert html =~ "verdict: approve"
+      assert html =~ "verified citations live 2026-04-24"
+      assert html =~ "by critiqueops"
+    end
+
+    test "combines requested + verdict + other chain audits coherently", %{
+      conn: conn,
+      base: base
+    } do
+      audit_dir = Path.join([base, "companies/acme/audit"])
+      File.mkdir_p!(audit_dir)
+      month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+      path = Path.join(audit_dir, "#{month}.jsonl")
+
+      entries =
+        [
+          %{
+            "ts" => "2026-04-24T14:00:00Z",
+            "action" => "task.reassign",
+            "target" => "projects/foo/tasks/foo-77.md",
+            "actor" => "director",
+            "from" => "director",
+            "to" => "engineer"
+          },
+          %{
+            "ts" => "2026-04-24T14:15:00Z",
+            "action" => "peer_review.requested",
+            "actor" => "system",
+            "target" => "projects/foo/tasks/foo-77.md",
+            "detail" => %{"reviewer" => "critiqueops", "severity" => "major"}
+          },
+          %{
+            "ts" => "2026-04-24T14:45:00Z",
+            "action" => "task.peer_review.revise",
+            "actor" => "critiqueops",
+            "target" => "projects/foo/tasks/foo-77.md",
+            "verdict" => "revise",
+            "detail" => %{"note" => "citation 3 returned 404"}
+          }
+        ]
+        |> Enum.map_join("\n", &Jason.encode!/1)
+
+      File.write!(path, entries <> "\n")
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme/tasks/foo-77/chain")
+
+      # The peer-review section is a separate <details> block, so both
+      # peer-review entries appear there while the reassign stays in
+      # the audit cross-reference section above.
+      assert html =~ "peer review · 2 events"
+      assert html =~ "review requested"
+      assert html =~ "verdict: revise"
+      assert html =~ "citation 3 returned 404"
+      assert html =~ "audit cross-reference"
+    end
+  end
 end

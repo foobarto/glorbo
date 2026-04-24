@@ -109,6 +109,35 @@ is left outstanding for v0.8.0.
   `severity: major|critical` auto-triggers the gate.
   CritiqueOps is the reviewer side and keeps its
   Round-J GEP-41 framing unchanged.
+- **Chain audit view surfaces peer-review events**
+  (`TaskChainLive`, GEP-41 rollout item 6). Renders
+  `peer_review.requested` (from `Glorbo.Approvals.Gate`)
+  and `task.peer_review.<verdict>` (from the reviewer's
+  verdict-land path) in a dedicated `<details>` section
+  alongside the existing reassign cross-reference. Detail
+  row shows reviewer + severity on requested events and
+  verdict + note on verdict events. 4 new tests.
+- **GEP-40 Implemented — task chain observability.**
+  Frontmatter schema (`done_when:`, `handoff_chain:`,
+  `requested_by:`, `severity:`, `peer_review_required:`)
+  plus append-only enforcement at the parser, Router
+  handoff-chain appender in `Actions.Tasks.assign/4`, and
+  `GlorboWeb.TaskChainLive` at
+  `/companies/:co/tasks/:task_id/chain` with drift
+  detection. Phase-1 rollout complete within v0.8.0's
+  crown-jewels cut.
+- **GEP-41 Implemented — agent peer-review gate.**
+  Severity-based automatic trigger (`major|critical` →
+  auto-flip `peer_review_required: true`) + author opt-in;
+  CritiqueOps as default reviewer; three-way verdict
+  (approve/revise/block); append-only
+  `peer_review_required` flag; gate emits
+  `peer_review.requested` audit when reviewer-blocked;
+  chain view surfaces the full review lifecycle inline.
+  Phase-1 rollout complete (items 1–7 across rounds J/K/
+  N/O/P). Deferred to a future GEP-41 phase-3: reviewer
+  auto-dispatcher (inbox delivery, sentinel dedupe,
+  cadence, retry, reviewer-absent fallback).
 - **`docs/project-profile.md`** extended with "The crown
   jewels — non-negotiable quality axes" section codifying
   the four axes (inter-agent, director, deliverable

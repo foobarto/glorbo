@@ -2,7 +2,7 @@
 gep: 0040
 title: "Task chain observability — `done_when:`, `handoff_chain:`, chain audit view"
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-24
 history:
@@ -24,6 +24,31 @@ history:
       D5 (severity schema drift fix), D6 (nested chain-route).
       Implementation begins with the FileSpec schema additions;
       Router + LiveView land in subsequent commits within v0.8.0.
+  - date: 2026-04-24
+    status: Implemented
+    note: |
+      Phase-1 rollout complete within v0.8.0's crown-jewels cut:
+
+        1. Schema + validator: `Glorbo.FileSpec.TaskMd` parses
+           `done_when:`, `handoff_chain:`, `requested_by:`,
+           `severity:`, `peer_review_required:`;
+           `Glorbo.TaskDefinition` struct carries the fields;
+           append-only handoff_chain enforced at the parser.
+        2. Router wiring: `Glorbo.Actions.Tasks.assign/4`
+           appends a handoff_chain entry on every
+           `assigned_to:` flip and emits the canonical
+           `task.reassign` audit.
+        3. Chain audit view: `GlorboWeb.TaskChainLive` at
+           `/companies/:co/tasks/:task_id/chain`, linked from
+           the task detail page; renders handoff_chain +
+           reassign cross-reference + drift detection +
+           peer-review audit section (GEP-41 phase-1 completes
+           the view wiring — see Round P).
+
+      GEP-41 landed on top of this schema in the same release
+      window. Template + MCP surfaces for setting
+      `done_when:` / `requested_by:` already existed through
+      the Kanban new-task form and the `create_task` MCP tool.
 requires: [2, 3, 7, 25]
 see-also: [13, 19, 28, 30, 41]
 ---

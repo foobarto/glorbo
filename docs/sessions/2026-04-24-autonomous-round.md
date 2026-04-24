@@ -3170,3 +3170,127 @@ gain the opt-in paragraph").
 ### Commit(s)
 
 One commit to follow.
+
+---
+
+## Round P — peer-review audits in TaskChainLive + GEP-40/41 → Implemented
+
+### Task picked
+
+Crown-jewels phase-1 tail: GEP-41 rollout item 6 ("Chain audit
+view rendering. Hook into `agent.peer_review_*` audit events.")
+was still open — `TaskChainLive` only rendered `task.reassign`
+events and had no surfacing of peer-review lifecycle. Closing
+this unblocks the honest status flip on both GEP-40 and GEP-41,
+which had been stuck at Accepted despite phase-1 being otherwise
+feature-complete.
+
+### What shipped
+
+- `lib/glorbo_web/live/task_chain_live.ex`:
+  - New `peer_review_audit?/1` filter matches
+    `peer_review.requested` + `task.peer_review.<v>` action
+    families.
+  - `mount_valid/3` assigns `:audit_peer_review` alongside
+    the existing `:audit_reassigns`.
+  - New `<details class="gl-task-chain__peer-review">`
+    section renders each event with
+    `peer_review_label/1` display name + `peer_review_detail/1`
+    flattening for reviewer/severity/note. Sits directly below
+    the reassign cross-reference so directors read the
+    lifecycle top-to-bottom.
+  - Moduledoc refreshed to document the new section + the
+    GEP-41 #6 linkage.
+- `test/glorbo_web/live/task_chain_live_test.exs`:
+  - New `describe "peer-review events section (GEP-41)"` block
+    with 4 tests: absent-state rendering, `peer_review.requested`
+    + reviewer/severity, `task.peer_review.approve` + note, and
+    a combined fixture asserting both sections coexist.
+- `docs/geps/0040-task-chain-observability.md`:
+  - Frontmatter `status: Accepted → Implemented`.
+  - New history entry dated 2026-04-24 with the phase-1
+    rollout summary (schema + validator, Router wiring,
+    chain view + drift + peer-review section).
+- `docs/geps/0041-agent-peer-review-gate.md`:
+  - Frontmatter `status: Accepted → Implemented`.
+  - New history entry covering the full rollout across rounds
+    J, K, N (N-1/N-2/N-3), O, and P, explicitly calling out
+    that phase-3 reviewer auto-dispatch stays future work.
+- `docs/geps/README.md`: GEP-40 and GEP-41 rows flipped
+  `Accepted → Implemented`.
+- `CHANGELOG.md`: new `Added` bullets for the chain-view
+  peer-review section, GEP-40 Implemented, GEP-41
+  Implemented.
+
+### Design calls I made without you
+
+- **Separate `<details>` section, not merged timeline.** The
+  existing `audit_reassigns` render is a collapsed details
+  section; the new peer-review section mirrors that exactly.
+  Merging peer-review events inline with the handoff chain
+  would give nicer chronological UX but adds complexity
+  (two-source sort, key handling, varying entry shapes).
+  Pre-1.0 discipline: ship the simpler version; inline
+  interleaving is a follow-up if maintainer asks.
+- **Detail shape: one display string per event, not a
+  structured field list.** `peer_review_detail/1` flattens
+  the most-load-bearing field (reviewer for requested,
+  note for verdict) into a single line — easier to skim,
+  less CSS to author, and it degrades cleanly when the
+  audit entry is missing a detail. Severity hangs off the
+  reviewer line with a `· severity X` suffix when set.
+- **Filter applied at `mount/3`, not in render.** Two
+  filters over the same `audits` list cost one extra traversal;
+  keeps the render template readable. The assign is derived
+  once and stays stable for the view's lifetime (this is a
+  pure read-only LiveView — no reactive updates in this round).
+- **No CSS in this commit.** `gl-task-chain__peer-review`
+  classes have no matching rules in `assets/css/app.css`;
+  `gl-task-chain__audit` also has none, so the new section
+  inherits the same default-element look. If maintainer
+  wants branded styling, that's a follow-up polish pass.
+- **GEP-40 and GEP-41 flipped to Implemented honestly,
+  despite GEP-41 phase-3 being future work.** Per the
+  "flip GEP status honestly (Implemented only when fully
+  shipped)" memory, I audited both GEPs' explicit rollout
+  lists against the codebase:
+  - GEP-40: all three rollout items shipped.
+  - GEP-41: all seven rollout items shipped (items 2–7
+    landed across rounds J, K, N, O, P; item 1 is "GEP-40
+    ships first" which is now true).
+  Phase-3 (reviewer auto-dispatcher) is explicitly framed as
+  future work *beyond* the GEP-41 rollout list, not a hole
+  in it. The history entry spells that out so a future
+  reader can see what "Implemented" does and doesn't mean.
+
+### Gates
+
+- `mix test test/glorbo_web/live/task_chain_live_test.exs` —
+  8 tests, 0 failures.
+- `mix precommit` — 2069 tests, 0 failures, 1 skipped (+4
+  new peer-review tests on top of the 2065 from Round O).
+- `mix gep.validate` — all checks passed (numbering,
+  bidirectional links, cross-refs, README index sync).
+- `mix format --check-formatted` — clean.
+- `mix credo --strict` — 68 checks, 0 issues; exit 0.
+- Security pass: no trust-boundary crossings — pure read
+  view, no mutation, no new input surfaces. Audit-entry
+  `reviewer` / `severity` / `note` values are already
+  stringified at write time (Gate + Actions.Tasks).
+
+### Skipped / not done
+
+- **Inline chronological merging of handoff + peer-review
+  events.** Nicer UX but not in GEP-41's rollout list.
+- **CSS polish for the new section.** No-op — the existing
+  section has no CSS either.
+- **UAT walkthrough.** GEP-41's rollout item 7 mentions
+  "Manual browser walk: create task with `severity: critical`,
+  let agent process, verify CritiqueOps gets dispatched".
+  The dispatcher itself is GEP-41 phase-3 (future); the
+  *observability* path is now walkable but the gate is also
+  exercised by the integration tests landed in Round N-3.
+
+### Commit(s)
+
+One commit to follow.

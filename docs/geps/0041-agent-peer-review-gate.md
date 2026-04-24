@@ -2,7 +2,7 @@
 gep: 0041
 title: "Agent peer-review gate — severity-based + opt-in escalation"
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-24
 history:
@@ -28,6 +28,41 @@ history:
       D7 (verb-list alignment to lower-case). Implementation
       lands in v0.8.0 after GEP-36's Actions extraction + GEP-40's
       schema additions.
+  - date: 2026-04-24
+    status: Implemented
+    note: |
+      Phase-1 rollout complete across rounds J, K, N (N-1 / N-2 /
+      N-3), O, and P within v0.8.0's crown-jewels cut.
+
+        1. Router Peer_review module — `Glorbo.Approvals.Gate`
+           now blocks director approval until
+           `peer_review_verdict` lands (Round K).
+        2. `Glorbo.Actions.Tasks.record_peer_review_verdict/5`
+           emits `task.peer_review.<verdict>` audit + writes
+           verdict fields (Round J → Actions extraction).
+        3. CritiqueOps template verb alignment
+           (approve/revise/block lower-case) — Round J.
+        4. Severity auto-flip at task creation:
+           `severity: major|critical` forces
+           `peer_review_required: true` unless authored
+           explicitly false — Round N-1.
+        5. Kanban `⧗ peer-review` pill marks cards awaiting
+           reviewer (Round N-2).
+        6. `Glorbo.Approvals.Gate` emits
+           `peer_review.requested` audit once per task-path
+           when it first observes the reviewer-blocked state
+           (Round N-3).
+        7. Peer-review opt-in paragraph propagated to the 5
+           non-reviewer agent templates (engineer, ceo, editor,
+           researcher, provenance-auditor) — Round O.
+        8. Chain audit view (`TaskChainLive`) renders
+           `peer_review.requested` + `task.peer_review.<v>`
+           events inline in a `<details>` section — Round P.
+
+      Deferred to a future GEP-41 phase-3: reviewer auto-
+      dispatcher (inbox delivery, sentinel dedupe, cadence,
+      retry, reviewer-absent fallback). Phase-3 is a separate
+      design exercise, not a rollout-list gap.
 requires: [2, 19, 40]
 see-also: [6, 19, 28, 30, 36, 37]
 ---

@@ -9,6 +9,13 @@ defmodule GlorboWeb.TaskChainLive do
   a `chain drift` warning so a director or provenance-auditor
   can investigate.
 
+  Peer-review audit events (`peer_review.requested` emitted by
+  `Glorbo.Approvals.Gate`, and `task.peer_review.<verdict>`
+  emitted by the reviewer's verdict-land path) render in a
+  separate `<details>` section below the reassign cross-
+  reference — so directors can see the full review lifecycle
+  without leaving the chain view (GEP-41 rollout item 6).
+
   Pure read view; no actions. Link from the main task-detail
   page's header.
   """
@@ -46,6 +53,7 @@ defmodule GlorboWeb.TaskChainLive do
          {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: co) do
       audits = Glorbo.Audit.Query.for_task(base, co, rel_path, limit: 100)
       reassigns = Enum.filter(audits, &(&1["action"] == "task.reassign"))
+      peer_review = Enum.filter(audits, &peer_review_audit?/1)
 
       {:ok,
        socket
@@ -59,6 +67,7 @@ defmodule GlorboWeb.TaskChainLive do
        |> assign(:task, task)
        |> assign(:chain, Enum.with_index(task.handoff_chain || []))
        |> assign(:audit_reassigns, reassigns)
+       |> assign(:audit_peer_review, peer_review)
        |> assign(:drift, compute_drift(task.handoff_chain || [], reassigns))}
     else
       _ ->
@@ -181,6 +190,27 @@ defmodule GlorboWeb.TaskChainLive do
           </li>
         </ol>
       </details>
+
+      <details :if={@audit_peer_review != []} class="gl-task-chain__peer-review">
+        <summary>
+          peer review · {length(@audit_peer_review)} event{if length(@audit_peer_review) == 1,
+            do: "",
+            else: "s"}
+        </summary>
+        <ol class="gl-task-chain__peer-review-list">
+          <li :for={e <- @audit_peer_review} class="gl-task-chain__peer-review-entry">
+            <span class="gl-muted">{e["ts"]}</span>
+            ·
+            <strong class="gl-task-chain__peer-review-action">
+              {peer_review_label(e["action"])}
+            </strong>
+            <span :if={peer_review_detail(e) != ""} class="gl-task-chain__peer-review-detail">
+              — {peer_review_detail(e)}
+            </span>
+            <span :if={e["actor"]} class="gl-muted">· by {e["actor"]}</span>
+          </li>
+        </ol>
+      </details>
     </section>
     """
   end
@@ -194,4 +224,44 @@ defmodule GlorboWeb.TaskChainLive do
 
   defp drift_copy({:missing_audit_entries, n}),
     do: "chain has #{n} entr#{if n == 1, do: "y", else: "ies"} not in audit log"
+
+  # GEP-41 rollout item 6: surface peer-review activity in the chain view.
+  # `peer_review.requested` comes from Approvals.Gate; the task.peer_review.*
+  # family comes from the verdict-land path in Actions.Tasks.
+  defp peer_review_audit?(%{"action" => "peer_review.requested"}), do: true
+
+  defp peer_review_audit?(%{"action" => "task.peer_review." <> _verdict}), do: true
+
+  defp peer_review_audit?(_), do: false
+
+  defp peer_review_label("peer_review.requested"), do: "review requested"
+  defp peer_review_label("task.peer_review.approve"), do: "verdict: approve"
+  defp peer_review_label("task.peer_review.revise"), do: "verdict: revise"
+  defp peer_review_label("task.peer_review.block"), do: "verdict: block"
+  defp peer_review_label(other) when is_binary(other), do: other
+  defp peer_review_label(_), do: ""
+
+  # Audit entries land as `{"action":..., "detail": {...}, ...}`.
+  # `peer_review.requested` stashes `reviewer` + `severity` under detail;
+  # `task.peer_review.<v>` stashes `note` under detail. We flatten the
+  # most useful field per action family into a single display string.
+  defp peer_review_detail(entry) do
+    detail = entry["detail"] || %{}
+
+    cond do
+      is_binary(detail["reviewer"]) and detail["reviewer"] != "" ->
+        "reviewer " <> detail["reviewer"] <> severity_suffix(detail)
+
+      is_binary(detail["note"]) and detail["note"] != "" ->
+        detail["note"]
+
+      true ->
+        ""
+    end
+  end
+
+  defp severity_suffix(%{"severity" => sev}) when is_binary(sev) and sev not in ["", "unset"],
+    do: " · severity " <> sev
+
+  defp severity_suffix(_), do: ""
 end
