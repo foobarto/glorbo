@@ -567,6 +567,56 @@ log. I'm not rewriting it; just adding a compensating commit
 on top. Net effect in the tree is that the files are tracked
 again. Any future session pulling HEAD will see the files.
 
+## 2026-04-24 — GEP-39 Placeholder: configurable TUI keybindings
+
+Follow-up to the Emacs flip: user suggested a GEP for configurable
+keybinding schemes (Emacs / Vim / VS Code / DIY). After a brief
+exchange we settled on:
+
+- **TUI-only scope.** Web-UI shortcuts stay as shipped legacy.
+- **Three curated schemes — no DIY.** User-authored keymaps
+  were in the initial idea; dropped after flagging the
+  CI-reproducibility + support-burden cost. DIY can come back
+  as a future GEP if demand appears.
+- **Not a conflict with GEP-37 D10.** My earlier D10 rationale
+  ("single known user") was too narrow. User re-framed: Glorbo
+  targets many directors running single-user instances each,
+  so preference diversity across editor lineages is a real
+  product concern even though no single instance hosts
+  multiple users. GEP-39 extends GEP-37 rather than superseding
+  it — GEP-37 still ships Emacs as *the default*, GEP-39 adds
+  the alternatives.
+- **Status: Placeholder, implementation gated on demand.** Per
+  user's instruction: "I would create the GEP but leave it as
+  placeholder until someone asks for implementation."
+
+Shipped:
+
+- `docs/geps/0039-configurable-tui-keybindings.md` —
+  Placeholder with Problem + Goals + Non-goals + Design
+  sketch + Open questions + Promotion prereqs + Related.
+- `docs/geps/README.md` — row 0039 added.
+- `docs/geps/0037-glorbo-tui.md` — frontmatter gains
+  `extended-by: [39]` so the link is bidirectional.
+
+**Gates:** `mix gep.validate` — 39/39 pass, all link checks
+pass. No code touched.
+
+**Design calls I made without you:**
+
+- The existing GEP-37 D10 rationale stays intact ("at this
+  GEP's scope... for zero current benefit (single known user)").
+  It reads correctly at GEP-37's scope; GEP-39's Problem
+  section quotes it and then explains why the broader
+  product context dissolves the "single known user" clause.
+  No amendment needed.
+- Placeholder stays deliberately light on Design — the
+  action-registry shape I sketched (`Glorbo.Tui.Actions` as
+  the enum, scheme modules as `action → key_sequence` maps)
+  is the minimum viable skeleton. The Draft that promotes it
+  will have to settle open questions like vim modal-editing
+  fidelity + VS Code `Ctrl+P` analogue.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the

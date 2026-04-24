@@ -62,6 +62,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Placeholder |
 | 0037 | [`glorbo tui` — interactive terminal client for the Director](./0037-glorbo-tui.md) | Standards     | Draft       |
 | 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Placeholder |
+| 0039 | [Configurable TUI keybinding schemes — Emacs, Vim, VS Code](./0039-configurable-tui-keybindings.md) | Standards | Placeholder |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

@@ -19,6 +19,7 @@ history:
       a wrong default. Web UI's existing `j/k/y/n` stays as legacy
       (not this GEP's scope).
 requires: [2]
+extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
 ---
 
