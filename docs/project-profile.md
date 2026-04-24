@@ -176,9 +176,16 @@ deferred with rationale in that doc.
 
 **P0 definition — "actively wrong":**
 
-- Security finding left sliding past a version cut. *Never*
-  OK; it either gets fixed or gets an explicit
-  deferral-with-rationale in `docs/testing/threatmodel.md`.
+- **Security finding left sliding past a version cut — never
+  OK.** Either fix upstream, or **apply mitigation in our
+  own code** if upstream can't be fixed (e.g., vulnerability
+  in a critical dependency with no patched version: wrap the
+  dep with extra filtering/validation that prevents the
+  exploitable payload from reaching the vulnerable code
+  path). Silently deferring without a mitigation is never
+  acceptable. The deferral-with-rationale in
+  `docs/testing/threatmodel.md` must explicitly describe the
+  mitigation if the fix can't be applied at the vuln site.
 - Production-path bug (the single-user main workflow
   broken). Dispatch hangs, Router crashes, inbox loses
   messages.

@@ -903,6 +903,151 @@ find nothing, and stop — wasted context cycle. If you come
 back with direction, invoke `/cairn-round` or equivalent to
 restart.
 
+## 2026-04-24 later — answered 15 questions, workflow hygiene + GEP-37 Accepted
+
+Big round of user answers (all 15 parked questions addressed).
+Applied per-answer updates in surgical commits. Summary:
+
+**Shipped this round:**
+
+- `ab48af2` — populated `docs/project-profile.md` from answers
+  #7–#11, plus CLAUDE.md's explicit pre-version release gate
+  (#1). Wiki-index row added for project-profile, marked
+  READ FIRST for stance calls.
+- `8e7bfa4` — CHANGELOG drift pass: Unreleased section lists
+  today's work targeted for v0.8.0. Targets clarified:
+  `Glorbo.Actions` atomic cut (GEP-36 absorbing GEP-38) +
+  `glorbo shell` first cut (GEP-37 impl).
+- `3e4f76d` — GEP-37 promoted Draft → Accepted after maintainer
+  sign-off on D2/D4/D5/D8/D10. `mix gep.validate` 39/39 green.
+- **Pushed 17 commits** (`6a1193d..3e4f76d`) to
+  `origin/main` per answer #2.
+- `aefa9bd` earlier this session — graphify refresh. Counts
+  in the pre-push push (answer #1).
+- User-profile memory (`user_thinking_profile.md`) re-synthesised
+  with observations from #7 (Moderate-to-Aggressive), #8
+  (security as pride), #12-15 (daily-use vision, peer
+  benchmark, audience framing).
+
+**Design calls made without you (now logged):**
+
+- P0 definition received a mid-round addendum from you after
+  initial commit — mitigation-in-own-code required when upstream
+  fix isn't available. Applied as an in-place revision to the
+  just-committed project-profile; will fold into the next commit
+  rather than chasing history (Draft status on that file, append-
+  friendly).
+- Cairn-vs-Glorbo worktree comparison (#3) run at
+  `/tmp/glorbo-cairn-compare-*`; see the "Adoption delta" section
+  below. Worktree cleaned up; stray `~/.config/cairn/user-profile.md`
+  on this machine removed since the maintainer hasn't opted in on
+  this machine.
+
+## Cairn-vs-Glorbo adoption delta (from worktree comparison)
+
+Ran `cairn/install.sh --profile-scope 1` against a detached
+worktree of Glorbo at commit `3e4f76d`. Per your directive (#3)
+the worktree is not merged; this is informational only.
+
+**Files Glorbo already has (cairn skipped — Glorbo wins):**
+
+- `CLAUDE.md` — Glorbo's version is customised for Elixir /
+  Phoenix specifics (Common commands, Load-bearing invariants,
+  Bazzite workaround, Historical planning artifacts). Don't
+  overwrite.
+- `docs/project-profile.md` — just created this round with
+  Glorbo-specific stances.
+- `docs/todo.md` — real content; cairn would have dropped a stub.
+- `docs/sessions/*.md` — already tracked.
+
+**Files cairn would add (Glorbo is missing):**
+
+- `docs/sessions/README.md` — short pointer to the template.
+  6 lines. Worth adopting verbatim.
+- `docs/workflow/` directory with:
+  - `governing-principles.md` — the four Karpathy principles
+    as a dedicated file. Glorbo's CLAUDE.md currently inlines
+    them; extracting to a linked file is cleaner.
+  - `six-phase-checklist.md` — Cairn's is ~170 lines, more
+    detailed than Glorbo's inlined ~41 lines (includes 5a/5b/5c
+    review-pass split, anti-patterns section). Worth adopting
+    and shrinking CLAUDE.md.
+  - `autonomous-protocol.md` — Cairn-sourced; Glorbo currently
+    has autonomy guidance inlined in CLAUDE.md's
+    Autonomous-round section.
+
+**Recommended adoption (next round, not this one):**
+
+1. Drop `docs/sessions/README.md` (verbatim copy).
+2. Add `docs/workflow/` with the three files (verbatim from
+   cairn).
+3. Shrink Glorbo's CLAUDE.md by replacing the inlined
+   six-phase, governing-principles, and autonomous sections
+   with links to the dedicated workflow docs. Keeps
+   project-specific content (Common commands, invariants,
+   Bazzite) where it belongs.
+
+This would be a small dedicated commit, not something to
+bundle with the GEP-35/36 work. Deferred until you greenlight.
+
+**Not applied autonomously** because per your instruction #3
+("do not install/override what we have"). Report is the
+deliverable.
+
+## Handoff — 16:40
+
+**Shipped this round:**
+- `ab48af2` project-profile + CLAUDE.md pre-release gate
+- `8e7bfa4` CHANGELOG drift pass
+- `3e4f76d` GEP-37 Draft → Accepted
+- 17 commits pushed to origin
+
+**Autonomy level used:** L2.
+
+**Stopped because:** user-answered unblocks completed. The
+remaining scope (GEP-35 Draft + GEP-36/38 merge + shell
+implementation + cairn adoption delta) is substantial and
+warrants a fresh round with clear head.
+
+**Queued for next round (in rough priority order):**
+
+1. **GEP-35 Draft promotion.** User answered: per-kind
+   genserver process model, testability preference
+   functional/e2e over unit. Shared-state shape and
+   concrete write-seam design are my call. Expected
+   deliverable: GEP-35 frontmatter flip + Draft-level
+   decision log.
+2. **GEP-36 / GEP-38 merge** into atomic `Glorbo.Actions`
+   cleanup. Scope requested "pure module/functions vs GenServer?"
+   — my recommendation (pure module, state is filesystem):
+   expand with pros/cons in the Draft and flip status.
+   GEP-38 likely gets superseded-by GEP-36.
+3. **Cairn adoption delta** (3 new workflow files in Glorbo,
+   CLAUDE.md slim-down). Small dedicated commit.
+4. Only after all three above: start GEP-35 / GEP-36
+   implementation. That's where v0.8.0 work begins.
+
+**For your review:**
+
+1. **Mitigation-in-own-code P0 addendum.** Applied in-place
+   to project-profile after initial commit; will roll into
+   next commit. OK?
+2. **Cairn adoption delta** — greenlight to adopt the three
+   new workflow files + slim CLAUDE.md, or defer?
+3. **`Glorbo.Actions` — pure module vs GenServer.** My
+   strong lean is pure module (state is filesystem,
+   concurrency handled by OS atomic renames + append-only
+   audit, no centralised rate-limit need). GenServer becomes
+   a bottleneck, not a benefit. Full pros/cons will be in
+   the GEP-36 Draft.
+4. **GEP-38 → supersede-by GEP-36?** My read: yes. GEP-38
+   captures the principle; GEP-36 will become the concrete
+   implementation doc that absorbs it. Cleaner than
+   two separate GEPs for the same outcome.
+
+**Scheduling next wakeup** in 45 min to pick up GEP-35 Draft
+promotion if no new user input arrives first.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
