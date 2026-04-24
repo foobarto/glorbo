@@ -1364,39 +1364,36 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  # Sink uploads to projects/<proj>/attachments/<task_id>/<safe-filename>.
-  # Returns a list of relative paths (as strings) for the markdown
-  # body's attachment list. Silently ignores entries we couldn't
-  # consume — LiveView guarantees upload_errors renders in the UI.
-  defp consume_new_task_uploads(socket, base, company, project, task_id) do
-    dest_dir =
-      Path.join([base, "companies", company, "projects", project, "attachments", task_id])
+  # Sink uploads into `projects/<p>/attachments/<task_id>/` via
+  # `Glorbo.Actions.Attachments.ingest/6`. Entries that fail to
+  # ingest come back as `nil` from the callback and are filtered
+  # out — LiveView renders any upload_errors in the UI already.
+  defp consume_new_task_uploads(socket, _base, company, project, task_id) do
+    socket
+    |> consume_uploaded_entries(:new_task_attachments, fn %{path: tmp}, entry ->
+      case Glorbo.Actions.Attachments.ingest(
+             company,
+             project,
+             task_id,
+             tmp,
+             entry.client_name,
+             actor: "director",
+             base: base_dir()
+           ) do
+        {:ok, rel_path} ->
+          {:ok, rel_path}
 
-    if has_uploaded_files?(socket) do
-      File.mkdir_p!(dest_dir)
-    end
+        {:error, reason} ->
+          require Logger
 
-    consume_uploaded_entries(socket, :new_task_attachments, fn %{path: tmp}, entry ->
-      safe_name = sanitize_filename(entry.client_name)
-      dest = Path.join(dest_dir, safe_name)
-      File.cp!(tmp, dest)
-      {:ok, Path.join(["attachments", task_id, safe_name])}
+          Logger.warning(
+            "[kanban/#{company}] attachment ingest failed for #{entry.client_name}: #{inspect(reason)}"
+          )
+
+          {:ok, nil}
+      end
     end)
-  end
-
-  defp has_uploaded_files?(socket) do
-    socket.assigns.uploads.new_task_attachments.entries
-    |> Enum.any?(fn e -> e.done? end)
-  end
-
-  defp sanitize_filename(name) do
-    name
-    |> String.replace(~r/[^\w.\-]/u, "_")
-    |> String.trim_leading(".")
-    |> case do
-      "" -> "file"
-      ok -> ok
-    end
+    |> Enum.reject(&is_nil/1)
   end
 
   defp build_body(params, attachments) do

@@ -2471,3 +2471,90 @@ their symlink-guard helpers from KanbanLive into
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-5c — KanbanLive attachment uploads (GEP-36 ratchet)
+
+Round M-5b CI green (run 24909596945 → success). Last write
+site in KanbanLive.
+
+### Task picked
+
+Extract `consume_new_task_uploads/5`'s per-entry filesystem
+ops (mkdir + `File.cp!`) into
+`Glorbo.Actions.Attachments.ingest/6`.
+
+### What shipped
+
+- `lib/glorbo/actions/attachments.ex` — new module.
+  - `ingest(company, project, task_id, tmp_path,
+    client_name, opts)` — copies `tmp_path` into
+    `projects/<p>/attachments/<task_id>/<safe-name>` via
+    `File.cp/2`, emits `attachment.upload` audit with
+    canonical `target:` + `client_name:` detail.
+  - `sanitize_filename/1` (public helper) — identical
+    behavior to pre-migration KanbanLive.sanitize_filename:
+    non-word chars → `_`, strip leading dots, fall back to
+    `"file"` on empty.
+- `lib/glorbo_web/live/kanban_live.ex`:
+  - `consume_new_task_uploads/5` is now a thin wrapper
+    that passes each `consume_uploaded_entries` callback
+    through `Actions.Attachments.ingest/6`. Failed ingests
+    log a warning and drop from the returned list
+    (pre-migration `File.cp!` would have raised).
+  - Removed `has_uploaded_files?/1` (only used to gate the
+    pre-migration mkdir) and `sanitize_filename/1` (moved
+    to Actions).
+- `.credo.exs` — dropped
+  `lib/glorbo_web/live/kanban_live.ex` from the allowlist.
+  **Only agent_live.ex remains.**
+- `test/glorbo/actions/attachments_test.exs` — 7 tests:
+  - happy-path copy + audit emit + tmp file left intact
+    (LiveView cleans).
+  - unsafe client-name sanitization (with sanity-check
+    comment that `..` is safe inside a single-filename
+    context — no path traversal because there's no
+    separator).
+  - idempotent mkdir on subsequent ingests.
+  - invalid slug / project / task_id rejections.
+  - `File.cp` error path when tmp_path is absent (maps to
+    `:enoent`).
+  - Direct `sanitize_filename/1` coverage for leading-dot
+    + empty-string cases.
+
+### Design calls I made without you
+
+- **Ingest failure gracefully skipped (not raised).**
+  Pre-migration `File.cp!` would have crashed the LiveView
+  process; we now log + drop. This is a small behavioral
+  improvement — one corrupt upload won't take down a
+  director's task form. Noted here so a reviewer doesn't
+  mistake it for parity drift.
+- **`File.mkdir_p` is idempotent + always called.** Dropped
+  the pre-migration `has_uploaded_files?` gate; mkdir on a
+  dir that already exists is essentially free, and running
+  it unconditionally simplifies the code.
+- **`sanitize_filename/1` is public.** Exposed via @doc
+  false as a sub-helper for tests. Not part of the module's
+  advertised API, just accessible for direct coverage.
+- **Logger metadata warning caught by Credo.** Initial
+  draft passed `client_name:` as Logger metadata; the
+  project Logger config doesn't allowlist that key, so
+  Credo flagged it. Fixed by interpolating into the message
+  string.
+
+### Gates
+
+- `mix test test/glorbo/actions/attachments_test.exs` — 7
+  passing.
+- `mix test test/glorbo_web/live/kanban_live_test.exs` — 43
+  passing (no regressions).
+- `mix credo --strict` — 5011 mods/funs, 0 issues.
+- `mix precommit` — 2040 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- Actions.Support extraction — M-6 still pending.
+
+### Commit(s)
+
+One commit to follow.
