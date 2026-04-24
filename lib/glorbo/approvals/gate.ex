@@ -399,8 +399,15 @@ defmodule Glorbo.Approvals.Gate do
       %TasksApprovalState{agent_slug: agent} ->
         case consume_director_mark(state, td.task_path) do
           {:director, state} ->
-            :ok = resolve_granted(td, agent, state)
-            state
+            case peer_review_ready?(td) do
+              :ok ->
+                :ok = resolve_granted(td, agent, state)
+                state
+
+              {:error, reason} ->
+                revert_peer_review_block(td, abs_path, agent, reason, state)
+                state
+            end
 
           {:agent_bypass, state} ->
             revert_unauthorised_status(td, abs_path, agent, "approved", state)
@@ -439,6 +446,57 @@ defmodule Glorbo.Approvals.Gate do
   # Any other status (pending-approval, in-progress, completed, custom) is a
   # no-op — the sentinel stays in place until approved/denied.
   defp resolve_status(_td, _abs_path, state), do: state
+
+  # GEP-41 D5: peer review runs BEFORE Director approval. When
+  # `peer_review_required: true`, the Director's `status: approved`
+  # flip is held until a verdict lands:
+  #
+  #   * verdict missing      → :awaiting_peer_review
+  #   * verdict = "block"    → :peer_review_blocked
+  #   * verdict = "revise"   → :peer_review_revise
+  #   * verdict = "approve"  → :ok (Director's flip takes effect)
+  #
+  # `peer_review_required: false` (or unset) → :ok unconditionally.
+  defp peer_review_ready?(%TaskDefinition{peer_review_required: false}), do: :ok
+  defp peer_review_ready?(%TaskDefinition{peer_review_required: nil}), do: :ok
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "approve"}), do: :ok
+
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "block"}),
+    do: {:error, :peer_review_blocked}
+
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "revise"}),
+    do: {:error, :peer_review_revise}
+
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: nil}),
+    do: {:error, :awaiting_peer_review}
+
+  defp peer_review_ready?(_td), do: {:error, :awaiting_peer_review}
+
+  defp revert_peer_review_block(td, abs_path, agent, reason, state) do
+    audit(state, %{
+      action: "approval.peer_review_block",
+      actor: "system",
+      agent: agent,
+      target: td.task_path,
+      peer_review_reason: to_string(reason),
+      peer_review_verdict: td.peer_review_verdict,
+      company: state.company
+    })
+
+    # Revert status to pending-approval so the Director's mark
+    # doesn't latch. The director can re-flip once the verdict
+    # clears (verdict changes land via the reviewer agent; the
+    # director waits for that event).
+    case File.lstat(abs_path) do
+      {:ok, %{type: :regular}} ->
+        _ = TaskDefinition.write_frontmatter(abs_path, %{"status" => "pending-approval"})
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  end
 
   # Threatmodel H4 (wave 4): an awaiting task file flipped to
   # approved/denied without a matching Director mark. Only the

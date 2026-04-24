@@ -1802,4 +1802,68 @@ Queued for Round L:
 
 Cairn log-before-commit discipline held this round.
 
+### Round K — peer-review gate integration into Approvals.Gate
+
+Short round: adds one guard clause to `Glorbo.Approvals.Gate`
+so Director approvals are held until the peer-review verdict
+lands. GEP-41 D5 ("peer review runs before Director approval")
+is now load-bearing code, not just an architectural note.
+
+`peer_review_ready?/1` classifies the task into four buckets:
+
+  * peer_review_required: false / nil → `:ok` unconditionally
+  * peer_review_verdict: "approve"    → `:ok`
+  * peer_review_verdict: "block"      → `{:error, :peer_review_blocked}`
+  * peer_review_verdict: "revise"     → `{:error, :peer_review_revise}`
+  * peer_review_verdict: nil          → `{:error, :awaiting_peer_review}`
+
+On the error branches, `resolve_status/3` for `status:
+approved` calls a new `revert_peer_review_block/5` which
+audits `approval.peer_review_block` + flips status back to
+`pending-approval` so the Director can re-approve once the
+verdict clears. The agent is NOT woken.
+
+Two new tests land under `test/glorbo/approvals/gate_test.exs`:
+
+- **G17** — Director flips `status: approved` on a task with
+  `peer_review_required: true` but no verdict. Assertion:
+  agent is NOT woken, `approval.peer_review_block` audit
+  fires, file reverts to `pending-approval`.
+- **G18** — Same shape but with `peer_review_verdict: approve`
+  already in the frontmatter (reviewer emitted first).
+  Assertion: agent IS woken, `approval.granted` audit fires.
+
+Together with Rounds I + J this closes GEP-41's phase-1 scope:
+
+  * **Data layer** (I) — field schema + atomic-write API.
+  * **Agent path** (J) — reviewer template + directive parser.
+  * **Gate path** (K) — director approval held on missing/
+    rejected verdict.
+
+What's still missing for GEP-41 full coverage:
+
+- Router-triggered auto-dispatch to the reviewer when a task
+  hits `status: pending-approval` with `peer_review_required:
+  true`. Right now the reviewer only runs if a human wakes
+  them; the trigger is manual. Low priority — the reviewer
+  can heartbeat-scan their inbox for new review tasks.
+- Kanban column / ribbon indicating "awaiting peer review"
+  as a distinct state. Right now such tasks show as
+  `pending-approval`; the peer_review_verdict field is
+  invisible in the board view.
+- GEP-41 D1 enforcement — tasks with `severity: major` or
+  `severity: critical` should auto-flip
+  `peer_review_required: true` on create. A one-line patch in
+  `Actions.Tasks.create/4`. Queued.
+
+### Cadence + discipline, running tally
+
+- Rounds C through K shipped across this session (9 commits,
+  2950ceb → dc27188 → 21a6203 → 6a885ce → upcoming K commit).
+- `/compact` still not invoked; the cost-of-stale-context
+  curve is getting real. Planning to compact after Round K
+  closes.
+- Cairn log-before-commit held for Rounds I, J, K.
+- Credo ratchet still held — no LiveView raw File.* drift.
+
 

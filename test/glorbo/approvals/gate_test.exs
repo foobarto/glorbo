@@ -700,6 +700,110 @@ defmodule Glorbo.Approvals.GateTest do
     assert row.status == "awaiting"
   end
 
+  # G17 — GEP-41: peer review gate runs BEFORE director approval.
+  # Director flip to `status: approved` is reverted to
+  # `pending-approval` when `peer_review_required: true` and the
+  # verdict isn't `approve`. Agent wake does NOT fire.
+  test "G17: director approval held when peer_review_required but verdict missing",
+       ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-17",
+        title: "needs review",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # Director flips status; no verdict has landed yet.
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "needs review"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-17.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-17.md", [:modified]})
+
+    # Agent must NOT be woken.
+    refute_receive {:wake, _, :director_approval, _}, 200
+
+    # Audit emits peer_review_block instead of approval.granted.
+    assert_audit_within(:action, "approval.peer_review_block", 1_500)
+
+    # File reverted to pending-approval so Director can re-flip once
+    # the verdict lands.
+    {:ok, reverted} = Glorbo.TaskDefinition.parse_file(path, base: ctx.base, company: "acme")
+    assert reverted.status == "pending-approval"
+  end
+
+  test "G18: director approval proceeds when peer_review_verdict is approve", ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-18",
+        title: "reviewed ok",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # Reviewer has emitted verdict:approve already (simulating the
+    # Round J directive path landing before Director flips).
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "reviewed ok"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    peer_review_verdict: approve
+    peer_review_verdict_by: critiqueops
+    peer_review_verdict_at: "2026-04-24T16:00:00Z"
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-18.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-18.md", [:modified]})
+
+    # Agent SHOULD be woken — approval is clean.
+    assert_receive {:wake, "engineer", :director_approval, _}, 500
+    assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
   # ---- helpers ---------------------------------------------------------
 
   defp collect_audit(timeout_ms) do
