@@ -9,6 +9,15 @@ history:
   - date: 2026-04-24
     status: Draft
     note: Initial draft.
+  - date: 2026-04-24
+    status: Draft
+    note: |
+      Keybinding revision — flipped from vim to Emacs conventions
+      (mode-less, Ctrl/Alt chords, C-x / C-c prefixes, M-x command
+      palette, C-g cancel). D10 updated with the new rationale.
+      Director is an Emacs user; the earlier vim-inspired set was
+      a wrong default. Web UI's existing `j/k/y/n` stays as legacy
+      (not this GEP's scope).
 requires: [2]
 see-also: [6, 29, 30, 35, 36, 38]
 ---
@@ -200,7 +209,7 @@ Every GEP-6 canonical view + GEP-20 addition mapped to a TUI view:
 | Kanban | `Tui.View.Tasks` | Filterable task table with columns `Status / Project / Task / Assignee / Priority`. Swim-lane grouping available via `gs` to group-by status. No drag-and-drop; keyboard moves via `/move <status>` slash-command. |
 | Agent detail | `Tui.View.Agent` | Agent config header + tabs: `Config` (editable fields per GEP-20 AgentLive form), `Stdout` (live tail via existing `stdout_streamer`), `Inbox`, `Outbox`, `Runs`. |
 | Chat | `Tui.View.Chat` | Classic IRC view. Channel list in sidebar; main pane scrollback; composer supports plain messages and slash commands. |
-| Approvals | `Tui.View.Approvals` | List with `j/k/y/n` — matches existing `ApprovalQueueLive` keybindings (GEP-19 surfaces). |
+| Approvals | `Tui.View.Approvals` | Dired-style list; `C-n`/`C-p` cursor, `C-c C-y` / `C-c C-n` approve/deny. |
 | Audit | `Tui.View.Audit` | Searchable log with `/<query>` incremental filter + column filters (`actor=`, `action=`, `since=`). |
 | Health | `Tui.View.Health` | Process tree + container status + resource usage; reuses the GEP-20 health data. |
 | Skills (GEP-20) | `Tui.View.Skills` | Builtin/custom/shadowed classification; used-by counts. |
@@ -235,26 +244,67 @@ director@acme:tasks   [3 pending]  [4 agents]  ● ●
 
 ### Keybindings (v1)
 
-Vim-flavoured. Mode-less; composer is a one-shot `:` (command
-mode) or `/` (slash commands for in-context actions).
+**Emacs-flavoured.** Mode-less — single-letter keys are always
+text input when a composer or prompt has focus. Commands go
+through chord bindings (`Ctrl-`, `Alt-`/`M-`, `C-x`, `C-c`).
+
+View switching (`C-c` is the Emacs "mode-specific binding"
+prefix — TUI-wide commands all live under it):
 
 | Key | Action |
 |---|---|
-| `go` / `gt` / `ga` / `gc` / `gp` / `gh` / `gu` | Switch to Overview / Tasks / Agents / Chat / Approvals / Health / aUdit |
-| `gs` / `gS` | Switch company (forward / back) in sidebar |
-| `j` / `k` | List cursor down / up |
-| `h` / `l` | Collapse / expand tree nodes in sidebar |
-| `Enter` | Open detail for highlighted item |
-| `y` / `n` | Approve / deny (on Approvals view) — matches GEP-19 web shortcut |
-| `/` | Open composer in slash-command mode |
-| `:` | Open composer in global command mode |
-| `Ctrl-k` | Command palette overlay |
-| `?` | Keys help overlay |
-| `q` | Close current overlay / prompt to quit from root |
+| `C-c o` | Overview |
+| `C-c t` | Tasks |
+| `C-c a` | Agents |
+| `C-c c` | Chat |
+| `C-c p` | Approvals (permission gate) |
+| `C-c h` | Health |
+| `C-c u` | aUdit |
+| `C-c s` / `C-c S` | Switch company forward / back in sidebar |
 
-All keybindings are centralised in `Glorbo.Tui.Keybindings`;
-per-view overrides are supported. Rebinding via a config file is
-an open question for a future GEP (see "Open questions").
+Navigation (standard Emacs motion — works everywhere, including
+inside composer buffers):
+
+| Key | Action |
+|---|---|
+| `C-n` / `C-p` / `↓` / `↑` | Next / previous line |
+| `C-f` / `C-b` / `→` / `←` | Forward / back (char in composer, tree node in sidebar) |
+| `C-v` / `M-v` | Page down / up |
+| `M-<` / `M->` | Beginning / end of buffer |
+| `TAB` / `S-TAB` | Next / previous focusable region (pane cycle) |
+| `RET` | Open detail for highlighted item / submit single-line composer |
+| `C-j` | Submit multi-line composer |
+
+Commands:
+
+| Key | Action |
+|---|---|
+| `M-x` | Command palette — invokes any bound action by name |
+| `/` | Open composer with `/` already inserted (IRC slash-command convention; composer is still a regular text buffer — `C-g` cancels without submitting) |
+| `C-g` | Universal cancel — closes overlay, discards composer input, aborts prompt |
+| `C-x C-c` | Quit Glorbo TUI (with confirmation) |
+| `?` | Keys help overlay |
+| `C-l` | Redraw the screen |
+
+Approvals view (dired-style — the list is the focus, not a
+composer; dispatch-style single-letter bindings are safe here
+because nothing is typing into a buffer):
+
+| Key | Action |
+|---|---|
+| `C-c C-y` | Approve highlighted request |
+| `C-c C-n` | Deny highlighted request (prompts for reason) |
+| `C-c C-a` | Archive |
+
+All keybindings live in `Glorbo.Tui.Keybindings` as a single
+source of truth. Per-view overrides are supported but rare —
+the TUI prefers a consistent global vocabulary so muscle memory
+carries between views.
+
+**Out of scope:** vim-mode opt-in. GEP-37 ships one keybinding
+scheme, Emacs-flavoured. If there's demand for a vim-mode
+emulation later, it's a future GEP, not a compile-time option
+inside this one.
 
 ### Slash commands (composer)
 
@@ -557,21 +607,34 @@ expanded in follow-up releases.
   lands, the TUI migrates to it in the same pass that updates
   LiveView.
 
-### D10. Vim-style keybindings, slash commands for context mutations
+### D10. Emacs-style keybindings, slash commands for context mutations
 
-- **Decided:** `g<letter>` view-switch, `j/k/h/l` navigation,
-  `y/n` approve/deny (matching GEP-19 web shortcut), `/` for
-  slash commands, `:` for global command mode. Central
-  `Glorbo.Tui.Keybindings` module; per-view overrides.
-- **Alternatives:** Emacs-style meta/ctrl chords; menu-driven
-  navigation; pure slash-command interface; Ctrl-tab cycling for
-  view switching.
-- **Why:** Target audience (developers running Glorbo in their
-  terminal) has vim muscle memory; `j/k/y/n` already exists in
-  `ApprovalQueueLive` and will feel continuous. IRC's composer
-  semantics (slash commands at the bottom input line) are the
-  established pattern for this UI shape and align with GEP-30's
-  IRC-aesthetic direction.
+- **Decided:** Mode-less Emacs conventions. `C-c <letter>`
+  prefixed view switch (`C-c o/t/a/c/p/h/u`), `C-n`/`C-p`/arrows
+  for list motion, `M-x` for the command palette, `C-g` as
+  universal cancel, `C-x C-c` to quit. Approvals view uses
+  `C-c C-y` / `C-c C-n` chords so single-letter `y`/`n` stays
+  available as text input when the composer is focused. IRC
+  slash-command convention preserved (`/` inserts into the
+  composer, submission triggers the dispatch). Central
+  `Glorbo.Tui.Keybindings` module; per-view overrides are rare.
+- **Alternatives:** (a) vim-modal (`j/k/y/n`, `g<letter>`
+  prefixes, `:` ex-mode, insert/normal modes); (b) menu-driven
+  arrow-key navigation; (c) dual-mode compile-time flag shipping
+  both Emacs and vim bindings.
+- **Why:** The Director is an Emacs user, and the TUI's primary
+  user is the Director. Shipping vim as default would force a
+  modal workflow the user doesn't have muscle memory for.
+  Mode-less Emacs is also a better fit for "the composer is
+  always available" TUI shape — no mode-switching tax when
+  typing a chat message. The GEP-19 web-UI `j/k/y/n` shortcuts
+  are shipped legacy (Implemented status, content frozen) and
+  stay untouched here; if the web UI's keybindings also want
+  an Emacs flip, that's a separate GEP against GEP-19/20. The
+  dual-mode (c) option was rejected for the pre-1.0 "atomic cut"
+  discipline — two keybinding schemes means two test matrices,
+  two documentation pages, and continuous drift between them
+  for zero current benefit (single known user).
 
 ### D11. No hex dependency beyond `owl`
 

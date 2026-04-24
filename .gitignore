@@ -109,8 +109,3 @@ graphify-out/
 **/graphify-out/
 .codex
 .reviews/
-
-# Autonomous-session review logs. Ephemeral review material written
-# by Claude during autonomous rounds; not shared history. Directory
-# is referenced in CLAUDE.md as a local-only workspace.
-/docs/sessions/
