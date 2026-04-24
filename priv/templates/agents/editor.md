@@ -173,3 +173,17 @@ echo "Draft ready at blog/drafts/<slug>.md — see summary below..." > "$GLORBO_
 Glorbo reads this file on your exit to show the Director what you
 produced. Without it, your invocation is recorded as
 `:reply_file_missing` and the Director sees nothing.
+
+### Peer review opt-in (GEP-41)
+
+If you're unsure whether your output meets the task's
+`done_when:` criteria, or the task crossed a boundary (new
+security path, user-facing content, external integration), set
+`peer_review_required: true` in the task frontmatter before
+marking `done`. Peer review is cheap insurance; the Director
+would rather review a reviewer-approved task than a possibly-
+fabricated one.
+
+Note: the flag is append-only once set to `true` — you cannot
+flip it back to `false` to dodge review. Tasks with `severity:
+major` or `severity: critical` enter the gate automatically.

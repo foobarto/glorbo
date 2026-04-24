@@ -108,12 +108,13 @@ it's been in CHANGELOG for a cycle.
 - [ ] **GEP-41 implementation (crown-jewels phase 1b).** Peer-review
   gate. Router trigger rules + CritiqueOps routing + verdict parser
   + chain-view inline rendering. Depends on GEP-40. v0.8.0 scope.
-- [ ] **Agent template propagation (crown-jewels phase 1c).**
-  Propagate cairn-style additions + handoff discipline + peer-review
-  opt-in paragraph from `engineer.md` to the other 5 role templates
-  (ceo, editor, researcher, critiqueops, provenance-auditor). Uses
-  GEP-40's new frontmatter fields. Bundled with v0.8.0 so templates
-  ship with the schema that supports them.
+- [x] **Agent template propagation (crown-jewels phase 1c).**
+  Shipped across Round L (cairn-style + handoff to ceo/editor/
+  researcher/provenance-auditor) and Round O (peer-review opt-in
+  paragraph added to engineer/ceo/editor/researcher/provenance-
+  auditor — 5/5). CritiqueOps is the reviewer side and keeps its
+  pre-existing GEP-41 wording. Opt-in paragraph is canonical verbatim
+  from GEP-41 D1 + a reminder that the flag is append-only.
 - [x] **Global search should include scheduled-task tags.** Shipped
   2026-04-24 (autonomous round). `Glorbo.Search.scan_tasks/2` now
   reads `schedule:` alongside `title` (same ETS cache key), and

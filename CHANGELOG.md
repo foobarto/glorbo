@@ -26,11 +26,12 @@ glorbo shell until this is done." Scope:
 
 **Deferred behind v0.8.0:** `glorbo shell` implementation
 (GEP-37 stays Accepted; first cut of the shell now queued
-for v0.9.0 or later). Template propagation to remaining 5
-agent roles (ceo, editor, researcher, critiqueops,
-provenance-auditor) also waits for the GEP-40 schema to
-settle — templates will carry the new fields and handoff
-discipline in one coordinated cut rather than two.
+for v0.9.0 or later). Template propagation to the remaining
+5 agent roles landed across Round L (cairn-style + handoff
+to ceo/editor/researcher/provenance-auditor — CritiqueOps
+had it from Round J) and Round O (peer-review opt-in
+paragraph to all 5 non-reviewer roles), so no template work
+is left outstanding for v0.8.0.
 
 ### Added
 
@@ -98,8 +99,16 @@ discipline in one coordinated cut rather than two.
 - **Engineer agent template** rewritten cairn-style
   (commit `fe658ee`): governing principles inline, L3
   autonomy can/cannot, anti-slop discipline, handoff
-  return-path, structured reply. Reference impl; other 5
-  roles propagate in the v0.8.0 cut.
+  return-path, structured reply. Reference impl; propagated
+  across the 4 remaining non-CritiqueOps roles in Round L.
+- **Peer-review opt-in paragraph** added to engineer, ceo,
+  editor, researcher, and provenance-auditor templates
+  (GEP-41 D1 rollout item 5). Canonical verbatim language
+  from GEP-41 plus a reminder that `peer_review_required`
+  is append-only once flipped to `true` and that
+  `severity: major|critical` auto-triggers the gate.
+  CritiqueOps is the reviewer side and keeps its
+  Round-J GEP-41 framing unchanged.
 - **`docs/project-profile.md`** extended with "The crown
   jewels — non-negotiable quality axes" section codifying
   the four axes (inter-agent, director, deliverable

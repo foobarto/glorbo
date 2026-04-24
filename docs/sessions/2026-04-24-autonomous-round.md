@@ -3064,3 +3064,109 @@ Deferred to GEP-41 phase-3:
 ### Commit(s)
 
 One commit to follow.
+
+---
+
+## Round O — peer-review opt-in paragraph propagation (GEP-41 D1 rollout item 5)
+
+### Task picked
+
+Crown-jewels phase 1c tail: propagate GEP-41's canonical peer-
+review opt-in paragraph to the 5 non-CritiqueOps templates. Round
+L already propagated cairn-style + handoff-discipline sections to
+ceo/editor/researcher/provenance-auditor (critiqueops had it from
+Round J). What was still missing was the author-side paragraph
+spelled out verbatim in GEP-41 §Design ("Other agent templates
+gain the opt-in paragraph").
+
+### What shipped
+
+- `priv/templates/agents/engineer.md` — new `### Peer review
+  opt-in (GEP-41)` subsection under `## Reply contract (required)`,
+  canonical paragraph + append-only flag reminder + auto-trigger
+  note for `severity: major|critical`.
+- `priv/templates/agents/ceo.md` — same subsection inserted under
+  the reply-contract header, before the one-to-three-sentences
+  content-guidance paragraph.
+- `priv/templates/agents/editor.md` — same subsection appended to
+  the end of the reply-contract section.
+- `priv/templates/agents/researcher.md` — same subsection appended
+  at the end of the reply-contract section.
+- `priv/templates/agents/provenance-auditor.md` — same subsection
+  appended after the verdict-format line. Agent does emit its own
+  tasks occasionally (self-improvement items) so the opt-in still
+  applies.
+- `docs/todo.md` — crown-jewels phase 1c row flipped to `[x]` with
+  a note citing Round L + Round O.
+- `CHANGELOG.md` — `[Unreleased]` lede updated (no template work
+  deferred for v0.8.0); Engineer-agent bullet amended to note
+  Round-L propagation; new bullet for the opt-in paragraph rollout.
+
+### Design calls I made without you
+
+- **Canonical verbatim, not role-adapted.** Each of the 5
+  templates gets the *same* GEP-41 paragraph, not a role-rewritten
+  variant. Cost: 5 near-identical paragraphs that maintainers
+  can grep for when the wording changes. Benefit: single source
+  of truth (GEP-41), trivially greppable ("boundary (new security
+  path, user-facing content, external integration)"), zero
+  divergence risk across the roster. A role-specific rewrite
+  would be more nuanced but invites drift and needs per-template
+  review every time the gate mechanic shifts.
+- **Append-only + auto-trigger reminder added.** GEP-41's
+  paragraph itself is just the opt-in guidance. I added two
+  sentences on top: (a) once `peer_review_required: true` is
+  set, the Router rejects flips back to `false` (GEP-41 D6);
+  (b) `severity: major|critical` auto-fires the gate (GEP-41 D1
+  + Round N-1). These are the two footguns an author most
+  needs to know when weighing whether to flip the flag.
+  Rationale: readers of the template never read the GEP; the
+  template has to be self-contained on the mechanics.
+- **Subsection heading vs inline paragraph.** Used `###`
+  heading (`### Peer review opt-in (GEP-41)`) rather than an
+  inline paragraph, so it shows up in the rendered markdown
+  ToC and is easier to find via skimming. Small structural
+  cost; the reply-contract section is already subheaded on
+  critiqueops.md.
+- **Provenance-auditor included even though it's audit-focused.**
+  GEP-41's rollout list names all 5 explicitly, including
+  provenance-auditor. The auditor does file self-tasks
+  occasionally (process improvements, fixture updates) and
+  should have the opt-in available on those. Excluding it would
+  drift from the GEP.
+- **Insertion point varied per-template.** Engineer gets the
+  subsection right after the intro paragraph of the reply
+  contract (before `**Reply structure**` is introduced). CEO
+  gets it after the required-non-negotiable intro, before the
+  content-guidance line. Editor/researcher/provenance-auditor
+  get it at the end of their (shorter) reply-contract section.
+  Kept the one-para intro of each reply-contract section intact;
+  the opt-in is a refinement *on top of* replying, not a
+  replacement.
+
+### Gates
+
+- `mix test` — 2065 tests, 0 failures, 1 skipped.
+- `mix credo --strict` — 68 checks, 0 issues; exit 0.
+- `mix format --check-formatted` — clean.
+- `mix test test/glorbo/cli/scaffold/template_registry_test.exs
+  test/glorbo/cli/scaffold/templates_verb_test.exs` — 15/0
+  (template-registry + scaffold-verb tests).
+- Security pass: no trust-boundary crossings — markdown
+  additions to frontmatter-less sections of template files;
+  frontmatter YAML unchanged.
+
+### Skipped / not done
+
+- **Per-role rewording of the paragraph** — would be a polish
+  pass, not a correctness one. Canonical verbatim is cheaper
+  to maintain and easier to keep in sync with GEP-41.
+- **Template-rendering integration test for the new heading.**
+  The existing `template_registry_test.exs` already covers
+  scaffold-from-template parseability (frontmatter only); adding
+  a markdown-body snapshot check would be a fresh regression
+  layer. Out of scope for this round.
+
+### Commit(s)
+
+One commit to follow.
