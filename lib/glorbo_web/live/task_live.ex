@@ -269,16 +269,12 @@ defmodule GlorboWeb.TaskLive do
   end
 
   def handle_event("delete_task", %{"path" => _path}, socket) do
-    abs =
-      Path.join([base_dir(), "companies", socket.assigns.company_slug, socket.assigns.rel_path])
+    actor = to_string(socket.assigns[:current_user] || "director")
 
-    trash_dir = Path.join([Path.dirname(Path.dirname(abs)), "history", "deleted"])
-    File.mkdir_p!(trash_dir)
-    ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
-    dest = Path.join(trash_dir, "#{ts}-#{Path.basename(abs)}")
-
-    case File.rename(abs, dest) do
-      :ok ->
+    case Glorbo.Actions.Tasks.trash(socket.assigns.company_slug, socket.assigns.rel_path,
+           actor: actor
+         ) do
+      {:ok, _} ->
         {:noreply,
          socket
          |> put_flash(:info, "Moved #{socket.assigns.rel_path} to history/deleted/.")

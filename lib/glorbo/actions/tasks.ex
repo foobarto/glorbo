@@ -14,7 +14,6 @@ defmodule Glorbo.Actions.Tasks do
   Planned next (not yet implemented):
 
     * `move/4` — status/column flip.
-    * `trash/3` — move to `history/tasks/`.
     * `update_status/4` — any status change.
     * `assign/4` — `assigned_to:` flip + `handoff_chain:` append
       (GEP-40 consumer).
@@ -55,6 +54,15 @@ defmodule Glorbo.Actions.Tasks do
           ]
 
   @type create_result :: %{task_id: String.t(), rel_path: String.t(), abs_path: String.t()}
+
+  @type trash_opts ::
+          [
+            actor: String.t(),
+            base: Path.t(),
+            audit: atom()
+          ]
+
+  @type trash_result :: %{dest_rel_path: String.t()}
 
   @doc """
   Create a new task file under `projects/<project>/tasks/<task_id>.md`.
@@ -129,6 +137,43 @@ defmodule Glorbo.Actions.Tasks do
     end
   end
 
+  @doc """
+  Move a task file to `projects/<project>/history/deleted/` — a
+  soft-delete, not a true unlink (recoverable by moving back).
+
+  `task_rel_path` is relative to `companies/<company>/`, e.g.
+  `projects/demo/tasks/demo-07.md`.
+
+  `opts`:
+
+    * `:actor` (required) — who deleted the task.
+    * `:base` — filesystem root (default `~/.glorbo`).
+    * `:audit` — AuditLog target (default global).
+
+  ## Audit
+
+  Emits `task.trash` with `target: <original rel_path>` and detail
+  `dest: <history/deleted/... rel_path>`.
+  """
+  @spec trash(String.t(), String.t(), trash_opts()) ::
+          {:ok, trash_result()} | {:error, term()}
+  def trash(company, task_rel_path, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    with :ok <- validate_slug(company, :company),
+         {:ok, project} <- project_of(task_rel_path),
+         abs_src = Path.join([base, "companies", company, task_rel_path]),
+         :ok <- ensure_regular_file(abs_src),
+         {:ok, dest_rel, abs_dest} <- build_trash_dest(base, company, project, abs_src),
+         :ok <- File.rename(abs_src, abs_dest),
+         :ok <- emit_trash_audit(audit, company, task_rel_path, dest_rel, actor) do
+      {:ok, %{dest_rel_path: dest_rel}}
+    end
+  end
+
   defp resolve_task_id(opts, base, company, project) do
     case Keyword.get(opts, :task_id) do
       nil -> do_next_task_id(base, company, project)
@@ -145,9 +190,7 @@ defmodule Glorbo.Actions.Tasks do
   # Internals
   # ---------------------------------------------------------------------------
 
-  defp default_base do
-    Application.get_env(:glorbo, :base_dir) || Path.expand("~/.glorbo")
-  end
+  defp default_base, do: Glorbo.Filesystem.Hierarchy.default_root()
 
   defp validate_slug(slug, kind) when is_binary(slug) do
     if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
@@ -301,4 +344,45 @@ defmodule Glorbo.Actions.Tasks do
   defp put_detail(map, _key, nil), do: map
   defp put_detail(map, _key, ""), do: map
   defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
+
+  # Derive `<project>` from a `projects/<project>/tasks/<id>.md` path.
+  # Rejects anything else so callers can't trash a file outside a
+  # project's tasks dir.
+  defp project_of(rel_path) do
+    case Regex.run(~r|\Aprojects/([a-z0-9][a-z0-9-]*)/tasks/[^/]+\.md\z|, rel_path) do
+      [_whole, project] -> {:ok, project}
+      _ -> {:error, {:invalid_task_rel_path, rel_path}}
+    end
+  end
+
+  defp ensure_regular_file(abs_path) do
+    case File.lstat(abs_path) do
+      {:ok, %File.Stat{type: :regular}} -> :ok
+      {:ok, %File.Stat{type: other}} -> {:error, {:not_regular_file, other}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp build_trash_dest(base, company, project, abs_src) do
+    trash_dir =
+      Path.join([base, "companies", company, "projects", project, "history", "deleted"])
+
+    with :ok <- File.mkdir_p(trash_dir) do
+      ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
+      dest_name = "#{ts}-#{Path.basename(abs_src)}"
+      abs_dest = Path.join(trash_dir, dest_name)
+      dest_rel = "projects/#{project}/history/deleted/#{dest_name}"
+      {:ok, dest_rel, abs_dest}
+    end
+  end
+
+  defp emit_trash_audit(audit, company, rel_path, dest_rel, actor) do
+    AuditLog.append(audit, %{
+      actor: actor,
+      action: "task.trash",
+      target: rel_path,
+      company: company,
+      dest: dest_rel
+    })
+  end
 end
