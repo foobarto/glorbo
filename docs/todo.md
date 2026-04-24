@@ -100,6 +100,11 @@ it's been in CHANGELOG for a cycle.
   chain observability schema + chain audit view LiveView. Atomic
   cut: FileSpec schema extension + Router handoff-chain appender
   + `TaskChainLive` + template scaffolding updates. v0.8.0 scope.
+- [ ] **FileSpec.Formatter: preserve `|` block-scalar for
+  multi-line strings.** Currently `done_when:` with multi-line
+  content gets re-emitted as a double-quoted string with literal
+  newlines — valid YAML but ugly. Non-blocking; user-facing
+  fields deserve block-scalar. Low priority.
 - [ ] **GEP-41 implementation (crown-jewels phase 1b).** Peer-review
   gate. Router trigger rules + CritiqueOps routing + verdict parser
   + chain-view inline rendering. Depends on GEP-40. v0.8.0 scope.

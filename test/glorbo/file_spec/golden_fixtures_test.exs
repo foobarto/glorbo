@@ -34,12 +34,18 @@ defmodule Glorbo.FileSpec.GoldenFixturesTest do
            String.ends_with?(p, ".jsonl"))
     end)
 
-  minimal_valid_paths =
+  # Valid fixtures cover both `minimal_valid/` (required fields only)
+  # and `maximal_valid/` (every optional field populated). Both must
+  # pass Validator + Formatter checks.
+  valid_paths =
     fixture_paths
-    |> Enum.filter(&String.contains?(&1, "/minimal_valid/"))
+    |> Enum.filter(fn p ->
+      String.contains?(p, "/minimal_valid/") or
+        String.contains?(p, "/maximal_valid/")
+    end)
 
-  minimal_valid_md_paths =
-    minimal_valid_paths
+  valid_md_paths =
+    valid_paths
     |> Enum.filter(&String.ends_with?(&1, ".md"))
 
   @found_fixture_count length(fixture_paths)
@@ -70,8 +76,8 @@ defmodule Glorbo.FileSpec.GoldenFixturesTest do
     end
   end
 
-  describe "Validator — minimal_valid fixtures have no :error findings" do
-    for path <- minimal_valid_paths do
+  describe "Validator — valid fixtures have no :error findings" do
+    for path <- valid_paths do
       @path path
 
       test "#{@path}" do
@@ -84,8 +90,8 @@ defmodule Glorbo.FileSpec.GoldenFixturesTest do
     end
   end
 
-  describe "Formatter — minimal_valid fixtures are already canonical" do
-    for path <- minimal_valid_md_paths do
+  describe "Formatter — valid fixtures are already canonical" do
+    for path <- valid_md_paths do
       @path path
 
       test "#{@path} round-trips unchanged" do
