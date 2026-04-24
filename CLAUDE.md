@@ -86,7 +86,7 @@ intentionally doesn't carry:
 | End-user manual test plan        | `docs/testing/testplan.md` |
 | Rolling punch list               | `docs/todo.md` |
 | Release verification (cosign)    | `docs/verifying-releases.md` |
-| Past autonomous-session logs     | `docs/sessions/` |
+| Past autonomous-session logs (local only; gitignored) | `docs/sessions/` |
 | Archived design artifacts        | `docs/archived/` |
 | On-disk file format specs        | `docs/file-formats/` |
 
