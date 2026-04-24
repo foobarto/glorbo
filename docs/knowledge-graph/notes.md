@@ -605,6 +605,72 @@ and builds up. Tests pin the root-inclusive behaviour.
 
 ---
 
+## 2026-04-24 — GEP-37 Draft round + formatter list-of-map fix
+
+### `FileSpec.Formatter.emit_list_item/2` list-of-map continuation indent
+
+Pre-existing bug surfaced when R26.2b added the first golden
+fixture using list-of-map frontmatter (path-request's `paths:`).
+Continuation keys inside a list-of-map item were emitted at the
+dash-column indent instead of aligned with the first key,
+producing invalid YAML like:
+
+```
+paths:
+  - mode: read
+  path: /etc/config.yaml    # wrong — under the dash, not the key
+```
+
+Fix in `lib/glorbo/file_spec/formatter.ex` `emit_list_item/2`:
+use `pad(indent + 2)` for continuation lines (was
+`pad(indent)`). Two regression tests in
+`test/glorbo/file_spec/formatter_test.exs`. If you add a new
+FileSpec kind whose frontmatter uses lists-of-maps, the
+formatter now handles it correctly; prior to this fix anyone
+hitting it would have had silent YAML corruption on save.
+
+### Validator Placeholder section-skip
+
+`Gep.Validator.check_required_sections/1` now treats
+`Placeholder` status the same as `Accepted` / `Implemented` —
+skips the Problem / Goals / Non-goals / Design / Migration /
+Decision-log requirement. Documented intent per GEP-1
+("low-bar parking spot"); the validator had been failing
+Placeholders for required sections, which contradicted the
+skill guidance. Test: `Placeholder Standards GEP skips section
+validation` in `validator_test.exs`. Side effect: pre-existing
+GEP-34/35/36 Placeholders now pass where they were failing.
+
+### `Glorbo.Search` carries `schedule:` frontmatter
+
+`Search.scan_tasks/2` task structs gained a `schedule:` field;
+ETS cache tuple changed from `{path, mtime, title}` to
+`{path, mtime, {title, schedule}}`. `score_task/3` scores
+schedule substring matches at 35 (below id-contains at 40 so
+task names still win ties). Task labels decorate with
+`(<schedule>)` when a task has one, so the director sees *why*
+a Ctrl+K hit surfaced. If you see an odd label decoration, check
+the task's `schedule:` frontmatter first — it's not a bug.
+
+### `GlorboWeb.KanbanLive.model_options_for_assignee/3` is public-but-`@doc false`
+
+Marked `@doc false` + promoted from `defp` to `def` so its
+tests can call it directly without a LiveView harness. Not a
+contract for callers outside this module. If you see the graph
+flag it as "called from tests only" that's the reason.
+
+### GEP-37 renamed mid-Draft: `glorbo tui` → `glorbo shell`
+
+Command + top-level module renamed. File moved via `git mv`
+(69% similarity). TUI framework flipped from "custom on owl"
+to `pcharbon70/term_ui` — no owl dep, no custom render loop;
+term_ui's widget set covers the full shell surface. D2/D6/D11
+updated accordingly in a single history entry. Module tree is
+flat: `Glorbo.Shell.{Supervisor, Runtime, EventBus, Views.*,
+Overlays.*, Theme, Keybindings, Actions}`.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

@@ -826,6 +826,83 @@ tests to run beyond that.
 - Cairn (separate repo) — three commits pushed to
   <https://github.com/foobarto/cairn> on `main`.
 
+## 2026-04-24 15:51 — autonomous wakeup: graphify refresh
+
+**Task picked:** Refresh `docs/knowledge-graph/GRAPH_REPORT.md`
+via `graphify update lib` and append today's tacit-knowledge
+entries to `docs/knowledge-graph/notes.md`. Autonomy level: L2.
+Picked because CLAUDE.md's rule explicitly requires the refresh
+when modules change, and today's sessions changed
+`Glorbo.Search`, `Glorbo.FileSpec.Formatter`,
+`GlorboWeb.KanbanLive`, and `Gep.Validator`. No design calls.
+
+**What shipped:**
+
+- `graphify update lib` → 2985 nodes (+3), 5668 edges (+7),
+  118 communities (+7) vs. last report. Deltas match today's
+  changes: new public function in KanbanLive, new cross-module
+  call (KanbanLive → ProviderModel / Repo), schedule-field
+  fanout in Search. No surprising structural shifts.
+- Moved the report to `docs/knowledge-graph/GRAPH_REPORT.md`
+  and cleaned up `lib/graphify-out/` per CLAUDE.md's stated
+  command.
+- Appended a dated section to `docs/knowledge-graph/notes.md`
+  with four tacit-knowledge entries: the formatter list-of-map
+  indent fix, the validator Placeholder skip, `Glorbo.Search`'s
+  new `schedule:` field + label decoration, the
+  `@doc false` + public promotion on
+  `KanbanLive.model_options_for_assignee/3`, and the GEP-37
+  rename / term_ui flip.
+
+**Design calls I made without you:**
+
+- **Skipped the doc-drift pass** I mentioned as an option.
+  Per my honest read earlier: low-ROI without specific drift
+  in mind. The 15 questions I parked are the real blocker; a
+  drift pass without those answers would churn the wrong docs.
+- **Didn't push.** Per memory, unpushed commits stay local
+  until a version bump or explicit ask. This wakeup's commit
+  joins the backlog.
+
+**Gates:**
+
+- `graphify update lib` — clean (241 files, 100% AST
+  extraction, no errors).
+- No code changed; no tests required for this wakeup.
+  Existing suite was last green at `mix test` 1954/0 earlier
+  in the session.
+
+**Skipped / not done this turn:**
+
+- `mix gep.validate` — GEP frontmatter untouched this wakeup;
+  last green at 39/39 (commit `a3701c3`).
+- No moduledoc audit, no cairn-install-against-glorbo — both
+  await your steering from the 15 questions parked above.
+
+**Commit:** see next entry (docs-only graph refresh + notes
+append).
+
+## Handoff — 15:51
+
+**Shipped this round:** graphify refresh + notes.md append.
+
+**Autonomy level used:** L2.
+
+**Stopped because:** 15 parked questions from earlier are the
+real blockers; autonomous queue is otherwise empty at L2. One
+bounded task done, returning control.
+
+**Queued if you want more:** nothing obvious without your
+direction on the 15 questions.
+
+**For your review:** those 15 questions. No new ones from this
+wakeup.
+
+**Not scheduling a next wakeup.** Doing so would just fire,
+find nothing, and stop — wasted context cycle. If you come
+back with direction, invoke `/cairn-round` or equivalent to
+restart.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
