@@ -14,6 +14,14 @@ defmodule Glorbo.FileSpec.Formatter do
       touches what's below the closing `---`. Task prose, agent
       instructions, channel-log entries stay as the director wrote
       them.
+    * Multi-line strings emit as YAML `|` (clip) block scalars
+      instead of double-quoted scalars with literal `\\n`. Applies
+      both to top-level fields (`done_when:`, future paragraph
+      fields) and to values inside list-of-maps items
+      (`handoff_chain[].reason`). `|` clip chomping always yields
+      a single trailing newline; the formatter normalises to that
+      shape so a string written without one becomes `:changed` on
+      first pass and `:unchanged` thereafter.
     * File ends with exactly one trailing `\\n`.
 
   Scope (GEP-25 D3): syntactic only. The formatter does NOT add
@@ -231,21 +239,20 @@ defmodule Glorbo.FileSpec.Formatter do
         "{}"
 
       [{first_k, first_v} | rest] ->
-        first_line = emit_list_item_pair(first_k, first_v, indent + 2, :first)
+        first_line = emit_list_item_pair(first_k, first_v, indent + 2)
 
         rest_lines =
           Enum.map(rest, fn {k, v} ->
-            ["\n", pad(indent + 2), emit_list_item_pair(k, v, indent + 2, :rest)]
+            ["\n", pad(indent + 2), emit_list_item_pair(k, v, indent + 2)]
           end)
 
         [first_line, rest_lines]
     end
   end
 
-  # `kind` is unused today (both first + rest emit identically once
-  # the surrounding caller has prefixed the dash + indent). Multi-line
-  # values use a block scalar; everything else falls back to `emit_leaf`.
-  defp emit_list_item_pair(k, v, indent, _kind) when is_binary(v) do
+  # Multi-line values use a block scalar; everything else falls
+  # back to `emit_leaf`.
+  defp emit_list_item_pair(k, v, indent) when is_binary(v) do
     if block_scalar?(v) do
       [to_string(k), ": |\n", emit_block_scalar_body(v, indent + 2)]
     else
@@ -253,7 +260,7 @@ defmodule Glorbo.FileSpec.Formatter do
     end
   end
 
-  defp emit_list_item_pair(k, v, _indent, _kind),
+  defp emit_list_item_pair(k, v, _indent),
     do: [to_string(k), ": ", emit_leaf(v)]
 
   # Scalar emission — quote only when the YAML parser might
