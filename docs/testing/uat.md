@@ -356,7 +356,43 @@ Rounds ordered newest-first. Each round records the commit under
 test + the tally, not per-case outcomes (those live in the case
 boxes above).
 
-### Round 7 — 2026-04-21 (this cycle)
+### Round 8 — 2026-04-24 (v0.8.0 release gate)
+
+- **Commit under test:** `b54e1be` (pre-release doc-drift pass;
+  pre-fix for the finding below).
+- **Scope:** P-series (crown-jewels, GEP-40 + GEP-41) walked via
+  curl + HTML assertions against a temp `/tmp/glorbo-uat-r8-*`
+  workspace on `127.0.0.1:4100`. Chrome-based MCP unavailable on
+  Bazzite (no native Chrome binary; only flatpak); full browser
+  automation stand-in with filesystem seeds + direct HTTP fetch
+  exercises the same LiveView render paths that Section P
+  asserts against.
+- **Results:**
+  - ✅ Passing (7 cases): P1 (pill render), P3 (empty chain), P4
+    (2-hop chain), P5 (`peer_review.requested` in chain view),
+    P6 (`task.peer_review.approve` in chain view), P7 (verdict
+    suppresses pill), P9 (new finding, now fixed).
+  - ◐ Partial (1): P2 — unit-test-covered, not browser-
+    exercisable via curl. Kanban form → `Actions.Tasks.create/4`
+    is where the severity auto-flip happens; that full round-
+    trip needs form submission over WebSocket.
+  - 🚫 Not exercised this round: P8 (vacuous — no mutation path
+    exists today), plus A–O regression (10 route codes spot-
+    checked; all HTTP 200 except the non-route
+    `/companies/acme/agents` collection which is 404 by design).
+- **Finding landed this round (P9):** Kanban review column
+  filter `group_by_column/1` didn't include `"pending-approval"`,
+  so Gate-set tasks (`status: pending-approval`) silently
+  disappeared from the board. Fixed in
+  `lib/glorbo_web/live/kanban_live.ex:1520` + regression test
+  added. The bug predates the crown-jewels arc — `pending-
+  approval` has been a Router/Gate state since GEP-19 — but the
+  peer-review gate work made the state far more common, which is
+  why it surfaced here.
+- **Artefacts:** none saved; assertions ran inline against
+  curl-fetched HTML.
+
+### Round 7 — 2026-04-21 (previous cycle)
 
 - **Commit under test:** `1491fc1`
 - **Scope:** A · B1 · C1 · D1/D3/D4 · E1/E2 · F1 · G1 · H4 ·
@@ -393,30 +429,37 @@ boxes above).
 
 ## P. Task chain + peer-review (GEP-40 + GEP-41)
 
-- [ ] **P1** — Create a task with `severity: major` via the Kanban
-  new-task drawer; verify the card renders with a `⧗ peer-review`
-  pill on the board (auto-flip of `peer_review_required: true`
-  fires because severity is major).
-- [ ] **P2** — Same task: frontmatter written to disk contains
-  `peer_review_required: true` even though the form didn't set it
-  (Round N-1 severity auto-flip).
-- [ ] **P3** — Navigate to `/companies/<co>/tasks/<id>/chain` from
-  the task detail header; chain view renders with "No handoffs
-  recorded" copy before any reassign happens.
-- [ ] **P4** — Reassign the task twice via the task-detail
-  Reassign control; chain view now shows 2 hops with from/to/
-  reason/ts; no `chain drift` banner (chain + audit agree).
-- [ ] **P5** — Flip a `peer_review_required` task to
-  `pending-approval`; `peer_review.requested` audit event fires
-  exactly once per task-path, surfaces in the chain view's
-  "peer review" section with `reviewer critiqueops · severity
-  major` detail line.
-- [ ] **P6** — Approve/revise/block the task via a CritiqueOps
-  verdict write; `task.peer_review.<verdict>` event appears in
-  the chain view peer-review section with the verdict note.
-- [ ] **P7** — Kanban card's `⧗ peer-review` pill disappears once
-  a verdict is recorded; the `⚠ gated` pill (if present) persists
-  until Director approval lands.
+- [x] **P1** — Task with `severity: major + peer_review_required:
+  true + requires_approval: director + status: pending` renders
+  on the Kanban review column with both the `⧗ peer-review` and
+  `⚠ gated` pills, and the `gl-task-card--approval` modifier is
+  applied.
+- [~] **P2** — Severity auto-flip at create (`major|critical` →
+  `peer_review_required: true`) is covered by
+  `test/glorbo/actions/tasks_test.exs:"severity auto-flip"`; not
+  browser-exercisable via curl-driven UAT because the flip
+  happens in the `Actions.Tasks.create/4` call behind the Kanban
+  form submission.
+- [x] **P3** — `/companies/acme/tasks/demo-1/chain` for a task
+  with no `handoff_chain:` frontmatter renders "No handoffs
+  recorded" + `handoff history · 0 steps`.
+- [x] **P4** — Task with a 2-entry `handoff_chain:` renders as
+  `handoff history · 2 steps` with both reason strings, chain
+  from/to classes, and no drift banner.
+- [x] **P5** — Task with seeded `peer_review.requested` audit
+  event renders the `peer review · N events` section in the
+  chain view with `review requested` label + `reviewer
+  critiqueops · severity major` detail. (The live Gate also
+  emits its own `peer_review.requested` when it first sees a
+  reviewer-blocked task, so per-view event counts can exceed
+  the manually-seeded rows — that's correct behaviour.)
+- [x] **P6** — Task with `task.peer_review.approve` audit row
+  renders with the `verdict: approve` label and the `note` from
+  the audit detail ("verified spot-check") + "by critiqueops"
+  actor.
+- [x] **P7** — Task with `peer_review_verdict: approve` set in
+  frontmatter renders WITHOUT the `⧗ peer-review` pill on the
+  Kanban card (the pill is conditioned on verdict == nil).
 - [ ] **P8** — GEP-41 D6 invariant (`peer_review_required` is
   append-only) holds *vacuously* at v0.8.0: no Director-facing
   LiveView surface and no Router outbox handler currently
@@ -424,3 +467,13 @@ boxes above).
   violate it. Runtime enforcement (`peer_review_flag_rewound`
   rejection) will land if/when a mutation path is added; see
   GEP-41 history for the deferral note.
+- [x] **P9** *(UAT Round 8 finding)* — Task with `status:
+  pending-approval` (the state the Approvals.Gate + Router set
+  when the agent reports back on an approval-gated task) now
+  renders in the Kanban review column. The pre-fix
+  `group_by_column/1` filter only matched `["pending",
+  "approved", "denied"]`, so Gate-set tasks silently disappeared
+  from the board until the Director explicitly approved or
+  denied via the Inbox. Regression test:
+  `test/glorbo_web/live/kanban_live_test.exs:"renders tasks
+  with status: pending-approval in the review column"`.

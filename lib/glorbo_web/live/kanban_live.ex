@@ -1517,7 +1517,11 @@ defmodule GlorboWeb.KanbanLive do
     %{
       todo: Enum.filter(tasks, &(&1.status == "todo")),
       in_progress: Enum.filter(tasks, &(&1.status == "in-progress")),
-      review: Enum.filter(tasks, &(&1.status in ["pending", "approved", "denied"])),
+      review:
+        Enum.filter(
+          tasks,
+          &(&1.status in ["pending", "pending-approval", "approved", "denied"])
+        ),
       done: Enum.filter(tasks, &(&1.status == "done"))
     }
   end

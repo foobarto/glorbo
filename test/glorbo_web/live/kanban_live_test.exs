@@ -24,6 +24,43 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert html =~ ~s|data-status="pending"|
   end
 
+  # UAT Round 8 finding: `status: pending-approval` — the state the
+  # Approvals.Gate + Router set when an agent reports "done" on a
+  # `requires_approval: director` task — was silently dropped by the
+  # review column filter. The card would disappear from the board until
+  # the Director explicitly approved or denied via the Inbox, so
+  # kanban users who dragged approval-gated tasks lost track of them.
+  test "renders tasks with status: pending-approval in the review column",
+       %{conn: conn, base: base} do
+    tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    File.write!(Path.join([base, "companies/acme/projects/foo/project.md"]), """
+    ---
+    kind: project/v1
+    slug: foo
+    name: foo
+    ---
+    # foo
+    """)
+
+    File.write!(Path.join(tasks_dir, "foo-42.md"), """
+    ---
+    kind: task/v1
+    id: foo-42
+    title: gated task awaiting director sign-off
+    status: pending-approval
+    assigned_to: engineer
+    requires_approval: director
+    ---
+    body
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
+    assert html =~ "gated task awaiting director sign-off"
+    assert html =~ ~s|data-status="pending-approval"|
+  end
+
   test "kanban:move writes new status to the task frontmatter",
        %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")

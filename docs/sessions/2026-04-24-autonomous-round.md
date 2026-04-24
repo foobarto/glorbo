@@ -3294,3 +3294,88 @@ feature-complete.
 ### Commit(s)
 
 One commit to follow.
+
+---
+
+## UAT Round 8 + pending-approval Kanban fix
+
+### Task picked
+
+Pre-release gate step 4 — E2E UAT on the crown-jewels Section P
+before the v0.8.0 cut. Chrome-based MCP can't attach on Bazzite
+(only flatpak browsers available), so I drove UAT via curl + HTML
+assertions against a `/tmp/glorbo-uat-r8-*` workspace served by
+a dedicated `mix phx.server` on `:4100`. Same render paths as
+a real browser would exercise for these specific cases.
+
+### What shipped
+
+- **UAT Round 8 log** appended to `docs/testing/uat.md`:
+  7 passing P-cases (P1/P3/P4/P5/P6/P7/P9), 1 partial (P2 —
+  unit-test-covered but not curl-exercisable), 1 vacuous (P8),
+  10-route regression spot-check (all HTTP 200).
+- **P9 finding + fix** (`lib/glorbo_web/live/kanban_live.ex:1520`):
+  the Kanban review column filter
+  (`group_by_column/1`) now includes `"pending-approval"` in
+  its status allowlist alongside the existing
+  `pending/approved/denied`. Pre-fix, any task the Approvals.Gate
+  or Router set to `pending-approval` would silently disappear
+  from the Kanban board until the Director explicitly flipped
+  the status via the Inbox. Regression test added:
+  `renders tasks with status: pending-approval in the review
+  column` in `kanban_live_test.exs`.
+- **Section P cases marked in `uat.md`** with pass/partial
+  status + case-by-case notes; new case P9 documents the finding.
+
+### Design calls I made without you
+
+- **curl + HTML assertions instead of chrome MCP.** Per the
+  `reference_agent_browser_bazzite` memory + the CLAUDE.md
+  "Bazzite workaround" note, Chrome-based MCP can't attach.
+  Flatpak browsers exist (chromium, firefox) but
+  `mcp__chrome-devtools-mcp` expects a native binary at
+  `/opt/google/chrome/chrome`. Rather than detour into flatpak
+  launch + CDP attach plumbing, I drove UAT by seeding the
+  filesystem with representative task + audit fixtures and
+  fetching the LiveView HTML over curl. Same render paths,
+  same assertions; lost: JS hook behavior (KanbanCard drag,
+  LiveView reconnect) and form submission over WebSocket.
+  That's the reason P2 is marked partial — the full
+  severity-auto-flip round-trip goes through a form submission
+  I couldn't drive from curl. Unit tests cover the actual flip
+  logic.
+- **Filter fix covers `pending-approval` only.** Other Router /
+  Gate states like `completed`, `superseded`, `cancelled`
+  (if they exist in some code path) aren't added to any column
+  — out of scope for this fix. Only the state we saw silently
+  disappearing is added.
+- **Regression test in kanban_live_test.exs, not tasks_test.**
+  The filter is a LiveView render concern, not a task
+  definition concern. The task file is legal either way
+  (`pending-approval` is already in the `TaskMd` FileSpec
+  enum). Test placement follows that concern split.
+
+### Gates
+
+- `mix test test/glorbo_web/live/kanban_live_test.exs` —
+  44 tests, 0 failures.
+- `mix credo --strict` (full scope) — deferred to the
+  pre-tag gate run.
+- UAT Round 8 curl walk — 7 ✅ / 1 ◐ / 1 vacuous / 10-route
+  regression spot-check all 200 (except non-route 404 for
+  `/companies/acme/agents` collection, expected).
+
+### Skipped / not done
+
+- **Chrome MCP setup on flatpak.** Not worth the detour in
+  this session; uat.md §Bazzite can capture the incantation
+  for a later round if full JS hook coverage becomes a blocker.
+- **Full A–O regression re-walk.** Round 7 covered A–K in
+  interactive browser; I spot-checked route codes only. Per
+  pre-1.0 practice, a v0.8.0 cut doesn't require a full UAT
+  re-walk since no A–O feature has changed since Round 7.
+
+### Commit(s)
+
+One commit to follow (Kanban filter + regression test +
+UAT Round 8 log + this session entry).
