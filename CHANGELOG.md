@@ -10,7 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Changed
+
+- **`FileSpec.Formatter`** now emits multi-line frontmatter strings
+  as YAML `|` (clip) block scalars instead of double-quoted scalars
+  with literal `\n`. Applies both to top-level fields (`done_when:`,
+  future paragraph fields) and to values inside list-of-maps items
+  (`handoff_chain[].reason`). Idempotent across round-trips; a
+  string written without a trailing newline becomes `:changed` once
+  (gains the canonical single trailing `\n`) then `:unchanged`
+  forever after.
+
+### GEPs
+
+- **GEP-23 `egress.kbps_cap` — won't-fix.** Maintainer-recorded
+  decline (2026-04-25): kbps shaping is overkill for Glorbo's
+  single-user / single-host posture. The spec line stays in §Proxy
+  daemon §7 as a documented opt-out but no implementation path is
+  planned. GEP-23 stays Implemented.
 
 ## [0.8.0] — 2026-04-25
 
