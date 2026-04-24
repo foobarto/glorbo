@@ -83,6 +83,14 @@ it's been in CHANGELOG for a cycle.
 
 ## P3 — thinking out loud
 
+- [ ] **GEP-37 `glorbo tui` implementation.** Drafted 2026-04-24. Once
+  accepted, phased shipping: (1) carve `Glorbo.Actions` out of
+  `GlorboWeb.Actions` + extract `create_task`/`move_task`/`trash_task`/
+  `dispatch_task`/`create_project`/`create_agent`; (2) custom TUI
+  runtime on `owl` + basic pane/layout primitives; (3) views in
+  drop-in parity order (chat/approvals/tasks first, then agents,
+  audit, health, skills/goals). Most of GEP-36's write-seam cleanup
+  arrives in (1).
 - [ ] **Global search should include scheduled-task tags.** Right now
   `schedule:` is searchable only via audit (via `task.scheduled_
   dispatch`). A `schedule:daily` query should find all daily tasks.

@@ -31,7 +31,7 @@ history:
       TaskLive routed to the new path). Existing `?` cheatsheet +
       ⌘K palette reused.
 requires: [2, 6]
-see-also: [11, 15, 20, 25]
+see-also: [11, 15, 20, 25, 37]
 ---
 
 # GEP-30: Director Dashboard TUI Redesign (V1)

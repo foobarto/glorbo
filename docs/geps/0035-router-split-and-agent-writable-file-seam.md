@@ -16,7 +16,7 @@ history:
       the round-3 sweep wired them all up. The dual-review finding
       was: centralise the host-side agent-writable-file policy and
       split the Router's per-kind outbox handling into siblings.
-see-also: [30]
+see-also: [30, 37, 38]
 ---
 
 # GEP-35: Router split + AgentWritableFile seam

@@ -17,7 +17,7 @@ history:
       `File.rename` directly. That means two surfaces — LV + MCP —
       can produce divergent on-disk shapes, audit gaps, and
       permission bypasses.
-see-also: [6, 29]
+see-also: [6, 29, 37, 38]
 ---
 
 # GEP-36: Actions layer as the single Director-write channel

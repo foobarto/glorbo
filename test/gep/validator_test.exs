@@ -291,6 +291,30 @@ defmodule Gep.ValidatorTest do
       File.rm_rf!(tmp_dir)
     end
 
+    test "Placeholder Standards GEP skips section validation" do
+      gep = %{
+        valid_gep(1)
+        | type: "Standards",
+          status: "Placeholder",
+          history: [%{"date" => "2026-04-24", "status" => "Placeholder", "note" => "parked"}],
+          body: """
+          ## Problem
+          Rough problem statement; design space not yet explored.
+
+          ## Open questions
+          - everything
+          """
+      }
+
+      tmp_dir = tmp_gep_dir([gep])
+      results = Validator.validate_all(tmp_dir)
+
+      # Placeholders are intentional parking spots; section check is skipped
+      # until they graduate to Draft.
+      assert no_errors_for_gep(results, 1)
+      File.rm_rf!(tmp_dir)
+    end
+
     test "Draft Standards GEP with all required sections passes" do
       gep = %{
         valid_gep(1)

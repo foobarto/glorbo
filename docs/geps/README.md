@@ -60,6 +60,8 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0034 | [Reindex v2 — full derived-state rebuild](./0034-reindex-v2-derived-state-rebuild.md)       | Standards     | Placeholder |
 | 0035 | [Router split + AgentWritableFile seam](./0035-router-split-and-agent-writable-file-seam.md) | Standards   | Placeholder |
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Placeholder |
+| 0037 | [`glorbo tui` — interactive terminal client for the Director](./0037-glorbo-tui.md) | Standards     | Draft       |
+| 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Placeholder |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
