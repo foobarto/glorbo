@@ -2,7 +2,7 @@
 gep: 0038
 title: "Frontend adapter contracts — one internal service layer, N frontends"
 author: Glorbo Maintainers <security@example.invalid>
-status: Placeholder
+status: Superseded
 type: Standards
 created: 2026-04-24
 history:
@@ -18,6 +18,20 @@ history:
       the principle; the concrete sub-proposals are GEP-35 (read
       seam) and GEP-36 (write seam). GEP-37's deliverable includes
       most of GEP-36's extraction as a side effect.
+  - date: 2026-04-24
+    status: Superseded
+    note: |
+      Superseded by GEP-36. User directive on 2026-04-24:
+      "GEP-36/38 confusing, let's do the Glorbo.Actions and route
+      everything through it properly." GEP-36 is the concrete
+      atomic Actions carve-out that will also codify the
+      frontend-adapter principle this GEP was reserving — no need
+      to keep two separate GEPs for the same outcome. GEP-36's
+      expanded Draft (forthcoming) will absorb the principle from
+      this document's sketch. This file remains as historical
+      record of the principle's early framing; navigation goes
+      through GEP-36 from here.
+superseded-by: 36
 see-also: [6, 29, 35, 36, 37]
 ---
 

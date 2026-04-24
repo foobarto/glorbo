@@ -61,7 +61,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0035 | [Router split + AgentWritableFile seam](./0035-router-split-and-agent-writable-file-seam.md) | Standards   | Placeholder |
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Placeholder |
 | 0037 | [`glorbo shell` — interactive terminal session for the Director](./0037-glorbo-shell.md) | Standards     | Accepted    |
-| 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Placeholder |
+| 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Superseded  |
 | 0039 | [Configurable TUI keybinding schemes — Emacs, Vim, VS Code](./0039-configurable-tui-keybindings.md) | Standards | Placeholder |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->

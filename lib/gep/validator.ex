@@ -404,12 +404,14 @@ defmodule Gep.Validator do
 
   defp check_required_sections(record) do
     # Only validate sections for Standards GEPs that are actively being written
-    # toward acceptance. Placeholders are intentionally incomplete parking spots
-    # (see GEP-1 §"Placeholders") — they must graduate to Draft before they are
-    # held to the full template. Accepted/Implemented GEPs have frozen structure
-    # and are append-only. Informational/Process GEPs are descriptive by nature
-    # and don't follow the Standards template.
-    if record.type != "Standards" or record.status in ~w(Placeholder Accepted Implemented) do
+    # toward acceptance (status == Draft). Placeholders are intentional parking
+    # spots per GEP-1 and must graduate before being held to the full template.
+    # Accepted / Implemented / Superseded / Withdrawn / Rejected GEPs have
+    # frozen structure and are append-only (or archival). Informational /
+    # Process GEPs are descriptive by nature and don't follow the Standards
+    # template.
+    if record.type != "Standards" or
+         record.status in ~w(Placeholder Accepted Implemented Superseded Withdrawn Rejected) do
       []
     else
       sections = @required_sections[record.type || "Standards"] || []

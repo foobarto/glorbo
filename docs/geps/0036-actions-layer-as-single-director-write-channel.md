@@ -17,7 +17,36 @@ history:
       `File.rename` directly. That means two surfaces — LV + MCP —
       can produce divergent on-disk shapes, audit gaps, and
       permission bypasses.
-see-also: [6, 29, 37, 38]
+  - date: 2026-04-24
+    status: Placeholder
+    note: |
+      Scope expanded: GEP-38 (frontend adapter contracts) marked
+      Superseded-by-this-GEP per user directive
+      ("GEP-36/38 confusing, let's do the Glorbo.Actions and
+      route everything through it properly"). GEP-36 now covers
+      both the concrete atomic `Glorbo.Actions` carve-out AND
+      the principle that every frontend (web LV, MCP, shell,
+      future frontends) routes through it. The principle was
+      previously reserved in GEP-38's sketch.
+
+      Shape-level decisions settled pending Draft promotion:
+      - `Glorbo.Actions` is **pure module + functions**, not a
+        GenServer. Rationale per maintainer 2026-04-24: no
+        current use case where concurrent shell/web/MCP writes
+        would race on state needing Actions as a gatekeeper;
+        filesystem atomic-rename + append-only audit handle
+        concurrency correctly at the OS level. Revisit if such
+        a use case materialises — a GenServer can wrap the pure
+        module later without rewriting callers.
+      - Absorbs GEP-38's principle: every Director-facing
+        capability exposed through `Glorbo.Actions`; frontends
+        are thin adapters; no parallel write paths.
+      - Extracts every mutation that today lives inline in
+        LiveView handlers (create_task, move_task, trash_task,
+        dispatch_task, create_project, create_agent) — GEP-37's
+        same carve-out list.
+supersedes: [38]
+see-also: [6, 29, 37]
 ---
 
 # GEP-36: Actions layer as the single Director-write channel
