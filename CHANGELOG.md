@@ -10,6 +10,75 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+Targeting **v0.8.0**, which will ship after the `Glorbo.Actions`
+write-seam carve-out (GEP-36, absorbing GEP-38) and the first
+cut of the `glorbo shell` (GEP-37) are both implemented.
+
+### Added
+
+- **`Glorbo.Search` indexes task `schedule:` frontmatter.**
+  Ctrl+K palette now substring-matches schedule values; query
+  `daily` surfaces every task with `schedule: every day` or
+  similar. Label decorates with `(<schedule>)` when a task has
+  one, so the director sees *why* a hit surfaced. Schedule
+  matches score at 35 (below title/id so task names still win
+  ties). 5 new tests.
+- **Kanban new-task form gains a `model` combobox** (GEP-32
+  phase 4 follow-up). Selecting an assignee pre-fills a
+  `<datalist>` of cached model IDs for that agent's provider;
+  the chosen model is persisted into task frontmatter.
+  Dispatch already honours `task.model` per threatmodel M10.
+  5 new tests.
+- **R26.2b: per-kind golden fixtures** for every FileSpec kind.
+  12 new minimal_valid fixtures (sentinel-stuck,
+  sentinel-resolution, task-comments, inbox-message,
+  inbox-archive, audit-event, agent-memory-index,
+  benchmark-run, config, emergency-stop, proposal,
+  path-request); all 24 kinds now covered by
+  `GoldenFixturesTest`.
+- **`docs/project-profile.md`** — declarative statement of
+  Glorbo's stances (risk tolerance, security posture, quality
+  bar, contribution norms, tech-debt stance, pre-release
+  gate). Introduced by the cairn workflow kit; populated
+  from maintainer's answers on 2026-04-24. Consumed by
+  autonomous rounds and the `cairn-review-phase` skill.
+- **GEP-37 Draft** — `glorbo shell` interactive terminal
+  session for the Director. Pure Elixir on
+  [`pcharbon70/term_ui`](https://github.com/pcharbon70/term_ui);
+  Emacs-style keybindings; drop-in parity with the Phoenix
+  dashboard.
+- **GEP-38 Placeholder** — frontend adapter contracts (one
+  internal service layer, N frontends); likely to be absorbed
+  into GEP-36's atomic Actions carve-out when that lands.
+- **GEP-39 Placeholder** — configurable TUI keybinding
+  schemes (Emacs default / Vim / VS Code); implementation
+  gated on demand.
+
+### Changed
+
+- **`Gep.Validator` skips required-sections check for
+  `Placeholder` status.** Matches GEP-1's "low-bar parking
+  spot" definition; GEP-34/35/36 Placeholders now pass where
+  they had been failing. New regression test
+  `Placeholder Standards GEP skips section validation`.
+- **`FileSpec.Formatter.emit_list_item/2`** — pre-existing
+  indent bug fixed for list-of-map frontmatter (surfaced by
+  the path-request golden fixture). Continuation keys now
+  align with first key instead of dash column. Two regression
+  tests lock the canonical shape.
+- **`CLAUDE.md` gains an explicit pre-version release gate** —
+  doc-drift pass, graphify refresh, full test run, E2E UAT,
+  security review, release-artefact flow. Formalises what
+  had been habit.
+
+### GEPs
+
+- GEP-37 `glorbo shell` — **Draft** (renamed mid-round from
+  `glorbo tui`; D2 flipped from custom-on-owl to term_ui
+  after maintainer review).
+- GEP-38 frontend adapter contracts — **Placeholder**.
+- GEP-39 configurable TUI keybindings — **Placeholder**.
+
 ## [0.7.0] — 2026-04-24
 
 Seventh pre-1.0 minor. Two shipping flags over v0.6.0: GEP-23 Phase 5
