@@ -180,7 +180,6 @@
            [
              allowlist: [
                "lib/glorbo_web/live/agent_live.ex",
-               "lib/glorbo_web/live/channel_live.ex",
                "lib/glorbo_web/live/kanban_live.ex"
              ]
            ]}

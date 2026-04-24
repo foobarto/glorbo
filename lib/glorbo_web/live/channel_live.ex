@@ -119,8 +119,22 @@ defmodule GlorboWeb.ChannelLive do
   def handle_event("create_channel", %{"slug" => slug}, socket) do
     normalized = String.trim(slug || "")
 
-    cond do
-      not Glorbo.Slug.valid?(normalized) ->
+    case Glorbo.Actions.Channels.create(socket.assigns.company_slug, normalized,
+           actor: "director",
+           base: socket.assigns.base
+         ) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:new_channel_slug, "")
+         |> push_navigate(
+           to: ~p"/companies/#{socket.assigns.company_slug}/channels/#{normalized}"
+         )}
+
+      {:error, :already_exists} ->
+        {:noreply, put_flash(socket, :error, "Channel ##{normalized} already exists.")}
+
+      {:error, {:invalid_slug, :channel, _}} ->
         {:noreply,
          put_flash(
            socket,
@@ -128,40 +142,14 @@ defmodule GlorboWeb.ChannelLive do
            "Channel name must be lowercase letters / digits / dashes (starts with a letter or digit)."
          )}
 
-      File.exists?(channel_path(socket.assigns.base, socket.assigns.company_slug, normalized)) ->
-        {:noreply, put_flash(socket, :error, "Channel ##{normalized} already exists.")}
+      {:error, reason} ->
+        Logger.warning("create_channel failed",
+          company: socket.assigns.company_slug,
+          channel: normalized,
+          reason: inspect(reason)
+        )
 
-      true ->
-        path = channel_path(socket.assigns.base, socket.assigns.company_slug, normalized)
-
-        content =
-          """
-          ---
-          kind: channel-log/v1
-          channel: #{normalized}
-          ---
-          # ##{normalized}
-
-          """
-
-        with :ok <- File.mkdir_p(Path.dirname(path)),
-             :ok <- File.write(path, content) do
-          {:noreply,
-           socket
-           |> assign(:new_channel_slug, "")
-           |> push_navigate(
-             to: ~p"/companies/#{socket.assigns.company_slug}/channels/#{normalized}"
-           )}
-        else
-          {:error, reason} ->
-            Logger.warning("create_channel failed",
-              company: socket.assigns.company_slug,
-              channel: normalized,
-              reason: inspect(reason)
-            )
-
-            {:noreply, put_flash(socket, :error, "Could not create channel.")}
-        end
+        {:noreply, put_flash(socket, :error, "Could not create channel.")}
     end
   end
 
@@ -202,11 +190,28 @@ defmodule GlorboWeb.ChannelLive do
     company = socket.assigns.company_slug
     base = socket.assigns.base
 
-    if archivable?(channel) do
-      do_archive(base, company, channel, socket)
-    else
-      {:noreply,
-       put_flash(socket, :error, "Can't archive ##{channel} — it's a canonical channel.")}
+    case Glorbo.Actions.Channels.archive(company, channel,
+           actor: "director",
+           base: base
+         ) do
+      {:ok, %{dest_rel_path: dest_rel}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Archived ##{channel}. Moved to #{dest_rel}.")
+         |> push_navigate(to: ~p"/companies/#{company}/channels/general")}
+
+      {:error, :not_archivable} ->
+        {:noreply,
+         put_flash(socket, :error, "Can't archive ##{channel} — it's a canonical channel.")}
+
+      {:error, reason} ->
+        Logger.warning("archive_channel failed",
+          company: company,
+          channel: channel,
+          reason: inspect(reason)
+        )
+
+        {:noreply, put_flash(socket, :error, "Could not archive channel.")}
     end
   end
 
@@ -477,29 +482,6 @@ defmodule GlorboWeb.ChannelLive do
   end
 
   defp archivable?(_), do: false
-
-  defp do_archive(base, company, channel, socket) do
-    src = channel_path(base, company, channel)
-    archive_dir = Path.join([base, "companies", company, "channels", ".archive"])
-    dst = Path.join(archive_dir, "#{channel}.md")
-
-    with :ok <- File.mkdir_p(archive_dir),
-         :ok <- File.rename(src, dst) do
-      {:noreply,
-       socket
-       |> put_flash(:info, "Archived ##{channel}. Moved to channels/.archive/#{channel}.md.")
-       |> push_navigate(to: ~p"/companies/#{company}/channels/general")}
-    else
-      {:error, reason} ->
-        Logger.warning("archive_channel failed",
-          company: company,
-          channel: channel,
-          reason: inspect(reason)
-        )
-
-        {:noreply, put_flash(socket, :error, "Could not archive channel.")}
-    end
-  end
 
   defp list_channels(base, company) do
     dir = Path.join([base, "companies", company, "channels"])

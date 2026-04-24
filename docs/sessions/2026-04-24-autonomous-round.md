@@ -2221,3 +2221,94 @@ into a new `Glorbo.Actions.Audit.scaffold_from_entry/3`.
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-4 — ChannelLive migration (GEP-36 ratchet)
+
+Round M-2 CI green
+(run 24908790998 → completed|success) confirmed mid-way
+through this round. Two write sites extracted.
+
+### Task picked
+
+Migrate ChannelLive's two write paths:
+
+- `handle_event("create_channel", ...)` — creates a fresh
+  channel log at `channels/<slug>.md` with canonical
+  `kind: channel-log/v1` header.
+- `handle_event("archive_channel", ...)` → `do_archive/4`
+  — moves channel file under `channels/.archive/`, guards
+  against archiving `general` and `dm-director--*`.
+
+### What shipped
+
+- `lib/glorbo/actions/channels.ex` — new module.
+  - `create(company, channel, opts)` — validates slug,
+    refuses `:already_exists`, `mkdir_p` + `File.write`
+    with canonical header, emits `channel.create`.
+  - `archive(company, channel, opts)` — validates slug,
+    enforces `guard_archivable/1` (blocks `general` and
+    `dm-director--*`), checks source exists, moves to
+    `.archive/`, emits `channel.archive` with `dest:`
+    detail.
+- `lib/glorbo_web/live/channel_live.ex`:
+  - `handle_event("create_channel", ...)` now a `case`
+    over `Actions.Channels.create/3` with branches for
+    `:already_exists`, `{:invalid_slug, :channel, _}`,
+    and other errors. The pre-existing `cond` with
+    `Glorbo.Slug.valid?` is gone — validation lives in
+    Actions.
+  - `handle_event("archive_channel", ...)` calls
+    `Actions.Channels.archive/3`; UI branch on
+    `:not_archivable`.
+  - `do_archive/4` helper removed (~30 lines).
+- `.credo.exs` — dropped
+  `lib/glorbo_web/live/channel_live.ex` from the
+  allowlist. Two LiveViews remain: agent, kanban.
+- `test/glorbo/actions/channels_test.exs` — 9 tests:
+  create happy-path + already_exists + invalid slugs +
+  invalid company; archive happy-path + general refusal
+  + DM refusal + not_found.
+
+### Design calls I made without you
+
+- **Slug validation tightened to `@slug_re`** —
+  `[a-z0-9][a-z0-9-]*` instead of `Glorbo.Slug.valid?`'s
+  looser `[a-z0-9-]+`. Pre-migration, a slug like `-foo`
+  would have passed validation; now it's rejected. No kid
+  gloves pre-1.0 — channels with leading dash are
+  suspicious and nobody creates them in practice. Kept
+  consistent with Actions.Tasks / Companies / Projects /
+  Audit.
+- **Archive flash text changed.** Pre-migration flash
+  included the verbose "Moved to channels/.archive/…"
+  path prefix; post-migration flash uses the
+  `dest_rel_path` returned by Actions verbatim. Same
+  information, cleaner sentence.
+- **`archivable?/1` stays in the LiveView** (not moved
+  to Actions) because the render template uses it to
+  show/hide the archive button. Domain rule lives in
+  Actions (`guard_archivable/1`); the UI mirror stays
+  close to the template.
+- **Audit-routing helpers duplicated a 5th time.**
+  Holding the `Actions.Support` extraction until after
+  M-6 as planned — all six modules in place before
+  refactoring. Each migration round stays single-concern.
+
+### Gates
+
+- Compile --warnings-as-errors — green.
+- `mix test test/glorbo/actions/channels_test.exs` — 9
+  passing.
+- `mix test test/glorbo_web/live/channel_live_test.exs` —
+  20 passing (no regressions).
+- `mix credo --strict` — 4970 mods/funs, 0 issues.
+- `mix precommit` — 2026 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- Browser UAT — no.
+- `Actions.Support` extraction — scheduled post-M-6.
+
+### Commit(s)
+
+One commit to follow.
