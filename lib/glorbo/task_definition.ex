@@ -290,14 +290,24 @@ defmodule Glorbo.TaskDefinition do
     :denial_reason,
     :title,
     :assigned_to,
+    :requested_by,
     :priority,
+    :severity,
     :goal,
+    :peer_review_required,
+    :reviewer,
+    :done_when,
     "status",
     "denial_reason",
     "title",
     "assigned_to",
+    "requested_by",
     "priority",
-    "goal"
+    "severity",
+    "goal",
+    "peer_review_required",
+    "reviewer",
+    "done_when"
   ]
 
   @doc """
@@ -411,12 +421,64 @@ defmodule Glorbo.TaskDefinition do
   def write_frontmatter(file_path, updates) when is_binary(file_path) and is_map(updates) do
     with {:ok, content} <- File.read(file_path),
          rewritten <- maybe_loop_back_recurring(content, updates),
-         {:ok, new_content} <- replace_frontmatter(content, rewritten) do
+         # GEP-40 — merge updates with existing frontmatter so scalar
+         # fields the caller didn't touch (done_when, reviewer,
+         # requested_by, title, priority, severity, etc.) survive
+         # mutations that target only one field. Callers that want to
+         # clear a field pass `nil` or `""` explicitly; the
+         # Enum.reject in `replace_frontmatter/2` drops those. Agent
+         # Server's explicit merge is still safe — Map.merge/2 is
+         # idempotent under this pattern.
+         merged <- merge_with_existing(content, rewritten),
+         {:ok, new_content} <- replace_frontmatter(content, merged) do
       atomic_write(file_path, new_content)
     end
   end
 
-  @editor_keys ~w(title status assigned_to priority severity requires_approval denial_reason)
+  # Read + parse existing frontmatter, then merge caller's updates
+  # (updates win). Returns a string-keyed map compatible with
+  # replace_frontmatter's lookup path. Silently falls back to the
+  # raw updates if the file has no frontmatter or fails to parse —
+  # the subsequent replace_frontmatter will raise a clearer error
+  # in that case.
+  defp merge_with_existing(content, updates) do
+    case Glorbo.Filesystem.Frontmatter.parse(content) do
+      {:ok, meta, _body} when is_map(meta) ->
+        existing = Map.new(meta, fn {k, v} -> {to_string(k), v} end)
+
+        updates_str =
+          Map.new(updates, fn
+            {k, v} when is_atom(k) -> {Atom.to_string(k), v}
+            {k, v} -> {to_string(k), v}
+          end)
+
+        Map.merge(existing, updates_str)
+
+      _ ->
+        updates
+    end
+  end
+
+  @editor_keys ~w(
+    title
+    status
+    assigned_to
+    requested_by
+    priority
+    severity
+    requires_approval
+    peer_review_required
+    reviewer
+    denial_reason
+    done_when
+  )
+
+  # Keys that carry structured (non-scalar) values in a task frontmatter.
+  # `replace_frontmatter/2` preserves their raw text block from the
+  # original rather than re-emitting — our `yaml_scalar/1` emitter is
+  # scalar-only, and the canonical YAML shape for list-of-maps /
+  # multi-line scalars is owned by `Glorbo.FileSpec.Formatter`.
+  @structured_keys ~w(handoff_chain)
 
   defp replace_frontmatter(content, updates) do
     case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
@@ -436,10 +498,60 @@ defmodule Glorbo.TaskDefinition do
           |> Enum.reject(fn {_, v} -> v in [nil, ""] end)
           |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{yaml_scalar(v)}" end)
 
-        {:ok, "---\n" <> kind_line <> "\n" <> fm_lines <> "\n---\n" <> body}
+        # GEP-40 — preserve structured keys from original frontmatter
+        # that this function can't re-emit as scalars. `handoff_chain:`
+        # is the primary case; Router owns the authoritative append
+        # path via `Glorbo.Actions.Tasks.assign/4`, and
+        # `write_frontmatter/2` callers (kanban new-task form,
+        # Agent.Server acceptance ack, etc.) must not drop the chain
+        # when mutating an unrelated scalar field.
+        preserved =
+          @structured_keys
+          |> Enum.map(&extract_block(old_fm, &1))
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.join()
+
+        {:ok,
+         "---\n" <>
+           kind_line <>
+           "\n" <>
+           fm_lines <>
+           "\n" <>
+           preserved <>
+           "---\n" <>
+           body}
 
       _ ->
         {:error, :no_frontmatter}
+    end
+  end
+
+  # Extract a structured-YAML block (`<key>:\n  ...indented lines...`)
+  # from a frontmatter blob. Returns "" if the key is not present.
+  # The returned string ends with a trailing newline so concatenation
+  # in `replace_frontmatter/2` lines up cleanly.
+  defp extract_block(old_fm, key) when is_binary(key) do
+    # `String.split` on the closing-fence pattern consumes the newline
+    # BEFORE `---`, so `old_fm`'s last line has no trailing `\n`. Append
+    # one so the continuation-line regex (which requires `\n`) can
+    # match a chain whose last entry lands on the fence-adjacent line.
+    fm = old_fm <> "\n"
+
+    # Match key line + every subsequent line that starts with
+    # whitespace (continuation) OR is blank. Stop at the next
+    # non-indented, non-blank line. Non-greedy so we don't eat the
+    # whole remaining frontmatter.
+    pattern =
+      ~r/
+        (?<block>
+          ^#{Regex.escape(key)}:[^\n]*\n
+          (?:[ \t][^\n]*\n|\n)*
+        )
+      /mx
+
+    case Regex.named_captures(pattern, fm) do
+      %{"block" => block} when is_binary(block) -> block
+      _ -> ""
     end
   end
 
@@ -490,8 +602,14 @@ defmodule Glorbo.TaskDefinition do
           "title" -> Map.get(map, :title)
           "status" -> Map.get(map, :status)
           "assigned_to" -> Map.get(map, :assigned_to)
+          "requested_by" -> Map.get(map, :requested_by)
           "priority" -> Map.get(map, :priority)
+          "severity" -> Map.get(map, :severity)
           "requires_approval" -> Map.get(map, :requires_approval)
+          "peer_review_required" -> Map.get(map, :peer_review_required)
+          "reviewer" -> Map.get(map, :reviewer)
+          "denial_reason" -> Map.get(map, :denial_reason)
+          "done_when" -> Map.get(map, :done_when)
           _ -> nil
         end
     end

@@ -774,5 +774,104 @@ defmodule Glorbo.TaskDefinitionTest do
       assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
       assert td.severity == nil
     end
+
+    test "G40-7: write_frontmatter preserves handoff_chain across unrelated mutation",
+         ctx do
+      # Regression: write_frontmatter/2 rebuilds from @editor_keys.
+      # handoff_chain is structured (list-of-maps), lives outside
+      # editor_keys, and must NOT be dropped when an unrelated field
+      # (status / priority / etc.) is written. @structured_keys +
+      # extract_block handle this.
+      content = """
+      ---
+      kind: task/v1
+      title: Chain preserve test
+      status: in-progress
+      assigned_to: engineer
+      handoff_chain:
+        - from: director
+          reason: initial dispatch
+          to: ceo
+          ts: "2026-04-24T14:00:00Z"
+        - from: ceo
+          reason: build work
+          to: engineer
+          ts: "2026-04-24T14:05:00Z"
+      ---
+      body
+      """
+
+      path = write_task(ctx, "preserve.md", content)
+
+      # Write an unrelated scalar change — status only.
+      assert :ok = TaskDefinition.write_frontmatter(path, %{status: "done"})
+
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      # Scalar was written.
+      assert td.status == "done"
+
+      # Handoff chain preserved intact — same 2 entries, same order.
+      assert length(td.handoff_chain) == 2
+      assert Enum.at(td.handoff_chain, 0).from == "director"
+      assert Enum.at(td.handoff_chain, 0).to == "ceo"
+      assert Enum.at(td.handoff_chain, 1).from == "ceo"
+      assert Enum.at(td.handoff_chain, 1).to == "engineer"
+    end
+
+    test "G40-8: write_frontmatter carries done_when through rewrites",
+         ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: done_when echo
+      status: todo
+      done_when: pipeline green; tests pass
+      ---
+      """
+
+      path = write_task(ctx, "echo.md", content)
+
+      assert :ok = TaskDefinition.write_frontmatter(path, %{status: "in-progress"})
+
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "in-progress"
+      assert td.done_when == "pipeline green; tests pass"
+    end
+
+    test "G40-9: write_frontmatter adds new scalar GEP-40 keys when caller includes them",
+         ctx do
+      # Baseline task has only required + severity. write_frontmatter/2
+      # can ADD keys (unlike write/2 which only rewrites existing ones
+      # via line-level substitution). Internal merge means the caller
+      # still gets the existing frontmatter preserved.
+      content = """
+      ---
+      kind: task/v1
+      title: new-keys test
+      status: todo
+      ---
+      """
+
+      path = write_task(ctx, "write-new-keys.md", content)
+
+      assert :ok =
+               TaskDefinition.write_frontmatter(path, %{
+                 severity: "major",
+                 peer_review_required: true,
+                 reviewer: "critiqueops",
+                 requested_by: "director",
+                 done_when: "ship v1"
+               })
+
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.severity == :major
+      assert td.peer_review_required == true
+      assert td.reviewer == "critiqueops"
+      assert td.requested_by == "director"
+      assert td.done_when == "ship v1"
+      # Title preserved via internal merge.
+      assert td.title == "new-keys test"
+    end
   end
 end

@@ -142,6 +142,11 @@ defmodule Glorbo.Filesystem.FrontmatterWriter do
   """
   def yaml_scalar(nil), do: "null"
   def yaml_scalar(""), do: ~s("")
+  # Emit booleans as bare YAML tokens so the parser reads them back as
+  # booleans, not strings. GEP-40 `peer_review_required:` is strict
+  # boolean per its enum; quoting `"true"` would break round-trip.
+  def yaml_scalar(true), do: "true"
+  def yaml_scalar(false), do: "false"
 
   def yaml_scalar(v) when is_binary(v) do
     if v =~ ~r/[\s#:\[\]\{\},&\*!\|>'"%@`]|\A(true|false|null|yes|no)\z|[\x00-\x1f]/ do
