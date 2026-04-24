@@ -1567,3 +1567,91 @@ Five check-unit tests assert fire/silence/scope behavior.
   context is still coherent but budget pressure is real.
   Expect to compact after Round H lands.
 
+### Round G — Tasks.reassign + handoff_chain appender (`6fe4946`)
+
+GEP-40 Router appender lands as `Glorbo.Actions.Tasks.reassign/4`
+plus a small extension to `TaskDefinition.write_frontmatter/2`
+that re-emits `handoff_chain:` in canonical YAML when passed as
+a list (alphabetized keys matching the fixture). Agent-emitted
+`reassign_to:` directives now route through this function
+instead of mutating `assigned_to:` directly, so every ownership
+change records a chain entry + an audit event atomically.
+
+Behavioural change in `agent/server.ex#apply_task_actions/4`:
+the function now takes `state` + `task_id` in addition to the
+abs path, splits reassign_to into its own Actions-backed path,
+and drops the `read_existing_frontmatter/1` helper (unused
+since Round B made write_frontmatter do internal merging).
+
+**Round F prod-compile regression fix (bundled here).** The
+Credo custom check in `lib/glorbo/credo/check/` pulled Credo
+into the prod build path, breaking cross-builds for macOS /
+aarch64 / x86_64 with `module Credo.Check not loaded`. Moved
+to `lib_dev/glorbo/credo/check/`; extended `elixirc_paths/1`
+in `mix.exs` to include `lib_dev` only in `:dev` and `:test`.
+Prod compile clean, Credo still happily loads the check in
+dev.
+
+**Audit routing change.** `Actions.Tasks` now defaults to
+`AuditLog.append_for/2` when no explicit `:audit` opt is
+passed — picks per-company via-tuple in production, bare
+module in LiveCase, swallows `:noproc` in bare unit tests.
+`FakeAudit`-injected unit tests still use `AuditLog.append/2`
+directly. This was the fix for the two agent-server
+directive-path test regressions (TA-2 / TA-4).
+
+Five GEP-40 decision log entries are now backed by running
+code: D1 structured entries, D2 append-only, D3 requested_by
+separate, D4 free-text reason, plus the emergent constraint
+that agents can *only* append via Actions (can't direct-write
+the frontmatter list) — enforced both by the Credo ratchet
+(Round F) and by the directive-path rewrite (Round G).
+
+Landmine, filed for the record: I committed Round G code
+before appending this section to the session log. Next round
+(H) the order is right — log first, commit second.
+
+### Round H — TaskChainLive (`/companies/:co/tasks/:task_id/chain`)
+
+Pure read view: renders `handoff_chain:` as a numbered
+timeline + reconciles against `task.reassign` audit events
+from the current-month JSONL. Drift detection compares chain
+length vs. audit reassign-event count: an audit shows extra
+reassigns → "missing chain entries" warning (likely a
+pre-GEP-40 hand-edit or a write path that bypassed Actions);
+chain is longer → "missing audit entries" (audit rotation /
+cross-month query gap — expected when chain spans months).
+
+Wired into the router at
+`/companies/:company/tasks/:task_id/chain`. TaskLive's header
+grows a "chain →" button linking out. No write paths, no
+socket subscriptions beyond what `LiveCase` sets up — the
+view is cheap.
+
+Four integration tests: empty chain, populated 3-hop chain,
+drift-when-audit-disagrees, redirect-on-ghost-task.
+
+Side note: I originally had a two-column plan (chain on left,
+audit on right) but collapsed to the linear "chain first +
+audit in `<details>`" shape because (a) the reconciliation is
+the important UX answer and (b) a default-collapsed audit list
+stops the page from becoming noisy on tasks with dozens of
+reassigns. The drift banner still fires regardless of whether
+the user opens the details.
+
+The CSS classes (`gl-task-chain`, `gl-task-chain__drift`,
+etc.) are new — no styling has been added yet; they'll inherit
+the view default until a round picks up the visual polish
+pass. Functional first.
+
+### Still queued after Rounds G+H
+
+- Round I — Peer-review gate (GEP-41). Severity-based trigger
+  + CritiqueOps default reviewer + three-way verdict parser.
+- Round J — CritiqueOps template verb realignment + propagate
+  cairn-style to the remaining 5 AGENT.md roles (ceo, editor,
+  researcher, critiqueops, provenance-auditor).
+- GEP-36 LiveView migration continuation. Each round shrinks
+  the Credo allowlist by one file.
+- CSS polish pass on `gl-task-chain__*` classes.
+

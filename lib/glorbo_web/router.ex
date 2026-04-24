@@ -36,6 +36,9 @@ defmodule GlorboWeb.Router do
     # Dedicated task-detail page — JIRA-style. Kanban opens the same task
     # as a right-side shelf; clicking "open task page →" navigates here.
     live "/companies/:company/tasks/:task_id", TaskLive
+    # GEP-40 chain audit view: task's handoff_chain + reconciled
+    # `task.reassign` audit events, for "how did we get here" forensics.
+    live "/companies/:company/tasks/:task_id/chain", TaskChainLive
     live "/companies/:company/agents/:agent", AgentLive
     # Unified director inbox — approvals + recent activity + future
     # @mention and assignment feeds. The standalone `/approvals`

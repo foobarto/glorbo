@@ -389,6 +389,13 @@ defmodule GlorboWeb.TaskLive do
           </p>
         </div>
         <div class="gl-overview__actions">
+          <.link
+            navigate={~p"/companies/#{@company_slug}/tasks/#{@task_id}/chain"}
+            class="gl-btn gl-btn--ghost"
+            title="View handoff history (GEP-40)"
+          >
+            chain →
+          </.link>
           <.link navigate={~p"/companies/#{@company_slug}/kanban?task=#{@rel_path}"} class="gl-btn">
             ← back to kanban
           </.link>
