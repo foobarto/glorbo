@@ -193,8 +193,13 @@ defmodule GlorboWeb.AuditLive do
 
     case entry do
       {e, _idx} ->
-        case scaffold_audit_task(socket.assigns.company_slug, e) do
-          {:ok, rel_path} ->
+        case Glorbo.Actions.Audit.scaffold_from_entry(
+               socket.assigns.company_slug,
+               e,
+               actor: "director",
+               base: base_dir()
+             ) do
+          {:ok, %{rel_path: rel_path}} ->
             {:noreply, put_flash(socket, :info, "Task scaffolded: #{rel_path}")}
 
           {:error, reason} ->
@@ -487,99 +492,4 @@ defmodule GlorboWeb.AuditLive do
   end
 
   defp parse_entry_ts(_), do: nil
-
-  # #254 — scaffold a task from an audit entry. Lands in
-  # `projects/inbox/tasks/` with an audit-context footer so the
-  # director (or the agent that picks it up) has enough context to
-  # decide the follow-up.
-  defp scaffold_audit_task(company, entry) do
-    base = base_dir()
-    co_dir = Path.join([base, "companies", company])
-    tasks_dir = Path.join([co_dir, "projects", "inbox", "tasks"])
-    File.mkdir_p!(tasks_dir)
-
-    ts = to_string(entry["ts"] || DateTime.to_iso8601(DateTime.utc_now()))
-    actor = to_string(entry["actor"] || "system")
-    action = to_string(entry["action"] || "unknown")
-    target = to_string(entry["target"] || "")
-
-    slug =
-      action
-      |> String.replace(~r/[^a-z0-9]+/i, "-")
-      |> String.downcase()
-      |> String.trim("-")
-
-    date = ts |> String.slice(0, 10) |> String.replace("-", "")
-    task_id = uniqify_audit_task_id(tasks_dir, "t-audit-#{date}-#{slug}", 0)
-    abs = Path.join(tasks_dir, "#{task_id}.md")
-    rel = Path.join(["projects", "inbox", "tasks", "#{task_id}.md"])
-
-    title = "Follow up on audit event: #{actor} · #{action}"
-
-    content = """
-    ---
-    title: #{yaml_escape(title)}
-    status: todo
-    source: audit
-    audit_ts: #{ts}
-    ---
-
-    Follow-up triggered by an audit event.
-
-    ## Context
-
-    - **Timestamp**: #{ts}
-    - **Actor**: #{actor}
-    - **Action**: #{action}
-    - **Target**: #{target}
-
-    ```json
-    #{Jason.encode!(entry, pretty: true)}
-    ```
-    """
-
-    tmp = abs <> ".tmp"
-
-    with :ok <- refuse_if_symlink(tmp),
-         :ok <- refuse_if_symlink(abs),
-         :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, abs) do
-      {:ok, rel}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  rescue
-    e -> {:error, e}
-  end
-
-  # threatmodel H6: reject pre-created symlinks at either the temp
-  # path or the final target — File.write/rename follow symlinks
-  # and would otherwise overwrite arbitrary host files an agent can
-  # pre-seed inside the shared projects/inbox/tasks/ directory.
-  defp refuse_if_symlink(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp uniqify_audit_task_id(dir, base, n) do
-    candidate = if n == 0, do: base, else: "#{base}-#{n}"
-
-    if File.exists?(Path.join(dir, "#{candidate}.md")) do
-      uniqify_audit_task_id(dir, base, n + 1)
-    else
-      candidate
-    end
-  end
-
-  defp yaml_escape(s) when is_binary(s) do
-    if String.contains?(s, [":", "#", "\""]) do
-      "\"" <> String.replace(s, "\"", "\\\"") <> "\""
-    else
-      s
-    end
-  end
 end

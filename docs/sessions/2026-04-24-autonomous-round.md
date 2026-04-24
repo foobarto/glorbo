@@ -2124,3 +2124,100 @@ view + atomic frontmatter edit) into
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-3 — AuditLive migration (GEP-36 ratchet)
+
+Round M-2 CI monitored in background; did not block on it.
+Smallest remaining surface: AuditLive's `scaffold_audit_task`
+— single write site, ~90-line helper cluster, threatmodel
+H6 guard.
+
+### Task picked
+
+Extract `scaffold_audit_task/2` (and its helpers
+`refuse_if_symlink/1`, `uniqify_audit_task_id/3`,
+`yaml_escape/1`) from `lib/glorbo_web/live/audit_live.ex`
+into a new `Glorbo.Actions.Audit.scaffold_from_entry/3`.
+
+### What shipped
+
+- `lib/glorbo/actions/audit.ex` — new module.
+  - `scaffold_from_entry(company, entry, opts)` — writes a
+    follow-up task under `projects/inbox/tasks/` with
+    canonical frontmatter (title / status: todo /
+    source: audit / audit_ts) + a context body (timestamp,
+    actor, action, target) + the pretty-printed entry JSON
+    blob.
+  - Enforces threatmodel H6: `lstat` both the target and the
+    `.tmp` path; refuses any non-regular (symlink,
+    directory, device); emits `{:error, :not_a_regular_file}`.
+  - Emits `task.create` audit entry on success with
+    `source: "audit"` + `origin_action:` / `origin_ts:`
+    details — preserves the provenance chain.
+- `lib/glorbo_web/live/audit_live.ex` — swapped handler to
+  call `Actions.Audit.scaffold_from_entry/3`. Removed ~90
+  lines of private helpers.
+- `.credo.exs` — dropped
+  `lib/glorbo_web/live/audit_live.ex` from the allowlist.
+  Three LiveViews remain: agent, channel, kanban.
+- `test/glorbo/actions/audit_test.exs` — 6 tests:
+  - happy-path audit-entry scaffold with canonical id shape,
+    frontmatter + body content, and audit event emission.
+  - YAML-unsafe title quoting.
+  - Id de-duplication on same-action-same-date collisions
+    (`-1`, `-2`, ...).
+  - Threatmodel H6 refusal of a pre-planted dangling symlink
+    at the `.tmp` path (the realistic attack surface —
+    `File.exists?` in `uniqify` follows live symlinks away
+    from the collision, so the `refuse_if_symlink` guard
+    fires at the dangling-symlink case).
+  - Invalid-slug rejection.
+  - Safe defaults for missing entry fields
+    (`actor: "system"`, `action: "unknown"`, blank target).
+
+### Design calls I made without you
+
+- **Did NOT extend `Actions.Tasks.create/4`.** The audit-
+  scaffolded task has bespoke frontmatter fields (`source`,
+  `audit_ts`) and a context-heavy body that don't fit the
+  Kanban-shaped create flow. Adding them as opt-args would
+  couple two unrelated call sites; a dedicated
+  `Actions.Audit.*` module is cleaner.
+- **Emitted `action: "task.create"` (not `audit.scaffold`).**
+  Audit consumers care that a new task was born; the "it
+  came from an audit click" fact lives in the
+  `source: "audit"` detail. This keeps `task.create` the
+  single authoritative action for "new task file exists"
+  events regardless of origin.
+- **Audit-routing helpers duplicated a 4th time.** Rule of
+  three has been crossed. NOT extracting `Actions.Support`
+  yet because doing so inside the migration rounds
+  interleaves refactor and migration concerns. Queued a
+  post-M-6 refactor round to extract the shared module once
+  all five Actions.* modules exist and their audit-emission
+  shapes have stabilized.
+- **Clarified H6 test to use a dangling symlink.** First
+  draft used a live symlink pointing at a decoy file;
+  `File.exists?` in `uniqify` followed the symlink and
+  swerved to a fresh id, so the guard never fired. Rewrote
+  the test to use a dangling symlink at the `.tmp` path
+  where `lstat` actually catches it.
+
+### Gates
+
+- Compile --warnings-as-errors — green.
+- `mix test test/glorbo/actions/audit_test.exs` — 6 passing.
+- `mix test test/glorbo_web/live/audit_live_test.exs` — 14
+  passing (no regressions).
+- `mix credo --strict` — 4945 mods/funs, 0 issues.
+- `mix precommit` — 2018 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- Browser UAT of "convert to task" — no. Unit + LiveView
+  tests cover the flow.
+- Shared helper extraction — deferred as noted above.
+
+### Commit(s)
+
+One commit to follow.
