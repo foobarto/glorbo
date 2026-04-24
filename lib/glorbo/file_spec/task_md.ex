@@ -45,10 +45,16 @@ defmodule Glorbo.FileSpec.TaskMd do
       required: [:kind, :id, :title, :status],
       optional: [
         :assigned_to,
+        :requested_by,
         :priority,
+        :severity,
         :goal,
         :schedule,
         :requires_approval,
+        :peer_review_required,
+        :reviewer,
+        :done_when,
+        :handoff_chain,
         :created_at,
         :created_by,
         :denial_reason,
@@ -67,6 +73,8 @@ defmodule Glorbo.FileSpec.TaskMd do
           "done"
         ],
         priority: ["low", "medium", "high", "critical"],
+        severity: ["info", "minor", "major", "critical"],
+        peer_review_required: [true, false],
         requires_approval: ["director"]
       },
       patterns: %{},
@@ -82,16 +90,22 @@ defmodule Glorbo.FileSpec.TaskMd do
       :title,
       :status,
       :assigned_to,
+      :requested_by,
       :priority,
+      :severity,
       :goal,
       :schedule,
       :requires_approval,
+      :peer_review_required,
+      :reviewer,
       :provider,
       :model,
       :budget_usd_cents,
       :created_at,
       :created_by,
-      :denial_reason
+      :denial_reason,
+      :done_when,
+      :handoff_chain
     ]
   end
 

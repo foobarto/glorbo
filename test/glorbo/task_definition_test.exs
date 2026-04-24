@@ -631,4 +631,148 @@ defmodule Glorbo.TaskDefinitionTest do
       assert td.status == "in-progress"
     end
   end
+
+  # GEP-40 — chain-observability fields.
+  describe "GEP-40: task chain observability fields" do
+    test "G40-1: parses done_when / requested_by / peer_review_required / reviewer",
+         ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: Ship v1
+      status: todo
+      assigned_to: ceo
+      requested_by: director
+      severity: major
+      peer_review_required: true
+      reviewer: critiqueops
+      done_when: |
+        tag v1.0.0 exists; GH Release signed; tap updated.
+      ---
+      Body.
+      """
+
+      path = write_task(ctx, "ship-1.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      assert td.requested_by == "director"
+      assert td.severity == :major
+      assert td.peer_review_required == true
+      assert td.reviewer == "critiqueops"
+      assert td.done_when =~ "tag v1.0.0 exists"
+    end
+
+    test "G40-2: missing new fields default to nil / false / []", ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: Minimal
+      status: todo
+      ---
+      """
+
+      path = write_task(ctx, "minimal.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      assert td.requested_by == nil
+      assert td.peer_review_required == false
+      assert td.reviewer == nil
+      assert td.done_when == nil
+      assert td.handoff_chain == []
+    end
+
+    test "G40-3: handoff_chain list-of-maps coerces to list of %{ts,from,to,reason}",
+         ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: Multi-hop
+      status: in-progress
+      assigned_to: engineer
+      handoff_chain:
+        - ts: "2026-04-24T14:00:00Z"
+          from: director
+          to: ceo
+          reason: initial dispatch
+        - ts: "2026-04-24T14:05:00Z"
+          from: ceo
+          to: engineer
+          reason: needs build work
+      ---
+      """
+
+      path = write_task(ctx, "multi-hop.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      assert length(td.handoff_chain) == 2
+      [first, second] = td.handoff_chain
+      assert first.from == "director"
+      assert first.to == "ceo"
+      assert first.reason == "initial dispatch"
+      assert first.ts == "2026-04-24T14:00:00Z"
+      assert second.from == "ceo"
+      assert second.to == "engineer"
+    end
+
+    test "G40-4: handoff_chain entries missing required keys are dropped",
+         ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: Malformed chain
+      status: todo
+      handoff_chain:
+        - ts: "2026-04-24T14:00:00Z"
+          from: director
+          to: ceo
+          reason: good entry
+        - from: ceo
+          reason: bad entry (no ts, no to)
+      ---
+      """
+
+      path = write_task(ctx, "bad-chain.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      assert length(td.handoff_chain) == 1
+      assert hd(td.handoff_chain).reason == "good entry"
+    end
+
+    test "G40-5: peer_review_required accepts booleans only; other values → false",
+         ctx do
+      # String "true" is NOT a valid boolean — should coerce to default false
+      # per GEP-40 D1 (schema uses strict booleans; see the open-questions
+      # note about possible future normalisation).
+      content = """
+      ---
+      kind: task/v1
+      title: String trick
+      status: todo
+      peer_review_required: "true"
+      ---
+      """
+
+      path = write_task(ctx, "string-bool.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+
+      # String "true" is not a valid boolean; safe default wins.
+      assert td.peer_review_required == false
+    end
+
+    test "G40-6: severity enum rejects unknown values (coerces to nil)",
+         ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: Bad severity
+      status: todo
+      severity: catastrophic
+      ---
+      """
+
+      path = write_task(ctx, "bad-sev.md", content)
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.severity == nil
+    end
+  end
 end

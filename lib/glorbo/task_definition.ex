@@ -63,16 +63,28 @@ defmodule Glorbo.TaskDefinition do
   @type priority :: :low | :medium | :high | nil
   @type severity :: :info | :minor | :major | :critical | nil
 
+  @type handoff_entry :: %{
+          required(:ts) => String.t(),
+          required(:from) => String.t(),
+          required(:to) => String.t(),
+          required(:reason) => String.t()
+        }
+
   @type t :: %__MODULE__{
           task_path: String.t(),
           task_id: String.t(),
           title: String.t() | nil,
           status: String.t() | nil,
           assigned_to: String.t() | nil,
+          requested_by: String.t() | nil,
           requires_approval: approval_mode(),
           denial_reason: String.t() | nil,
           priority: priority(),
           severity: severity(),
+          peer_review_required: boolean(),
+          reviewer: String.t() | nil,
+          done_when: String.t() | nil,
+          handoff_chain: [handoff_entry()],
           project: String.t() | nil,
           goal: String.t() | nil,
           model: String.t() | nil,
@@ -83,25 +95,28 @@ defmodule Glorbo.TaskDefinition do
           file_path: String.t()
         }
 
-  defstruct [
-    :task_path,
-    :task_id,
-    :title,
-    :status,
-    :assigned_to,
-    :requires_approval,
-    :denial_reason,
-    :priority,
-    :severity,
-    :project,
-    :goal,
-    :model,
-    :provider,
-    :schedule,
-    :budget_usd_cents,
-    :prompt_body,
-    :file_path
-  ]
+  defstruct task_path: nil,
+            task_id: nil,
+            title: nil,
+            status: nil,
+            assigned_to: nil,
+            requested_by: nil,
+            requires_approval: nil,
+            denial_reason: nil,
+            priority: nil,
+            severity: nil,
+            peer_review_required: false,
+            reviewer: nil,
+            done_when: nil,
+            handoff_chain: [],
+            project: nil,
+            goal: nil,
+            model: nil,
+            provider: nil,
+            schedule: nil,
+            budget_usd_cents: nil,
+            prompt_body: nil,
+            file_path: nil
 
   @type parse_error ::
           :no_frontmatter
@@ -162,10 +177,15 @@ defmodule Glorbo.TaskDefinition do
          # tasks off the board). `assigned_to` takes precedence when
          # both are present.
          assigned_to: as_string(meta["assigned_to"]) || as_string(meta["assignee"]),
+         requested_by: as_string(meta["requested_by"]),
          requires_approval: requires_approval,
          denial_reason: as_string(meta["denial_reason"]),
          priority: coerce_priority(meta["priority"]),
          severity: coerce_severity(meta["severity"]),
+         peer_review_required: coerce_peer_review_required(meta["peer_review_required"]),
+         reviewer: as_string(meta["reviewer"]),
+         done_when: as_string(meta["done_when"]),
+         handoff_chain: coerce_handoff_chain(meta["handoff_chain"]),
          goal: as_string(meta["goal"]),
          model: as_string(meta["model"]),
          provider: as_string(meta["provider"]),
@@ -193,6 +213,38 @@ defmodule Glorbo.TaskDefinition do
   defp coerce_severity("minor"), do: :minor
   defp coerce_severity("info"), do: :info
   defp coerce_severity(_), do: nil
+
+  # GEP-41 peer-review trigger flag. Booleans only; never strings.
+  # A bad value is coerced to the safe default (false) so a malformed
+  # task doesn't accidentally escape the gate.
+  defp coerce_peer_review_required(true), do: true
+  defp coerce_peer_review_required(false), do: false
+  defp coerce_peer_review_required(_), do: false
+
+  # GEP-40 handoff_chain — append-only list of {ts, from, to, reason}
+  # entries. Coerces a parsed YAML list into a normalised list of
+  # maps with string keys for each entry. Entries missing required
+  # keys are dropped (validator will flag in a separate pass).
+  defp coerce_handoff_chain(list) when is_list(list) do
+    Enum.flat_map(list, fn
+      %{} = entry ->
+        ts = as_string(Map.get(entry, "ts"))
+        from = as_string(Map.get(entry, "from"))
+        to = as_string(Map.get(entry, "to"))
+        reason = as_string(Map.get(entry, "reason")) || ""
+
+        if is_binary(ts) and is_binary(from) and is_binary(to) do
+          [%{ts: ts, from: from, to: to, reason: reason}]
+        else
+          []
+        end
+
+      _ ->
+        []
+    end)
+  end
+
+  defp coerce_handoff_chain(_), do: []
 
   defp coerce_priority("high"), do: :high
   defp coerce_priority("medium"), do: :medium
@@ -577,10 +629,15 @@ defmodule Glorbo.TaskDefinition do
        title: partial.title,
        status: partial.status,
        assigned_to: partial.assigned_to,
+       requested_by: partial[:requested_by],
        requires_approval: partial.requires_approval,
        denial_reason: partial.denial_reason,
        priority: partial.priority,
        severity: partial.severity,
+       peer_review_required: partial[:peer_review_required] || false,
+       reviewer: partial[:reviewer],
+       done_when: partial[:done_when],
+       handoff_chain: partial[:handoff_chain] || [],
        project: derive_project(task_path),
        goal: partial.goal,
        model: partial[:model],
