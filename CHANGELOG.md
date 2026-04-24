@@ -10,7 +10,11 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-Targeting **v0.8.0** — **crown-jewels phase 1**. Maintainer
+*(nothing yet — next cycle)*
+
+## [0.8.0] — 2026-04-25
+
+Eighth pre-1.0 minor. **Crown-jewels phase 1.** Maintainer
 pivot on 2026-04-24: "pivot to crown jewels now and defer
 glorbo shell until this is done." Scope:
 
@@ -154,6 +158,58 @@ is left outstanding for v0.8.0.
   doc-drift pass, graphify refresh, full test run, E2E UAT,
   security review, release-artefact flow. Formalises what
   had been habit.
+
+### Fixed
+
+Pre-release gate findings (UAT Round 8 + codex `review --base
+v0.7.0`) closed before the tag:
+
+- **Kanban review column renders `status: pending-approval`**
+  (UAT Round 8 P9). `group_by_column/1` filter previously only
+  matched `["pending", "approved", "denied"]`, so Gate-set
+  tasks silently disappeared from the board until the Director
+  explicitly flipped the status via the Inbox. Regression test
+  added.
+- **Peer-review verdict requires the configured reviewer**
+  (codex P1). `Actions.Tasks.record_peer_review_verdict/5` now
+  rejects any actor that isn't the task's `reviewer:` (or the
+  default `"critiqueops"` when unset). Pre-fix, any agent with
+  `tasks:update` could write `ACTIONS: verdict: approve` in
+  its reply and self-clear peer review.
+- **Task create + trash audits route through the company
+  audit server** (codex P1). `emit_create_audit/6` +
+  `emit_trash_audit/5` now call `Support.append_audit/3`
+  instead of the raw `AuditLog.append/2` with the bare module
+  atom — the prod via-tuple registration meant the raw call
+  exited `:noproc` and the audit row was silently lost after
+  the file write had already happened.
+- **Peer-review `block` verdict sticks** (codex P2). New
+  `Approvals.Gate` resolve-status clause short-circuits when
+  `status: "denied" + peer_review_verdict: "block"`. The
+  generic `denied` clause previously treated unmarked flips
+  as agent self-approval attempts and reverted the status to
+  `"awaiting"`, silently erasing a legitimate reviewer block.
+- **Kanban new-task validates title before consuming uploads**
+  (codex P2). Pre-fix, an invalid-title form still consumed
+  uploads + emitted `attachment.upload` audit rows, leaving
+  orphaned attachments under `attachments/<task_id>/` when
+  `Actions.Tasks.create/4` subsequently rejected the title.
+- **`Actions.Agents.trash_workspace_file/4` refuses contract
+  files** (codex P2). `refuse_contract_write/1` now guards the
+  trash path alongside the existing create/write paths;
+  threatmodel H9 (AGENT.md / stdout.log protection) is
+  enforced at the core, not only the UI.
+- **`write_frontmatter/2` preserves task-level `model:` +
+  `provider:` overrides** (codex P2). `@editor_keys` now
+  includes both keys; pre-fix, any reassign / peer-review
+  verdict / Kanban save silently stripped the overrides and
+  dispatch fell back to the agent default (GEP-32 per-task
+  override regressed).
+- **Chain view reassign cross-reference reads `from`/`to`
+  from audit `detail`** (codex P3). `AuditLog.append/2` nests
+  any key outside `{ts, company, actor, action, target}` under
+  `detail`; the view was reading top-level, so live
+  `task.reassign` events rendered as blank arrows.
 
 ### GEPs
 
