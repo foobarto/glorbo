@@ -49,7 +49,15 @@ and for native runs can replay sanitized tool-audit events back into
 the company audit log before recording cost + outcome. On Linux,
 `network: proxy` dispatches now wrap that launch in `pasta` so only
 the per-company proxy port is reachable inside the agent netns. See
-GEP-4, GEP-5, GEP-8, GEP-31, and GEP-32.
+GEP-4, GEP-5, GEP-8, GEP-23, GEP-31, and GEP-32.
+
+Per-dispatch egress attribution rides on `Glorbo.Network.ProxyTokens`:
+`Agent.Dispatch` allocates an ephemeral 32-byte url-safe token before
+launch, embeds it in the sandboxed `HTTPS_PROXY` URL as userinfo, and
+revokes it when the dispatch ends. The proxy parses `Proxy-Authorization`
+against the registry and stamps audit events with
+`{company, agent, dispatch_id}` (GEP-23 Phase 5). The token is audit
+context — the company allowlist remains the authorisation gate.
 
 Supporting modules: `Glorbo.Agent.Parser` (validates AGENT.md),
 `Glorbo.Agent.Spec` (struct), `Glorbo.Agent.FileLayout`

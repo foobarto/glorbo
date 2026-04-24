@@ -550,6 +550,61 @@ single invariant.
 
 ---
 
+## 2026-04-24 — Post-v0.6.0 hardening + Phase 5 tokens
+
+### `Glorbo.Network.ProxyTokens` is a new application-level child
+
+Registry + reaper GenServer live in `lib/glorbo/network/proxy_tokens.ex`,
+started directly under `Glorbo.Application` **before**
+`Glorbo.CompanySupervisor` so the first dispatch can't race ETS-table
+creation. This is a rare "top-level not per-company" network-layer peer
+of things like `PathGrantStore` — tokens are not company-scoped because
+each entry carries `{company, agent, dispatch_id}` and the proxy
+resolves globally.
+
+### GEP-23 proxy token URL embedding is `http://<token>@host:port`
+
+`Agent.Dispatch.resolve_proxy_url/4` prepends the url-safe token as
+userinfo. Clients inside the sandbox see no code change — any
+conforming HTTP client handles RFC 3986 userinfo and emits
+`Proxy-Authorization: Basic <base64(token:)>`. If you see `proxy_url`
+equality assertions in dispatch tests, they now need a regex that
+matches the userinfo prefix.
+
+### `agent_fleet` `:rest_for_one` sub-supervisor wraps AgentSupervisor + AgentBoot
+
+Post round-2 fix: `Company.Supervisor` previously had children
+`[AgentSupervisor, AgentBoot]` as `:one_for_one`. If `AgentSupervisor`
+crashed, `AgentBoot` (transient, one-shot) didn't rerun so the company
+came back with an empty fleet. Regression test `S4` covers this path;
+S1/S1b/S3 child-count assertions dropped from 11 → 10 when this
+refactor landed.
+
+### `AgentWritableFile` is the canonical lstat-before-touch helper
+
+`lib/glorbo/filesystem/agent_writable_file.ex`. Before this extraction
+7 modules had private copies of `ensure_regular`/`_lstat`/`_for_write`
+with subtly different return shapes. Everyone now delegates through
+`ensure_writable/1`, `ensure_regular/1`, `read/1`, and the new
+`any_symlink_in_path?/1` ancestor walker. When touching an agent-
+writable path from the host side, reach for this module — the
+threat-model-M03 defense rides on every caller using it.
+
+### `FrontmatterWriter.atomic_write/2` uses unique `.tmp-<monotonic>` now
+
+The old `<file>.tmp` collided under concurrent writers to the same
+canonical file. Also lstat-guards the target through
+`AgentWritableFile.ensure_writable/1` before the write/rename pair.
+
+### `Path.join("", "/")` returns `""` — gotcha
+
+`PathRequestGate.path_has_symlink_segment?` originally used
+`Enum.scan` on path components which lost the root. Rewrote as an
+explicit ancestor walk (`walk_ancestor_paths`) that seeds with `"/"`
+and builds up. Tests pin the root-inclusive behaviour.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

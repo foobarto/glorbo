@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-04-24
+
+Seventh pre-1.0 minor. Two shipping flags over v0.6.0: GEP-23 Phase 5
+per-dispatch `Proxy-Authorization` tokens (unblocks the long-deferred
+`kbps_cap` follow-up) and a deep round of security + audit + symlink
+hardening from codex + opencode + claude multi-reviewer sweeps
+(rounds 2, 3, 4, 4b). Also ships the `GlorboWeb.Slug → Glorbo.Slug`
+dep-direction fix as a BREAKING rename, and the GEP-23 D1 network
+enum rename (`none|open → loopback|full`) as an atomic migration.
+All 1394+ existing tests green plus 30+ regression tests locking
+in the hardening. No new GEP flips this cycle — `GEP-23` was
+already Implemented at v0.6.0; Phase 5 history entry dated
+2026-04-24.
+
 ### Added — GEP-23 Phase 5: per-dispatch `Proxy-Authorization` tokens
 
 - **[FEATURE]** `Glorbo.Network.ProxyTokens` is a new ETS-backed
