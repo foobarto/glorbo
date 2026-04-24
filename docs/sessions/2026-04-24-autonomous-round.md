@@ -1936,3 +1936,101 @@ Phase-2 (deferred):
     retrospectives, GEP-43 Provenance-Auditor auto-gate).
 
 
+
+## Round M-1 — CompanyLive migration (GEP-36 ratchet)
+
+Resumed after /compact seam. Opening the LiveView-migration
+phase of GEP-36: each round extracts one LiveView's raw
+`File.*` writes into a `Glorbo.Actions.*` module and drops
+that file from the Credo allowlist. Smallest surface first —
+`CompanyLive` with a single write site in
+`handle_event("save_company_md", ...)`.
+
+### Task picked
+
+Extract `write_company_md/2` from
+`lib/glorbo_web/live/company_live.ex` into a new
+`Glorbo.Actions.Companies.update/3` following the
+Actions.Tasks contract (validate slug + params + atomic
+write + audit emission).
+
+### What shipped
+
+- `lib/glorbo/actions/companies.ex` — new module. `update/3`
+  validates slug (`@slug_re`) + name (required, ≤200 bytes)
+  + optional `description` / `icon` / `monthly_usd`, renders
+  canonical YAML frontmatter, writes atomically via
+  `write + rename` (with `File.rm(tmp)` on failure), and
+  emits a `company.update` audit entry. Audit routing copies
+  the pattern from Actions.Tasks (bare module → `append_for`,
+  explicit atom/pid → `append`, `:noproc` swallowed).
+- `lib/glorbo_web/live/company_live.ex` — `save_company_md`
+  handler now calls `Glorbo.Actions.Companies.update/3`;
+  removed ~85 lines of now-unused helpers
+  (`write_company_md`, `parse_monthly`,
+  `render_company_yaml`, `yaml_string`).
+- `.credo.exs` — dropped `lib/glorbo_web/live/company_live.ex`
+  from the GEP-36 ratchet allowlist. Credo --strict is green.
+- `test/glorbo/actions/companies_test.exs` — 8 tests:
+  happy-path audit + atomic write, YAML quoting of unsafe
+  chars, budget omission for blank/unparseable monthly,
+  empty optionals dropped from YAML, name-required
+  validation, invalid-slug rejection, missing-actor raise,
+  no leftover `.tmp` sibling after success.
+
+### Design calls I made without you
+
+- **Added `company.update` to the audit log.** Pre-migration
+  the LiveView emitted nothing. GEP-36 contract says every
+  Actions.* function emits an audit entry before returning;
+  following that uniformly rather than preserving the old
+  silent behavior.
+- **`description` / `icon` / `monthly_usd` land as string-
+  keyed details** via `put_detail/3` in the audit entry,
+  matching the `task.reassign` pattern (first-class fields
+  atom-keyed, secondary fields string-keyed through
+  put_detail). Consistent with existing convention, not
+  prescribed by a GEP.
+- **Did not extract a shared `Actions.Support` yet.** The
+  audit-routing + `put_detail` + `default_base` helpers are
+  duplicated from Actions.Tasks. Rule of three — defer
+  extraction until Round M-3 or M-4 forces it.
+- **Skipped atom key promotion for company-level fields.**
+  `name` stays atom-keyed (first-class), but `description`
+  etc. stay string-keyed. Keeps the audit-entry shape
+  predictable across actions.
+
+### Gates
+
+- Compile --warnings-as-errors — green.
+- `mix test test/glorbo/actions/companies_test.exs` — 8
+  passing.
+- `mix test test/glorbo_web/live/company_live_test.exs` —
+  14 passing (no regressions from the helper removal).
+- `mix credo --strict` — 4897 mods/funs, 0 issues, exit 0.
+- `mix precommit` — 2002 tests, 0 failures, 1 skipped.
+
+### Incidental fix
+
+`test/glorbo/credo/check/raw_filesystem_write_in_live_test.exs`
+had a pre-existing flake: the `setup_all` comment claimed
+"tolerates the :already_started race" but the pattern match
+was strict `{:ok, _}`. Under precommit, `mix credo --strict`
+runs first and boots `:credo`; the subsequent
+`Application.ensure_all_started(:credo)` in setup_all
+returned `{:error, {:credo, {{:already_started, _}, _}}}`
+and crashed the suite's setup. Widened the match to tolerate
+both shapes. Purely a test-infrastructure fix; nothing in
+the round's scope required it, but the gate surfaced it.
+
+### Skipped / not done
+
+- Did not run browser UAT (company save). CompanyLive tests
+  cover the handler; the new module has unit tests. Browser
+  dev loop was not necessary for this particular change.
+- Did not extract shared audit-routing helper yet.
+- Did not migrate remaining 5 LiveViews — that's M-2..M-6.
+
+### Commit(s)
+
+One commit to follow.

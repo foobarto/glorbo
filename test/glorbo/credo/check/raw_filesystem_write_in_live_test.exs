@@ -11,12 +11,16 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLiveTest do
   alias Glorbo.Credo.Check.RawFilesystemWriteInLive
 
   # Credo.SourceFile.parse/2 talks to an ETS-backed GenServer that
-  # Credo starts from its own Application supervisor. Since we don't
-  # start :credo as an application here, boot the GenServer ourselves
-  # (idempotent — tolerates the :already_started race).
+  # Credo starts from its own Application supervisor. When we run in
+  # isolation, ensure_all_started returns {:ok, _}; under precommit,
+  # `mix credo --strict` has already booted :credo as a supervision
+  # child, and a subsequent ensure_all_started hits an
+  # {:already_started, _} race. Tolerate both.
   setup_all do
-    {:ok, _} = Application.ensure_all_started(:credo)
-    :ok
+    case Application.ensure_all_started(:credo) do
+      {:ok, _} -> :ok
+      {:error, {:credo, {{:already_started, _}, _}}} -> :ok
+    end
   end
 
   defp run(relative_path, source, params \\ []) do

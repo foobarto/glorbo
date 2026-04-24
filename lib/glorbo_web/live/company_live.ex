@@ -862,9 +862,10 @@ defmodule GlorboWeb.CompanyLive do
     base = base_dir()
     slug = socket.assigns.company_slug
     co_path = Path.join([base, "companies", slug])
+    actor = Map.get(socket.assigns, :current_user, "director") |> to_string()
 
-    case write_company_md(co_path, params) do
-      :ok ->
+    case Glorbo.Actions.Companies.update(slug, params, actor: actor, base: base) do
+      {:ok, _} ->
         data = load_company_data(base, slug, co_path)
 
         {:noreply,
@@ -1912,90 +1913,6 @@ defmodule GlorboWeb.CompanyLive do
       monthly_usd: monthly,
       body: body || ""
     }
-  end
-
-  defp write_company_md(co_path, params) do
-    name = params |> Map.get("name", "") |> String.trim()
-    description = params |> Map.get("description", "") |> String.trim()
-    icon = params |> Map.get("icon", "") |> String.trim()
-    monthly_raw = params |> Map.get("monthly_usd", "") |> String.trim()
-    body = params |> Map.get("body", "") |> String.trim_trailing()
-
-    if name == "" do
-      {:error, :name_required}
-    else
-      monthly = parse_monthly(monthly_raw)
-
-      slug = Path.basename(co_path)
-
-      yaml =
-        render_company_yaml(%{
-          slug: slug,
-          name: name,
-          description: description,
-          icon: icon,
-          monthly_usd: monthly
-        })
-
-      content = "---\n" <> yaml <> "---\n\n" <> body <> "\n"
-
-      path = Path.join(co_path, "company.md")
-      tmp = path <> ".tmp"
-
-      with :ok <- File.write(tmp, content),
-           :ok <- File.rename(tmp, path) do
-        :ok
-      else
-        {:error, _} = err -> err
-      end
-    end
-  end
-
-  defp parse_monthly(""), do: nil
-
-  defp parse_monthly(raw) do
-    case Float.parse(raw) do
-      {n, _} when n >= 0 -> n
-      _ -> nil
-    end
-  end
-
-  # Build YAML frontmatter deterministically. We control every
-  # string, so quoting is hand-rolled rather than dragging in a YAML
-  # encoder — same pattern as TaskDefinition.write_frontmatter.
-  defp render_company_yaml(%{
-         slug: slug,
-         name: name,
-         description: desc,
-         icon: icon,
-         monthly_usd: monthly
-       }) do
-    lines =
-      [
-        {"kind", "company/v1"},
-        {"slug", slug},
-        {"name", name},
-        {"description", desc},
-        {"icon", icon}
-      ]
-      |> Enum.reject(fn {_k, v} -> v == "" end)
-      |> Enum.map(fn {k, v} -> "#{k}: #{yaml_string(v)}\n" end)
-
-    budget_block =
-      case monthly do
-        nil -> ""
-        n -> "budget:\n  monthly_usd: #{Float.round(n * 1.0, 2)}\n"
-      end
-
-    Enum.join(lines) <> budget_block
-  end
-
-  defp yaml_string(s) do
-    if String.contains?(s, [":", "#", "[", "]", "\"", "'", "\n"]) do
-      ~s("#{String.replace(s, "\"", "\\\"")}")
-    else
-      s
-    end
   end
 
   # Providers declared in the registry. Falls back to the bundled
