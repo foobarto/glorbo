@@ -400,6 +400,108 @@ defmodule Glorbo.Actions.TasksTest do
   end
 
   # ---------------------------------------------------------------------------
+  # create/4 severity auto-flip (GEP-41 D1, Round N)
+  # ---------------------------------------------------------------------------
+
+  describe "create/4 severity auto-flip" do
+    test "severity: critical + no explicit peer_review_required → flipped to true",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{"title" => "ship it", "severity" => "critical"},
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-1"
+               )
+
+      abs = Path.join([base, "companies", "acme", rel])
+      content = File.read!(abs)
+      assert content =~ "peer_review_required: true"
+    end
+
+    test "severity: major + no explicit peer_review_required → flipped to true",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{"title" => "ship it", "severity" => "major"},
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-2"
+               )
+
+      content = File.read!(Path.join([base, "companies", "acme", rel]))
+      assert content =~ "peer_review_required: true"
+    end
+
+    test "severity: minor does NOT auto-flip",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{"title" => "ship it", "severity" => "minor"},
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-3"
+               )
+
+      content = File.read!(Path.join([base, "companies", "acme", rel]))
+      refute content =~ "peer_review_required"
+    end
+
+    test "explicit peer_review_required: false wins even with severity: critical",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{
+                   "title" => "ship it",
+                   "severity" => "critical",
+                   "peer_review_required" => false
+                 },
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-4"
+               )
+
+      content = File.read!(Path.join([base, "companies", "acme", rel]))
+      # Written as the falsy path: kind: task/v1 + title + status: todo
+      # only — build_frontmatter skips false-valued scalars.
+      refute content =~ "peer_review_required"
+    end
+
+    test "explicit peer_review_required: true is preserved (no double-flip regression)",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{
+                   "title" => "ship it",
+                   "severity" => "critical",
+                   "peer_review_required" => true
+                 },
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-5"
+               )
+
+      content = File.read!(Path.join([base, "companies", "acme", rel]))
+      assert content =~ "peer_review_required: true"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # archive_to_history/3 (Round M-5b)
   # ---------------------------------------------------------------------------
 

@@ -2793,3 +2793,70 @@ made each round harder to review.
 ### Commit(s)
 
 One commit to follow.
+
+## Round N-1 — GEP-41 D1 severity auto-flip at create
+
+Post-M refactor CI green + Round M-6 CI green. Opening
+Round N (GEP-41 phase-2, deferred from Round K).
+
+The smallest self-contained piece of phase-2 is the D1
+auto-flip: when a task is created with
+`severity: major|critical`, it should default to
+`peer_review_required: true`. Directors can still opt out
+by setting `peer_review_required: false` explicitly.
+
+### Task picked
+
+Add `apply_severity_auto_flip/1` to
+`Glorbo.Actions.Tasks.create/4`: mutate the incoming
+`params` map before it hits the frontmatter writer.
+
+### What shipped
+
+- `lib/glorbo/actions/tasks.ex` —
+  `create/4` now runs `params` through a pre-processor
+  that flips `peer_review_required` to `true` when
+  severity is `"major"` or `"critical"` AND the caller
+  did not explicitly supply the field (even explicit
+  `false` wins — opt-out respected).
+- `test/glorbo/actions/tasks_test.exs` — 5 new tests
+  under `describe "create/4 severity auto-flip"`:
+  critical → flipped, major → flipped, minor → no flip,
+  explicit false respected, explicit true preserved.
+
+### Design calls I made without you
+
+- **Pre-processor at the top of `create/4`, not inside
+  `write_task_file/6`.** Keeps the transformation visible
+  from the function's entry point; `write_task_file` stays
+  a pure mapper from params → disk.
+- **Tolerant input shape.** `severity` is normalised via
+  `to_string/1 + String.downcase/1` so atom keys
+  (`"major"`, `:major`, `"MAJOR"`) all trigger the flip.
+  Defensive but cheap.
+- **Explicit `false` wins.** A director who deliberately
+  sets `peer_review_required: false` on a critical task
+  is making a conscious call (hotfix bypass, etc.). We
+  respect it — the auto-flip only fires when the field is
+  absent.
+
+### Gates
+
+- `mix test test/glorbo/actions/tasks_test.exs` — 26
+  passing (21 old + 5 new).
+- `mix precommit` — 2057 tests, 0 failures, 1 skipped.
+- `mix credo --strict` — clean.
+
+### Skipped / not done (deferred to later Round N sub-rounds)
+
+- **N-2** — router-triggered reviewer dispatch when a
+  task flips to `pending-approval` with
+  `peer_review_required: true`. Needs a
+  `Glorbo.Approvals.PeerReviewDispatcher` or equivalent
+  observer on file events.
+- **N-3** — Kanban awaiting-peer-review column or
+  ribbon. Pure UI change, needs a column enum expansion.
+
+### Commit(s)
+
+One commit to follow.

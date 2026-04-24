@@ -142,6 +142,9 @@ defmodule Glorbo.Actions.Tasks do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
     attachments = Keyword.get(opts, :attachments, [])
+    # GEP-41 D1: major / critical tasks default to peer-review-required
+    # unless the caller explicitly opted out. See `apply_severity_auto_flip/1`.
+    params = apply_severity_auto_flip(params)
 
     with :ok <- Support.validate_slug(company, :company),
          :ok <- Support.validate_slug(project, :project),
@@ -153,6 +156,20 @@ defmodule Glorbo.Actions.Tasks do
          abs_path = Path.join([base, "companies", company, rel_path]),
          :ok <- emit_create_audit(audit, company, rel_path, title, actor, params) do
       {:ok, %{task_id: task_id, rel_path: rel_path, abs_path: abs_path}}
+    end
+  end
+
+  # GEP-41 D1: if severity is major or critical and the caller did NOT
+  # explicitly supply peer_review_required, flip it to true. Explicit
+  # false from the caller wins — respect the opt-out.
+  defp apply_severity_auto_flip(params) do
+    severity = params |> Map.get("severity") |> to_string() |> String.downcase()
+    explicit = Map.get(params, "peer_review_required")
+
+    cond do
+      severity not in ["major", "critical"] -> params
+      explicit in [true, false, "true", "false"] -> params
+      true -> Map.put(params, "peer_review_required", true)
     end
   end
 
