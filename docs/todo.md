@@ -158,9 +158,19 @@ it's been in CHANGELOG for a cycle.
   brain-dump, chat rotation, kanban/company/project/channel editors,
   task scheduler, DM channel). Router rejects missing `kind:` on task
   + memory outbox. 1394/1394 green.
-- [ ] R26.2b: atomic `kind:` cut — templates + per-kind golden fixtures;
-  precommit wiring for `mix glorbo.docs.file_formats` + `glorbo fmt
-  --check`. Scope shrank considerably with R26.2a done.
+- [x] R26.2b: atomic `kind:` cut — per-kind golden fixtures for every
+  FileSpec kind. Shipped 2026-04-24 (autonomous round). Added 12
+  missing fixtures (sentinel-stuck, sentinel-resolution,
+  task-comments, inbox-message, inbox-archive, audit-event,
+  agent-memory-index, benchmark-run, config, emergency-stop,
+  proposal, path-request). All 24 kinds now have minimal_valid
+  fixtures; 71/0 in golden_fixtures_test.exs. Fixed a pre-existing
+  formatter bug surfaced by list-of-map frontmatter (path-request's
+  `paths:`): continuation keys now align with the first key instead
+  of the dash column. Precommit wiring is NOT in this pass —
+  `mix glorbo.docs.file_formats` + `glorbo fmt --check` already
+  exist but the precommit alias was not touched; filed as a
+  follow-up if the user wants it.
 - [x] #306 R33: FileSpec.Formatter + `glorbo fmt [--check|--write]` — canonical YAML key ordering, fence normalisation, idempotent, atomic writes; 14 unit tests + 2 CLI smoke tests
 - [x] **Threatmodel waves 1–3 (2026-04-22).** Shipped across 3
   commits: wave-1 T1–T15 + UAT B1–U1 + `:api_only → :proxy`

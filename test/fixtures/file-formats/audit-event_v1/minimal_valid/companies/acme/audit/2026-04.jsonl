@@ -1,0 +1,3 @@
+{"kind":"audit-event/v1","ts":"2026-04-21T10:00:00Z","actor":"ceo","action":"agent.dispatch","target":"projects/demo/tasks/release-01.md"}
+{"kind":"audit-event/v1","ts":"2026-04-21T10:01:00Z","actor":"director","action":"approval.approved","target":"projects/demo/tasks/release-01.md","detail":{"decision":"approved"}}
+{"kind":"audit-event/v1","ts":"2026-04-21T10:02:00Z","actor":"system","action":"channel.rotate","target":"channels/general.md","company":"acme"}

@@ -214,6 +214,12 @@ defmodule Glorbo.FileSpec.Formatter do
 
   defp emit_list_item(item, indent) when is_map(item) do
     # `- key1: value1\n  key2: value2` shape.
+    #
+    # The dash line is already written at column `indent` (via the
+    # caller's `pad(indent) ++ "- "`), so the first key sits at
+    # column `indent + 2`. Continuation keys in the same item must
+    # align with that first key — one pad deeper than `indent`, not
+    # at `indent` itself (which is the dash column).
     pairs = Enum.sort_by(item, fn {k, _} -> to_string(k) end)
 
     case pairs do
@@ -225,7 +231,7 @@ defmodule Glorbo.FileSpec.Formatter do
 
         rest_lines =
           Enum.map(rest, fn {k, v} ->
-            ["\n", pad(indent), to_string(k), ": ", emit_leaf(v)]
+            ["\n", pad(indent + 2), to_string(k), ": ", emit_leaf(v)]
           end)
 
         [first_line, rest_lines]

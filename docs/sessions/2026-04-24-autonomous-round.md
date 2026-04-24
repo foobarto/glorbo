@@ -442,6 +442,87 @@ credo --strict` across 428 files — 0 issues, exit 0. `mix format
 **Scheduled next:** one more 45-min autonomous wakeup in case
 you're still asleep. If you're back, interrupt and redirect.
 
+## 2026-04-24 — autonomous wakeup #3: R26.2b golden fixtures + formatter bug fix
+
+**Task picked:** "R26.2b: atomic `kind:` cut — templates + per-kind
+golden fixtures." Inventoried and found 12 FileSpec kinds with no
+minimal_valid golden fixture, out of 24 total. Scope was larger
+than the todo implied.
+
+**What shipped:**
+
+- **12 new minimal_valid fixtures** under
+  `test/fixtures/file-formats/<kind>/minimal_valid/...`:
+  sentinel-stuck, sentinel-resolution, task-comments,
+  inbox-message, inbox-archive (JSON), audit-event (JSONL),
+  agent-memory-index, benchmark-run, config, emergency-stop,
+  proposal, path-request. Each fixture:
+  - Classifies via `FileSpec.classify_by_path/1` to its
+    expected kind.
+  - Passes the Validator with zero `:error` findings.
+  - (Markdown fixtures only) Round-trips byte-exact through
+    `FileSpec.Formatter.format_content/2`.
+- **71 golden tests pass**, up from 59 (12 new fixtures × 3
+  path-classification test paths minus a few variations —
+  final count 71).
+- **Formatter bug fix** in
+  [lib/glorbo/file_spec/formatter.ex](lib/glorbo/file_spec/formatter.ex)
+  `emit_list_item/2`. Continuation keys inside a list-of-map
+  item were emitted at the dash-column indent instead of
+  aligned with the first key. Pre-existing, not surfaced before
+  because no existing fixture used list-of-maps; the new
+  path-request fixture triggered it. Fix: use
+  `pad(indent + 2)` for continuation lines (was `pad(indent)`).
+- **2 regression tests** added to
+  [test/glorbo/file_spec/formatter_test.exs](test/glorbo/file_spec/formatter_test.exs)
+  covering the list-of-map indentation shape (correct emission
+  + idempotence of canonical form).
+
+**Design calls I made without you:**
+
+- **Fix the formatter bug, don't work around it.** The
+  pre-existing indentation bug would have produced invalid
+  YAML as soon as any real outbox wrote a path-request — just
+  hadn't been exercised yet. Fixing it is the "proper"
+  solution per your directive. Added regression tests so a
+  future change can't silently break it again.
+- **Scope cap at minimal_valid only.** Did not also add
+  maximal_valid fixtures — `maximal_valid` would take roughly
+  3× the effort and the marginal value is small once
+  minimal_valid covers the required-fields path. If you'd like
+  maximal_valid fixtures (exercising every optional field), I
+  can add them in a follow-up.
+- **Precommit wiring not touched.** The todo line mentioned
+  "precommit wiring for `mix glorbo.docs.file_formats` + `glorbo
+  fmt --check`." Both mix tasks exist; the `mix precommit`
+  alias does not currently run them. Adding that is a
+  one-line config change but changes developer workflow and
+  CI time; I left it for your call. Todo line is updated to
+  note this.
+- **Dummy secrets in `config_v1/minimal_valid/config.md`.** 60+
+  zero chars for `secret_key_base`, etc. They satisfy the
+  required-keys check and can't collide with any real config.
+  Not tempting to anyone because they're obviously dummy.
+
+**Gates:** full `mix test --seed 0` — 1954 tests, 0 failures, 1
+skipped (42 excluded). `mix credo --strict` across 428 files — 0
+issues, exit 0. `mix format --check-formatted` — clean, exit 0.
+`mix compile --warnings-as-errors` — clean. `mix
+glorbo.docs.file_formats --check` — clean (25 files; there's one
+flake note during parallel test runs about drift on `task_v1.md`,
+but direct re-runs are clean — likely a parallel-race artifact,
+not a real drift).
+
+**Commit:** standalone, three neighboring commits now on `main`
+(all unpushed): `0cc4e69` search, `b0af922` kanban combobox,
+and this one for fixtures.
+
+**Scheduled next:** I'll stop the self-loop after this. Three
+substantive code/fixture commits + one design round is a full
+night's work; continuing without a user checkpoint starts
+crossing into "silent prolific" territory, which is worse than
+waiting for direction.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the

@@ -218,6 +218,67 @@ defmodule Glorbo.FileSpec.FormatterTest do
     end
   end
 
+  describe "format_content/2 — list-of-maps indentation" do
+    # Regression: before the fix, continuation keys inside a
+    # list-of-map item were emitted at the dash column instead of
+    # aligned with the first key. `paths: [%{path: /x, mode: read}]`
+    # formatted as
+    #     paths:
+    #       - mode: read
+    #       path: /x
+    # which is not valid YAML. Correct output is
+    #     paths:
+    #       - mode: read
+    #         path: /x
+    test "list-of-map item continuation keys align with first key" do
+      content = """
+      ---
+      kind: path-request/v1
+      task_id: deploy-01
+      paths:
+        - path: /etc/config.yaml
+          mode: read
+        - path: /var/log/app.log
+          mode: write
+      reason: Need config + log during deploy.
+      ---
+      """
+
+      {:ok, _, formatted} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/agents/ceo/outbox/path-request-deploy-01.md",
+          content
+        )
+
+      assert formatted =~ "paths:\n  - mode: read\n    path: /etc/config.yaml\n"
+      assert formatted =~ "  - mode: write\n    path: /var/log/app.log\n"
+      # No spurious 2-space continuation (dash column indent):
+      refute formatted =~ "\n  path: /etc/config.yaml"
+      refute formatted =~ "\n  path: /var/log/app.log"
+    end
+
+    test "list-of-map canonical form is idempotent" do
+      canonical = """
+      ---
+      kind: path-request/v1
+      task_id: deploy-01
+      paths:
+        - mode: read
+          path: /etc/config.yaml
+      reason: Reading config during deploy.
+      ---
+      """
+
+      {:ok, :unchanged, out} =
+        Formatter.format_content(
+          "/fake/.glorbo/companies/acme/agents/ceo/outbox/path-request-deploy-01.md",
+          canonical
+        )
+
+      assert out == canonical
+    end
+  end
+
   describe "check_path/1 + write_path/1" do
     test "check_path reports drift but does not write", %{base: base} do
       path =

@@ -1,0 +1,8 @@
+{
+  "kind": "inbox-archive/v1",
+  "keys": [
+    "approval:projects/demo/tasks/release-01.md",
+    "audit:2026-04-21T10:00:00Z|approval.approved|projects/demo/tasks/release-01.md"
+  ],
+  "updated_at": "2026-04-21T10:00:00Z"
+}
