@@ -182,8 +182,7 @@
                "lib/glorbo_web/live/agent_live.ex",
                "lib/glorbo_web/live/audit_live.ex",
                "lib/glorbo_web/live/channel_live.ex",
-               "lib/glorbo_web/live/kanban_live.ex",
-               "lib/glorbo_web/live/project_live.ex"
+               "lib/glorbo_web/live/kanban_live.ex"
              ]
            ]}
         ],

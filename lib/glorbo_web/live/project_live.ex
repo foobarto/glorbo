@@ -42,7 +42,7 @@ defmodule GlorboWeb.ProjectLive do
         Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
       end
 
-      meta = ensure_and_load_meta(proj_dir)
+      meta = ensure_and_load_meta(co, proj, proj_dir)
       tasks = list_tasks(base, co, proj)
 
       {:ok,
@@ -84,7 +84,13 @@ defmodule GlorboWeb.ProjectLive do
 
     cond do
       project_md_for_me?(rel_path, socket.assigns.project_slug) ->
-        meta = ensure_and_load_meta(socket.assigns.project_dir)
+        meta =
+          ensure_and_load_meta(
+            socket.assigns.company_slug,
+            socket.assigns.project_slug,
+            socket.assigns.project_dir
+          )
+
         {:noreply, assign(socket, :meta, meta)}
 
       task_for_me?(rel_path, socket.assigns.project_slug) ->
@@ -128,8 +134,14 @@ defmodule GlorboWeb.ProjectLive do
       description: description
     }
 
-    case write_project_md(socket.assigns.project_dir, new_meta) do
-      :ok ->
+    case Glorbo.Actions.Projects.update(
+           socket.assigns.company_slug,
+           socket.assigns.project_slug,
+           new_meta,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} ->
         {:noreply,
          socket
          |> assign(:meta, new_meta)
@@ -310,19 +322,15 @@ defmodule GlorboWeb.ProjectLive do
     end
   end
 
-  defp ensure_and_load_meta(proj_dir) do
-    path = Path.join(proj_dir, "project.md")
-
-    # threatmodel M19: project.md lives under an agent-writable
-    # projects tree. A symlink swap redirects File.read / File.write
-    # to arbitrary host paths. lstat on the target and refuse
-    # anything non-regular. :enoent is fine — we'll create it.
-    case ensure_project_md_writable(path) do
-      :ok ->
-        unless File.exists?(path) do
-          slug = proj_dir |> Path.basename()
-          File.write!(path, "---\nkind: project/v1\nslug: #{slug}\n---\n")
-        end
+  # threatmodel M19 enforcement lives in Actions.Projects.ensure_stub/3
+  # — see that module for the lstat guard + audit-emit contract.
+  defp ensure_and_load_meta(co, proj, proj_dir) do
+    case Glorbo.Actions.Projects.ensure_stub(co, proj,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} ->
+        path = Path.join(proj_dir, "project.md")
 
         case File.read(path) do
           {:ok, content} -> parse_meta(content)
@@ -331,15 +339,6 @@ defmodule GlorboWeb.ProjectLive do
 
       {:error, _} ->
         %{name: nil, icon: nil, description: nil}
-    end
-  end
-
-  defp ensure_project_md_writable(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_regular_file}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -427,51 +426,5 @@ defmodule GlorboWeb.ProjectLive do
     }
   rescue
     _ -> %{id: id, title: nil, status: "unknown", assigned_to: nil}
-  end
-
-  # ---------------------------------------------------------------------------
-  # Write
-  # ---------------------------------------------------------------------------
-
-  defp write_project_md(proj_dir, meta) do
-    path = Path.join(proj_dir, "project.md")
-    tmp = path <> ".tmp"
-
-    # threatmodel M19: lstat-refuse any symlink at either the
-    # target or the temp path. Without this, an agent-planted
-    # symlink for either name redirects File.write/File.rename to
-    # arbitrary host paths on save.
-    with :ok <- ensure_project_md_writable(path),
-         :ok <- ensure_project_md_writable(tmp),
-         {:ok, content} <- File.read(path) do
-      {_fm, body} = split_frontmatter(content)
-
-      fm_lines =
-        [
-          {"name", meta.name},
-          {"icon", meta.icon},
-          {"description", meta.description}
-        ]
-        |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
-        |> Enum.map_join("\n", fn {k, v} -> ~s(#{k}: "#{escape(v)}") end)
-
-      new_content = "---\n" <> fm_lines <> "\n---\n" <> (body || "")
-
-      with :ok <- File.write(tmp, new_content, [:sync]),
-           :ok <- File.rename(tmp, path) do
-        :ok
-      else
-        err ->
-          _ = File.rm(tmp)
-          err
-      end
-    end
-  end
-
-  defp escape(value) when is_binary(value) do
-    value
-    |> String.replace("\\", "\\\\")
-    |> String.replace(~s("), ~s(\\"))
-    |> String.replace("\n", " ")
   end
 end

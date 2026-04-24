@@ -2034,3 +2034,93 @@ the round's scope required it, but the gate surfaced it.
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-2 — ProjectLive migration (GEP-36 ratchet)
+
+Round M-1 CI green confirmed
+(run 24908360629 → completed|success) while I was mid-migration
+on M-2. Tight-loop discipline held.
+
+### Task picked
+
+Extract the two write paths from
+`lib/glorbo_web/live/project_live.ex` (stub-create on first
+view + atomic frontmatter edit) into
+`Glorbo.Actions.Projects.ensure_stub/3` and
+`Glorbo.Actions.Projects.update/4`.
+
+### What shipped
+
+- `lib/glorbo/actions/projects.ex` — new module.
+  - `ensure_stub/3` — idempotent stub write with threatmodel
+    M19 `lstat` guard; returns `{:ok, :exists}` when file is
+    present, `{:ok, :created}` after the write, `{:error,
+    :not_a_regular_file}` when a symlink is planted.
+  - `update/4` — atomic edit (`:sync` write to `.tmp`
+    + rename); preserves body after frontmatter; escapes
+    embedded quotes and newlines.
+  - Emits `project.create` / `project.update` audit entries.
+  - M19 guard applies at both target and `.tmp` paths.
+- `lib/glorbo_web/live/project_live.ex` — swapped both call
+  sites. `ensure_and_load_meta/1` is now
+  `ensure_and_load_meta/3` taking `(co, proj, proj_dir)` so
+  it can delegate the write to Actions.Projects without
+  back-parsing the path. Removed ~45 lines:
+  `write_project_md/2`, `ensure_project_md_writable/1`,
+  `escape/1`.
+- `.credo.exs` — dropped `lib/glorbo_web/live/project_live.ex`
+  from the allowlist. 4 LiveViews remain (agent, audit,
+  channel, kanban).
+- `test/glorbo/actions/projects_test.exs` — 10 tests:
+  - `ensure_stub/3`: happy-path create+audit, idempotent
+    no-op when file exists, symlink refusal, invalid slugs.
+  - `update/4`: happy-path write+audit with body
+    preservation, escape handling, nil/empty drop, symlink
+    refusal, `.tmp` cleanup on rename failure, slug
+    rejection.
+
+### Design calls I made without you
+
+- **Changed `ensure_and_load_meta/1` to `/3`.** The simpler
+  alternative was parsing `proj_dir` back into `(co, proj)`
+  inside the LiveView helper; it was janky and fragile
+  against any future path-shape drift. Taking the two slugs
+  explicitly is clearer and keeps the LiveView single-
+  responsibility (display concerns, not path archaeology).
+- **Did NOT extract a shared `Actions.Support` yet.**
+  Audit-routing helpers (`append_audit/3`, `safe_append_for/2`,
+  `put_detail/3`, `default_base/0`) are now duplicated across
+  three modules (Tasks, Companies, Projects). Holding off on
+  extraction until M-3 lands a fourth copy — avoiding
+  abstraction-for-its-own-sake per CLAUDE.md §2. Will
+  re-evaluate at the close of M-3.
+- **Added `project.create` + `project.update` audit entries.**
+  Pre-migration there was no audit at either call site. GEP-36
+  contract is "Actions emit audit." Behavior improvement,
+  noted here for trace-completeness reviewers.
+- **Refactored `update/4` to a single `with` chain** to clear
+  a Credo "nested too deep" finding (was 4, max 3). Introduced
+  `render_new_content/2` helper.
+
+### Gates
+
+- Compile --warnings-as-errors — green.
+- `mix test test/glorbo/actions/projects_test.exs` — 10
+  passing.
+- `mix test test/glorbo_web/live/project_live_test.exs` —
+  5 passing (no regressions).
+- `mix credo --strict` — 4922 mods/funs, 0 issues.
+- `mix precommit` — 2012 tests, 0 failures, 1 skipped.
+
+### Skipped / not done
+
+- Browser UAT — no. Unit + LiveView tests cover the handler;
+  the new module has its own tests including symlink
+  refusal. Not worth spinning up manual chrome for a surgical
+  extraction.
+- Shared `Actions.Support` extraction — deferred to M-3/M-4
+  based on whether a 4th duplicate makes it unavoidable.
+
+### Commit(s)
+
+One commit to follow.
