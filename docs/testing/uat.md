@@ -390,3 +390,37 @@ boxes above).
   listener directly (`127.0.0.1:<non-proxy-port>` fails).
 - [ ] **O3** — Linux host without `pasta`: `network: proxy` dispatch is
   refused, and the audit log records `agent.netns_unavailable`.
+
+## P. Task chain + peer-review (GEP-40 + GEP-41)
+
+- [ ] **P1** — Create a task with `severity: major` via the Kanban
+  new-task drawer; verify the card renders with a `⧗ peer-review`
+  pill on the board (auto-flip of `peer_review_required: true`
+  fires because severity is major).
+- [ ] **P2** — Same task: frontmatter written to disk contains
+  `peer_review_required: true` even though the form didn't set it
+  (Round N-1 severity auto-flip).
+- [ ] **P3** — Navigate to `/companies/<co>/tasks/<id>/chain` from
+  the task detail header; chain view renders with "No handoffs
+  recorded" copy before any reassign happens.
+- [ ] **P4** — Reassign the task twice via the task-detail
+  Reassign control; chain view now shows 2 hops with from/to/
+  reason/ts; no `chain drift` banner (chain + audit agree).
+- [ ] **P5** — Flip a `peer_review_required` task to
+  `pending-approval`; `peer_review.requested` audit event fires
+  exactly once per task-path, surfaces in the chain view's
+  "peer review" section with `reviewer critiqueops · severity
+  major` detail line.
+- [ ] **P6** — Approve/revise/block the task via a CritiqueOps
+  verdict write; `task.peer_review.<verdict>` event appears in
+  the chain view peer-review section with the verdict note.
+- [ ] **P7** — Kanban card's `⧗ peer-review` pill disappears once
+  a verdict is recorded; the `⚠ gated` pill (if present) persists
+  until Director approval lands.
+- [ ] **P8** — GEP-41 D6 invariant (`peer_review_required` is
+  append-only) holds *vacuously* at v0.8.0: no Director-facing
+  LiveView surface and no Router outbox handler currently
+  mutates the field post-creation, so there's no path to
+  violate it. Runtime enforcement (`peer_review_flag_rewound`
+  rejection) will land if/when a mutation path is added; see
+  GEP-41 history for the deferral note.

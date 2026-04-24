@@ -63,6 +63,16 @@ history:
       dispatcher (inbox delivery, sentinel dedupe, cadence,
       retry, reviewer-absent fallback). Phase-3 is a separate
       design exercise, not a rollout-list gap.
+
+      Deferral: D6's runtime enforcement
+      (`peer_review_flag_rewound` rejection of `true → false`
+      flips) holds *vacuously* at v0.8.0 — the field is only
+      ever written at task creation through
+      `Glorbo.Actions.Tasks.create/4`; no Director-facing
+      surface and no Router outbox handler currently mutates
+      `peer_review_required` post-creation. If a mutation
+      path is added later, the enforcement lands in that
+      same commit.
 requires: [2, 19, 40]
 see-also: [6, 19, 28, 30, 36, 37]
 ---

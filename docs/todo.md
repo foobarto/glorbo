@@ -96,18 +96,26 @@ it's been in CHANGELOG for a cycle.
   v0.8.0 anyway); (2) `term_ui` dep + Shell supervisor + Runtime
   wired under `glorbo shell` subcommand; (3) views in drop-in parity
   order.
-- [ ] **GEP-40 implementation (crown-jewels phase 1a).** Task
-  chain observability schema + chain audit view LiveView. Atomic
-  cut: FileSpec schema extension + Router handoff-chain appender
-  + `TaskChainLive` + template scaffolding updates. v0.8.0 scope.
+- [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
+  2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
+  `requested_by:`, `severity:`, `peer_review_required:` with
+  append-only enforcement), `Actions.Tasks.assign/4` handoff-
+  chain appender, `GlorboWeb.TaskChainLive` at
+  `/companies/:co/tasks/:task_id/chain` with drift detection +
+  peer-review event section. GEP-40 → Implemented.
 - [ ] **FileSpec.Formatter: preserve `|` block-scalar for
   multi-line strings.** Currently `done_when:` with multi-line
   content gets re-emitted as a double-quoted string with literal
   newlines — valid YAML but ugly. Non-blocking; user-facing
   fields deserve block-scalar. Low priority.
-- [ ] **GEP-41 implementation (crown-jewels phase 1b).** Peer-review
-  gate. Router trigger rules + CritiqueOps routing + verdict parser
-  + chain-view inline rendering. Depends on GEP-40. v0.8.0 scope.
+- [x] **GEP-41 implementation (crown-jewels phase 1b).** Shipped
+  2026-04-24 across rounds J/K/N-1/N-2/N-3/O/P: CritiqueOps verb
+  alignment, `Approvals.Gate` peer-review blocker + requested
+  audit, `Actions.Tasks.record_peer_review_verdict`, severity
+  auto-flip at create, Kanban `⧗ peer-review` pill, opt-in
+  paragraph on 5 agent templates, chain-view peer-review section.
+  GEP-41 → Implemented. Phase-3 reviewer auto-dispatcher stays
+  future work.
 - [x] **Agent template propagation (crown-jewels phase 1c).**
   Shipped across Round L (cairn-style + handoff to ceo/editor/
   researcher/provenance-auditor) and Round O (peer-review opt-in

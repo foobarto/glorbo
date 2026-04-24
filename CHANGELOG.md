@@ -87,15 +87,6 @@ is left outstanding for v0.8.0.
 - **GEP-39 Placeholder** — configurable TUI keybinding
   schemes (Emacs default / Vim / VS Code); implementation
   gated on demand.
-- **GEP-40 Draft** — task chain observability. Frontmatter
-  additions (`done_when:`, `handoff_chain:`, `requested_by:`,
-  `severity:`, `peer_review_required:`) plus a new chain
-  audit LiveView at `/companies/:co/tasks/:task_id/chain`.
-  First of the crown-jewels GEP arc.
-- **GEP-41 Draft** — agent peer-review gate. Severity-based
-  automatic trigger + opt-in self-request. Default reviewer
-  `critiqueops`; verdict-based routing (approve / revise /
-  block). Depends on GEP-40's schema.
 - **Engineer agent template** rewritten cairn-style
   (commit `fe658ee`): governing principles inline, L3
   autonomy can/cannot, anti-slop discipline, handoff
@@ -166,11 +157,16 @@ is left outstanding for v0.8.0.
 
 ### GEPs
 
+- GEP-36 actions-layer single-write-channel — **Implemented**.
 - GEP-37 `glorbo shell` — **Draft** (renamed mid-round from
   `glorbo tui`; D2 flipped from custom-on-owl to term_ui
   after maintainer review).
 - GEP-38 frontend adapter contracts — **Placeholder**.
 - GEP-39 configurable TUI keybindings — **Placeholder**.
+- GEP-40 task chain observability — **Implemented**.
+- GEP-41 agent peer-review gate — **Implemented**
+  (phase-1 rollout; phase-3 reviewer auto-dispatcher is
+  future work).
 
 ## [0.7.0] — 2026-04-24
 

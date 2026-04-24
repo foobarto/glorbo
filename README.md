@@ -89,6 +89,21 @@ headers. No JS framework, no CSS build step.
   `http://127.0.0.1:4000`. Inotify repaints in under a second.
 - **Approval + audit trail.** Tasks can require Director approval. Every
   decision writes a structured `YYYY-MM.jsonl` row.
+- **Task chain observability.** Every `assigned_to:` flip appends to the
+  task's `handoff_chain:` frontmatter; the `/companies/:co/tasks/:id/chain`
+  view reconstructs the full multi-agent route with drift detection
+  against the audit log (GEP-40).
+- **Peer-review gate.** Tasks flagged `severity: major|critical` — or
+  any task whose author opts in with `peer_review_required: true` —
+  route through the `critiqueops` reviewer before Director approval
+  can clear; three-way verdict (approve/revise/block) is append-only
+  per task (GEP-41).
+- **Single Director write-channel.** Every filesystem mutation the
+  Director-facing LiveViews can make flows through `Glorbo.Actions.*`
+  modules with slug validation, atomic writes, threatmodel-appropriate
+  symlink guards, and audit emission before the `File.*` call lands
+  — enforced by a Credo ratchet that rejects raw writes under
+  `lib/glorbo_web/live/` (GEP-36).
 - **Portable.** `glorbo backup | scp | glorbo restore` reproduces a working
   install on a fresh host.
 
