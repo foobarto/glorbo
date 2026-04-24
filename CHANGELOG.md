@@ -21,6 +21,16 @@ change between minor versions. Pin exact versions in downstream usage.
   (gains the canonical single trailing `\n`) then `:unchanged`
   forever after.
 
+### Fixed
+
+- **`PortabilityTest`** asserted `companies/.../agents/ceo/agent.md`
+  (lowercase) but the canonical filename per `Glorbo.Agent.FileLayout`
+  is `AGENT.md` (GEP-15 ALLCAPS). On case-sensitive filesystems
+  (Linux) the assertion failed; corrected to match the convention.
+- **`ApprovalGateE2ETest`** `write_task` helper omitted required
+  `kind: task/v1` and `id:` fields (GEP-25 R26.2b cut). Added them
+  as overridable defaults so existing call sites stay terse.
+
 ### GEPs
 
 - **GEP-23 `egress.kbps_cap` — won't-fix.** Maintainer-recorded

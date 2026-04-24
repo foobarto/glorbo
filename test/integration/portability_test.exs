@@ -84,10 +84,15 @@ defmodule Glorbo.Integration.PortabilityTest do
              )
 
     # STAGE 5 — file-level byte-equality assertions
+    #
+    # `AGENT.md` stays uppercase per GEP-15's ALLCAPS convention
+    # (see `Glorbo.Agent.FileLayout`); on case-sensitive filesystems
+    # (Linux) the lowercase form is a different file and fails the
+    # exists-at-B check.
     for rel <- [
           "config.md",
           "companies/acme/company.md",
-          "companies/acme/agents/ceo/agent.md"
+          "companies/acme/agents/ceo/AGENT.md"
         ] do
       path_a = Path.join(a, rel)
       path_b = Path.join(b, rel)

@@ -38,7 +38,14 @@ defmodule Glorbo.Integration.ApprovalGateE2ETest do
   end
 
   defp write_task(ctx, id, attrs) do
-    fm = Enum.map_join(attrs, "\n", fn {k, v} -> "#{k}: #{v}" end)
+    # GEP-25 R26.2b — `kind: task/v1` is required on every task
+    # frontmatter; `id:` is required by `TaskDefinition.parse_file/3`.
+    # Inject defaults that the test case can override via `attrs`.
+    full_attrs =
+      [kind: "task/v1", id: id, assigned_to: "engineer"]
+      |> Keyword.merge(attrs)
+
+    fm = Enum.map_join(full_attrs, "\n", fn {k, v} -> "#{k}: #{v}" end)
     path = Path.join([ctx.company_dir, "projects/foo/tasks", "#{id}.md"])
     File.write!(path, "---\n" <> fm <> "\n---\n# #{id}\nBody.\n")
     path
