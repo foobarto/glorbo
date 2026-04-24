@@ -30,6 +30,16 @@ change between minor versions. Pin exact versions in downstream usage.
 - **`ApprovalGateE2ETest`** `write_task` helper omitted required
   `kind: task/v1` and `id:` fields (GEP-25 R26.2b cut). Added them
   as overridable defaults so existing call sites stay terse.
+- **`InotifyToBwrapHappyPathTest`** had three independent stale
+  assertions: (a) the `run_fun` signature pattern matched
+  `(argv, env, ^spec, ctx)` but the dispatcher's actual contract is
+  `(argv, env, bwrap_opts, run_opts_map)`; (b) `ctx.network_policy
+  == :none` predates the GEP-23 D1 enum rename to `:loopback`;
+  (c) `Map.has_key?(env, "CLAUDE_CONFIG_DIR")` predates the move to
+  bind-based CLI auth redirection (`cli_auth_binds` carries the
+  `~/.claude` mount; no env var). Realigned with the current shape;
+  also stubs `audit_fun` since the test doesn't start a per-company
+  AuditLog GenServer.
 
 ### GEPs
 

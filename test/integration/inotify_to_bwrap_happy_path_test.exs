@@ -78,34 +78,38 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
 
     # run_fun records the invocation + re-composes what production's
     # default_bwrap_run_fun would build so we can assert on the concrete
-    # bwrap argv that would have been spawned.
-    recording_run_fun = fn argv, env, ^spec, ctx ->
-      invocation_opts = %{
-        agent_workspace: ctx.workspace,
-        inbox_path: ctx.inbox_path,
-        outbox_path: ctx.outbox_path,
-        company_path: ctx.company_path,
-        permissions: ctx.permissions,
-        network_policy: ctx.network_policy,
-        cli_auth_binds: [],
-        cli_env: env,
-        proxy_url: ctx.proxy_url,
-        timeout_seconds: ctx.timeout_seconds
-      }
+    # bwrap argv that would have been spawned. Signature is the
+    # post-`Glorbo.CLI.Dispatcher` shape: `(argv, env, bwrap_opts,
+    # run_opts_map)`. `bwrap_opts` already carries everything
+    # `Bwrap.build_argv/1` needs.
+    recording_run_fun = fn argv, env, bwrap_opts, _run_opts ->
+      bwrap_argv =
+        bwrap_opts
+        |> Map.put(:cli_env, env)
+        |> Bwrap.build_argv()
 
-      bwrap_argv = Bwrap.build_argv(invocation_opts)
+      send(
+        parent,
+        {:dispatched, %{argv: argv, env: env, ctx: bwrap_opts, bwrap_argv: bwrap_argv}}
+      )
 
-      send(parent, {:dispatched, %{argv: argv, env: env, ctx: ctx, bwrap_argv: bwrap_argv}})
       {:ok, %{exit_status: 0, stdout: "ok"}}
     end
 
     # dispatch_fun wraps Dispatch.execute/3 + injects the recording run_fun
     # + a stub binary_fun so we don't need a real `claude` on PATH.
+    # Also stubs `audit_fun` because Dispatch's default routes to a
+    # per-company AuditLog GenServer (via-tuple); this test starts a
+    # bespoke per-test company without the CompanySupervisor tree, so
+    # the via-tuple lookup misses and the bare-module fallback isn't
+    # registered either. No-op audit keeps Dispatch focused on the
+    # bwrap argv assertion.
     dispatch_fun = fn spec, task, opts ->
       opts =
         opts
         |> Keyword.put(:run_fun, recording_run_fun)
         |> Keyword.put(:binary_fun, fn _mod -> "/fake/claude" end)
+        |> Keyword.put(:audit_fun, fn _co, _entry -> :ok end)
         |> Keyword.put(:base, base)
 
       Glorbo.Agent.Dispatch.execute(spec, task, opts)
@@ -187,14 +191,27 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     assert "--model" in argv
     assert "claude-sonnet-4-5" in argv
 
-    # Env is populated with the per-agent session redirect.
-    assert Map.has_key?(env, "CLAUDE_CONFIG_DIR")
+    # Per-agent integration env populated (`GLORBO_*` keys are the
+    # contract `Glorbo.CLI.Harness` relies on inside the sandbox).
+    # CLI-auth redirection now happens via `cli_auth_binds` mounts
+    # rather than an env var, so we assert on the binds map below.
+    assert Map.has_key?(env, "GLORBO_INBOX")
+    assert Map.has_key?(env, "GLORBO_OUTBOX")
+    assert Map.has_key?(env, "GLORBO_WORKSPACE")
+    # claude-code provider's auth redirect lands in cli_auth_binds.
+    assert Enum.any?(ctx.cli_auth_binds, fn
+             {host, _sandbox} -> String.ends_with?(host, ".claude")
+             _ -> false
+           end)
 
-    # Context carries the agent's on-disk paths.
+    # `ctx` here is the `bwrap_opts` map the dispatcher passed to
+    # `run_fun`. Carries the agent's on-disk paths + sandbox policy.
     assert ctx.company_path == co_root
     assert ctx.inbox_path == Path.join(agent_dir, "inbox")
     assert ctx.outbox_path == Path.join(agent_dir, "outbox")
-    assert ctx.network_policy == :none
+    # GEP-23 D1 enum rename — `:none` was retired; loopback is the
+    # honest least-privilege default the spec carries.
+    assert ctx.network_policy == :loopback
 
     # Bwrap argv contains the D-08 baseline flags + network isolation +
     # workspace + per-agent paths — what a real sandbox invocation would
@@ -206,7 +223,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     # workspace bound rw, inbox ro (one-way flow invariant)
     assert bwrap_argv
            |> Enum.chunk_every(3, 1, :discard)
-           |> Enum.any?(&(&1 == ["--bind", ctx.workspace, "/workspace"]))
+           |> Enum.any?(&(&1 == ["--bind", ctx.agent_workspace, "/workspace"]))
 
     assert bwrap_argv
            |> Enum.chunk_every(3, 1, :discard)
