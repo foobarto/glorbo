@@ -540,17 +540,25 @@ defmodule GlorboWeb.KanbanLive do
 
     projects = socket.assigns.new_task_projects
 
+    # GEP-36 — task creation flows through `Glorbo.Actions.Tasks.create/4`.
+    # LV keeps the upload consumption + render bookkeeping; the
+    # filesystem write + audit emit live in core.
+    #
+    # Pre-reserve the task id via `Tasks.next_task_id/3` so uploads can
+    # land under the correct `attachments/<task_id>/` directory before
+    # the task file itself is written (the body links into that
+    # directory).
     with :ok <- validate_project(Map.get(params, "project", ""), projects),
-         :ok <- validate_title(Map.get(params, "title", "")),
          project = Map.fetch!(params, "project"),
-         {:ok, task_id} <- next_task_id(base, company, project),
-         # Order matters: consume uploads BEFORE writing the task md so
-         # the body can link to the attachment files.
+         {:ok, task_id} <- Glorbo.Actions.Tasks.next_task_id(base, company, project),
          attachments <- consume_new_task_uploads(socket, base, company, project, task_id),
-         :ok <- write_new_task_rich(base, company, project, task_id, params, attachments) do
-      rel_path = "projects/#{project}/tasks/#{task_id}.md"
-      emit_task_create_audit(company, rel_path, String.trim(Map.get(params, "title", "")))
-
+         {:ok, _result} <-
+           Glorbo.Actions.Tasks.create(company, project, params,
+             actor: "director",
+             base: base,
+             task_id: task_id,
+             attachments: attachments
+           ) do
       # If the user assigned the task, drop an inbox notification so
       # the wake pipeline picks it up (same pattern as kanban save).
       maybe_notify_assignee(
@@ -589,6 +597,9 @@ defmodule GlorboWeb.KanbanLive do
 
       {:error, :invalid_title} ->
         {:noreply, put_flash(socket, :error, "Title can't be empty.")}
+
+      {:error, {:invalid_slug, kind, _slug}} ->
+        {:noreply, put_flash(socket, :error, "Invalid #{kind} identifier.")}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Could not create task.")}
@@ -1369,81 +1380,6 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  defp validate_title(title) when is_binary(title) do
-    trimmed = String.trim(title)
-
-    if trimmed != "" and byte_size(trimmed) <= 200,
-      do: :ok,
-      else: {:error, :invalid_title}
-  end
-
-  defp validate_title(_), do: {:error, :invalid_title}
-
-  # GEP-13: task filenames are `<project-slug>-<NN>.md`. Legacy `t-NN.md`
-  # files are still counted when picking the next number so a mixed
-  # directory (during the soft-migration window) doesn't collide.
-  defp next_task_id(base, company, project) do
-    tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
-    File.mkdir_p!(tasks_dir)
-
-    legacy_re = ~r/\At-(\d+)\.md\z/
-    prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
-
-    max_n =
-      case File.ls(tasks_dir) do
-        {:ok, files} ->
-          files
-          |> Enum.map(fn f ->
-            Regex.run(prefixed_re, f) || Regex.run(legacy_re, f)
-          end)
-          |> Enum.reject(&is_nil/1)
-          |> Enum.map(fn [_, n] -> String.to_integer(n) end)
-          |> Enum.max(fn -> 0 end)
-
-        _ ->
-          0
-      end
-
-    next = max_n + 1
-
-    n_str =
-      if next <= 99,
-        do: String.pad_leading(Integer.to_string(next), 2, "0"),
-        else: Integer.to_string(next)
-
-    {:ok, "#{project}-#{n_str}"}
-  end
-
-  # Resolve the company's AuditLog via-tuple (same shape Actions uses),
-  # fall back silently if the audit server isn't registered — new-task
-  # creation must not fail just because audit is unavailable.
-  defp emit_task_create_audit(company, rel_path, title) do
-    via =
-      case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
-        [{_pid, _}] ->
-          {:via, Registry, {Glorbo.Agent.Registry, {:company_child, company, :audit_log}}}
-
-        _ ->
-          Glorbo.Company.AuditLog
-      end
-
-    try do
-      Glorbo.Company.AuditLog.append(via, %{
-        company: company,
-        actor: "director",
-        action: "task.create",
-        target: rel_path,
-        title: title
-      })
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
-
-    :ok
-  end
-
   defp emit_task_delete_audit(company, rel_path) do
     via =
       case Registry.lookup(Glorbo.Agent.Registry, {:company_child, company, :audit_log}) do
@@ -1557,50 +1493,6 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  # Rich create: writes frontmatter with title/status/assigned_to/priority/
-  # severity + markdown body (description + attachment refs, if any).
-  # Falls through to the same atomic tmp+rename path as the original
-  # simple write.
-  defp write_new_task_rich(base, company, project, task_id, params, attachments) do
-    title = Map.get(params, "title", "") |> String.trim()
-    assigned_to = Map.get(params, "assigned_to", "") |> String.trim()
-    model = Map.get(params, "model", "") |> String.trim()
-    priority = Map.get(params, "priority", "") |> String.trim()
-    severity = Map.get(params, "severity", "") |> String.trim()
-
-    frontmatter_lines =
-      [
-        {"kind", "task/v1"},
-        {"title", title},
-        {"status", "todo"},
-        {"assigned_to", assigned_to},
-        {"model", model},
-        {"priority", priority},
-        {"severity", severity}
-      ]
-      |> Enum.reject(fn {k, v} -> k != "status" and k != "kind" and v in ["", nil] end)
-      |> Enum.map(fn {k, v} -> "#{k}: #{yaml_scalar(v)}\n" end)
-
-    body =
-      "---\n" <>
-        Enum.join(frontmatter_lines) <>
-        "---\n\n" <>
-        build_body(params, attachments) <>
-        "\n"
-
-    path = Path.join([base, "companies", company, "projects", project, "tasks", "#{task_id}.md"])
-    tmp = path <> ".tmp"
-
-    with :ok <- File.write(tmp, body, [:sync]),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      err ->
-        _ = File.rm(tmp)
-        err
-    end
-  end
-
   # Sink uploads to projects/<proj>/attachments/<task_id>/<safe-filename>.
   # Returns a list of relative paths (as strings) for the markdown
   # body's attachment list. Silently ignores entries we couldn't
@@ -1656,8 +1548,6 @@ defmodule GlorboWeb.KanbanLive do
       description
     end <> attach_block
   end
-
-  defp yaml_scalar(v), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)
 
   defp default_new_task_form do
     %{

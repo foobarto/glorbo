@@ -1,0 +1,304 @@
+defmodule Glorbo.Actions.Tasks do
+  @moduledoc """
+  Task mutation operations (GEP-36). Every function performs the
+  permission check + input validation + atomic filesystem write +
+  audit-emit sequence. Callers (LiveView, MCP, shell) invoke these
+  directly — no raw `File.*!` writes in frontend handlers.
+
+  Current public API:
+
+    * `create/4` — new task file in `projects/<p>/tasks/<id>.md`.
+      Called by `KanbanLive.handle_event("new_task_create", ...)`
+      and MCP's `create_task` tool.
+
+  Planned next (not yet implemented):
+
+    * `move/4` — status/column flip.
+    * `trash/3` — move to `history/tasks/`.
+    * `update_status/4` — any status change.
+    * `assign/4` — `assigned_to:` flip + `handoff_chain:` append
+      (GEP-40 consumer).
+    * `dispatch/3` — wake agent + record dispatch.
+    * `request_peer_review/3` + `resolve_peer_review/4` (GEP-41).
+
+  ## Contract
+
+  Every function:
+
+    * Returns `{:ok, result}` or `{:error, reason}`. No raised
+      exceptions on expected failure paths.
+    * Takes `opts :: keyword()` with mandatory `:actor` key.
+      Missing `:actor` raises `ArgumentError` at the boundary.
+    * Emits a `Glorbo.Company.AuditLog` entry before returning
+      on success. Audit-emit failures surface as
+      `{:error, :audit_failed}`.
+  """
+
+  alias Glorbo.Company.AuditLog
+  alias Glorbo.Filesystem.FrontmatterWriter
+
+  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
+  @title_max_bytes 200
+  @task_id_re ~r/\A[a-z0-9][a-z0-9-]*\z/
+
+  @type create_params :: %{
+          optional(String.t()) => any()
+        }
+
+  @type create_opts ::
+          [
+            actor: String.t(),
+            base: Path.t(),
+            audit: atom(),
+            attachments: [String.t()],
+            task_id: String.t()
+          ]
+
+  @type create_result :: %{task_id: String.t(), rel_path: String.t(), abs_path: String.t()}
+
+  @doc """
+  Create a new task file under `projects/<project>/tasks/<task_id>.md`.
+
+  `params` carries the task's frontmatter + body fields as string
+  keys. Minimum: `"title"`. Optional: `"assigned_to"`,
+  `"requested_by"`, `"priority"`, `"severity"`,
+  `"peer_review_required"`, `"reviewer"`, `"model"`, `"provider"`,
+  `"done_when"`, `"description"`, `"schedule"`.
+
+  `opts`:
+
+    * `:actor` (required) — who is creating the task (director /
+      ceo / etc.). Surfaced in the audit entry.
+    * `:base` — filesystem root (default `Glorbo.Path.base_dir/0`).
+    * `:audit` — AuditLog target (default global).
+    * `:attachments` — list of relative attachment paths to link
+      from the body.
+
+  ## Validations
+
+  Company + project slugs must match `~r/\\A[a-z0-9][a-z0-9-]*\\z/`.
+  Title is trimmed; must be 1..200 bytes. Next task ID is derived
+  from existing filenames in the project's tasks dir
+  (`<project>-NN.md`, legacy `t-NN.md` counted too).
+
+  ## Audit
+
+  Emits `task.create` with:
+
+    * `actor` — from `opts[:actor]`.
+    * `target` — `projects/<project>/tasks/<task_id>.md`.
+    * `detail: %{"title" => title, "assigned_to" => ...}`.
+  """
+  @spec create(String.t(), String.t(), create_params(), create_opts()) ::
+          {:ok, create_result()} | {:error, term()}
+  def create(company, project, params, opts \\ [])
+      when is_binary(company) and is_binary(project) and is_map(params) and is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+    attachments = Keyword.get(opts, :attachments, [])
+
+    with :ok <- validate_slug(company, :company),
+         :ok <- validate_slug(project, :project),
+         title <- params |> Map.get("title", "") |> to_string() |> String.trim(),
+         :ok <- validate_title(title),
+         {:ok, task_id} <- resolve_task_id(opts, base, company, project),
+         :ok <- write_task_file(base, company, project, task_id, params, attachments),
+         rel_path = "projects/#{project}/tasks/#{task_id}.md",
+         abs_path = Path.join([base, "companies", company, rel_path]),
+         :ok <- emit_create_audit(audit, company, rel_path, title, actor, params) do
+      {:ok, %{task_id: task_id, rel_path: rel_path, abs_path: abs_path}}
+    end
+  end
+
+  @doc """
+  Compute the next free task id in a project. Exposed so callers
+  that need to place artifacts (upload dirs, etc.) under the
+  task-id path BEFORE calling `create/4` can pre-reserve the id
+  and pass it via `opts[:task_id]`.
+
+  No filesystem mutation beyond `mkdir_p` on the tasks dir.
+  """
+  @spec next_task_id(Path.t(), String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, term()}
+  def next_task_id(base, company, project)
+      when is_binary(base) and is_binary(company) and is_binary(project) do
+    with :ok <- validate_slug(company, :company),
+         :ok <- validate_slug(project, :project) do
+      do_next_task_id(base, company, project)
+    end
+  end
+
+  defp resolve_task_id(opts, base, company, project) do
+    case Keyword.get(opts, :task_id) do
+      nil -> do_next_task_id(base, company, project)
+      id when is_binary(id) -> validate_given_task_id(id)
+      other -> {:error, {:invalid_task_id, other}}
+    end
+  end
+
+  defp validate_given_task_id(id) do
+    if Regex.match?(@task_id_re, id), do: {:ok, id}, else: {:error, {:invalid_task_id, id}}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Internals
+  # ---------------------------------------------------------------------------
+
+  defp default_base do
+    Application.get_env(:glorbo, :base_dir) || Path.expand("~/.glorbo")
+  end
+
+  defp validate_slug(slug, kind) when is_binary(slug) do
+    if Regex.match?(@slug_re, slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
+  end
+
+  defp validate_title(title) when is_binary(title) do
+    cond do
+      title == "" -> {:error, :invalid_title}
+      byte_size(title) > @title_max_bytes -> {:error, :invalid_title}
+      true -> :ok
+    end
+  end
+
+  # `<project>-NN.md` is the canonical filename (GEP-13). Legacy
+  # `t-NN.md` files from pre-v0.0.3 are counted in the max so a mixed
+  # tasks dir doesn't collide on id generation.
+  defp do_next_task_id(base, company, project) do
+    tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
+    File.mkdir_p!(tasks_dir)
+
+    prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
+    legacy_re = ~r/\At-(\d+)\.md\z/
+
+    max_n =
+      case File.ls(tasks_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.map(fn f -> Regex.run(prefixed_re, f) || Regex.run(legacy_re, f) end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.map(fn [_, n] -> String.to_integer(n) end)
+          |> Enum.max(fn -> 0 end)
+
+        _ ->
+          0
+      end
+
+    next = max_n + 1
+
+    n_str =
+      if next <= 99,
+        do: String.pad_leading(Integer.to_string(next), 2, "0"),
+        else: Integer.to_string(next)
+
+    task_id = "#{project}-#{n_str}"
+
+    if Regex.match?(@task_id_re, task_id),
+      do: {:ok, task_id},
+      else: {:error, {:invalid_task_id, task_id}}
+  end
+
+  defp write_task_file(base, company, project, task_id, params, attachments) do
+    title = params |> Map.get("title", "") |> to_string() |> String.trim()
+
+    frontmatter = build_frontmatter(params, title)
+    body = build_body(params, attachments)
+
+    content = "---\n" <> frontmatter <> "---\n\n" <> body <> "\n"
+
+    path = Path.join([base, "companies", company, "projects", project, "tasks", "#{task_id}.md"])
+    tmp = path <> ".tmp-#{System.unique_integer([:positive, :monotonic])}"
+
+    with :ok <- File.write(tmp, content, [:sync]),
+         :ok <- File.rename(tmp, path) do
+      :ok
+    else
+      err ->
+        _ = File.rm(tmp)
+        err
+    end
+  end
+
+  # Compose the task's frontmatter as text. Ordered for human
+  # readability; `FileSpec.Formatter` canonical order is applied by
+  # `mix glorbo fmt` if the user ever runs it.
+  defp build_frontmatter(params, title) do
+    kind = "kind: task/v1\n"
+
+    scalar = fn key ->
+      params
+      |> Map.get(key)
+      |> case do
+        v when v in [nil, "", false] -> ""
+        v -> "#{key}: #{FrontmatterWriter.yaml_scalar(v)}\n"
+      end
+    end
+
+    # Required + optional scalar keys, emitted only when non-empty.
+    lines = [
+      kind,
+      "title: #{FrontmatterWriter.yaml_scalar(title)}\n",
+      "status: todo\n",
+      scalar.("assigned_to"),
+      scalar.("requested_by"),
+      scalar.("priority"),
+      scalar.("severity"),
+      scalar.("goal"),
+      scalar.("schedule"),
+      scalar.("requires_approval"),
+      scalar.("peer_review_required"),
+      scalar.("reviewer"),
+      scalar.("provider"),
+      scalar.("model"),
+      scalar.("done_when")
+    ]
+
+    IO.iodata_to_binary(lines)
+  end
+
+  defp build_body(params, attachments) do
+    description = params |> Map.get("description", "") |> to_string() |> String.trim()
+
+    attach_block =
+      case attachments do
+        [] ->
+          ""
+
+        list ->
+          "\n\n## Attachments\n\n" <>
+            Enum.map_join(list, "\n", fn rel -> "- [#{Path.basename(rel)}](../#{rel})" end) <>
+            "\n"
+      end
+
+    body_text =
+      if description == "",
+        do: params |> Map.get("title", "") |> to_string() |> String.trim(),
+        else: description
+
+    body_text <> attach_block
+  end
+
+  defp emit_create_audit(audit, company, rel_path, title, actor, params) do
+    # AuditLog.append treats any key outside {ts, company, actor,
+    # action, target} as a detail field — "detail:" is not a wrapper
+    # key. Flatten detail fields at the top level of the entry so
+    # they land in the JSONL's "detail" object under drop_known_keys.
+    entry =
+      %{
+        actor: actor,
+        action: "task.create",
+        target: rel_path,
+        company: company
+      }
+      |> put_detail("title", title)
+      |> put_detail("assigned_to", Map.get(params, "assigned_to"))
+      |> put_detail("priority", Map.get(params, "priority"))
+      |> put_detail("severity", Map.get(params, "severity"))
+
+    AuditLog.append(audit, entry)
+  end
+
+  defp put_detail(map, _key, nil), do: map
+  defp put_detail(map, _key, ""), do: map
+  defp put_detail(map, key, value), do: Map.put(map, key, to_string(value))
+end
