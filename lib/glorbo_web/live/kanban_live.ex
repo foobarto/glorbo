@@ -25,6 +25,8 @@ defmodule GlorboWeb.KanbanLive do
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
+  alias Glorbo.ProviderModel
+  alias Glorbo.Repo
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.TaskCard
   alias GlorboWeb.Components.TaskDetailForm
@@ -69,6 +71,7 @@ defmodule GlorboWeb.KanbanLive do
        |> assign(:assignee_options, list_assignees(base, slug))
        |> assign(:open_task, nil)
        |> assign(:new_task_form, default_new_task_form())
+       |> assign(:new_task_model_options, [])
        |> assign(:task_search, "")
        |> assign(:return_to, nil)
        |> allow_upload(:new_task_attachments,
@@ -140,6 +143,21 @@ defmodule GlorboWeb.KanbanLive do
     # cancel should navigate back to.
     {new_task_form, new_task_open?} = resolve_new_task_params(params, socket.assigns)
 
+    # GEP-32 phase 4 follow-up — pre-fill the model <datalist> when
+    # `?assignee=<slug>` pre-populated the assignee field, since the
+    # `new_task_validate` path isn't triggered by a query-param
+    # pre-fill.
+    new_task_model_options =
+      if new_task_form.assigned_to == socket.assigns.new_task_form.assigned_to do
+        socket.assigns.new_task_model_options
+      else
+        model_options_for_assignee(
+          base_dir(),
+          socket.assigns.company_slug,
+          new_task_form.assigned_to
+        )
+      end
+
     socket =
       socket
       |> assign(:page_title, title)
@@ -149,6 +167,7 @@ defmodule GlorboWeb.KanbanLive do
       |> assign(:columns, group_by_column(tasks))
       |> assign(:new_task_form, new_task_form)
       |> assign(:new_task_open?, new_task_open?)
+      |> assign(:new_task_model_options, new_task_model_options)
       |> assign(:return_to, Map.get(params, "return_to"))
 
     # Deep-link: `?task=projects/<proj>/tasks/<id>.md` opens the task
@@ -486,10 +505,27 @@ defmodule GlorboWeb.KanbanLive do
       project: Map.get(params, "project", socket.assigns.new_task_form.project),
       title: Map.get(params, "title", socket.assigns.new_task_form.title),
       assigned_to: Map.get(params, "assigned_to", socket.assigns.new_task_form.assigned_to),
+      model: Map.get(params, "model", socket.assigns.new_task_form.model),
       priority: Map.get(params, "priority", socket.assigns.new_task_form.priority),
       severity: Map.get(params, "severity", socket.assigns.new_task_form.severity),
       description: Map.get(params, "description", socket.assigns.new_task_form.description)
     }
+
+    # GEP-32 phase 4 follow-up — recompute the cached model list whenever
+    # the assignee changes, so the <datalist> reflects the agent's
+    # provider. No-op if the assignee didn't actually change.
+    socket =
+      if form.assigned_to == socket.assigns.new_task_form.assigned_to do
+        socket
+      else
+        base = base_dir()
+
+        assign(
+          socket,
+          :new_task_model_options,
+          model_options_for_assignee(base, socket.assigns.company_slug, form.assigned_to)
+        )
+      end
 
     {:noreply, assign(socket, :new_task_form, form)}
   end
@@ -793,6 +829,21 @@ defmodule GlorboWeb.KanbanLive do
             </label>
             <datalist id="gl-new-task-assignees">
               <option :for={a <- @assignee_options} value={a}></option>
+            </datalist>
+
+            <label class="gl-form__row">
+              <span class="gl-form__label">model</span>
+              <input
+                type="text"
+                name="model"
+                class="gl-input"
+                value={@new_task_form.model}
+                list="gl-new-task-model-options"
+                placeholder="(agent default)"
+              />
+            </label>
+            <datalist id="gl-new-task-model-options">
+              <option :for={m <- @new_task_model_options} value={m}></option>
             </datalist>
 
             <label class="gl-form__row">
@@ -1264,6 +1315,52 @@ defmodule GlorboWeb.KanbanLive do
     ["director" | slugs]
   end
 
+  # GEP-32 phase 4 follow-up — when the new-task form has an assignee
+  # pinned, populate the model <datalist> with the cached model IDs for
+  # that agent's provider. Returns `[]` for the "director" synthetic
+  # assignee, for unknown slugs, for CLI-provider agents (no cached
+  # models), and for any lookup error — keeping the field optional and
+  # free-text in those cases.
+  @doc false
+  def model_options_for_assignee(base, company, assigned_to)
+
+  def model_options_for_assignee(_base, _company, nil), do: []
+  def model_options_for_assignee(_base, _company, ""), do: []
+  def model_options_for_assignee(_base, _company, "director"), do: []
+
+  def model_options_for_assignee(base, company, assigned_to)
+      when is_binary(base) and is_binary(company) and is_binary(assigned_to) do
+    case lookup_agent_provider(base, company, assigned_to) do
+      provider when is_binary(provider) and provider != "" ->
+        import Ecto.Query, only: [from: 2]
+
+        query =
+          from pm in ProviderModel,
+            where: pm.alias == ^provider,
+            select: pm.model_id,
+            order_by: [asc: pm.model_id]
+
+        Repo.all(query)
+
+      _ ->
+        []
+    end
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp lookup_agent_provider(base, company, slug) do
+    ag_dir = Path.join([base, "companies", company, "agents", slug])
+    agent_md = Glorbo.Agent.FileLayout.agent_md(ag_dir)
+
+    case Glorbo.Agent.Parser.parse_file(agent_md) do
+      {:ok, %{provider: p}} when is_binary(p) -> p
+      _ -> nil
+    end
+  end
+
   defp validate_project(project, allowed) do
     if is_binary(project) and project != "" and project in allowed do
       :ok
@@ -1467,6 +1564,7 @@ defmodule GlorboWeb.KanbanLive do
   defp write_new_task_rich(base, company, project, task_id, params, attachments) do
     title = Map.get(params, "title", "") |> String.trim()
     assigned_to = Map.get(params, "assigned_to", "") |> String.trim()
+    model = Map.get(params, "model", "") |> String.trim()
     priority = Map.get(params, "priority", "") |> String.trim()
     severity = Map.get(params, "severity", "") |> String.trim()
 
@@ -1476,6 +1574,7 @@ defmodule GlorboWeb.KanbanLive do
         {"title", title},
         {"status", "todo"},
         {"assigned_to", assigned_to},
+        {"model", model},
         {"priority", priority},
         {"severity", severity}
       ]
@@ -1561,7 +1660,15 @@ defmodule GlorboWeb.KanbanLive do
   defp yaml_scalar(v), do: Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(v)
 
   defp default_new_task_form do
-    %{project: "", title: "", assigned_to: "", priority: "", severity: "", description: ""}
+    %{
+      project: "",
+      title: "",
+      assigned_to: "",
+      model: "",
+      priority: "",
+      severity: "",
+      description: ""
+    }
   end
 
   @doc false

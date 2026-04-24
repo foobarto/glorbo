@@ -755,4 +755,133 @@ defmodule GlorboWeb.KanbanLiveTest do
       refute html2 =~ ~s(class="gl-kanban__filters")
     end
   end
+
+  # GEP-32 phase 4 follow-up — mirroring AgentLive's provider-aware
+  # model combobox in the kanban new-task form. The datalist feeds off
+  # the cached `provider_models` projection keyed by the selected
+  # assignee's provider.
+  describe "new-task model datalist (GEP-32 phase 4 follow-up)" do
+    setup %{base: base} do
+      # Second agent in acme with a native provider so there's something
+      # the cache can key off.
+      agent_dir = Path.join([base, "companies", "acme", "agents", "sparky"])
+
+      Enum.each(
+        ~w(inbox outbox workspace history state),
+        &File.mkdir_p!(Path.join(agent_dir, &1))
+      )
+
+      File.write!(Path.join(agent_dir, "AGENT.md"), """
+      ---
+      kind: agent/v1
+      name: Sparky
+      slug: sparky
+      role: "Research"
+      provider: openai
+      model: gpt-4o
+      network: full
+      heartbeat: null
+      permissions:
+        - projects:read:*
+      ---
+
+      # Sparky
+      """)
+
+      Glorbo.Repo.insert_all(Glorbo.ProviderModel, [
+        %{
+          alias: "openai",
+          model_id: "gpt-4o",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        },
+        %{
+          alias: "openai",
+          model_id: "gpt-5-alpha",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        },
+        # Noise row under a different provider; must not appear in the
+        # datalist when assigned_to has `provider: openai`.
+        %{
+          alias: "openrouter",
+          model_id: "other/only",
+          raw_json: "{}",
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        }
+      ])
+
+      :ok
+    end
+
+    test "model_options_for_assignee returns cached models for native provider",
+         %{base: base} do
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", "sparky") ==
+               ~w(gpt-4o gpt-5-alpha)
+    end
+
+    test "model_options_for_assignee returns [] for director, empty, nil",
+         %{base: base} do
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", "director") == []
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", "") == []
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", nil) == []
+    end
+
+    test "model_options_for_assignee returns [] for CLI provider (no cache)",
+         %{base: base} do
+      # `ceo` is seeded with `provider: claude-code` — a CLI provider
+      # with no `provider_models` rows.
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", "ceo") == []
+    end
+
+    test "model_options_for_assignee returns [] for unknown slug",
+         %{base: base} do
+      assert GlorboWeb.KanbanLive.model_options_for_assignee(base, "acme", "no-such-agent") == []
+    end
+
+    test "datalist renders cached models after assignee changes",
+         %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?new_task=1")
+
+      html =
+        render_change(view, "new_task_validate", %{
+          "assigned_to" => "sparky",
+          "title" => "",
+          "project" => ""
+        })
+
+      assert html =~ ~s(id="gl-new-task-model-options")
+      assert html =~ "gpt-4o"
+      assert html =~ "gpt-5-alpha"
+      refute html =~ "other/only"
+    end
+
+    test "model is persisted into task frontmatter on create",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/kanban?new_task=1")
+
+      render_submit(view, "new_task_create", %{
+        "project" => "website",
+        "title" => "Pick the model",
+        "assigned_to" => "sparky",
+        "model" => "gpt-5-alpha",
+        "priority" => "medium",
+        "severity" => "",
+        "description" => ""
+      })
+
+      tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
+      {:ok, files} = File.ls(tasks_dir)
+
+      path =
+        files
+        |> Enum.map(&Path.join(tasks_dir, &1))
+        |> Enum.find(fn p -> File.read!(p) =~ "Pick the model" end)
+
+      body = File.read!(path)
+
+      assert body =~ "model: gpt-5-alpha"
+      assert body =~ "assigned_to: sparky"
+    end
+  end
 end

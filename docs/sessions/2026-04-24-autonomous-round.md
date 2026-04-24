@@ -311,6 +311,79 @@ sentinel. When it fires, I will:
 If you wake up before 45 minutes pass, interrupt with your
 direction; the scheduled wakeup self-cancels on new input.
 
+## 2026-04-24 — autonomous wakeup #1: shipped P1 todo (model combobox on KanbanLive)
+
+**Task picked:** "GEP-32 phase 4 follow-up — model combobox on
+KanbanLive new-task quick-add." P1, open, bounded, mirrors a
+shipped pattern in AgentLive. No design decisions needed.
+
+**What shipped:**
+
+- New public helper `GlorboWeb.KanbanLive.model_options_for_assignee/3`
+  in [lib/glorbo_web/live/kanban_live.ex](lib/glorbo_web/live/kanban_live.ex):
+  given `base`/`company`/`assigned_to`, parses the assignee's
+  `AGENT.md` for `provider:` and queries `provider_models` for
+  cached model IDs. Returns `[]` for `director`, empty, nil,
+  unknown slugs, CLI-provider agents (no cache), or any
+  error/exit — so the field stays an optional free-text combobox.
+- `default_new_task_form/0` gains a `model: ""` key; assigns carry
+  `new_task_model_options` (initial `[]`).
+- `new_task_validate` recomputes the model options whenever
+  `assigned_to` changes (parity with AgentLive's
+  `config_form_change` reactive datalist).
+- `handle_params` pre-populates the options when
+  `?assignee=<slug>` opens the drawer (path not covered by
+  `new_task_validate`).
+- Template gains a `model` label + input + `<datalist
+  id="gl-new-task-model-options">` placed right after
+  `assigned_to`, with placeholder `(agent default)`.
+- `write_new_task_rich/6` persists `model:` into task
+  frontmatter when non-empty (Dispatch already honors this per
+  `Glorbo.Agent.Dispatch.task_model_override/2`).
+- 5 new tests in [test/glorbo_web/live/kanban_live_test.exs](test/glorbo_web/live/kanban_live_test.exs)
+  covering: native-provider happy path (cached IDs render),
+  special-slug null paths (director/empty/nil), CLI-provider
+  null path (no cache → `[]`), unknown slug, live
+  `new_task_validate` round-trip asserts the datalist shows
+  openai models and hides openrouter noise, and create-submit
+  asserts `model: gpt-5-alpha` lands in task frontmatter.
+
+**Design calls I made without you:**
+
+- `task.provider` NOT added to the new-task form even though
+  task frontmatter accepts it. Per `Glorbo.Agent.Dispatch`
+  (threatmodel M10), `task.provider` is ignored unless it
+  equals `agent.provider`, so showing a free-text
+  `provider:` picker on a task where it'd mostly be a no-op is
+  bad UX. `model:` alone is the clean minimum-surprise surface.
+- Placeholder "(agent default)" rather than "(optional)" to
+  hint that the agent's own `model:` is used when the task's
+  is blank — matches how Dispatch resolves the override.
+- Helper is marked `@doc false` + promoted from `defp` to
+  `def` so the tests can call it directly without a LiveView
+  harness. Kept from the public docs; the function isn't a
+  contract for callers outside this module.
+
+**Gates:** `mix test test/glorbo_web/live/kanban_live_test.exs` —
+43/0. `mix test test/glorbo_web/live/agent_live_test.exs`
+(sibling, untouched) — 32/0. `mix credo --strict` across 428
+files — 0 issues. `mix format --check-formatted` — clean. Credo
+exit code checked explicitly (memory `feedback_run_tests_before_pushing.md`):
+`$? == 0`. `mix compile --warnings-as-errors` — clean.
+
+**Gates I did not run:** full `mix test` suite, `mix precommit`
+full gate, burrito rebuild, graphify refresh. Targeted test
+runs plus credo global pass are sufficient for a surgical
+LiveView + helper + fixture test change with no other module
+surface touched.
+
+**Commit:** separate commit from the GEP-37/38 round (shipping
+discipline — not bundling an autonomous-wakeup bug fix into a
+design-doc round).
+
+**Scheduled next:** another 45-min autonomous wakeup for a
+second iteration in case you're still asleep.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the

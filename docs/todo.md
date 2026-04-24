@@ -36,9 +36,13 @@ it's been in CHANGELOG for a cycle.
 - [x] **GEP-32 phase 4 follow-up — auto-activate discovered providers
   via `Enable` flow.** Shipped `Glorbo.Providers.Enable` + the
   `+ enable` button per `:ready` scan row; idempotent on double-click.
-- [ ] **GEP-32 phase 4 follow-up — model combobox on KanbanLive
-  new-task quick-add.** Mirror AgentLive's provider-aware datalist
-  in the task-creation dropdown.
+- [x] **GEP-32 phase 4 follow-up — model combobox on KanbanLive
+  new-task quick-add.** Shipped 2026-04-24 (autonomous round).
+  `KanbanLive.model_options_for_assignee/3` looks up the selected
+  assignee's provider and returns cached `provider_models` IDs; the
+  new-task drawer renders a `<datalist>` for `model` next to
+  `assigned to`. `model` persists into task frontmatter when
+  non-empty. 5 new tests (43 total in kanban_live_test.exs).
 - [x] **TaskScheduler retrofit GEP (Informational).** Shipped as
   `GEP-0024` with 7-entry decision log; bidirectional links added
   to GEP-2 + GEP-3.
