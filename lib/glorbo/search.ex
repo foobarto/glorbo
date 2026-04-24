@@ -5,8 +5,12 @@ defmodule Glorbo.Search do
 
   Sources (both scanned; results merged + ranked together):
 
-    * **Task titles + IDs** under `projects/*/tasks/*.md`. ETS-cached
-      by (path, mtime).
+    * **Task titles + IDs + schedule tags** under
+      `projects/*/tasks/*.md`. ETS-cached by (path, mtime). The
+      task's `schedule:` frontmatter value (e.g. `every day`,
+      `daily`, `0 9 * * 1-5`) is searchable as a substring, so a
+      query like `daily` surfaces every daily-scheduled task
+      without having to hunt through audit.
     * **Audit rows** from the current month's
       `audit/YYYY-MM.jsonl` — matches on `actor`, `action`, and
       `target` fields.
@@ -101,8 +105,8 @@ defmodule Glorbo.Search do
 
     case File.stat(path) do
       {:ok, %File.Stat{mtime: mtime}} ->
-        title = cached_or_parse_title(path, task_id, mtime)
-        [%{task_id: task_id, title: title, path: path}]
+        {title, schedule} = cached_or_parse_fields(path, task_id, mtime)
+        [%{task_id: task_id, title: title, schedule: schedule, path: path}]
 
       _ ->
         []
@@ -112,36 +116,46 @@ defmodule Glorbo.Search do
   # `mtime` from File.Stat is a `{:erlang.datetime}` tuple (seconds
   # precision). Use it + path as the cache key so a modified task
   # re-parses on the next scan; an unchanged task serves from ETS.
-  defp cached_or_parse_title(path, task_id, mtime) do
+  #
+  # The cache tuple is `{path, mtime, {title, schedule}}`. The
+  # schedule string is kept lowercase-normalised ready for
+  # substring scoring — parsing is expensive enough that we want
+  # both fields memoised together.
+  defp cached_or_parse_fields(path, task_id, mtime) do
     ensure_cache()
 
     case :ets.lookup(@cache_table, path) do
-      [{^path, ^mtime, title}] ->
-        title
+      [{^path, ^mtime, {title, schedule}}] ->
+        {title, schedule}
 
       _ ->
-        title = parse_title(path, task_id)
-        maybe_cache_title(path, mtime, title)
-        title
+        fields = parse_fields(path, task_id)
+        maybe_cache_fields(path, mtime, fields)
+        fields
     end
   end
 
-  defp parse_title(path, task_id) do
+  defp parse_fields(path, task_id) do
     case File.read(path) do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, fm, _body} -> truncate_title(to_string(fm["title"] || task_id))
-          _ -> truncate_title(task_id)
+          {:ok, fm, _body} ->
+            title = truncate_title(to_string(fm["title"] || task_id))
+            schedule = to_string(fm["schedule"] || "")
+            {title, schedule}
+
+          _ ->
+            {truncate_title(task_id), ""}
         end
 
       _ ->
-        truncate_title(task_id)
+        {truncate_title(task_id), ""}
     end
   end
 
-  defp maybe_cache_title(path, mtime, title) do
+  defp maybe_cache_fields(path, mtime, fields) do
     if :ets.member(@cache_table, path) or cache_room?() do
-      :ets.insert(@cache_table, {path, mtime, title})
+      :ets.insert(@cache_table, {path, mtime, fields})
     end
   end
 
@@ -268,9 +282,15 @@ defmodule Glorbo.Search do
 
   # Score each candidate against the query. Higher score = better
   # match. Results with score 0 are dropped.
-  defp score_task(%{task_id: id, title: title}, query, co) do
+  #
+  # The `schedule` field scores below id/title because the director
+  # is usually looking for a specific task by name; schedule
+  # matches are a useful fallback ("show me all daily tasks") but
+  # shouldn't outrank a literal title match.
+  defp score_task(%{task_id: id, title: title, schedule: schedule}, query, co) do
     lid = String.downcase(id)
     ltitle = String.downcase(title)
+    lschedule = String.downcase(schedule)
 
     score =
       cond do
@@ -278,6 +298,7 @@ defmodule Glorbo.Search do
         String.starts_with?(lid, query) -> 90
         String.contains?(ltitle, query) -> 50
         String.contains?(lid, query) -> 40
+        lschedule != "" and String.contains?(lschedule, query) -> 35
         true -> 0
       end
 
@@ -287,11 +308,17 @@ defmodule Glorbo.Search do
       [
         %{
           kind: "task",
-          label: "#{id} · #{title}",
+          label: task_label(id, title, schedule),
           href: "/companies/#{co}/tasks/#{id}",
           score: score
         }
       ]
     end
   end
+
+  # Schedule tag decorates the label when present, so the
+  # director sees *why* a result surfaced on a `schedule:`-style
+  # query without having to open the task.
+  defp task_label(id, title, ""), do: "#{id} · #{title}"
+  defp task_label(id, title, schedule), do: "#{id} · #{title} (#{schedule})"
 end

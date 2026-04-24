@@ -225,6 +225,80 @@ defmodule Glorbo.SearchTest do
     assert byte_size(hit.label) <= 512 + byte_size("foo-4 · ")
   end
 
+  # Global search should include scheduled-task tags so e.g. `daily`
+  # surfaces every daily-scheduled task without hunting through audit.
+  describe "schedule frontmatter search" do
+    setup %{base: base, company: co} do
+      tasks_dir = Path.join([base, "companies", co, "projects", "foo", "tasks"])
+
+      File.write!(Path.join(tasks_dir, "foo-sched-1.md"), """
+      ---
+      kind: task/v1
+      title: Morning standup notes
+      status: todo
+      schedule: every weekday at 9am
+      ---
+      body
+      """)
+
+      File.write!(Path.join(tasks_dir, "foo-sched-2.md"), """
+      ---
+      kind: task/v1
+      title: Weekly review prep
+      status: todo
+      schedule: "0 10 * * 1"
+      ---
+      body
+      """)
+
+      File.write!(Path.join(tasks_dir, "foo-sched-3.md"), """
+      ---
+      kind: task/v1
+      title: Daily dispatch check
+      status: todo
+      schedule: every day
+      ---
+      body
+      """)
+
+      :ok
+    end
+
+    test "matches on schedule value substring", %{base: base, company: co} do
+      results = Search.search(base, co, "weekday")
+
+      assert Enum.any?(results, &(&1.kind == "task" and &1.label =~ "Morning standup notes"))
+    end
+
+    test "cron-style schedules are searchable", %{base: base, company: co} do
+      results = Search.search(base, co, "0 10")
+      assert Enum.any?(results, &(&1.kind == "task" and &1.label =~ "Weekly review prep"))
+    end
+
+    test "schedule decorates the label with its value", %{base: base, company: co} do
+      [hit | _] = Search.search(base, co, "weekday")
+      assert hit.label =~ "(every weekday at 9am)"
+    end
+
+    test "title matches still outrank schedule matches", %{base: base, company: co} do
+      # `daily` is a substring of schedule `every day`? No — but
+      # "Daily dispatch check" has "daily" as a title prefix, and
+      # another task has schedule containing "day". The title-prefix
+      # task should rank first.
+      [first | _rest] = Search.search(base, co, "daily")
+      assert first.label =~ "Daily dispatch check"
+      assert first.score == 100
+    end
+
+    test "tasks without schedule: don't get a trailing schedule-decorator",
+         %{base: base, company: co} do
+      [hit | _] = Search.search(base, co, "refactor")
+      # foo-1.md is the seed task with no schedule; its label must
+      # not contain parentheses.
+      refute hit.label =~ ~r/\([^)]+\)$/
+    end
+  end
+
   test "title cache stops growing after the hard cap", %{base: base, company: co} do
     tasks_dir = Path.join([base, "companies", co, "projects", "foo", "tasks"])
 

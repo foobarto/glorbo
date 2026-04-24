@@ -384,6 +384,64 @@ design-doc round).
 **Scheduled next:** another 45-min autonomous wakeup for a
 second iteration in case you're still asleep.
 
+## 2026-04-24 — autonomous wakeup #2: shipped P3 todo (schedule tags in global search)
+
+**Task picked:** "Global search should include scheduled-task
+tags." P3, open, scoped. The hook surface was already documented
+(the ETS cache in `Glorbo.Search` keyed on `(path, mtime)`), so
+extending it to carry `schedule:` alongside `title:` was a
+surgical edit without a new data path.
+
+**What shipped:**
+
+- `Glorbo.Search.scan_tasks/2` now returns structs with a
+  `schedule:` field alongside `title:`. The ETS cache tuple
+  changes shape from `{path, mtime, title}` to `{path, mtime,
+  {title, schedule}}` — both fields memoised together, since
+  `Frontmatter.parse/1` reads the whole header anyway.
+- `score_task/3` adds a new scoring branch: schedule substring
+  match → score 35 (below id match at 40 so a literal task
+  identifier still wins the tie).
+- Task labels decorate with `(<schedule>)` when present, so a
+  `daily` query result reads like
+  `grb-42 · Ship release (every day)` — director sees *why* the
+  hit surfaced without having to open it.
+- 5 new tests in [test/glorbo/search_test.exs](test/glorbo/search_test.exs)
+  covering: substring schedule match, cron-style schedule
+  searchability, label decoration, title-prefix still outrants
+  schedule match, tasks without `schedule:` don't get a
+  trailing parenthetical.
+
+**Design calls I made without you:**
+
+- Schedule is substring-matched, not parsed/normalised. A query
+  like `9am` matches a schedule of `every weekday at 9am` but
+  not `0 9 * * 1-5` — the latter needs a different token.
+  Expanding matching to "canonicalize `9am` → cron" would
+  require the ScheduleNL parser to run on every search
+  keystroke; not worth it unless a user asks.
+- Scoring at 35 (between id-contains at 40 and title-contains
+  at 50) is a judgement call. Lower than title/id makes sense
+  (those are "the main thing," schedule is metadata); not zero
+  because otherwise a dedicated `schedule:` search is
+  impossible. Can tune if feedback says schedule matches drown
+  out title hits.
+- Label decoration is always shown when a task has a schedule,
+  not just when the match *reason* is schedule. Tradeoff: adds
+  noise to title-matched results on scheduled tasks, gains:
+  consistent renderer (no "was this hit because of title or
+  schedule" branching in the template).
+
+**Gates:** `mix test test/glorbo/search_test.exs` — 21/0. `mix
+credo --strict` across 428 files — 0 issues, exit 0. `mix format
+--check-formatted` — clean, exit 0. `mix compile
+--warnings-as-errors` — clean.
+
+**Commit:** standalone, not bundled with the model-combobox work.
+
+**Scheduled next:** one more 45-min autonomous wakeup in case
+you're still asleep. If you're back, interrupt and redirect.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the

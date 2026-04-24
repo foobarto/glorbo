@@ -95,9 +95,12 @@ it's been in CHANGELOG for a cycle.
   drop-in parity order (chat/approvals/tasks first, then agents,
   audit, health, skills/goals). Most of GEP-36's write-seam cleanup
   arrives in (1).
-- [ ] **Global search should include scheduled-task tags.** Right now
-  `schedule:` is searchable only via audit (via `task.scheduled_
-  dispatch`). A `schedule:daily` query should find all daily tasks.
+- [x] **Global search should include scheduled-task tags.** Shipped
+  2026-04-24 (autonomous round). `Glorbo.Search.scan_tasks/2` now
+  reads `schedule:` alongside `title` (same ETS cache key), and
+  `score_task/3` scores a schedule substring match at 35 (below
+  title/id). Task labels decorate with `(<schedule>)` when the
+  task has a schedule. 5 new tests in `search_test.exs`.
 - [ ] **Visual regression tests.** We'd catch the topbar wrap /
   modal-body-unstyled class of bugs earlier with a
   screenshot-baseline test per LV. Baseline sprint: pick
