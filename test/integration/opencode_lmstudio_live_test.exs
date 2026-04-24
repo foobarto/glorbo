@@ -10,24 +10,29 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
 
   ## When this test runs
 
-  Tagged `:integration` + `:live_model`. Skipped by default; opt in with:
+  Tagged `:live_model` only (the previous `:integration` tag was
+  redundant — ExUnit's `--include` overrides `--exclude` when tags
+  overlap, so `:integration` defeated the default `:live_model`
+  exclusion). Opt in explicitly with:
 
-      mix test --include integration --include live_model test/integration/opencode_lmstudio_live_test.exs
+      mix test --include live_model test/integration/opencode_lmstudio_live_test.exs
 
   Additionally, the test body self-skips (via `IO.puts` + early return)
   when any precondition is missing:
 
     * `opencode` binary not on PATH or at `~/.opencode/bin/opencode`
     * `bwrap` not installed
-    * LM Studio not reachable at `http://localhost:1234/v1/models`
-    * Configured model (`lmstudio/qwen/qwen3.6-35b-a3b`) not in that list
+    * LM Studio's chat-completions endpoint returns 200 for the
+      configured model (covers both "listed" and "loaded")
+    * opencode's own provider registry recognises the model — this
+      one cannot be preflight-checked from Elixir; misconfiguration
+      surfaces as `ProviderModelNotFoundError` inside the dispatch.
 
   This keeps the test hermetic-friendly — it becomes a passing no-op on
   machines that don't have the live stack, rather than failing CI.
   """
   use ExUnit.Case, async: false
 
-  @moduletag :integration
   @moduletag :live_model
 
   alias Glorbo.Agent.Dispatch
@@ -53,19 +58,77 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
   defp lmstudio_has_model?(model) do
     # opencode addresses LM Studio models as `lmstudio/<id>`; the
     # OpenAI-compatible API returns just `<id>` in the `data[].id`
-    # field. Strip the `lmstudio/` prefix before substring-checking.
+    # field. Strip the `lmstudio/` prefix and (1) verify the id is
+    # in the model catalog, (2) probe `/v1/chat/completions` to
+    # confirm the model is actually loaded — `/v1/models` lists
+    # every discoverable model, but only the currently-loaded one
+    # serves requests. Without (2) the test passes preflight then
+    # fails inside opencode with "model not found."
     lookup =
       case model do
         "lmstudio/" <> rest -> rest
         other -> other
       end
 
-    case System.cmd("curl", ~w(-sf #{@lmstudio_url}), stderr_to_stdout: true) do
-      {json, 0} -> String.contains?(json, lookup)
-      _ -> false
-    end
+    listed_and_loaded?(lookup)
   rescue
     _ -> false
+  end
+
+  defp listed_and_loaded?(model_id) do
+    with {:ok, true} <- model_listed?(model_id),
+         {:ok, true} <- model_loaded?(model_id) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp model_listed?(model_id) do
+    case System.cmd("curl", ~w(-sf #{@lmstudio_url}), stderr_to_stdout: true) do
+      {json, 0} ->
+        case Jason.decode(json) do
+          {:ok, %{"data" => data}} when is_list(data) ->
+            {:ok, Enum.any?(data, fn entry -> Map.get(entry, "id") == model_id end)}
+
+          _ ->
+            {:ok, false}
+        end
+
+      _ ->
+        {:ok, false}
+    end
+  end
+
+  # Tiny chat-completion probe — 1 token, "ping" prompt. If LM
+  # Studio responds 200 the model is loaded; 404 / "model not
+  # found" means it's listed but not in memory.
+  defp model_loaded?(model_id) do
+    body =
+      Jason.encode!(%{
+        model: model_id,
+        messages: [%{role: "user", content: "ping"}],
+        max_tokens: 1,
+        temperature: 0
+      })
+
+    args = [
+      "-sf",
+      "-o",
+      "/dev/null",
+      "-w",
+      "%{http_code}",
+      "-H",
+      "content-type: application/json",
+      "-d",
+      body,
+      "http://127.0.0.1:1234/v1/chat/completions"
+    ]
+
+    case System.cmd("curl", args, stderr_to_stdout: true) do
+      {"200" <> _, _} -> {:ok, true}
+      _ -> {:ok, false}
+    end
   end
 
   defp preflight_skip_reason do
@@ -373,6 +436,7 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
 
     File.write!(Path.join(co_root, "company.md"), """
     ---
+    kind: company/v1
     slug: #{company}
     name: #{company}
     mission: Live opencode smoke.
@@ -381,8 +445,11 @@ defmodule Glorbo.Integration.OpencodeLmstudioLiveTest do
 
     agent_md = Path.join([co_root, "agents", slug, "AGENT.md"])
 
+    # GEP-25 R26.2b — `kind: agent/v1` is required on every agent
+    # frontmatter; the parser refuses bare frontmatter without it.
     File.write!(agent_md, """
     ---
+    kind: agent/v1
     slug: #{slug}
     name: #{slug}
     role: Opencode LM Studio smoke

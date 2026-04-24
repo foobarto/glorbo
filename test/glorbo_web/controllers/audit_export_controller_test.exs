@@ -2,7 +2,20 @@ defmodule GlorboWeb.AuditExportControllerTest do
   use GlorboWeb.ConnCase, async: false
 
   setup do
-    base = Application.fetch_env!(:glorbo, :glorbo_base)
+    # See SearchControllerTest for context — ConnCase doesn't set
+    # `:glorbo_base`. Each case owns + restores it so order-dependent
+    # state from other test files doesn't leak in.
+    base = Glorbo.Test.TmpGlorboHome.setup()
+    original = Application.get_env(:glorbo, :glorbo_base)
+    Application.put_env(:glorbo, :glorbo_base, base)
+
+    on_exit(fn ->
+      case original do
+        nil -> Application.delete_env(:glorbo, :glorbo_base)
+        val -> Application.put_env(:glorbo, :glorbo_base, val)
+      end
+    end)
+
     month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     path = Path.join([base, "companies", "acme", "audit", "#{month}.jsonl"])
     File.mkdir_p!(Path.dirname(path))

@@ -4,7 +4,21 @@ defmodule GlorboWeb.SearchControllerTest do
   @moduletag :capture_log
 
   setup do
-    base = Application.fetch_env!(:glorbo, :glorbo_base)
+    # `ConnCase` doesn't put `:glorbo_base` into the app env (only
+    # `LiveCase` does). Earlier suite-pollution failures came from
+    # depending on whatever previous case left in there. Each test
+    # sets + restores its own tmp root so the case is self-contained.
+    base = Glorbo.Test.TmpGlorboHome.setup()
+    original = Application.get_env(:glorbo, :glorbo_base)
+    Application.put_env(:glorbo, :glorbo_base, base)
+
+    on_exit(fn ->
+      case original do
+        nil -> Application.delete_env(:glorbo, :glorbo_base)
+        val -> Application.put_env(:glorbo, :glorbo_base, val)
+      end
+    end)
+
     tasks_dir = Path.join([base, "companies", "acme", "projects", "foo", "tasks"])
     File.mkdir_p!(tasks_dir)
 

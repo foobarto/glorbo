@@ -9,6 +9,21 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
 
   Tagged `:integration` + `:inotify` — requires inotify-tools on the
   host; otherwise skipped via the global tag gate in `test_helper.exs`.
+
+  ## Known suite-pollution caveat
+
+  Passes consistently in isolation (`mix test --include integration
+  test/integration/inotify_to_bwrap_happy_path_test.exs`) but
+  reproducibly fails when `agent_crash_isolation_test.exs` runs
+  earlier in the same `mix test` invocation. Symptom: the
+  `assert_receive {:dispatched, ...}` times out with an empty
+  mailbox — the inotify event chain (Watcher → PubSub →
+  AgentServer wake → dispatch_fun) never reaches the test pid.
+  Bumping the timeout to 30s does not help, so it isn't timing.
+  Root cause unresolved as of 2026-04-25; `Application.ensure_
+  all_started(:glorbo)` in agent_crash leaves something in a
+  state the per-test Watcher + AgentServer can't recover from.
+  Tracked in `docs/todo.md` (P3).
   """
   use ExUnit.Case, async: false
 
