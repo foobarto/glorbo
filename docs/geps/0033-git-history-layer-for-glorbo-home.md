@@ -11,6 +11,30 @@ history:
   - date: 2026-04-23
     status: Draft
     note: Initial draft after wave-6 security work, grounded in a decision-log review of GEPs 2, 3, 5, 7, 11, 19, and 27.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 1 partial — `Glorbo.HomeHistory` module landed with
+      `init/1` (bootstrap + .gitignore + initial commit),
+      `status/1` (porcelain wrap), `log/1` (record-separator
+      pretty format), and `tracked?/2` predicate mirroring the
+      §3 policy. CLI subcommands `glorbo history {init, status,
+      log [--limit N]}` are wired through `Glorbo.CLI.dispatch/1`
+      to a new `:history` verb. 19 unit tests
+      (`home_history_test.exs` + dispatch coverage).
+
+      Out of scope this round: `show`, `diff`, `restore` (rest of
+      §8.1); marked-commit pipeline from host-side write surfaces
+      (Phase 2); watcher fallback for manual edits (Phase 3); the
+      `Glorbo Kernel <kernel@glorbo.local>` committer + per-actor
+      author identity (§4.2). Initial commits use the daemon's
+      git env identity for now — Phase 2 wires the kernel/author
+      split. `glorbo init` does **not** auto-init history; it
+      stays opt-in per §Migration / rollout.
+
+      GEP-33 stays Draft — Phase 1 alone doesn't satisfy the
+      design's marked-commit + watcher-fallback core. Status
+      flips to Implemented when Phases 2 + 3 land.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

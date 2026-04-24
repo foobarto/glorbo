@@ -52,6 +52,7 @@ defmodule Glorbo.CLI do
           | :fmt
           | :bench
           | :harness
+          | :history
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -263,6 +264,84 @@ defmodule Glorbo.CLI do
     {:detect_providers, exit_code, output}
   end
 
+  # GEP-33 Phase 1 — opt-in git history layer for ~/.glorbo/.
+  # `init` bootstraps the repo; `status` and `log` are read-only.
+  # `show`/`diff`/`restore` land in a follow-up.
+  @history_log_switches [limit: :integer]
+  def dispatch(["history"]), do: {:history, 1, history_help_text()}
+  def dispatch(["history", "--help" | _]), do: {:history, 0, history_help_text()}
+  def dispatch(["history", "-h" | _]), do: {:history, 0, history_help_text()}
+
+  def dispatch(["history", "init" | _rest]) do
+    case Glorbo.HomeHistory.init([]) do
+      {:ok, %{repo: repo, initial_commit: sha, tracked: count}} ->
+        out =
+          "glorbo history — initialised\n" <>
+            "  repo: #{repo}\n" <>
+            "  initial commit: #{sha}\n" <>
+            "  tracked paths: #{count}\n"
+
+        {:history, 0, out}
+
+      {:error, :already_initialised} ->
+        {:history, 1, "glorbo history — already initialised (no-op)\n"}
+
+      {:error, {:base_missing, base}} ->
+        {:history, 2, "glorbo history — base directory does not exist: #{base}\n"}
+
+      {:error, reason} ->
+        {:history, 2, "glorbo history — init failed: #{inspect(reason)}\n"}
+    end
+  end
+
+  def dispatch(["history", "status" | _rest]) do
+    case Glorbo.HomeHistory.status([]) do
+      {:ok, %{enabled: false}} ->
+        {:history, 1, "glorbo history — disabled (run `glorbo history init`)\n"}
+
+      {:ok, %{enabled: true, dirty: []}} ->
+        {:history, 0, "glorbo history — enabled · clean\n"}
+
+      {:ok, %{enabled: true, dirty: dirty}} ->
+        body =
+          "glorbo history — enabled · #{length(dirty)} dirty path(s)\n" <>
+            Enum.map_join(dirty, "\n", &("  " <> &1)) <> "\n"
+
+        {:history, 0, body}
+
+      {:error, reason} ->
+        {:history, 2, "glorbo history — status failed: #{inspect(reason)}\n"}
+    end
+  end
+
+  def dispatch(["history", "log" | rest]) do
+    {opts, _argv, _invalid} = OptionParser.parse(rest, strict: @history_log_switches)
+
+    case Glorbo.HomeHistory.log(limit: Keyword.get(opts, :limit, 20)) do
+      {:ok, []} ->
+        {:history, 0, "glorbo history — no commits\n"}
+
+      {:ok, rows} ->
+        body =
+          "glorbo history — #{length(rows)} commit(s)\n" <>
+            Enum.map_join(rows, "\n", fn r ->
+              "  #{r.sha}  #{r.subject} · #{r.author_name} · #{r.relative_time}"
+            end) <> "\n"
+
+        {:history, 0, body}
+
+      {:error, :not_initialised} ->
+        {:history, 1, "glorbo history — disabled (run `glorbo history init`)\n"}
+
+      {:error, reason} ->
+        {:history, 2, "glorbo history — log failed: #{inspect(reason)}\n"}
+    end
+  end
+
+  def dispatch(["history", verb | _]) do
+    {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
+  end
+
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
@@ -336,6 +415,8 @@ defmodule Glorbo.CLI do
                                Flags: --check (default, exits 1 on drift), --write
       detect-providers         Probe localhost for native providers (ollama, llama.cpp,
                                LocalAI, vLLM, LM Studio). No side effects. Flags: --json
+      history <sub>            Opt-in git history layer for ~/.glorbo/ (GEP-33).
+                               Subcommands: init, status, log [--limit N].
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 
@@ -360,7 +441,25 @@ defmodule Glorbo.CLI do
   defp verb_help_text("restore"), do: Restore.help_text()
   defp verb_help_text("console"), do: Console.help_text()
   defp verb_help_text("doctor"), do: doctor_help_text()
+  defp verb_help_text("history"), do: history_help_text()
   defp verb_help_text(_other), do: help_text()
+
+  defp history_help_text do
+    """
+    glorbo history — opt-in git history layer for ~/.glorbo/ (GEP-33).
+
+    USAGE
+      glorbo history init             Bootstrap the repo + write .gitignore + initial commit
+      glorbo history status           Show enabled/disabled + dirty tracked paths
+      glorbo history log [--limit N]  Most recent commits (default N=20)
+
+    Phase 1 ships read-only inspection. `show`, `diff`, `restore`,
+    and watcher-driven automatic commits arrive in later phases.
+
+    Filesystem remains the source of truth (GEP-3). Git here is
+    derivative — it never replaces the audit log or the working tree.
+    """
+  end
 
   defp new_help_text do
     """

@@ -88,4 +88,30 @@ defmodule Glorbo.CLI.DispatchPhase5StubsTest do
     assert {:unknown, 1, out} = Glorbo.CLI.dispatch(["definitely-not-a-verb"])
     assert out =~ "Unknown command: definitely-not-a-verb"
   end
+
+  # GEP-33 Phase 1 — `glorbo history` family. `init` would touch the
+  # filesystem, so these tests exercise the no-side-effect rows
+  # (--help + unknown subcommand) only. End-to-end init/status/log
+  # are covered by `Glorbo.HomeHistoryTest`.
+  describe "history dispatch" do
+    test "no subcommand returns :history exit 1 with help text" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history"])
+      assert out =~ "glorbo history"
+      assert out =~ "init"
+    end
+
+    test "--help returns :history exit 0" do
+      assert {:history, 0, out} = Glorbo.CLI.dispatch(["history", "--help"])
+      assert out =~ "GEP-33"
+    end
+
+    test "unknown subcommand returns :history exit 1" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history", "definitely-not"])
+      assert out =~ "Unknown history subcommand"
+    end
+
+    test "help_text mentions the history verb" do
+      assert Glorbo.CLI.help_text() =~ "history"
+    end
+  end
 end

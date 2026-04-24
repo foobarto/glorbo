@@ -87,6 +87,15 @@ it's been in CHANGELOG for a cycle.
 
 ## P3 — thinking out loud
 
+- [ ] **GEP-33 Phase 2 — marked commits from write surfaces.**
+  Phase 1 shipped 2026-04-25 (`Glorbo.HomeHistory` + `glorbo
+  history {init, status, log}`). Phase 2 wires
+  `HomeHistory.begin/mark/flush` into Router, Actions,
+  scaffolders, restore, and the other durable writers so
+  in-app changes commit with structured trailers + the
+  `Glorbo Kernel <kernel@glorbo.local>` committer + per-actor
+  author. Phase 3 follows with watcher-fallback `External`
+  commits for manual edits; Phase 4 adds `show`/`diff`/`restore`.
 - [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
   2026-04-24. Implementation queued **behind** the crown-jewels arc
   (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer

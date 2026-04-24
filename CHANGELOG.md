@@ -21,6 +21,20 @@ change between minor versions. Pin exact versions in downstream usage.
   (gains the canonical single trailing `\n`) then `:unchanged`
   forever after.
 
+### Added
+
+- **GEP-33 Phase 1 — git history layer (opt-in).** New
+  `Glorbo.HomeHistory` module + `glorbo history {init, status,
+  log}` CLI verb. `init` bootstraps `~/.glorbo/.git/` with the
+  GEP-33 §3 tracked-scope `.gitignore` and writes the root
+  commit; `status` wraps `git status --porcelain`; `log` reads
+  recent commits via record-separator format. A `tracked?/2`
+  predicate mirrors the policy without shelling out. Phase 2
+  (marked commits from write surfaces) and Phase 3 (watcher
+  fallback) follow; `show`/`diff`/`restore` are deferred to
+  Phase 4. GEP-33 stays Draft — Implemented when Phases 2 + 3
+  land.
+
 ### Fixed
 
 - **`PortabilityTest`** asserted `companies/.../agents/ceo/agent.md`
