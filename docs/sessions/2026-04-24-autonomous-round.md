@@ -1442,3 +1442,128 @@ README, CHANGELOG, todo.md, session log. Then push.
    something like `glorbo console` or `glorbo shell`? I kept
    `tui` because it's explicit and matches your session language.
 
+---
+
+## Implementation rounds A–F (post-planning, evening of 2026-04-24)
+
+User directive at the pivot: *"tighten the loop cycle, once done
+with one round proceed to next one"*. What follows are the
+atomic-cut rounds that translated the GEP-36 / GEP-40 / GEP-41
+plan into shipped code. Each round = one commit = one green CI.
+
+### Round A — GEP-40 schema (`53c720c`, `c5073cb`)
+
+Extended `task/v1` FileSpec with `done_when`, `handoff_chain`,
+`severity`, `peer_review_required`, `requested_by`, `reviewer`.
+Added maximal-valid fixture exercising the full surface; extended
+golden-fixture test to cover both `minimal_valid/` and
+`maximal_valid/` trees. Regenerated `docs/file-formats/task_v1.md`
+via `mix glorbo.docs.file_formats`.
+
+### Round B — TaskDefinition parse + write plumbing (`9655679`)
+
+`Glorbo.TaskDefinition` struct gains the six GEP-40 fields.
+`write_frontmatter/2` now performs an internal
+`merge_with_existing/2` and preserves structured block keys
+(`handoff_chain:`) via a text-slice pass rather than YAML
+round-trip — the formatter canonical-form rewrite would mangle
+block scalars. Nine G40-* unit tests added.
+
+Bug-fix I'd flag: `yaml_scalar(true)` was emitting the quoted
+string `"true"`, which the parser read back as a string, which
+the strict-boolean coercion rejected. Fixed by adding bare-token
+heads for `true` / `false` in `FrontmatterWriter.yaml_scalar/1`.
+
+### Round C — Actions carve-out (`2950ceb`)
+
+Moved `GlorboWeb.Actions` → `Glorbo.Actions`
+(`lib/glorbo/actions.ex`, 747 lines, verbatim). Old
+`GlorboWeb.Actions` became a 4-line `defdelegate` facade so the
+existing 32-test `actions_test.exs` suite kept passing without
+modification. No behavioral change — purely a module-path move to
+unblock the core-module placement decided in GEP-36 D2.
+
+### Round D — Tasks.create extraction (`59b0c67`)
+
+New `Glorbo.Actions.Tasks.create/4` +
+`Glorbo.Actions.Tasks.next_task_id/3` under
+`lib/glorbo/actions/tasks.ex`. KanbanLive's
+`handle_event("new_task_create", …)` + `attachments_upload`
+follow-through now call into the module instead of doing raw
+`File.*` writes + inline audit emission. Dropped ~105 lines of
+orphan helpers from KanbanLive.
+
+Two landmines I stepped on:
+
+1. **Audit shape.** First pass wrapped detail fields under
+   `detail:` — `AuditLog.append/2` treats any key outside
+   `{ts, company, actor, action, target}` as a detail field
+   (via `drop_known_keys`), so `detail:` became a nested map
+   inside detail. Fix: flatten `title` / `assigned_to` /
+   `priority` / `severity` at the top level of the entry.
+2. **Default-base config key drift.** `default_base/0` read
+   `Application.get_env(:glorbo, :base_dir)`, but tests set
+   `:glorbo_base`. Live tests silently pointed the Actions
+   layer at the real `~/.glorbo/`, not the tmp test tree. Fixed
+   in Round E; delegated to `Filesystem.Hierarchy.default_root/0`.
+
+### Round E — Tasks.trash extraction (`8e54353`)
+
+New `Glorbo.Actions.Tasks.trash/3`. TaskLive's `delete_task`
+handler — which previously did raw `File.rename` with *no audit
+emission at all* — now routes through Actions. Five unit tests
+cover happy path + 4 rejection paths (invalid rel_path, invalid
+company slug, ENOENT source, M18-style symlinked-source refusal).
+
+KanbanLive's own `delete_task` flow is structurally different
+(targets `history/tasks/`, not `history/deleted/`, and additionally
+moves the attachments sidecar directory). Left unmigrated for a
+later round once I decide whether to unify the two dest layouts
+or keep them divergent.
+
+### Round F — Credo ratchet (this commit)
+
+Custom check `Glorbo.Credo.Check.RawFilesystemWriteInLive` fails
+CI when any module under `lib/glorbo_web/live/` calls mutating
+`File.*` functions. Allowlist — seeded with the six LiveViews
+still awaiting migration — silences current offenders. Each
+migration round drops an entry; when the list empties, GEP-36 is
+done. Exit code 16 (Credo Warning category) fails the CI
+`mix credo --strict` step. Regression-proven by dropping kanban
+from the allowlist mid-test and watching 8 warnings surface.
+
+Five check-unit tests assert fire/silence/scope behavior.
+
+### Queued (not done this round, next up)
+
+- Round G — Router `handoff_chain:` appender (GEP-40). Every
+  task dispatch / reassign appends one entry with `from` / `to`
+  / `ts` / `reason`. Router is the single mutator.
+- Round H — Chain audit LiveView at
+  `/companies/:co/tasks/:task_id/chain`. Reads
+  `handoff_chain:` + reconstructs from audit log when the
+  frontmatter was truncated.
+- Round I — Peer-review gate (GEP-41). Severity-based trigger +
+  CritiqueOps default reviewer + three-way verdict parser.
+- Round J — CritiqueOps template verb realignment + propagate
+  cairn-style to the remaining 5 AGENT.md roles (ceo, editor,
+  researcher, critiqueops, provenance-auditor).
+- GEP-36 LiveView migration — extract remaining write paths
+  from AgentLive / AuditLive / ChannelLive / CompanyLive /
+  KanbanLive / ProjectLive. Allowlist shrinks round-by-round
+  as each one flips to `Glorbo.Actions.*`.
+
+### Running discipline notes
+
+- **Session log cadence.** The user flagged during Round F that
+  I had not been updating this file per cairn. True — I was
+  running commit-by-commit without appending. This round
+  catches up; future rounds log as they close. Cairn protocol:
+  append before each commit, not after the session.
+- **Burrito build.** Still broken (exqlite NIF rebuild —
+  `erl_nif.h not found`). Did not re-attempt this session;
+  noted in memory.
+- **/compact cadence.** Did not `/compact` between rounds; the
+  context is still coherent but budget pressure is real.
+  Expect to compact after Round H lands.
+
