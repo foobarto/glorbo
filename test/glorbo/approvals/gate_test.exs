@@ -917,4 +917,66 @@ defmodule Glorbo.Approvals.GateTest do
       refute_receive {:audit, %{action: "peer_review.requested"}}, 200
     end
   end
+
+  # Codex P2 (v0.8.0 pre-release): a peer-review `block` verdict
+  # writes `status: denied` + `peer_review_verdict: "block"`. Pre-fix,
+  # the generic `"denied"` resolver treated the flip as an agent
+  # self-denial (no Director mark) and reverted the task to
+  # `"awaiting"`, silently erasing the reviewer's block. Regression
+  # guard: the reviewer-emitted denial must stick.
+  describe "peer-review block verdict preservation" do
+    test "denied + peer_review_verdict: block does NOT revert to awaiting", ctx do
+      %{pid: pid} = start_gate(ctx)
+
+      {path, td} =
+        td_for(ctx, "t-block-1",
+          title: "blocked by reviewer",
+          status: "pending-approval",
+          requires_approval: "director",
+          peer_review_required: "true",
+          reviewer: "critiqueops"
+        )
+
+      # Prime the awaiting state first.
+      :ok =
+        Gate.request_approval(pid, %{
+          agent: "engineer",
+          task_definition: td,
+          requesting_trigger: :inbox
+        })
+
+      _ = collect_audit(100)
+
+      # Reviewer lands a `block` verdict via the normal path (but we
+      # simulate the frontmatter write that `Actions.Tasks.
+      # record_peer_review_verdict/5` does).
+      File.write!(path, """
+      ---
+      kind: task/v1
+      id: t-block-1
+      title: blocked by reviewer
+      status: denied
+      requires_approval: director
+      peer_review_required: true
+      peer_review_verdict: block
+      peer_review_verdict_by: critiqueops
+      peer_review_verdict_at: "2026-04-24T14:00:00Z"
+      reviewer: critiqueops
+      ---
+      body
+      """)
+
+      send(pid, {:file_event, "projects/foo/tasks/t-block-1.md", [:modified]})
+
+      # No self-approval reversion should be emitted.
+      refute_receive {:audit, %{action: "approval.self_approval_rejected"}}, 200
+
+      # File must remain `denied` (NOT reverted to `awaiting`).
+      {:ok, still_denied} =
+        Glorbo.TaskDefinition.parse_file(path, base: ctx.base, company: @company)
+
+      assert still_denied.status == "denied"
+      assert still_denied.peer_review_verdict == "block"
+    end
+  end
 end

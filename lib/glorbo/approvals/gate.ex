@@ -421,6 +421,21 @@ defmodule Glorbo.Approvals.Gate do
     end
   end
 
+  # GEP-41 D4 + codex P2: a peer-review `block` verdict lands as
+  # `status: denied` + `peer_review_verdict: "block"`. The generic
+  # `"denied"` clause below treats unmarked flips as agent self-
+  # approval attempts and reverts them to `awaiting`, which would
+  # clobber a legitimate reviewer block. Short-circuit here so the
+  # reviewer-emitted denial sticks; the Director decides next via
+  # the Inbox.
+  defp resolve_status(
+         %TaskDefinition{status: "denied", peer_review_verdict: "block"},
+         _abs_path,
+         state
+       ) do
+    state
+  end
+
   defp resolve_status(%TaskDefinition{status: "denied"} = td, abs_path, state) do
     case find_awaiting_row(state, td.task_path) do
       nil ->

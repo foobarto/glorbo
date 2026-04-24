@@ -125,8 +125,7 @@ defmodule GlorboWeb.TaskChainLiveTest do
         "action" => "task.reassign",
         "target" => "projects/foo/tasks/foo-3.md",
         "actor" => "director",
-        "from" => "director",
-        "to" => "ceo"
+        "detail" => %{"from" => "director", "to" => "ceo"}
       })
 
     File.write!(path, entry <> "\n")
@@ -136,6 +135,10 @@ defmodule GlorboWeb.TaskChainLiveTest do
     assert html =~ "chain drift"
     assert html =~ "not in audit log"
     assert html =~ "audit cross-reference"
+    # Codex P3: reassign from/to land under `detail` in JSONL.
+    # Chain view must read from there, not top-level.
+    assert html =~ "director"
+    assert html =~ "ceo"
   end
 
   test "redirects on unknown task_id", %{conn: conn} do
@@ -249,8 +252,7 @@ defmodule GlorboWeb.TaskChainLiveTest do
             "action" => "task.reassign",
             "target" => "projects/foo/tasks/foo-77.md",
             "actor" => "director",
-            "from" => "director",
-            "to" => "engineer"
+            "detail" => %{"from" => "director", "to" => "engineer"}
           },
           %{
             "ts" => "2026-04-24T14:15:00Z",

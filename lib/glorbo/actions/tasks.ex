@@ -519,6 +519,7 @@ defmodule Glorbo.Actions.Tasks do
          abs_path = Path.join([base, "companies", company, task_rel_path]),
          {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
          :ok <- guard_review_required(task),
+         :ok <- guard_actor_is_reviewer(actor, task),
          :ok <- guard_not_already_decided(task) do
       verdict_str = Atom.to_string(verdict)
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
@@ -547,6 +548,20 @@ defmodule Glorbo.Actions.Tasks do
 
   defp guard_review_required(%Glorbo.TaskDefinition{peer_review_required: true}), do: :ok
   defp guard_review_required(_), do: {:error, :not_required}
+
+  # GEP-41 D2: only the task's configured reviewer (or the default
+  # critiqueops when none is set) may record a verdict. Without this
+  # guard, any agent with `tasks:update` could self-clear peer review
+  # by writing an `ACTIONS: verdict: approve` reply through the
+  # `Agent.Server` → `record_peer_review_verdict/5` path.
+  defp guard_actor_is_reviewer(actor, %Glorbo.TaskDefinition{reviewer: reviewer}) do
+    if actor == effective_reviewer(reviewer),
+      do: :ok,
+      else: {:error, :wrong_reviewer}
+  end
+
+  defp effective_reviewer(slug) when is_binary(slug) and slug != "", do: slug
+  defp effective_reviewer(_), do: "critiqueops"
 
   defp guard_not_already_decided(%Glorbo.TaskDefinition{peer_review_verdict: nil}), do: :ok
   defp guard_not_already_decided(_), do: {:error, :already_decided}
@@ -768,7 +783,7 @@ defmodule Glorbo.Actions.Tasks do
       |> Support.put_detail("priority", Map.get(params, "priority"))
       |> Support.put_detail("severity", Map.get(params, "severity"))
 
-    AuditLog.append(audit, entry)
+    Support.append_audit(audit, company, entry)
   end
 
   # Derive `<project>` from a `projects/<project>/tasks/<id>.md` path.
@@ -803,7 +818,7 @@ defmodule Glorbo.Actions.Tasks do
   end
 
   defp emit_trash_audit(audit, company, rel_path, dest_rel, actor) do
-    AuditLog.append(audit, %{
+    Support.append_audit(audit, company, %{
       actor: actor,
       action: "task.trash",
       target: rel_path,

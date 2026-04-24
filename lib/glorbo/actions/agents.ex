@@ -107,6 +107,7 @@ defmodule Glorbo.Actions.Agents do
 
     with :ok <- Support.validate_slug(company, :company),
          :ok <- Support.validate_slug(slug, :agent),
+         :ok <- refuse_contract_write(rel_path),
          agent_root = agent_dir(base, company, slug),
          {:ok, abs_path} <- resolve_workspace_path(agent_root, rel_path),
          :ok <- ensure_no_symlink_on_path(abs_path, agent_root),

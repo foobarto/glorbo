@@ -199,6 +199,27 @@ defmodule Glorbo.Actions.AgentsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # Codex P2 (v0.8.0 pre-release): trash must refuse contract files
+    # the same way create_workspace_file/write_workspace_file do. Pre-
+    # fix, a non-LiveView caller could `trash_workspace_file/4` an
+    # `AGENT.md` or `stdout.log` into `history/deleted/` — the UI
+    # enforced H9 but the core action didn't.
+    test "refuses contract files (threatmodel H9)",
+         %{base: base, audit: audit, ag_dir: ag_dir} do
+      File.write!(Path.join(ag_dir, "AGENT.md"), "permission doc\n")
+
+      assert {:error, :contract_file} =
+               Agents.trash_workspace_file("acme", "ceo", "AGENT.md",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      # Original contract file still in place.
+      assert File.exists?(Path.join(ag_dir, "AGENT.md"))
+      assert FakeAudit.calls(audit) == []
+    end
   end
 
   describe "retire/3" do

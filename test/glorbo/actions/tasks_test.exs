@@ -397,6 +397,64 @@ defmodule Glorbo.Actions.TasksTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # Codex P1 (v0.8.0 pre-release): only the task's configured
+    # reviewer may land a verdict. Pre-fix, any agent with
+    # `tasks:update` could self-clear peer review by writing
+    # `ACTIONS: verdict: approve` in their reply.
+    test "rejects a verdict from a non-reviewer actor",
+         %{base: base, audit: audit} do
+      assert {:error, :wrong_reviewer} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "engineer",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "default reviewer falls back to `critiqueops` when task.reviewer is unset",
+         %{base: base, audit: audit, src: src} do
+      # Rewrite the fixture without the `reviewer:` line.
+      File.write!(src, """
+      ---
+      kind: task/v1
+      id: demo-99
+      title: needs review
+      status: pending-approval
+      assigned_to: engineer
+      severity: major
+      peer_review_required: true
+      ---
+      body
+      """)
+
+      # Wrong actor still rejected.
+      assert {:error, :wrong_reviewer} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "engineer",
+                 base: base,
+                 audit: audit
+               )
+
+      # Default reviewer (`critiqueops`) is accepted.
+      assert {:ok, _} =
+               Tasks.record_peer_review_verdict(
+                 "acme",
+                 "projects/demo/tasks/demo-99.md",
+                 :approve,
+                 actor: "critiqueops",
+                 base: base,
+                 audit: audit
+               )
+    end
   end
 
   # ---------------------------------------------------------------------------

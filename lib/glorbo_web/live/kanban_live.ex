@@ -550,6 +550,7 @@ defmodule GlorboWeb.KanbanLive do
     # the task file itself is written (the body links into that
     # directory).
     with :ok <- validate_project(Map.get(params, "project", ""), projects),
+         :ok <- pre_validate_title(Map.get(params, "title", "")),
          project = Map.fetch!(params, "project"),
          {:ok, task_id} <- Glorbo.Actions.Tasks.next_task_id(base, company, project),
          attachments <- consume_new_task_uploads(socket, base, company, project, task_id),
@@ -1361,6 +1362,22 @@ defmodule GlorboWeb.KanbanLive do
       :ok
     else
       {:error, :invalid_project}
+    end
+  end
+
+  # Codex P2 (v0.8.0 pre-release): short-circuit title validation
+  # before `consume_new_task_uploads/5` so an invalid-title form
+  # doesn't leave an orphaned attachments dir + `attachment.upload`
+  # audit rows behind. `Actions.Tasks.create/4` re-validates the
+  # title as defense-in-depth, but by the time it runs the uploads
+  # have already landed on disk.
+  defp pre_validate_title(title) do
+    trimmed = title |> to_string() |> String.trim()
+
+    cond do
+      trimmed == "" -> {:error, :invalid_title}
+      byte_size(trimmed) > 200 -> {:error, :invalid_title}
+      true -> :ok
     end
   end
 

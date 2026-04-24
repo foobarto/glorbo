@@ -3379,3 +3379,148 @@ a real browser would exercise for these specific cases.
 
 One commit to follow (Kanban filter + regression test +
 UAT Round 8 log + this session entry).
+
+---
+
+## Post-codex review fixes (v0.8.0 pre-release)
+
+### Task picked
+
+Pre-release gate step 5.b — run `codex review --base v0.7.0` on
+the 58 commits that accumulated since v0.7.0 and apply all
+must-fix findings before cutting v0.8.0. Codex surfaced 7
+findings (2 P1, 4 P2, 1 P3); all are legitimate and fixed.
+
+### What shipped
+
+- **Codex P1** (`lib/glorbo/actions/tasks.ex:515-522`):
+  `record_peer_review_verdict/5` now validates that the emitting
+  `actor` equals the task's configured `reviewer` (or the default
+  `"critiqueops"` when unset) before writing verdict fields. Pre-
+  fix, any agent with `tasks:update` could write
+  `ACTIONS: verdict: approve` in its reply and — through
+  `Agent.Server` → `record_peer_review_verdict/5` — self-clear
+  peer review. GEP-41 D2 invariant now enforced. New helper
+  `guard_actor_is_reviewer/2` + `effective_reviewer/1` fallback.
+  Returns `{:error, :wrong_reviewer}` on mismatch.
+- **Codex P1** (`lib/glorbo/actions/tasks.ex:771, :806`):
+  `emit_create_audit/6` + `emit_trash_audit/5` now route through
+  `Support.append_audit/3` instead of raw `AuditLog.append/2`.
+  In production the company AuditLog is registered under a via-
+  tuple, not the bare module name, so the raw call exited
+  `:noproc` after the file had already been written — silent
+  audit loss on task create + trash paths.
+- **Codex P2** (`lib/glorbo/approvals/gate.ex:424`): new
+  resolve-status clause short-circuits when
+  `status: "denied" + peer_review_verdict: "block"`. The
+  generic `denied` resolver treated unmarked denials as agent
+  self-approval attempts and reverted them to `awaiting`,
+  silently erasing a legitimate reviewer block verdict. GEP-41
+  D4 three-way verdict now sticks for `block`.
+- **Codex P2** (`lib/glorbo_web/live/kanban_live.ex:552-557`):
+  new `pre_validate_title/1` gate in the new-task pipeline runs
+  BEFORE `consume_new_task_uploads/5`. Pre-fix, an invalid-title
+  form still consumed uploads + emitted `attachment.upload`
+  audit rows, leaving orphaned attachments under
+  `attachments/<task_id>/` when `Actions.Tasks.create/4`
+  subsequently rejected the title.
+- **Codex P2** (`lib/glorbo/actions/agents.ex:108`):
+  `trash_workspace_file/4` now calls `refuse_contract_write/1`
+  alongside the existing `create`/`write` paths. Pre-fix, a
+  non-LiveView caller could move `AGENT.md` or `stdout.log`
+  into `history/deleted/` — UI enforced H9, core didn't.
+- **Codex P2** (`lib/glorbo/task_definition.ex:487`): added
+  `model` and `provider` to `@editor_keys`. Pre-fix, any
+  `write_frontmatter/2` call (reassign / peer-review verdict /
+  Kanban save) silently stripped per-task model + provider
+  overrides, regressing dispatch to the agent default.
+- **Codex P3** (`lib/glorbo_web/live/task_chain_live.ex:186-189`):
+  chain view's reassign cross-reference now reads `from` + `to`
+  from `e["detail"]` (where `AuditLog.append/2` actually
+  persists them) with a top-level fallback for test seeds +
+  historical rows. Pre-fix, live-written `task.reassign` events
+  rendered as blank arrows. New helpers `reassign_from/1`,
+  `reassign_to/1`, `pick_detail/2`.
+
+### Tests
+
+- `test/glorbo/actions/tasks_test.exs` — 2 new verdict-actor-
+  guard tests (`rejects a verdict from a non-reviewer actor` +
+  `default reviewer falls back to critiqueops when task.reviewer
+  is unset`).
+- `test/glorbo/approvals/gate_test.exs` — 1 new describe block
+  `peer-review block verdict preservation` with 1 test asserting
+  the file stays `denied` and no `approval.self_approval_rejected`
+  audit fires on a reviewer-emitted block.
+- `test/glorbo/actions/agents_test.exs` — 1 new test
+  `refuses contract files (threatmodel H9)` under the
+  `trash_workspace_file/4` describe block.
+- `test/glorbo/task_definition_test.exs` — 1 new test
+  `G40-pv: write_frontmatter preserves model + provider
+  overrides` under the GEP-40 describe block.
+- `test/glorbo_web/live/task_chain_live_test.exs` — two seed
+  updates: `from`/`to` moved under `detail` to match real
+  AuditLog shape; additional assertions on the drift-warning
+  test confirm directors render correctly from the nested
+  shape.
+
+Total delta: 6 new tests, 2075 tests / 0 failures (up from 2069).
+
+### Design calls I made without you
+
+- **Default reviewer is the literal `"critiqueops"`, not a
+  configurable atom.** Matches the GEP-41 D2 decision log which
+  names critiqueops as the default. Any project that wants a
+  different reviewer sets `reviewer: <slug>` on the task.
+  Avoids a new Application env / config table for now.
+- **Block-verdict short-circuit is a dedicated Gate clause,
+  not a global guard.** Keeps the existing `denied` self-
+  approval-revert logic untouched for the legitimate self-
+  denial path (agent attempts denial with no Director mark).
+  The new clause pattern-matches on `peer_review_verdict:
+  "block"` specifically; any other verdict value keeps the
+  original revert semantics.
+- **Chain view pick_detail has a top-level fallback, not a
+  hard switch.** Real live audit rows nest `from`/`to` under
+  `detail`; pre-existing test seeds put them at top level.
+  The fallback accepts both shapes, so the fix is
+  backwards-compatible for any test seeds that still use the
+  flat shape — no forced test churn. Also means if some
+  historical AuditLog row pre-dates the `detail`-nesting, it
+  still renders correctly.
+- **Title pre-validation duplicates the core validator.**
+  `Actions.Tasks.create/4` already has `validate_title/1`, but
+  by the time it runs the uploads have landed. Simpler to
+  short-circuit at the LiveView than to restructure
+  `create/4` to validate before writing attachments. Both
+  validators agree on the same rules (trimmed non-empty,
+  ≤200 bytes).
+- **Trash contract-file guard sits in the `with` chain
+  alongside the existing slug validators.** Order matters:
+  slug checks first (cheap + informative errors), then
+  contract refusal, then workspace-path resolution. This
+  matches the `create_workspace_file`/`write_workspace_file`
+  ordering.
+
+### Gates
+
+- `mix precommit` — 2075 tests, 0 failures, 1 skipped.
+- `mix credo --strict` — 68 checks, 0 issues; exit 0.
+- `mix format --check-formatted` — clean.
+- Security pass: all P1 findings directly address security
+  or production correctness; new regression tests lock the
+  invariants.
+
+### Skipped / not done
+
+- **Codex's nice-to-have findings.** Codex didn't surface any
+  I deferred; all 7 are fixed here.
+- **`Agent.Server` call-site update for reviewer guard.** The
+  guard is enforced at `Actions.Tasks.record_peer_review_
+  verdict/5`; `Agent.Server` callers get `{:error,
+  :wrong_reviewer}` and can handle / log as appropriate.
+  No new plumbing there.
+
+### Commit(s)
+
+One commit to follow (all fixes + tests + this journal entry).

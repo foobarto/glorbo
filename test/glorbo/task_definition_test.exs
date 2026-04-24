@@ -873,5 +873,37 @@ defmodule Glorbo.TaskDefinitionTest do
       # Title preserved via internal merge.
       assert td.title == "new-keys test"
     end
+
+    # Codex P2 (v0.8.0 pre-release): `model:` and `provider:` are
+    # task-level overrides of the agent's default dispatch config
+    # (GEP-32). Pre-fix, the `@editor_keys` allowlist omitted both,
+    # so any write_frontmatter call (reassign, peer-review verdict,
+    # Kanban save) silently stripped them and dispatch fell back to
+    # the agent default.
+    test "G40-pv: write_frontmatter preserves model + provider overrides", ctx do
+      content = """
+      ---
+      kind: task/v1
+      title: tuned task
+      status: todo
+      model: qwen/qwen3.6-35b-a3b
+      provider: opencode
+      ---
+      body
+      """
+
+      path = write_task(ctx, "t-pv.md", content)
+
+      # Flip an unrelated field; model/provider should survive.
+      assert :ok =
+               TaskDefinition.write_frontmatter(path, %{"status" => "in-progress"})
+
+      assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.status == "in-progress"
+      # Raw frontmatter still contains model + provider.
+      raw = File.read!(path)
+      assert raw =~ ~r/^model: qwen\/qwen3\.6-35b-a3b$/m
+      assert raw =~ ~r/^provider: opencode$/m
+    end
   end
 end

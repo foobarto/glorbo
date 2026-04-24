@@ -484,6 +484,12 @@ defmodule Glorbo.TaskDefinition do
     end
   end
 
+  # Scalar frontmatter keys rewritten by `write_frontmatter/2`.
+  # Any scalar key NOT in this allowlist is silently dropped on the
+  # next write. `model` and `provider` are task-level overrides of the
+  # agent's default provider config (GEP-32); omitting them here meant
+  # reassign / peer-review verdict / Kanban save silently regressed
+  # dispatch to the agent default (codex P2, v0.8.0 pre-release).
   @editor_keys ~w(
     title
     status
@@ -500,6 +506,8 @@ defmodule Glorbo.TaskDefinition do
     reviewer
     denial_reason
     done_when
+    model
+    provider
   )
 
   # Keys that carry structured (non-scalar) values in a task frontmatter.

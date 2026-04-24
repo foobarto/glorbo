@@ -184,9 +184,9 @@ defmodule GlorboWeb.TaskChainLive do
         </summary>
         <ol class="gl-task-chain__audit-list">
           <li :for={e <- @audit_reassigns} class="gl-task-chain__audit-entry">
-            <span class="gl-muted">{e["ts"]}</span> · <strong>{e["from"]}</strong>
+            <span class="gl-muted">{e["ts"]}</span> · <strong>{reassign_from(e)}</strong>
             <span aria-hidden="true">→</span>
-            <strong>{e["to"]}</strong> · <span class="gl-muted">by {e["actor"]}</span>
+            <strong>{reassign_to(e)}</strong> · <span class="gl-muted">by {e["actor"]}</span>
           </li>
         </ol>
       </details>
@@ -233,6 +233,22 @@ defmodule GlorboWeb.TaskChainLive do
   defp peer_review_audit?(%{"action" => "task.peer_review." <> _verdict}), do: true
 
   defp peer_review_audit?(_), do: false
+
+  # `task.reassign` audit entries written by `Actions.Tasks.reassign/4`
+  # stash `from` + `to` on the entry map, but `AuditLog.append/2` moves
+  # anything outside {ts, company, actor, action, target} into the
+  # `detail` JSON object before writing to JSONL. So the persisted
+  # shape is `entry["detail"]["from"]` / `entry["detail"]["to"]`; the
+  # top-level keys exist only in the pre-persist struct. Codex P3
+  # v0.8.0 pre-release: fall back to top-level for test-seeded rows
+  # and for any historical rows that pre-date this nesting.
+  defp reassign_from(e), do: pick_detail(e, "from")
+  defp reassign_to(e), do: pick_detail(e, "to")
+
+  defp pick_detail(entry, key) do
+    detail = entry["detail"] || %{}
+    detail[key] || entry[key] || ""
+  end
 
   defp peer_review_label("peer_review.requested"), do: "review requested"
   defp peer_review_label("task.peer_review.approve"), do: "verdict: approve"
