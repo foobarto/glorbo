@@ -1866,4 +1866,73 @@ What's still missing for GEP-41 full coverage:
 - Cairn log-before-commit held for Rounds I, J, K.
 - Credo ratchet still held — no LiveView raw File.* drift.
 
+### Round L — cairn-style propagation to 4 roster templates
+
+Additive only — kept the existing sections intact and added
+three new ones above whichever section marked "start of role
+meat" in each template:
+
+- **ceo.md** — added `## Autonomy — L3` + `## Quality`
+  sections before the existing `## Delegation discipline`.
+  The role-specific autonomy clauses mention: can reassign
+  agents below in the reporting chain; can file hiring
+  proposals; cannot self-approve or touch another agent's
+  AGENT.md.
+
+- **editor.md** — added Autonomy / Quality /
+  `## Handoff & return-path discipline` before the existing
+  `## Provenance in every output`. Handoff block is
+  editor-specific: "you sit between Research and Critique-
+  Ops; never route to Publisher directly."
+
+- **researcher.md** — same three sections before the
+  existing `## Provenance rules`. Handoff block: "first
+  link in most chains; pass raw notes forward, not polished
+  deliverables."
+
+- **provenance-auditor.md** — same three sections before
+  `## The rubric`. Handoff block: "PROVENANCE-CLEAN → next
+  agent; PROVENANCE-ISSUES → back to the Researcher who
+  sourced the failing claim. Never route to anyone other
+  than the claimant on failures."
+
+No struct / parser / test changes needed; the CLI template
+parseability test (`new_agent_test.exs`) passes unchanged
+across all four. Full 1994-test suite still green.
+
+Deliberately did NOT:
+
+- Rewrite the existing role-specific sections (delegation
+  discipline in ceo.md, fetch-before-flag in editor.md,
+  provenance rules in researcher.md). Those are already
+  load-bearing; adding cairn sections on top gives the role
+  a fuller picture without churning the existing wording.
+- Add an `autonomy:` field to the agent/v1 frontmatter.
+  Cairn templates treat L0-L4 as prose guidance; encoding
+  it in the struct becomes a GEP in its own right.
+
+### GEP-41 phase-1 — closing statement
+
+After Rounds I + J + K + L, GEP-41 phase-1 is done:
+
+  * **Data** — verdict field + atomic-write API (I)
+  * **Agent-emit** — directive parser + CritiqueOps
+    template (J)
+  * **Gate** — Director approval blocked on missing
+    verdict (K)
+  * **Template coverage** — 4 of 5 non-engineer roles
+    carry cairn-style sections; engineer already had them
+    (L)
+
+Phase-2 (deferred):
+
+  * Router-triggered auto-dispatch to the reviewer on
+    pending-approval tasks.
+  * GEP-41 D1 auto-flip (`severity: major|critical` →
+    `peer_review_required: true` at create time).
+  * Kanban visibility for awaiting-peer-review as a
+    distinct column / ribbon.
+  * Phase-2 GEPs mentioned in the research doc (GEP-42 CEO
+    retrospectives, GEP-43 Provenance-Auditor auto-gate).
+
 
