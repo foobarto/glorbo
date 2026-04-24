@@ -2,7 +2,7 @@
 gep: 0037
 title: "`glorbo shell` — interactive terminal session for the Director"
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-04-24
 history:
@@ -36,6 +36,15 @@ history:
       split panes, command palette, supervision-tree viewer — the
       last one a direct fit for the Health view). D2, D6, D11
       updated to reflect both changes.
+  - date: 2026-04-24
+    status: Accepted
+    note: |
+      Accepted after maintainer sign-off on D2 (term_ui),
+      D4 (drop-in parity), D5 (`Glorbo.Actions` carve-out),
+      D8 (ship-everything-at-once view list), and D10 (Emacs
+      keybindings default). Implementation will ride alongside
+      the GEP-36 `Glorbo.Actions` atomic cut; first release to
+      carry the shell will be v0.8.0.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
