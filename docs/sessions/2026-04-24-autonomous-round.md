@@ -617,6 +617,88 @@ pass. No code touched.
   will have to settle open questions like vim modal-editing
   fidelity + VS Code `Ctrl+P` analogue.
 
+## 2026-04-24 — spun up `cairn` standalone project
+
+User reflected on the session and asked to capture the workflow
+("the way our interaction is going, the way ideas are shaped and
+documented, the sessions audit log, decision making and level of
+autonomous work") as a standalone project. Asked for a suggested
+name and Claude-plugin layout, kept CLI-agnostic.
+
+**Name:** `cairn` — trail markers you stack as you pass through,
+marking the way for those behind. Evocative + googlable + pairs
+nicely with the existing `ep-kit` (the user's earlier project
+covering the proposal side). My pick, shipped without bike-shed.
+
+**Scoped:** cairn handles session journals + rolling punch list +
+autonomous-round cadence + six-phase checklist. Explicitly does
+NOT duplicate ep-kit's proposal territory; cairn's CLAUDE.md
+template references ep-kit.
+
+**Shipped at `/home/user/Documents/cairn/`:**
+
+- Commit `85d9341` on `main`. Not pushed. No remote configured.
+- `.claude-plugin/plugin.json` Claude Code plugin manifest.
+- 3 slash commands: `/cairn-init`, `/cairn-session`,
+  `/cairn-round`.
+- 3 skills: `session-log`, `autonomous-round`, `close-session`.
+- 1 sub-agent: `prior-session-digest`.
+- 5 templates: `CLAUDE.md` (rename-able), `session-template.md`,
+  `todo.md`, `workflow/six-phase-checklist.md`,
+  `workflow/autonomous-round-protocol.md`.
+- 4 CLI-adapter docs: `docs/for-claude-code.md`,
+  `for-gemini-cli.md`, `for-codex-cli.md`, `for-opencode.md`.
+- `install.sh` — non-destructive per-project scaffolder. Tested
+  on a clean `/tmp/` target; creates `docs/sessions/`,
+  `docs/todo.md`, `docs/workflow/...`, and `CLAUDE.md` without
+  overwriting.
+- Apache-2.0 LICENSE (user preference).
+- `examples/example-session-log.md` — fictional session showing
+  the format in-situ.
+
+**Design calls I made without you:**
+
+- **Name `cairn`.** Chosen over alternatives like `workshop`,
+  `logbook`, `cadence`. Pairs with ep-kit's standalone-name
+  style (not "-kit" suffixed).
+- **Skills as core; commands as convenience.** The three
+  `SKILL.md` files are the substance (portable across any CLI
+  that can read markdown and follow instructions). Slash
+  commands are Claude-Code-native wrappers that auto-trigger
+  the skill behavior.
+- **Skill frontmatter uses `name: cairn-<topic>` prefixes.**
+  Reduces collision risk when installed alongside other plugins.
+- **Hard rules in the autonomous-round skill.** No pushes
+  without authorisation, no force-pushes, no Draft-proposal
+  implementation, no safety-gate bypass, 3/5 commit caps. These
+  are the ones we exercised in this session; they should be
+  defaults for anyone else using cairn.
+- **Session-log-tracked-in-git is a default.** Per your
+  earlier reversal on Glorbo's `.gitignore` — the templates
+  tell projects to track `docs/sessions/` rather than ignore it.
+- **cairn's own `docs/sessions/` directory is NOT gitignored.**
+  Dogfooding — cairn should practice what it preaches. The only
+  entry in `.gitignore` that mentions sessions was briefly there
+  and I removed it before the initial commit.
+- **Apache-2.0.** User's preferred OSS license per memory; not
+  reconsidered.
+
+**Skipped / not done this turn:**
+
+- No GitHub remote created or pushed to. The user hasn't asked
+  to publish; local commit only.
+- No CI configuration. cairn has no tests to run; a shell
+  linter (shellcheck) on `install.sh` could be added later.
+- No `prior-session-digest` dogfooded against cairn's own
+  session dir — cairn has no session logs of its own yet.
+- No integration with the Glorbo repo. cairn stands alone;
+  if Glorbo wants to adopt it as the external workflow kit, a
+  separate step would be to (a) run `cairn/install.sh` against
+  Glorbo and merge the output, (b) delete Glorbo's bespoke
+  workflow files where they'd duplicate. Deferred.
+
+**Commit:** `85d9341` in `/home/user/Documents/cairn/`.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
