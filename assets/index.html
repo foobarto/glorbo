@@ -1,919 +1,1252 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Glorbo — Agent Orchestration for the Discerning Director</title>
-<meta name="description" content="Self-hosted, filesystem-first AI agent orchestration. Everything is markdown. Everything is a file. The fleeb juice is included.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0a0a0c;
-    --bg-elevated: #111116;
-    --bg-card: #16161c;
-    --border: #2a2a35;
-    --border-glow: #3d5a3d;
-    --text: #c8c8d0;
-    --text-dim: #6a6a78;
-    --text-bright: #eeeef2;
-    --accent: #4ade80;
-    --accent-dim: #22633a;
-    --accent-bright: #86efac;
-    --amber: #fbbf24;
-    --amber-dim: #78570a;
-    --red: #f87171;
-    --blue: #60a5fa;
-    --mono: 'IBM Plex Mono', monospace;
-    --display: 'Instrument Serif', serif;
-    --body: 'Space Grotesk', sans-serif;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--body);
-    font-size: 16px;
-    line-height: 1.7;
-    overflow-x: hidden;
-  }
-
-  ::selection {
-    background: var(--accent-dim);
-    color: var(--accent-bright);
-  }
-
-  /* ---- Grain overlay ---- */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 9999;
-  }
-
-  /* ---- Layout ---- */
-  .container {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
-  section {
-    padding: 100px 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  section:last-of-type { border-bottom: none; }
-
-  /* ---- Nav ---- */
-  nav {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    padding: 16px 24px;
-    background: rgba(10, 10, 12, 0.85);
-    backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .nav-logo {
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 18px;
-    color: var(--accent);
-    text-decoration: none;
-    letter-spacing: -0.5px;
-  }
-
-  .nav-logo span { color: var(--text-dim); }
-
-  .nav-links { display: flex; gap: 32px; }
-
-  .nav-links a {
-    color: var(--text-dim);
-    text-decoration: none;
-    font-size: 14px;
-    font-family: var(--mono);
-    transition: color 0.2s;
-  }
-
-  .nav-links a:hover { color: var(--text-bright); }
-
-  /* ---- Hero ---- */
-  .hero {
-    padding: 180px 0 120px;
-    text-align: center;
-    position: relative;
-  }
-
-  .hero-tag {
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border: 1px solid var(--accent);
-    padding: 4px 14px;
-    border-radius: 2px;
-    margin-bottom: 32px;
-    letter-spacing: 0.5px;
-    animation: fadeDown 0.6s ease both;
-  }
-
-  .hero h1 {
-    font-family: var(--display);
-    font-size: clamp(52px, 8vw, 96px);
-    font-weight: 400;
-    color: var(--text-bright);
-    line-height: 1.0;
-    margin-bottom: 24px;
-    letter-spacing: -2px;
-    animation: fadeDown 0.6s ease 0.1s both;
-  }
-
-  .hero h1 em {
-    font-style: italic;
-    color: var(--accent);
-  }
-
-  .hero-sub {
-    font-size: 19px;
-    color: var(--text-dim);
-    max-width: 560px;
-    margin: 0 auto 48px;
-    line-height: 1.6;
-    animation: fadeDown 0.6s ease 0.2s both;
-  }
-
-  .hero-quote {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-style: italic;
-    color: var(--text-dim);
-    margin-top: 48px;
-    opacity: 0.6;
-    animation: fadeDown 0.6s ease 0.4s both;
-  }
-
-  .hero-cta {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    flex-wrap: wrap;
-    animation: fadeDown 0.6s ease 0.3s both;
-  }
-
-  .btn {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 600;
-    padding: 12px 28px;
-    border-radius: 3px;
-    text-decoration: none;
-    transition: all 0.2s;
-    cursor: pointer;
-    border: none;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--bg);
-  }
-
-  .btn-primary:hover {
-    background: var(--accent-bright);
-    box-shadow: 0 0 30px rgba(74, 222, 128, 0.2);
-  }
-
-  .btn-ghost {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-
-  .btn-ghost:hover {
-    border-color: var(--text-dim);
-    color: var(--text-bright);
-  }
-
-  /* ---- Section headers ---- */
-  .section-label {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 16px;
-  }
-
-  .section-quote {
-    font-family: var(--mono);
-    font-size: 13px;
-    font-style: italic;
-    color: var(--text-dim);
-    margin-bottom: 48px;
-    padding-left: 16px;
-    border-left: 2px solid var(--border);
-    opacity: 0.7;
-  }
-
-  h2 {
-    font-family: var(--display);
-    font-size: clamp(32px, 5vw, 48px);
-    font-weight: 400;
-    color: var(--text-bright);
-    line-height: 1.15;
-    margin-bottom: 16px;
-    letter-spacing: -1px;
-  }
-
-  /* ---- What section ---- */
-  .what-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 48px;
-  }
-
-  .what-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    padding: 28px;
-    border-radius: 4px;
-    transition: border-color 0.3s;
-  }
-
-  .what-card:hover { border-color: var(--border-glow); }
-
-  .what-card-icon {
-    font-size: 20px;
-    margin-bottom: 12px;
-    display: block;
-  }
-
-  .what-card h3 {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-bright);
-    margin-bottom: 8px;
-  }
-
-  .what-card p {
-    font-size: 14px;
-    color: var(--text-dim);
-    line-height: 1.6;
-  }
-
-  /* ---- Tree section ---- */
-  .tree-block {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 32px;
-    margin-top: 32px;
-    overflow-x: auto;
-  }
-
-  .tree-block pre {
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.8;
-    color: var(--text);
-  }
-
-  .tree-block .tr-dir { color: var(--accent); font-weight: 600; }
-  .tree-block .tr-file { color: var(--text); }
-  .tree-block .tr-comment { color: var(--text-dim); }
-
-  /* ---- How it works ---- */
-  .steps {
-    margin-top: 48px;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .step {
-    display: grid;
-    grid-template-columns: 48px 1fr;
-    gap: 24px;
-    padding: 32px 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .step:last-child { border-bottom: none; }
-
-  .step-num {
-    font-family: var(--mono);
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--accent-dim);
-    line-height: 1;
-    padding-top: 4px;
-  }
-
-  .step h3 {
-    font-family: var(--mono);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-bright);
-    margin-bottom: 8px;
-  }
-
-  .step p {
-    font-size: 15px;
-    color: var(--text-dim);
-  }
-
-  .step code {
-    font-family: var(--mono);
-    font-size: 13px;
-    background: var(--bg);
-    color: var(--accent);
-    padding: 2px 8px;
-    border-radius: 2px;
-    border: 1px solid var(--border);
-  }
-
-  /* ---- Install ---- */
-  .install-block {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-top: 32px;
-    overflow: hidden;
-  }
-
-  .install-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .install-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-  }
-
-  .dot-r { background: var(--red); opacity: 0.7; }
-  .dot-y { background: var(--amber); opacity: 0.7; }
-  .dot-g { background: var(--accent); opacity: 0.7; }
-
-  .install-body {
-    padding: 24px;
-  }
-
-  .install-body pre {
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 2;
-    color: var(--text);
-    white-space: pre-wrap;
-  }
-
-  .install-body .cmd-comment { color: var(--text-dim); }
-  .install-body .cmd-prompt { color: var(--accent); user-select: none; }
-  .install-body .cmd-flag { color: var(--amber); }
-  .install-body .cmd-url { color: var(--blue); }
-  .install-body .cmd-output { color: var(--text-dim); font-style: italic; }
-
-  /* ---- Tech stack ---- */
-  .stack-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 48px;
-  }
-
-  .stack-item {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    padding: 16px 20px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
-
-  .stack-item .stack-name {
-    font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--accent);
-    white-space: nowrap;
-    min-width: 100px;
-  }
-
-  .stack-item .stack-desc {
-    font-size: 14px;
-    color: var(--text-dim);
-  }
-
-  /* ---- Portability ---- */
-  .port-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-top: 48px;
-  }
-
-  .port-card {
-    padding: 28px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    text-align: center;
-  }
-
-  .port-card h3 {
-    font-family: var(--mono);
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text-bright);
-    margin-bottom: 4px;
-  }
-
-  .port-card .port-cmd {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--accent);
-    margin-bottom: 12px;
-    display: block;
-  }
-
-  .port-card p {
-    font-size: 14px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
-
-  /* ---- Footer ---- */
-  footer {
-    padding: 60px 0;
-    text-align: center;
-  }
-
-  .footer-logo {
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--accent);
-    margin-bottom: 16px;
-  }
-
-  .footer-links {
-    display: flex;
-    gap: 24px;
-    justify-content: center;
-    margin-bottom: 32px;
-  }
-
-  .footer-links a {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--text-dim);
-    text-decoration: none;
-    transition: color 0.2s;
-  }
-
-  .footer-links a:hover { color: var(--text-bright); }
-
-  .footer-quote {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-style: italic;
-    color: var(--text-dim);
-    opacity: 0.5;
-    max-width: 500px;
-    margin: 0 auto;
-  }
-
-  .footer-license {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-dim);
-    opacity: 0.4;
-    margin-top: 24px;
-  }
-
-  /* ---- Animations ---- */
-  @keyframes fadeDown {
-    from { opacity: 0; transform: translateY(-12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ---- Responsive ---- */
-  @media (max-width: 700px) {
-    .what-grid,
-    .stack-grid { grid-template-columns: 1fr; }
-
-    .port-grid { grid-template-columns: 1fr; }
-
-    .nav-links { display: none; }
-
-    section { padding: 64px 0; }
-
-    .hero { padding: 140px 0 80px; }
-
-    .step { grid-template-columns: 36px 1fr; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glorbo — Agent Orchestration for the Discerning Director</title>
+  <meta name="description" content="Self-hosted, filesystem-first AI agent orchestration. Everything is markdown. Everything is a file. Run agents inside bwrap sandboxes on your own machine.">
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #0a0d0b; min-height: 100vh; }
+    body {
+      font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+      color: #c9d9cd;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    #root { width: 100%; max-width: 1200px; margin: 0 auto; }
+    #__loading {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #0a0d0b; color: #7a8c80;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 12px;
+    }
+    @media (max-width: 900px) {
+      #root > div[data-root="true"] { padding: 16px 18px 32px !important; }
+    }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
+  <div id="root"><div id="__loading">▚ glorbo — loading…</div></div>
 
-<!-- Nav -->
-<nav>
-  <a href="#" class="nav-logo">glorbo<span> v0.0.3</span></a>
-  <div class="nav-links">
-    <a href="#features">Features</a>
-    <a href="#how">How It Works</a>
-    <a href="#install">Install</a>
-    <a href="https://github.com/foobarto/glorbo">GitHub</a>
-  </div>
-</nav>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef } = React;
 
-<!-- Hero -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-tag">open source · self-hosted · linux-first</div>
-    <h1>Your whole company<br>in a <em>folder</em></h1>
-    <p class="hero-sub">
-      AI agent orchestration that runs on one machine, stores everything as
-      markdown, spawns your CLI tools (Claude Code, Gemini, Codex) inside
-      <code style="font-family: var(--mono); color: var(--accent); background: var(--bg-card); padding: 1px 6px; border-radius: 2px; font-size: 14px;">bwrap</code>
-      sandboxes, and enforces permissions at the kernel level.
-      No cloud. No SaaS. No regrets.
-    </p>
-    <div class="hero-cta">
-      <a href="#install" class="btn btn-primary">Get Started</a>
-      <a href="https://github.com/foobarto/glorbo" class="btn btn-ghost">View Source</a>
-    </div>
-    <p class="hero-quote">
-      "Finally, a grumbo-compatible agent orchestrator. The fleeb juice is included."
-    </p>
-  </div>
-</section>
+    // ---------- shared small bits -----------------------------------------
 
-<!-- What -->
-<section id="features">
-  <div class="container">
-    <div class="section-label">Features</div>
-    <h2>Everything an agent workforce needs.<br>Nothing it doesn't.</h2>
-    <p class="section-quote">
-      You already know what it does. Your ploobis has never been cleaner.
-    </p>
+    function Kbd({ children }) {
+      return (
+        <span style={{
+          padding: "1px 6px",
+          border: "1px solid #2a3a32",
+          borderRadius: 3,
+          color: "#c9d9cd",
+          background: "#0a0d0b",
+          fontSize: 11,
+        }}>{children}</span>
+      );
+    }
 
-    <div class="what-grid">
-      <div class="what-card">
-        <span class="what-card-icon">📁</span>
-        <h3>Filesystem-First</h3>
-        <p>Agents, tasks, chat, permissions — all markdown files on disk.
-        Back up with tar. Version-control with git. Debug with cat.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">📦</span>
-        <h3>Sandboxed CLI Agents</h3>
-        <p>Every agent wake is a fresh <code>bwrap</code> sandbox around the CLI
-        of your choice. Workspace mounted writable, everything else invisible.
-        No standing container, no long-lived namespace, no privileged daemon.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">🧠</span>
-        <h3>Use the CLIs You Already Have</h3>
-        <p>Each agent picks its provider: <code>claude-code</code>,
-        <code>gemini-cli</code>, <code>codex</code>, <code>hermes</code>,
-        <code>opencode</code>, or <code>pi</code>. Each tool uses its own
-        login — Glorbo never handles API keys. Add your own via one TOML file.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">💬</span>
-        <h3>Agent Chat</h3>
-        <p>Talk to your agents. Agents talk to each other. Channels are
-        append-only markdown files. Phoenix Channels handles the real-time.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">📊</span>
-        <h3>Live Dashboard</h3>
-        <p>Phoenix LiveView provides company overview, kanban board, agent
-        stdout streaming, chat, approval queue, audit log, system health,
-        and provider registry. No JS framework. No build step.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">🔒</span>
-        <h3>Kernel-Level Permissions</h3>
-        <p>Declared in markdown, enforced by the kernel. Denied paths aren't
-        mounted inside the <code>bwrap</code> sandbox — the filesystem
-        literally can't see them. <code>network: none</code> is
-        <code>--unshare-net</code>: physical egress shutoff.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">💰</span>
-        <h3>Budget Governance</h3>
-        <p>Per-agent monthly budgets with alerts and hard stops. Approval gates
-        for sensitive tasks. Append-only audit log. No runaway API bills at 3 AM.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">🏢</span>
-        <h3>Company Isolation</h3>
-        <p>Each company is its own sandbox root. Agents in Company A can't see
-        any path that leads to Company B — there is no such path.
-        Multiple companies, one machine, full separation.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">🔄</span>
-        <h3>OTP Supervision</h3>
-        <p>Agent crashes? Only that agent restarts. Company crashes?
-        Only that company restarts. Dashboard stays up. That's just what the BEAM does.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">🧩</span>
-        <h3>Config-Driven Providers</h3>
-        <p>Every CLI tool is a TOML entry declaring invocation shape, env
-        overrides, and usage parser. Drop your own into
-        <code>~/.glorbo/providers.toml</code> and see it in the
-        <code>/providers</code> dashboard panel. Zero Elixir code to add
-        a new model.</p>
-      </div>
-      <div class="what-card">
-        <span class="what-card-icon">📨</span>
-        <h3>Reply-File Contract</h3>
-        <p>Each invocation writes its final answer to
-        <code>$GLORBO_REPLY_PATH</code>. No stdout-parsing ambiguity, no
-        lost output, no "did it work?" doubt. Missing / empty / oversize =
-        structured failure in the audit log.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- How -->
-<section id="how">
-  <div class="container">
-    <div class="section-label">How It Works</div>
-    <h2>Elixir watches files.<br>bwrap sandboxes the CLI.<br>The kernel says no.</h2>
-    <p class="section-quote">
-      The blamfs rub against the chumble. That's how messages get delivered. Don't overthink it.
-    </p>
-
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">01</div>
-        <div>
-          <h3>You are the Director</h3>
-          <p>You own the company. You hire agents by writing markdown files. You set
-          the mission, approve budgets, and intervene when needed. The CEO works for
-          you — not the other way around.</p>
+    function TuiBox({ title, children, right }) {
+      const [hover, setHover] = useState(false);
+      return (
+        <div
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            border: `1px solid ${hover ? "#3a5a48" : "#1f2a24"}`,
+            background: hover ? "#121a15" : "#0f1411",
+            transition: "border-color 150ms, background 150ms",
+          }}>
+          <div style={{
+            display: "flex", justifyContent: "space-between",
+            padding: "6px 10px",
+            borderBottom: "1px solid #1f2a24",
+            color: "#7a8c80",
+            fontSize: 11,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+          }}>
+            <span>{title}</span>
+            {right && <span>{right}</span>}
+          </div>
+          <div style={{ padding: "12px 14px" }}>{children}</div>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-num">02</div>
-        <div>
-          <h3>Agents get mail</h3>
-          <p>An event triggers an agent — a new task in their <code>inbox/</code>, a
-          heartbeat schedule, a mention in a chat channel. Elixir detects it via
-          inotify and wakes the agent.</p>
+      );
+    }
+
+    // ---------- interactive roster hero -----------------------------------
+
+    const INITIAL_AGENTS = [
+      { id: "ceo",        status: "RUN",  activity: "dispatching blog-2",     provider: "claude-code", budget: 0.52, cap: 5, model: "sonnet-4.5",  skills: ["dispatch", "review"],  inbox: 2, tools: ["read", "write", "dispatch"], lastWake: "12s ago" },
+      { id: "engineer",   status: "IDLE", activity: "—",                      provider: "codex",       budget: 1.80, cap: 5, model: "gpt-5",       skills: ["code", "test"],         inbox: 0, tools: ["read", "write", "shell"],     lastWake: "4m ago"  },
+      { id: "researcher", status: "WARN", activity: "retry 2/3 · 12s",        provider: "gemini-cli",  budget: 0.12, cap: 3, model: "gemini-2.5",  skills: ["search", "summarize"],  inbox: 1, tools: ["read", "fetch"],              lastWake: "just now"},
+      { id: "writer",     status: "RUN",  activity: "drafting post.md",       provider: "claude-code", budget: 0.34, cap: 3, model: "sonnet-4.5",  skills: ["write", "edit"],        inbox: 0, tools: ["read", "write"],              lastWake: "30s ago" },
+      { id: "ops",        status: "IDLE", activity: "—",                      provider: "openai",      budget: 0.00, cap: 2, model: "gpt-5-mini",  skills: ["deploy", "monitor"],    inbox: 0, tools: ["shell", "read"],              lastWake: "1h ago"  },
+    ];
+
+    const STATUS_COLOR = { RUN: "#8ddc90", IDLE: "#7a8c80", WARN: "#e0b97a" };
+
+    function RosterHero({ selected, onSelect }) {
+      const [agents, setAgents] = useState(INITIAL_AGENTS);
+
+      useEffect(() => {
+        const id = setInterval(() => {
+          setAgents((prev) => prev.map((a) => {
+            if (a.status === "RUN") {
+              const next = Math.min(a.cap, +(a.budget + Math.random() * 0.04).toFixed(2));
+              return { ...a, budget: next };
+            }
+            return a;
+          }));
+        }, 1200);
+        return () => clearInterval(id);
+      }, []);
+
+      useEffect(() => {
+        const id = setInterval(() => {
+          setAgents((prev) => prev.map((a) => {
+            if (a.id === "researcher" && a.status === "WARN" && Math.random() > 0.6) {
+              return { ...a, status: "RUN", activity: "summarizing 12 sources" };
+            }
+            if (a.id === "engineer" && a.status === "IDLE" && Math.random() > 0.7) {
+              return { ...a, status: "RUN", activity: "patching auth.ex" };
+            }
+            if (a.id === "engineer" && a.status === "RUN" && Math.random() > 0.85) {
+              return { ...a, status: "IDLE", activity: "—" };
+            }
+            return a;
+          }));
+        }, 3500);
+        return () => clearInterval(id);
+      }, []);
+
+      const activeCount = agents.filter((a) => a.status === "RUN").length;
+
+      return (
+        <div style={{
+          background: "#0a0d0b",
+          border: "1px solid #2a3a32",
+          fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: "#c9d9cd",
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            borderBottom: "1px solid #1f2a24",
+            padding: "8px 12px",
+            background: "#0f1411",
+          }}>
+            <span style={{ color: "#7adccf", fontSize: 11.5 }}>▚ company/acme</span>
+            <span style={{ color: "#4a5a50", marginLeft: 10, fontSize: 11.5 }}>· overview</span>
+            <span style={{ marginLeft: "auto", color: "#4a5a50", fontSize: 11.5 }}>live · v0.6.0</span>
+          </div>
+
+          <div style={{ padding: "16px 18px 18px" }}>
+            <div style={{
+              color: "#7a8c80",
+              display: "grid",
+              gridTemplateColumns: "72px 100px 1fr 110px 130px",
+              paddingBottom: 8,
+              borderBottom: "1px solid #1f2a24",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              fontSize: 10.5,
+            }}>
+              <span>status</span><span>agent</span><span>activity</span><span>provider</span><span>budget</span>
+            </div>
+            {agents.map((r) => {
+              const isSelected = selected === r.id;
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => onSelect(isSelected ? null : r.id)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "72px 100px 1fr 110px 130px",
+                    padding: "7px 8px 7px 6px",
+                    margin: "1px -6px",
+                    cursor: "pointer",
+                    background: isSelected ? "#15241b" : "transparent",
+                    borderLeft: isSelected ? "2px solid #8ddc90" : "2px solid transparent",
+                    transition: "background 120ms",
+                  }}
+                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "#0f1411"; }}
+                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span style={{ color: STATUS_COLOR[r.status] }}>● {r.status}</span>
+                  <span>{r.id}</span>
+                  <span style={{ color: "#c9d9cd" }}>{r.activity}</span>
+                  <span style={{ color: "#7adccf" }}>{r.provider}</span>
+                  <span style={{ color: "#7a8c80" }}>${r.budget.toFixed(2)} / ${r.cap}</span>
+                </div>
+              );
+            })}
+
+            <div style={{
+              borderTop: "1px solid #1f2a24",
+              marginTop: 12,
+              paddingTop: 10,
+              display: "flex",
+              justifyContent: "space-between",
+              color: "#4a5a50",
+              fontSize: 10.5,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}>
+              <span>{selected ? `→ ${selected} selected · see drawer` : "click an agent to inspect"}</span>
+              <span>{agents.length} agents · {activeCount} active</span>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-num">03</div>
-        <div>
-          <h3>Sandboxes do the work</h3>
-          <p>Glorbo spawns the configured CLI tool (<code>claude -p</code>,
-          <code>gemini</code>, or <code>codex</code>) inside a
-          <code>bwrap</code> sandbox with only the agent's workspace mounted
-          writable and network policy enforced at the kernel. Results land in
-          <code>outbox/</code> and <code>workspace/</code>. Stdout streams to
-          the dashboard.</p>
+      );
+    }
+
+    // ---------- agent drawer ---------------------------------------------
+
+    function AgentDrawer({ agentId, onClose }) {
+      const agent = INITIAL_AGENTS.find((a) => a.id === agentId);
+      const [dispatch, setDispatch] = useState("");
+      const [sent, setSent] = useState(false);
+
+      useEffect(() => { setSent(false); setDispatch(""); }, [agentId]);
+
+      if (!agent) return null;
+
+      const handleSend = () => {
+        if (!dispatch.trim()) return;
+        setSent(true);
+        setTimeout(() => setSent(false), 2400);
+        setDispatch("");
+      };
+
+      return (
+        <div style={{
+          position: "fixed",
+          top: 0, right: 0, bottom: 0,
+          width: 420,
+          maxWidth: "100vw",
+          background: "#0a0d0b",
+          borderLeft: "1px solid #2a3a32",
+          boxShadow: "-18px 0 44px rgba(0,0,0,0.55)",
+          zIndex: 50,
+          color: "#c9d9cd",
+          fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
+          fontSize: 12,
+          overflowY: "auto",
+          animation: "drawer-in 220ms ease-out",
+        }}>
+          <style>{`@keyframes drawer-in { from { transform: translateX(12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+
+          <div style={{
+            display: "flex", alignItems: "center",
+            padding: "12px 16px",
+            borderBottom: "1px solid #1f2a24",
+            background: "#0f1411",
+          }}>
+            <span style={{ color: STATUS_COLOR[agent.status] }}>● {agent.status}</span>
+            <span style={{ marginLeft: 10, color: "#c9d9cd", fontSize: 14 }}>agents/{agent.id}</span>
+            <button
+              onClick={onClose}
+              style={{
+                marginLeft: "auto",
+                background: "transparent",
+                border: "1px solid #2a3a32",
+                color: "#7a8c80",
+                fontFamily: "inherit",
+                fontSize: 11,
+                padding: "3px 9px",
+                cursor: "pointer",
+              }}>esc · close</button>
+          </div>
+
+          <div style={{ padding: "18px 18px 10px", color: "#7a8c80", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            ── identity
+          </div>
+          <div style={{ padding: "0 18px 18px", display: "grid", gridTemplateColumns: "90px 1fr", gap: "6px 14px", fontSize: 12 }}>
+            <span style={{ color: "#7a8c80" }}>provider</span><span style={{ color: "#7adccf" }}>{agent.provider}</span>
+            <span style={{ color: "#7a8c80" }}>model</span><span>{agent.model}</span>
+            <span style={{ color: "#7a8c80" }}>inbox</span><span>{agent.inbox} messages</span>
+            <span style={{ color: "#7a8c80" }}>last wake</span><span style={{ color: "#c9d9cd" }}>{agent.lastWake}</span>
+            <span style={{ color: "#7a8c80" }}>tools</span><span>{agent.tools.join(" · ")}</span>
+            <span style={{ color: "#7a8c80" }}>skills</span><span>{agent.skills.join(" · ")}</span>
+          </div>
+
+          <div style={{ padding: "0 18px 10px", color: "#7a8c80", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            ── budget
+          </div>
+          <div style={{ padding: "0 18px 18px" }}>
+            <div style={{ height: 6, background: "#1f2a24", position: "relative" }}>
+              <div style={{
+                position: "absolute", top: 0, left: 0, bottom: 0,
+                width: `${Math.min(100, (agent.budget / agent.cap) * 100)}%`,
+                background: agent.status === "WARN" ? "#e0b97a" : "#8ddc90",
+                transition: "width 400ms",
+              }} />
+            </div>
+            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", color: "#7a8c80", fontSize: 11 }}>
+              <span>${agent.budget.toFixed(2)} spent this month</span>
+              <span>cap ${agent.cap.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div style={{ padding: "0 18px 10px", color: "#7a8c80", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            ── dispatch
+          </div>
+          <div style={{ padding: "0 18px 22px" }}>
+            <textarea
+              value={dispatch}
+              onChange={(e) => setDispatch(e.target.value)}
+              placeholder={`message @${agent.id}…`}
+              rows={3}
+              style={{
+                width: "100%",
+                background: "#0f1411",
+                border: "1px solid #2a3a32",
+                color: "#c9d9cd",
+                fontFamily: "inherit",
+                fontSize: 12,
+                padding: "10px 12px",
+                resize: "none",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => e.target.style.borderColor = "#3a5a48"}
+              onBlur={(e) => e.target.style.borderColor = "#2a3a32"}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+              <button
+                onClick={handleSend}
+                disabled={!dispatch.trim()}
+                style={{
+                  background: dispatch.trim() ? "#8ddc90" : "#1f2a24",
+                  color: dispatch.trim() ? "#0a0d0b" : "#4a5a50",
+                  border: "none",
+                  padding: "7px 14px",
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: dispatch.trim() ? "pointer" : "not-allowed",
+                }}>
+                ▸ dispatch
+              </button>
+              <span style={{ color: "#4a5a50", fontSize: 11 }}>⇧⏎ to send</span>
+              {sent && <span style={{ color: "#8ddc90", fontSize: 11, marginLeft: "auto" }}>✓ queued</span>}
+            </div>
+          </div>
+
+          <div style={{ padding: "0 18px 10px", color: "#7a8c80", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            ── recent audit
+          </div>
+          <div style={{ padding: "0 18px 28px", fontSize: 11, color: "#7a8c80", lineHeight: 1.85 }}>
+            {[
+              { t: "14:22:08", c: "#8ddc90", a: "wake",   d: "inbox/task-001.md" },
+              { t: "14:22:11", c: "#7adccf", a: "tool",   d: "read(main.ex)" },
+              { t: "14:22:14", c: "#7adccf", a: "tool",   d: "write(reply.md)" },
+              { t: "14:22:20", c: "#8ddc90", a: "exit",   d: "ok · 12.4s · $0.04" },
+            ].map((e, i) => (
+              <div key={i}>
+                <span style={{ color: "#4a5a50" }}>{e.t}</span>
+                <span style={{ color: e.c, marginLeft: 10 }}>{e.a.padEnd(6)}</span>
+                <span style={{ color: "#c9d9cd", marginLeft: 4 }}>{e.d}</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-num">04</div>
-        <div>
-          <h3>Glorbo routes the output</h3>
-          <p>Elixir picks up outbox files, checks permissions, and delivers
-          messages to recipients' inboxes or appends them to channel files. Tasks
-          update. The index refreshes. The cycle continues.</p>
+      );
+    }
+
+    // ---------- copy-to-clipboard helper ---------------------------------
+
+    function CopyBlock({ lines }) {
+      const [copied, setCopied] = useState(false);
+      const text = lines.join("\n");
+
+      const handleCopy = (e) => {
+        e.stopPropagation();
+        try { navigator.clipboard.writeText(text); } catch (_) {}
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1400);
+      };
+
+      return (
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={handleCopy}
+            style={{
+              position: "absolute", top: 8, right: 8,
+              background: copied ? "#8ddc90" : "#1f2a24",
+              color: copied ? "#0a0d0b" : "#c9d9cd",
+              border: "none",
+              padding: "3px 9px",
+              fontSize: 10.5,
+              fontFamily: "inherit",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+            }}>
+            {copied ? "✓ copied" : "copy"}
+          </button>
+          <div>
+            {lines.map((l, i) => (
+              <div key={i} style={{ wordBreak: "break-all" }}>
+                <span style={{ color: "#8ddc90" }}>$</span> {l.replace(/^\$\s*/, "")}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-num">05</div>
-        <div>
-          <h3>Everything is a file</h3>
-          <p>Chat logs, task boards, audit trails, agent configs — all markdown
-          and JSONL on disk. SQLite is just a rebuildable index. Delete it anytime.
-          Run <code>glorbo reindex</code>. Done.</p>
+      );
+    }
+
+    // ---------- install section with tabs --------------------------------
+
+    const INSTALL_TABS = [
+      {
+        id: "brew",
+        label: "homebrew",
+        subtitle: "linux + macOS",
+        lines: ["brew tap foobarto/tap", "brew install glorbo", "glorbo init"],
+        after: <>→ dashboard at <span style={{ color: "#7adccf" }}>http://127.0.0.1:4000</span> · linux x86_64 / aarch64 · macOS intel + apple silicon (Burrito-bundled BEAM, FSEvents watcher; agents run unsandboxed since bwrap is linux-only)</>,
+      },
+      {
+        id: "curl",
+        label: "curl",
+        subtitle: "linux x86_64 · aarch64",
+        lines: [
+          "curl -L github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m) -o ~/.local/bin/glorbo",
+          "chmod +x ~/.local/bin/glorbo",
+          "glorbo init",
+        ],
+        after: "prereqs: bubblewrap · passt (for network: proxy) · inotify-tools · one provider CLI on $PATH or a native credentials file",
+      },
+      {
+        id: "wsl",
+        label: "windows · wsl2",
+        subtitle: "wsl2 ubuntu / debian",
+        lines: [
+          "wsl --install              # in PowerShell, once",
+          "curl -L github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-x86_64 -o ~/.local/bin/glorbo",
+          "chmod +x ~/.local/bin/glorbo && glorbo init",
+        ],
+        after: <><span style={{ color: "#e0b97a" }}>note:</span> no native windows port planned — bwrap, inotify, and unprivileged user namespaces are linux-only</>,
+      },
+      {
+        id: "source",
+        label: "from source",
+        subtitle: "elixir 1.18.4 · otp-28",
+        lines: [
+          "git clone github.com/foobarto/glorbo && cd glorbo",
+          "mix setup            # deps + db + esbuild",
+          "mix phx.server       # dashboard on :4000",
+        ],
+        after: "mix precommit runs format + compile-warn + credo --strict + tests",
+      },
+    ];
+
+    function InstallTabs() {
+      const [active, setActive] = useState("brew");
+      const tab = INSTALL_TABS.find((t) => t.id === active);
+
+      return (
+        <div style={{ border: "1px solid #2a3a32", background: "#0f1411" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #1f2a24", flexWrap: "wrap" }}>
+            {INSTALL_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setActive(t.id)}
+                style={{
+                  flex: "1 0 140px",
+                  background: active === t.id ? "#0a0d0b" : "transparent",
+                  color: active === t.id ? "#c9d9cd" : "#7a8c80",
+                  border: "none",
+                  borderRight: "1px solid #1f2a24",
+                  borderBottom: active === t.id ? "2px solid #8ddc90" : "2px solid transparent",
+                  padding: "12px 16px",
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                  letterSpacing: "0.04em",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}>
+                <div>{t.label}</div>
+                <div style={{ fontSize: 10, color: "#4a5a50", marginTop: 2, textTransform: "lowercase" }}>{t.subtitle}</div>
+              </button>
+            ))}
+          </div>
+
+          <div style={{ padding: "22px 24px", fontSize: 13, color: "#c9d9cd" }}>
+            <CopyBlock lines={tab.lines} />
+            <div style={{ color: "#7a8c80", marginTop: 14, fontSize: 11.5, lineHeight: 1.6 }}>{tab.after}</div>
+          </div>
         </div>
-      </div>
-    </div>
-  </div>
-</section>
+      );
+    }
 
-<!-- Structure -->
-<section>
-  <div class="container">
-    <div class="section-label">Anatomy</div>
-    <h2>It's just a directory</h2>
-    <p class="section-quote">
-      A schlami organises the blamfs into nested hizzard compartments. This is standard.
-    </p>
+    // ---------- how-it-works stepper -------------------------------------
 
-    <div class="tree-block">
-      <pre><span class="tr-dir">~/.glorbo/</span>
-├── <span class="tr-file">glorbo</span>                    <span class="tr-comment"># Single binary. That's the app.</span>
-├── <span class="tr-file">glorbo.db</span>                 <span class="tr-comment"># SQLite index. Rebuildable. Disposable.</span>
-│
-└── <span class="tr-dir">companies/</span>
-    └── <span class="tr-dir">acme/</span>
-        ├── <span class="tr-file">company.md</span>        <span class="tr-comment"># Mission, budget, settings</span>
-        ├── <span class="tr-dir">agents/</span>
-        │   ├── <span class="tr-dir">ceo/</span>
-        │   │   ├── <span class="tr-file">agent.md</span>  <span class="tr-comment"># Identity, permissions, model config</span>
-        │   │   ├── <span class="tr-dir">inbox/</span>    <span class="tr-comment"># Tasks and messages arrive here</span>
-        │   │   ├── <span class="tr-dir">outbox/</span>   <span class="tr-comment"># Agent writes here, Glorbo routes</span>
-        │   │   └── <span class="tr-dir">workspace/</span><span class="tr-comment"># Mounted into the bwrap sandbox</span>
-        │   └── <span class="tr-dir">engineer/</span>
-        ├── <span class="tr-dir">channels/</span>
-        │   ├── <span class="tr-file">general.md</span>    <span class="tr-comment"># Append-only chat logs</span>
-        │   └── <span class="tr-file">engineering.md</span>
-        ├── <span class="tr-dir">projects/</span>
-        │   └── <span class="tr-dir">website-redesign/</span>
-        │       ├── <span class="tr-file">project.md</span>
-        │       └── <span class="tr-dir">tasks/</span>
-        └── <span class="tr-dir">audit/</span>
-            └── <span class="tr-file">2026-04.jsonl</span> <span class="tr-comment"># Append-only. Never modified.</span></pre>
-    </div>
-  </div>
-</section>
+    const WAKE_STEPS = [
+      { id: 1, title: "director writes", color: "#c69ae0", body: "→ agents/ceo/inbox/task-001.md", detail: "A file appears in the agent's inbox. That's the trigger. No API, no queue broker — just inotify (or FSEvents on macOS) watching the directory." },
+      { id: 2, title: "router checks",   color: "#8ddc90", body: "Company.Router composes prompt · permissions", detail: "Permissions are read from the agent's AGENT.md. The prompt is assembled from AGENT.md + SOUL.md + heartbeat / inbox context." },
+      { id: 3, title: "bwrap sandbox",   color: "#e0b97a", body: "--die-with-parent --unshare-net --cap-drop ALL", detail: "Kernel-level isolation. Denied paths aren't mounted. Credentials bound read-only. No net, no caps, no escape." },
+      { id: 4, title: "CLI or harness",  color: "#7adccf", body: "claude -p · gemini -p · codex exec - · glorbo harness",  detail: "The agent's chosen CLI (or, for native providers, the built-in glorbo harness) reads the prompt on stdin and writes the answer to $GLORBO_REPLY_PATH." },
+      { id: 5, title: "elixir routes",   color: "#7adccf", body: "audit jsonl · outbox → inbox/channels", detail: "Reply is parsed for tool calls, costs, and routed messages. Audit log appended. SQLite index updated. Dashboard repaints." },
+    ];
 
-<!-- Install -->
-<section id="install">
-  <div class="container">
-    <div class="section-label">Get Started</div>
-    <h2>Two commands. One minute.</h2>
-    <p class="section-quote">
-      Pre-schleemed. Zero hizzard leakage. One command.
-    </p>
+    function WakeStepper() {
+      const [active, setActive] = useState(1);
+      const [auto, setAuto] = useState(true);
 
-    <div class="install-block">
-      <div class="install-header">
-        <div class="install-dot dot-r"></div>
-        <div class="install-dot dot-y"></div>
-        <div class="install-dot dot-g"></div>
-      </div>
-      <div class="install-body">
-<pre><span class="cmd-comment"># Download the binary</span>
-<span class="cmd-prompt">$ </span>curl <span class="cmd-flag">-L</span> <span class="cmd-url">https://github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m)</span> \
-    <span class="cmd-flag">-o</span> ~/.local/bin/glorbo
-<span class="cmd-prompt">$ </span>chmod +x ~/.local/bin/glorbo
+      useEffect(() => {
+        if (!auto) return;
+        const id = setInterval(() => {
+          setActive((a) => (a % WAKE_STEPS.length) + 1);
+        }, 2600);
+        return () => clearInterval(id);
+      }, [auto]);
 
-<span class="cmd-comment"># Set up everything</span>
-<span class="cmd-prompt">$ </span>glorbo init
-<span class="cmd-output">  ✓ Created ~/.glorbo/
-  ✓ Verified bwrap + unprivileged userns
-  ✓ Scaffolded example company (acme) with CEO agent
-  ✓ Provider registry loaded — 3 routable, 3 untracked
-  ✓ Ready. Run `glorbo doctor` to verify.</span>
+      const step = WAKE_STEPS.find((s) => s.id === active);
 
-<span class="cmd-comment"># Create a company and hire some agents</span>
-<span class="cmd-prompt">$ </span>glorbo new company acme
-<span class="cmd-prompt">$ </span>glorbo new agent acme/ceo <span class="cmd-flag">--provider</span> claude-code
-<span class="cmd-prompt">$ </span>glorbo up
-<span class="cmd-output">  ● glorbo is running — dashboard at http://localhost:4000</span></pre>
-      </div>
-    </div>
+      return (
+        <div style={{
+          background: "#0f1411",
+          border: "1px solid #1f2a24",
+          padding: "22px 26px",
+        }}>
+          <div style={{ display: "flex", gap: 2, marginBottom: 22, flexWrap: "wrap" }}>
+            {WAKE_STEPS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { setActive(s.id); setAuto(false); }}
+                style={{
+                  flex: "1 0 140px",
+                  background: active === s.id ? "#15241b" : "transparent",
+                  border: "1px solid",
+                  borderColor: active === s.id ? s.color : "#1f2a24",
+                  color: active === s.id ? s.color : "#7a8c80",
+                  padding: "10px 12px",
+                  fontFamily: "inherit",
+                  fontSize: 11.5,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "border-color 150ms, background 150ms",
+                }}>
+                <div style={{ fontSize: 10, color: "#4a5a50", marginBottom: 4 }}>step {s.id}</div>
+                <div>{s.title}</div>
+              </button>
+            ))}
+          </div>
 
-    <p style="margin-top: 24px; color: var(--text-dim); font-size: 14px; font-family: var(--mono);">
-      Prerequisites: Linux (x86_64 or aarch64) with <code>bwrap</code> and
-      unprivileged user namespaces. A CLI tool on PATH for each agent provider
-      you use (<code>claude</code>, <code>gemini</code>, or <code>codex</code>).
-      No Python. No Erlang. No Node.js.
-    </p>
-  </div>
-</section>
+          <div style={{ color: step.color, fontSize: 13, marginBottom: 8, fontFamily: "inherit", wordBreak: "break-word" }}>
+            ◆ {step.body}
+          </div>
+          <div style={{ color: "#c9d9cd", fontSize: 13, lineHeight: 1.6, maxWidth: 680 }}>
+            {step.detail}
+          </div>
 
-<!-- Stack -->
-<section>
-  <div class="container">
-    <div class="section-label">Stack</div>
-    <h2>What's inside the Glorbo</h2>
-    <p class="section-quote">
-      The grumbo is made of Elixir. The hizzards are CLI tools, hermetically schleemed inside bwrap. You do NOT mix them on the host.
-    </p>
+          <div style={{ marginTop: 18, display: "flex", gap: 14, color: "#4a5a50", fontSize: 11, alignItems: "center" }}>
+            <button
+              onClick={() => setAuto(!auto)}
+              style={{
+                background: "transparent",
+                border: "1px solid #2a3a32",
+                color: auto ? "#8ddc90" : "#7a8c80",
+                padding: "3px 9px",
+                fontFamily: "inherit",
+                fontSize: 11,
+                cursor: "pointer",
+              }}>{auto ? "▶ auto" : "⏸ paused"}</button>
+            <span>step {active} / {WAKE_STEPS.length}</span>
+          </div>
+        </div>
+      );
+    }
 
-    <div class="stack-grid">
-      <div class="stack-item">
-        <span class="stack-name">Elixir/OTP</span>
-        <span class="stack-desc">Orchestration, supervision, scheduling</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">LiveView</span>
-        <span class="stack-desc">Real-time dashboard, no JS build step</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Channels</span>
-        <span class="stack-desc">WebSocket agent chat and streaming</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">bwrap</span>
-        <span class="stack-desc">Per-invocation sandbox: mount + netns isolation</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Claude Code</span>
-        <span class="stack-desc">Agent runtime (provider: claude-code)</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Gemini CLI</span>
-        <span class="stack-desc">Agent runtime (provider: gemini-cli)</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Codex</span>
-        <span class="stack-desc">Agent runtime (provider: codex)</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">SQLite</span>
-        <span class="stack-desc">Disposable index, rebuildable from files</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Markdown</span>
-        <span class="stack-desc">Source of truth for everything</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">TOML Provider Registry</span>
-        <span class="stack-desc">GEP-8 — each CLI tool is a drop-in config file; add your own model in one file</span>
-      </div>
-      <div class="stack-item">
-        <span class="stack-name">Burrito</span>
-        <span class="stack-desc">Bundles the BEAM VM into the single-binary release — no Erlang install needed</span>
-      </div>
-    </div>
-  </div>
-</section>
+    // ---------- feature grid (director's surface) ------------------------
 
-<!-- Portable -->
-<section>
-  <div class="container">
-    <div class="section-label">Portability</div>
-    <h2>Move it like you own it</h2>
-    <p class="section-quote">
-      You take the whole Glorbo. You put it on another machine.
-      It's still a Glorbo. What part of this is complicated?
-    </p>
+    const FEATURES = [
+      { t: "inbox",      s: "mine / recent / all / archive", d: "Approvals + audit activity unified. Approve or deny on the prompt diff.", more: "Type g i from anywhere. Keyboard-first. Archive collapses resolved threads." },
+      { t: "kanban",     s: "goal-scoped",                   d: "Drag a card to write task frontmatter. Recurring tasks show ↻.",         more: "Columns are writable hooks. Moving a card triggers the downstream agent's wake." },
+      { t: "chat",       s: "channels + DMs",                d: "Append-only markdown under the hood. Live-tailed in the dashboard.",      more: "Every channel is channels/<name>.md. @mentions route; tail -f works." },
+      { t: "audit",      s: "append-only jsonl",             d: "Actor-verb-object sentences. CSV export. Deep-link any task.",            more: "One file per month. Grep-friendly. Never rewritten. Perfect for compliance." },
+      { t: "goals",      s: "per-goal rollup",               d: "Progress bars over task status. Scoped Kanban one click away.",           more: "Goal = directory with tasks/. Progress derives from task frontmatter." },
+      { t: "skills",     s: "builtin + custom",              d: "Drop markdown into skills/. Used-by counts on every card.",               more: "A skill is a markdown prompt snippet. Agents reference them by name." },
+      { t: "providers",  s: "toml-driven registry · gep-32", d: "CLI adapters AND native OpenAI-compatible endpoints.",                   more: "claude · gemini · codex · opencode · hermes · pi · openai · openrouter · auto-detected ollama / lm studio / vllm / localai / llama.cpp." },
+      { t: "costs",      s: "12-month ledger",               d: "Per-agent and per-company monthly spend. Hard stops at 100%.",            more: "Caps enforced at dispatch time. Breach pauses the agent, not the company." },
+      { t: "brain dump", s: "g b",                           d: "Throwaway thoughts into a daily log. Promote any entry to a task.",       more: "One file per day under journal/. No structure required." },
+    ];
 
-    <div class="port-grid">
-      <div class="port-card">
-        <h3>Deploy</h3>
-        <span class="port-cmd">curl + glorbo init</span>
-        <p>Download one binary. Run one command. bwrap is usually already there; the CLI tool of your choice handles its own install. No system service, no root.</p>
-      </div>
-      <div class="port-card">
-        <h3>Upgrade</h3>
-        <span class="port-cmd">replace binary + glorbo migrate</span>
-        <p>Your company data is never touched. The binary is stateless. Replace it and keep going.</p>
-      </div>
-      <div class="port-card">
-        <h3>Move</h3>
-        <span class="port-cmd">glorbo backup → glorbo restore</span>
-        <p>Archive the directory. <code>scp</code> to a new machine. <code>glorbo restore</code> + <code>glorbo doctor --fix</code> and you're live.</p>
-      </div>
-    </div>
-  </div>
-</section>
+    function FeatureGrid() {
+      const [open, setOpen] = useState(null);
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+          {FEATURES.map((f, i) => {
+            const isOpen = open === f.t;
+            return (
+              <div
+                key={f.t}
+                onClick={() => setOpen(isOpen ? null : f.t)}
+                style={{
+                  border: `1px solid ${isOpen ? "#3a5a48" : "#1f2a24"}`,
+                  padding: "12px 14px",
+                  background: isOpen ? "#121a15" : (i % 2 === 0 ? "#0f1411" : "#0a0d0b"),
+                  cursor: "pointer",
+                  transition: "border-color 150ms, background 150ms",
+                }}>
+                <div style={{ display: "flex", alignItems: "baseline" }}>
+                  <div style={{ color: "#8ddc90", fontSize: 12.5, marginBottom: 3 }}>/{f.t}</div>
+                  <div style={{ marginLeft: "auto", color: "#4a5a50", fontSize: 10 }}>{isOpen ? "−" : "+"}</div>
+                </div>
+                <div style={{ color: "#4a5a50", fontSize: 10.5, marginBottom: 8, letterSpacing: "0.04em" }}>{f.s}</div>
+                <div style={{ color: "#c9d9cd", fontSize: 12, lineHeight: 1.5 }}>{f.d}</div>
+                {isOpen && (
+                  <div style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: "1px solid #1f2a24",
+                    color: "#7a8c80",
+                    fontSize: 11.5,
+                    lineHeight: 1.6,
+                  }}>
+                    {f.more}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
 
-<!-- Footer -->
-<footer>
-  <div class="container">
-    <div class="footer-logo">glorbo</div>
-    <div class="footer-links">
-      <a href="https://github.com/foobarto/glorbo">GitHub</a>
-      <a href="https://github.com/foobarto/glorbo/blob/main/DESIGN.md">Design Doc</a>
-      <a href="https://github.com/foobarto/glorbo/issues">Issues</a>
-      <a href="https://github.com/foobarto/glorbo/blob/main/LICENSE">Apache 2.0 License</a>
-    </div>
-    <p class="footer-quote">
-      "Look, we're not trying to build a whole Plumbus here. It's a Glorbo. Stay focused."
-    </p>
-    <p class="footer-license">
-      © 2026 foobarto — Open source under Apache 2.0
-    </p>
-  </div>
-</footer>
+    // ---------- nav (smooth-scroll, active section) ----------------------
 
+    function Nav({ rootRef }) {
+      const [active, setActive] = useState("top");
+
+      useEffect(() => {
+        const root = rootRef?.current;
+        if (!root) return;
+        const ids = ["features", "how", "screens", "install"];
+        const onScroll = () => {
+          const y = window.scrollY || document.documentElement.scrollTop || 0;
+          let cur = "top";
+          ids.forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const top = el.getBoundingClientRect().top + y - 60;
+            if (y >= top) cur = id;
+          });
+          setActive(cur);
+        };
+        window.addEventListener("scroll", onScroll, { passive: true });
+        onScroll();
+        return () => window.removeEventListener("scroll", onScroll);
+      }, [rootRef]);
+
+      const go = (id) => (e) => {
+        e.preventDefault();
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+
+      const link = (id, label) => (
+        <a
+          href={`#${id}`}
+          onClick={go(id)}
+          style={{
+            color: active === id ? "#c9d9cd" : "#7a8c80",
+            textDecoration: "none",
+            borderBottom: active === id ? "1px solid #8ddc90" : "1px solid transparent",
+            paddingBottom: 2,
+            transition: "color 150ms",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = "#c9d9cd"}
+          onMouseLeave={(e) => e.currentTarget.style.color = active === id ? "#c9d9cd" : "#7a8c80"}
+        >{label}</a>
+      );
+
+      return (
+        <div style={{
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14,
+          fontSize: 11.5,
+          paddingBottom: 22,
+          borderBottom: "1px solid #1f2a24",
+          marginBottom: 32,
+        }}>
+          <span style={{ color: "#7adccf" }}>▚ glorbo</span>
+          <span style={{ color: "#4a5a50" }}>·</span>
+          <span style={{ color: "#7a8c80" }}>v0.6.0</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
+            {link("features", "features")}
+            {link("how", "how it works")}
+            {link("screens", "screens")}
+            {link("install", "install")}
+            <a href="https://github.com/foobarto/glorbo/blob/main/docs/DESIGN.md" style={{ color: "#7a8c80", textDecoration: "none" }}>docs</a>
+            <a
+              href="https://github.com/foobarto/glorbo"
+              style={{
+                background: "transparent",
+                border: "1px solid #2a3a32",
+                color: "#c9d9cd",
+                padding: "5px 10px",
+                fontFamily: "inherit",
+                fontSize: 11.5,
+                textDecoration: "none",
+                display: "inline-flex", alignItems: "center", gap: 6,
+              }}>
+              <span>★</span>
+              github
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    // ---------- screens showcase -----------------------------------------
+
+    const SCREENS = [
+      { id: "companies", label: "/companies",                     caption: "Companies index — one folder per company on disk",          src: "screenshots/overview.png" },
+      { id: "company",   label: "/companies/<co>",                caption: "Company — rollups · roster · org chart",                    src: "screenshots/company.png" },
+      { id: "kanban",    label: "/companies/<co>/kanban",         caption: "Goal-scoped board — columns are writable hooks",            src: "screenshots/kanban.png" },
+      { id: "agent",     label: "/companies/<co>/agents/<slug>",  caption: "Agent — identity · skills · audit · live stdout",           src: "screenshots/agent.png" },
+      { id: "inbox",     label: "/companies/<co>/inbox",          caption: "Inbox — unified approvals · keyboard-first",                src: "screenshots/inbox.png" },
+      { id: "approvals", label: "approvals",                      caption: "Approvals queue — diff, approve, deny",                     src: "screenshots/approvals.png" },
+      { id: "audit",     label: "audit",                          caption: "Append-only jsonl — actor · verb · object",                 src: "screenshots/audit.png" },
+      { id: "goals",     label: "goals",                          caption: "Goals — progress bars over task status",                    src: "screenshots/goals.png" },
+      { id: "skills",    label: "skills",                         caption: "Skills — reusable markdown prompt snippets",                src: "screenshots/skills.png" },
+      { id: "providers", label: "/providers",                     caption: "Providers — CLI + native, auto-detected locals (GEP-32)",   src: "screenshots/providers.png" },
+    ];
+
+    function ScreensShowcase() {
+      const [active, setActive] = useState("companies");
+      const [lightbox, setLightbox] = useState(false);
+      const cur = SCREENS.find((s) => s.id === active);
+      const idx = SCREENS.findIndex((s) => s.id === active);
+
+      useEffect(() => {
+        if (!lightbox) return;
+        const onKey = (e) => {
+          if (e.key === "Escape") setLightbox(false);
+          if (e.key === "ArrowRight") setActive(SCREENS[(idx + 1) % SCREENS.length].id);
+          if (e.key === "ArrowLeft") setActive(SCREENS[(idx - 1 + SCREENS.length) % SCREENS.length].id);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [lightbox, idx]);
+
+      return (
+        <div style={{ border: "1px solid #1f2a24", background: "#0f1411" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #1f2a24", flexWrap: "wrap" }}>
+            {SCREENS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActive(s.id)}
+                style={{
+                  background: active === s.id ? "#0a0d0b" : "transparent",
+                  color: active === s.id ? "#8ddc90" : "#7a8c80",
+                  border: "none",
+                  borderRight: "1px solid #1f2a24",
+                  borderBottom: active === s.id ? "2px solid #8ddc90" : "2px solid transparent",
+                  padding: "10px 16px",
+                  fontFamily: "inherit",
+                  fontSize: 11.5,
+                  cursor: "pointer",
+                }}>{s.label}</button>
+            ))}
+          </div>
+          <div style={{ padding: "18px 18px 14px" }}>
+            <div
+              onClick={() => setLightbox(true)}
+              style={{
+                border: "1px solid #1f2a24",
+                background: "#0a0d0b",
+                overflow: "hidden",
+                lineHeight: 0,
+                cursor: "zoom-in",
+                position: "relative",
+              }}>
+              <img src={cur.src} alt={cur.label} style={{ width: "100%", display: "block" }} />
+              <div style={{
+                position: "absolute", top: 10, right: 10,
+                background: "rgba(10,13,11,0.85)", color: "#c9d9cd",
+                padding: "3px 9px", fontSize: 10.5,
+                border: "1px solid #2a3a32",
+                textTransform: "uppercase", letterSpacing: "0.06em",
+              }}>⤢ click to zoom</div>
+            </div>
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              marginTop: 10, gap: 12, flexWrap: "wrap",
+              color: "#7a8c80", fontSize: 11.5,
+              textTransform: "uppercase", letterSpacing: "0.06em",
+            }}>
+              <span>{cur.caption}</span>
+              <span style={{ color: "#4a5a50" }}>fig. {idx + 1} of {SCREENS.length}</span>
+            </div>
+          </div>
+
+          {lightbox && (
+            <div
+              onClick={() => setLightbox(false)}
+              style={{
+                position: "fixed", inset: 0,
+                background: "rgba(5,7,6,0.92)",
+                zIndex: 100,
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                padding: 40,
+                animation: "fade-in 160ms ease-out",
+              }}>
+              <style>{`@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }`}</style>
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                width: "min(1200px, 92vw)",
+                color: "#7a8c80", fontSize: 11.5,
+                marginBottom: 12,
+                textTransform: "uppercase", letterSpacing: "0.08em",
+                gap: 16, flexWrap: "wrap",
+              }}>
+                <span style={{ color: "#8ddc90" }}>{cur.label} · {cur.caption}</span>
+                <span>← → to navigate · esc to close</span>
+              </div>
+              <img
+                src={cur.src}
+                alt={cur.label}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  maxWidth: "min(1200px, 92vw)",
+                  maxHeight: "80vh",
+                  border: "1px solid #2a3a32",
+                  display: "block",
+                }}
+              />
+              <div style={{ display: "flex", gap: 6, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
+                {SCREENS.map((s, i) => (
+                  <button
+                    key={s.id}
+                    onClick={(e) => { e.stopPropagation(); setActive(s.id); }}
+                    style={{
+                      width: 10, height: 10,
+                      background: i === idx ? "#8ddc90" : "#2a3a32",
+                      border: "none", cursor: "pointer",
+                    }} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ---------- top-level landing component ------------------------------
+
+    function LandingTerminal() {
+      const [selectedAgent, setSelectedAgent] = useState(null);
+      const [heroCopied, setHeroCopied] = useState(false);
+      const rootRef = useRef(null);
+
+      const copyHeroInstall = () => {
+        try { navigator.clipboard.writeText("curl -L github.com/foobarto/glorbo/releases/latest/download/glorbo-linux-$(uname -m) -o ~/.local/bin/glorbo"); } catch {}
+        setHeroCopied(true);
+        setTimeout(() => setHeroCopied(false), 1400);
+      };
+
+      useEffect(() => {
+        const onKey = (e) => { if (e.key === "Escape") setSelectedAgent(null); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, []);
+
+      return (
+        <div
+          ref={rootRef}
+          data-root="true"
+          style={{
+            background: "#0a0d0b",
+            color: "#c9d9cd",
+            fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
+            fontSize: 12,
+            lineHeight: 1.55,
+            padding: "28px 40px 48px",
+            position: "relative",
+          }}>
+
+          <Nav rootRef={rootRef} />
+
+          {/* hero */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 40, alignItems: "start", marginBottom: 56 }}>
+            <div>
+              <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                ── open source · self-hosted · linux-first
+              </div>
+              <div style={{ color: "#e0b97a", fontSize: 13, marginBottom: 22, fontStyle: "italic" }}>
+                agent orchestration for the discerning director.
+              </div>
+              <h1 style={{
+                fontSize: 44,
+                lineHeight: 1.1,
+                margin: 0,
+                marginBottom: 22,
+                fontWeight: 500,
+                letterSpacing: "-0.01em",
+              }}>
+                Your whole company<br/>
+                in a <span style={{ color: "#8ddc90", fontStyle: "italic" }}>folder.</span>
+              </h1>
+              <p style={{ color: "#7a8c80", fontSize: 14, lineHeight: 1.6, maxWidth: 470, margin: 0, marginBottom: 14 }}>
+                AI agent orchestration that runs on one machine, stores everything
+                as markdown, spawns your CLI tools (Claude Code, Gemini, Codex) or
+                native OpenAI-compatible endpoints inside <span style={{ color: "#c9d9cd" }}>bwrap</span>
+                {" "}sandboxes, and enforces permissions at the kernel level.
+              </p>
+              <p style={{ color: "#7a8c80", fontSize: 14, lineHeight: 1.6, maxWidth: 470, margin: 0, marginBottom: 28 }}>
+                No cloud. No SaaS. No regrets.
+              </p>
+              <div style={{ display: "flex", gap: 10, marginBottom: 26, flexWrap: "wrap" }}>
+                <a
+                  href="https://github.com/foobarto/glorbo"
+                  style={{
+                    padding: "9px 16px",
+                    background: "#8ddc90",
+                    color: "#0a0d0b",
+                    border: "1px solid #8ddc90",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    fontWeight: 500,
+                    textDecoration: "none",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                  }}>
+                  <span>★</span> star on github
+                </a>
+                <button
+                  onClick={copyHeroInstall}
+                  style={{
+                    padding: "9px 16px",
+                    background: "transparent",
+                    color: heroCopied ? "#8ddc90" : "#c9d9cd",
+                    border: "1px solid",
+                    borderColor: heroCopied ? "#8ddc90" : "#2a3a32",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                  {heroCopied ? "✓ copied" : "curl -L .../glorbo-linux-$(uname -m)"}
+                </button>
+              </div>
+              <div style={{ color: "#4a5a50", fontSize: 11.5, display: "flex", gap: 18, flexWrap: "wrap" }}>
+                <span><Kbd>⌘</Kbd> <Kbd>K</Kbd> command palette</span>
+                <span>·</span>
+                <span>apache 2.0 · elixir 1.18.4 · otp-28 · linux · macOS · wsl2</span>
+              </div>
+            </div>
+
+            <RosterHero selected={selectedAgent} onSelect={setSelectedAgent} />
+          </div>
+
+          {/* "it's just a directory" callout */}
+          <div style={{
+            border: "1px solid #1f2a24",
+            background: "#0f1411",
+            padding: "22px 26px",
+            marginBottom: 56,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 36,
+          }}>
+            <div>
+              <div style={{ color: "#e0b97a", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                ── the whole thing
+              </div>
+              <div style={{ color: "#c9d9cd", fontSize: 20, lineHeight: 1.25, marginBottom: 12 }}>
+                It's just a directory.
+              </div>
+              <div style={{ color: "#7a8c80", fontSize: 12.5, lineHeight: 1.6 }}>
+                Back up with <span style={{ color: "#c9d9cd" }}>tar</span>.
+                Version with <span style={{ color: "#c9d9cd" }}>git</span>.
+                Move with <span style={{ color: "#c9d9cd" }}>scp</span>.
+                Debug with <span style={{ color: "#c9d9cd" }}>cat</span>.
+              </div>
+            </div>
+            <pre style={{
+              margin: 0,
+              color: "#7a8c80",
+              fontSize: 12,
+              lineHeight: 1.55,
+              fontFamily: "inherit",
+              overflow: "auto",
+            }}>
+{`~/.glorbo/
+├── `}<span style={{ color: "#c9d9cd" }}>glorbo</span>{`                    `}<span style={{ color: "#4a5a50" }}># single binary. that's the app.</span>{`
+├── glorbo.db                 `}<span style={{ color: "#4a5a50" }}># sqlite index. rebuildable. disposable.</span>{`
+└── `}<span style={{ color: "#7adccf" }}>companies/</span>{`
+    └── `}<span style={{ color: "#7adccf" }}>acme/</span>{`
+        ├── company.md        `}<span style={{ color: "#4a5a50" }}># mission, budget, settings</span>{`
+        ├── `}<span style={{ color: "#7adccf" }}>agents/ceo/</span>{`
+        │   ├── AGENT.md      `}<span style={{ color: "#4a5a50" }}># identity, permissions, model config</span>{`
+        │   ├── inbox/  outbox/  workspace/
+        ├── `}<span style={{ color: "#7adccf" }}>channels/</span>{`
+        │   └── general.md    `}<span style={{ color: "#4a5a50" }}># append-only chat logs</span>{`
+        ├── `}<span style={{ color: "#7adccf" }}>projects/</span>{`website-redesign/
+        └── `}<span style={{ color: "#7adccf" }}>audit/</span>{`2026-04.jsonl `}<span style={{ color: "#4a5a50" }}># append-only. never modified.</span>
+            </pre>
+          </div>
+
+          {/* four principles */}
+          <div id="features" style={{ marginBottom: 64, scrollMarginTop: 24 }}>
+            <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ── features
+            </div>
+            <h2 style={{ fontSize: 28, margin: 0, marginBottom: 10, fontWeight: 500, letterSpacing: "-0.01em" }}>
+              Everything an agent workforce needs.<br/>Nothing it doesn't.
+            </h2>
+            <p style={{ color: "#7a8c80", margin: 0, marginBottom: 32, fontSize: 13, maxWidth: 620 }}>
+              You already know what it does. Your ploobis has never been cleaner.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+              <TuiBox title="filesystem-first" right="markdown + jsonl">
+                <div style={{ marginBottom: 10, fontSize: 13, color: "#c9d9cd" }}>
+                  The filesystem is the source of truth.
+                </div>
+                <div style={{ color: "#7a8c80", fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>
+                  Agents, tasks, channels, permissions, goals, audit — all markdown
+                  and JSONL on disk. SQLite is a rebuildable index. Delete it
+                  anytime; <span style={{ color: "#c9d9cd" }}>glorbo reindex</span> brings it back.
+                </div>
+                <div style={{ color: "#4a5a50", fontSize: 11.5, wordBreak: "break-word" }}>
+                  <span style={{ color: "#7adccf" }}>◆</span> agents/ceo/AGENT.md · channels/general.md · audit/2026-04.jsonl
+                </div>
+              </TuiBox>
+
+              <TuiBox title="kernel as policy engine" right="bwrap · pasta">
+                <div style={{ marginBottom: 10, fontSize: 13, color: "#c9d9cd" }}>
+                  Permissions aren't enforced by code.
+                </div>
+                <div style={{ color: "#7a8c80", fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>
+                  Every agent wake is a fresh <span style={{ color: "#c9d9cd" }}>bwrap</span> sandbox.
+                  Denied paths aren't mounted. <span style={{ color: "#c9d9cd" }}>network: proxy</span> gets
+                  a private netns via <span style={{ color: "#c9d9cd" }}>pasta</span> — only the per-company
+                  proxy port is reachable. <span style={{ color: "#c9d9cd" }}>ls -la</span> is your audit tool.
+                </div>
+                <div style={{ color: "#4a5a50", fontSize: 11.5, wordBreak: "break-word" }}>
+                  <span style={{ color: "#8ddc90" }}>◆</span> --unshare-user-try --unshare-ipc --unshare-pid --unshare-uts --cap-drop ALL
+                </div>
+              </TuiBox>
+
+              <TuiBox title="cli + native agents" right="gep-32">
+                <div style={{ marginBottom: 10, fontSize: 13, color: "#c9d9cd" }}>
+                  Your existing CLIs. Or native endpoints. Both sandboxed.
+                </div>
+                <div style={{ color: "#7a8c80", fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>
+                  Glorbo wraps <span style={{ color: "#c9d9cd" }}>claude</span>,
+                  <span style={{ color: "#c9d9cd" }}> gemini</span>,
+                  <span style={{ color: "#c9d9cd" }}> codex</span>,
+                  <span style={{ color: "#c9d9cd" }}> opencode</span>,
+                  <span style={{ color: "#c9d9cd" }}> hermes</span>,
+                  <span style={{ color: "#c9d9cd" }}> pi</span>,
+                  {" "}plus native <span style={{ color: "#c9d9cd" }}>openai</span> / <span style={{ color: "#c9d9cd" }}>openrouter</span>
+                  {" "}endpoints and auto-detected local servers (Ollama, LM Studio, vLLM, LocalAI, llama.cpp).
+                  Credentials stay on the host. No SDK layer.
+                </div>
+                <div style={{ color: "#4a5a50", fontSize: 11.5, wordBreak: "break-word" }}>
+                  <span style={{ color: "#7adccf" }}>◆</span> glorbo detect-providers · ~/.local/etc/glorbo/credentials/openai.toml
+                </div>
+              </TuiBox>
+
+              <TuiBox title="otp supervision" right="crash ≠ outage">
+                <div style={{ marginBottom: 10, fontSize: 13, color: "#c9d9cd" }}>
+                  If an agent crashes, only that agent restarts.
+                </div>
+                <div style={{ color: "#7a8c80", fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>
+                  One supervision tree per company. The dashboard, other companies,
+                  and sibling agents keep going. That's just what the BEAM does.
+                </div>
+                <div style={{ color: "#4a5a50", fontSize: 11.5, wordBreak: "break-word" }}>
+                  <span style={{ color: "#c69ae0" }}>◆</span> Application → CompanySupervisor → Company.Supervisor(acme) → Agent.Server(ceo)
+                </div>
+              </TuiBox>
+            </div>
+          </div>
+
+          {/* how it works */}
+          <div id="how" style={{ marginBottom: 64, scrollMarginTop: 24 }}>
+            <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ── how it works
+            </div>
+            <h2 style={{ fontSize: 28, margin: 0, marginBottom: 12, fontWeight: 500, letterSpacing: "-0.01em" }}>
+              Elixir watches files. bwrap sandboxes the CLI.<br/>The kernel says no.
+            </h2>
+            <p style={{ color: "#7a8c80", margin: 0, marginBottom: 28, fontSize: 13, maxWidth: 620 }}>
+              The blamfs rub against the chumble. That's how messages get delivered.
+              Don't overthink it. Click a step to explore it.
+            </p>
+
+            <WakeStepper />
+          </div>
+
+          {/* screens showcase */}
+          <div id="screens" style={{ marginBottom: 64, scrollMarginTop: 24 }}>
+            <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ── the real thing
+            </div>
+            <h2 style={{ fontSize: 28, margin: 0, marginBottom: 10, fontWeight: 500, letterSpacing: "-0.01em" }}>
+              Every screen, honest.
+            </h2>
+            <p style={{ color: "#7a8c80", margin: 0, marginBottom: 28, fontSize: 13, maxWidth: 620 }}>
+              No demo mockups. These are the actual Phoenix LiveView pages you get
+              after <span style={{ color: "#c9d9cd" }}>glorbo init</span>.
+            </p>
+
+            <ScreensShowcase />
+          </div>
+
+          {/* feature breadth */}
+          <div style={{ marginBottom: 64 }}>
+            <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ── the director's surface
+            </div>
+            <h2 style={{ fontSize: 28, margin: 0, marginBottom: 10, fontWeight: 500, letterSpacing: "-0.01em" }}>
+              You're the owner. Not an employee.
+            </h2>
+            <p style={{ color: "#7a8c80", margin: 0, marginBottom: 28, fontSize: 13, maxWidth: 620 }}>
+              Click a surface to learn more.
+            </p>
+
+            <FeatureGrid />
+          </div>
+
+          {/* install */}
+          <div id="install" style={{ marginBottom: 64, scrollMarginTop: 24 }}>
+            <div style={{ color: "#7a8c80", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ── get started
+            </div>
+            <h2 style={{ fontSize: 28, margin: 0, marginBottom: 10, fontWeight: 500, letterSpacing: "-0.01em" }}>
+              Two commands. One minute.
+            </h2>
+            <p style={{ color: "#7a8c80", margin: 0, marginBottom: 22, fontSize: 13, maxWidth: 620 }}>
+              Pre-schleemed. Zero hizzard leakage. One command.
+            </p>
+
+            <InstallTabs />
+
+            <div style={{ color: "#4a5a50", fontSize: 11.5, marginTop: 14, lineHeight: 1.7 }}>
+              Prerequisites: Linux (x86_64 or aarch64) with <span style={{ color: "#c9d9cd" }}>bubblewrap</span>,
+              {" "}<span style={{ color: "#c9d9cd" }}>passt</span> (for <span style={{ color: "#c9d9cd" }}>network: proxy</span>),
+              {" "}and <span style={{ color: "#c9d9cd" }}>inotify-tools</span>. A provider CLI on PATH
+              (<span style={{ color: "#c9d9cd" }}>claude</span>, <span style={{ color: "#c9d9cd" }}>gemini</span>, <span style={{ color: "#c9d9cd" }}>codex</span>, …)
+              {" "}or a native credentials file. macOS works without bwrap (agents run unsandboxed; one audit row per boot).
+              No Python. No Erlang. No Node.js.
+            </div>
+          </div>
+
+          {/* closer */}
+          <div style={{
+            border: "1px solid #1f2a24",
+            padding: "32px 28px",
+            marginBottom: 48,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 32,
+            alignItems: "center",
+          }}>
+            <div>
+              <div style={{ color: "#e0b97a", fontSize: 11.5, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em", fontStyle: "italic" }}>
+                ── portability
+              </div>
+              <div style={{ fontSize: 20, lineHeight: 1.4, color: "#c9d9cd", maxWidth: 620, fontStyle: "italic" }}>
+                "Look, we're not trying to build a whole Plumbus here.
+                It's a Glorbo. Stay focused."
+              </div>
+              <div style={{ color: "#7a8c80", fontSize: 12.5, marginTop: 14, lineHeight: 1.7 }}>
+                <span style={{ color: "#8ddc90" }}>deploy</span> · curl + glorbo init
+                &nbsp;·&nbsp;
+                <span style={{ color: "#8ddc90" }}>upgrade</span> · replace binary + glorbo migrate
+                &nbsp;·&nbsp;
+                <span style={{ color: "#8ddc90" }}>move</span> · glorbo backup → glorbo restore
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <a
+                href="https://github.com/foobarto/glorbo"
+                style={{
+                  padding: "11px 20px",
+                  background: "#8ddc90",
+                  color: "#0a0d0b",
+                  border: "1px solid #8ddc90",
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                  textDecoration: "none",
+                }}>
+                ★ star on github
+              </a>
+              <a
+                href="https://github.com/foobarto/glorbo/blob/main/docs/DESIGN.md"
+                style={{
+                  padding: "11px 20px",
+                  background: "transparent",
+                  color: "#c9d9cd",
+                  border: "1px solid #2a3a32",
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                  textDecoration: "none",
+                }}>
+                read docs/DESIGN.md →
+              </a>
+            </div>
+          </div>
+
+          {/* footer */}
+          <div style={{
+            borderTop: "1px solid #1f2a24",
+            paddingTop: 20,
+            display: "flex",
+            justifyContent: "space-between",
+            color: "#4a5a50",
+            fontSize: 11.5,
+            flexWrap: "wrap",
+            gap: 16,
+          }}>
+            <div>
+              <span style={{ color: "#7adccf" }}>▚ glorbo</span>
+              <span style={{ margin: "0 8px" }}>·</span>
+              v0.6.0 · apache 2.0 · elixir 1.18.4 · otp-28 · phoenix liveview · bwrap · pasta · burrito
+            </div>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+              <a href="https://github.com/foobarto/glorbo" style={{ color: "inherit", textDecoration: "none" }}>github</a>
+              <a href="https://github.com/foobarto/glorbo/blob/main/docs/DESIGN.md" style={{ color: "inherit", textDecoration: "none" }}>DESIGN.md</a>
+              <a href="https://github.com/foobarto/glorbo/blob/main/CHANGELOG.md" style={{ color: "inherit", textDecoration: "none" }}>CHANGELOG</a>
+              <a href="https://github.com/foobarto/glorbo/issues" style={{ color: "inherit", textDecoration: "none" }}>issues</a>
+              <a href="https://github.com/foobarto" style={{ color: "inherit", textDecoration: "none" }}>@foobarto</a>
+            </div>
+          </div>
+
+          {selectedAgent && (
+            <AgentDrawer agentId={selectedAgent} onClose={() => setSelectedAgent(null)} />
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<LandingTerminal />);
+  </script>
 </body>
 </html>

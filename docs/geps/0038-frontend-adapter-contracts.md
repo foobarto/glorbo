@@ -9,7 +9,7 @@ history:
   - date: 2026-04-24
     status: Placeholder
     note: |
-      Parked during the GEP-37 (glorbo tui) session. User
+      Parked during the GEP-37 (glorbo shell) session. User
       observation: "we may need another standards GEP that would
       put a rule on every feature/functionality in glorbo to have
       well defined internal interface so that new systems such
@@ -32,7 +32,7 @@ trajectory toward a fourth:
 |---|---|---|
 | `glorbo_web` LiveView | shipped, primary | `GlorboWeb.*Live` modules |
 | `glorbo_web` MCP server | shipped (GEP-29) | `GlorboWeb.MCP.*` |
-| `glorbo tui` terminal client | proposed (GEP-37) | `Glorbo.Tui.*` |
+| `glorbo shell` terminal client | proposed (GEP-37) | `Glorbo.Shell.*` |
 | Hypothetical: agent-facing native API, remote CLI, … | future | TBD |
 
 Each surface needs to read and mutate the same orchestrator
@@ -69,7 +69,7 @@ internal service module pair:
 - **`Glorbo.Queries.*`** — all state reads (read seam; the focus
   of GEP-35's `AgentWritableFile` seam, generalised).
 
-Frontends — `GlorboWeb.*Live`, `GlorboWeb.MCP.*`, `Glorbo.Tui.*`,
+Frontends — `GlorboWeb.*Live`, `GlorboWeb.MCP.*`, `Glorbo.Shell.*`,
 and anything that comes next — are thin adapters. They are
 allowed to:
 
@@ -164,6 +164,6 @@ is deferred to the Draft that supersedes this Placeholder.
   (Placeholder). The concrete read-seam proposal.
 - **GEP-36** — Actions layer as single Director-write channel
   (Placeholder). The concrete write-seam proposal.
-- **GEP-37** — `glorbo tui` interactive terminal client (Draft).
+- **GEP-37** — `glorbo shell` interactive terminal client (Draft).
   First non-Phoenix frontend; side-effect of its extraction work
   is most of GEP-36's intended cleanup.

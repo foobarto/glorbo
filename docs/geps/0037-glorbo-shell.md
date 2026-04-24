@@ -1,6 +1,6 @@
 ---
 gep: 0037
-title: "`glorbo tui` — interactive terminal client for the Director"
+title: "`glorbo shell` — interactive terminal session for the Director"
 author: Glorbo Maintainers <security@example.invalid>
 status: Draft
 type: Standards
@@ -18,12 +18,30 @@ history:
       Director is an Emacs user; the earlier vim-inspired set was
       a wrong default. Web UI's existing `j/k/y/n` stays as legacy
       (not this GEP's scope).
+  - date: 2026-04-24
+    status: Draft
+    note: |
+      Two substantive revisions driven by user feedback on the
+      initial draft:
+      (a) Command renamed `glorbo tui` → `glorbo shell`. "Shell"
+      is the right user-facing noun for an interactive session;
+      "TUI" is the implementation detail, demoted to docstrings.
+      Top-level module also renamed `Glorbo.Tui` → `Glorbo.Shell`
+      (flat submodule tree: `Glorbo.Shell.{Supervisor, Runtime,
+      EventBus, Views.*}`).
+      (b) TUI framework flipped from "custom runtime on `owl`
+      primitives" to **pcharbon70/term_ui** (v0.2.0 on hex).
+      Actively maintained (439 commits), pure Elixir (preserves
+      Burrito), widget set above GEP-37's needs (tables, trees,
+      split panes, command palette, supervision-tree viewer — the
+      last one a direct fit for the Health view). D2, D6, D11
+      updated to reflect both changes.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
 ---
 
-# GEP-37: `glorbo tui` — interactive terminal client for the Director
+# GEP-37: `glorbo shell` — interactive terminal session for the Director
 
 ## Problem
 
@@ -56,7 +74,7 @@ terminal surface does not. This GEP adds the terminal surface.
 
 ## Goals
 
-- Introduce a new top-level subcommand `glorbo tui` that launches
+- Introduce a new top-level subcommand `glorbo shell` that launches
   a real terminal UI inside the existing `glorbo` binary. Single
   binary, single Elixir release, no new runtime dependencies.
 - Achieve **drop-in replacement parity with the Phoenix dashboard**
@@ -80,7 +98,7 @@ terminal surface does not. This GEP adds the terminal surface.
 
 ## Non-goals
 
-- **Not a remote client.** `glorbo tui` runs in-process in the
+- **Not a remote client.** `glorbo shell` runs in-process in the
   same `glorbo` binary against the same `~/.glorbo` home
   directory. No networked client mode in v1. (Future GEP may
   revisit; explicitly out of scope here.)
@@ -107,7 +125,7 @@ A new top-level subcommand alongside `run` and `serve`:
 ```
 glorbo run            # headless — core only, no UI surface
 glorbo serve          # core + Phoenix (LiveView + MCP + channels)
-glorbo tui            # core + TUI, no Phoenix  ← new in GEP-37
+glorbo shell            # core + TUI, no Phoenix  ← new in GEP-37
 ```
 
 All three acquire the same single-node lock on `~/.glorbo`. You
@@ -115,12 +133,12 @@ cannot run two of them against the same home simultaneously; this
 is already enforced by the existing lock semantics (GEP-2 D1 —
 single Elixir node per host).
 
-`glorbo tui --help` marks the command `[alpha]` until stability
+`glorbo shell --help` marks the command `[alpha]` until stability
 is demonstrated across a full release cycle.
 
 ### Runtime shape
 
-`glorbo tui` boots the full Glorbo core — `Glorbo.Application`
+`glorbo shell` boots the full Glorbo core — `Glorbo.Application`
 supervisor starts with its normal children (`CompaniesSupervisor`,
 `Router`, `Audit`, `Budget`, filesystem watchers, PubSub, SQLite
 connection pool). It does **not** start `GlorboWeb.Endpoint`; no
@@ -135,14 +153,14 @@ config :glorbo, :surface, :tui   # :headless | :web | :tui
 ```
 
 `Glorbo.Application` conditionally adds either `GlorboWeb.Endpoint`
-or `Glorbo.Tui.Supervisor` to its children list based on this
+or `Glorbo.Shell.Supervisor` to its children list based on this
 key. Headless mode adds neither.
 
-### Supervision tree under `Glorbo.Tui.Supervisor`
+### Supervision tree under `Glorbo.Shell.Supervisor`
 
 `:rest_for_one` strategy, three children in order:
 
-1. **`Glorbo.Tui.EventBus`** (`GenServer`)
+1. **`Glorbo.Shell.EventBus`** (`GenServer`)
    Subscribes to `company:<co>:projects`, `company:<co>:channels`,
    `company:<co>:agents`, `company:<co>:audit`, `company:<co>:
    approvals`, and cross-company `glorbo:companies` topics via
@@ -150,55 +168,62 @@ key. Headless mode adds neither.
    stream to the Runtime. A crash restarts EventBus and everything
    downstream of it.
 
-2. **`Glorbo.Tui.InputReader`** (`GenServer`)
+2. **`Glorbo.Shell.InputReader`** (`GenServer`)
    Owns stdin in raw/cbreak mode. Parses ANSI escape sequences for
    arrow keys, function keys, resize signals (`SIGWINCH`), and
    mouse events (initially unused). Pushes decoded input events
    to the Runtime. A crash restarts just itself and the Runtime.
 
-3. **`Glorbo.Tui.Runtime`** (`GenServer`)
+3. **`Glorbo.Shell.Runtime`** (`GenServer`)
    Holds render state. Reduces `(state, event) -> state` for
    EventBus and InputReader events. Emits frame diffs to stdout
-   via `Glorbo.Tui.Renderer`. A crash restarts just the Runtime.
+   via `Glorbo.Shell.Renderer`. A crash restarts just the Runtime.
 
 TUI crashes do not kill agents, the router, PubSub, or any core
-service — that is enforced by `Glorbo.Tui.Supervisor` being a
+service — that is enforced by `Glorbo.Shell.Supervisor` being a
 *sibling* subtree under `Glorbo.Application`'s root supervisor,
 not a parent of core services.
 
-### TUI runtime library — pure-Elixir custom on top of `owl`
+### TUI framework — [`term_ui`](https://github.com/pcharbon70/term_ui)
 
-The TUI framework is a small custom runtime under
-`lib/glorbo/tui/runtime/`, built on `owl` for styling and
-primitives (tables, prompts, progress indicators).
+The shell is built on `term_ui` (v0.2.x on hex). Pure Elixir,
+actively maintained, MIT-licensed. Elm-architecture API
+(`init/2`, `event_to_msg/2`, `update/2`, `view/1`) with a
+GenServer-backed render loop doing cell-level differential
+updates. The widget set covers every surface the shell needs
+(tables, trees, split panes, text inputs, command palette,
+supervision-tree viewer — the last a direct fit for the Health
+view).
 
-**Not using Ratatouille** — the canonical Elixir TUI framework is
-effectively unmaintained (last meaningful release ~2021) and
-imposes Elm-style render-loop opinions we would fight when
-matching GEP-30's theme tokens and the IRC keybinding model.
-Vendoring + maintaining would be a net-negative trade vs. writing
-~500–800 lines of render/input loop against Owl.
+**Not using Ratatouille** — the older canonical Elixir TUI
+framework is effectively unmaintained (last meaningful release
+~2021). term_ui is the active successor in spirit.
 
-**Not adding a Rust NIF (ratatui, bubbletea port)** — the Burrito
-single-binary story is the load-bearing distribution invariant;
-a Rust NIF complicates cross-compilation (Linux + macOS via
-GEP-R30) for no gain over pure Elixir at our scope.
+**Not writing a custom runtime on `owl`** — the initial draft's
+choice. Replaced in the same revision as D2/D11 because term_ui
+already does what the custom layer would have done, with
+maintenance and tests.
 
-Runtime responsibilities:
+**Not adding a Rust NIF (ratatui, bubbletea port)** — the
+Burrito single-binary story is the load-bearing distribution
+invariant; a Rust NIF complicates cross-compilation (Linux +
+macOS via GEP-R30) for no gain over pure Elixir at our scope.
 
-- **Pane model** — windowed regions with independent content and
-  redraw. Three permanent panes: `Sidebar`, `Main`, `Status+Composer`.
-- **Render diffing** — compute cell-level diff between last frame
-  and next frame; write only changed cells. Avoids full-screen
-  repaints on every keystroke.
-- **Layout primitives** — horizontal/vertical splits with fixed
-  or flex dimensions.
-- **Theme tokens** — Elixir module `Glorbo.Tui.Theme` exposing
-  colour/border constants that mirror GEP-30's phosphor web
-  tokens (terminal-friendly approximations of the CSS palette).
-  Read at compile time into the renderer.
-- **Input mapping** — `Glorbo.Tui.Keybindings` maps raw key
-  events to logical actions. Swappable per-view.
+Shell-side responsibilities (on top of term_ui):
+
+- **View modules** — one per pane under `Glorbo.Shell.Views.*`,
+  each implementing term_ui's `init/update/view` callbacks.
+  Top-level Runtime composes them into the root view.
+- **Theme tokens** — Elixir module `Glorbo.Shell.Theme`
+  exposing colour/border constants that mirror GEP-30's
+  phosphor web tokens (terminal-friendly approximations of
+  the CSS palette). Passed to term_ui widgets at render time.
+- **Input mapping** — `Glorbo.Shell.Keybindings` maps term_ui
+  input events to logical actions (`view.overview`,
+  `list.next`, `composer.submit`, etc.). Per-view overrides
+  supported but rare; centralised for consistency.
+- **EventBus** — subscribes to PubSub `company:<co>:*` topics,
+  forwards as term_ui messages into the Runtime.
 
 ### Views (drop-in parity checklist)
 
@@ -206,18 +231,18 @@ Every GEP-6 canonical view + GEP-20 addition mapped to a TUI view:
 
 | Web view / feature | TUI view | Adaptation |
 |---|---|---|
-| Overview (company list, rollups) | `Tui.View.Overview` | Company list in sidebar; right pane shows 14-day rollup tiles as text tables (GEP-20) + recent-activity scrollback. |
-| Kanban | `Tui.View.Tasks` | Filterable task table with columns `Status / Project / Task / Assignee / Priority`. Swim-lane grouping available via `gs` to group-by status. No drag-and-drop; keyboard moves via `/move <status>` slash-command. |
-| Agent detail | `Tui.View.Agent` | Agent config header + tabs: `Config` (editable fields per GEP-20 AgentLive form), `Stdout` (live tail via existing `stdout_streamer`), `Inbox`, `Outbox`, `Runs`. |
-| Chat | `Tui.View.Chat` | Classic IRC view. Channel list in sidebar; main pane scrollback; composer supports plain messages and slash commands. |
-| Approvals | `Tui.View.Approvals` | Dired-style list; `C-n`/`C-p` cursor, `C-c C-y` / `C-c C-n` approve/deny. |
-| Audit | `Tui.View.Audit` | Searchable log with `/<query>` incremental filter + column filters (`actor=`, `action=`, `since=`). |
-| Health | `Tui.View.Health` | Process tree + container status + resource usage; reuses the GEP-20 health data. |
-| Skills (GEP-20) | `Tui.View.Skills` | Builtin/custom/shadowed classification; used-by counts. |
-| Goals (GEP-20) | `Tui.View.Goals` | Tasks bucketed by `goal:` frontmatter. |
-| Inbox (GEP-20) | `Tui.View.Inbox` | Active + archived tabs. |
-| Command palette (GEP-20) | `Tui.Overlay.CommandPalette` | Overlay invoked with `/` or `Ctrl-k`. |
-| Keys help (GEP-30) | `Tui.Overlay.KeysHelp` | `?` opens; reuses GEP-30's keymap content. |
+| Overview (company list, rollups) | `Shell.Views.Overview` | Company list in sidebar; right pane shows 14-day rollup tiles as text tables (GEP-20) + recent-activity scrollback. |
+| Kanban | `Shell.Views.Tasks` | Filterable task table with columns `Status / Project / Task / Assignee / Priority`. Swim-lane grouping available via `gs` to group-by status. No drag-and-drop; keyboard moves via `/move <status>` slash-command. |
+| Agent detail | `Shell.Views.Agent` | Agent config header + tabs: `Config` (editable fields per GEP-20 AgentLive form), `Stdout` (live tail via existing `stdout_streamer`), `Inbox`, `Outbox`, `Runs`. |
+| Chat | `Shell.Views.Chat` | Classic IRC view. Channel list in sidebar; main pane scrollback; composer supports plain messages and slash commands. |
+| Approvals | `Shell.Views.Approvals` | Dired-style list; `C-n`/`C-p` cursor, `C-c C-y` / `C-c C-n` approve/deny. |
+| Audit | `Shell.Views.Audit` | Searchable log with `/<query>` incremental filter + column filters (`actor=`, `action=`, `since=`). |
+| Health | `Shell.Views.Health` | Process tree + container status + resource usage; reuses the GEP-20 health data. |
+| Skills (GEP-20) | `Shell.Views.Skills` | Builtin/custom/shadowed classification; used-by counts. |
+| Goals (GEP-20) | `Shell.Views.Goals` | Tasks bucketed by `goal:` frontmatter. |
+| Inbox (GEP-20) | `Shell.Views.Inbox` | Active + archived tabs. |
+| Command palette (GEP-20) | `Shell.Overlays.CommandPalette` | Overlay invoked with `/` or `Ctrl-k`. |
+| Keys help (GEP-30) | `Shell.Overlays.KeysHelp` | `?` opens; reuses GEP-30's keymap content. |
 
 "Drop-in parity" is judged by capability, not pixel fidelity.
 File upload becomes a path prompt; rich charts become sparklines
@@ -297,7 +322,7 @@ because nothing is typing into a buffer):
 | `C-c C-n` | Deny highlighted request (prompts for reason) |
 | `C-c C-a` | Archive |
 
-All keybindings live in `Glorbo.Tui.Keybindings` as a single
+All keybindings live in `Glorbo.Shell.Keybindings` as a single
 source of truth. Per-view overrides are supported but rare —
 the TUI prefers a consistent global vocabulary so muscle memory
 carries between views.
@@ -378,7 +403,7 @@ happening.
 
 ## Migration / rollout
 
-**Pre-1.0, atomic cut.** No feature flag. `glorbo tui` ships
+**Pre-1.0, atomic cut.** No feature flag. `glorbo shell` ships
 enabled in the first release that includes it.
 
 - `glorbo --help` marks the command `[alpha]` in the command
@@ -398,36 +423,37 @@ Downstream effects:
 - Existing `GlorboWeb.Actions` call sites continue to work
   (delegation is transparent).
 - No on-disk format changes. No new FileSpec kinds.
-- No new hex dependencies beyond `owl` (~100 kB compiled).
+- One new hex dependency: `term_ui` (~200-300 kB compiled,
+  pure Elixir, no native code).
 
 ## Failure modes
 
 | Mode | Surface | Handling |
 |---|---|---|
-| Terminal doesn't support ANSI | `glorbo tui` start | Detect via `$TERM` on boot; print error and exit with `EX_CONFIG` code, pointing at documentation. |
-| Terminal too small | Live | `Glorbo.Tui.Renderer` detects `<80 cols` or `<24 rows` and renders a "resize-to-at-least-80x24" placeholder frame. |
+| Terminal doesn't support ANSI | `glorbo shell` start | Detect via `$TERM` on boot; print error and exit with `EX_CONFIG` code, pointing at documentation. |
+| Terminal too small | Live | `Glorbo.Shell.Renderer` detects `<80 cols` or `<24 rows` and renders a "resize-to-at-least-80x24" placeholder frame. |
 | Stdin is not a TTY (piped/redirected) | Start | Refuse to launch; suggest `glorbo run` for non-interactive use. |
 | Render diff bug produces corrupted screen | Live | `Ctrl-l` triggers a full repaint; documented. |
 | Runtime GenServer crash | Live | Supervisor restarts; last frame is re-rendered from persisted state. A redraw loses at most one keystroke. |
 | Single-node lock held by `glorbo serve` | Start | Print "another `glorbo` is already running against this home" and exit non-zero. |
 | Mutation attempted before core ready | Start window | `Glorbo.Actions` calls return `{:error, :core_not_ready}`; composer shows the error in status bar. |
-| Theme palette mismatch (low-colour terminal) | Live | `Glorbo.Tui.Theme` falls back to 16-colour on `$TERM` match; layout integrity preserved, aesthetic reduced. |
+| Theme palette mismatch (low-colour terminal) | Live | `Glorbo.Shell.Theme` falls back to 16-colour on `$TERM` match; layout integrity preserved, aesthetic reduced. |
 
 ## Test strategy
 
 Four layers, matching the web surface's test architecture.
 
-**Unit tests — pure reducer.** `Glorbo.Tui.Runtime.reduce/2` is a
+**Unit tests — pure reducer.** `Glorbo.Shell.Runtime.reduce/2` is a
 pure `(state, event) -> state` function. Comprehensive table
 tests: every event type × relevant state shape. Fast,
 deterministic, no I/O.
 
-**Render snapshot tests.** `Glorbo.Tui.Renderer.frame/1` is pure:
+**Render snapshot tests.** `Glorbo.Shell.Renderer.frame/1` is pure:
 state → list of cells. Tests build a fixture state, render, strip
 ANSI escapes, and assert the textual shape matches a golden
 string. Layout regressions show up immediately.
 
-**Integration tests.** `Glorbo.Tui.Runtime` running against a fake
+**Integration tests.** `Glorbo.Shell.Runtime` running against a fake
 IO device (`ExUnit.CaptureIO` + a synthetic InputReader that
 pushes a scripted sequence of events). Assert on the captured
 output after each step.
@@ -440,7 +466,7 @@ output after ignoring theme-dependent escape codes. Runs under
 the existing E2E tag, not on the default `mix test` run.
 
 **Coverage floor.** Unit + snapshot tests: 100% line coverage on
-`Glorbo.Tui.{Runtime, Renderer, View.*}`. Integration tests:
+`Glorbo.Shell.{Runtime, Renderer, View.*}`. Integration tests:
 at least one per view. E2E: at least one per view for v1;
 expanded in follow-up releases.
 
@@ -453,7 +479,7 @@ expanded in follow-up releases.
 - **Theming mechanism.** GEP-30 introduced CSS custom properties
   for phosphor tokens. The TUI wants colour parity. Options:
   (a) hardcode a terminal-approximation palette in
-  `Glorbo.Tui.Theme`; (b) read a `theme.toml` alongside the
+  `Glorbo.Shell.Theme`; (b) read a `theme.toml` alongside the
   GEP-30 tokens for single source of truth; (c) compile-time
   extraction from the CSS tokens at release build. Leaning (a)
   for v1 with (b) as future work.
@@ -474,7 +500,7 @@ expanded in follow-up releases.
 
 ### D1. In-process surface, not a remote client
 
-- **Decided:** `glorbo tui` runs inside the same `glorbo` binary,
+- **Decided:** `glorbo shell` runs inside the same `glorbo` binary,
   against the same `~/.glorbo` home. No networked client, no
   attach-to-running-instance.
 - **Alternatives:** MCP-client TUI over HTTP-SSE (GEP-29); custom
@@ -486,25 +512,42 @@ expanded in follow-up releases.
   stretch-goal ergonomics feature. Deferred to a future GEP if
   demand materialises.
 
-### D2. Custom pure-Elixir runtime on `owl`, not Ratatouille or a Rust NIF
+### D2. `term_ui` as the TUI framework (pcharbon70/term_ui)
 
-- **Decided:** Write a small (~500–800 LoC) custom render + input
-  runtime under `lib/glorbo/tui/runtime/`, using `owl` for
-  primitives (tables, styled output, prompts).
-- **Alternatives:** vendor Ratatouille; depend on Ratatouille as
-  hex; Rust NIF to `ratatui`; sidecar port to `bubbletea`.
-- **Why:** Ratatouille is effectively unmaintained and its
-  Elm-style render loop imposes opinions that fight the
-  GEP-30 theme-token parity goal. A Rust NIF breaks the Burrito
-  single-binary story for cross-compilation targets (Linux +
-  GEP-R30 macOS). A custom runtime over Owl keeps the distribution
-  invariant intact, gives full control over theme/keybinding/pane
-  shape, and is smaller than the Ratatouille fork-and-fix
-  carrying cost.
+- **Decided:** Adopt [`term_ui`](https://github.com/pcharbon70/term_ui)
+  v0.2.x from hex as the TUI framework. Pure Elixir, actively
+  maintained (439 commits, 183 stars as of 2026-04), MIT
+  licensed. Widget set covers everything GEP-37 needs: tables,
+  trees, split panes, text inputs, command palette, and a
+  supervision-tree viewer that maps directly onto the Health
+  view. Elm-architecture API (`init/2`, `event_to_msg/2`,
+  `update/2`, `view/1`) with a GenServer-backed render loop
+  doing differential updates.
+- **Alternatives:** (a) Custom render + input runtime on `owl`
+  primitives (the initial draft's choice); (b) vendor
+  Ratatouille; (c) Rust NIF to `ratatui`; (d) sidecar port to
+  `bubbletea`.
+- **Why:** (a) is reinvention when a viable framework exists;
+  the user flagged term_ui mid-review and it's a strictly
+  better fit — we were going to write a layer that does what
+  term_ui already does, with bugs, without tests. (b)
+  Ratatouille is effectively unmaintained. (c) and (d) break
+  the Burrito single-binary story for cross-compilation (Linux +
+  GEP-R30 macOS). term_ui is pure Elixir, on hex, matches our
+  `.tool-versions` floor (Elixir 1.15+ / OTP 28+), and its
+  widget set lands above the GEP-37 requirement — we adopt, not
+  build. If term_ui's model doesn't cover something exotic
+  (unlikely given its breadth), we render custom inside a
+  term_ui viewport — contained fallback, not framework
+  abandonment.
+
+  This flip replaces the initial draft's "custom on owl"
+  decision. The spirit of that decision (pure Elixir, preserve
+  Burrito, no NIFs) is retained; the mechanics change.
 
 ### D3. Third top-level command, sibling to `run` / `serve`
 
-- **Decided:** `glorbo tui` is its own subcommand. It boots core
+- **Decided:** `glorbo shell` is its own subcommand. It boots core
   + TUI, not Phoenix. Single-node lock enforces mutual exclusion
   with `glorbo serve`.
 - **Alternatives:** `glorbo serve --tui` flag that adds TUI to
@@ -543,7 +586,7 @@ expanded in follow-up releases.
 - **Alternatives:** (a) have the TUI depend on `glorbo_web`'s
   `Actions` module directly; (b) wait for GEP-36 to complete the
   seam before shipping the TUI; (c) reimplement mutations inside
-  `Glorbo.Tui.*` and dedup later.
+  `Glorbo.Shell.*` and dedup later.
 - **Why:** (a) inverts the module graph — `glorbo_web` is a
   frontend, core should not depend on frontends. (b) holds the
   TUI hostage to a larger cleanup effort. (c) creates the exact
@@ -552,20 +595,31 @@ expanded in follow-up releases.
   minimum change that unblocks the TUI. User directive: "proper
   and secure solutions, not temporary/evolutionary."
 
-### D6. Separate `:rest_for_one` supervisor subtree
+### D6. Separate supervisor subtree with term_ui as a child
 
-- **Decided:** `Glorbo.Tui.Supervisor` is a sibling of
-  `CompaniesSupervisor` under `Glorbo.Application`, with
-  `:rest_for_one` over `EventBus → InputReader → Runtime`.
+- **Decided:** `Glorbo.Shell.Supervisor` is a sibling of
+  `CompaniesSupervisor` under `Glorbo.Application`.
+  `:rest_for_one` strategy over two children: `EventBus` →
+  `Runtime` (the term_ui app module). `term_ui` handles its
+  own input reading internally, so the separate
+  `InputReader` process from the initial draft is folded into
+  term_ui's runtime.
 - **Alternatives:** single GenServer holding all state; one
-  process per view; `:one_for_one` over three peers.
-- **Why:** Input reading, event buffering, and rendering are
-  distinct concerns and belong in distinct processes (GEP-2 D2).
-  `:rest_for_one` is correct because Runtime depends on
-  InputReader's TTY setup which depends on EventBus being ready
-  to receive events; crash order should restart downstream.
-  TUI crashes do not propagate to core because the subtree is a
-  sibling of `CompaniesSupervisor`, not a child.
+  process per view; `:one_for_one` over peers.
+- **Why:** Event buffering and rendering are still distinct
+  concerns — EventBus subscribes to `company:<co>:*` PubSub
+  topics, Runtime reduces `(state, msg) → state` per term_ui's
+  Elm-architecture. `:rest_for_one` is correct because Runtime
+  depends on EventBus being ready to receive events; crash
+  order should restart downstream. TUI crashes do not propagate
+  to core because the subtree is a sibling of
+  `CompaniesSupervisor`, not a child (GEP-2 D2 — bounded blast
+  radius).
+
+  This simplifies the initial draft's 3-child tree (EventBus,
+  InputReader, Runtime) to a 2-child tree, with term_ui owning
+  the TTY surface. Adopted in the same revision as D2's flip
+  to term_ui.
 
 ### D7. No feature flag, ship atomic
 
@@ -618,7 +672,7 @@ expanded in follow-up releases.
   available as text input when the composer is focused. IRC
   slash-command convention preserved (`/` inserts into the
   composer, submission triggers the dispatch). Central
-  `Glorbo.Tui.Keybindings` module; per-view overrides are rare.
+  `Glorbo.Shell.Keybindings` module; per-view overrides are rare.
 - **Alternatives:** (a) vim-modal (`j/k/y/n`, `g<letter>`
   prefixes, `:` ex-mode, insert/normal modes); (b) menu-driven
   arrow-key navigation; (c) dual-mode compile-time flag shipping
@@ -637,19 +691,32 @@ expanded in follow-up releases.
   two documentation pages, and continuous drift between them
   for zero current benefit (single known user).
 
-### D11. No hex dependency beyond `owl`
+### D11. Single new hex dependency: `term_ui`
 
-- **Decided:** Add `{:owl, "~> 0.12"}` (or current stable); no
-  other TUI-related dep. Custom runtime lives under
-  `lib/glorbo/tui/runtime/`.
-- **Alternatives:** Ratatouille as hex dep; multiple TUI libs
-  (ex_termbox + owl + ...); Rustler NIF.
-- **Why:** Burrito single-binary story is load-bearing. Every hex
-  dep adds compile + cross-compile cost. Owl is pure Elixir,
-  actively maintained, and covers the primitives we need (tables,
-  prompts, colour, box-drawing) without imposing a render-loop
-  architecture. Custom runtime code ships in-tree where we own
-  the maintenance surface.
+- **Decided:** Add `{:term_ui, "~> 0.2"}` (pcharbon70/term_ui).
+  No other TUI-adjacent hex deps. Shell-specific code lives
+  under `lib/glorbo/shell/` (the EventBus, Runtime view module,
+  and per-view modules).
+- **Alternatives:** `owl` as primitives base + custom runtime
+  (initial draft); Ratatouille as hex dep; `ex_termbox` plus a
+  hand-rolled layout engine; Rustler NIF.
+- **Why:** term_ui is pure Elixir (preserves the Burrito
+  single-binary story), MIT-licensed (Apache-2.0 compatible),
+  and its widget set covers the shell's full surface without
+  us writing render/input primitives. The initial draft's
+  "custom on owl" was motivated by Ratatouille's stale state,
+  but term_ui resolves that concern at the framework layer —
+  actively maintained, 439 commits, on hex. Adopting is
+  straightforwardly simpler than building.
+
+  Cross-compile cost: term_ui has no native dependencies
+  (Erlang `:io.get_chars/2` for input, ANSI for output); should
+  flow through Burrito's Zig cross-compile for macOS without
+  special handling.
+
+  This flip replaces the initial draft's "no hex dep beyond owl"
+  decision. Same spirit (minimise deps, preserve Burrito),
+  different mechanics.
 
 ## Related
 

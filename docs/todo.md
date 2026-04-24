@@ -87,14 +87,14 @@ it's been in CHANGELOG for a cycle.
 
 ## P3 — thinking out loud
 
-- [ ] **GEP-37 `glorbo tui` implementation.** Drafted 2026-04-24. Once
+- [ ] **GEP-37 `glorbo shell` implementation.** Drafted 2026-04-24. Once
   accepted, phased shipping: (1) carve `Glorbo.Actions` out of
   `GlorboWeb.Actions` + extract `create_task`/`move_task`/`trash_task`/
-  `dispatch_task`/`create_project`/`create_agent`; (2) custom TUI
-  runtime on `owl` + basic pane/layout primitives; (3) views in
-  drop-in parity order (chat/approvals/tasks first, then agents,
-  audit, health, skills/goals). Most of GEP-36's write-seam cleanup
-  arrives in (1).
+  `dispatch_task`/`create_project`/`create_agent`; (2) `term_ui` dep
+  added, `Glorbo.Shell.Supervisor` + EventBus + Runtime wired under
+  `glorbo shell` subcommand; (3) views in drop-in parity order
+  (chat/approvals/tasks first, then agents, audit, health,
+  skills/goals). Most of GEP-36's write-seam cleanup arrives in (1).
 - [x] **Global search should include scheduled-task tags.** Shipped
   2026-04-24 (autonomous round). `Glorbo.Search.scan_tasks/2` now
   reads `schedule:` alongside `title` (same ETS cache key), and

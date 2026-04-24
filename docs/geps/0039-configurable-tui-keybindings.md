@@ -24,7 +24,7 @@ see-also: [19, 30]
 
 ## Problem
 
-GEP-37 ships the `glorbo tui` with a single keybinding scheme —
+GEP-37 ships the `glorbo shell` with a single keybinding scheme —
 Emacs-flavoured, chosen because the current Director is an Emacs
 user. D10 in GEP-37 rejected dual-scheme shipping with this
 rationale: "two keybinding schemes means two test matrices, two
@@ -46,7 +46,7 @@ will follow.
   (modal, `j/k/y/n`, `g<letter>` prefixes, `:` ex-mode), and
   **VS Code** (Ctrl-chord heavy, `Ctrl+Shift+P` command palette,
   arrow-key motion).
-- Keep one canonical **action registry** inside `Glorbo.Tui` — a
+- Keep one canonical **action registry** inside `Glorbo.Shell` — a
   flat list of logical actions (`:view.overview`, `:list.next`,
   `:composer.submit`, `:approval.accept`, …). Schemes are
   modules mapping `action → key_sequence`; the runtime only
@@ -87,11 +87,11 @@ will follow.
 The substantive design is deferred until implementation demand
 arrives. Rough sketch so a later Draft knows where to start:
 
-1. **Action registry.** `Glorbo.Tui.Actions` — an enum-like
+1. **Action registry.** `Glorbo.Shell.Actions` — an enum-like
    module listing every logical action as an atom, with a
    human-readable description. Schemes never reference physical
    keys outside their own map.
-2. **Scheme modules.** `Glorbo.Tui.Keybindings.Emacs`,
+2. **Scheme modules.** `Glorbo.Shell.Keybindings.Emacs`,
    `.Vim`, `.VSCode` — each exposes `bindings/0` returning a
    `%{action_atom => key_sequence}` map. Missing actions fall
    back to a trailing default.
@@ -152,8 +152,8 @@ arrives. Rough sketch so a later Draft knows where to start:
 
 Mechanical:
 
-- GEP-37 has landed and `glorbo tui` ships.
-- `Glorbo.Tui.Keybindings` exists as a module the current Emacs
+- GEP-37 has landed and `glorbo shell` ships.
+- `Glorbo.Shell.Keybindings` exists as a module the current Emacs
   scheme lives in — that's the hook the new schemes plug into.
 - Someone has asked for a non-Emacs scheme. Per user's guidance
   on 2026-04-24: "leave it as placeholder until someone asks
@@ -164,7 +164,7 @@ Design:
 - Answer the five open questions above, at least well enough
   to defend a choice in a decision log.
 - Enumerate every action the TUI binds. That list becomes
-  `Glorbo.Tui.Actions` and it is the contract every scheme
+  `Glorbo.Shell.Actions` and it is the contract every scheme
   must implement.
 
 ## Related

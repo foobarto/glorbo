@@ -635,7 +635,7 @@ autonomous-round cadence + six-phase checklist. Explicitly does
 NOT duplicate ep-kit's proposal territory; cairn's CLAUDE.md
 template references ep-kit.
 
-**Shipped at `/home/user/Documents/cairn/`:**
+**Shipped at `../cairn/`:**
 
 - Commit `85d9341` on `main`. Not pushed. No remote configured.
 - `.claude-plugin/plugin.json` Claude Code plugin manifest.
@@ -697,7 +697,7 @@ template references ep-kit.
   Glorbo and merge the output, (b) delete Glorbo's bespoke
   workflow files where they'd duplicate. Deferred.
 
-**Commit:** `85d9341` in `/home/user/Documents/cairn/`.
+**Commit:** `85d9341` in `../cairn/`.
 
 ## 2026-04-24 — session close-out
 
@@ -744,7 +744,7 @@ Final pass before closing the session:
 9. `f0b29e3` log creation of cairn standalone project.
 10. *(this commit)* session close-out.
 
-## Cairn commits (at `/path/to/cairn/`, `master`, unpushed)
+## Cairn commits (at `../cairn/`, `master`, unpushed)
 
 1. `85d9341` initial skeleton (workflow kit extracted from Glorbo).
 2. `de9f8a0` governing principles as the backbone.
