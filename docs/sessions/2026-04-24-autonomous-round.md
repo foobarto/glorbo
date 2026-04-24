@@ -749,6 +749,82 @@ Final pass before closing the session:
 1. `85d9341` initial skeleton (workflow kit extracted from Glorbo).
 2. `de9f8a0` governing principles as the backbone.
 
+## 2026-04-24 — later round: GEP-37 rename + term_ui flip + cairn published
+
+User feedback round — three items addressed in one pass.
+
+**GEP-37 revisions** (commit `a3701c3`):
+
+- Command renamed `glorbo tui` → `glorbo shell`. "Shell" is
+  the user-facing noun for an interactive session; "TUI" is
+  the implementation detail, demoted to docstrings. Top-level
+  module `Glorbo.Tui` → `Glorbo.Shell`; submodule tree flat:
+  `Glorbo.Shell.{Supervisor, Runtime, EventBus, Views.*,
+  Overlays.*, Theme, Keybindings, Actions}`.
+- File renamed: `0037-glorbo-tui.md` → `0037-glorbo-shell.md`
+  via `git mv` (git sees it as 69% similarity; rename tracking
+  intact).
+- D2 revision: TUI framework flipped from "custom runtime on
+  `owl`" to **pcharbon70/term_ui** v0.2.x. User pointed out the
+  library mid-review; investigation (via WebFetch on the repo)
+  confirmed pure Elixir, actively maintained (439 commits,
+  183 stars), MIT-licensed, Elm-architecture, no native deps
+  (Burrito cross-compile stays intact), Elixir 1.15+/OTP 28+
+  matches our `.tool-versions` pins, widget set ABOVE what
+  GEP-37 needs — tables, trees, split panes, command palette,
+  supervision-tree viewer (direct fit for the Health view).
+  Adopt, don't build.
+- D6 revision: supervision tree simplifies from 3-child
+  (EventBus, InputReader, Runtime) to 2-child (EventBus,
+  Runtime). term_ui owns its own input reading.
+- D11 revision: single new hex dep `{:term_ui, "~> 0.2"}`;
+  `owl` removed from the dep list.
+- Referring docs updated: GEPs README index row, GEP-38
+  frontends table + `Glorbo.Shell.*` references, GEP-39 body
+  references (file name kept since "TUI keybinding schemes"
+  is still valid vocabulary), `docs/todo.md` P3 entry.
+
+**Placeholder validator skip — confirmed live.** Shipped
+earlier in this same session (commit `2b61eb4`). `mix
+gep.validate` accepts Placeholder GEPs without requiring
+Goals/Non-goals/Design/Migration/Decision-log sections.
+Existing GEP-34/35/36 Placeholders pass as a consequence.
+
+**cairn published to GitHub.** `gh repo create` →
+<https://github.com/foobarto/cairn>. Public, Apache-2.0,
+`main` as default branch. Three commits pushed: `85d9341`
+initial, `de9f8a0` governing principles, `f53c19f` v0.2.0
+(autonomy menu, round/loop split, review phase, dual
+profiles). No issues or CI yet — shape-first shipping; can
+layer on later.
+
+**Design calls I made without you:**
+
+- **Applied term_ui adoption immediately.** Could have spun up
+  a "spike term_ui first" task. Didn't, because the framework
+  is mature enough to not need a spike; the spike would be
+  the prototype; and the WebFetch data was specific enough to
+  commit on. If it doesn't work out, a counter-revision to D2
+  is cheap.
+- **Kept GEP-39's file name** (`0039-configurable-tui-keybindings.md`)
+  despite the command rename, because the GEP's subject —
+  "TUI keybinding schemes (Emacs/Vim/VSCode)" — is valid
+  vocabulary independent of command naming.
+- **Didn't chase "TUI" as a generic noun** through GEP-37's
+  body. "TUI" describes the thing correctly; only the
+  command and module names changed. Pushing further would
+  violate surgical-changes discipline.
+
+**Gates:** `mix gep.validate` 39/39 pass. No code changed; no
+tests to run beyond that.
+
+**Commit trail for this round:**
+
+- Glorbo `a3701c3` — GEP-37 rename + term_ui flip + referring
+  docs + docs/todo.md update.
+- Cairn (separate repo) — three commits pushed to
+  <https://github.com/foobarto/cairn> on `main`.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
