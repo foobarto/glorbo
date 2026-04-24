@@ -1150,6 +1150,121 @@ verbatim.
 - Proposed CLAUDE.md merge ready at `CLAUDE.md.proposed`;
   not committed until you greenlight.
 
+## 2026-04-24 later 3 — CLAUDE.md slim, GEP-36/38 merge, agent template audit
+
+**Shipped this sub-round:**
+
+- CLAUDE.md slimmed from 248 → 202 lines. Extracted:
+  `docs/workflow/release-gate.md`, `docs/workflow/ship-checklist.md`.
+  Context-management section shrunk (5 lines + pointer).
+  Historical planning artifacts folded into "Off-topic".
+  `CLAUDE.md.proposed` removed; slimmed version IS `CLAUDE.md`.
+- GEP-38 `Placeholder → Superseded`; `superseded-by: 36` added.
+  GEP-36 gets `supersedes: [38]` + scope-expansion note in
+  history capturing your pure-module decision for `Glorbo.Actions`
+  with rationale verbatim.
+- Validator extension: Superseded / Withdrawn / Rejected
+  statuses now also skip required-sections check (frozen /
+  archival). Tests still 28/0; validator 39/39 green.
+- Commit: `<next>`. Push pending (still DNS-flaky).
+
+## Agent template audit
+
+Glorbo ships 6 role-triples under `priv/templates/` —
+AGENT.md + SOUL.md + HEARTBEAT.md per role. Roles: ceo,
+engineer, editor, researcher, critiqueops, provenance-auditor.
+
+**Current shape (well-designed already):**
+
+- Kind frontmatter (agent/v1) with `permissions:`, `budget:`,
+  `skills:`, `heartbeat:`.
+- System prompt with role-specific substance.
+- Provenance rule (tool vs memory) in every template — good
+  hygiene, maps to cairn's "honesty about shortcuts."
+- Reply contract via `$GLORBO_REPLY_PATH` — every template
+  has one; CEO's is especially strict.
+- Delegation + proactive-planning discipline sections in CEO;
+  path-passing discipline in several.
+- Heartbeat templates (tick checklist) for heartbeat-driven
+  agents (CEO).
+
+**Gaps cairn-style automation would close:**
+
+1. **Governing principles** — not currently named.
+   Karpathy's four principles (Think / Simplicity / Surgical
+   / Goal-driven) would apply directly and are already
+   Glorbo project policy via CLAUDE.md. Adding them to each
+   template (or a shared include) gives every agent the same
+   backbone the human sessions run on.
+2. **Explicit autonomy level** — the templates *imply* L3 but
+   don't name it. Making it explicit ("your default is L3;
+   here's what you can/cannot do without asking") removes
+   guesswork per invocation and reduces needless round-trips
+   to the supervisor.
+3. **Structured reply contract** — currently freeform 1-3
+   sentences. Cairn's session-journal format (Task /
+   What shipped / Design calls made without asking / Gates /
+   Skipped / For review) ports cleanly onto
+   `$GLORBO_REPLY_PATH`. Each agent's reply becomes a tiny
+   session journal for that invocation; the supervisor gets
+   far more signal than "completed task; no blockers."
+4. **Review phase (engineer/reviewer roles only).** Current
+   engineer.md says "use the `code-review` skill before
+   finishing any patch" — good, but not explicit about
+   quality + security as separate mandatory passes. Per
+   `docs/project-profile.md` security posture (Paranoid),
+   these should be distinct passes with documented outcomes.
+
+**L3 default — confirmed right level.** The question-mark in
+your note read as "validate this." Affirmative: L3 matches
+what the templates already enforce in practice. Agents
+create tasks, propose hires, decompose work, make design
+calls within scope. The unstated "L3" becomes explicit
+policy. Cairn's Autonomous Protocol lists L3 as "expansive —
+L2 plus: promote Placeholder→Draft when design space
+settled" — for an agent that would be promoting a task's
+status, filing sub-tasks, deciding among equally-reasonable
+approaches. Exactly what they should do. L4 would require
+push authority which no agent has (no git access in sandbox
+anyway); L2 would make agents too timid.
+
+**Proposed shape (concrete example at
+`priv/templates/agents/engineer.md.proposed`)** — I drafted
+an expanded engineer.md showing the cairn-style additions
+without changing the existing operational guidance.
+Adds ~60 lines:
+
+- "Working principles" block at the top of the system
+  prompt (4 principles inline).
+- "Autonomy — L3" section with can/cannot list for this
+  role.
+- "Review before completing" section making quality +
+  security passes explicit, documenting in reply.
+- "Reply contract" expanded with structured sub-sections
+  (Task / What shipped / Design calls / Review / Skipped /
+  For review).
+
+Existing sections (Provenance, skills, [EDIT:] placeholder)
+all preserved.
+
+**Rollout proposal** (doesn't happen without your greenlight):
+
+1. Apply the shape to all 6 AGENT.md templates (CEO gets the
+   CEO-specific variant — delegation/proactive-planning
+   sections stay; L3 additions slot in alongside).
+2. Test: run `mix test` + scaffold a demo company and check
+   agents boot cleanly with the expanded templates.
+3. Update CHANGELOG [Unreleased] noting the template
+   overhaul.
+4. No migration concern for existing companies — templates
+   only affect newly-scaffolded agents; in-flight companies
+   keep their current AGENT.md files.
+
+**Scope of this commit:** engineer.md.proposed only, plus
+this audit entry. Not applied. Say "apply to all six" and
+I'll propagate; say "adjust X" and I'll iterate on the
+engineer sample first.
+
 ## Things I'd like your review / yes-or-no on when you're back
 
 1. **GEP-37 scope and shape.** Drop-in parity (D4), the
