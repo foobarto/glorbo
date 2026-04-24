@@ -34,6 +34,21 @@ discipline in one coordinated cut rather than two.
 
 ### Added
 
+- **GEP-36 Implemented — `Glorbo.Actions.*` single-write-channel
+  carve-out complete.** Eight resource-organised modules
+  (`Glorbo.Actions.Tasks` / `.Companies` / `.Projects` /
+  `.Audit` / `.Channels` / `.Inbox` / `.Attachments` /
+  `.Agents`) now own every filesystem mutation the Director-
+  facing LiveViews can make; each applies the GEP-36 contract
+  (slug validation, atomic write, threatmodel-appropriate
+  symlink/contract-file guards, audit emission) before the
+  `File.*` call lands. Shared helpers consolidated in
+  `Glorbo.Actions.Support`. New Credo custom check
+  `Glorbo.Credo.Check.RawFilesystemWriteInLive` rejects any raw
+  `File.write/rename/mkdir_p` under `lib/glorbo_web/live/`.
+  Allowlist is empty — the ratchet is closed. Companion tests
+  cover each module's happy path + guards; session log:
+  `docs/sessions/2026-04-24-autonomous-round.md`.
 - **`Glorbo.Search` indexes task `schedule:` frontmatter.**
   Ctrl+K palette now substring-matches schedule values; query
   `daily` surfaces every task with `schedule: every day` or

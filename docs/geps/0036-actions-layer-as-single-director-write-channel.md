@@ -2,7 +2,7 @@
 gep: 0036
 title: Actions layer as the single Director-write channel
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-04-24
 history:
@@ -65,6 +65,20 @@ history:
       mandatory :actor opt). Implementation starts with FileSpec
       schema work driven by GEP-40; GEP-36's Actions extraction
       follows in the same v0.8.0 cut.
+  - date: 2026-04-24
+    status: Implemented
+    note: |
+      Round M (6 sub-rounds: M-1, M-2, M-3, M-4, M-5a, M-5b,
+      M-5c, M-6) migrated every raw File.* write in
+      lib/glorbo_web/live/ into a Glorbo.Actions.* module.
+      Modules shipped: Tasks, Companies, Projects, Audit,
+      Channels, Inbox, Attachments, Agents. Post-M refactor
+      extracted the shared helpers (slug validation, AuditLog
+      routing, put_detail, default_base) into
+      Glorbo.Actions.Support. The GEP-36 Credo ratchet
+      allowlist is now empty — every write in lib/glorbo_web/
+      live/ routes through Actions. Session log:
+      docs/sessions/2026-04-24-autonomous-round.md.
 supersedes: [38]
 see-also: [6, 29, 37, 40, 41]
 ---
