@@ -835,4 +835,86 @@ defmodule Glorbo.Approvals.GateTest do
         wait_until(fun, remaining - 1)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # GEP-41 Round N-3 — peer_review.requested audit emission
+  # ---------------------------------------------------------------------------
+
+  describe "peer_review.requested audit (Round N-3)" do
+    test "emits once when pending-approval + peer_review_required + no verdict",
+         ctx do
+      %{pid: pid} = start_gate(ctx)
+
+      {_path, _td} =
+        td_for(ctx, "t-n3-1",
+          title: "Needs review",
+          status: "pending-approval",
+          peer_review_required: "true",
+          reviewer: "critiqueops",
+          severity: "major"
+        )
+
+      send(pid, {:file_event, "projects/foo/tasks/t-n3-1.md", [:modified]})
+
+      assert_receive {:audit,
+                      %{
+                        action: "peer_review.requested",
+                        target: "projects/foo/tasks/t-n3-1.md",
+                        reviewer: "critiqueops",
+                        severity: "major"
+                      }},
+                     500
+    end
+
+    test "de-dupes within a single Gate lifetime", ctx do
+      %{pid: pid} = start_gate(ctx)
+
+      {_path, _td} =
+        td_for(ctx, "t-n3-2",
+          title: "Needs review",
+          status: "pending-approval",
+          peer_review_required: "true",
+          reviewer: "critiqueops"
+        )
+
+      send(pid, {:file_event, "projects/foo/tasks/t-n3-2.md", [:modified]})
+      send(pid, {:file_event, "projects/foo/tasks/t-n3-2.md", [:modified]})
+
+      assert_receive {:audit, %{action: "peer_review.requested"}}, 500
+      refute_receive {:audit, %{action: "peer_review.requested"}}, 100
+    end
+
+    test "does NOT emit when peer_review_required is false", ctx do
+      %{pid: pid} = start_gate(ctx)
+
+      {_path, _td} =
+        td_for(ctx, "t-n3-3",
+          title: "No review needed",
+          status: "pending-approval",
+          peer_review_required: "false"
+        )
+
+      send(pid, {:file_event, "projects/foo/tasks/t-n3-3.md", [:modified]})
+
+      refute_receive {:audit, %{action: "peer_review.requested"}}, 200
+    end
+
+    test "does NOT emit when a verdict is already recorded", ctx do
+      %{pid: pid} = start_gate(ctx)
+
+      {_path, _td} =
+        td_for(ctx, "t-n3-4",
+          title: "Already reviewed",
+          status: "pending-approval",
+          peer_review_required: "true",
+          peer_review_verdict: "approve",
+          peer_review_verdict_by: "critiqueops",
+          peer_review_verdict_at: "2026-04-24T00:00:00Z"
+        )
+
+      send(pid, {:file_event, "projects/foo/tasks/t-n3-4.md", [:modified]})
+
+      refute_receive {:audit, %{action: "peer_review.requested"}}, 200
+    end
+  end
 end

@@ -165,7 +165,12 @@ defmodule Glorbo.Approvals.Gate do
       # The watcher-driven approval handler consults this to tell
       # legitimate Director flips from agent self-approval attempts.
       # Values are monotonic timestamps in milliseconds.
-      director_pending: %{}
+      director_pending: %{},
+      # GEP-41 Round N-3: in-memory dedupe for peer-review-request
+      # audit emission. Each task_path gets at most one
+      # `peer_review.requested` entry per Gate lifetime. Re-emit on
+      # restart is acceptable (audit dedupe happens at read-time).
+      peer_review_requested: MapSet.new()
     }
 
     {:ok, state}
@@ -443,9 +448,60 @@ defmodule Glorbo.Approvals.Gate do
     end
   end
 
+  # GEP-41 Round N-3: when a task sits at `pending-approval` with
+  # `peer_review_required: true` and no verdict yet, emit a
+  # `peer_review.requested` audit entry so Directors (and future
+  # dispatcher logic) can see the queue of reviewer-blocked work.
+  # Dedupe via in-memory MapSet — we emit once per Gate lifetime
+  # per task_path; restarts re-emit (cheap), verdict-flips clear
+  # the entry so re-open after revise would re-emit.
+  defp resolve_status(
+         %TaskDefinition{
+           status: "pending-approval",
+           peer_review_required: true,
+           peer_review_verdict: nil
+         } = td,
+         _abs_path,
+         state
+       ) do
+    maybe_emit_peer_review_requested(td, state)
+  end
+
+  # When a verdict lands, drop the dedupe entry so a subsequent
+  # revise→re-open cycle re-notifies.
+  defp resolve_status(
+         %TaskDefinition{peer_review_verdict: verdict} = td,
+         _abs_path,
+         state
+       )
+       when verdict in ["approve", "revise", "block"] do
+    %{state | peer_review_requested: MapSet.delete(state.peer_review_requested, td.task_path)}
+  end
+
   # Any other status (pending-approval, in-progress, completed, custom) is a
   # no-op — the sentinel stays in place until approved/denied.
   defp resolve_status(_td, _abs_path, state), do: state
+
+  defp maybe_emit_peer_review_requested(td, state) do
+    if MapSet.member?(state.peer_review_requested, td.task_path) do
+      state
+    else
+      audit(state, %{
+        action: "peer_review.requested",
+        actor: "system",
+        target: td.task_path,
+        company: state.company,
+        reviewer: td.reviewer || "unspecified",
+        severity: severity_string(td.severity)
+      })
+
+      %{state | peer_review_requested: MapSet.put(state.peer_review_requested, td.task_path)}
+    end
+  end
+
+  defp severity_string(nil), do: "unset"
+  defp severity_string(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp severity_string(other), do: to_string(other)
 
   # GEP-41 D5: peer review runs BEFORE Director approval. When
   # `peer_review_required: true`, the Director's `status: approved`

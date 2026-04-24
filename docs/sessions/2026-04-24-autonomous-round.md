@@ -2944,3 +2944,123 @@ that renders when `peer_review_required: true` and
 ### Commit(s)
 
 One commit to follow.
+
+## Round N-3 — Gate emits peer_review.requested audit
+
+Round N-2 shipped. Originally Round N-3 was scoped as a
+full reviewer auto-dispatch (watch file events, deliver
+inbox messages to the reviewer, write a sentinel for
+dedupe). Reassessed mid-round: that's a multi-commit
+design exercise that deserves its own GEP-41 phase-3
+spike. Smaller scope for this round: emit a
+`peer_review.requested` audit entry at the Gate so the
+queue is observable from the Audit view, Director
+dashboards, and future dispatcher logic — all without
+introducing a new writer.
+
+### Task picked
+
+Add a `resolve_status` clause in `Glorbo.Approvals.Gate`
+that fires when a task with `peer_review_required: true`
+is sitting at `status: pending-approval` with no verdict
+yet. Emit `peer_review.requested`. Dedupe via an
+in-memory `MapSet` on the Gate state; verdict-landing
+drops the entry (so a `revise` → re-open cycle
+re-notifies).
+
+### What shipped
+
+- `lib/glorbo/approvals/gate.ex`:
+  - `init/1` adds `peer_review_requested: MapSet.new()`
+    to the Gate state struct.
+  - Two new `resolve_status` clauses above the existing
+    catch-all:
+    - matches `pending-approval` + `peer_review_required:
+      true` + `peer_review_verdict: nil` → emit
+      `peer_review.requested` once per task_path per
+      Gate lifetime.
+    - matches any task with a recorded verdict (approve /
+      revise / block) → drop the dedupe entry so a
+      subsequent re-open re-emits.
+  - `maybe_emit_peer_review_requested/2` + `severity_string/1`
+    helpers.
+- `test/glorbo/approvals/gate_test.exs` — new describe
+  block `"peer_review.requested audit (Round N-3)"` with 4
+  tests:
+  - Positive: emits once with `reviewer` + `severity`
+    detail.
+  - Dedupe: second file_event within the same lifetime
+    does NOT re-emit.
+  - Negative: does not emit when `peer_review_required:
+    false`.
+  - Negative: does not emit when a verdict is already
+    recorded.
+
+### Design calls I made without you
+
+- **Shrunk the round's scope.** Full reviewer
+  dispatcher → one audit emission. Reasoning: the
+  existing peer-review wiring (D5 gate, CritiqueOps
+  template, Kanban pill) already gives Directors the
+  path forward; a queue-visible audit action is the
+  smallest primitive that enables future dispatcher
+  automation without baking in a premature design (which
+  inbox? dedupe sentinel? retry? reviewer absence
+  handling?). Shipping this unblocks the observability
+  story now; the dispatcher ships when phase-3 scopes it.
+- **In-memory dedupe.** Persistent dedupe (sentinel file
+  or DB) would be heavier. Gate restart re-emits are
+  acceptable — duplicate audit entries are easy to merge
+  at read-time; losing the dedupe mid-Gate-restart is not
+  a safety concern (audit is append-only and cheap).
+- **Verdict-landing clears the dedupe.** Caught by a
+  dedicated clause above the catch-all. Means a
+  `revise` verdict that sends the task back, plus a
+  subsequent re-queue at `pending-approval`, re-emits
+  — exactly the behavior you want for re-reviewed work.
+- **`severity` included in the audit detail.** Downstream
+  consumers (a future dispatcher's priority queue, a
+  Director's "what needs review most" list) will sort on
+  this. Adding it now is cheap; retrofitting later is
+  noisy.
+
+### Gates
+
+- `mix test test/glorbo/approvals/gate_test.exs` — 23
+  passing (19 old + 4 new).
+- `mix precommit` — 2065 tests, 0 failures, 1 skipped.
+
+### Skipped / not done (deferred)
+
+- **Actual reviewer dispatch** (inbox message delivery
+  to the reviewer slug + sentinel-based dedupe) —
+  deferred to a future GEP-41 phase-3 round with a
+  proper design conversation (inbox format, cadence,
+  retry, reviewer-absent fallback).
+- **Audit dedupe at read-time** — the AuditLive filter
+  could collapse repeated `peer_review.requested`
+  entries. Out of scope.
+
+## GEP-41 phase-2 — closing statement for Round N
+
+Round N — three sub-rounds (N-1, N-2, N-3) — shipped
+GEP-41 phase-2's three deferrals:
+
+  1. **D1 auto-flip at create** (N-1): severity
+     `major`/`critical` now defaults to
+     `peer_review_required: true`; explicit false wins.
+  2. **Kanban visibility** (N-2): `⧗ peer-review` pill
+     on cards that are blocked on the reviewer.
+  3. **Queue observability** (N-3): Gate emits
+     `peer_review.requested` audit when a task hits the
+     reviewer-blocked state.
+
+Deferred to GEP-41 phase-3:
+
+  * Actual reviewer auto-dispatch (inbox delivery,
+    sentinel dedupe, cadence, retry, reviewer-absent
+    fallback).
+
+### Commit(s)
+
+One commit to follow.
