@@ -1243,51 +1243,34 @@ defmodule GlorboWeb.KanbanLive do
   defp maybe_notify_assignee(_prev, _new, _co, _id, _title, _body), do: :ok
 
   defp do_notify_assignee(new_assignee, company, task_id, title, body) do
-    agent_dir = Path.join([base_dir(), "companies", company, "agents", new_assignee])
+    case Glorbo.Actions.Inbox.deliver_task_assignment(
+           company,
+           new_assignee,
+           task_id,
+           title,
+           body,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _} ->
+        # Belt-and-braces: inotify → PubSub → Agent.Server is the canonical
+        # wake path, but boot-race or dropped events leave tasks sitting in
+        # inbox until the next heartbeat (observed 2026-04-19, >8 min
+        # delay). Directly wake via Registry lookup; idempotent with the
+        # fs-event path via the server's wake-queue.
+        safe_wake_assignee(company, new_assignee)
 
-    if File.dir?(agent_dir) do
-      inbox_dir = Path.join([agent_dir, "inbox"])
-      File.mkdir_p!(inbox_dir)
+      {:error, :agent_not_found} ->
+        # No agent directory — silently skip. The task is still
+        # re-assignable manually.
+        :ok
 
-      ts = System.system_time(:millisecond)
-      path = Path.join(inbox_dir, "#{ts}-task-#{task_id}.md")
+      {:error, reason} ->
+        require Logger
 
-      content = """
-      ---
-      kind: inbox-message/v1
-      from: director
-      task_id: "#{task_id}"
-      subkind: task_assignment
-      delivered_at: "#{DateTime.to_iso8601(DateTime.utc_now())}"
-      ---
-
-      # New task assigned: #{title}
-
-      #{body}
-      """
-
-      # threatmodel M03 defense-in-depth. `inbox/` is `--ro-bind` for
-      # this agent inside the sandbox, but a future path grant or
-      # operator tool could plant a symlink; refuse to follow one
-      # before writing.
-      case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
-        :ok ->
-          File.write!(path, content)
-
-        {:error, _} ->
-          require Logger
-
-          Logger.warning(
-            "[kanban/#{company}] skipped assignee notify for #{new_assignee}: non-regular path at #{path}"
-          )
-      end
-
-      # Belt-and-braces: inotify → PubSub → Agent.Server is the canonical
-      # wake path, but boot-race or dropped events leave tasks sitting in
-      # inbox until the next heartbeat (observed 2026-04-19, >8 min
-      # delay). Directly wake via Registry lookup; idempotent with the
-      # fs-event path via the server's wake-queue.
-      safe_wake_assignee(company, new_assignee)
+        Logger.warning(
+          "[kanban/#{company}] skipped assignee notify for #{new_assignee}: #{inspect(reason)}"
+        )
     end
 
     :ok

@@ -2312,3 +2312,78 @@ Migrate ChannelLive's two write paths:
 ### Commit(s)
 
 One commit to follow.
+
+## Round M-5a — KanbanLive inbox delivery (GEP-36 ratchet)
+
+Round M-4 CI green (run 24909242495 → success). KanbanLive
+is the biggest remaining surface (6 write sites across 3
+functions), so splitting Round M-5 into three sub-rounds:
+
+- **M-5a** — inbox delivery (this round).
+- **M-5b** — task archive to history.
+- **M-5c** — attachment upload sink + Credo allowlist drop.
+
+Each sub-round ships one commit, but `kanban_live.ex`
+stays on the allowlist until M-5c because all three write
+sites need to move before the ratchet shrinks.
+
+### Task picked
+
+Extract `do_notify_assignee/5`'s inbox-file write into
+`Glorbo.Actions.Inbox.deliver_task_assignment/6`.
+
+### What shipped
+
+- `lib/glorbo/actions/inbox.ex` — new module.
+  - `deliver_task_assignment(company, agent, task_id, title,
+    body, opts)` — validates slugs, enforces agent-dir
+    presence (`:agent_not_found` otherwise), enforces
+    `AgentWritableFile.ensure_writable/1` (threatmodel M03),
+    writes the inbox-message/v1 file, emits `inbox.deliver`
+    audit.
+- `lib/glorbo_web/live/kanban_live.ex` — `do_notify_assignee/5`
+  now a tiny dispatch wrapper around Actions.Inbox. Log the
+  failure reason rather than swallowing silently. `File.dir?`
+  pre-check removed; `:agent_not_found` branch handles it.
+- `test/glorbo/actions/inbox_test.exs` — 4 tests:
+  - happy-path write + audit.
+  - `:agent_not_found` when agent dir missing.
+  - Invalid company slug rejection.
+  - Invalid agent slug rejection.
+
+### Design calls I made without you
+
+- **Preserved `File.mkdir_p(inbox_dir)` inside Actions.** The
+  inbox directory is created on demand; agents bootstrapped
+  via hire proposals may not have it yet. Keeping the mkdir
+  inside Actions matches pre-migration semantics.
+- **M03 guard re-used (not re-implemented).** Actions.Inbox
+  delegates to the existing
+  `Glorbo.Filesystem.AgentWritableFile.ensure_writable/1`.
+  That helper was already defense-in-depth for the sandbox
+  boundary; no reason to duplicate the logic in Actions.
+- **Noted adjacent inbox writers without migrating them.**
+  `Glorbo.Company.TaskScheduler` and `Glorbo.PathRequestGate`
+  both write inbox-message files under similar patterns.
+  They're NOT in `lib/glorbo_web/live/` so Credo doesn't
+  flag them; they could share `Actions.Inbox` in a future
+  consolidation round. Not in scope.
+
+### Gates
+
+- `mix test test/glorbo/actions/inbox_test.exs` — 4 passing.
+- `mix test test/glorbo_web/live/kanban_live_test.exs` — 42
+  passing (no regressions).
+- `mix credo --strict` — 4991 mods/funs, 0 issues.
+- `mix precommit` — 2029 tests, 0 failures.
+
+### Skipped / not done
+
+- KanbanLive stays on Credo allowlist — intentional until
+  M-5c lands.
+- Browser UAT — no.
+- Actions.Support extraction — still deferred to post-M-6.
+
+### Commit(s)
+
+One commit to follow.
