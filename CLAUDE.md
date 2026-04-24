@@ -47,6 +47,34 @@ in a row.
 Bug fixes, doc tweaks, and dep bumps may collapse phases 1–2 (no
 GEP) but still need 3–6.
 
+## Pre-version release gate
+
+Before every version cut (`mix.exs` bump + `git tag`), execute
+this gate end-to-end. No shortcuts; no silent deferrals.
+
+1. **Doc-drift pass** — read CHANGELOG, README, DESIGN,
+   architecture.md, moduledocs on changed modules. Update
+   anything stale. (Documented as a P0 smell in
+   `docs/project-profile.md`.)
+2. **Graphify refresh** — `graphify update lib && mv
+   lib/graphify-out/GRAPH_REPORT.md docs/knowledge-graph/ &&
+   rm -rf lib/graphify-out`. Append tacit-knowledge entries
+   to `docs/knowledge-graph/notes.md` for anything surprising.
+3. **`mix test`** — all green; integration-tag tests if the
+   change touches that surface.
+4. **E2E UAT** — walk `docs/testing/uat.md` in a real
+   browser. Green the cases that pass; note breakages.
+5. **Security review** — review the open rows in
+   `docs/testing/threatmodel.md`. Close or explicitly defer
+   with rationale inline. Unresolved security findings past
+   a version cut are P0.
+6. **Release flow** — tag → signed GH release + Burrito
+   binaries + Homebrew tap formula regen (`docs/releasing.md`).
+
+Shortcuts caught during the gate are the whole point — the
+gate exists because we know cutting versions is when they
+surface.
+
 ## Coding discipline
 
 Four principles (adapted from Karpathy's guidelines). They override
@@ -85,6 +113,7 @@ intentionally doesn't carry:
 | Browser UAT checklist            | `docs/testing/uat.md` |
 | End-user manual test plan        | `docs/testing/testplan.md` |
 | Rolling punch list               | `docs/todo.md` |
+| Project values / stances (READ FIRST for stance calls) | **`docs/project-profile.md`** |
 | Release verification (cosign)    | `docs/verifying-releases.md` |
 | Detailed runtime log — session-by-session notes | `docs/sessions/` |
 | Archived design artifacts        | `docs/archived/` |
