@@ -98,7 +98,10 @@ defmodule Glorbo.Actions.Projects do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
     path = project_md_path(base, company, project)
-    tmp = path <> ".tmp"
+    # Threatmodel wave 23: random-suffix temp filename + exclusive open
+    # closes the TOCTOU race the prior `path <> ".tmp"` flow had.
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
 
     history_meta = %{
       actor: HomeHistory.actor_from_string(actor),
@@ -111,7 +114,6 @@ defmodule Glorbo.Actions.Projects do
         with :ok <- Support.validate_slug(company, :company),
              :ok <- Support.validate_slug(project, :project),
              :ok <- ensure_writable(path),
-             :ok <- ensure_writable(tmp),
              {:ok, content} <- File.read(path),
              new_content = render_new_content(content, meta),
              :ok <- atomic_write(tmp, path, new_content),
@@ -149,12 +151,28 @@ defmodule Glorbo.Actions.Projects do
   end
 
   defp atomic_write(tmp, path, content) do
-    with :ok <- File.write(tmp, content, [:sync]),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      err ->
-        _ = File.rm(tmp)
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
         err
     end
   end

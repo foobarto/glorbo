@@ -115,15 +115,20 @@ defmodule GlorboWeb.MCP.Tools.QueryAudit do
   defp read_month(audit_dir, ym) do
     path = Path.join(audit_dir, "#{ym}.jsonl")
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        |> Enum.flat_map(&decode_line/1)
-
-      _ ->
-        []
+    # Threatmodel wave 23: stream the audit JSONL line-by-line so
+    # an MCP query against a fat audit month doesn't OOM the BEAM.
+    # The MCP plug-side limit cap already bounds the result list
+    # via Enum.take after Enum.reverse downstream; here we just
+    # avoid materialising the full file in memory at decode time.
+    if File.regular?(path) do
+      path
+      |> File.stream!([], :line)
+      |> Enum.flat_map(&decode_line/1)
+    else
+      []
     end
+  rescue
+    _ -> []
   end
 
   defp decode_line(line) do

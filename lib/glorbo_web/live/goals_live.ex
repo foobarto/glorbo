@@ -359,7 +359,8 @@ defmodule GlorboWeb.GoalsLive do
   end
 
   defp read_fm(path) do
-    with {:ok, content} <- File.read(path),
+    # Threatmodel wave 23: lstat + 1 MiB cap on agent-RW task md.
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       [fm]
     else
@@ -382,7 +383,7 @@ defmodule GlorboWeb.GoalsLive do
       Enum.map(goals, fn goal ->
         fms = Map.get(by_goal, goal.slug, [])
         total = length(fms)
-        done = Enum.count(fms, &(to_string(&1["status"] || "todo") == "done"))
+        done = Enum.count(fms, &(safe_scalar_str(&1["status"], "todo") == "done"))
         open = total - done
 
         pct = if total == 0, do: 0, else: div(done * 100, total)
@@ -411,7 +412,7 @@ defmodule GlorboWeb.GoalsLive do
 
     counts =
       Enum.reduce(fms, %{}, fn fm, acc ->
-        key = to_string(fm["status"] || "todo")
+        key = safe_scalar_str(fm["status"], "todo")
         Map.update(acc, key, 1, &(&1 + 1))
       end)
 
@@ -419,4 +420,11 @@ defmodule GlorboWeb.GoalsLive do
     |> Enum.map(fn k -> {k, Map.get(counts, k, 0)} end)
     |> Enum.filter(fn {_, c} -> c > 0 end)
   end
+
+  # Threatmodel wave 23: agent-controlled YAML can set status to a
+  # map / list, which would crash `to_string/1`. Coerce only scalars.
+  defp safe_scalar_str(v, _default) when is_binary(v), do: v
+  defp safe_scalar_str(v, _default) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_scalar_str(v, _default) when is_number(v), do: to_string(v)
+  defp safe_scalar_str(_, default), do: default
 end

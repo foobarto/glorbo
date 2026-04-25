@@ -54,23 +54,45 @@ defmodule Glorbo.Filesystem.FrontmatterWriter do
   @spec atomic_write(Path.t(), binary()) :: :ok | {:error, term()}
   def atomic_write(file_path, new_content) do
     with :ok <- Glorbo.Filesystem.AgentWritableFile.ensure_writable(file_path) do
-      tmp = file_path <> ".tmp-#{System.unique_integer([:positive, :monotonic])}"
+      # Threatmodel wave 23: 8-byte random suffix + exclusive open
+      # (O_EXCL refuses symlink follow + existing-file in one syscall).
+      # The previous `path <> ".tmp-<monotonic>"` was attacker-
+      # predictable in agent-RW trees.
+      rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+      tmp = "#{file_path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
 
-      case File.write(tmp, new_content, [:sync]) do
-        :ok ->
-          case File.rename(tmp, file_path) do
-            :ok ->
-              :ok
+      do_atomic_write(file_path, tmp, new_content)
+    end
+  end
 
-            {:error, _} = err ->
-              _ = File.rm(tmp)
-              err
-          end
+  defp do_atomic_write(file_path, tmp, new_content) do
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        finish_atomic_write(fd, file_path, tmp, new_content)
 
-        {:error, _} = err ->
-          _ = File.rm(tmp)
-          err
-      end
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp finish_atomic_write(fd, file_path, tmp, new_content) do
+    case :file.write(fd, new_content) do
+      :ok ->
+        :ok = :file.close(fd)
+
+        case File.rename(tmp, file_path) do
+          :ok ->
+            :ok
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        :ok = :file.close(fd)
+        _ = File.rm(tmp)
+        err
     end
   end
 

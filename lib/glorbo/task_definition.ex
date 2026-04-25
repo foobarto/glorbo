@@ -431,7 +431,8 @@ defmodule Glorbo.TaskDefinition do
   """
   @spec write_body(Path.t(), String.t()) :: :ok | {:error, term()}
   def write_body(file_path, body) when is_binary(file_path) and is_binary(body) do
-    with {:ok, content} <- File.read(file_path),
+    with :ok <- ensure_regular_file_or_absent(file_path),
+         {:ok, content} <- File.read(file_path),
          {:ok, new_content} <- substitute_body(content, body) do
       atomic_write(file_path, new_content)
     end
@@ -450,7 +451,8 @@ defmodule Glorbo.TaskDefinition do
   """
   @spec write_frontmatter(Path.t(), map()) :: :ok | {:error, term()}
   def write_frontmatter(file_path, updates) when is_binary(file_path) and is_map(updates) do
-    with {:ok, content} <- File.read(file_path),
+    with :ok <- ensure_regular_file_or_absent(file_path),
+         {:ok, content} <- File.read(file_path),
          rewritten <- maybe_loop_back_recurring(content, updates),
          # GEP-40 — merge updates with existing frontmatter so scalar
          # fields the caller didn't touch (done_when, reviewer,
@@ -645,13 +647,18 @@ defmodule Glorbo.TaskDefinition do
     "#{key}:\n#{items}\n"
   end
 
+  # Threatmodel wave 23: closes the TOCTOU race the previous lstat-
+  # then-write flow had. `<file>.tmp` was predictable; an attacker
+  # in a writable task tree could pre-plant a symlink between the
+  # ensure_regular_file_or_absent check and File.write. Now uses an
+  # 8-byte random suffix + `:file.open([:exclusive])` so the temp
+  # file is BOTH unguessable AND created with O_EXCL — refusing
+  # symlink follow + existing-file in one atomic syscall. Target
+  # lstat is still gated for non-regular shapes.
   defp atomic_write(file_path, new_content) do
-    tmp = file_path <> ".tmp"
-    # Threatmodel wave 5: don't let a pre-created `<file>.tmp` symlink
-    # redirect the write. lstat both the target and the temp side; if
-    # the temp file exists and isn't a regular file, refuse.
-    with :ok <- ensure_regular_file_or_absent(tmp),
-         :ok <- ensure_regular_file_or_absent(file_path) do
+    with :ok <- ensure_regular_file_or_absent(file_path) do
+      rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+      tmp = "#{file_path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
       do_atomic_write(tmp, file_path, new_content)
     end
   end
@@ -665,19 +672,28 @@ defmodule Glorbo.TaskDefinition do
   end
 
   defp do_atomic_write(tmp, file_path, new_content) do
-    case File.write(tmp, new_content, [:sync]) do
-      :ok ->
-        case File.rename(tmp, file_path) do
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        case :file.write(fd, new_content) do
           :ok ->
-            :ok
+            :ok = :file.close(fd)
+
+            case File.rename(tmp, file_path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
 
           {:error, _} = err ->
+            :ok = :file.close(fd)
             _ = File.rm(tmp)
             err
         end
 
       {:error, _} = err ->
-        _ = File.rm(tmp)
         err
     end
   end

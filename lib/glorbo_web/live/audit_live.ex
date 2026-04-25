@@ -364,33 +364,56 @@ defmodule GlorboWeb.AuditLive do
   defp audit_path(base, co, ym),
     do: Path.join([base, "companies", co, "audit", "#{ym}.jsonl"])
 
+  # Threatmodel wave 23: stream the JSONL line-by-line. Both the tail
+  # and the older-page path keep memory bounded by the visible-row
+  # cap (`n`) regardless of the file's total size; the older path
+  # uses a sliding window instead of materialising the full list.
   defp load_tail(path, n) do
-    case File.read(path) do
-      {:ok, content} ->
-        lines = content |> String.split("\n", trim: true)
-        total = length(lines)
-        tail = Enum.take(lines, -n)
-        entries = tail |> Enum.map(&decode/1) |> Enum.reject(&is_nil/1)
-        offset = max(total - n, 0)
-        {entries, offset, total}
+    if File.regular?(path) do
+      {tail_lines, total} =
+        path
+        |> File.stream!([], :line)
+        |> Enum.reduce({[], 0}, fn line, {acc, count} ->
+          line = String.trim_trailing(line, "\n")
 
-      _ ->
-        {[], 0, 0}
+          if line == "" do
+            {acc, count}
+          else
+            new_acc = [line | Enum.take(acc, n - 1)]
+            {new_acc, count + 1}
+          end
+        end)
+
+      entries = tail_lines |> Enum.reverse() |> Enum.map(&decode/1) |> Enum.reject(&is_nil/1)
+      offset = max(total - n, 0)
+      {entries, offset, total}
+    else
+      {[], 0, 0}
     end
+  rescue
+    _ -> {[], 0, 0}
   end
 
   defp load_older(path, current_offset, n) do
-    case File.read(path) do
-      {:ok, content} ->
-        lines = content |> String.split("\n", trim: true)
-        new_offset = max(current_offset - n, 0)
-        slice = Enum.slice(lines, new_offset, current_offset - new_offset)
-        entries = slice |> Enum.map(&decode/1) |> Enum.reject(&is_nil/1)
-        {entries, new_offset}
+    new_offset = max(current_offset - n, 0)
+    take = current_offset - new_offset
 
-      _ ->
-        {[], 0}
+    if File.regular?(path) do
+      lines =
+        path
+        |> File.stream!([], :line)
+        |> Stream.map(&String.trim_trailing(&1, "\n"))
+        |> Stream.reject(&(&1 == ""))
+        |> Stream.drop(new_offset)
+        |> Enum.take(take)
+
+      entries = lines |> Enum.map(&decode/1) |> Enum.reject(&is_nil/1)
+      {entries, new_offset}
+    else
+      {[], 0}
     end
+  rescue
+    _ -> {[], 0}
   end
 
   defp decode(line) do

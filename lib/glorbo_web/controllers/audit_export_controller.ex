@@ -26,36 +26,31 @@ defmodule GlorboWeb.AuditExportController do
       month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
       path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
 
-      case File.read(path) do
-        {:ok, content} ->
-          csv = build_csv(content)
+      # Threatmodel wave 23: stream the JSONL into the CSV body
+      # row-by-row instead of slurping the whole month into RAM.
+      if File.regular?(path) do
+        csv_body =
+          path
+          |> File.stream!([], :line)
+          |> Stream.map(&row_from_line/1)
+          |> Stream.reject(&is_nil/1)
+          |> Enum.join("")
 
-          conn
-          |> put_resp_content_type("text/csv")
-          |> put_resp_header(
-            "content-disposition",
-            ~s|attachment; filename="#{co}-audit-#{month}.csv"|
-          )
-          |> send_resp(200, csv)
-
-        _ ->
-          conn
-          |> put_resp_content_type("text/csv")
-          |> send_resp(200, header_row())
+        conn
+        |> put_resp_content_type("text/csv")
+        |> put_resp_header(
+          "content-disposition",
+          ~s|attachment; filename="#{co}-audit-#{month}.csv"|
+        )
+        |> send_resp(200, header_row() <> csv_body)
+      else
+        conn
+        |> put_resp_content_type("text/csv")
+        |> send_resp(200, header_row())
       end
     else
       conn |> send_resp(400, "invalid company slug")
     end
-  end
-
-  defp build_csv(content) do
-    rows =
-      content
-      |> String.split("\n", trim: true)
-      |> Enum.map(&row_from_line/1)
-      |> Enum.reject(&is_nil/1)
-
-    [header_row() | rows] |> Enum.join("")
   end
 
   defp header_row do

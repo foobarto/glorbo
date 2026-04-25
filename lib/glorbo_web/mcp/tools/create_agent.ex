@@ -46,16 +46,28 @@ defmodule GlorboWeb.MCP.Tools.CreateAgent do
       "additionalProperties" => false
     }
 
+  @reserved_agent_slugs ~w(mcp)
+
   @impl true
   def call(%{"company" => company, "slug" => slug} = args, context)
       when is_binary(company) and is_binary(slug) do
     with :ok <- Args.require_slugs(company: company, slug: slug),
+         :ok <- refuse_reserved_slug(slug),
          :ok <- validate_scalar_args(args) do
       do_call(company, slug, args, context)
     end
   end
 
   def call(_args, _context), do: {:error, :missing_args}
+
+  # Threatmodel wave 23: `mcp` is the synthetic sender MCP tools use
+  # for proposal / decide outbox writes. A real agent at the same
+  # slug would share the Router-adjacent outbox + sender identity.
+  defp refuse_reserved_slug(slug) do
+    if slug in @reserved_agent_slugs,
+      do: {:error, {:reserved_slug, slug}},
+      else: :ok
+  end
 
   # Threatmodel T2: untrusted MCP strings land directly in AGENT.md
   # YAML frontmatter. Reject anything that could inject additional

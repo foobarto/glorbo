@@ -83,10 +83,21 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
     end
   end
 
+  # Threatmodel wave 23: every agent-RW read has the same OOM
+  # vector (a planted 1 GB regular file). The default cap is 10 MiB
+  # — generous for the largest legitimate task / channel files
+  # we've ever observed. Use `read_bounded/2` for caller-specified
+  # caps where 10 MiB is too generous.
+  @default_max_bytes 10 * 1_048_576
+
   @doc """
-  Read `path` after enforcing the lstat guard. A bare `File.read/1`
-  on a path in an agent-writable tree follows symlinks; this helper
-  refuses any non-regular shape before reading.
+  Read `path` after enforcing the lstat guard + a 10 MiB byte cap.
+  A bare `File.read/1` on a path in an agent-writable tree follows
+  symlinks AND has no size limit; this helper refuses any non-regular
+  shape AND oversized files before reading.
+
+  Use `read_bounded/2` when 10 MiB is too generous (e.g. memory body
+  reads where 1 MiB is the right ceiling).
   """
   @spec read(Path.t()) ::
           {:ok, binary()}
@@ -94,16 +105,55 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
              {:not_regular_file, stat_type()}
              | :enoent
              | {:stat_failed, term()}
-             | {:read_failed, term()}}
+             | {:read_failed, term()}
+             | {:file_too_large, non_neg_integer(), pos_integer()}}
   def read(path) when is_binary(path) do
-    with :ok <- ensure_regular(path),
-         {:ok, _} = ok <- File.read(path) do
-      ok
-    else
-      {:error, {:not_regular_file, _}} = err -> err
-      {:error, :enoent} = err -> err
-      {:error, {:stat_failed, _}} = err -> err
-      {:error, reason} -> {:error, {:read_failed, reason}}
+    read_bounded(path, @default_max_bytes)
+  end
+
+  @doc """
+  Like `read/1` but caps file size BEFORE reading via `:file.read_link_info`.
+  Refuses files larger than `max_bytes` with
+  `{:error, {:file_too_large, size, max}}` rather than slurping into RAM.
+
+  Use this from any read site where the caller doesn't already enforce
+  a size cap downstream — agent-controlled task / project / channel
+  files where an attacker could plant a 1 GB body to OOM the BEAM.
+
+  The `file_info` record element layout is:
+  `{:file_info, size, type, access, atime, mtime, ctime, mode, ...}`.
+  """
+  @spec read_bounded(Path.t(), pos_integer()) ::
+          {:ok, binary()}
+          | {:error,
+             {:not_regular_file, stat_type()}
+             | :enoent
+             | {:stat_failed, term()}
+             | {:read_failed, term()}
+             | {:file_too_large, non_neg_integer(), pos_integer()}}
+  def read_bounded(path, max_bytes)
+      when is_binary(path) and is_integer(max_bytes) and max_bytes > 0 do
+    case :file.read_link_info(path) do
+      {:ok, info} ->
+        case {elem(info, 2), elem(info, 1)} do
+          {:regular, size} when size > max_bytes ->
+            {:error, {:file_too_large, size, max_bytes}}
+
+          {:regular, _size} ->
+            case File.read(path) do
+              {:ok, _} = ok -> ok
+              {:error, reason} -> {:error, {:read_failed, reason}}
+            end
+
+          {other, _} ->
+            {:error, {:not_regular_file, other}}
+        end
+
+      {:error, :enoent} ->
+        {:error, :enoent}
+
+      {:error, reason} ->
+        {:error, {:stat_failed, reason}}
     end
   end
 

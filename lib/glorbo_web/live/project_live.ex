@@ -332,7 +332,10 @@ defmodule GlorboWeb.ProjectLive do
       {:ok, _} ->
         path = Path.join(proj_dir, "project.md")
 
-        case File.read(path) do
+        # Threatmodel wave 23: agent-RW path, cap at 1 MiB and lstat-
+        # gate so a planted symlink can't smuggle cross-company /
+        # host-readable content into the dashboard.
+        case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
           {:ok, content} -> parse_meta(content)
           _ -> %{name: nil, icon: nil, description: nil}
         end
@@ -415,7 +418,15 @@ defmodule GlorboWeb.ProjectLive do
   end
 
   defp load_task_row(path, id) do
-    content = File.read!(path)
+    # Threatmodel wave 23: lstat + 1 MiB cap on agent-RW task files.
+    # Falls back to a minimal row on any guard failure so a planted
+    # symlink / oversized file doesn't crash the project page.
+    content =
+      case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
+        {:ok, c} -> c
+        _ -> ""
+      end
+
     {fm, _body} = split_frontmatter(content)
 
     %{

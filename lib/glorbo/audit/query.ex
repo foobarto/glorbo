@@ -31,17 +31,33 @@ defmodule Glorbo.Audit.Query do
 
     path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        |> Enum.flat_map(&decode_line/1)
-        |> Enum.filter(&matches?(&1, task_path, task_id))
-        |> Enum.reverse()
-        |> Enum.take(limit)
+    # Threatmodel wave 23: stream the JSONL line-by-line and keep a
+    # rolling-window of the last `limit` matches, so memory stays
+    # bounded by N regardless of file size.
+    if File.regular?(path) do
+      # `[entry | Enum.take(acc, limit-1)]` keeps the rolling window
+      # sorted newest-first as the stream progresses, since the file
+      # is chronologically oldest-first. The final acc IS already
+      # newest-first; no Enum.reverse needed.
+      path
+      |> File.stream!([], :line)
+      |> Enum.reduce([], &push_match(&1, &2, task_path, task_id, limit))
+    else
+      []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp push_match(line, acc, task_path, task_id, limit) do
+    case decode_line(line) do
+      [entry] ->
+        if matches?(entry, task_path, task_id),
+          do: [entry | Enum.take(acc, limit - 1)],
+          else: acc
 
       _ ->
-        []
+        acc
     end
   end
 

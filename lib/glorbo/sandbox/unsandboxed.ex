@@ -89,16 +89,36 @@ defmodule Glorbo.Sandbox.Unsandboxed do
     end
   end
 
+  # Threatmodel wave 23: mirror the bwrap helper's hardened tempfile.
+  # 8-byte random suffix + `:file.open([:exclusive])` (O_EXCL refuses
+  # to follow a pre-planted symlink) + 0600 mode so other local users
+  # can't read the prompt while it's on disk. Prompt text frequently
+  # contains agent-routed secrets / API context.
   defp write_prompt_tempfile(prompt) when is_binary(prompt) do
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+
     path =
       Path.join(
         System.tmp_dir!(),
-        "glorbo_unsandboxed_prompt_#{System.unique_integer([:positive, :monotonic])}"
+        "glorbo_unsandboxed_prompt_#{System.unique_integer([:positive, :monotonic])}_#{rand_suffix}"
       )
 
-    case File.write(path, prompt) do
-      :ok -> {:ok, path}
-      {:error, reason} -> {:error, reason}
+    case :file.open(path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        case :file.write(fd, prompt) do
+          :ok ->
+            :ok = :file.close(fd)
+            _ = File.chmod(path, 0o600)
+            {:ok, path}
+
+          {:error, reason} ->
+            :ok = :file.close(fd)
+            _ = File.rm(path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

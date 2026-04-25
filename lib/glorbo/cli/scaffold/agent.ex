@@ -39,6 +39,10 @@ defmodule Glorbo.CLI.Scaffold.Agent do
   alias Glorbo.CLI.Scaffold.TemplateRegistry
 
   @slug_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
+
+  # Reserved agent slugs that MCP tools and other synthetic senders
+  # use; refusing to scaffold prevents actor / outbox confusion.
+  @reserved_agent_slugs ~w(mcp)
   @switches [
     role: :string,
     provider: :string,
@@ -62,10 +66,22 @@ defmodule Glorbo.CLI.Scaffold.Agent do
     case String.split(co_slash_ag, "/", parts: 2) do
       [company, agent]
       when byte_size(company) > 0 and byte_size(agent) > 0 ->
-        if company =~ @slug_re and agent =~ @slug_re do
-          scaffold(company, agent, opts)
-        else
-          {:new_agent, 1, "Invalid slug in '#{co_slash_ag}'. Slug regex: #{inspect(@slug_re)}.\n"}
+        cond do
+          # Threatmodel wave 23: `mcp` is a synthetic sender used by
+          # MCP tools that write into `agents/mcp/outbox`. Refuse to
+          # scaffold a real agent at the same slug — the two would
+          # share the Router-adjacent outbox and sender identity.
+          agent in @reserved_agent_slugs ->
+            {:new_agent, 1,
+             "Refusing to scaffold reserved agent slug '#{agent}' " <>
+               "(reserved: #{Enum.join(@reserved_agent_slugs, ", ")}).\n"}
+
+          company =~ @slug_re and agent =~ @slug_re ->
+            scaffold(company, agent, opts)
+
+          true ->
+            {:new_agent, 1,
+             "Invalid slug in '#{co_slash_ag}'. Slug regex: #{inspect(@slug_re)}.\n"}
         end
 
       _ ->

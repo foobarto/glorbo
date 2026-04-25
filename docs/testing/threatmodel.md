@@ -348,10 +348,45 @@ correctness/UX backlog; they are not direct security gaps and
 will be triaged into general bug-fix waves rather than security
 sweeps.
 
-**Fresh Codex re-scan 2026-04-25 22:00** (raw at
-`.reports/codex-security-scan-2026-04-25-2200.md`) surfaced 4
-NEW findings against HEAD (1 high, 3 medium). All 4 closed in
-**wave 22**:
+**Codex re-scan #3 2026-04-25 22:30** (post-v0.11.1, raw at
+`.reports/codex-security-scan-2026-04-25-2230.md`) surfaced 9
+more findings (3 high, 6 medium). Plus the v1 scan output that
+landed late (`2026-04-25-2154.md`) had 6 findings. All closed
+in **wave 23**:
+
+  * **High** — TaskDefinition `atomic_write` predictable temp
+    path TOCTOU race (now uses crypto-random suffix +
+    `:file.open([:exclusive])`).
+  * **High** — Actions.Projects `update/4` predictable temp +
+    lstat-then-write race (same fix).
+  * **High** — Unsandboxed prompt tempfile predictable + non-
+    exclusive (mirrors the bwrap helper now: random suffix, O_EXCL,
+    0600).
+  * **High** — `AgentWritableFile.read/1` had no size cap —
+    closed by adding a default 10 MiB ceiling via
+    `read_bounded/2` and routing all callers through it.
+  * **High** — Task/project dashboard readers (project_live,
+    overview_live, goals_live) were doing raw `File.read` on
+    agent-RW paths — switched all to
+    `AgentWritableFile.read_bounded(path, 1_048_576)`.
+  * **Medium** — FrontmatterWriter.atomic_write predictable
+    `tmp-<monotonic>` path (random suffix + exclusive open).
+  * **Medium** — `mcp` synthetic-sender slug was scaffoldable
+    as a real agent — added `@reserved_agent_slugs` block in
+    both `Glorbo.CLI.Scaffold.Agent` and the
+    `glorbo.create_agent` MCP tool.
+  * **Medium** — Audit JSONL readers still slurping
+    (`audit_live.load_tail/load_older`, `audit_export_controller`,
+    `audit/query.for_task`, `mcp/tools/query_audit.read_month`)
+    — all four switched to `File.stream!([], :line) +
+    Enum.reduce` rolling-window pattern.
+  * **Low** — `to_string/1` on agent-controlled metadata in
+    overview_live + goals_live (`safe_scalar`/`safe_scalar_str`
+    helpers refuse maps/lists).
+
+**Codex re-scan #2 2026-04-25 22:00** (raw at
+`.reports/codex-security-scan-2026-04-25-2200.md`) had surfaced 4
+findings (1 high, 3 medium) all closed in **wave 22**:
 
   * **High — TaskDefinition.parse_file follows symlinks.**
     `read_file/1` did a bare `File.read/1` against an agent-RW

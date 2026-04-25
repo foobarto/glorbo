@@ -383,6 +383,14 @@ defmodule GlorboWeb.OverviewLive do
   defp safe_goal_slug(v) when is_integer(v), do: Integer.to_string(v)
   defp safe_goal_slug(_), do: ""
 
+  # Same shape as safe_goal_slug but used inline for any agent-
+  # controlled scalar field (status, etc). Refuses to coerce
+  # maps/lists which would crash `to_string/1`.
+  defp safe_scalar(v) when is_binary(v), do: v
+  defp safe_scalar(v) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_scalar(v) when is_number(v), do: to_string(v)
+  defp safe_scalar(_), do: ""
+
   # Per-goal task counts: {total, done} keyed by goal slug. Walks
   # `projects/*/tasks/*.md` once, bucketing by frontmatter `goal:`.
   defp goal_task_counts(base, slug) do
@@ -394,11 +402,12 @@ defmodule GlorboWeb.OverviewLive do
   end
 
   defp fold_task(path, acc) do
-    case File.read(path) do
+    # Threatmodel wave 23: lstat + 1 MiB cap on the agent-RW task md.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
           {:ok, %{"goal" => goal_slug} = meta, _} when is_binary(goal_slug) and goal_slug != "" ->
-            status = to_string(Map.get(meta, "status", ""))
+            status = safe_scalar(Map.get(meta, "status", ""))
             delta = if status == "done", do: {1, 1}, else: {1, 0}
 
             Map.update(acc, goal_slug, delta, fn {t, d} ->
