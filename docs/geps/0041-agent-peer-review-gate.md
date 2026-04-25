@@ -64,6 +64,11 @@ history:
       retry, reviewer-absent fallback). Phase-3 is a separate
       design exercise, not a rollout-list gap.
 
+      *Update 2026-04-25:* phase-3 shipped as GEP-42, which
+      closes the auto-dispatcher gap. See GEP-42's decision log
+      for the routing model, missing-reviewer policy, and
+      verdict-return path.
+
       Deferral: D6's runtime enforcement
       (`peer_review_flag_rewound` rejection of `true → false`
       flips) holds *vacuously* at v0.8.0 — the field is only
@@ -74,6 +79,7 @@ history:
       path is added later, the enforcement lands in that
       same commit.
 requires: [2, 19, 40]
+extended-by: [42]
 see-also: [6, 19, 28, 30, 36, 37]
 ---
 

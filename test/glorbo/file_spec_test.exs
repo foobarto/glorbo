@@ -40,8 +40,9 @@ defmodule Glorbo.FileSpecTest do
   ]
 
   describe "registry" do
-    test "specs/0 returns all 24 per-kind modules" do
-      assert length(FileSpec.specs()) == 24
+    test "specs/0 returns all 26 per-kind modules" do
+      # GEP-42 added PeerReviewRequestMd + PeerReviewFeedbackMd.
+      assert length(FileSpec.specs()) == 26
     end
 
     test "every spec module declares a kind in `<name>/<version>` shape" do

@@ -65,6 +65,8 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0039 | [Configurable TUI keybinding schemes — Emacs, Vim, VS Code](./0039-configurable-tui-keybindings.md) | Standards | Placeholder |
 | 0040 | [Task chain observability — `done_when:`, `handoff_chain:`, chain audit view](./0040-task-chain-observability.md) | Standards | Implemented |
 | 0041 | [Agent peer-review gate — severity-based + opt-in escalation](./0041-agent-peer-review-gate.md) | Standards     | Implemented |
+| 0042 | [Reviewer auto-dispatcher — close the GEP-41 peer-review loop](./0042-reviewer-auto-dispatcher.md) | Standards     | Implemented |
+| 0043 | [ETS-first derived state with on-disk snapshots for cold boot](./0043-ets-derived-state-with-snapshots.md) | Standards     | Placeholder |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

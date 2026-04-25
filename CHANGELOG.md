@@ -23,6 +23,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Added
 
+- **GEP-42 — reviewer auto-dispatcher.** Closes the GEP-41
+  half-feature gap. When `Glorbo.Approvals.Gate` first observes
+  that a task needs peer review, `Glorbo.Actions.Reviews.
+  request_peer_review/4` drops a `peer-review-request/v1`
+  sentinel into the configured reviewer's inbox; the existing
+  inotify wake pipeline does the rest. Verdict-side cleanup
+  (`record_peer_review_verdict/5`) deletes the request sentinel
+  on every verdict and, on `revise`, drops a
+  `peer-review-feedback/v1` sentinel into the original
+  assignee's inbox so the fix-and-resubmit loop fires
+  automatically. Missing-reviewer fails loud (D5) — the gate's
+  MapSet dedupe is marked only when dispatch succeeds, so the
+  next observation retries; an attacker who deletes the
+  reviewer's `AGENT.md` can't silently bypass review. Two new
+  FileSpec modules + auto-generated doc pages under
+  `docs/file-formats/`. 10 new tests.
+- **GEP-43 (Placeholder) — ETS-first derived state with
+  on-disk snapshots for cold boot.** Pinned during the
+  SQLite-vs-ETS sidebar that surfaced while diagnosing the
+  Burrito local-build issue. Hard prerequisite is GEP-34
+  (make budgets + approvals fully derivable from audit log)
+  before SQLite can be removed safely. Most decisions
+  intentionally open.
 - **GEP-40 — `done_when:` editable from the dashboard.** The
   shared `TaskDetailForm` component (used by both `TaskLive`
   and `KanbanLive`'s shelf overlay) now renders a textarea

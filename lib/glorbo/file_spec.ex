@@ -94,7 +94,9 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.ConfigMd,
     Glorbo.FileSpec.PathRequestMd,
     Glorbo.FileSpec.ProposalMd,
-    Glorbo.FileSpec.BenchmarkRunMd
+    Glorbo.FileSpec.BenchmarkRunMd,
+    Glorbo.FileSpec.PeerReviewRequestMd,
+    Glorbo.FileSpec.PeerReviewFeedbackMd
   ]
 
   @doc """

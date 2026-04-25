@@ -537,10 +537,44 @@ defmodule Glorbo.Actions.Tasks do
       with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
            :ok <-
              emit_verdict_audit(audit, company, task_rel_path, verdict_str, actor, note) do
+        # GEP-42: clean up the request sentinel from the
+        # reviewer's inbox (best-effort — missing file is fine,
+        # the sentinel is a wake trigger, not source of truth).
+        # On `revise`, drop a feedback sentinel into the original
+        # assignee's inbox so the fix-and-resubmit loop fires.
+        :ok =
+          Glorbo.Actions.Reviews.clear_request_sentinel(company, actor, task.task_id, base: base)
+
+        maybe_send_revise_feedback(verdict, company, task, actor, note, base, audit)
         {:ok, %{verdict: verdict, next_status: next_status}}
       end
     end
   end
+
+  # GEP-42: only `revise` with a non-empty note + a real
+  # original-assignee distinct from the reviewer routes a feedback
+  # sentinel. Approve / block don't generate feedback files; a
+  # reviewer who is also the original assignee is a degenerate case
+  # that doesn't need a wake (they already know what they wrote).
+  defp maybe_send_revise_feedback(:revise, company, task, actor, note, base, audit)
+       when is_binary(note) and note != "" do
+    original_assignee = existing_assignee(task)
+
+    if original_assignee != "unassigned" and original_assignee != actor do
+      Glorbo.Actions.Reviews.write_revise_feedback(
+        company,
+        original_assignee,
+        task,
+        note,
+        base: base,
+        audit: audit
+      )
+    else
+      :ok
+    end
+  end
+
+  defp maybe_send_revise_feedback(_verdict, _co, _task, _actor, _note, _base, _audit), do: :ok
 
   defp validate_note(""), do: :ok
   defp validate_note(v) when is_binary(v) and byte_size(v) <= 500, do: :ok

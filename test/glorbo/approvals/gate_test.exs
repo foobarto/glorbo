@@ -841,6 +841,31 @@ defmodule Glorbo.Approvals.GateTest do
   # ---------------------------------------------------------------------------
 
   describe "peer_review.requested audit (Round N-3)" do
+    # GEP-42: the gate's `peer_review.requested` edge now also calls
+    # `Actions.Reviews.request_peer_review/4` to drop the wake
+    # sentinel into the reviewer's inbox. Per D5, MapSet dedupe is
+    # ONLY marked when the dispatch succeeds — so these tests
+    # scaffold the reviewer agent + inbox so dispatch passes
+    # pre-flight and the dedupe semantics under test still hold.
+    setup ctx do
+      reviewer_dir = Path.join([ctx.company_dir, "agents", "critiqueops"])
+      File.mkdir_p!(Path.join(reviewer_dir, "inbox"))
+
+      File.write!(Path.join(reviewer_dir, "AGENT.md"), """
+      ---
+      kind: agent/v1
+      slug: critiqueops
+      role: Peer reviewer
+      provider: claude-code
+      model: claude-sonnet-4-5
+      network: loopback
+      permissions: []
+      ---
+      """)
+
+      :ok
+    end
+
     test "emits once when pending-approval + peer_review_required + no verdict",
          ctx do
       %{pid: pid} = start_gate(ctx)

@@ -470,16 +470,23 @@ defmodule Glorbo.Approvals.Gate do
   # Dedupe via in-memory MapSet — we emit once per Gate lifetime
   # per task_path; restarts re-emit (cheap), verdict-flips clear
   # the entry so re-open after revise would re-emit.
+  #
+  # GEP-42: on the same edge, drop a peer-review wake sentinel
+  # into the reviewer's inbox via `Actions.Reviews.request_
+  # peer_review/4`. The MapSet entry is added only when BOTH the
+  # audit emit AND the sentinel write succeed — a missing
+  # reviewer (D5) leaves the dedupe set unchanged so the next
+  # gate observation retries.
   defp resolve_status(
          %TaskDefinition{
            status: "pending-approval",
            peer_review_required: true,
            peer_review_verdict: nil
          } = td,
-         _abs_path,
+         abs_path,
          state
        ) do
-    maybe_emit_peer_review_requested(td, state)
+    maybe_emit_peer_review_requested(td, abs_path, state)
   end
 
   # When a verdict lands, drop the dedupe entry so a subsequent
@@ -497,7 +504,7 @@ defmodule Glorbo.Approvals.Gate do
   # no-op — the sentinel stays in place until approved/denied.
   defp resolve_status(_td, _abs_path, state), do: state
 
-  defp maybe_emit_peer_review_requested(td, state) do
+  defp maybe_emit_peer_review_requested(td, abs_path, state) do
     if MapSet.member?(state.peer_review_requested, td.task_path) do
       state
     else
@@ -510,8 +517,41 @@ defmodule Glorbo.Approvals.Gate do
         severity: severity_string(td.severity)
       })
 
-      %{state | peer_review_requested: MapSet.put(state.peer_review_requested, td.task_path)}
+      # GEP-42: drop the wake sentinel. On success → mark dedupe.
+      # On `:reviewer_absent` / `:inbox_unwritable` → leave the
+      # MapSet unchanged so the next observation retries (covers
+      # the case where the reviewer is scaffolded mid-flight).
+      # `Actions.Reviews.request_peer_review/4` emits its own
+      # `peer_review.dispatched` / `peer_review.skipped_no_reviewer`
+      # audits; the gate doesn't double-audit.
+      case dispatch_peer_review_request(td, abs_path, state) do
+        {:ok, _} ->
+          %{
+            state
+            | peer_review_requested: MapSet.put(state.peer_review_requested, td.task_path)
+          }
+
+        {:error, _} ->
+          state
+      end
     end
+  end
+
+  # GEP-42: side-effect on the same edge as `peer_review.requested`.
+  # `audit_server` is the Gate's existing audit handle (bare module
+  # in production, fake in tests). Wrapping in rescue keeps a
+  # mis-configured Reviews call from taking the Gate down — the
+  # gate's job is to gate, not to chase reviewer plumbing.
+  defp dispatch_peer_review_request(td, abs_path, state) do
+    Glorbo.Actions.Reviews.request_peer_review(
+      state.company,
+      abs_path,
+      td,
+      base: state.base,
+      audit: state.audit_server
+    )
+  rescue
+    _ -> {:error, :dispatcher_raised}
   end
 
   defp severity_string(nil), do: "unset"
