@@ -2791,3 +2791,47 @@ when the corresponding release doesn't yet exist.
   next bounded item — wire it into `.github/workflows/ci.yml` so
   every PR runs `bash scripts/ui-baseline.sh check` and surfaces
   any drift > 0.5% as a status comment.
+
+---
+
+## Task 33 — VR harness wired into CI as informational gate
+
+* **Task picked:** the queued follow-up from Task 32 — wire the
+  harness into `.github/workflows/ci.yml`.
+* **What shipped:**
+  * `.github/workflows/ci.yml` — added a `Visual regression check`
+    step inside the `build-and-test` job, gated to `matrix.arch
+    == 'x86_64'` (baselines are x86_64 captures; aarch64 font-
+    rendering would create false positives) and marked
+    `continue-on-error: true` so drift annotates but doesn't
+    fail the build.
+  * The step:
+    1. Symlinks `./glorbo` to `burrito_out/$BINARY_NAME` (the
+       earlier `Rename binary` step moved it).
+    2. Runs `mix assets.setup` + `mix assets.build` so the
+       harness's `mix phx.server` boot can serve the dashboard.
+    3. `npm install` in `scripts/` + `npx playwright install
+       --with-deps chrome`.
+    4. `bash scripts/ui-baseline.sh check`.
+  * Step placement is AFTER `Upload artifact` so the binary
+    rename earlier doesn't trip artifact upload.
+* **Design calls I made without you:**
+  * **`continue-on-error: true` for v1.** Fail-on-drift is
+    tempting, but we haven't measured the per-PR flake rate yet.
+    Run informational for a few weeks; once the rate is below
+    a threshold, flip to blocking (or per-LV blocking).
+  * **x86_64 only.** The committed baselines are x86_64; aarch64
+    runs Chrome with subtly different font subpixel rendering
+    that pushes drift well past 0.5% even for unchanged code. To
+    cover aarch64 we'd need a parallel set of aarch64 baselines.
+    Not worth the storage / capture cost for v1.
+  * **Pre-build assets in CI before phx.server boots.** The
+    harness expects the dev endpoint with esbuild watchers
+    available. CI's `mix test` doesn't pre-build assets (test
+    env doesn't need them), so we add `mix assets.setup`+
+    `assets.build` explicitly. ~5s overhead.
+* **Gates:** locally validated that the harness produces stable
+  diffs (Task 32: 3× check runs, worst drift 0.045%); CI step
+  not yet exercised — push to main will surface any CI-runner-
+  specific issues.
+* **Commit(s):** pending.

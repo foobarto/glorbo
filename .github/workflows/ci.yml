@@ -166,6 +166,41 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # GEP-44 visual-regression check — informational gate.
+      # Boots phx.server with a fresh tmp GLORBO_HOME, screenshots
+      # all 18 LV routes via Playwright, diffs each PNG against
+      # test/fixtures/ui-baselines/current/. Reports drift > 0.5%
+      # via job annotations but does NOT fail the build
+      # (`continue-on-error: true`) until we've measured per-PR
+      # flake rate over a few weeks.
+      #
+      # x86_64 only: committed baselines were captured on x86_64;
+      # aarch64 font-rendering subtly differs and would create
+      # false positives across the matrix.
+      - name: Visual regression check
+        if: matrix.arch == 'x86_64'
+        continue-on-error: true
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          # Harness expects `./glorbo` to be the burrito binary.
+          # The `Rename binary` step earlier moved it to a
+          # release-named path; symlink it back into place.
+          ln -snf "burrito_out/$BINARY_NAME" glorbo
+          ./glorbo --help | head -1
+          # Install esbuild + build assets so phx.server can serve
+          # the dashboard (mix test doesn't need this; the harness
+          # boots the dev endpoint which does).
+          mix assets.setup
+          mix assets.build
+          # Install harness node deps + Playwright Chrome.
+          (cd scripts && npm install --no-audit --no-fund)
+          (cd scripts && npx playwright install --with-deps chrome)
+          # Run the diff. `continue-on-error` swallows a non-zero
+          # exit, but the per-LV drift lines still appear in the
+          # log so reviewers can eyeball regressions.
+          bash scripts/ui-baseline.sh check
+
   # R30 — macOS builds, via Burrito's Zig-based cross-compile from
   # Linux. Burrito downloads the universal macOS ERTS tarball from
   # `beam-machine-universal.b-cdn.net`, `zig cc -target <arch>-macos`
