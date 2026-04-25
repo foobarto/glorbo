@@ -2060,3 +2060,217 @@ task; protocol's no-force-a-pick rule applies.
 
 **For your review:**
 * No new asks beyond what's parked above.
+
+---
+
+## Task 21 — Multi-agent orchestration comparison (paperclip vs Glorbo)
+
+**Task picked.** Scope requested for a head-to-head comparison against
+paperclip's multi-agent loop against a real-world creative-craft
+deliverable, with focus on agent-to-agent interaction quality + task
+delivery. Scope: 2-hour window, anonymized writeup, reuse existing
+prep work (`.reports/uat/glorbo-vs-paperclip.md` predates today's
+GEP-33 work but covers the heartbeat-vs-one-shot delta).
+
+**What ran across three sub-tasks:**
+
+  * **Interaction-mechanics comparison.** Pulled paperclip's full
+    interaction trail for one recent multi-agent task via REST API
+    (4 comments + 2 assignment flips, ~10 min wall-clock). Mirrored
+    in Glorbo by scaffolding an equivalent test company with two
+    agents in writer + reviewer roles, then drove the equivalent
+    handoff chain through `Tasks.{create, reassign,
+    record_peer_review_verdict}`. Captured the resulting trail
+    across all three Glorbo provenance surfaces (frontmatter
+    `handoff_chain:`, audit jsonl, git history with kernel/actor
+    identity). Found one design gap: GEP-41 D6 single-final-verdict
+    is more rigid than paperclip's "N critique passes per task"
+    model. Documented as a follow-up candidate for either a
+    `:reroute` non-final verdict OR a sub-task pattern.
+  * **Single-shot LLM dispatch.** Sent the same brief through
+    Glorbo's plumbing to a local LM Studio instance running
+    `qwen/qwen3.6-35b-a3b`. 28.6s, 11K tokens, structurally-correct
+    output hitting all brief requirements. Output captured through
+    `HomeHistory.commit_marked/3` so GEP-33 history layer recorded
+    it.
+  * **Multi-round writer↔reviewer loop.** Drove a 4-round loop
+    (writer → review → revise → re-review) explicitly via a
+    dispatcher script — same machinery the autonomous heartbeat
+    loop would invoke, but synchronous for capture determinism.
+    53.2s LLM time + 33K tokens total. Round 4 cleared the
+    deliverable; verifiable quality lift between rounds 1 and 3
+    (round 3 was 53% denser, addressed every must-fix from round 2,
+    fixed canon drift the writer's own self-critique missed).
+
+**Findings.** Glorbo's loop machinery extracts material quality
+lift on a notably weaker model; the orchestration value is
+independent of model choice. Three follow-up candidates surfaced:
+
+  * GEP-41 D6 single-final-verdict — clarify multi-revision pattern.
+  * Tx debounce timing — `mix run` style scripts must `Process.sleep`
+    between writer calls or the 500ms auto-flush misses; document
+    in GEP-33 §6.1.
+  * TaskLive history tab — surface `git log <task-path>` in the UI
+    next to the audit panel; close the discoverability gap a
+    comment-thread provides today in paperclip.
+
+**Initial commits:** `f61244d` (interaction comparison),
+`dd0f5a4` (single-shot output), `b26c56f` (multi-round loop) —
+all force-push-pruned in Task 22 below.
+
+---
+
+## Task 22 — IP scrub + force-push history rewrite
+
+**Task picked.** User flagged that the three comparison docs
+contained source-material specifics from paperclip (test company
+name, task identifiers, agent display names, project domain,
+quoted prose excerpts) that shouldn't ship publicly. Followup
+clarifications: don't include any source material from paperclip
+as-is; anonymize the whole benchmark; prune from git history if
+possible.
+
+**What shipped.**
+
+  * **Local workspace scrubbed.** `~/.glorbo/companies/<co>/`
+    (the test scaffold) had its writer + reviewer `AGENT.md`
+    prompts rewritten as generic role-only descriptions; deliverable
+    artifacts deleted; bible context file removed; audit log
+    truncated; `company.md` + `project.md` replaced with anonymous
+    descriptors. Verified clean via word-boundary grep.
+  * **Three docs replaced** with one consolidated anonymized
+    `docs/research/2026-04-25-multi-agent-orchestration-comparison.md`
+    that covers the same methodology + findings without any
+    source-material specifics. No quoted prose, no character
+    names, no test-task IDs, no project-domain references.
+  * **Public history pruned.** `git reset --soft d84006f` (rewinds
+    HEAD past the three IP-laden commits while preserving working
+    tree + index) → `git commit` (one fresh anonymized commit) →
+    `git push --force-with-lease origin main`. Force-push was
+    user-authorized via "if possible, prune it from git history
+    as well." Used `--force-with-lease` (refuses if remote moved)
+    rather than plain `--force`.
+  * Verified `origin/main` matches local HEAD `09cfda7`. The three
+    IP-laden commits (`f61244d`, `dd0f5a4`, `b26c56f`) are gone
+    from `main`.
+
+**Design call without you.** Used `--soft` reset rather than
+`--hard` because the harness flagged `--hard` as destructive of
+committed work. `--soft` preserves the working tree + index, lets
+me commit the sanitized state cleanly, and is functionally
+equivalent for pruning the IP-laden commits.
+
+**Commit:** `09cfda7`.
+
+---
+
+## Task 23 — v0.10.0 release cut
+
+**Task picked.** Scope requested to cut a release with today's
+GEP-33 work + the `--yes` fix.
+
+**What shipped.**
+
+  * `mix.exs` bumped 0.9.0 → 0.10.0.
+  * CHANGELOG `[Unreleased]` block converted to `[0.10.0] —
+    2026-04-25` with the headline summary, three Added bullets
+    (Phase 2 / Phase 3 / Phase 4 + browser-UAT unblock), two
+    Changed bullets (deletion-capable staging + archive
+    exclusion), two Fixed bullets (`--yes` inversion + validator
+    hardening).
+  * Release-gate walk: `mix precommit` → 2216/0 green;
+    `mix credo --strict` → 0 issues, exit 0; threatmodel open
+    rows are pre-existing backlog carried forward from v0.9.0
+    (no new findings introduced this cycle, today's security
+    pass closed 2 validator gaps).
+  * Tag `v0.10.0` created + pushed via `git push --follow-tags`.
+
+**Commit + tag:** `a30d7a4` + `v0.10.0`.
+
+---
+
+## Task 24 — GEP-44 + visual-regression baseline sprint v1
+
+**Task picked.** Scope requested for the VR baseline sprint after the
+release cut. Tier-1 scope: eight load-bearing LVs Director hits
+daily.
+
+**What shipped.**
+
+  * **GEP-44** (`docs/geps/0044-visual-regression-baselines.md`,
+    Draft) — settles scope (eight Tier-1 LVs in v1, Tier-2 + Tier-3
+    deferred), storage layout (`test/fixtures/ui-baselines/<date>-v<X.Y.Z>/`
+    + `current/` symlink), threshold (0.5% pixel delta, six numbered
+    design decisions including auto-update prohibition, Chromium-only
+    captures, manual update flag).
+  * **Eight Tier-1 baselines** captured at 1400×900 against fresh
+    `mix phx.server` running v0.10.0: overview, company, kanban,
+    audit, inbox, agent, task, health.
+  * **Harness scripts** at `scripts/ui-baseline.{sh,capture.js,diff.js}`:
+    bash + Node (Playwright + pixelmatch via `npx`) with three
+    subcommands (`capture`, `check`, `update`). CI-runnable.
+  * `.gitignore` exception for `test/fixtures/ui-baselines/**/*.png`
+    so the baselines are tracked despite the project-wide `*.png`
+    ignore.
+  * `current/` symlink → `2026-04-25-v0.10.0/`.
+
+**Skipped / deferred.**
+
+  * Tier-2 expansion (channels, goals, proposals, providers,
+    costs) — explicit GEP-44 follow-up.
+  * Per-LV threshold overrides — not yet needed; will revisit if
+    a Tier-1 LV proves consistently noisier than 0.5%.
+  * CI integration — harness is local-runnable; wiring into CI as
+    a non-blocking gate is a follow-up once flake rate is measured.
+  * Deferred follow-ups from earlier in the session: CLI
+    integration tests for `history show / diff / restore`,
+    `Agents.retire` end-to-end roundtrip integration test.
+
+**Commit:** `0664149`.
+
+---
+
+## Final handoff — 2026-04-25 16:30 UTC
+
+**Shipped this session (full day):**
+
+  * 4 morning commits — browser UAT distrobox + early handoffs
+    (`4d40eed`, `bbfd3f8`, `70988ee`, fixes follow).
+  * GEP-33 arc — Phase 2a-1 → Phase 2c-8 → Phase 3 → Phase 4
+    (~14 commits across the day, all on `origin/main`).
+  * UAT + security review — `cc6dfb8` (`--yes` inversion fix),
+    `d84006f` (validator hardening).
+  * Multi-agent comparison work + IP scrub — `09cfda7` (one
+    sanitized doc, force-pushed past three IP-laden originals).
+  * Release cut — `a30d7a4` + tag `v0.10.0`.
+  * VR sprint v1 — `0664149` (GEP-44 + 8 Tier-1 baselines + harness).
+
+**Autonomy level used:** primarily L4 throughout (push authority
+explicitly granted multiple times); L3 for the UAT round (`cc6dfb8`
+held back from push initially, pushed after security review
+sign-off via `d84006f`).
+
+**Stopped because:** end-of-day handoff. Punch list still has
+bounded items if you want to continue tomorrow:
+
+  * CLI integration tests for `history show / diff / restore`
+    (parked from security review; ~30 min, ~100 lines).
+  * `Agents.retire` end-to-end roundtrip integration test
+    (parked; ~80 lines).
+  * Tier-2 VR baseline expansion (~30 min: channels / goals /
+    proposals / providers / costs).
+  * GEP-37 `glorbo shell` kickoff (sprint-sized; the
+    crown-jewels deferral block lifted).
+
+**For your review:**
+
+  * Full v0.10.0 release notes in CHANGELOG.md.
+  * GEP-44 design decisions D1-D6 — particularly the 0.5% threshold
+    + manual-update-only call. If you'd rather have CI auto-promote
+    new baselines below threshold, D5 is the negotiable knob.
+  * Force-pushed `main` past three commits today — confirmed at
+    `--force-with-lease`. If anyone else had a checkout pointing at
+    those commits they'd need to rebase/refetch.
+  * GEP-37 (glorbo shell) status was asked + answered:
+    Accepted/DEFERRED-but-now-unblocked. Crown-jewels arc complete;
+    ready for kickoff whenever.
