@@ -1043,6 +1043,73 @@ pattern as Phase 2c-3's `Projects.create_or_skip_stub/7`.
 
 ---
 
+## Task 10 — GEP-33 Phase 2c-5: Goals.add_goal wired
+
+**Task picked.** The Actions modules are now all wired
+that have audit-emitting writers in scope. The remaining
+in-scope writer surface that's NOT in `Glorbo.Actions.*`
+is `Glorbo.Company.Goals.add_goal/2` — called from
+`GoalsLive.handle_event("new_goal_submit", ...)` to splice
+a new goal into `company.md`'s frontmatter. It doesn't
+emit audit currently, but the `company.md` write itself is
+durable + tracked-scope, so a history commit makes sense.
+
+**What shipped.** `Glorbo.Company.Goals.add_goal/3`:
+
+  * Optional `:actor` opt added (default `"director"`,
+    matching the LV-only caller). `add_goal/2` callers still
+    work via the new arity-3 with default opts.
+  * Wraps the splice + atomic write in `Tx.with_tx`.
+  * `do_add_goal_write/5` private helper extracted to keep
+    nesting flat after the wrapper.
+  * `rel_path_for_history/2` defensively trims the absolute
+    `company_md_path` to a base-relative form when an
+    optional `:base` opt is supplied — Tx is best-effort
+    about path shape but the §4.3 trailer prefers relative
+    paths.
+
+**Design calls I made without you.**
+
+  * **No audit emission added.** Goals.add_goal historically
+    didn't audit; conflating the history wiring with adding
+    audit would be two concerns in one change. If audit is
+    desired here it deserves its own GEP-36-style Action
+    module + rounded test. Phase 2c-5 is purely about
+    history.
+  * **Hardcoded `:director` default.** Single LV caller
+    today. If MCP / agent flow ever wants to add goals,
+    they'll pass `:actor` explicitly.
+  * **No new integration test.** The test surface for
+    Goals.add_goal already covers the splice + uniqueness +
+    validation. The history wiring goes through the same
+    `with_tx` shape that's exercised by Companies / Channels
+    / Tasks integration tests; the marginal value of a Goals-
+    specific history assertion is low.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/company/goals_test.exs` — 7/7
+    green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * **Skills + Brain dump LiveViews.** Both have similar
+    single-file mutation surfaces that could be wired. Saved
+    for the next round.
+  * **Router-level proposal + memory writes.** Big surface;
+    deserves a dedicated round.
+  * **Glorbo.Actions.Audit.scaffold_from_entry/3** —
+    actively part of audit infra; wiring it would create a
+    chicken-and-egg with Tx.mark_path of the audit jsonl.
+    Out of scope for Phase 2c.
+
+**Commit.** Tenth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

@@ -11,6 +11,8 @@ defmodule Glorbo.Company.Goals do
   """
 
   alias Glorbo.Filesystem.Frontmatter
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @type goal :: %{
           required(:slug) => String.t(),
@@ -18,31 +20,79 @@ defmodule Glorbo.Company.Goals do
           optional(:description) => String.t()
         }
 
-  @spec add_goal(Path.t(), goal) :: :ok | {:error, term()}
-  def add_goal(company_md_path, goal) do
+  @spec add_goal(Path.t(), goal, keyword()) :: :ok | {:error, term()}
+  def add_goal(company_md_path, goal, opts \\ []) do
     slug = String.trim(to_string(goal[:slug] || ""))
     title = String.trim(to_string(goal[:title] || ""))
     description = String.trim(to_string(goal[:description] || ""))
 
-    cond do
-      slug == "" ->
-        {:error, :slug_required}
+    # Goals are Director-only today (only caller is GoalsLive); the
+    # actor opt is a future seam for non-Director callers (e.g., MCP
+    # tool, agent-initiated proposal flow). Pass `actor:` to override.
+    actor = Keyword.get(opts, :actor, "director")
 
-      not Regex.match?(~r/^[a-z][a-z0-9-]{0,63}$/, slug) ->
-        {:error, :invalid_slug}
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "company.add_goal",
+      target: rel_path_for_history(company_md_path, opts)
+    }
 
-      title == "" ->
-        {:error, :title_required}
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        cond do
+          slug == "" ->
+            {:error, :slug_required}
 
-      true ->
-        with {:ok, content} <- File.read(company_md_path),
-             :ok <- check_slug_unique(content, slug) do
-          new_content = splice_goal(content, slug, title, description)
-          tmp = company_md_path <> ".tmp"
+          not Regex.match?(~r/^[a-z][a-z0-9-]{0,63}$/, slug) ->
+            {:error, :invalid_slug}
 
-          with :ok <- File.write(tmp, new_content) do
-            File.rename(tmp, company_md_path)
-          end
+          title == "" ->
+            {:error, :title_required}
+
+          true ->
+            do_add_goal_write(
+              tx_id,
+              company_md_path,
+              slug,
+              title,
+              description
+            )
+        end
+      end)
+
+    case history_result do
+      {:ok, :ok, _tx_id} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  defp do_add_goal_write(tx_id, company_md_path, slug, title, description) do
+    with {:ok, content} <- File.read(company_md_path),
+         :ok <- check_slug_unique(content, slug) do
+      new_content = splice_goal(content, slug, title, description)
+      tmp = company_md_path <> ".tmp"
+
+      with :ok <- File.write(tmp, new_content),
+           :ok <- File.rename(tmp, company_md_path) do
+        Tx.mark_path(tx_id, company_md_path)
+      end
+    end
+  end
+
+  # The history `target` field wants a relative-to-base path. The
+  # caller hands us the absolute company_md_path; absent an explicit
+  # `:base` opt we use the path as-is (Tx.with_tx handles "history
+  # disabled" silently anyway, so a non-relativised target only
+  # matters for the §4.3 trailer cosmetics).
+  defp rel_path_for_history(company_md_path, opts) do
+    case Keyword.get(opts, :base) do
+      nil ->
+        company_md_path
+
+      base when is_binary(base) ->
+        case Path.relative_to(company_md_path, base) do
+          ^company_md_path -> company_md_path
+          rel -> rel
         end
     end
   end

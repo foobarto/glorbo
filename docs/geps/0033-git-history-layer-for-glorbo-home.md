@@ -249,6 +249,26 @@ history:
       Out of scope still: Goals, Skills, Proposals, Agents
       writers. Router-level proposal + memory paths. Phase
       3 watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-5 — `Glorbo.Company.Goals.add_goal/3` wired.
+      The first non-`Glorbo.Actions.*` writer to receive a
+      `with_tx` wrapper. Splices a new goal into
+      `company.md` frontmatter atomically (textual splice
+      + tmp + rename) and history-commits the change. No
+      audit emission is added in this round — Goals.add_goal
+      historically didn't audit and conflating the two
+      concerns would balloon scope.
+
+      Optional `:actor` opt added (default `"director"`,
+      the only legitimate caller today). Future MCP / agent
+      flows pass `:actor` explicitly. `do_add_goal_write/5`
+      private helper extracted to flatten nesting.
+
+      Out of scope still: Skills + Brain dump LiveView write
+      surfaces. Router-level proposal + memory paths. Phase
+      3 watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home
