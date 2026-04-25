@@ -192,7 +192,15 @@ defmodule Glorbo.HomeHistory.TxTest do
   describe "concurrent transactions" do
     test "two open txs don't collide", %{base: base} do
       {:ok, _} = init_repo(base)
-      tx = start_server(base)
+
+      # Long debounce + hard cap so the two manual flushes win the race
+      # against auto-flush. Without this, a slow CI runner can spend
+      # >50ms inside `do_commit` for tx_a; tx_b's debounce timer fires
+      # in the meantime, the auto-flush drops it from state, and the
+      # explicit `Tx.flush(tx_b)` returns `{:error, :unknown_tx}`.
+      # Auto-flush behaviour is exercised in its own test; this one
+      # is about explicit-flush isolation.
+      tx = start_server(base, debounce_ms: 60_000, hard_cap_ms: 120_000)
 
       a = Path.join(base, "companies/acme/company.md")
       b = Path.join(base, "companies/acme/agents/ceo/AGENT.md")
