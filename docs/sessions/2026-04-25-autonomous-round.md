@@ -318,3 +318,74 @@ its own thing).
    sudo on your behalf. The first two are already done (this
    session needed them); the passt/newuidmap one is queued. Say
    the word if you'd rather I sudo-installed during the round.
+
+---
+
+## Continuation attempt — 2026-04-25 04:30 UTC
+
+Continuation scope "continue L4" after the handoff above. Re-walked the
+punch list and stopped per protocol's
+"no bounded task available" criterion:
+
+* **Review asks 1–3 from earlier in this journal** — all three
+  turned out to be already-shipped before today (commits
+  `b3f22af`, `0dd7068`, `0069326` from before v0.8.0 cut). The
+  journal entries reflected work that landed in an earlier
+  cycle, not pending pre-merge questions. No follow-up needed.
+* **GEP-33 Phase 2 (`HomeHistory.begin/mark/flush` + writer
+  rewires)** — too large to bound in one round under the
+  autonomous protocol's "30→300 lines" guard. Spec calls for
+  GenServer + tx state + debounce/coalescer + kernel-vs-actor
+  identity split + sanitization layer + wiring into Router /
+  Actions / scaffolders / restore / config writers, plus the
+  test surface. Realistic floor 500+ lines across 10+ files.
+  Deserves its own dedicated session with a written plan.
+* **P1: Scheduler O(projects × tasks) every 60s** — the todo
+  entry is explicitly "watch it past 1000 tasks. If it becomes
+  hot, cache mtime." Watch-only, not actionable until measured
+  hot.
+* **P2: Modal narrow viewport / topbar shortcut popover** —
+  both have explicit "revisit if feedback complains" /
+  "revisit once narrow-screen UI testing" gates. Forcing a
+  design choice here would violate "ask first when ambiguous."
+* **P2: Approvals power-user shortcuts on Inbox Mine** —
+  same shape: "revisit if director feedback complains about
+  approval throughput." Defer.
+* **P3: Visual-regression baseline sprint** — now feasible
+  with the unblocked Playwright path, but baseline-sprint
+  scope is multiple LV captures + diff harness + fixture
+  storage layout decisions; sprint, not round.
+* **Speculative additions** (e.g., a doctor distrobox check)
+  considered and rejected — punch list doesn't call for it,
+  adding it violates "no features beyond what was asked."
+
+**Stopped because:** bounded-task pool empty; honoring
+protocol over forcing a pick. The user is at a natural
+checkpoint to weigh in on the larger pieces.
+
+---
+
+## Handoff (revised) — 2026-04-25 04:30 UTC
+
+**Shipped this round (cumulative):**
+* `4d40eed` — Browser E2E + distrobox docs.
+* `bbfd3f8` — handoff block addendum.
+
+**Autonomy level used:** L4 explicitly per user; only L3
+results actually shipped (no destructive ops, no force-push,
+no schema changes — just normal pushes after green gates).
+
+**Stopped because:** punch list has no bounded ready-to-ship
+task; protocol's no-force-a-pick rule applies.
+
+**Queued — needs your input to unblock:**
+* GEP-33 Phase 2 — wants its own plan + dedicated session.
+* Visual-regression sprint — needs scope + baseline-storage
+  decision (`test/fixtures/ui-baselines/` layout, perceptual-
+  diff threshold, which LVs in v1).
+* Topbar narrow-viewport shortcut popover — design call:
+  popover-below-breakpoint vs ellipsis vs hide-on-small.
+* `apt-get install passt newuidmap` in distrobox — sudo ask.
+
+**For your review:**
+* No new asks beyond what's parked above.
