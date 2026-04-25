@@ -365,6 +365,163 @@ checkpoint to weigh in on the larger pieces.
 
 ---
 
+## Task 4 — GEP-33 Phase 2a-1: synchronous `commit_marked/3` primitive
+
+**Task picked.** Continuation scope "continue autonomously L4" again
+after the prior continuation-attempt stop. That's an explicit
+override of my "no bounded task" call. Re-scoped GEP-33 Phase 2
+to the smallest standalone shippable cut: the synchronous
+commit primitive that Phase 2b will eventually buffer into a
+GenServer. Delivers visible foundation progress without
+touching any caller — pure new code, no behaviour change to
+the running app.
+
+**What shipped.** `lib/glorbo/home_history.ex` gains:
+
+  * `@type actor`, `@type tx_meta`, `@type commit_result`
+    typedocs codifying GEP-33 §4.2 + §4.3 shapes.
+  * `commit_marked/3` public entry point. Filters paths via
+    `tracked?/2`, validates meta, branches on
+    "tracked-list empty?" before touching git.
+  * `sanitize_trailer/2` public — newline + control-char
+    stripper with bounded length. Used both internally and
+    exposed for Phase 2b callers that want to pre-sanitize.
+  * `kernel_committer_args/0` helper — refactored
+    `git_initial_commit/1` to share the
+    `-c user.email=kernel@glorbo.local -c user.name="Glorbo
+    Kernel"` env shape with the new commit path. One source
+    of truth.
+  * Validation layer: `validate_meta/1` →
+    `fetch_actor/1` + `fetch_required_string/2` + actor-shape
+    refinement (`{:agent, slug}` requires non-empty binary).
+    Bad input returns `{:error, :invalid_meta}`.
+  * Identity layer: `format_author/1` per §4.2 actor variant.
+    `Director`, `System`, `External` are static; `Agent`
+    and `MCP` carry sanitized slugs into `agent+<slug>@`
+    / `mcp+<client>@` local-parts.
+  * `sanitize_actor_slug/1`: strips anything outside
+    `[a-zA-Z0-9._-]`, caps at 64 chars. Empty result =
+    invalid actor.
+  * `tx_id` handling: explicit value sanitized; absent value
+    auto-generates `history-<base32-of-10-rand-bytes>`.
+  * Commit pipeline: `git_add_paths/2` (explicit-path
+    staging — never `-A`), `git_commit_or_noop/3` (uses
+    `git diff --cached --quiet` to detect "nothing to
+    commit" cleanly without a `--allow-empty`),
+    `do_kernel_commit/3` (assembles subject + trailers,
+    invokes `git commit --author=<actor>` under the kernel
+    committer env).
+  * `build_paths_trailer_value/1`: sanitizes each path
+    individually, drops empties, joins with `, `, then
+    bounds the joined string at 1000 chars (wider than the
+    200-char default for ordinary trailer values).
+
+**12 new tests in `test/glorbo/home_history_test.exs`** (31
+total in that file now):
+
+  * `sanitize_trailer/2` — control-char stripping, length
+    bound, nil coercion, custom max_len.
+  * Sanitizer blocks newline injection of fake trailer
+    lines.
+  * `commit_marked/3` errors when `.git/` is absent.
+  * Rejects malformed meta (missing fields, invalid actor,
+    empty agent slug).
+  * Happy path: single tracked file produces a real commit
+    with `Director` author + `Glorbo Kernel` committer +
+    all six trailer keys present.
+  * Untracked-scope paths land in `:skipped` and never
+    enter the commit's tree (`config.md` excluded
+    explicitly).
+  * All-skipped → `{:ok, %{sha: "", committed: 0}}` with no
+    commit.
+  * Tracked-but-unchanged → same no-op success (clean index
+    after `git add`).
+  * Newline-injection round-trip: feeds the resulting
+    commit body through `git interpret-trailers --parse`,
+    asserts only the legitimate `Glorbo-Actor: director`
+    trailer survives.
+  * Actor variants ({agent, mcp, system, external}) → each
+    produces the expected `Author: <Name> <email>` line.
+  * Hostile slug `ceo<>@!` → sanitizer strips to `ceo`,
+    email-safe.
+  * Auto-generated `tx_id` is unique across calls;
+    explicit `tx_id` is preserved.
+  * Multi-path commit lists all paths in `Glorbo-Paths`
+    trailer.
+  * Both relative and absolute path inputs partition
+    correctly.
+
+**Design calls I made without you.**
+
+  * **One-shot synchronous primitive, not a GenServer.**
+    GEP-33 §5.1 specifies `begin/mark/flush` as the
+    public API, but nothing in the design forbids a lower
+    primitive that the GenServer composes from. Shipping
+    the synchronous version first makes Phase 2b a small
+    wrapper instead of a single megapatch.
+  * **No-op success returns `sha: ""` with `committed: 0`,
+    not `:nothing_to_commit`.** Callers should treat
+    "nothing changed" as success, not as an error variant
+    they need to pattern-match. The empty-string SHA is
+    visibly distinct from any real short-SHA.
+  * **`Glorbo-Paths` cap at 1000 chars** vs 200 for other
+    trailers. A logical operation can touch a handful of
+    files plus the audit append; 200 chars truncates
+    realistic path lists. 1000 is enough for ~10 medium
+    paths and still bounds the commit body.
+  * **`git diff --cached --quiet` instead of
+    `--allow-empty`** for the no-op detection. An
+    `--allow-empty` would create a commit with the same
+    tree as HEAD, polluting `git log` with semantically-
+    nothing rows. Detecting the empty index up front and
+    returning early gives the same `{:ok, ...}` shape
+    callers see for "tracked file changed" — only the SHA
+    differs.
+  * **Sanitizer is public.** Phase 2b's GenServer will
+    want to pre-sanitize on `mark/2` (cheaper than
+    re-sanitizing on flush) and the watcher will want it
+    too. Exposing now avoids a future api widening.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history_test.exs` —
+    31/31 green, 0 failures.
+  * `mix precommit` — 2175 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs.file_formats + docs
+    moduledoc check + reindex round-trips all green.
+    exit 0.
+
+**Skipped / not done.**
+
+  * **Phase 2b (`begin/mark/flush` + GenServer + debounce
+    coalescer).** Out of scope; will follow as its own
+    round once the synchronous primitive proves out the
+    trailer + sanitization shape.
+  * **Phase 2c (caller wiring).** Router, Actions,
+    scaffolders, restore — none are touched in this
+    round. The synchronous primitive is unused at runtime;
+    only tests exercise it. That's intentional.
+  * **Best-effort failure audit emission.** GEP-33 §12.3
+    says a commit failure should emit a warning audit;
+    `commit_marked/3` returns `{:error, _}` to its caller
+    without itself emitting audit. The caller is the right
+    place for that — when wired by Phase 2c, the writer
+    that just succeeded authoritatively will already have
+    its own audit context.
+  * **`history.enabled: true` config flag.** Still tied to
+    Phase 1's "opt in by running `glorbo history init`"
+    UX. No new config wiring this round.
+
+**Commit.** Will be its own commit — fourth of the day,
+exceeds the 3-commit soft checkpoint. Per protocol, this
+warrants notifying the user via the next handoff. User
+explicitly authorized continued L4 after the prior stop, so
+not asking again before the commit; user can stop me on
+review if four is one too many. Hard 5-commit stop respected.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

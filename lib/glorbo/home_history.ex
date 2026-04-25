@@ -15,11 +15,20 @@ defmodule Glorbo.HomeHistory do
     * `status/1` — wrap `git status --porcelain` against the home
       tree. Reports enabled/disabled + dirty paths.
     * `log/1` — wrap `git log --oneline -n N`.
+    * `commit_marked/3` (Phase 2a-1) — synchronous primitive that
+      stages an explicit list of paths, applies the
+      tracked-scope filter, and writes one commit with kernel
+      committer + actor author + sanitized GEP-33 §4.3 trailers.
+      Best-effort: returns `{:error, _}` on git failure so the
+      caller can decide whether to retry / warn / drop the
+      commit. **No coalescer / no debouncer / no caller wiring
+      yet** — those are Phase 2b and 2c.
 
-  Out of scope here (Phase 2+):
+  Out of scope here (Phase 2b+):
 
-    * Marked commits from host-side write surfaces.
+    * Coalesced begin/mark/flush GenServer with debounce window.
     * Watcher-fallback commits for manual edits.
+    * Wiring into Router / Actions / scaffolders / restore.
     * `restore`, `show`, `diff` — read-only inspection beyond `log`.
 
   ## Tracked vs ignored
@@ -89,6 +98,46 @@ defmodule Glorbo.HomeHistory do
           required(:repo) => Path.t() | nil,
           required(:dirty) => [String.t()]
         }
+
+  @typedoc """
+  Logical actor identity per GEP-33 §4.2. Becomes the commit's
+  author; the committer is always `Glorbo Kernel`.
+  """
+  @type actor ::
+          :director
+          | {:agent, String.t()}
+          | {:mcp, String.t()}
+          | :system
+          | :external
+
+  @typedoc """
+  Required metadata for `commit_marked/3`. Sanitized into
+  `Glorbo-Actor`, `Glorbo-Action`, `Glorbo-Target`,
+  `Glorbo-Source`, `Glorbo-Paths`, `Glorbo-Tx` trailers per
+  GEP-33 §4.3 before being handed to git.
+  """
+  @type tx_meta :: %{
+          required(:actor) => actor(),
+          required(:action) => String.t(),
+          required(:target) => String.t(),
+          optional(:source) => String.t(),
+          optional(:tx_id) => String.t()
+        }
+
+  @type commit_result :: %{
+          required(:sha) => String.t(),
+          required(:committed) => non_neg_integer(),
+          required(:skipped) => [Path.t()]
+        }
+
+  # Sanitization — trailer values pass through these caps before
+  # they reach git. The thresholds favour readable subjects + a
+  # bounded git-log surface; bumps are cheap if a trailer needs
+  # more room (e.g., the `Glorbo-Paths` list, which gets a wider
+  # cap explicitly below).
+  @max_trailer_value_len 200
+  @max_paths_trailer_len 1000
+  @max_actor_slug_len 64
 
   # ----------------------------------------------------------------
   # Public API
@@ -212,6 +261,98 @@ defmodule Glorbo.HomeHistory do
     end
   end
 
+  @doc """
+  Synchronous one-shot commit: stage an explicit list of paths and
+  write one commit with actor-aware author + structured trailers.
+
+  This is the Phase 2a-1 primitive. It does not coalesce, does not
+  debounce, does not own any tx state — every call produces (at
+  most) one commit. Phase 2b will wrap this in a GenServer that
+  buffers calls inside the §6.1 debounce window so multi-file
+  logical operations land as one commit.
+
+  Behaviour:
+
+    1. **Filters paths via `tracked?/2`.** Untracked-scope paths
+       (e.g., `config.md`, `glorbo.db*`, `runtime/`,
+       `agents/<slug>/inbox/`) are excluded and reported in
+       `:skipped`. Never invokes `git add -A` (GEP-33 §7).
+    2. **No-op cleanly when nothing to commit.** If every path
+       is filtered out OR every staged path has no diff against
+       HEAD, returns `{:ok, %{sha: "", committed: 0}}` without
+       creating a commit.
+    3. **Sanitizes trailer values** to single-line bounded
+       scalars (GEP-33 §12.2) before handing them to git. Stops
+       newline-injection from forging fake trailers.
+    4. **Author = actor**, **committer = Glorbo Kernel**
+       (GEP-33 §4.2). Different identities — the committer
+       never lies about which Erlang process wrote the object.
+    5. **Best-effort.** A git failure returns `{:error, _}`; the
+       caller (typically a writer that already wrote the file
+       authoritatively) decides whether to retry or warn.
+
+  Required `meta`:
+
+    * `:actor` — `:director | {:agent, slug} | {:mcp, client} |
+      :system | :external`
+    * `:action` — short verb like `"task.approve"`
+    * `:target` — canonical path or logical id (used in subject)
+
+  Optional `meta`:
+
+    * `:source` — origin module/function (`"actions.set_approval"`)
+    * `:tx_id` — idempotency token; auto-generated otherwise
+
+  Options:
+
+    * `:base` — home root (defaults to `GLORBO_HOME` / hierarchy
+      default)
+
+  Returns `{:ok, %{sha, committed, skipped}}` on success;
+  `{:error, :not_initialised}` if `.git/` is absent;
+  `{:error, :invalid_meta}` if required metadata is missing or
+  shaped incorrectly; `{:error, {:git_failed, code, output}}`
+  on subprocess failure.
+  """
+  @spec commit_marked([Path.t()], tx_meta(), keyword()) ::
+          {:ok, commit_result()} | {:error, term()}
+  def commit_marked(paths, meta, opts \\ []) when is_list(paths) and is_map(meta) do
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+
+    with :ok <- ensure_repo_initialised(base),
+         {:ok, validated} <- validate_meta(meta),
+         {tracked, skipped} <- partition_tracked_paths(paths, base) do
+      if tracked == [] do
+        {:ok, %{sha: "", committed: 0, skipped: skipped}}
+      else
+        do_marked_commit(base, tracked, skipped, validated)
+      end
+    end
+  end
+
+  @doc """
+  Public sanitizer used by `commit_marked/3` and exposed for
+  tests + future Phase-2b callers that need to pre-sanitize meta
+  before queueing it.
+
+  Strips control characters (including newlines), trims
+  whitespace, and bounds length. Non-binary input is coerced via
+  `to_string/1`.
+  """
+  @spec sanitize_trailer(term()) :: String.t()
+  def sanitize_trailer(value, max_len \\ @max_trailer_value_len)
+
+  def sanitize_trailer(nil, _), do: ""
+
+  def sanitize_trailer(value, max_len) when is_binary(value) do
+    value
+    |> String.replace(~r/[\x00-\x1f\x7f]+/, " ")
+    |> String.trim()
+    |> String.slice(0, max_len)
+  end
+
+  def sanitize_trailer(value, max_len), do: sanitize_trailer(to_string(value), max_len)
+
   # ----------------------------------------------------------------
   # Tracked-scope predicate
   # ----------------------------------------------------------------
@@ -320,17 +461,15 @@ defmodule Glorbo.HomeHistory do
     # always present after `write_gitignore/1`, but if every other
     # tracked file ends up matching some future ignore the commit
     # would be empty without this flag.
-    args = [
-      "-c",
-      "user.email=kernel@glorbo.local",
-      "-c",
-      "user.name=Glorbo Kernel",
-      "commit",
-      "--allow-empty",
-      "--quiet",
-      "-m",
-      "glorbo: initial history import"
-    ]
+    args =
+      kernel_committer_args() ++
+        [
+          "commit",
+          "--allow-empty",
+          "--quiet",
+          "-m",
+          "glorbo: initial history import"
+        ]
 
     case git(args, base) do
       {:ok, _} ->
@@ -343,6 +482,204 @@ defmodule Glorbo.HomeHistory do
       {:error, _} = err ->
         err
     end
+  end
+
+  defp kernel_committer_args do
+    ["-c", "user.email=kernel@glorbo.local", "-c", "user.name=Glorbo Kernel"]
+  end
+
+  defp ensure_repo_initialised(base) do
+    if File.dir?(Path.join(base, ".git")) do
+      :ok
+    else
+      {:error, :not_initialised}
+    end
+  end
+
+  defp partition_tracked_paths(paths, base) do
+    {tracked, skipped} =
+      paths
+      |> Enum.uniq()
+      |> Enum.split_with(&tracked?(&1, base))
+
+    {Enum.map(tracked, &relativise_or_keep(&1, base)), skipped}
+  end
+
+  defp relativise_or_keep(path, base) do
+    case relativise(path, base) do
+      :outside -> path
+      "" -> path
+      rel -> rel
+    end
+  end
+
+  defp validate_meta(meta) do
+    with {:ok, actor} <- fetch_actor(meta),
+         {:ok, action} <- fetch_required_string(meta, :action),
+         {:ok, target} <- fetch_required_string(meta, :target),
+         {:ok, author} <- format_author(actor),
+         actor_label <- format_actor_label(actor),
+         source <- sanitize_trailer(Map.get(meta, :source, "")),
+         tx_id <- ensure_tx_id(meta) do
+      {:ok,
+       %{
+         author: author,
+         actor: actor_label,
+         action: sanitize_trailer(action),
+         target: sanitize_trailer(target),
+         source: source,
+         tx_id: tx_id
+       }}
+    end
+  end
+
+  defp fetch_actor(meta) do
+    case Map.fetch(meta, :actor) do
+      {:ok, actor} ->
+        if valid_actor?(actor), do: {:ok, actor}, else: {:error, :invalid_meta}
+
+      :error ->
+        {:error, :invalid_meta}
+    end
+  end
+
+  defp valid_actor?(:director), do: true
+  defp valid_actor?(:system), do: true
+  defp valid_actor?(:external), do: true
+  defp valid_actor?({:agent, slug}) when is_binary(slug) and byte_size(slug) > 0, do: true
+  defp valid_actor?({:mcp, client}) when is_binary(client) and byte_size(client) > 0, do: true
+  defp valid_actor?(_), do: false
+
+  defp fetch_required_string(meta, key) do
+    case Map.get(meta, key) do
+      v when is_binary(v) and byte_size(v) > 0 -> {:ok, v}
+      _ -> {:error, :invalid_meta}
+    end
+  end
+
+  defp format_author(:director), do: {:ok, "Director <director@glorbo.local>"}
+  defp format_author(:system), do: {:ok, "System <system@glorbo.local>"}
+  defp format_author(:external), do: {:ok, "External <external@glorbo.local>"}
+
+  defp format_author({:agent, slug}) do
+    case sanitize_actor_slug(slug) do
+      "" -> {:error, :invalid_meta}
+      s -> {:ok, "Agent #{s} <agent+#{s}@glorbo.local>"}
+    end
+  end
+
+  defp format_author({:mcp, client}) do
+    case sanitize_actor_slug(client) do
+      "" -> {:error, :invalid_meta}
+      c -> {:ok, "MCP #{c} <mcp+#{c}@glorbo.local>"}
+    end
+  end
+
+  defp format_actor_label(:director), do: "director"
+  defp format_actor_label(:system), do: "system"
+  defp format_actor_label(:external), do: "external"
+  defp format_actor_label({:agent, slug}), do: "agent:" <> sanitize_actor_slug(slug)
+  defp format_actor_label({:mcp, client}), do: "mcp:" <> sanitize_actor_slug(client)
+
+  # Actor slugs flow into a left-hand-side email local part, so cap
+  # to RFC-safe characters. A dropped slug returns "" — caller treats
+  # that as invalid_meta.
+  defp sanitize_actor_slug(slug) do
+    slug
+    |> String.replace(~r/[^a-zA-Z0-9._-]/, "")
+    |> String.slice(0, @max_actor_slug_len)
+  end
+
+  defp ensure_tx_id(meta) do
+    case Map.get(meta, :tx_id) do
+      v when is_binary(v) and byte_size(v) > 0 -> sanitize_trailer(v)
+      _ -> generate_tx_id()
+    end
+  end
+
+  defp generate_tx_id do
+    random = :crypto.strong_rand_bytes(10) |> Base.encode32(case: :lower, padding: false)
+    "history-" <> random
+  end
+
+  defp do_marked_commit(base, tracked, skipped, validated) do
+    with :ok <- git_add_paths(base, tracked),
+         {:ok, sha_or_noop} <- git_commit_or_noop(base, tracked, validated) do
+      {:ok, %{sha: sha_or_noop, committed: commit_count(sha_or_noop, tracked), skipped: skipped}}
+    end
+  end
+
+  defp commit_count("", _), do: 0
+  defp commit_count(_sha, tracked), do: length(tracked)
+
+  defp git_add_paths(base, paths) do
+    Enum.reduce_while(paths, :ok, fn rel, _ ->
+      case git(["add", "--", rel], base) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
+
+  # `git diff --cached --quiet` exits 0 when the index matches HEAD
+  # (nothing to commit) and 1 when there's a real diff. Anything else
+  # is a real error.
+  defp git_commit_or_noop(base, tracked, validated) do
+    case System.cmd("git", ["diff", "--cached", "--quiet"], cd: base, stderr_to_stdout: true) do
+      {_, 0} -> {:ok, ""}
+      {_, 1} -> do_kernel_commit(base, tracked, validated)
+      {out, code} -> {:error, {:git_failed, code, String.trim(out)}}
+    end
+  end
+
+  defp do_kernel_commit(base, tracked, validated) do
+    %{author: author, action: action, target: target, source: source, tx_id: tx_id} = validated
+
+    subject = "#{action}: #{target}"
+    paths_value = build_paths_trailer_value(tracked)
+
+    trailers =
+      [
+        {"Glorbo-Actor", validated.actor},
+        {"Glorbo-Action", action},
+        {"Glorbo-Target", target}
+      ] ++
+        if(source == "", do: [], else: [{"Glorbo-Source", source}]) ++
+        [{"Glorbo-Paths", paths_value}, {"Glorbo-Tx", tx_id}]
+
+    message =
+      subject <>
+        "\n\n" <> Enum.map_join(trailers, "\n", fn {k, v} -> "#{k}: #{v}" end) <> "\n"
+
+    args =
+      kernel_committer_args() ++
+        [
+          "commit",
+          "--quiet",
+          "--no-verify",
+          "--author=#{author}",
+          "-m",
+          message
+        ]
+
+    case git(args, base) do
+      {:ok, _} ->
+        case git(["rev-parse", "--short", "HEAD"], base) do
+          {:ok, sha} -> {:ok, String.trim(sha)}
+          {:error, _} = err -> err
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp build_paths_trailer_value(tracked) do
+    tracked
+    |> Enum.map(&sanitize_trailer/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(", ")
+    |> sanitize_trailer(@max_paths_trailer_len)
   end
 
   defp parse_log_row(row) do

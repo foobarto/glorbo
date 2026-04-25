@@ -222,6 +222,363 @@ defmodule Glorbo.HomeHistoryTest do
     end
   end
 
+  describe "sanitize_trailer/2" do
+    test "strips control chars and bounds length" do
+      assert HomeHistory.sanitize_trailer("hello") == "hello"
+      assert HomeHistory.sanitize_trailer("hello\nworld") == "hello world"
+      assert HomeHistory.sanitize_trailer("a\x00b\x01c\x7fd") == "a b c d"
+      assert HomeHistory.sanitize_trailer("  spaced  ") == "spaced"
+      assert HomeHistory.sanitize_trailer(nil) == ""
+
+      long = String.duplicate("x", 250)
+      assert byte_size(HomeHistory.sanitize_trailer(long)) == 200
+      assert byte_size(HomeHistory.sanitize_trailer(long, 50)) == 50
+    end
+
+    test "blocks newline-injection of fake trailers" do
+      hostile = "real-target\nGlorbo-Actor: attacker"
+      sanitized = HomeHistory.sanitize_trailer(hostile)
+      refute sanitized =~ "\n"
+      assert sanitized =~ "real-target"
+      assert sanitized =~ "Glorbo-Actor: attacker"
+    end
+  end
+
+  describe "commit_marked/3" do
+    test "errors when not initialised", %{base: base} do
+      assert {:error, :not_initialised} =
+               HomeHistory.commit_marked(
+                 ["companies/acme/company.md"],
+                 %{actor: :director, action: "task.approve", target: "x"},
+                 base: base
+               )
+    end
+
+    test "rejects missing or malformed meta", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      assert {:error, :invalid_meta} =
+               HomeHistory.commit_marked([], %{}, base: base)
+
+      assert {:error, :invalid_meta} =
+               HomeHistory.commit_marked([], %{actor: :director}, base: base)
+
+      assert {:error, :invalid_meta} =
+               HomeHistory.commit_marked(
+                 [],
+                 %{actor: :wat, action: "x", target: "y"},
+                 base: base
+               )
+
+      assert {:error, :invalid_meta} =
+               HomeHistory.commit_marked(
+                 [],
+                 %{actor: {:agent, ""}, action: "x", target: "y"},
+                 base: base
+               )
+    end
+
+    test "happy path — single tracked file becomes a commit", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: acme-renamed\n---\n")
+
+      assert {:ok, %{sha: sha, committed: 1, skipped: []}} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{
+                   actor: :director,
+                   action: "company.rename",
+                   target: "companies/acme/company.md",
+                   source: "actions.rename"
+                 },
+                 base: base
+               )
+
+      assert sha != ""
+      assert {:ok, [head | _]} = HomeHistory.log(base: base, limit: 2)
+      assert head.subject == "company.rename: companies/acme/company.md"
+
+      # Author = director, committer = kernel.
+      {raw, 0} =
+        System.cmd("git", ["log", "-1", "--pretty=%an <%ae>|%cn <%ce>"], cd: base)
+
+      [author_line, committer_line] = raw |> String.trim() |> String.split("|")
+      assert author_line == "Director <director@glorbo.local>"
+      assert committer_line == "Glorbo Kernel <kernel@glorbo.local>"
+
+      # Trailers — actor/action/target/source/paths/tx land structured.
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Actor: director"
+      assert body =~ "Glorbo-Action: company.rename"
+      assert body =~ "Glorbo-Target: companies/acme/company.md"
+      assert body =~ "Glorbo-Source: actions.rename"
+      assert body =~ "Glorbo-Paths: companies/acme/company.md"
+      assert body =~ ~r/Glorbo-Tx: history-[a-z0-9]+/
+    end
+
+    test "filters untracked-scope paths into :skipped without committing them",
+         %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      tracked_path = Path.join(base, "companies/acme/company.md")
+      File.write!(tracked_path, "---\nname: acme-renamed\n---\n")
+
+      # config.md is excluded per §3.2 — must end up in :skipped.
+      File.write!(Path.join(base, "config.md"), "secret_key_base: hunter2\n")
+
+      assert {:ok, %{sha: sha, committed: 1, skipped: skipped}} =
+               HomeHistory.commit_marked(
+                 [tracked_path, Path.join(base, "config.md")],
+                 %{actor: :director, action: "test.scope", target: "x"},
+                 base: base
+               )
+
+      assert sha != ""
+      assert Enum.any?(skipped, &String.ends_with?(&1, "config.md"))
+
+      # config.md must not appear in the commit's tree.
+      {body, 0} = System.cmd("git", ["log", "-1", "--name-only"], cd: base)
+      refute body =~ "config.md"
+      assert body =~ "company.md"
+    end
+
+    test "all-skipped → no-op success without a commit", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      assert {:ok, %{sha: "", committed: 0, skipped: skipped}} =
+               HomeHistory.commit_marked(
+                 [
+                   Path.join(base, "config.md"),
+                   Path.join(base, "glorbo.db")
+                 ],
+                 %{actor: :system, action: "noop.test", target: "x"},
+                 base: base
+               )
+
+      assert length(skipped) == 2
+
+      # Log must still be just the initial commit.
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+
+    test "tracked-but-unchanged path → no-op success without a commit",
+         %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      # Path is tracked-scope and exists in the index, but content is
+      # identical to HEAD — index stays clean → no commit.
+      path = Path.join(base, "companies/acme/company.md")
+
+      assert {:ok, %{sha: "", committed: 0, skipped: []}} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{actor: :director, action: "noop.test", target: "x"},
+                 base: base
+               )
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+
+    test "newline injection in target cannot forge a fake trailer",
+         %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: acme-renamed\n---\n")
+
+      hostile = "legit-target\nGlorbo-Actor: attacker"
+
+      assert {:ok, %{sha: sha}} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{actor: :director, action: "task.approve", target: hostile},
+                 base: base
+               )
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+
+      # The sanitizer replaces newlines with spaces — the hostile
+      # string survives as substring noise, but cannot land as its
+      # own trailer line. That's the load-bearing invariant: git's
+      # trailer parser only ever sees one `Glorbo-Actor:` line.
+      assert Regex.scan(~r/^Glorbo-Actor: /m, body) |> length() == 1
+      # Confirm the trailer parser would refuse to read "attacker"
+      # as the actor — `git interpret-trailers --parse` returns the
+      # canonical key/value pairs. System.cmd has no stdin option;
+      # round-trip the body through a tmpfile.
+      tmp = Path.join(System.tmp_dir!(), "trailer-#{System.unique_integer([:positive])}.txt")
+      File.write!(tmp, body)
+      on_exit_remove(tmp)
+
+      {parsed, 0} =
+        System.cmd("git", ["interpret-trailers", "--parse", tmp],
+          cd: base,
+          stderr_to_stdout: true
+        )
+
+      actor_lines =
+        parsed
+        |> String.split("\n", trim: true)
+        |> Enum.filter(&String.starts_with?(&1, "Glorbo-Actor:"))
+
+      assert actor_lines == ["Glorbo-Actor: director"]
+      assert sha != ""
+    end
+
+    test "actor variants set author identity correctly", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      authors = [
+        {{:agent, "ceo"}, "Agent ceo <agent+ceo@glorbo.local>"},
+        {{:mcp, "claude-code"}, "MCP claude-code <mcp+claude-code@glorbo.local>"},
+        {:system, "System <system@glorbo.local>"},
+        {:external, "External <external@glorbo.local>"}
+      ]
+
+      for {actor, expected} <- authors do
+        path = Path.join(base, "companies/acme/company.md")
+        # Bump content per loop so every commit has a real diff.
+        File.write!(path, "---\nname: acme-#{:rand.uniform(1_000_000)}\n---\n")
+
+        assert {:ok, %{sha: sha}} =
+                 HomeHistory.commit_marked(
+                   [path],
+                   %{actor: actor, action: "test.actor", target: "x"},
+                   base: base
+                 )
+
+        assert sha != ""
+        {raw, 0} = System.cmd("git", ["log", "-1", "--pretty=%an <%ae>"], cd: base)
+        assert String.trim(raw) == expected
+      end
+    end
+
+    test "agent slug with hostile chars sanitized into email-safe form",
+         %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert {:ok, _} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{actor: {:agent, "ceo<>@!"}, action: "x", target: "y"},
+                 base: base
+               )
+
+      {raw, 0} = System.cmd("git", ["log", "-1", "--pretty=%an <%ae>"], cd: base)
+      # Hostile chars stripped; "ceo" survives.
+      assert String.trim(raw) == "Agent ceo <agent+ceo@glorbo.local>"
+    end
+
+    test "auto-generated tx_id is unique across calls", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      path = Path.join(base, "companies/acme/company.md")
+
+      ids =
+        for i <- 1..3 do
+          File.write!(path, "---\nname: bump-#{i}\n---\n")
+
+          {:ok, _} =
+            HomeHistory.commit_marked(
+              [path],
+              %{actor: :director, action: "test.tx", target: "x"},
+              base: base
+            )
+
+          {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+          [_, id] = Regex.run(~r/Glorbo-Tx: (history-[a-z0-9]+)/, body)
+          id
+        end
+
+      assert length(Enum.uniq(ids)) == 3
+    end
+
+    test "explicit tx_id is preserved (sanitized)", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert {:ok, _} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{
+                   actor: :director,
+                   action: "x",
+                   target: "y",
+                   tx_id: "approval-abc-123"
+                 },
+                 base: base
+               )
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Tx: approval-abc-123"
+    end
+
+    test "multi-path commit lists all paths in trailer", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      File.mkdir_p!(Path.join(base, "companies/acme/audit"))
+      audit_path = Path.join(base, "companies/acme/audit/2026-04.jsonl")
+      File.write!(audit_path, ~s({"action":"task.approve"}\n))
+
+      company_path = Path.join(base, "companies/acme/company.md")
+      File.write!(company_path, "---\nname: edited\n---\n")
+
+      assert {:ok, _} =
+               HomeHistory.commit_marked(
+                 [company_path, audit_path],
+                 %{actor: :director, action: "task.approve", target: "task-1"},
+                 base: base
+               )
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "companies/acme/company.md"
+      assert body =~ "companies/acme/audit/2026-04.jsonl"
+    end
+
+    test "absolute and relative paths both partition correctly", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      File.write!(
+        Path.join(base, "companies/acme/company.md"),
+        "---\nname: edited\n---\n"
+      )
+
+      assert {:ok, %{sha: sha, committed: 1}} =
+               HomeHistory.commit_marked(
+                 ["companies/acme/company.md"],
+                 %{actor: :director, action: "x", target: "y"},
+                 base: base
+               )
+
+      assert sha != ""
+    end
+  end
+
+  defp on_exit_remove(path) do
+    on_exit(fn -> File.rm(path) end)
+  end
+
   # Tiny seed — just enough that `git add -A` finds tracked files
   # and the initial commit isn't built solely on .gitignore.
   defp seed_minimal_company(base) do

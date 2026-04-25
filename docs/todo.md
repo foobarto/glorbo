@@ -98,13 +98,16 @@ it's been in CHANGELOG for a cycle.
   in the test moduledoc.
 - [ ] **GEP-33 Phase 2 — marked commits from write surfaces.**
   Phase 1 shipped 2026-04-25 (`Glorbo.HomeHistory` + `glorbo
-  history {init, status, log}`). Phase 2 wires
-  `HomeHistory.begin/mark/flush` into Router, Actions,
-  scaffolders, restore, and the other durable writers so
-  in-app changes commit with structured trailers + the
-  `Glorbo Kernel <kernel@glorbo.local>` committer + per-actor
-  author. Phase 3 follows with watcher-fallback `External`
-  commits for manual edits; Phase 4 adds `show`/`diff`/`restore`.
+  history {init, status, log}`). **Phase 2a-1 shipped
+  2026-04-25 (autonomous L4):** synchronous `commit_marked/3`
+  primitive — kernel committer + actor-aware author + sanitized
+  GEP-33 §4.3 trailers + tracked-scope filter + no-op-on-empty
+  semantics. 12 new tests; 31 total in `home_history_test.exs`.
+  Phase 2b will wrap it in a `begin/mark/flush` GenServer with
+  the §6.1 debounce coalescer; Phase 2c wires Router, Actions,
+  scaffolders, restore. Phase 3 follows with watcher-fallback
+  `External` commits for manual edits; Phase 4 adds
+  `show`/`diff`/`restore`.
 - [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
   2026-04-24. Implementation queued **behind** the crown-jewels arc
   (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer

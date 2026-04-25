@@ -35,6 +35,40 @@ history:
       GEP-33 stays Draft — Phase 1 alone doesn't satisfy the
       design's marked-commit + watcher-fallback core. Status
       flips to Implemented when Phases 2 + 3 land.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2a-1 — synchronous commit primitive landed.
+      `Glorbo.HomeHistory.commit_marked/3` stages an explicit
+      list of paths, applies the §3 tracked-scope filter (drops
+      `config.md` / `glorbo.db*` / runtime / cache / agent
+      transport paths into a `:skipped` field rather than into a
+      commit), writes one commit with `Glorbo Kernel` committer
+      + actor-aware author per §4.2, and emits the canonical §4.3
+      trailers (`Glorbo-Actor`, `-Action`, `-Target`, `-Source`,
+      `-Paths`, `-Tx`).
+
+      Sanitization layer for §12.2: the public
+      `HomeHistory.sanitize_trailer/2` strips control chars,
+      bounds length, and is the only path trailer values can
+      reach git through. Newline-injection round-trip test runs
+      `git interpret-trailers --parse` on the output to confirm
+      a forged `Glorbo-Actor: attacker` in `target` cannot
+      become a real trailer line.
+
+      No-op semantics: an all-skipped path list or a tracked
+      list whose contents already match HEAD returns
+      `{:ok, %{sha: "", committed: 0}}` — no empty commit.
+
+      Out of scope still: the `begin/mark/flush` GenServer that
+      will buffer multi-file logical operations into one commit
+      under the §6.1 debounce window (Phase 2b); wiring into
+      Router / Actions / scaffolders / restore (Phase 2c); the
+      watcher-fallback `External` commit pipeline (Phase 3).
+      `glorbo init` still does not auto-init history; this Phase
+      adds zero new caller-visible behaviour to the running app —
+      it's foundation for Phase 2b. 12 new unit tests added to
+      `home_history_test.exs` (31 total in that file).
 ---
 
 # GEP-33: Git History Layer for Glorbo Home
