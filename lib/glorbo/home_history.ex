@@ -85,6 +85,14 @@ defmodule Glorbo.HomeHistory do
   /companies/*/agents/*/state/
   /companies/*/agents/*/workspace/
   /companies/*/agents/*/stdout.log
+
+  # Retired-agent archive — once retired, an agent's subtree is
+  # frozen by definition; the retire event itself is captured in
+  # the audit log and (when `Agents.retire/3` is Phase-2c-wired)
+  # in a single history commit. Tracking the archive's ongoing
+  # filesystem state would balloon the repo with content that
+  # can't change.
+  /companies/*/agents/.archive/
   """
 
   @type init_result :: %{
@@ -609,7 +617,8 @@ defmodule Glorbo.HomeHistory do
       ~r{^companies/[^/]+/agents/[^/]+/(inbox|outbox|state|workspace)(/|$)},
       rel
     ) or
-      Regex.match?(~r{^companies/[^/]+/agents/[^/]+/stdout\.log$}, rel)
+      Regex.match?(~r{^companies/[^/]+/agents/[^/]+/stdout\.log$}, rel) or
+      Regex.match?(~r{^companies/[^/]+/agents/\.archive(/|$)}, rel)
   end
 
   # ----------------------------------------------------------------

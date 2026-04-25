@@ -88,6 +88,23 @@ defmodule Glorbo.HomeHistoryTest do
       refute HomeHistory.tracked?(Path.join(base, ".git"), base)
     end
 
+    test "ignores agents/.archive/ retired-agent subtree", %{base: base} do
+      refute HomeHistory.tracked?(
+               Path.join(base, "companies/acme/agents/.archive/old-ceo-2026-04-25/AGENT.md"),
+               base
+             )
+
+      refute HomeHistory.tracked?(
+               Path.join(base, "companies/acme/agents/.archive"),
+               base
+             )
+
+      refute HomeHistory.tracked?(
+               Path.join(base, "companies/acme/agents/.archive/x/memory/notes.md"),
+               base
+             )
+    end
+
     test "rejects paths outside the base", %{base: base} do
       refute HomeHistory.tracked?("/tmp/somewhere-else/file.md", base)
     end
