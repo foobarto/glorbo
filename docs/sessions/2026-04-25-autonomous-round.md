@@ -1110,6 +1110,55 @@ durable + tracked-scope, so a history commit makes sense.
 
 ---
 
+## Task 11 — GEP-33 Phase 2c-6: Proposals.flip wired
+
+**Task picked.** `Glorbo.Company.Proposals.flip/4` is the
+Director-side approve/deny path for GEP-28 proposals. Single
+file mutation (`proposals/<id>.md` frontmatter) + audit emit,
+exact same shape as the Actions-module writers. Wiring it
+brings the Director-side proposal flow into the history layer.
+
+**What shipped.** `Glorbo.Company.Proposals.flip/4`:
+
+  * `with_tx` wrapper around the existing `with`-chain.
+  * `do_flip_write/8` private helper extracted (the post-`with`
+    body's `case FrontmatterWriter.atomic_write/2` branches
+    couldn't sit in the `with_tx` callback without nesting
+    past credo's depth-3 limit).
+  * Action subjects: `proposal.approved` /
+    `proposal.denied`. Marks the proposal md + audit jsonl.
+
+**Design calls I made without you.**
+
+  * **Subject covers the canonical proposal path, not the
+    Director's free-form "decided proposal X" rendering.**
+    `companies/<co>/proposals/<id>.md` is what shows up in
+    `git log <path>`; the trailer carries the same shape.
+  * **`actor` defaults to `"director"` already** — preserved
+    unchanged. Non-Director callers (none today) would pass
+    `:actor` explicitly.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/company/proposals_sink_test.exs
+    test/glorbo_web/live/proposals_live_test.exs` — 8/8
+    green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * Skills + Brain dump LiveView write paths.
+  * Router-level proposal create + memory writes (the Router
+    is the agent-side proposal create surface; this round
+    only wired the Director-side decision flow).
+  * Phase 3 watcher fallback. Phase 4 restore UX.
+
+**Commit.** Eleventh of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

@@ -14,6 +14,8 @@ defmodule Glorbo.Company.Proposals do
   alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.Filesystem.FrontmatterWriter
   alias Glorbo.Filesystem.Hierarchy
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @type proposal :: %{
           required(:id) => String.t(),
@@ -76,30 +78,59 @@ defmodule Glorbo.Company.Proposals do
 
     path = Path.join([base, "companies", company, "proposals", "#{id}.md"])
 
-    with {:ok, proposal} <- read_one!(path),
-         :ok <- require_pending(proposal),
-         :ok <- reject_self_flip(proposal, actor) do
-      merged_fm =
-        proposal.frontmatter
-        |> Map.merge(flip_updates(decision, actor, denial_reason))
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "proposal.#{Atom.to_string(decision)}",
+      target: "companies/#{company}/proposals/#{id}.md"
+    }
 
-      new_content = serialize(merged_fm, proposal.body)
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with {:ok, proposal} <- read_one!(path),
+             :ok <- require_pending(proposal),
+             :ok <- reject_self_flip(proposal, actor) do
+          do_flip_write(tx_id, path, base, company, id, proposal, decision,
+            actor: actor,
+            denial_reason: denial_reason,
+            audit: audit
+          )
+        end
+      end)
 
-      case FrontmatterWriter.atomic_write(path, new_content) do
-        :ok ->
-          _ =
-            audit.(company, %{
-              actor: actor,
-              action: "proposal.#{Atom.to_string(decision)}",
-              target: "proposals/#{id}.md",
-              detail: %{proposed_by: proposal.proposed_by, denial_reason: denial_reason}
-            })
+    case history_result do
+      {:ok, :ok, _tx_id} -> :ok
+      {:error, _} = err -> err
+    end
+  end
 
-          :ok
+  defp do_flip_write(tx_id, path, base, company, id, proposal, decision, opts) do
+    actor = Keyword.fetch!(opts, :actor)
+    denial_reason = Keyword.get(opts, :denial_reason)
+    audit = Keyword.fetch!(opts, :audit)
 
-        other ->
-          other
-      end
+    merged_fm =
+      proposal.frontmatter
+      |> Map.merge(flip_updates(decision, actor, denial_reason))
+
+    new_content = serialize(merged_fm, proposal.body)
+
+    case FrontmatterWriter.atomic_write(path, new_content) do
+      :ok ->
+        :ok = Tx.mark_path(tx_id, path)
+
+        _ =
+          audit.(company, %{
+            actor: actor,
+            action: "proposal.#{Atom.to_string(decision)}",
+            target: "proposals/#{id}.md",
+            detail: %{proposed_by: proposal.proposed_by, denial_reason: denial_reason}
+          })
+
+        :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company))
+        :ok
+
+      other ->
+        other
     end
   end
 

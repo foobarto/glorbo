@@ -269,6 +269,21 @@ history:
       Out of scope still: Skills + Brain dump LiveView write
       surfaces. Router-level proposal + memory paths. Phase
       3 watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-6 — `Glorbo.Company.Proposals.flip/4` wired.
+      Director-side approve/deny flow for GEP-28 proposals.
+      Action subjects: `proposal.approved` / `proposal.denied`.
+      Marks the proposal md + audit jsonl.
+
+      `do_flip_write/8` extracted from the body to flatten
+      nesting after the `with_tx` wrapper.
+
+      Out of scope still: Skills + Brain dump LV write paths.
+      Router-side agent-initiated proposal CREATE flow (this
+      round only covered the Director-side decision flow).
+      Phase 3 watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home
