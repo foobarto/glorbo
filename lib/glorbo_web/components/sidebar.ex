@@ -420,10 +420,20 @@ defmodule GlorboWeb.Components.Sidebar do
   def count_memory_files_for_test(agents_dir, slug),
     do: count_memory_files(agents_dir, slug)
 
+  # Threatmodel: memory files are agent-controlled. An agent could
+  # spam thousands of files into its memory directory to make every
+  # sidebar render walk a huge list. Cap at @memory_count_cap; we
+  # only render an `(N files)` badge so a hard ceiling is fine —
+  # the UI can degrade to "999+" without losing meaning.
+  @memory_count_cap 999
+
   defp count_memory_files(agents_dir, slug) do
     case File.ls(Path.join([agents_dir, slug, "memory"])) do
       {:ok, entries} ->
-        Enum.count(entries, &Regex.match?(@memory_filename_re, &1))
+        entries
+        |> Stream.filter(&Regex.match?(@memory_filename_re, &1))
+        |> Enum.take(@memory_count_cap + 1)
+        |> length()
 
       _ ->
         0

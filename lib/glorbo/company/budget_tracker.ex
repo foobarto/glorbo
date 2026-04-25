@@ -292,6 +292,24 @@ defmodule Glorbo.Company.BudgetTracker do
   end
 
   defp write_alert_file(agent_slug, year_month, used_cents, cap_cents, state) do
+    # Threatmodel: agent_slug flows in from agent creation /
+    # disk-driven recording paths and is otherwise unvalidated.
+    # Path.join/1 doesn't normalize "..", so a slug like
+    # "../../etc" would put the alert file outside the company
+    # scope. Slug-validate at this seam; refuse the write if the
+    # value isn't canonical.
+    if Glorbo.Actions.Support.valid_slug?(agent_slug) do
+      do_write_alert_file(agent_slug, year_month, used_cents, cap_cents, state)
+    else
+      Logger.warning(
+        "budget_tracker: refusing alert write for non-slug agent=#{inspect(agent_slug)} (company=#{state.company})"
+      )
+
+      :ok
+    end
+  end
+
+  defp do_write_alert_file(agent_slug, year_month, used_cents, cap_cents, state) do
     path =
       Path.join([
         state.base,

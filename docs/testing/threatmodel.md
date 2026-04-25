@@ -240,23 +240,31 @@ path; the three CLI parsers — claude_jsonl, codex_jsonl,
 gemini_stdout — now coerce token counts via `coerce_int/1`
 before summing, so a malicious or buggy CLI emitting strings or
 lists in `input_tokens`/`output_tokens`/etc no longer raises an
-ArithmeticError out of the dispatcher's accumulator).
+ArithmeticError out of the dispatcher's accumulator); **wave 15
+on 2026-04-25** verified 1 low already fixed at HEAD
+(OverviewLive's `safe_goal_slug/1` already filters non-scalar
+goal slugs — the threatmodel finding's wording matched a prior
+version) and closed 2 more lows (BudgetTracker.write_alert_file
+now slug-validates `agent_slug` via `Glorbo.Actions.Support`
+before joining it into the alert path, refusing path-traversal
+attempts; sidebar `count_memory_files/2` caps the
+`Stream.filter` walk at 999 entries via `Enum.take` so an agent
+spamming thousands of memory files can't slow every sidebar
+render).
 
-Breakdown: 0 critical, 0 high, 0 medium, 19 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 17 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 19
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 17
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
 - **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
   *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **Unbounded sidebar memory scans enable low-effort UI DoS** — The sidebar now calls count_memory_files/2 for every agent row. That function performs File.ls on the agent's memory directory and walks all entries to match a regex. There is no cap or caching, and memory files are attacker-controlled via the agent outbox. A…
-  *Paths:* `lib/glorbo_web/components/sidebar.ex`
 - **Unbounded memory file reads allow local DoS via huge files** — Glorbo.Agent.Memory.compose/3 introduces unbounded File.read calls for both the MEMORY.md index and each memory body file. The code enforces a 20KB output budget only after the entire file contents are loaded into memory, meaning a large file placed under…
   *Paths:* `lib/glorbo/agent/memory.ex`
 - **TaskLive audit aggregation can exhaust memory on large logs** — The new TaskLive usage strip computes totals by calling load_usage_totals, which reads the entire monthly audit JSONL file with File.read and splits it into a list of lines before reduction. Audit logs are append-only and can grow without bound from untrusted…
@@ -283,8 +291,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/stdout_streamer.ex`
 - **Unbounded agent.md scan on startup enables local DoS** — The commit adds a boot-time scan that walks every agents/<slug>/agent.md to decide whether to start the Network.Proxy. This is done during Company.Supervisor.init/1 and calls Agent.Parser.parse_file/1 for each file. Agent.Parser.parse_file/1 uses File.read/1…
   *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/agent/parser.ex`
-- **Budget alerts use unsanitized agent slugs in file paths** — BudgetTracker’s alert writer builds the output path with `Path.join([... "#{agent_slug}-budget.md"])` and then calls `mkdir_p!` and `write!` without validating the slug. If an attacker can influence `agent_slug` (e.g., via agent creation or on-disk…
-  *Paths:* `lib/glorbo/company/budget_tracker.ex`
 - **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…
   *Paths:* `lib/glorbo/filesystem/reindex.ex`
 
@@ -292,7 +298,9 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 
 - **TaskComments parse swaps capture order, misreads entries** — `@message_re` defines named captures in the order `ts`, `author`, `body`. `parse/1` destructures the `Regex.scan(..., capture: :all_names)` results as `[author, body, ts]`, which does not match the capture order returned by Elixir. This causes comment entries…
   *Paths:* `lib/glorbo/task_comments.ex`
-- **Overview goals parsing crashes on non-string goal slug** — The commit adds goals aggregation for company cards by parsing `company.md` and iterating over each goal entry. The code calls `to_string/1` on `goal.slug` without verifying it is a scalar string/atom/integer. YAML frontmatter is attacker-controlled per the…
+- ~~**Overview goals parsing crashes on non-string goal slug**~~ —
+  Closed in wave 15 (verified `safe_goal_slug/1` already filters
+  non-scalar values).
   *Paths:* `lib/glorbo_web/live/overview_live.ex`
 - **Proxy classifier lacks validation and can crash on bad return** — In classify_unlisted/5, the proxy only pattern-matches the expected classifier verdict tuples. safe_classify/3 only rescues raises and exits, but it does not validate or coerce unexpected return values. A classifier that returns nil or any non-matching tuple…
   *Paths:* `lib/glorbo/network/proxy.ex`
