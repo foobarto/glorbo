@@ -19,6 +19,8 @@ defmodule Glorbo.Actions.Channels do
 
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @type create_opts :: [actor: String.t(), base: Path.t(), audit: atom()]
   @type archive_opts :: [actor: String.t(), base: Path.t(), audit: atom()]
@@ -38,14 +40,32 @@ defmodule Glorbo.Actions.Channels do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(channel, :channel),
-         abs = channel_path(base, company, channel),
-         :ok <- guard_not_exists(abs),
-         :ok <- File.mkdir_p(Path.dirname(abs)),
-         :ok <- File.write(abs, render_header(channel)),
-         :ok <- emit_create_audit(audit, company, channel, actor) do
-      {:ok, %{rel_path: "channels/#{channel}.md", abs_path: abs}}
+    rel_path = "channels/#{channel}.md"
+
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "channel.create",
+      target: Path.join(["companies", company, rel_path])
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(channel, :channel),
+             abs = channel_path(base, company, channel),
+             :ok <- guard_not_exists(abs),
+             :ok <- File.mkdir_p(Path.dirname(abs)),
+             :ok <- File.write(abs, render_header(channel)),
+             :ok <- Tx.mark_path(tx_id, abs),
+             :ok <- emit_create_audit(audit, company, channel, actor),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{rel_path: rel_path, abs_path: abs}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
   end
 
@@ -63,18 +83,35 @@ defmodule Glorbo.Actions.Channels do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(channel, :channel),
-         :ok <- guard_archivable(channel),
-         src = channel_path(base, company, channel),
-         :ok <- guard_exists(src),
-         archive_dir = archive_dir_path(base, company),
-         dst = Path.join(archive_dir, "#{channel}.md"),
-         :ok <- File.mkdir_p(archive_dir),
-         :ok <- File.rename(src, dst),
-         dest_rel = "channels/.archive/#{channel}.md",
-         :ok <- emit_archive_audit(audit, company, channel, dest_rel, actor) do
-      {:ok, %{dest_rel_path: dest_rel}}
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "channel.archive",
+      target: Path.join(["companies", company, "channels/#{channel}.md"])
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(channel, :channel),
+             :ok <- guard_archivable(channel),
+             src = channel_path(base, company, channel),
+             :ok <- guard_exists(src),
+             archive_dir = archive_dir_path(base, company),
+             dst = Path.join(archive_dir, "#{channel}.md"),
+             :ok <- File.mkdir_p(archive_dir),
+             :ok <- File.rename(src, dst),
+             :ok <- Tx.mark_path(tx_id, src),
+             :ok <- Tx.mark_path(tx_id, dst),
+             dest_rel = "channels/.archive/#{channel}.md",
+             :ok <- emit_archive_audit(audit, company, channel, dest_rel, actor),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{dest_rel_path: dest_rel}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
   end
 

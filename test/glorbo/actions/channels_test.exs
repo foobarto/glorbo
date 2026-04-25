@@ -167,4 +167,93 @@ defmodule Glorbo.Actions.ChannelsTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  describe "GEP-33 Phase 2c: home-history wiring" do
+    alias Glorbo.HomeHistory
+    alias Glorbo.HomeHistory.Tx
+
+    setup %{base: base} do
+      File.write!(Path.join(base, "config.md"), "secret_key_base: x\n")
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      {:ok, _tx_pid} =
+        Tx.start_link(
+          name: Glorbo.HomeHistory.Tx,
+          base: base,
+          debounce_ms: 30,
+          hard_cap_ms: 200
+        )
+
+      {:ok, initial_sha: initial_sha}
+    end
+
+    test "channel.create commit lands with author + trailers",
+         %{base: base, audit: audit} do
+      assert {:ok, _} =
+               Channels.create("acme", "engineering",
+                 actor: "agent:ceo",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      assert head.subject == "channel.create: companies/acme/channels/engineering.md"
+      assert head.author_name == "Agent ceo"
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Actor: agent:ceo"
+      assert body =~ "Glorbo-Action: channel.create"
+      assert body =~ "Glorbo-Paths: companies/acme/channels/engineering.md"
+    end
+
+    test "channel.archive commit captures both src + dst paths",
+         %{base: base, audit: audit} do
+      # Set up: create the channel first.
+      assert {:ok, _} =
+               Channels.create("acme", "engineering",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      # Wait for the create commit to land before archiving.
+      Process.sleep(150)
+
+      assert {:ok, _} =
+               Channels.archive("acme", "engineering",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      assert head.subject =~ "channel.archive:"
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Action: channel.archive"
+      assert body =~ "Glorbo-Paths:"
+      # src removed, dst added — both paths surface in the trailer.
+      assert body =~ "channels/engineering.md"
+      assert body =~ "channels/.archive/engineering.md"
+    end
+
+    test "validation failure does NOT produce a history commit",
+         %{base: base, audit: audit, initial_sha: initial_sha} do
+      assert {:error, _} =
+               Channels.create("acme", "BAD-SLUG-CASE",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+  end
 end

@@ -818,6 +818,111 @@ tell you to stop" still in force.
 
 ---
 
+## Task 7 — GEP-33 Phase 2c-2: shared helpers + 3 more writers wired
+
+**Task picked.** Continuing the GEP-33 caller-wiring arc.
+The Phase 2c-1 inline `history_actor/1` + audit-path
+computation in Companies.update were going to duplicate
+across every writer; extracted them to public API on
+`Glorbo.HomeHistory` and wired the next 3 highest-value
+writers using the shared shape.
+
+**What shipped.**
+
+  * **`HomeHistory.actor_from_string/1`** — public helper
+    translating writer-side actor strings (`"director"`,
+    `"agent:ceo"`, `"mcp:claude-code"`, `"system"`,
+    `"external"`) into the GEP-33 §4.2 actor variants.
+    Defaults to `:system` for unrecognised shapes — honest
+    "we don't know who" provenance instead of dropping the
+    commit.
+  * **`HomeHistory.audit_jsonl_path/2`** — returns
+    `<base>/companies/<co>/audit/YYYY-MM.jsonl` for the
+    current month. Single source of truth for the audit
+    file shape every Phase 2c writer marks alongside its
+    primary write.
+  * **Companies.update retrofitted** to call the shared
+    helpers — drops the inline `history_actor/1` +
+    `mark_audit_path/3` from Phase 2c-1.
+  * **Tasks.create/4 wired.** Subject:
+    `task.create: companies/<co>/projects/<p>/tasks`. Marks
+    the new task md + the audit jsonl. Severity-auto-flip
+    (GEP-41 D1) still happens before the tx wrapper.
+  * **Channels.create/3 wired.** Subject:
+    `channel.create: companies/<co>/channels/<slug>.md`.
+    Marks the channel md + the audit jsonl.
+  * **Channels.archive/3 wired.** Subject:
+    `channel.archive: companies/<co>/channels/<slug>.md`.
+    Marks both the source path (now removed) and the
+    destination path (newly created), so the diff tells the
+    full story. Plus the audit jsonl.
+
+**Tests.** 6 new integration tests:
+
+  * `tasks_test.exs`: task.create commit lands with
+    `Glorbo-Actor: agent:ceo` + `Glorbo-Action: task.create`
+    + `Glorbo-Paths: companies/acme/projects/demo/tasks/<id>.md`
+    + `Author: Agent ceo <agent+ceo@glorbo.local>`.
+    Validation failure (empty title) does not produce a
+    commit.
+  * `channels_test.exs`: channel.create commit lands with
+    `Glorbo-Actor: agent:ceo` + the channel.md path.
+    channel.archive captures both src + dst paths in
+    `Glorbo-Paths`. Validation failure (bad slug) does not
+    produce a commit.
+
+**Design calls I made without you.**
+
+  * **Helpers public on `Glorbo.HomeHistory`, not a separate
+    `Glorbo.HomeHistory.Helpers` or `Glorbo.Actions.History`
+    module.** The helpers are thin and tightly coupled to
+    `commit_marked/3`'s actor variant + audit-jsonl shape;
+    keeping them on the same module keeps the API surface
+    unified and findable.
+  * **`audit_jsonl_path/2` uses UTC.** Audit jsonls roll
+    monthly using the Glorbo daemon's UTC clock; if a write
+    crosses the month boundary mid-`with_tx`, the marked
+    path could mismatch what AuditLog actually appended to.
+    The existence-filter from Phase 2c-1 catches this — the
+    "wrong" path drops to `:skipped`, the writer's own file
+    still commits. Acceptable degradation for a once-a-month
+    edge case.
+  * **`Tasks.create` target is the parent dir, not the new
+    file path.** The task id isn't computed until inside the
+    `with`-chain (`resolve_task_id/4`). The commit subject
+    refers to the project's tasks dir; the actual created
+    file shows up in `Glorbo-Paths`. Future readers can
+    `git log <path>` against the new task file directly.
+  * **No retrofit of Tasks.{trash, archive, reassign, ...}
+    yet.** Each one is a separate bounded round; landing one
+    at a time keeps reviews honest. The full audit set is
+    listed as Phase 2c-3 in the GEP history note.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/actions/` — 97/97 green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * **Other Tasks mutations.** trash, archive, reassign,
+    record_peer_review_verdict.
+  * **Goals / Skills / Projects / Proposals / Agents
+    writers.** Phase 2c-3.
+  * **Router-level proposal create + decide writes.** The
+    Router itself is currently a Phase 2c blind spot —
+    writers like `Glorbo.Company.Router.handle_proposal_*`
+    write proposal markdown files without going through
+    Actions. Phase 2c-N should either route them through an
+    Actions module first or instrument them directly.
+  * **Memory write path.** Same story.
+
+**Commit.** Seventh of the day. Long-loop override holds.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

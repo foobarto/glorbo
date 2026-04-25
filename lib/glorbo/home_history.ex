@@ -331,6 +331,42 @@ defmodule Glorbo.HomeHistory do
   end
 
   @doc """
+  Translate the free-form actor label that Glorbo writers carry
+  (`"director"`, `"agent:ceo"`, `"mcp:claude-code"`, `"system"`,
+  `"external"`) into the GEP-33 §4.2 `actor()` variants
+  `commit_marked/3` expects. Unknown shapes default to `:system`
+  so writers degrade to system-level provenance without losing
+  the commit. Phase 2c writers all funnel through here.
+  """
+  @spec actor_from_string(String.t()) :: actor()
+  def actor_from_string("director"), do: :director
+  def actor_from_string("system"), do: :system
+  def actor_from_string("external"), do: :external
+
+  def actor_from_string("agent:" <> slug) when slug != "" do
+    {:agent, slug}
+  end
+
+  def actor_from_string("mcp:" <> client) when client != "" do
+    {:mcp, client}
+  end
+
+  def actor_from_string(_), do: :system
+
+  @doc """
+  Compute the absolute path of the current month's audit jsonl
+  for a given company. Phase 2c writers mark this alongside their
+  primary file write so the §6.1 inactivity window fires one
+  combined commit.
+  """
+  @spec audit_jsonl_path(Path.t(), String.t()) :: Path.t()
+  def audit_jsonl_path(base, company) when is_binary(base) and is_binary(company) do
+    {{y, m, _d}, _time} = :calendar.universal_time()
+    month = :io_lib.format("~4..0B-~2..0B", [y, m]) |> IO.iodata_to_binary()
+    Path.join([base, "companies", company, "audit", month <> ".jsonl"])
+  end
+
+  @doc """
   Public sanitizer used by `commit_marked/3` and exposed for
   tests + future Phase-2b callers that need to pre-sanitize meta
   before queueing it.

@@ -676,4 +676,66 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  describe "GEP-33 Phase 2c: home-history wiring on create/4" do
+    alias Glorbo.HomeHistory
+    alias Glorbo.HomeHistory.Tx
+
+    setup %{base: base} do
+      File.write!(Path.join(base, "config.md"), "secret_key_base: x\n")
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      {:ok, _tx_pid} =
+        Tx.start_link(
+          name: Glorbo.HomeHistory.Tx,
+          base: base,
+          debounce_ms: 30,
+          hard_cap_ms: 200
+        )
+
+      {:ok, initial_sha: initial_sha}
+    end
+
+    test "task.create commit lands with author + trailers + Glorbo-Paths",
+         %{base: base, audit: audit} do
+      assert {:ok, %{task_id: task_id}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{"title" => "Wire history layer", "assigned_to" => "ceo"},
+                 actor: "agent:ceo",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      assert head.subject =~ ~r/^task\.create:/
+      assert head.author_name == "Agent ceo"
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Actor: agent:ceo"
+      assert body =~ "Glorbo-Action: task.create"
+      assert body =~ "Glorbo-Paths: companies/acme/projects/demo/tasks/#{task_id}.md"
+    end
+
+    test "validation failure does NOT produce a history commit",
+         %{base: base, audit: audit, initial_sha: initial_sha} do
+      assert {:error, _} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{"title" => ""},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+  end
 end

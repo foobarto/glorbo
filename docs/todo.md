@@ -114,9 +114,15 @@ it's been in CHANGELOG for a cycle.
   (`Actions.Companies.update/3`) + integration test;
   `commit_marked/3` gained an existence filter so optimistic
   marks of async-written audit paths don't break the whole
-  commit. Phase 2c-2..N wires the remaining writers (Tasks,
-  Channels, Goals, Skills, Projects, Proposals, Agents) one
-  at a time. Phase 3 follows with watcher-fallback `External`
+  commit. **Phase 2c-2 shipped 2026-04-25 (autonomous L4):**
+  shared `HomeHistory.actor_from_string/1` +
+  `audit_jsonl_path/2` helpers extracted; `Tasks.create/4`,
+  `Channels.create/3`, `Channels.archive/3` wired through
+  `with_tx`; Companies.update retrofitted to use the shared
+  helpers. 6 new integration tests. Phase 2c-3 picks up
+  Goals / Skills / Projects / Proposals / Agents / the rest
+  of Tasks-mutation surface + the Router proposal/memory
+  paths. Phase 3 follows with watcher-fallback `External`
   commits for manual edits; Phase 4 adds
   `show`/`diff`/`restore`.
 - [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted

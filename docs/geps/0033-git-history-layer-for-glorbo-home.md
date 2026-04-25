@@ -154,6 +154,44 @@ history:
       Out of scope still: Phase 2c-2..N — Tasks, Channels, Goals,
       Skills, Projects, Proposals, Agents writers (one PR each).
       Phase 3 watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-2 — shared helpers extracted + 3 more writers
+      wired. `HomeHistory.actor_from_string/1` translates
+      free-form actor labels into the §4.2 actor variants;
+      `HomeHistory.audit_jsonl_path/2` returns the canonical
+      current-month audit file path. Both are public API now —
+      every Phase 2c writer uses them.
+
+      Writers wired this round (each gets a `task.X` /
+      `channel.X` history commit covering the durable file
+      write + the audit jsonl path):
+
+        * `Glorbo.Actions.Tasks.create/4`
+          (`task.create: companies/<co>/projects/<p>/tasks`)
+        * `Glorbo.Actions.Channels.create/3`
+          (`channel.create: companies/<co>/channels/<slug>.md`)
+        * `Glorbo.Actions.Channels.archive/3`
+          (`channel.archive: companies/<co>/channels/<slug>.md`,
+          captures both the src and dst paths in `Glorbo-Paths`)
+
+      Companies.update was retrofitted to use the shared helpers
+      (drops the now-redundant inline `history_actor/1` +
+      audit-path computation).
+
+      Test surface: 6 new integration tests across
+      `tasks_test.exs` + `channels_test.exs` asserting:
+      kernel-committed history commit lands with the right
+      author + trailers; Glorbo-Paths captures the writer's
+      surface; validation failures cancel the tx without
+      committing.
+
+      Out of scope still: Phase 2c-N for Goals, Skills,
+      Projects, Proposals, Agents, Tasks.{trash, archive,
+      reassign, record_peer_review_verdict}, plus the Router
+      wires (proposal create / decide, memory write). Phase 3
+      watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

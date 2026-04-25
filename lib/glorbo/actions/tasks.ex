@@ -36,6 +36,8 @@ defmodule Glorbo.Actions.Tasks do
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.FrontmatterWriter
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @title_max_bytes 200
   @task_id_re ~r/\A[a-z0-9][a-z0-9-]*\z/
@@ -146,16 +148,32 @@ defmodule Glorbo.Actions.Tasks do
     # unless the caller explicitly opted out. See `apply_severity_auto_flip/1`.
     params = apply_severity_auto_flip(params)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(project, :project),
-         title <- params |> Map.get("title", "") |> to_string() |> String.trim(),
-         :ok <- validate_title(title),
-         {:ok, task_id} <- resolve_task_id(opts, base, company, project),
-         :ok <- write_task_file(base, company, project, task_id, params, attachments),
-         rel_path = "projects/#{project}/tasks/#{task_id}.md",
-         abs_path = Path.join([base, "companies", company, rel_path]),
-         :ok <- emit_create_audit(audit, company, rel_path, title, actor, params) do
-      {:ok, %{task_id: task_id, rel_path: rel_path, abs_path: abs_path}}
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.create",
+      target: "companies/#{company}/projects/#{project}/tasks"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(project, :project),
+             title <- params |> Map.get("title", "") |> to_string() |> String.trim(),
+             :ok <- validate_title(title),
+             {:ok, task_id} <- resolve_task_id(opts, base, company, project),
+             :ok <- write_task_file(base, company, project, task_id, params, attachments),
+             rel_path = "projects/#{project}/tasks/#{task_id}.md",
+             abs_path = Path.join([base, "companies", company, rel_path]),
+             :ok <- Tx.mark_path(tx_id, abs_path),
+             :ok <- emit_create_audit(audit, company, rel_path, title, actor, params),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{task_id: task_id, rel_path: rel_path, abs_path: abs_path}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
   end
 
