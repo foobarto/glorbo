@@ -55,10 +55,13 @@ defmodule Glorbo.CLI.Parsers.CodexJsonl do
   defp build_usage(event) do
     usage = get_in(event, ["payload", "info", "total_token_usage"]) || %{}
 
-    input = Map.get(usage, "input_tokens") || 0
-    cached = Map.get(usage, "cached_input_tokens") || 0
-    output = Map.get(usage, "output_tokens") || 0
-    reasoning = Map.get(usage, "reasoning_output_tokens") || 0
+    # Threatmodel: usage fields are CLI-controlled and may be
+    # strings, lists, or anything else. Coerce to non-negative
+    # integers to defeat the ArithmeticError on `+`.
+    input = coerce_int(Map.get(usage, "input_tokens"))
+    cached = coerce_int(Map.get(usage, "cached_input_tokens"))
+    output = coerce_int(Map.get(usage, "output_tokens"))
+    reasoning = coerce_int(Map.get(usage, "reasoning_output_tokens"))
 
     %{
       prompt_tokens: input + cached,
@@ -66,4 +69,7 @@ defmodule Glorbo.CLI.Parsers.CodexJsonl do
       model: nil
     }
   end
+
+  defp coerce_int(n) when is_integer(n) and n >= 0, do: n
+  defp coerce_int(_other), do: 0
 end

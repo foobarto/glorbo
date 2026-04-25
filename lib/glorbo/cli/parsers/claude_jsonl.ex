@@ -53,13 +53,18 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
     usage = get_in(entry, ["message", "usage"]) || %{}
     content = get_in(entry, ["message", "content"]) || []
 
+    # Threatmodel: usage fields are agent/CLI-controlled. A
+    # malicious or buggy CLI could emit `input_tokens: "many"` or
+    # `output_tokens: [1, 2]`, which would crash the accumulator
+    # with ArithmeticError when we add it to acc. Coerce to int.
     %{
       prompt_tokens:
         acc.prompt_tokens +
-          (Map.get(usage, "input_tokens") || 0) +
-          (Map.get(usage, "cache_creation_input_tokens") || 0) +
-          (Map.get(usage, "cache_read_input_tokens") || 0),
-      completion_tokens: acc.completion_tokens + (Map.get(usage, "output_tokens") || 0),
+          coerce_int(Map.get(usage, "input_tokens")) +
+          coerce_int(Map.get(usage, "cache_creation_input_tokens")) +
+          coerce_int(Map.get(usage, "cache_read_input_tokens")),
+      completion_tokens:
+        acc.completion_tokens + coerce_int(Map.get(usage, "output_tokens")),
       model: get_in(entry, ["message", "model"]) || acc.model,
       tool_calls: count_tool_calls(content, acc.tool_calls)
     }
@@ -80,4 +85,10 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
   end
 
   defp count_tool_calls(_, acc), do: acc
+
+  # Coerce attacker-controlled token counts to a non-negative
+  # integer; anything else degrades to 0 to avoid the
+  # ArithmeticError on `+`.
+  defp coerce_int(n) when is_integer(n) and n >= 0, do: n
+  defp coerce_int(_other), do: 0
 end

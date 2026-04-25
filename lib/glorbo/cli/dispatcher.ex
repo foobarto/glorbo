@@ -195,8 +195,13 @@ defmodule Glorbo.CLI.Dispatcher do
     reply_exists? = fs.exists?.(reply_path)
 
     if exit_status != 0 or not reply_exists? do
-      # Cap stdout so a flood doesn't drown the logs.
-      snippet = stdout |> to_string() |> String.slice(0, 2_000)
+      # Cap stdout so a flood doesn't drown the logs. Use byte-based
+      # `binary_part/3` rather than `String.slice/3` because the bwrap
+      # port produces raw bytes and stdout is attacker-controlled —
+      # `String.slice/3` raises on invalid UTF-8. `inspect/1` escapes
+      # non-printable bytes safely.
+      raw = stdout |> to_string()
+      snippet = binary_part(raw, 0, min(byte_size(raw), 2_000))
 
       Logger.warning(
         "cli #{provider.name} exit=#{exit_status} reply_exists?=#{reply_exists?} stdout=#{inspect(snippet)}"

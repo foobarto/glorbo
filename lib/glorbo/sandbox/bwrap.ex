@@ -598,18 +598,55 @@ defmodule Glorbo.Sandbox.Bwrap do
   end
 
   defp write_prompt_tempfile(prompt) when is_binary(prompt) do
-    # Use a unique per-invocation path under the system tmp dir. The
-    # filename contains no user input and cannot collide across parallel
-    # dispatches thanks to the monotonic unique_integer.
+    # Threatmodel: previous implementation used
+    # `glorbo_bwrap_prompt_<monotonic_integer>` which is predictable
+    # — an attacker watching `/tmp` could pre-plant a symlink at the
+    # next-integer name and redirect File.write to clobber an
+    # arbitrary file. Two layers of defence:
+    #
+    #   1. Add a per-call random suffix so the path can't be predicted
+    #      from one BEAM-process observation.
+    #   2. Open with `[:exclusive]` so :file.open returns {:error,
+    #      :eexist} if the path already exists (refuses to follow a
+    #      pre-planted symlink, even if the random suffix collided).
+    #
+    # The exclusive-create + 8-byte random suffix together turn the
+    # vector from "race attacker against monotonic counter" into
+    # "guess 2^64 random bytes between mktemp and open" — well past
+    # exploitable.
+    rand_suffix =
+      :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+
     path =
       Path.join(
         System.tmp_dir!(),
-        "glorbo_bwrap_prompt_#{System.unique_integer([:positive, :monotonic])}"
+        "glorbo_bwrap_prompt_#{System.unique_integer([:positive, :monotonic])}_#{rand_suffix}"
       )
 
-    case File.write(path, prompt) do
-      :ok -> {:ok, path}
-      {:error, reason} -> {:error, reason}
+    case :file.open(path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        try do
+          case :file.write(fd, prompt) do
+            :ok ->
+              :ok = :file.close(fd)
+              # Set 0600 so other local users can't read the prompt
+              # while it's on disk.
+              _ = File.chmod(path, 0o600)
+              {:ok, path}
+
+            {:error, reason} ->
+              :ok = :file.close(fd)
+              _ = File.rm(path)
+              {:error, reason}
+          end
+        rescue
+          _ ->
+            _ = File.rm(path)
+            {:error, :write_failed}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

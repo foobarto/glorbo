@@ -37,16 +37,19 @@ defmodule Glorbo.CLI.Parsers.GeminiStdout do
   defp reduce_models(models) do
     Enum.reduce(models, %{prompt_tokens: 0, completion_tokens: 0, model: nil}, fn
       {name, %{"tokens" => t}}, acc when is_map(t) ->
+        # Threatmodel: token fields are CLI-controlled. Coerce to
+        # non-negative integers so a buggy/malicious CLI emitting
+        # strings or lists doesn't crash the accumulator.
         %{
           prompt_tokens:
             acc.prompt_tokens +
-              (Map.get(t, "prompt") || 0) +
-              (Map.get(t, "cached") || 0),
+              coerce_int(Map.get(t, "prompt")) +
+              coerce_int(Map.get(t, "cached")),
           completion_tokens:
             acc.completion_tokens +
-              (Map.get(t, "candidates") || 0) +
-              (Map.get(t, "thoughts") || 0) +
-              (Map.get(t, "tool") || 0),
+              coerce_int(Map.get(t, "candidates")) +
+              coerce_int(Map.get(t, "thoughts")) +
+              coerce_int(Map.get(t, "tool")),
           model: acc.model || name
         }
 
@@ -54,4 +57,7 @@ defmodule Glorbo.CLI.Parsers.GeminiStdout do
         acc
     end)
   end
+
+  defp coerce_int(n) when is_integer(n) and n >= 0, do: n
+  defp coerce_int(_other), do: 0
 end

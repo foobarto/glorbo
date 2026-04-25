@@ -224,16 +224,32 @@ from `String.to_integer/1` to `Integer.parse/1` for `duration_ms`
 so a tampered audit row no longer crashes every reader of the run
 log; `Glorbo.CLI.Lifecycle.Distribution.ensure_epmd/0` no longer
 falls back to a bare `"epmd"` PATH search if the bundled ERTS
-binary is missing — closes the local-PATH-hijack vector).
+binary is missing — closes the local-PATH-hijack vector); **wave
+14 on 2026-04-25** verified 1 low already fixed at HEAD
+(`Glorbo.Restore.run/2` already extracts to a sibling
+`<base>.restore-<ts>/` staging dir + verifies symlinks before
+moving anything into base, so the "rejection leaves modified
+files" path is structurally impossible — the staging tree gets
+`File.rm_rf`'d in the `after` regardless) and closed 3 more lows
+(bwrap prompt tempfile now uses `:file.open(..., [:exclusive])`
++ an 8-byte `crypto.strong_rand_bytes` suffix + 0600 mode,
+blocking the predictable-tmpfile-symlink-redirect race;
+`maybe_log_run_output/4` switched from `String.slice/3` to
+`binary_part/3` so a non-UTF-8 stdout doesn't crash the warning
+path; the three CLI parsers — claude_jsonl, codex_jsonl,
+gemini_stdout — now coerce token counts via `coerce_int/1`
+before summing, so a malicious or buggy CLI emitting strings or
+lists in `input_tokens`/`output_tokens`/etc no longer raises an
+ArithmeticError out of the dispatcher's accumulator).
 
-Breakdown: 0 critical, 0 high, 0 medium, 22 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 19 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 22
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 19
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -255,26 +271,18 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/approval_queue_live.ex, lib/glorbo_web/actions.ex, lib/glorbo/task_definition.ex`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
-- **CLI failure logging can crash on non‑UTF‑8 stdout** — The new maybe_log_run_output/4 helper logs a snippet of CLI stdout when exit status is non‑zero or a reply file is missing. It converts the raw stdout to a string and calls String.slice/3. However, stdout is captured as raw binary from the bwrap port (with…
-  *Paths:* `lib/glorbo/cli/dispatcher.ex, lib/glorbo/sandbox/bwrap.ex`
 - **Agent history loads full audit log causing potential DoS** — The history feature loads the current-month audit log with File.read and splits/reverses the entire file just to find the last 200 matching rows. Audit logs are append-only and can grow very large (especially if a malicious agent or external caller generates…
   *Paths:* `lib/glorbo_web/live/agent_live.ex`
 - **Providers page now exposes raw TOML config contents** — The commit adds a collapsible TOML snippet for each provider. The LiveView calls read_toml/1, which does a File.read on the provider’s source_file and renders the raw text into the page. User-defined providers.toml supports env overrides and other potentially…
   *Paths:* `lib/glorbo_web/live/providers_live.ex`
 - **Kanban drag-drop trusts client paths for filesystem writes** — The new "kanban:move" LiveView event accepts a `task_path` from the browser and only validates that it starts with "projects/" and does not contain "..". It then calls `Glorbo.TaskDefinition.write/2` directly. This bypasses the stricter task-path validation…
   *Paths:* `lib/glorbo_web/live/kanban_live.ex`
-- **Restore rejection leaves modified files on symlink escape** — When restore detects escaping symlinks it now calls clean_up_extract/2 instead of wiping the base. clean_up_extract only removes top-level entries that did not exist before extraction. If the base already contains entries like config.md or companies/, a…
-  *Paths:* `lib/glorbo/restore.ex`
 - **CLI run bypasses director approval requirements** — `glorbo run` parses the task file and immediately calls `Glorbo.Agent.Dispatch.execute/3`. It never checks `TaskDefinition.requires_approval?/1` or consults the approval gate/state, so a task with `requires_approval: director` in frontmatter will still run.…
   *Paths:* `lib/glorbo/cli/lifecycle/run.ex, lib/glorbo/task_definition.ex`
 - **StdoutStreamer buffers unlimited line data, enabling DoS** — GlorboWeb.StdoutStreamer concatenates the previous buffer with each read chunk and retains the trailing partial line in memory until a newline appears. If an agent writes a very long line without newlines to stdout.log, `state.buf` grows by 64 KiB every poll…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex`
 - **Unbounded agent.md scan on startup enables local DoS** — The commit adds a boot-time scan that walks every agents/<slug>/agent.md to decide whether to start the Network.Proxy. This is done during Company.Supervisor.init/1 and calls Agent.Parser.parse_file/1 for each file. Agent.Parser.parse_file/1 uses File.read/1…
   *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/agent/parser.ex`
-- **Insecure prompt tempfile in /tmp may leak or clobber data** — The commit replaces direct stdin piping with a prompt tempfile created in the system temp directory. The tempfile is created with File.write/2 and a predictable name derived from System.unique_integer/1. File.write/2 does not request exclusive creation or set…
-  *Paths:* `lib/glorbo/sandbox/bwrap.ex`
-- **Unvalidated token counts in CLI adapters can crash parsing** — The new CLI adapters parse usage telemetry from JSONL/stdout files that are attacker-controlled (agent workspace or CLI output). In ClaudeCode, Codex, and GeminiCli, token fields are added without type checks. If a malicious or buggy CLI emits strings/arrays…
-  *Paths:* `lib/glorbo/cli/claude_code.ex, lib/glorbo/cli/codex.ex, lib/glorbo/cli/gemini_cli.ex`
 - **Budget alerts use unsanitized agent slugs in file paths** — BudgetTracker’s alert writer builds the output path with `Path.join([... "#{agent_slug}-budget.md"])` and then calls `mkdir_p!` and `write!` without validating the slug. If an attacker can influence `agent_slug` (e.g., via agent creation or on-disk…
   *Paths:* `lib/glorbo/company/budget_tracker.ex`
 - **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…
