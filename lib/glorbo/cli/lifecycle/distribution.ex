@@ -64,9 +64,11 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
   # Burrito ships ERTS but not a running EPMD. If none is listening on
   # port 4369 yet, `Node.start(_, :longnames)` crashes with
   # `econnrefused` ~100ms after start. Spawn the daemon ourselves —
-  # epmd refuses to double-bind, so this is idempotent. No PATH search
-  # drama needed: Erlang ships `epmd` next to the current ERTS binary,
-  # same dir as `erl`.
+  # epmd refuses to double-bind, so this is idempotent. Erlang ships
+  # `epmd` next to the current ERTS binary; if it isn't there for some
+  # reason we refuse to spawn rather than fall back to the PATH (a
+  # PATH search would let an attacker plant a malicious `epmd` earlier
+  # in PATH and hijack execution before `Node.start/2`).
   defp ensure_epmd do
     epmd =
       Path.join(
@@ -74,9 +76,15 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
         "bin/epmd"
       )
 
-    epmd = if File.exists?(epmd), do: epmd, else: "epmd"
-    _ = System.cmd(epmd, ["-daemon"], stderr_to_stdout: true)
-    :ok
+    if File.exists?(epmd) do
+      _ = System.cmd(epmd, ["-daemon"], stderr_to_stdout: true)
+      :ok
+    else
+      # No bundled epmd. `Node.start/2` will surface the real error
+      # to the caller; better than silently running an attacker's
+      # `epmd` from PATH.
+      :no_bundled_epmd
+    end
   rescue
     _ -> :ok
   end

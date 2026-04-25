@@ -275,7 +275,27 @@ defmodule Glorbo.CLI.Dispatcher do
   @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
 
   @doc false
-  def strip_ansi(text) when is_binary(text), do: String.replace(text, @ansi_re, "")
+  def strip_ansi(text) when is_binary(text) do
+    # Threatmodel: agent stdout is attacker-controlled and may contain
+    # invalid UTF-8. `String.replace/3` raises ArgumentError on
+    # non-UTF-8 binaries, which would propagate out of the dispatcher
+    # and surface as a 500 in the LV that's reading replies. Coerce to
+    # printable UTF-8 first — `:unicode.characters_to_binary/3` with
+    # `:utf8 / :utf8` and the `:replace` fallback strategy substitutes
+    # the U+FFFD replacement character for invalid bytes.
+    safe =
+      if String.valid?(text) do
+        text
+      else
+        case :unicode.characters_to_binary(text, :latin1, :utf8) do
+          bin when is_binary(bin) -> bin
+          _ -> for <<b <- text>>, do: if(b < 128, do: <<b>>, else: "?"), into: ""
+        end
+      end
+
+    String.replace(safe, @ansi_re, "")
+  end
+
   def strip_ansi(other), do: other
 
   # ---------------------------------------------------------------------------

@@ -142,12 +142,7 @@ defmodule Glorbo.Agent.RunLog do
         }
 
       "agent.complete" ->
-        duration =
-          case Map.get(detail, "duration_ms") do
-            n when is_integer(n) -> n
-            s when is_binary(s) -> String.to_integer(s)
-            _ -> run.duration_ms
-          end
+        duration = parse_duration_ms(Map.get(detail, "duration_ms"), run.duration_ms)
 
         %{
           run
@@ -177,6 +172,23 @@ defmodule Glorbo.Agent.RunLog do
   end
 
   defp parse_ts(_), do: nil
+
+  # Threatmodel: audit JSONL is append-only but a tampered or
+  # malformed entry can carry duration_ms as garbage.
+  # `String.to_integer/1` raises on non-numeric strings, which
+  # would propagate out of every reader of the run log
+  # (TaskLive, AgentLive history, …). `Integer.parse/1` gives a
+  # safe :error fallback that degrades to the prior duration.
+  defp parse_duration_ms(n, _fallback) when is_integer(n), do: n
+
+  defp parse_duration_ms(s, fallback) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, _rest} -> n
+      :error -> fallback
+    end
+  end
+
+  defp parse_duration_ms(_other, fallback), do: fallback
 
   defp month_bucket(%DateTime{} = dt) do
     dt |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)

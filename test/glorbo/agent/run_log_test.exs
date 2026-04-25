@@ -155,6 +155,25 @@ defmodule Glorbo.Agent.RunLogTest do
       assert is_nil(run.tool_calls)
     end
 
+    test "non-numeric duration_ms degrades to nil instead of crashing" do
+      # Threatmodel: tampered audit JSONL with a non-numeric
+      # duration_ms (e.g., `"forever"`) would previously crash the
+      # reader via String.to_integer/1. Defensive Integer.parse/1
+      # falls back to the prior duration (nil for a fresh run).
+      entries = [
+        %{
+          "action" => "agent.complete",
+          "ts" => "2026-04-20T10:00:00Z",
+          "agent" => "ceo",
+          "invocation_id" => "bad-duration",
+          "detail" => %{"duration_ms" => "forever", "exit_status" => "0"}
+        }
+      ]
+
+      assert [run] = RunLog.group_runs(entries, "ceo")
+      assert is_nil(run.duration_ms)
+    end
+
     # #246 — tokens always present on the complete-audit; cost is
     # optional (only when pricing is known for the provider/model).
     test "surfaces tokens + cost from complete-audit detail" do

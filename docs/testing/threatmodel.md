@@ -210,16 +210,30 @@ which fixes both the recurring-schedule and goal-frontmatter
 findings; AuditLog's `entry_company/1` validates the company
 against the canonical slug regex and buckets path-traversal
 attempts like `company: "../../etc"` into the `_system` bucket
-rather than scribbling outside `companies/`).
+rather than scribbling outside `companies/`); **wave 13 on
+2026-04-25** verified 1 low already fixed at HEAD (Reindex's
+`safe_markdown_files/1` already calls
+`AgentWritableFile.any_symlink_in_path?/1` to reject symlinked
+ancestors — the lexical-only check the finding mentioned was
+fortified after the wave-6 sweep) and closed 3 more lows
+(`Glorbo.CLI.Dispatcher.strip_ansi/1` now coerces invalid UTF-8
+to printable bytes via `:unicode.characters_to_binary/3` before
+calling `String.replace/3`, blocking the dispatcher-crash on
+attacker-controlled CLI stdout; `Glorbo.Agent.RunLog` switched
+from `String.to_integer/1` to `Integer.parse/1` for `duration_ms`
+so a tampered audit row no longer crashes every reader of the run
+log; `Glorbo.CLI.Lifecycle.Distribution.ensure_epmd/0` no longer
+falls back to a bare `"epmd"` PATH search if the bundled ERTS
+binary is missing — closes the local-PATH-hijack vector).
 
-Breakdown: 0 critical, 0 high, 0 medium, 26 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 22 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 26
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 22
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -229,18 +243,12 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/components/sidebar.ex`
 - **Unbounded memory file reads allow local DoS via huge files** — Glorbo.Agent.Memory.compose/3 introduces unbounded File.read calls for both the MEMORY.md index and each memory body file. The code enforces a 20KB output budget only after the entire file contents are loaded into memory, meaning a large file placed under…
   *Paths:* `lib/glorbo/agent/memory.ex`
-- **PATH search for epmd enables local command hijack** — The commit adds ensure_epmd/0 to spawn the EPMD daemon before Node.start/2. When the expected ERTS epmd binary is not present, it falls back to executing "epmd" via System.cmd/3. This relies on the current PATH and permits command hijacking if an attacker can…
-  *Paths:* `lib/glorbo/cli/lifecycle/distribution.ex`
 - **TaskLive audit aggregation can exhaust memory on large logs** — The new TaskLive usage strip computes totals by calling load_usage_totals, which reads the entire monthly audit JSONL file with File.read and splits it into a list of lines before reduction. Audit logs are append-only and can grow without bound from untrusted…
   *Paths:* `lib/glorbo_web/live/task_live.ex`
 - **UTF-8 offset mismatch can truncate rotated chat logs** — The new rotation logic collects header positions with `Regex.scan(..., return: :index)`, which returns byte offsets, and then feeds those offsets into `String.split_at/2`, which operates on grapheme indices. When messages contain multibyte UTF-8 characters…
   *Paths:* `lib/glorbo/chat/rotation.ex`
-- **strip_ansi crashes on non‑UTF‑8 reply/STDOUT output** — The commit adds strip_ansi/1 and applies it to both stdout fallback replies and on-disk reply reads. strip_ansi relies on String.replace/3, which requires valid UTF‑8 binaries. Agent/CLI output is attacker-controlled and may contain arbitrary bytes; invalid…
-  *Paths:* `lib/glorbo/cli/dispatcher.ex`
 - **Inbox audit feed rereads full log on each update** — InboxLive’s recent-activity panel uses File.read/1 to load the full current-month audit log and then filters the last 50 lines. This happens during initial mount and again on every :file_event and :audit_append notification. Because audit entries are…
   *Paths:* `lib/glorbo_web/live/inbox_live.ex`
-- **RunLog crashes on malformed duration_ms in audit JSONL** — The new Glorbo.Agent.RunLog reader converts detail["duration_ms"] with String.to_integer/1. If an audit JSONL entry contains a non-numeric duration_ms (e.g., tampered or malformed log line), String.to_integer raises an ArgumentError, which bubbles out of…
-  *Paths:* `lib/glorbo/agent/run_log.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
   *Paths:* `mix.exs, config/dev.exs`
 - **Denial reason input can corrupt task frontmatter parsing** — The commit adds a denial-reason textarea and passes its raw contents to GlorboWeb.Actions.set_approval/4. When a denial reason is present, set_approval rebuilds task frontmatter via TaskDefinition.write_frontmatter/2. That serializer only escapes double…
@@ -270,8 +278,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 - **Budget alerts use unsanitized agent slugs in file paths** — BudgetTracker’s alert writer builds the output path with `Path.join([... "#{agent_slug}-budget.md"])` and then calls `mkdir_p!` and `write!` without validating the slug. If an attacker can influence `agent_slug` (e.g., via agent creation or on-disk…
   *Paths:* `lib/glorbo/company/budget_tracker.ex`
 - **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…
-  *Paths:* `lib/glorbo/filesystem/reindex.ex`
-- **Symlink escape in reindex allows out-of-scope file reads** — Glorbo.Filesystem.Reindex.safe_markdown_files/1 claims to enforce a symlink escape defense by checking that each candidate path stays under the companies directory. However, it uses Path.expand on the symlink path, which is purely lexical and does not resolve…
   *Paths:* `lib/glorbo/filesystem/reindex.ex`
 
 ### Informational (correctness / UX — not a direct security gap) — 24
