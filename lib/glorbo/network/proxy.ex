@@ -664,6 +664,16 @@ defmodule Glorbo.Network.Proxy do
   defp public_ip?({_, _, _, _}), do: true
   defp public_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: false
   defp public_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: false
+  # IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) forms —
+  # extract the embedded IPv4 octets and recheck against the IPv4 ruleset
+  # so an allowlisted hostname whose AAAA points at ::ffff:127.0.0.1 or
+  # ::ffff:169.254.169.254 cannot bypass loopback/link-local rejection.
+  defp public_ip?({0, 0, 0, 0, 0, 0xFFFF, ab, cd}),
+    do: public_ip?({div(ab, 256), rem(ab, 256), div(cd, 256), rem(cd, 256)})
+
+  defp public_ip?({0, 0, 0, 0, 0, 0, ab, cd}) when ab != 0 or cd > 1,
+    do: public_ip?({div(ab, 256), rem(ab, 256), div(cd, 256), rem(cd, 256)})
+
   defp public_ip?({a, _, _, _, _, _, _, _}) when band(a, 0xFFC0) == 0xFE80, do: false
   defp public_ip?({a, _, _, _, _, _, _, _}) when band(a, 0xFE00) == 0xFC00, do: false
   defp public_ip?({_, _, _, _, _, _, _, _}), do: true

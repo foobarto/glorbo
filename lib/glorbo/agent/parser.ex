@@ -232,9 +232,19 @@ defmodule Glorbo.Agent.Parser do
   defp parse_host_list(list, field) when is_list(list) do
     list
     |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
-      case to_string(entry) do
-        "" -> {:halt, {:error, {:invalid_egress_host, {field, :blank}}}}
-        host -> {:cont, {:ok, [String.downcase(host) | acc]}}
+      # Wave 26: refuse non-binary entries (maps/lists from YAML) up
+      # front. The prior `to_string/1` raised Protocol.UndefinedError
+      # on `egress.allow: [{nested: true}]`, crashing the parser
+      # instead of returning a structured validation error.
+      cond do
+        not is_binary(entry) ->
+          {:halt, {:error, {:invalid_egress_host, {field, entry}}}}
+
+        entry == "" ->
+          {:halt, {:error, {:invalid_egress_host, {field, :blank}}}}
+
+        true ->
+          {:cont, {:ok, [String.downcase(entry) | acc]}}
       end
     end)
     |> case do
@@ -265,18 +275,24 @@ defmodule Glorbo.Agent.Parser do
   defp validate_models_aliases(map) when is_map(map) do
     map
     |> Enum.reduce_while({:ok, %{}}, fn {k, v}, {:ok, acc} ->
-      ks = to_string(k)
-      vs = to_string(v)
-
+      # Wave 26: refuse non-binary keys/values up front. YAML can
+      # nest maps/lists into the `models:` slot; `to_string/1` on
+      # those raised Protocol.UndefinedError at boot/hot-reload.
       cond do
-        not Regex.match?(@skill_name_regex, ks) ->
-          {:halt, {:error, {:invalid_models_aliases, {:bad_alias, ks}}}}
+        not is_binary(k) ->
+          {:halt, {:error, {:invalid_models_aliases, {:bad_alias_type, k}}}}
 
-        vs == "" ->
-          {:halt, {:error, {:invalid_models_aliases, {:blank_model_for, ks}}}}
+        not is_binary(v) ->
+          {:halt, {:error, {:invalid_models_aliases, {:bad_model_type, v}}}}
+
+        not Regex.match?(@skill_name_regex, k) ->
+          {:halt, {:error, {:invalid_models_aliases, {:bad_alias, k}}}}
+
+        v == "" ->
+          {:halt, {:error, {:invalid_models_aliases, {:blank_model_for, k}}}}
 
         true ->
-          {:cont, {:ok, Map.put(acc, ks, vs)}}
+          {:cont, {:ok, Map.put(acc, k, v)}}
       end
     end)
   end

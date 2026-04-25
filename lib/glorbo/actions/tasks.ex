@@ -804,36 +804,45 @@ defmodule Glorbo.Actions.Tasks do
   # tasks dir doesn't collide on id generation.
   defp do_next_task_id(base, company, project) do
     tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
-    File.mkdir_p!(tasks_dir)
 
-    prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
-    legacy_re = ~r/\At-(\d+)\.md\z/
+    # Wave 26: an agent with `projects:write:<p>` can replace
+    # `projects/<p>/tasks` with a symlink and redirect a director
+    # task creation across companies. Refuse symlinked ancestors
+    # before mkdir_p so the next-id scan + write stays in tree.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(tasks_dir) do
+      {:error, :symlinked_ancestor}
+    else
+      File.mkdir_p!(tasks_dir)
 
-    max_n =
-      case File.ls(tasks_dir) do
-        {:ok, files} ->
-          files
-          |> Enum.map(fn f -> Regex.run(prefixed_re, f) || Regex.run(legacy_re, f) end)
-          |> Enum.reject(&is_nil/1)
-          |> Enum.map(fn [_, n] -> String.to_integer(n) end)
-          |> Enum.max(fn -> 0 end)
+      prefixed_re = ~r/\A#{Regex.escape(project)}-(\d+)\.md\z/
+      legacy_re = ~r/\At-(\d+)\.md\z/
 
-        _ ->
-          0
-      end
+      max_n =
+        case File.ls(tasks_dir) do
+          {:ok, files} ->
+            files
+            |> Enum.map(fn f -> Regex.run(prefixed_re, f) || Regex.run(legacy_re, f) end)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.map(fn [_, n] -> String.to_integer(n) end)
+            |> Enum.max(fn -> 0 end)
 
-    next = max_n + 1
+          _ ->
+            0
+        end
 
-    n_str =
-      if next <= 99,
-        do: String.pad_leading(Integer.to_string(next), 2, "0"),
-        else: Integer.to_string(next)
+      next = max_n + 1
 
-    task_id = "#{project}-#{n_str}"
+      n_str =
+        if next <= 99,
+          do: String.pad_leading(Integer.to_string(next), 2, "0"),
+          else: Integer.to_string(next)
 
-    if Regex.match?(@task_id_re, task_id),
-      do: {:ok, task_id},
-      else: {:error, {:invalid_task_id, task_id}}
+      task_id = "#{project}-#{n_str}"
+
+      if Regex.match?(@task_id_re, task_id),
+        do: {:ok, task_id},
+        else: {:error, {:invalid_task_id, task_id}}
+    end
   end
 
   defp write_task_file(base, company, project, task_id, params, attachments) do
@@ -984,12 +993,19 @@ defmodule Glorbo.Actions.Tasks do
     trash_dir =
       Path.join([base, "companies", company, "projects", project, "history", "deleted"])
 
-    with :ok <- File.mkdir_p(trash_dir) do
-      ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
-      dest_name = "#{ts}-#{Path.basename(abs_src)}"
-      abs_dest = Path.join(trash_dir, dest_name)
-      dest_rel = "projects/#{project}/history/deleted/#{dest_name}"
-      {:ok, dest_rel, abs_dest}
+    # Wave 26: refuse a symlinked `projects/<p>/history` or
+    # `history/deleted` ancestor — without this an agent could
+    # redirect the trash rename across companies.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(trash_dir) do
+      {:error, :symlinked_ancestor}
+    else
+      with :ok <- File.mkdir_p(trash_dir) do
+        ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
+        dest_name = "#{ts}-#{Path.basename(abs_src)}"
+        abs_dest = Path.join(trash_dir, dest_name)
+        dest_rel = "projects/#{project}/history/deleted/#{dest_name}"
+        {:ok, dest_rel, abs_dest}
+      end
     end
   end
 

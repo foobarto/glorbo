@@ -495,27 +495,42 @@ defmodule Glorbo.PathRequestGate do
   defp archive_request(agent_slug, task_id, state) do
     state_dir = Path.join([state.base, "companies", state.company, "agents", agent_slug, "state"])
     archive_dir = Path.join(state_dir, "path-request-archive")
-    File.mkdir_p(archive_dir)
 
+    # Wave 26: `agents/<slug>/state/` is agent-RW. An agent can
+    # pre-create `path-request-archive -> ../../../<other>/audit`
+    # so the next approve/deny moves the pending sentinel into
+    # another company's tree. Refuse symlinked ancestors before
+    # mkdir_p / rename.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(archive_dir) do
+      :ok
+    else
+      File.mkdir_p(archive_dir)
+      move_matching_pending(state_dir, archive_dir, agent_slug, task_id)
+    end
+  end
+
+  defp move_matching_pending(state_dir, archive_dir, agent_slug, task_id) do
     case File.ls(state_dir) do
       {:ok, entries} ->
         entries
         |> Enum.filter(&Regex.match?(@pending_regex, &1))
-        |> Enum.each(fn entry ->
-          src = Path.join(state_dir, entry)
-          meta = read_sentinel_meta(src)
-
-          if meta.task_id == task_id and meta.agent == agent_slug do
-            ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
-            dest = Path.join(archive_dir, "path-pending-#{task_id}-#{ts}.md")
-            File.rename(src, dest)
-          end
-        end)
+        |> Enum.each(&maybe_archive_entry(&1, state_dir, archive_dir, agent_slug, task_id))
 
         :ok
 
       {:error, _} ->
         :ok
+    end
+  end
+
+  defp maybe_archive_entry(entry, state_dir, archive_dir, agent_slug, task_id) do
+    src = Path.join(state_dir, entry)
+    meta = read_sentinel_meta(src)
+
+    if meta.task_id == task_id and meta.agent == agent_slug do
+      ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
+      dest = Path.join(archive_dir, "path-pending-#{task_id}-#{ts}.md")
+      File.rename(src, dest)
     end
   end
 

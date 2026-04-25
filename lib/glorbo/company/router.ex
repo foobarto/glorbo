@@ -786,6 +786,11 @@ defmodule Glorbo.Company.Router do
              :ok <- check_project_write_permission(perms, project),
              :ok <- ensure_project_exists(project_md),
              :ok <- refuse_if_exists(dest_path),
+             # Wave 26: an agent with project write can replace
+             # `projects/<p>/tasks` with a symlink pointing at another
+             # company's tree. Refuse symlinked ancestors before
+             # `mkdir_p` so the write cannot land outside this company.
+             :ok <- refuse_symlinked_ancestors(project_tasks_dir),
              :ok <- File.mkdir_p(project_tasks_dir),
              stamped_content <- stamp_with_context(content, sender),
              # Threatmodel M03 (write side): `projects/<p>/tasks/`
@@ -951,6 +956,12 @@ defmodule Glorbo.Company.Router do
 
   defp refuse_if_exists(dest_path) do
     if File.exists?(dest_path), do: {:error, :task_id_collision}, else: :ok
+  end
+
+  defp refuse_symlinked_ancestors(path) do
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path),
+      do: {:error, :symlinked_ancestor},
+      else: :ok
   end
 
   defp emit_task_route_audit(sender, project, task_id, state) do

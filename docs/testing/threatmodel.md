@@ -491,10 +491,48 @@ done in this wave) + 2 highs + 2 mediums. All closed in
     Switched to `AgentWritableFile.read_bounded(_, 5 MiB)` so
     a runaway channel write can't OOM MCP clients.
 
-Cumulative day-end tally: **80 security findings closed across
-25 waves** — 39 from the original 2026-04-22 import + 4 wave 22
-+ 15 wave 23 + 11 wave 24 + 11 wave 25 (8 from codex v5 + earlier
-PathRequestGate fix). Two findings remain accepted-by-design.
+**Codex re-scan #6 2026-04-26 00:10** (raw at
+`.reports/codex-security-scan-2026-04-26-0010.md`) surfaced 5
+more findings — 2 highs + 2 mediums + 1 low. All closed in
+**wave 26**:
+
+  * **High** — Project-writable directory symlinks redirect host
+    task writes across companies. An agent with
+    `projects:write:<p>` could replace `projects/<p>/tasks` with
+    a symlink and have outbox-routed tasks land in another
+    company's tree. `Glorbo.Company.Router.handle_outbox_task/_`
+    now refuses symlinked ancestors before `mkdir_p` /
+    `exclusive_write`. Same guard added to
+    `Glorbo.Actions.Tasks.do_next_task_id/3` (director-side
+    create) and `build_trash_dest/4` (soft-delete rename).
+  * **High** — IPv4-mapped IPv6 addresses bypass Proxy private-
+    address filtering. The wave-25 `public_ip?/1` IPv6 catch-all
+    treated `::ffff:127.0.0.1` as public. New clauses extract
+    the embedded IPv4 octets from `::ffff:a.b.c.d` and
+    `::a.b.c.d` and recheck against the IPv4 ruleset.
+  * **Medium** — `Glorbo.TaskDefinition.read_file/1` slurped
+    full agent-RW task files before `Frontmatter.parse/1`
+    capped at 10 MiB. Now routed through
+    `AgentWritableFile.read/1`; the bounded reader's
+    `:file_too_large` is mapped back to `:size_limit_exceeded`
+    so the public error taxonomy is unchanged. Same fix in
+    `Glorbo.Actions.wake_task_assignee/7`.
+  * **Medium** — Path-request archive followed agent-controlled
+    state symlinks. `Glorbo.PathRequestGate.archive_request/3`
+    walked into `agents/<slug>/state/path-request-archive` via
+    plain `mkdir_p`/`File.rename`. Now lstat-refuses symlinked
+    ancestors first.
+  * **Low** — `Glorbo.Agent.Parser.validate_models_aliases/1`
+    and `parse_host_list/2` raised `Protocol.UndefinedError` on
+    nested-map YAML (e.g. `models: {fast: {nested: true}}`) via
+    `to_string/1`. Now refuse non-binary keys/values up front
+    and return structured `:invalid_models_aliases` /
+    `:invalid_egress_host` errors.
+
+Cumulative tally: **85 security findings closed across 26
+waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
++ 11 wave 24 + 11 wave 25 + 5 wave 26. Two findings remain
+accepted-by-design.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.

@@ -802,21 +802,18 @@ defmodule Glorbo.TaskDefinition do
   # large tasks still surface :size_limit_exceeded with the existing
   # error shape — we just block the symlink/non-regular vector here.
   defp read_file(path) do
-    case :file.read_link_info(path) do
-      {:ok, info} ->
-        case elem(info, 2) do
-          :regular ->
-            case File.read(path) do
-              {:ok, content} -> {:ok, content}
-              {:error, reason} -> {:error, {:read_error, reason}}
-            end
-
-          _other ->
-            {:error, {:read_error, :not_regular_file}}
-        end
-
-      {:error, reason} ->
-        {:error, {:read_error, reason}}
+    # WR-26 wave 26: route through `read_bounded/2` so a multi-GB regular
+    # task file cannot spike BEAM memory before the 10 MiB
+    # `Frontmatter.parse/1` cap fires. The helper still lstat-refuses
+    # symlinks and non-regular shapes ahead of the read.
+    case Glorbo.Filesystem.AgentWritableFile.read(path) do
+      {:ok, content} -> {:ok, content}
+      # Preserve the Phase-3 error taxonomy: the bounded reader's
+      # `:file_too_large` is the same condition Frontmatter.parse/1
+      # would have surfaced as `:size_limit_exceeded` after a full
+      # slurp, so translate at the boundary.
+      {:error, {:file_too_large, _, _}} -> {:error, :size_limit_exceeded}
+      {:error, reason} -> {:error, {:read_error, reason}}
     end
   end
 

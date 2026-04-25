@@ -202,7 +202,7 @@ defmodule Glorbo.Actions do
     # `../../companies/other/agents/ceo` would let a task comment
     # land in another company's inbox (cross-company isolation
     # bypass) or any directory writable by the Glorbo user.
-    with {:ok, content} <- File.read(abs_task_path),
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read(abs_task_path),
          {:ok, fm} <- extract_frontmatter(content),
          assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to"),
          true <- Glorbo.Slug.valid?(assignee) do
