@@ -497,14 +497,18 @@ defmodule Glorbo.HomeHistory do
     end
   end
 
-  # Rev validation: require the rev to resolve to an object in the
-  # repo. Catches typos, hostile rev strings, and arbitrary shell
-  # injection (`git rev-parse --verify` is a strict resolver).
+  # Rev validation: refuse anything that could confuse git's
+  # argument parser or smuggle a second logical arg. `\t`, `\n`,
+  # `\r`, NUL, and other control chars are all rejected; bare
+  # spaces likewise. Leading `-` is the option-injection vector
+  # (`-c`, `--upload-pack=...`); reject too. `git rev-parse
+  # --verify` is the strict resolver downstream — this is
+  # defense-in-depth.
   defp validate_rev(rev) do
     cond do
       not is_binary(rev) -> {:error, :invalid_rev}
       rev == "" -> {:error, :invalid_rev}
-      String.contains?(rev, " ") -> {:error, :invalid_rev}
+      Regex.match?(~r/[\s\x00-\x1f\x7f]/, rev) -> {:error, :invalid_rev}
       String.starts_with?(rev, "-") -> {:error, :invalid_rev}
       true -> :ok
     end
@@ -515,8 +519,17 @@ defmodule Glorbo.HomeHistory do
 
   defp validate_path(""), do: {:error, :invalid_path}
 
+  # Path validation: same control-char + NUL guard as
+  # `validate_rev/1`. NUL is especially load-bearing — Linux
+  # syscalls truncate paths at the first NUL, so a path like
+  # `"safe.md\0/etc/passwd"` would fool `String.contains?(path,
+  # "..")` while opening `safe.md` at the syscall layer (and an
+  # attacker who can supply such a path probably wants to fool
+  # `tracked?/2` into believing one path while git operates on
+  # another).
   defp validate_path(path) when is_binary(path) do
     cond do
+      Regex.match?(~r/[\x00-\x1f\x7f]/, path) -> {:error, :invalid_path}
       String.starts_with?(path, "-") -> {:error, :invalid_path}
       String.starts_with?(path, "/") -> {:error, :invalid_path}
       String.contains?(path, "..") -> {:error, :invalid_path}

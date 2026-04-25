@@ -617,6 +617,13 @@ defmodule Glorbo.HomeHistoryTest do
       assert {:error, :invalid_rev} = HomeHistory.show("--foo", base: base)
       assert {:error, :invalid_rev} = HomeHistory.show("a b c", base: base)
       assert {:error, :invalid_rev} = HomeHistory.show("", base: base)
+      # Defense-in-depth: control chars + tabs + NUL must reject
+      # before reaching git, even though git itself would refuse
+      # them.
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD\n--foo", base: base)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD\t--upload-pack=x", base: base)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD\r\n--foo", base: base)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD\0/etc", base: base)
     end
   end
 
@@ -737,6 +744,38 @@ defmodule Glorbo.HomeHistoryTest do
                HomeHistory.restore(
                  "--foo",
                  "companies/acme/company.md",
+                 %{actor: :director},
+                 base: base
+               )
+
+      # NUL byte path → would fool `String.contains?(path, "..")`
+      # at the Elixir layer while syscalls truncate at the NUL.
+      # Reject loudly.
+      assert {:error, :invalid_path} =
+               HomeHistory.restore(
+                 sha,
+                 "companies/acme/company.md\0/etc/passwd",
+                 %{actor: :director},
+                 base: base
+               )
+
+      # Newline in path — could break trailer formatting if it
+      # reached `commit_marked` even though tracked? + git would
+      # also refuse.
+      assert {:error, :invalid_path} =
+               HomeHistory.restore(
+                 sha,
+                 "companies/acme/company.md\nGlorbo-Actor: attacker",
+                 %{actor: :director},
+                 base: base
+               )
+
+      # Absolute path — outside-the-repo, must reject before
+      # `Path.expand` resolves to an unrelated location.
+      assert {:error, :invalid_path} =
+               HomeHistory.restore(
+                 sha,
+                 "/etc/passwd",
                  %{actor: :director},
                  base: base
                )

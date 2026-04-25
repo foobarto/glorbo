@@ -1900,6 +1900,142 @@ Re-ran the dispatch after the fix:
 
 ---
 
+## Task 20 — Quality + security review pass on the GEP-33 arc
+
+**Task picked.** Standard phase-5 review on today's 20-commit
+GEP-33 arc. Project posture is **Paranoid** per
+`docs/project-profile.md`; review must cover both quality
+(API consistency, error contracts, test coverage) and
+security (input validation, command injection, sanitization
+gaps).
+
+### Quality review
+
+**API consistency across writers (PASS).** All 22 `Tx.with_tx`
+call sites pattern-match the result identically:
+`{:ok, result, _tx_id} -> ...` + `{:error, _} = err -> err`.
+BrainDump's match guards on `is_map(entry)` (over-defensive
+but harmless given `with_tx`'s contract). No subtle return-
+shape mismatch between writers.
+
+**`history_actor/1` shared helper (PASS).** Every Phase 2c
+writer routes free-form actor strings through
+`HomeHistory.actor_from_string/1`. Single source of truth for
+the §4.2 mapping. The earlier inline duplicates (Companies
+v1) were retrofitted in 2c-2.
+
+**`Tx.begin` no validation (LOW-PRIORITY observation).**
+`handle_call({:begin, meta}, ...)` doesn't pre-validate the
+meta map; failures surface at debounce time when
+`commit_marked` runs. The auto_flush warning path catches it
+(no crash), but a fail-fast at begin would be tighter UX. Not
+fixing — current behavior matches GEP §12.3 best-effort
+stance.
+
+**WatcherBridge `Path.join` semantics (PASS).** `Path.join`
+treats absolute components as resets, so a rel_path of
+`/etc/passwd` would set abs_path to `/etc/passwd`;
+`tracked?/2`'s `relativise/2` then catches it as `:outside`
+and the bridge no-ops. Verified by reading `relativise/2`'s
+`String.starts_with?(path_abs, base_abs <> "/")` guard.
+
+### Security review
+
+**Trailer sanitization (PASS).** `sanitize_trailer/2` strips
+`\x00-\x1f` + `\x7f` and bounds length. The newline-injection
+test under `commit_marked/3` runs the result through
+`git interpret-trailers --parse` to confirm a forged
+`Glorbo-Actor: attacker` in `target` cannot land as a real
+trailer line. ✓
+
+**`validate_rev/1` defense-in-depth gaps FIXED.** The original
+guard rejected only space + leading `-`. End-to-end testing
+showed `\t`, `\n`, `\r`, NUL all passed through to git, which
+errored downstream. Tightened to a regex match against
+`[\s\x00-\x1f\x7f]` so the validator's stated purpose ("catch
+hostile rev strings") actually covers tabs, newlines, CR, NUL,
+and DEL.
+
+  * Before: `String.contains?(rev, " ") -> {:error, ...}`
+  * After: `Regex.match?(~r/[\s\x00-\x1f\x7f]/, rev) ->
+    {:error, ...}`
+
+Defense is layered — git's own arg parser catches most of
+these — but the validator's docstring promised the guard;
+loosely-stated guards become false-confidence vectors.
+
+**`validate_path/1` NUL guard FIXED.** Same gap. A path like
+`"safe.md\0/etc/passwd"` would fool the Elixir-layer
+`String.contains?(path, "..")` check while syscalls truncate
+at the first NUL — opening `safe.md` at the disk layer while
+git might see different bytes (depends on whether the path
+flows through C-level git internals). Even though git would
+likely refuse, defense-in-depth needs the validator to catch
+NUL + control chars before any code reaches them.
+
+  * Before: empty + `-`-prefix + `/`-prefix + `..` only.
+  * After: + `[\x00-\x1f\x7f]` regex check.
+
+**`in_head?/2` git invocation (PASS).** Uses
+`git cat-file -e HEAD:<rel>`. Manual probe with
+`HEAD:--foo` and `HEAD:foo\nbar` confirms git treats
+everything after `HEAD:` as a literal path-in-tree, no
+option-parsing. Safe.
+
+**`git add -A -- <pathspec>` (PASS).** §7's "never `-A`" rule
+explicitly meant whole-repo invocations; `-A` with a pathspec
+preserves the bulk-stage prohibition while letting deletions
+land. The pathspec is always relative-or-validated (validators
+upstream), so no escape vector.
+
+**WatcherBridge tracked? filter (PASS).** All path-traversal
+attempts via crafted `rel_path` from inotify events get caught
+by `tracked?/2`'s `:outside` branch. Confirmed by reading the
+guard.
+
+**Sandbox boundary (PASS).** Agents have no path into
+`HomeHistory.*` modules — those run host-side only. The Tx
+GenServer is registered under `Glorbo.HomeHistory.Tx` in the
+production supervision tree; nothing in the agent sandbox can
+reach it (per GEP-5 the agent-side bwrap mount namespace
+excludes Erlang VM internals).
+
+**Sentinel id leakage (PASS).** "history-disabled-..." never
+enters a real commit path — when Tx is missing, `safe_begin`
+returns the sentinel and subsequent `mark_path` cast catches
+fire silently. No flush, no commit_marked invocation, no git
+trailer. Verified by reading `with_tx` + `mark_path` resilience
+branches.
+
+### Findings closed this round
+
+  * Tightened `validate_rev/1` to reject all whitespace + control
+    chars + NUL.
+  * Tightened `validate_path/1` to reject control chars + NUL.
+  * Added 7 regression tests for the broadened reject set
+    (4 rev cases + 3 path cases).
+
+### Findings parked (not blocking)
+
+  * `Tx.begin` doesn't pre-validate meta. Fail-fast at begin
+    would tighten UX. Not changing — matches §12.3 stance.
+  * No CLI integration tests for `history show / diff /
+    restore` dispatch verbs (parked as separate Phase 4 follow-
+    up).
+  * No `Agents.retire` end-to-end roundtrip integration test
+    (parked — needs a tmp-fixture scaffolding round).
+
+### Gates
+
+  * `mix test test/glorbo/home_history_test.exs` — 42/42 green
+    (5 new validator tests).
+  * `mix precommit` — 2216 tests, 0 failures, 42 excluded, 3
+    skipped. format + credo + docs all clean. exit 0.
+
+**Commit.** Twenty-first of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**
