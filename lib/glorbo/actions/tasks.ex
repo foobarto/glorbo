@@ -845,14 +845,40 @@ defmodule Glorbo.Actions.Tasks do
     content = "---\n" <> frontmatter <> "---\n\n" <> body <> "\n"
 
     path = Path.join([base, "companies", company, "projects", project, "tasks", "#{task_id}.md"])
-    tmp = path <> ".tmp-#{System.unique_integer([:positive, :monotonic])}"
 
-    with :ok <- File.write(tmp, content, [:sync]),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      err ->
-        _ = File.rm(tmp)
+    # Threatmodel: `projects/<p>/tasks/` is RW-mounted for agents
+    # holding `tasks:write:<p>`. A predictable tempfile name
+    # (`path.tmp-<monotonic>`) lets an attacker pre-plant a symlink
+    # at the next-integer name and redirect File.write. Use exclusive
+    # open with an 8-byte random suffix so the path can't be predicted
+    # AND can't be a symlink even on (vanishingly unlikely) collision.
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+
+    tmp =
+      "#{path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
+
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
         err
     end
   end

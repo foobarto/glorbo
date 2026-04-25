@@ -777,10 +777,30 @@ defmodule Glorbo.TaskDefinition do
     end
   end
 
+  # Threatmodel: agents have RW on `projects/*/tasks/*.md` for tasks
+  # they own. A planted symlink there could point at another company's
+  # task file or any host-readable file, leaking content via MCP /
+  # LiveView task surfaces. lstat-gate before File.read to refuse
+  # symlinks + non-regular shapes. Size cap is left to
+  # `Frontmatter.parse/1` (10 MiB @max_content_bytes) so legitimate
+  # large tasks still surface :size_limit_exceeded with the existing
+  # error shape — we just block the symlink/non-regular vector here.
   defp read_file(path) do
-    case File.read(path) do
-      {:ok, content} -> {:ok, content}
-      {:error, reason} -> {:error, {:read_error, reason}}
+    case :file.read_link_info(path) do
+      {:ok, info} ->
+        case elem(info, 2) do
+          :regular ->
+            case File.read(path) do
+              {:ok, content} -> {:ok, content}
+              {:error, reason} -> {:error, {:read_error, reason}}
+            end
+
+          _other ->
+            {:error, {:read_error, :not_regular_file}}
+        end
+
+      {:error, reason} ->
+        {:error, {:read_error, reason}}
     end
   end
 

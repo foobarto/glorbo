@@ -786,14 +786,17 @@ defmodule Glorbo.Company.Router do
              :ok <- check_project_write_permission(perms, project),
              :ok <- ensure_project_exists(project_md),
              :ok <- refuse_if_exists(dest_path),
-             # threatmodel M03 (write side): `projects/<p>/tasks/` lives
-             # in a tree the sender may have RW-mounted. An agent can
-             # pre-plant a symlink at the task-id filename, turning the
-             # host-side materialise into a write through the symlink.
-             :ok <- ensure_regular_file_lstat(dest_path),
              :ok <- File.mkdir_p(project_tasks_dir),
              stamped_content <- stamp_with_context(content, sender),
-             :ok <- File.write(dest_path, stamped_content, [:sync]),
+             # Threatmodel M03 (write side): `projects/<p>/tasks/`
+             # lives in a tree the sender may have RW-mounted. The
+             # previous `lstat → File.write` flow had a TOCTOU race:
+             # between the lstat and the write, an attacker could
+             # swap `dest_path` for a symlink. Atomic exclusive
+             # `:file.open` (O_EXCL semantics) refuses to follow a
+             # symlink AND fails if the path already exists — closes
+             # both halves of the race in one syscall.
+             :ok <- exclusive_write(dest_path, stamped_content),
              :ok <- Tx.mark_path(tx_id, dest_path),
              :ok <- File.rm(abs_path) do
           emit_task_route_audit(sender, project, task_id, state)
@@ -1681,6 +1684,29 @@ defmodule Glorbo.Company.Router do
       :ok -> :ok
       {:error, {:not_regular_file, _}} -> {:error, :not_a_regular_file}
       {:error, {:stat_failed, reason}} -> {:error, reason}
+    end
+  end
+
+  # Atomic exclusive write — refuses to follow symlinks AND fails
+  # `{:error, :eexist}` if the path already exists. Closes the
+  # TOCTOU race between an `lstat` check and the subsequent write.
+  defp exclusive_write(path, content) do
+    case :file.open(path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            _ = File.rm(path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

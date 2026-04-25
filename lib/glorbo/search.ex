@@ -103,8 +103,20 @@ defmodule Glorbo.Search do
     path = Path.join(tasks_dir, filename)
     task_id = Path.basename(filename, ".md")
 
-    case File.stat(path) do
-      {:ok, %File.Stat{mtime: mtime}} ->
+    # Threatmodel: agents have RW on their own task files. Use lstat
+    # rather than stat so a planted symlink doesn't pull cross-
+    # company task content into Ctrl+K search results, and refuse
+    # oversized files (a 1 GB task body would block the indexer).
+    # Threatmodel: agents have RW on their own task files. Use lstat
+    # rather than stat so a planted symlink doesn't pull cross-
+    # company task content into Ctrl+K search results, and refuse
+    # oversized files (a 1 GB task body would block the indexer).
+    # The `file_info` record element layout is:
+    #   {:file_info, size, type, access, atime, mtime, ctime, mode, ...}
+    case :file.read_link_info(path) do
+      {:ok, info}
+      when elem(info, 2) == :regular and elem(info, 1) <= 1_048_576 ->
+        mtime = elem(info, 5)
         {title, schedule} = cached_or_parse_fields(path, task_id, mtime)
         [%{task_id: task_id, title: title, schedule: schedule, path: path}]
 

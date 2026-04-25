@@ -348,8 +348,40 @@ correctness/UX backlog; they are not direct security gaps and
 will be triaged into general bug-fix waves rather than security
 sweeps.
 
-Breakdown: 0 critical, 0 high, 0 medium, 0 low, 24 informational
-(plus 2 lows accepted by-design).
+**Fresh Codex re-scan 2026-04-25 22:00** (raw at
+`.reports/codex-security-scan-2026-04-25-2200.md`) surfaced 4
+NEW findings against HEAD (1 high, 3 medium). All 4 closed in
+**wave 22**:
+
+  * **High — TaskDefinition.parse_file follows symlinks.**
+    `read_file/1` did a bare `File.read/1` against an agent-RW
+    `projects/*/tasks/*.md` path. A planted symlink could
+    cross-company-leak task content via MCP / LiveView. Added
+    a `:file.read_link_info` lstat gate; refuses non-regular
+    shapes with `{:error, {:read_error, :not_regular_file}}`.
+    Existing 10 MiB Frontmatter cap continues to enforce size.
+  * **Medium — Search.scan_tasks follows symlinks.** Ctrl+K
+    indexer used `File.stat` (follows links) + `File.read` on
+    the same RW-mounted task tree. Switched to
+    `:file.read_link_info` with a 1 MiB cap; non-regular /
+    oversized files are skipped silently.
+  * **Medium — Router task-materialise lstat→write race.**
+    `perform_outbox_task_materialise/4` did
+    `ensure_regular_file_lstat/1` then `File.write/3`,
+    leaving a TOCTOU window for an attacker to swap the dest
+    for a symlink. Replaced with `exclusive_write/2` —
+    `:file.open([:exclusive])` opens with O_EXCL semantics so
+    the check + write are one syscall.
+  * **Medium — Actions.Tasks.write_task_file predictable
+    tempfile.** `path.tmp-<monotonic_int>` was guessable; an
+    attacker pre-planting a symlink at the next-integer name
+    could redirect the host-side write. Same pattern as the
+    earlier bwrap fix: 8-byte `crypto.strong_rand_bytes` suffix
+    + `:file.open([:exclusive])`.
+
+After wave 22 the re-scan finds no further new issues at HEAD
+within the prompted scope. Full breakdown: 0 critical, 0 high,
+0 medium, 0 low, 24 informational (plus 2 lows accepted by-design).
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
