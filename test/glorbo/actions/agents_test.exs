@@ -330,8 +330,11 @@ defmodule Glorbo.Actions.AgentsTest do
       assert event[:action] == "agent.retire"
       assert event[:target] == "agents/ceo"
 
-      # Wait for the Tx debounce to fire the auto-commit.
-      Process.sleep(150)
+      # Wait for the Tx debounce to fire the auto-commit. 1s gives
+      # plenty of margin over the 200ms hard_cap on slow CI runners
+      # (Agents.retire's Tx.with_tx finishes ≤ 100ms locally but can
+      # take longer under aarch64 GHA load).
+      Process.sleep(1000)
 
       {:ok, log} = HomeHistory.log(base: base, limit: 5)
       [head | _] = log
