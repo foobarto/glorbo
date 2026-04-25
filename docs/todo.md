@@ -83,6 +83,19 @@ it's been in CHANGELOG for a cycle.
   pixelmatch (pinned to ^5 for CommonJS); `ensure_node_deps()`
   runs `npm install` on demand. `NODE_PATH` set to
   `scripts/node_modules` for both capture + diff invocations.
+- [ ] **VR drift outliers on CI vs local**: first GHA run of the
+  informational VR gate (commit b594df4) showed `/health` at
+  1.111% and `/providers` at 2.745% drift — both above 0.5%
+  threshold. Locally these measured 0.045% and 0.012%. Likely
+  causes: `/health` renders live uptime in the main content
+  area (not just clipped status bar); `/providers` shows
+  native-provider scan results that differ between local (LM
+  Studio detected) and CI (no localhost services). Fix paths:
+  (a) seed deterministic provider data + freeze health-uptime
+  display in test mode, (b) exclude these two LVs from the
+  gated set, (c) per-LV thresholds. The gate is informational
+  so this doesn't block PRs; investigate before flipping to
+  blocking.
 - [ ] **Modal body `gl-form__row` in narrow viewport.** The 140px
   label column truncates awkwardly under 600px. Two options: (a) let
   labels wrap above the input below some breakpoint, (b) cap label

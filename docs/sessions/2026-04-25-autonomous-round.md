@@ -2834,4 +2834,28 @@ when the corresponding release doesn't yet exist.
   diffs (Task 32: 3× check runs, worst drift 0.045%); CI step
   not yet exercised — push to main will surface any CI-runner-
   specific issues.
-* **Commit(s):** pending.
+* **Commit(s):** `7a41a96`, `b48c5aa` (third debounce-race fix
+  for `Agents.retire` roundtrip test caught en route),
+  `b594df4` (chromium not chrome — capture script uses
+  `chromium.launch()`).
+
+### Post-merge findings
+
+* **First CI run of the gate (commit b594df4) succeeded** —
+  full drift table:
+  * 16/18 LVs under threshold (0.000–0.312% drift)
+  * **2 outliers above threshold:**
+    * `/health`: **1.111%** (local: 0.045%)
+    * `/providers`: **2.745%** (local: 0.012%)
+* **Both outliers are real env drift, not flake.** `/health`
+  shows live uptime in the main content area (not just the
+  clipped status bar). `/providers` shows native-provider scan
+  results — locally LM Studio detected at 127.0.0.1, on CI no
+  localhost services exist.
+* **`continue-on-error: true` saved the build** — gate is
+  informational. Filed P2 todo describing fix paths
+  (deterministic seed data, exclude both LVs, or per-LV
+  thresholds).
+* The gate is now working as designed: it surfaces
+  environment-dependent drift without blocking PRs. Flipping
+  to blocking-mode is gated on closing the 2 outliers.
