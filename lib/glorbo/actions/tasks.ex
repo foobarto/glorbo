@@ -478,36 +478,69 @@ defmodule Glorbo.Actions.Tasks do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(to_agent, :agent),
-         :ok <- validate_reason(reason),
-         {:ok, project} <- project_of(task_rel_path),
-         abs_path = Path.join([base, "companies", company, task_rel_path]),
-         {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
-         from_agent = existing_assignee(task),
-         :ok <- guard_non_noop(from_agent, to_agent) do
-      new_entry = build_entry(from_agent, to_agent, reason)
-      new_chain = task.handoff_chain ++ [new_entry]
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.reassign",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
 
-      updates = %{
-        "assigned_to" => to_agent,
-        "handoff_chain" => new_chain
-      }
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(to_agent, :agent),
+             :ok <- validate_reason(reason),
+             {:ok, project} <- project_of(task_rel_path),
+             abs_path = Path.join([base, "companies", company, task_rel_path]),
+             {:ok, task} <-
+               Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+             from_agent = existing_assignee(task),
+             :ok <- guard_non_noop(from_agent, to_agent) do
+          do_reassign_write(tx_id, abs_path, base, company, task_rel_path, project, task,
+            from_agent: from_agent,
+            to_agent: to_agent,
+            reason: reason,
+            actor: actor,
+            audit: audit
+          )
+        end
+      end)
 
-      with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
-           :ok <-
-             emit_reassign_audit(audit, company, task_rel_path, from_agent, to_agent,
-               reason: reason,
-               actor: actor,
-               project: project
-             ) do
-        {:ok,
-         %{
-           from: from_agent,
-           to: to_agent,
-           handoff_chain_len: length(new_chain)
-         }}
-      end
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp do_reassign_write(tx_id, abs_path, base, company, task_rel_path, project, task, opts) do
+    from_agent = Keyword.fetch!(opts, :from_agent)
+    to_agent = Keyword.fetch!(opts, :to_agent)
+    reason = Keyword.fetch!(opts, :reason)
+    actor = Keyword.fetch!(opts, :actor)
+    audit = Keyword.fetch!(opts, :audit)
+
+    new_entry = build_entry(from_agent, to_agent, reason)
+    new_chain = task.handoff_chain ++ [new_entry]
+
+    updates = %{
+      "assigned_to" => to_agent,
+      "handoff_chain" => new_chain
+    }
+
+    with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
+         :ok <- Tx.mark_path(tx_id, abs_path),
+         :ok <-
+           emit_reassign_audit(audit, company, task_rel_path, from_agent, to_agent,
+             reason: reason,
+             actor: actor,
+             project: project
+           ),
+         :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+      {:ok,
+       %{
+         from: from_agent,
+         to: to_agent,
+         handoff_chain_len: length(new_chain)
+       }}
     end
   end
 
@@ -566,42 +599,71 @@ defmodule Glorbo.Actions.Tasks do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(actor, :agent),
-         :ok <- validate_note(note),
-         {:ok, _project} <- project_of(task_rel_path),
-         abs_path = Path.join([base, "companies", company, task_rel_path]),
-         {:ok, task} <- Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
-         :ok <- guard_review_required(task),
-         :ok <- guard_actor_is_reviewer(actor, task),
-         :ok <- guard_not_already_decided(task) do
-      verdict_str = Atom.to_string(verdict)
-      ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      next_status = next_status_for(verdict, task.status)
+    history_meta = %{
+      actor: HomeHistory.actor_from_string("agent:" <> actor),
+      action: "task.peer_review.#{verdict}",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
 
-      updates =
-        %{
-          "peer_review_verdict" => verdict_str,
-          "peer_review_verdict_by" => actor,
-          "peer_review_verdict_at" => ts,
-          "status" => next_status
-        }
-        |> maybe_put("peer_review_verdict_note", note)
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(actor, :agent),
+             :ok <- validate_note(note),
+             {:ok, _project} <- project_of(task_rel_path),
+             abs_path = Path.join([base, "companies", company, task_rel_path]),
+             {:ok, task} <-
+               Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+             :ok <- guard_review_required(task),
+             :ok <- guard_actor_is_reviewer(actor, task),
+             :ok <- guard_not_already_decided(task) do
+          do_verdict_write(tx_id, abs_path, base, company, task_rel_path, task, verdict,
+            actor: actor,
+            note: note,
+            audit: audit
+          )
+        end
+      end)
 
-      with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
-           :ok <-
-             emit_verdict_audit(audit, company, task_rel_path, verdict_str, actor, note) do
-        # GEP-42: clean up the request sentinel from the
-        # reviewer's inbox (best-effort — missing file is fine,
-        # the sentinel is a wake trigger, not source of truth).
-        # On `revise`, drop a feedback sentinel into the original
-        # assignee's inbox so the fix-and-resubmit loop fires.
-        :ok =
-          Glorbo.Actions.Reviews.clear_request_sentinel(company, actor, task.task_id, base: base)
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
+    end
+  end
 
-        maybe_send_revise_feedback(verdict, company, task, actor, note, base, audit)
-        {:ok, %{verdict: verdict, next_status: next_status}}
-      end
+  defp do_verdict_write(tx_id, abs_path, base, company, task_rel_path, task, verdict, opts) do
+    actor = Keyword.fetch!(opts, :actor)
+    note = Keyword.fetch!(opts, :note)
+    audit = Keyword.fetch!(opts, :audit)
+
+    verdict_str = Atom.to_string(verdict)
+    ts = DateTime.utc_now() |> DateTime.to_iso8601()
+    next_status = next_status_for(verdict, task.status)
+
+    updates =
+      %{
+        "peer_review_verdict" => verdict_str,
+        "peer_review_verdict_by" => actor,
+        "peer_review_verdict_at" => ts,
+        "status" => next_status
+      }
+      |> maybe_put("peer_review_verdict_note", note)
+
+    with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs_path, updates),
+         :ok <- Tx.mark_path(tx_id, abs_path),
+         :ok <- emit_verdict_audit(audit, company, task_rel_path, verdict_str, actor, note),
+         :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+      # GEP-42: clean up the request sentinel from the reviewer's
+      # inbox (best-effort — missing file is fine, the sentinel is
+      # a wake trigger, not source of truth). On `revise`, drop a
+      # feedback sentinel into the original assignee's inbox. Both
+      # are inbox/state writes (excluded scope per GEP-33 §3.2) so
+      # they don't get marked here.
+      :ok =
+        Glorbo.Actions.Reviews.clear_request_sentinel(company, actor, task.task_id, base: base)
+
+      maybe_send_revise_feedback(verdict, company, task, actor, note, base, audit)
+      {:ok, %{verdict: verdict, next_status: next_status}}
     end
   end
 

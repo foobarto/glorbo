@@ -987,6 +987,62 @@ the commit, else only that one path drops to `:skipped`.
 
 ---
 
+## Task 9 — GEP-33 Phase 2c-4: remaining Tasks-mutation surface
+
+**Task picked.** Continuing the wiring sweep. Two more
+high-traffic Tasks writers go through `Tx.with_tx`:
+
+  * `Tasks.reassign/4` — `task.reassign:
+    companies/<co>/<rel>`. The handoff_chain append +
+    `assigned_to` flip land atomically (single
+    `write_frontmatter/2` call); we mark the task md +
+    audit jsonl.
+  * `Tasks.record_peer_review_verdict/5` — `task.
+    peer_review.<verdict>: ...` (one of approve / revise /
+    block). Same shape; the inbox/state side-effects
+    (`clear_request_sentinel`, `maybe_send_revise_feedback`)
+    write to excluded paths so they're not marked.
+
+Both functions had their post-`with` body inlined into
+helpers (`do_reassign_write/8`, `do_verdict_write/8`)
+because `with_tx`'s extra layer would have pushed the
+nesting depth past credo's max-3 threshold. Same refactor
+pattern as Phase 2c-3's `Projects.create_or_skip_stub/7`.
+
+**Design calls I made without you.**
+
+  * **Verdict actor is `agent:<reviewer>`, not `:system`.**
+    The reviewer slug is always known and validated as a
+    real agent (`Support.validate_slug(actor, :agent)`); the
+    history commit should attribute the verdict to that
+    reviewer, not anonymise it. Threading
+    `"agent:" <> actor` into `actor_from_string/1` returns
+    `{:agent, slug}` per §4.2.
+  * **Subject uses the verdict variant inline.** Three
+    distinct subjects (`task.peer_review.approve`,
+    `task.peer_review.revise`, `task.peer_review.block`) so
+    `git log --grep "peer_review\."` finds them all and the
+    individual verdict surfaces in the subject line for
+    archaeology.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/actions/` — 99/99 green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * Goals / Skills / Proposals / Agents writers — next
+    round.
+  * Router-level proposal + memory paths — still blind.
+  * Phase 3 watcher fallback. Phase 4 restore UX.
+
+**Commit.** Ninth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

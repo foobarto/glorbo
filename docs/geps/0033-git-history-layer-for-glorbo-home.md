@@ -221,6 +221,34 @@ history:
       excluded `inbox/` paths per §3.2 so wiring them is a
       no-op). Router-level proposal + memory writes still
       blind. Phase 3 watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-4 — remaining Tasks-mutation surface wired.
+
+        * `Tasks.reassign/4` — `task.reassign`. Marks the
+          task md (handoff_chain + assigned_to flip) + audit
+          jsonl.
+        * `Tasks.record_peer_review_verdict/5` —
+          `task.peer_review.<verdict>` (approve / revise /
+          block). Marks the task md (verdict frontmatter
+          flip) + audit jsonl. Reviewer slug becomes the
+          author identity (`{:agent, reviewer_slug}` →
+          §4.2). The inbox/state side-effects
+          (`clear_request_sentinel`,
+          `maybe_send_revise_feedback`) write to excluded
+          scope paths so they don't get marked.
+
+      Both functions extracted post-`with` bodies into
+      helpers (`do_reassign_write/8`,
+      `do_verdict_write/8`) to keep credo's
+      nesting-depth check happy after the with_tx layer —
+      same refactor pattern as Phase 2c-3's
+      `Projects.create_or_skip_stub/7`.
+
+      Out of scope still: Goals, Skills, Proposals, Agents
+      writers. Router-level proposal + memory paths. Phase
+      3 watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home
