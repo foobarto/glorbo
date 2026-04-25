@@ -1344,6 +1344,117 @@ durable, in-scope file goes through the history layer.
 
 ---
 
+## Task 15 — GEP-33 Phase 3: WatcherBridge (manual edit capture)
+
+**Task picked.** With Phase 2 substantively complete, the
+remaining gap to flip GEP-33 status to Implemented is
+Phase 3 — capturing **manual edits** (Director hand-edit
+in Vim, external `git apply`, hand-dropped braindump file)
+as `External` history commits.
+
+**What shipped.** New module
+`Glorbo.HomeHistory.WatcherBridge` at
+`lib/glorbo/home_history/watcher_bridge.ex`:
+
+  * `observe(company, rel_path)` — public cast entry
+    point. Resilient to missing server registration
+    (silent no-op).
+  * GenServer state: `%{base, debounce_ms, timers:
+    %{{company, rel_path} => timer_ref}}`.
+  * On `{:observe, ...}` cast: filters via `tracked?/2`
+    against the absolute path; if untracked, drop. If
+    tracked, cancel the per-key timer and re-arm a new
+    one for `debounce_ms` (default 500 ms).
+  * On `{:fire, ...}` info (timer-driven): calls
+    `HomeHistory.commit_marked/3` with `actor: :external`,
+    action `external.edit`, target =
+    `companies/<co>/<rel>`, source: `watcher`. No-diff
+    cleanly no-ops; failures log a warning.
+  * Wired into `Glorbo.Application` next to `Tx` under the
+    same `:start_home_history_tx` test gate.
+  * Watcher integration: `Glorbo.Filesystem.Watcher.
+    dispatch_by_prefix/5` now calls
+    `WatcherBridge.observe(company, rel)` for every event
+    (the bridge's tracked? filter handles scope).
+
+**Public API addition.** `HomeHistory.default_base!/0`
+exposes the home-root resolver (env var or hierarchy
+default) so the bridge can fall back to it when no
+explicit `:base` opt is set.
+
+**7 new tests** in
+`test/glorbo/home_history/watcher_bridge_test.exs`:
+
+  * Tracked-scope manual edit produces an External
+    commit with the right author + trailers
+    (`Glorbo-Source: watcher`).
+  * Excluded-scope paths
+    (`agents/<slug>/inbox/...`) drop silently.
+  * No-diff path is a clean no-op.
+  * Rapid burst on the same path coalesces per-key
+    (5 observe calls → 1 commit).
+  * Two distinct paths produce two distinct commits.
+  * Cast to unregistered server (default name, nothing
+    started) is a silent `:ok` no-op.
+  * History-disabled tmp tree (no `.git/`) doesn't
+    crash the bridge.
+
+**Design calls I made without you.**
+
+  * **`commit_marked/3` directly, not `Tx.with_tx`.**
+    Manual edits are single-path, observed independently;
+    there's no logical-operation boundary to coalesce.
+    The Tx GenServer is for multi-path host-side writers;
+    the bridge has its own debounce buffer keyed on
+    `{company, rel_path}`.
+  * **Diff-as-arbiter for marked-tx race.** A marked tx
+    writes a path; the watcher fires for the same path.
+    Without coordination both would commit. The
+    `commit_marked/3` no-diff branch is a clean no-op,
+    so whichever fires second sees no diff and drops.
+    Honest provenance for whoever got there first; no
+    cross-server state sharing needed.
+  * **Bridge gated under the same
+    `:start_home_history_tx` flag.** Tests already
+    rely on opting out of the production Tx; reusing
+    the same flag for the bridge keeps the setup
+    surface minimal.
+  * **GEP-33 status → Implemented.** Phase 1 (read UX),
+    Phase 2 (marked writes), and Phase 3 (watcher
+    fallback) are the load-bearing pieces. Phase 4
+    (`restore`) is additive Director ergonomics, not a
+    correctness gap. The original Phase-1-history note
+    said "status flips to Implemented when Phases 2 + 3
+    land" — that condition is now met.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history*` — 54/54 green.
+  * `mix precommit` — 2205 tests, 0 failures, 82
+    excluded, 3 skipped. format + credo + docs all
+    clean. exit 0.
+
+**Skipped / not done.**
+
+  * Phase 4 — `history restore` + `show` + `diff` UX.
+    Additive Director ergonomics; not blocking the
+    Implemented status.
+  * Strict marked-tx-vs-bridge coordination via shared
+    state. The diff-as-arbiter is sufficient; sharing
+    state would tighten provenance attribution under
+    racy timing but isn't worth the complexity for
+    GEP-33's "best-effort" stance.
+  * Performance work: the bridge fires
+    `commit_marked/3` on every debounced manual edit.
+    On a busy tree this could be noisy. Phase 4 or a
+    follow-up GEP can revisit if that's measured-hot.
+
+**Commit.** Fifteenth of the day. GEP-33 status flips
+to **Implemented**.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

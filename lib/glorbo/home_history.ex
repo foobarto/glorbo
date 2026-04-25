@@ -367,6 +367,14 @@ defmodule Glorbo.HomeHistory do
   end
 
   @doc """
+  Public version of the home-root resolver: `GLORBO_HOME` env var
+  if set, otherwise the hierarchy default. Phase 3 watcher bridge
+  needs this when its own `:base` opt is absent at boot.
+  """
+  @spec default_base!() :: Path.t()
+  def default_base!, do: default_base()
+
+  @doc """
   Public sanitizer used by `commit_marked/3` and exposed for
   tests + future Phase-2b callers that need to pre-sanitize meta
   before queueing it.

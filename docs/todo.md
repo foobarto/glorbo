@@ -96,7 +96,30 @@ it's been in CHANGELOG for a cycle.
   were silently dropped. Fix: 250ms settling sleep after
   `Watcher.start_link/1` in the test, with rationale captured
   in the test moduledoc.
-- [ ] **GEP-33 Phase 2 — marked commits from write surfaces.**
+- [x] **GEP-33 — git history layer for ~/.glorbo/. STATUS:
+  IMPLEMENTED 2026-04-25.** Phase 1 read UX shipped earlier;
+  Phase 2 (marked commits from writers) + Phase 3 (watcher
+  fallback for manual edits) shipped today across 15 commits
+  (`97c48f7` 2a-1, `4827554` 2b, `b731a0c` 2c-0+1, `8254341`
+  2c-2, `9830268` 2c-3, `9df606f` 2c-4, `8ce37fa` 2c-5,
+  `f304d61` 2c-6, `26ccc9d` 2c-7, `5a42771` 2c summary,
+  `9f69b13` 2c-8, plus today's Phase 3 commit). Status flipped
+  in `docs/geps/0033-git-history-layer-for-glorbo-home.md`.
+  Phase 4 (`history restore`/`show`/`diff` UX) is still
+  ahead — additive Director ergonomics on top of an
+  already-working layer; tracked separately as P3 work.
+- [ ] **GEP-33 Phase 4 — `history restore` + `show` + `diff` UX.**
+  Director-facing surface for the now-Implemented history layer:
+  `glorbo history show <rev>`, `glorbo history diff <rev>
+  [<rev2>]`, `glorbo history restore <rev> <path>`. Each writes a
+  new commit describing the restore (append-only repo
+  semantics). v1 explicitly excludes `glorbo checkout <sha>`
+  (whole-tree replace is too destructive). Bounded sub-tasks:
+  CLI parsing for the three verbs, output formatting matching
+  existing `history log` style, restore-mode confirmation
+  prompt unless `--yes`.
+- [x] **(superseded by GEP-33 Implemented entry above)
+  GEP-33 Phase 2 — marked commits from write surfaces.**
   Phase 1 shipped 2026-04-25 (`Glorbo.HomeHistory` + `glorbo
   history {init, status, log}`). **Phase 2a-1 shipped
   2026-04-25 (autonomous L4):** synchronous `commit_marked/3`

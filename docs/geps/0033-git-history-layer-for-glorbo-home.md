@@ -2,7 +2,7 @@
 gep: 33
 title: Git History Layer for Glorbo Home
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-23
 requires: [2, 3, 5, 7]
@@ -381,6 +381,57 @@ history:
       (`history restore` UX) are still ahead. GEP-33
       stays Draft until Phase 3 lands per the original
       Phase-1 plan.
+  - date: 2026-04-25
+    status: Implemented
+    note: |
+      Phase 3 — `Glorbo.HomeHistory.WatcherBridge` shipped.
+      Manual filesystem edits (Director hand-edit in Vim,
+      external `git apply`, hand-dropped braindump file)
+      now flow through the same history layer as marked-tx
+      writers do, attributed to the `External` actor with
+      `Glorbo-Source: watcher`.
+
+      Pipeline: the existing per-company
+      `Glorbo.Filesystem.Watcher` calls
+      `WatcherBridge.observe(company, rel_path)` from its
+      `dispatch_by_prefix/5` for every event. The bridge
+      filters via `tracked?/2`, debounces per
+      `{company, rel_path}` (500 ms inactivity), then
+      calls `commit_marked/3` directly with
+      `actor: :external` action `external.edit`.
+
+      Race with marked-tx writes: the §6.1-debounce on
+      both sides typically lets the marked tx commit
+      first; the bridge then sees no diff against HEAD
+      and no-ops. If timing flips the External commit
+      lands; the marked tx fires next and sees no diff.
+      Either way, history is honest about who got there
+      first. Sharing tx state with the bridge for
+      strict deduplication is out of scope — the
+      diff-as-arbiter is sufficient because
+      `commit_marked/3` returns `{:ok, %{committed: 0}}`
+      cleanly when no diff exists.
+
+      Wired into `Glorbo.Application` next to
+      `HomeHistory.Tx` under the same
+      `:start_home_history_tx` config gate so tests can
+      pin per-test instances. Tests cover: tracked-scope
+      capture produces an External commit; excluded-scope
+      paths drop silently; no-diff paths are clean no-ops;
+      rapid bursts coalesce per-key; concurrent
+      different-path observations produce distinct
+      commits; resilience to a missing server / disabled
+      history.
+
+      With Phase 1, Phase 2 (a-1, b, c-0..c-8), and Phase
+      3 all landed, **GEP-33 status flips to
+      Implemented.** Phase 4 (`history restore` UX) is
+      still ahead but is additive Director ergonomics on
+      top of an already-working history layer — its
+      absence does not weaken any of the Phase-2/3
+      invariants.
+
+      2205 tests across the suite, 0 failures.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

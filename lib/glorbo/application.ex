@@ -103,6 +103,10 @@ defmodule Glorbo.Application do
       # Tx instances pinned to tmp bases can register the canonical
       # name without clashing.
       Glorbo.HomeHistory.Tx,
+      # GEP-33 Phase 3: watcher-fallback bridge. Catches manual edits
+      # to tracked-scope paths via the existing per-company watcher
+      # and emits `External` provenance commits.
+      Glorbo.HomeHistory.WatcherBridge,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       # M-series fix: enumerate companies on disk at boot and start a
       # per-company supervisor for each. Without this, the dashboard
@@ -136,11 +140,15 @@ defmodule Glorbo.Application do
     # GEP-33 Phase 2c: under `mix test`, drop the Tx server from the
     # supervised tree so per-test instances can claim the canonical
     # registered name without a clash. Production + dev keep it.
+    # The Phase 3 WatcherBridge is gated by the same flag — tests
+    # that exercise the bridge spin up their own pinned instance.
     children =
       if Application.get_env(:glorbo, :start_home_history_tx, true) do
         children
       else
-        Enum.reject(children, &match?(Glorbo.HomeHistory.Tx, &1))
+        Enum.reject(children, fn child ->
+          child in [Glorbo.HomeHistory.Tx, Glorbo.HomeHistory.WatcherBridge]
+        end)
       end
 
     # #145: raise the parent supervisor's restart intensity too — when

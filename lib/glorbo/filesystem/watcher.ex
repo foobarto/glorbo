@@ -232,6 +232,12 @@ defmodule Glorbo.Filesystem.Watcher do
 
     inline_dispatch(classify(rel), company, path, rel, state)
     maybe_broadcast(pubsub_topic_for(rel), company, rel, events, state)
+    # GEP-33 Phase 3: feed manual-edit events into the history
+    # watcher-bridge. The bridge's own tracked? predicate filters
+    # out scope-excluded paths, so we don't gate on classify here.
+    # Cast — fire-and-forget; the bridge handles a missing
+    # registered name silently.
+    Glorbo.HomeHistory.WatcherBridge.observe(company, rel)
   end
 
   defp classify(rel) do
