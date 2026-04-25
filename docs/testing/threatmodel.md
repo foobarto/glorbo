@@ -158,8 +158,8 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **58 open** ·
-56 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **56 open** ·
+58 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
 closed 3 mediums (Kanban list_projects lstat+slug, AgentLive io
@@ -188,17 +188,20 @@ ProposalsSink "proposal-file" sentinel actor, AgentLive
 find_agent_server pinned to (company, slug) tuple) and closed 1
 more low (FileSpec.Validator now uses `:file.read_link_info`
 instead of `File.stat`, refusing to follow symlinks during
-walk + dir-expand — closes the local-DoS / arbitrary-read primitive
-on `glorbo validate`).
+walk + dir-expand); **wave 10 on 2026-04-25** closed 2 more lows
+(Kanban return_to open-redirect tightened — `same_origin_path?/1`
+rejects `//evil.com` + `/\\windows`-style protocol-relative URLs;
+Scheduler.default_heartbeat_lookup/3 lstat'd to refuse symlinks +
+non-regular files, blocking DoS-via-/dev/zero pivot).
 
-Breakdown: 0 critical, 0 high, 0 medium, 34 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 32 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 34
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 32
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -224,8 +227,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/task_definition.ex`
 - **Inbox audit feed rereads full log on each update** — InboxLive’s recent-activity panel uses File.read/1 to load the full current-month audit log and then filters the last 50 lines. This happens during initial mount and again on every :file_event and :audit_append notification. Because audit entries are…
   *Paths:* `lib/glorbo_web/live/inbox_live.ex`
-- **Protocol-relative return_to enables open redirect from Kanban** — KanbanLive now stores return_to directly from query params and uses it to push_navigate on cancel. The guard only checks String.starts_with?(path, "/"), which permits protocol-relative URLs such as "//evil.com". An attacker can craft a link like…
-  *Paths:* `lib/glorbo_web/live/kanban_live.ex`
 - **RunLog crashes on malformed duration_ms in audit JSONL** — The new Glorbo.Agent.RunLog reader converts detail["duration_ms"] with String.to_integer/1. If an audit JSONL entry contains a non-numeric duration_ms (e.g., tampered or malformed log line), String.to_integer raises an ArgumentError, which bubbles out of…
   *Paths:* `lib/glorbo/agent/run_log.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
@@ -242,8 +243,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/cli/dispatcher.ex, lib/glorbo/sandbox/bwrap.ex`
 - **Agent history loads full audit log causing potential DoS** — The history feature loads the current-month audit log with File.read and splits/reverses the entire file just to find the last 200 matching rows. Audit logs are append-only and can grow very large (especially if a malicious agent or external caller generates…
   *Paths:* `lib/glorbo_web/live/agent_live.ex`
-- **Scheduler reads HEARTBEAT.md without filtering non-regular files** — The new HEARTBEAT.md lookup reads the file with File.read after a size check using File.stat, but does not verify that the path is a regular file or reject symlinks/special files. An untrusted agent can replace HEARTBEAT.md with a FIFO, device file, or…
-  *Paths:* `lib/glorbo/company/scheduler.ex`
 - **Providers page now exposes raw TOML config contents** — The commit adds a collapsible TOML snippet for each provider. The LiveView calls read_toml/1, which does a File.read on the provider’s source_file and renders the raw text into the page. User-defined providers.toml supports env overrides and other potentially…
   *Paths:* `lib/glorbo_web/live/providers_live.ex`
 - **Kanban drag-drop trusts client paths for filesystem writes** — The new "kanban:move" LiveView event accepts a `task_path` from the browser and only validates that it starts with "projects/" and does not contain "..". It then calls `Glorbo.TaskDefinition.write/2` directly. This bypasses the stricter task-path validation…

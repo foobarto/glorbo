@@ -492,8 +492,12 @@ defmodule GlorboWeb.KanbanLive do
     case socket.assigns[:return_to] do
       path when is_binary(path) and path != "" ->
         # Only honor same-origin paths — never navigate to an
-        # external URL supplied via query string.
-        if String.starts_with?(path, "/"),
+        # external URL supplied via query string. The leading
+        # "/" check alone is not enough: protocol-relative URLs
+        # like "//evil.com/foo" also start with "/" and the browser
+        # resolves them to https://evil.com. Reject any path that
+        # begins with "//" or "/\" (Windows-style backslash).
+        if same_origin_path?(path),
           do: {:noreply, push_navigate(socket, to: path)},
           else: {:noreply, socket}
 
@@ -1494,6 +1498,16 @@ defmodule GlorboWeb.KanbanLive do
       {:error, _} -> :error
     end
   end
+
+  # True iff the path is unambiguously same-origin: starts with
+  # "/" but NOT "//" (protocol-relative — browser navigates to
+  # the host after the slashes) and NOT "/\\" (some browsers
+  # treat it as protocol-relative on legacy paths).
+  defp same_origin_path?("/"), do: true
+  defp same_origin_path?("//" <> _), do: false
+  defp same_origin_path?("/\\" <> _), do: false
+  defp same_origin_path?("/" <> _), do: true
+  defp same_origin_path?(_), do: false
 
   defp load_tasks(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])

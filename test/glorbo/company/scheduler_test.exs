@@ -344,6 +344,29 @@ defmodule Glorbo.Company.SchedulerTest do
     end
   end
 
+  test "S11b: default_heartbeat_lookup/3 refuses to follow symlinks" do
+    # Threatmodel: an agent with workspace-write could replace
+    # HEARTBEAT.md with a symlink to /dev/zero (DoS) or to an
+    # arbitrary file (read pivot). The resolver must `lstat` and
+    # reject anything that isn't a regular file.
+    base = Path.join(System.tmp_dir!(), "glorbo_sched_sym_#{System.unique_integer([:positive])}")
+    agent_dir = Path.join([base, "companies", "acme", "agents", "engineer"])
+    File.mkdir_p!(agent_dir)
+
+    decoy = Path.join(agent_dir, "decoy.md")
+    File.write!(decoy, "decoy\n")
+
+    symlink = Path.join(agent_dir, "HEARTBEAT.md")
+    :ok = File.ln_s(decoy, symlink)
+
+    try do
+      assert {:error, :not_regular_file} =
+               Scheduler.default_heartbeat_lookup(base, "acme", "engineer")
+    after
+      File.rm_rf!(base)
+    end
+  end
+
   test "S7: state is empty after restart (D-45 stateless invariant)" do
     {name1, pid1} = start_sched!(clock_fun: fn -> ~U[2026-04-16 12:00:00Z] end)
 

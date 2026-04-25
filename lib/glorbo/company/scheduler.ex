@@ -295,12 +295,24 @@ defmodule Glorbo.Company.Scheduler do
         "HEARTBEAT.md"
       ])
 
-    case File.stat(path) do
-      {:ok, %File.Stat{size: size}} when size > @heartbeat_max_bytes ->
-        {:error, :file_too_large}
+    # Threatmodel: an agent with workspace-write could replace
+    # HEARTBEAT.md with a symlink to /dev/zero or a FIFO and either
+    # DoS the scheduler tick (File.read on /dev/zero blocks
+    # forever) or pivot it into reading attacker-pointed files.
+    # `read_link_info` (lstat) gives us the link's own type — refuse
+    # anything that isn't `:regular`.
+    case :file.read_link_info(path) do
+      {:ok, info} ->
+        case {elem(info, 2), elem(info, 1)} do
+          {:regular, size} when size > @heartbeat_max_bytes ->
+            {:error, :file_too_large}
 
-      {:ok, _stat} ->
-        File.read(path)
+          {:regular, _size} ->
+            File.read(path)
+
+          {_other, _} ->
+            {:error, :not_regular_file}
+        end
 
       {:error, :enoent} ->
         {:error, :no_heartbeat_file}

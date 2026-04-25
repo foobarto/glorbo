@@ -553,6 +553,24 @@ defmodule GlorboWeb.KanbanLiveTest do
              render_click(view, "new_task_cancel")
   end
 
+  test "?return_to=//evil.com is rejected (open-redirect protection)",
+       %{conn: conn} do
+    # Threatmodel: "//evil.com/foo" passes a naive `starts_with?(/)`
+    # check but the browser navigates to https://evil.com.
+    # `same_origin_path?/1` must reject leading "//" and "/\\".
+    for hostile <- ["//evil.com", "//evil.com/foo", "/\\\\windows.example"] do
+      encoded = URI.encode_www_form(hostile)
+
+      {:ok, view, _} =
+        live(conn, ~p"/companies/acme/kanban?return_to=#{encoded}")
+
+      # Expect a noop on cancel — drawer closes but no redirect.
+      result = render_click(view, "new_task_cancel")
+      refute match?({:error, {:live_redirect, _}}, result),
+             "open redirect not blocked for return_to=#{hostile}"
+    end
+  end
+
   test ":agent_status PubSub broadcast triggers a re-render (pill color refresh)",
        %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
