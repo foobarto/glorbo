@@ -2274,3 +2274,118 @@ bounded items if you want to continue tomorrow:
   * GEP-37 (glorbo shell) status was asked + answered:
     Accepted/DEFERRED-but-now-unblocked. Crown-jewels arc complete;
     ready for kickoff whenever.
+
+---
+
+## Task 25 — punch-list bundle: CLI tests + retire roundtrip + Tier-2 VR baselines
+
+**Task picked.** User authorized autonomous L4 sweep through the
+queued punch list from the prior handoff. Three bounded items
+shipped as one bundle.
+
+**What shipped (`d6fa87d`).**
+
+  * **11 CLI integration tests** for `glorbo history show / diff /
+    restore` (`test/glorbo/cli_test.exs`). Locks in the dispatch
+    shape so future regressions like the `--yes` inversion
+    (caught by manual UAT earlier this session) get caught
+    immediately. Covers happy paths + missing-arg help +
+    hostile-rev rejection (validator catches `--upload-pack=`)
+    + hostile-path rejection + dry-run-vs-real semantics +
+    excluded-scope rejection.
+  * **2 `Agents.retire` end-to-end roundtrip tests** in
+    `test/glorbo/actions/agents_test.exs`. Verifies GEP-33
+    Phase 2c-3's deletion-capable staging actually captures the
+    full tracked-scope subtree as `D` entries in a single
+    `agent.retire` history commit. Confirms `agents/.archive/`
+    paths are NOT staged as additions (excluded scope per
+    Phase 2c-N follow-up).
+  * **5 Tier-2 VR baselines** (channels, goals, proposals,
+    providers, costs) added to
+    `test/fixtures/ui-baselines/2026-04-25-v0.10.0/`. Total now
+    13 LVs across two tiers. Harness `PAGES` list +
+    `test/fixtures/ui-baselines/README.md` + GEP-44 doc updated
+    to reflect the expanded coverage.
+
+**Mid-round bug.** First retire roundtrip iteration asserted on
+`AGENT.md` existing in the post-rename archive dir, but the outer
+`agents_test.exs` setup only creates a `workspace/` directory —
+no `AGENT.md`. Test was fixed to seed the canonical durable
+files (AGENT.md + SOUL.md + HEARTBEAT.md + memory/notes.md)
+before retire so the deletion-staging assertion has tracked
+content to capture.
+
+**Gates.** `mix precommit` → 2229 tests, 0 failures, 42 excluded,
+3 skipped. Format + credo + docs all clean.
+
+---
+
+## Task 26 — documentation sweep + landing-page refresh
+
+**Task picked.** User flagged a low-priority docs sweep:
+"update screenshots and update the landing page (assets/index.html
+etc)."
+
+**What shipped (`ac7b0ee`).**
+
+  * **`assets/index.html` version refs** bumped `v0.6.0` →
+    `v0.10.0` in three places: the mock dashboard topbar,
+    footer status line, and footer tagline. Reflects today's
+    cut.
+  * **`README.md`** — `Latest release v0.9.0` → `v0.10.0`;
+    rewrote the Optional-git-history bullet to reflect Phase
+    2-4 reality (kernel-committed commits with actor
+    provenance, watcher fallback for manual edits, full CLI
+    surface) instead of just Phase 1's read-only verbs.
+  * **8 of 10 landing-page screenshots refreshed** from the
+    v0.10.0 VR baselines: overview, company, kanban, audit,
+    inbox, agent, goals, providers. Single `cp` per file from
+    `test/fixtures/ui-baselines/2026-04-25-v0.10.0/` — same
+    images that anchor the GEP-44 baseline-sprint coverage,
+    so the landing page and the visual-regression harness are
+    now drift-locked together.
+
+**Skipped.** Approvals + skills screenshots kept their prior
+captures — both surfaces are unchanged in v0.10.0 and a fresh
+capture would be near-identical to the existing image.
+
+**Gates.** `mix format --check-formatted` clean (no Elixir
+source touched). No precommit re-run since the diff is
+PNG + HTML + Markdown only.
+
+---
+
+## Final-final handoff — 2026-04-25 16:42 UTC
+
+**Cumulative shipped today:**
+
+  * 18 GEP-33 commits (Phase 2a-1 through Phase 4 + polish).
+  * UAT + security review fixes (`cc6dfb8`, `d84006f`).
+  * IP scrub force-push (`09cfda7`).
+  * v0.10.0 release cut (`a30d7a4` + tag `v0.10.0`).
+  * GEP-44 + Tier-1 VR baselines (`0664149`).
+  * Punch-list bundle (`d6fa87d`): 13 new tests, 5 new baselines.
+  * Docs sweep (`ac7b0ee`): version bumps + 8 fresh screenshots.
+
+**Autonomy used:** L4 throughout (push authority granted +
+exercised at every commit boundary).
+
+**Stopped because:** end-of-session. Of the four-item queued
+list at the prior handoff, three are done; only **GEP-37 glorbo
+shell kickoff** remains. That one is sprint-sized, not
+autonomous-bounded — needs a written plan + dedicated session.
+
+**Queued for next time:**
+
+  * GEP-37 `glorbo shell` kickoff (sprint).
+  * Tier-3 VR baselines if useful (task_chain, benchmarks,
+    brain_dump, skills, project) — opportunistic.
+  * `bash scripts/ui-baseline.sh check` end-to-end run from CI
+    once we want the harness as a non-blocking gate.
+
+**For your review:**
+
+  * Final commit count today: ~24 commits across the day.
+  * `origin/main` HEAD = `ac7b0ee`.
+  * Full v0.10.0 release surface: tag pushed, CHANGELOG
+    finalized, landing page reflects current version.
