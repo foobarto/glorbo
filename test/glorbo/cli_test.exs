@@ -496,4 +496,36 @@ defmodule Glorbo.CLITest do
       assert output =~ "missing arguments"
     end
   end
+
+  describe ~S{dispatch(["shell" | _]) (GEP-37 Phase 0)} do
+    test "shell --help returns help text" do
+      {verb, code, output} = CLI.dispatch(["shell", "--help"])
+      assert verb == :shell
+      assert code == 0
+      assert output =~ "interactive Director terminal"
+      assert output =~ "GEP-37"
+    end
+
+    test "shell -h alias returns help text" do
+      {:shell, 0, output} = CLI.dispatch(["shell", "-h"])
+      assert output =~ "USAGE"
+    end
+
+    test "shell entry surfaces in top-level help text" do
+      {:help, 0, help} = CLI.dispatch([])
+      assert help =~ "shell"
+      assert help =~ "[alpha]"
+    end
+
+    test "shell verb refuses launch when stdout is not a TTY" do
+      # Test environment: ExUnit redirects IO; IO.ANSI.enabled? returns
+      # false. Phase-0 placeholder declines to launch and reports the
+      # non-TTY guard rather than dropping into the placeholder banner.
+      {verb, code, output} = CLI.dispatch(["shell"])
+      assert verb == :shell
+      assert code == 1
+      assert output =~ "not a TTY"
+      assert output =~ "glorbo run"
+    end
+  end
 end

@@ -45,6 +45,30 @@ history:
       keybindings default). Implementation will ride alongside
       the GEP-36 `Glorbo.Actions` atomic cut; first release to
       carry the shell will be v0.8.0.
+  - date: 2026-04-25
+    status: Accepted
+    note: |
+      Phase 0 scaffold landed in v0.10.0 (later than the
+      v0.8.0 target — `Glorbo.Actions` carve-out completed in
+      v0.10.0 alongside GEP-33 Phase 2c, which was the gating
+      arc): `term_ui ~> 1.0.0-rc` added to mix.exs;
+      `lib/glorbo/shell.ex` skeleton with `run/1` entry point;
+      `Glorbo.CLI.dispatch(["shell" | rest])` routes to it;
+      help-text entry marked `[alpha]`. The verb prints a
+      placeholder banner, refuses non-TTY launch, and exits
+      cleanly. 4 dispatch tests guard the wiring.
+
+      Pinned to `term_ui ~> 1.0.0-rc` because 0.2.0 fails to
+      compile under Elixir 1.18 (regex Reference values can't
+      be injected into `@module_attributes`; fixed upstream in
+      the rc but not yet released as 1.0.0 stable). Revisit
+      once 1.0.0 tags.
+
+      Phase 1 (Supervisor + Runtime + EventBus) and Phase 2
+      (first view: Inbox) land in subsequent rounds.
+      `Glorbo.Shell` module structure left flat
+      (`Glorbo.Shell.{Supervisor, Runtime, EventBus,
+      Views.*}`) per D2 in this GEP.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

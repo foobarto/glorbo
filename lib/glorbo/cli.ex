@@ -53,6 +53,7 @@ defmodule Glorbo.CLI do
           | :bench
           | :harness
           | :history
+          | :shell
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -425,6 +426,10 @@ defmodule Glorbo.CLI do
     {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
   end
 
+  # GEP-37: interactive Director shell. Phase 0 — CLI wiring +
+  # placeholder banner; runtime + views land in subsequent rounds.
+  def dispatch(["shell" | rest]), do: Glorbo.Shell.run(rest)
+
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
@@ -563,7 +568,9 @@ defmodule Glorbo.CLI do
       detect-providers         Probe localhost for native providers (ollama, llama.cpp,
                                LocalAI, vLLM, LM Studio). No side effects. Flags: --json
       history <sub>            Opt-in git history layer for ~/.glorbo/ (GEP-33).
-                               Subcommands: init, status, log [--limit N].
+                               Subcommands: init, status, log [--limit N],
+                               show, diff, restore.
+      shell                    [alpha] Interactive Director terminal (GEP-37 Phase 0)
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 

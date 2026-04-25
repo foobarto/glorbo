@@ -143,7 +143,12 @@ it's been in CHANGELOG for a cycle.
   paths. Phase 3 follows with watcher-fallback `External`
   commits for manual edits; Phase 4 adds
   `show`/`diff`/`restore`.
-- [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
+- [ ] **GEP-37 `glorbo shell` implementation — Phase 0 SHIPPED
+  2026-04-25 (v0.10.0).** CLI verb wired, `term_ui ~> 1.0.0-rc`
+  installed, `Glorbo.Shell` skeleton + placeholder banner +
+  non-TTY guard. 4 dispatch tests. Phase 1 (Supervisor + Runtime
+  + EventBus) and Phase 2+ (views in drop-in parity order)
+  remain queued. Originally:
   2026-04-24. Implementation queued **behind** the crown-jewels arc
   (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer
   direction. Once the chain-observability + peer-review infra lands

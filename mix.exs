@@ -87,7 +87,18 @@ defmodule Glorbo.MixProject do
       {:earmark, "~> 1.4"},
       # Allowlist HTML sanitizer for Earmark output — Earmark has no
       # built-in sanitization and explicitly defers to the caller.
-      {:html_sanitize_ex, "~> 1.5"}
+      {:html_sanitize_ex, "~> 1.5"},
+      # GEP-37: terminal UI runtime for `glorbo shell`. Pure-Elixir
+      # (preserves Burrito), MIT, widget set covering the views the
+      # GEP enumerates (tables, trees, split panes, command palette,
+      # supervision-tree viewer).
+      #
+      # Pinned to 1.0.0-rc — 0.2.0 fails to compile on Elixir 1.18
+      # because `@level_patterns` carried Regex Reference values
+      # that can't be injected into module attributes (upstream
+      # commit landed in the rc). Stays an `rc` until upstream
+      # tags a stable 1.0.0; revisit then.
+      {:term_ui, "~> 1.0.0-rc"}
     ]
   end
 
