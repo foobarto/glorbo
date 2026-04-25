@@ -41,7 +41,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
 
       WatcherBridge.observe("acme", "company.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
       assert head.subject == "external.edit: companies/acme/company.md"
@@ -65,7 +65,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
 
       WatcherBridge.observe("acme", "agents/ceo/inbox/wake.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
       assert head.sha == initial_sha
@@ -80,7 +80,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
       # check returns clean → no commit.
       WatcherBridge.observe("acme", "company.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
       assert head.sha == initial_sha
@@ -100,7 +100,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
         Process.sleep(div(@debounce_ms, 5))
       end)
 
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       {:ok, log} = HomeHistory.log(base: base, limit: 10)
 
@@ -124,7 +124,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
       WatcherBridge.observe("acme", "company.md", server: bridge)
       WatcherBridge.observe("acme", "agents/ceo/AGENT.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       {:ok, log} = HomeHistory.log(base: base, limit: 10)
 
@@ -154,7 +154,7 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
       bridge = start_bridge(base)
 
       WatcherBridge.observe("acme", "company.md", server: bridge)
-      Process.sleep(@debounce_ms * 4)
+      Process.sleep(@debounce_ms * 20)
 
       assert Process.alive?(bridge)
 
