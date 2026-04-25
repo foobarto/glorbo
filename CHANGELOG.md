@@ -12,6 +12,64 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.11.2] — 2026-04-26
+
+Same-day security patch. Two more Codex scans (waves 26–27)
+surfaced and closed **11 findings** end-to-end (2 high, 6
+medium, 3 low) — primarily extending the wave-25 symlinked-
+ancestor + bounded-read patterns to surfaces that earlier
+sweeps did not visit.
+
+### Security
+
+- **High** — Project-writable directory symlinks could redirect
+  host task writes across companies. An agent with
+  `projects:write:<p>` could replace `projects/<p>/tasks` with
+  a symlink and have outbox-routed tasks land in another
+  company's tree. `Company.Router.handle_outbox_task`,
+  `Actions.Tasks.do_next_task_id`, and
+  `Actions.Tasks.build_trash_dest` now refuse symlinked
+  ancestors before mkdir_p / exclusive_write / rename.
+- **High** — IPv4-mapped IPv6 addresses (`::ffff:127.0.0.1`)
+  bypassed the proxy private-address filter. Now extract the
+  embedded IPv4 octets and recheck against the IPv4 ruleset.
+- **Medium** — `TaskDefinition.read_file/1` slurped full
+  agent-RW task files before `Frontmatter.parse/1` capped at
+  10 MiB. Routed through `AgentWritableFile.read/1`;
+  preserved the `:size_limit_exceeded` error contract.
+- **Medium** — `PathRequestGate.archive_request/3` walked into
+  `agents/<slug>/state/path-request-archive` without symlink
+  refusal. Now lstat-refuses symlinked ancestors.
+- **Medium** — `Actions.Agents` workspace writers had a
+  lstat→write TOCTOU. `create_workspace_file` now uses O_EXCL
+  create; `write_workspace_file` writes through a random-suffix
+  exclusive temp + atomic rename; `trash_workspace_file`
+  refuses symlinked `agents/<slug>/history/deleted` ancestors.
+- **Medium** — Inbox delivery and `@mention` writes did not
+  refuse symlinked ancestors. Added `any_symlink_in_path?/1`
+  guards to `Actions.write_mention`,
+  `Actions.Inbox.deliver_task_assignment`,
+  `Company.Router.perform_routing({:agent, _}, …)` and
+  `do_write_mention`, and `PathRequestGate.notify_agent_denied`.
+- **Medium** — `Search.scan_audit/2` slurped each monthly audit
+  JSONL into BEAM memory before applying the 500-row limit.
+  Switched to `File.stream!([], :line)` + rolling-window reduce.
+- **Low** — `Agent.Parser.validate_models_aliases` and
+  `parse_host_list` raised `Protocol.UndefinedError` on
+  nested-map YAML via `to_string/1`. Now refuse non-binary
+  keys/values up front and return structured validation errors.
+- **Low** — Proposals reads (`Company.Proposals.read_one`,
+  MCP `GetProposal`/`ListProposals.load`) used raw
+  `File.read/1` on agent-RW `proposals/`. Routed through
+  `AgentWritableFile.read/1`.
+- **Low** — `Chat.Rotation` used predictable
+  `<channel>.md.rotate.tmp` and plain `mkdir_p` on
+  `archive/<channel>`. Random-suffix exclusive temp +
+  symlinked-ancestor refusal for both live and archive paths.
+
+Cumulative: 90 findings closed across 27 waves since the
+2026-04-22 import.
+
 ## [0.11.1] — 2026-04-25
 
 Same-day security patch. Two Codex security scans across waves
