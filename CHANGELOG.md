@@ -10,7 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added
+
+- **GEP-33 git history layer fully implemented** (Phases 2 + 3 + 4
+  on top of the v0.9.0 Phase-1 ship). The opt-in
+  `~/.glorbo/.git/` repo now captures every host-side write
+  through `Glorbo.HomeHistory.commit_marked/3` (Phase 2a-1) +
+  the `HomeHistory.Tx` GenServer's debounce coalescer
+  (Phase 2b). Wired into Companies / Channels / Tasks / Projects
+  / Goals / Proposals / BrainDump writers + the Router's
+  agent-side outbox flows (Phase 2c-0..2c-8). Manual filesystem
+  edits flow through the `HomeHistory.WatcherBridge` and land
+  as `External` provenance commits (Phase 3). Director-facing
+  `glorbo history show` / `diff` / `restore` verbs ship as
+  Phase 4. GEP-33 status flips to Implemented.
+- **Browser UAT harness unblocked.** Playwright MCP now works
+  inside an Ubuntu distrobox (`npx playwright install chrome`
+  + `apt-get install build-essential` for muontrap NIF).
+  CLAUDE.md + `docs/testing/uat.md` updated to document the
+  distrobox path as preferred over the legacy Bazzite host
+  workaround.
 
 ## [0.9.0] — 2026-04-25
 
