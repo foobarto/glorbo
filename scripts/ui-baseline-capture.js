@@ -4,11 +4,25 @@
 //
 // Usage: node scripts/ui-baseline-capture.js <dest> "name|path|selector" ...
 //
-// Requires: npm exec --package=playwright (or playwright in PATH).
+// Deps live in scripts/node_modules (see scripts/package.json).
 
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
+
+// Capture viewport — 1400×900, but clip the topbar (path bar bakes
+// the random tmp GLORBO_HOME path into pixels) and the bottom
+// status row (live wall-clock + uptime) so per-run drift in those
+// strings doesn't push the diff past the 0.5% threshold.
+const VIEWPORT = { width: 1400, height: 900 };
+const TOPBAR_PX = 30;
+const STATUSBAR_PX = 30;
+const CLIP = {
+  x: 0,
+  y: TOPBAR_PX,
+  width: VIEWPORT.width,
+  height: VIEWPORT.height - TOPBAR_PX - STATUSBAR_PX,
+};
 
 (async () => {
   const [destArg, ...pageArgs] = process.argv.slice(2);
@@ -21,7 +35,7 @@ const fs = require('fs');
 
   const browser = await chromium.launch();
   const context = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
+    viewport: VIEWPORT,
     deviceScaleFactor: 1,
   });
   const page = await context.newPage();
@@ -40,6 +54,7 @@ const fs = require('fs');
     await page.screenshot({
       path: path.join(dest, `${name}.png`),
       fullPage: false,
+      clip: CLIP,
     });
   }
 

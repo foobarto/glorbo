@@ -6,8 +6,7 @@
 // Exits 0 with the percentage on stdout; the calling shell decides
 // whether the percentage exceeds the threshold.
 //
-// Requires: pixelmatch + pngjs (npm exec --package=pixelmatch
-// --package=pngjs).
+// Deps live in scripts/node_modules (see scripts/package.json).
 
 const fs = require('fs');
 const { PNG } = require('pngjs');

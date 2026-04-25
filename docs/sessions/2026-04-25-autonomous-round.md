@@ -2740,4 +2740,54 @@ when the corresponding release doesn't yet exist.
   `bash scripts/ui-baseline.sh update` boots phx.server, seeds
   fixture, captures 18 PNGs, repoints `current/`, shuts down
   cleanly.
+* **Commit(s):** `0fdafaa`.
+
+---
+
+## Task 32 — VR harness CI-ready (clip rect + scripts/package.json)
+
+* **Task picked:** the two P2 follow-ups I just filed in Task 31 —
+  topbar/clock noise flake risk + project-local node_modules. Both
+  block VR from going into CI as a non-blocking gate.
+* **What shipped:**
+  * `scripts/package.json` — lists `playwright ^1.50`,
+    `pngjs ^7`, `pixelmatch ^5.3` (v5 stays CommonJS — v7 is
+    ESM-only, would force a script rewrite).
+  * `scripts/ui-baseline.sh` — added `ensure_node_deps()` that
+    runs `npm install` on demand if `scripts/node_modules` is
+    missing; both node invocations now use
+    `NODE_PATH=$REPO_ROOT/scripts/node_modules`.
+  * `scripts/ui-baseline-capture.js` — passes Playwright a
+    `clip` rect of `{x: 0, y: 30, width: 1400, height: 840}`
+    that excludes the topbar (path bar bakes the random tmp
+    `GLORBO_HOME` path into pixels) and the bottom status row
+    (wall-clock + uptime).
+  * `test/fixtures/ui-baselines/2026-04-25-0.11.0/` — 18 PNGs
+    recaptured under the new clip rect.
+* **Drift measurements (3 back-to-back `check` runs):**
+  * Most LVs: 0.000–0.013% drift.
+  * Worst: `/health` at 0.040–0.045% drift (live uptime ms in
+    main content, not just the status bar).
+  * All 18 LVs stay well under the 0.5% GEP-44 threshold.
+  * Harness is now usable as a non-blocking CI gate.
+* **Design calls I made without you:**
+  * **Pinned `pixelmatch` to v5, not v7.** v7 is ESM-only;
+    v5 keeps the existing CommonJS `require` shape working
+    without rewriting `ui-baseline-diff.js` as ESM.
+  * **Clip rect over selective masking.** Could have built a
+    pre-mask step that paints over noisy regions in both
+    baseline + current before pixelmatch. Clip is simpler and
+    the lost coverage (topbar / status-bar layout regressions)
+    isn't load-bearing — those surfaces change rarely and a
+    contributor running `update` would notice obvious breaks.
+* **Gates:** harness end-to-end smoke green (`update` + 3×
+  `check`). No app code changed so no `mix precommit`.
 * **Commit(s):** pending.
+
+### Things I'd like your review (Task 32)
+
+* **VR harness CI integration is now unblocked.** Adding it as a
+  non-blocking gate (informational only, doesn't fail PRs) is the
+  next bounded item — wire it into `.github/workflows/ci.yml` so
+  every PR runs `bash scripts/ui-baseline.sh check` and surfaces
+  any drift > 0.5% as a status comment.

@@ -53,9 +53,21 @@ PAGES=(
   "18-project|/companies/acme/projects/inbox|main"
 )
 
+ensure_node_deps() {
+  if [[ ! -d "$REPO_ROOT/scripts/node_modules" ]]; then
+    echo "→ scripts/node_modules missing — running npm install"
+    (cd "$REPO_ROOT/scripts" && npm install --no-audit --no-fund >/dev/null) || {
+      echo "FATAL: npm install in scripts/ failed." >&2
+      return 1
+    }
+  fi
+}
+
 capture_pages() {
   local dest="$1"
   local glorbo_home; glorbo_home="$(mktemp -d -t glorbo-vr-home-XXXX)"
+
+  ensure_node_deps || return 1
 
   # Seed via the burrito CLI. There's no `mix glorbo.init` /
   # `mix glorbo.cli` mix task — those live on the burrito-built
@@ -108,7 +120,8 @@ capture_pages() {
   echo "→ server up; capturing $(echo "${PAGES[@]}" | wc -w) pages..."
 
   # Drive Playwright in one node invocation; cheaper than per-page subprocess.
-  node "$REPO_ROOT/scripts/ui-baseline-capture.js" "$dest" "${PAGES[@]}"
+  NODE_PATH="$REPO_ROOT/scripts/node_modules" \
+    node "$REPO_ROOT/scripts/ui-baseline-capture.js" "$dest" "${PAGES[@]}"
 
   echo "✓ captures saved → $dest"
 }
@@ -129,7 +142,8 @@ diff_against_baseline() {
 
     # pixelmatch returns: total-px, diff-px on stdout via custom wrapper.
     local diff_pct
-    diff_pct="$(node "$REPO_ROOT/scripts/ui-baseline-diff.js" "$base" "$cur" "$current/$name-diff.png")"
+    diff_pct="$(NODE_PATH="$REPO_ROOT/scripts/node_modules" \
+      node "$REPO_ROOT/scripts/ui-baseline-diff.js" "$base" "$cur" "$current/$name-diff.png")"
 
     local cmp; cmp="$(awk -v a="$diff_pct" -v t="$THRESHOLD_PCT" 'BEGIN{print (a>t)}')"
     if [[ "$cmp" == "1" ]]; then
