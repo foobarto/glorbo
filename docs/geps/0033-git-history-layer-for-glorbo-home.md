@@ -432,6 +432,39 @@ history:
       invariants.
 
       2205 tests across the suite, 0 failures.
+  - date: 2026-04-25
+    status: Implemented
+    note: |
+      Phase 4 — Director UX shipped. New verbs:
+
+        * `glorbo history show <rev>` — `git show --stat`
+          wrapper.
+        * `glorbo history diff <rev> [<rev2>] [--path P]` —
+          single-rev (vs working tree) or two-rev diff;
+          `--path` scopes to one file.
+        * `glorbo history restore <rev> <path> [--yes]` —
+          restores a single tracked-scope path from a
+          previous revision and writes a new
+          `history.restore` commit (append-only;
+          §11 D11). Without `--yes`, runs in dry-run
+          mode and prints what would change so the
+          Director can confirm.
+
+      All three verbs validate input defensively:
+      `validate_rev/1` rejects empty, space-bearing, or
+      `--`-prefixed strings (option-injection guard);
+      `validate_path/1` rejects absolute paths, paths
+      starting with `-`, and `..` traversal. Restore
+      additionally requires the path to pass `tracked?/2`
+      so excluded-scope paths (`config.md`, `runtime/`,
+      etc.) can't be touched.
+
+      No `glorbo checkout <sha>` whole-tree replace — D11
+      stance unchanged for v1.
+
+      With Phase 4 landed, every implementation phase
+      from §14 is shipped. 2215 tests across the suite,
+      0 failures.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

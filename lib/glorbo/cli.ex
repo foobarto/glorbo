@@ -338,6 +338,85 @@ defmodule Glorbo.CLI do
     end
   end
 
+  def dispatch(["history", "show", rev | _rest]) do
+    case Glorbo.HomeHistory.show(rev, []) do
+      {:ok, out} ->
+        {:history, 0, out <> "\n"}
+
+      {:error, :not_initialised} ->
+        {:history, 1, "glorbo history — disabled (run `glorbo history init`)\n"}
+
+      {:error, :invalid_rev} ->
+        {:history, 1, "glorbo history show — invalid revision: #{rev}\n"}
+
+      {:error, reason} ->
+        {:history, 2, "glorbo history show — failed: #{inspect(reason)}\n"}
+    end
+  end
+
+  def dispatch(["history", "show" | _]) do
+    {:history, 1,
+     "glorbo history show <rev> — missing revision argument\n\n" <> history_help_text()}
+  end
+
+  @history_diff_switches [path: :string]
+  def dispatch(["history", "diff" | rest]) do
+    {opts, argv, invalid} = OptionParser.parse(rest, strict: @history_diff_switches)
+
+    cond do
+      invalid != [] ->
+        unknown = invalid |> Enum.map_join(" ", fn {k, _} -> k end)
+
+        {:history, 1,
+         "glorbo history diff — unknown switch(es): #{unknown}\n\n" <> history_help_text()}
+
+      argv == [] ->
+        {:history, 1,
+         "glorbo history diff <rev> [<rev2>] — missing revision argument\n\n" <>
+           history_help_text()}
+
+      true ->
+        run_history_diff(argv, opts)
+    end
+  end
+
+  def dispatch(["history", "restore", rev, path | rest]) do
+    confirm? = "--yes" not in rest
+
+    case Glorbo.HomeHistory.restore(rev, path, %{actor: :director}, confirm: confirm?) do
+      {:ok, %{would_restore: path, head_commit: sha}} ->
+        {:history, 0,
+         "glorbo history restore — would restore #{path} from #{rev} (HEAD=#{sha})\n" <>
+           "Re-run with --yes to actually perform the restore.\n"}
+
+      {:ok, %{sha: sha, committed: 1}} ->
+        {:history, 0, "glorbo history restore — restored #{path} from #{rev} (commit #{sha})\n"}
+
+      {:ok, %{committed: 0}} ->
+        {:history, 0, "glorbo history restore — #{path} at #{rev} matches working tree (no-op)\n"}
+
+      {:error, :not_initialised} ->
+        {:history, 1, "glorbo history — disabled (run `glorbo history init`)\n"}
+
+      {:error, :invalid_rev} ->
+        {:history, 1, "glorbo history restore — invalid revision: #{rev}\n"}
+
+      {:error, :invalid_path} ->
+        {:history, 1, "glorbo history restore — invalid path: #{path}\n"}
+
+      {:error, :path_excluded} ->
+        {:history, 1, "glorbo history restore — path is outside tracked scope: #{path}\n"}
+
+      {:error, reason} ->
+        {:history, 2, "glorbo history restore — failed: #{inspect(reason)}\n"}
+    end
+  end
+
+  def dispatch(["history", "restore" | _]) do
+    {:history, 1,
+     "glorbo history restore <rev> <path> [--yes] — missing arguments\n\n" <> history_help_text()}
+  end
+
   def dispatch(["history", verb | _]) do
     {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
   end
@@ -347,6 +426,37 @@ defmodule Glorbo.CLI do
   def dispatch([verb | _]) do
     {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
   end
+
+  defp run_history_diff([rev1], opts) do
+    case Glorbo.HomeHistory.diff(rev1, nil, path: opts[:path]) do
+      {:ok, out} -> {:history, 0, out <> "\n"}
+      {:error, err} -> diff_error_to_message(err)
+    end
+  end
+
+  defp run_history_diff([rev1, rev2], opts) do
+    case Glorbo.HomeHistory.diff(rev1, rev2, path: opts[:path]) do
+      {:ok, out} -> {:history, 0, out <> "\n"}
+      {:error, err} -> diff_error_to_message(err)
+    end
+  end
+
+  defp run_history_diff(_, _) do
+    {:history, 1,
+     "glorbo history diff <rev> [<rev2>] — too many revisions\n\n" <> history_help_text()}
+  end
+
+  defp diff_error_to_message(:not_initialised),
+    do: {:history, 1, "glorbo history — disabled (run `glorbo history init`)\n"}
+
+  defp diff_error_to_message(:invalid_rev),
+    do: {:history, 1, "glorbo history diff — invalid revision\n"}
+
+  defp diff_error_to_message(:invalid_path),
+    do: {:history, 1, "glorbo history diff — invalid path\n"}
+
+  defp diff_error_to_message(reason),
+    do: {:history, 2, "glorbo history diff — failed: #{inspect(reason)}\n"}
 
   defp run_history_log(limit) do
     case Glorbo.HomeHistory.log(limit: limit) do
@@ -482,15 +592,19 @@ defmodule Glorbo.CLI do
     glorbo history — opt-in git history layer for ~/.glorbo/ (GEP-33).
 
     USAGE
-      glorbo history init             Bootstrap the repo + write .gitignore + initial commit
-      glorbo history status           Show enabled/disabled + dirty tracked paths
-      glorbo history log [--limit N]  Most recent commits (default N=20)
-
-    Phase 1 ships read-only inspection. `show`, `diff`, `restore`,
-    and watcher-driven automatic commits arrive in later phases.
+      glorbo history init                       Bootstrap the repo + write .gitignore
+      glorbo history status                     Show enabled/disabled + dirty paths
+      glorbo history log [--limit N]            Most recent commits (default N=20)
+      glorbo history show <rev>                 Show one commit (metadata + stat)
+      glorbo history diff <rev> [<rev2>] [--path P]
+                                                Diff a rev vs working tree, or two revs
+      glorbo history restore <rev> <path> [--yes]
+                                                Restore one path from <rev>; without
+                                                --yes shows what would change.
 
     Filesystem remains the source of truth (GEP-3). Git here is
     derivative — it never replaces the audit log or the working tree.
+    Restore appends a new commit describing the restore (append-only).
     """
   end
 

@@ -1455,6 +1455,104 @@ to **Implemented**.
 
 ---
 
+## Task 16 — GEP-33 Phase 4: history show / diff / restore UX
+
+**Task picked.** GEP-33 status flipped to Implemented in
+the previous round, but Phase 4 (the read + restore UX
+verbs) was still ahead per the original §14 plan. With
+Phase 1/2/3 done the layer's commit graph already exists;
+Phase 4 just exposes Director-facing commands to inspect +
+selectively undo.
+
+**What shipped.**
+
+  * **`Glorbo.HomeHistory.show/2`** — wraps `git show
+    --stat <rev>`. Returns the formatted text. Validates
+    the rev string defensively (rejects empty,
+    space-bearing, or `--`-prefixed input — the latter is
+    git's option-injection vector).
+  * **`Glorbo.HomeHistory.diff/3`** — single-rev (vs
+    working tree) or two-rev. Optional `:path` opt scopes
+    to one file. Validates rev strings + path shape.
+  * **`Glorbo.HomeHistory.restore/4`** — restores one
+    tracked-scope path from a previous revision into the
+    working tree, then creates a new `history.restore`
+    commit. Append-only — HEAD always advances, never
+    rewinds. `:confirm: false` returns a dry-run
+    `{:ok, %{would_restore, head_commit}}` for the
+    "show me what this would do" UX.
+  * **CLI dispatch** for `glorbo history show <rev>`,
+    `glorbo history diff <rev> [<rev2>] [--path P]`,
+    `glorbo history restore <rev> <path> [--yes]`.
+    Without `--yes`, restore runs in dry-run mode and
+    prints the would-be HEAD pointer so the user can
+    confirm. `glorbo history --help` updated.
+
+**5 new tests** in `home_history_test.exs` covering
+show/diff/restore happy paths + hostile-input rejection
+(`--foo` rev injection, `../etc` path traversal, excluded-
+scope paths). Total: 41/41 in the file (up from 31).
+
+**Design calls I made without you.**
+
+  * **Restore commits a NEW commit, doesn't reset HEAD.**
+    GEP-33 §11 D11 explicitly forbids whole-tree
+    checkout in v1; the same logic applies to subtree
+    restore — append-only is honest about provenance
+    (the restore is itself a recordable Director action)
+    and avoids the "what does HEAD mean" confusion.
+  * **`--yes` flag for restore default-OFF.** Restore is
+    irreversible-ish (the old working-tree state is gone
+    after `git checkout <rev> -- <path>`; the only way
+    back is another restore). Default-dry-run preserves
+    the "preview before commit" Director affordance.
+  * **`git show --stat <rev>` not `git show <rev>`.**
+    Director-facing default; full patch is noisy for the
+    typical "what did I change" question. Future
+    `--patch` flag can opt back into full diff if needed.
+  * **`validate_rev/1` rejects `--`-prefixed input
+    explicitly.** Defends against
+    `git show --upload-pack=...` style option injection
+    even though `git` itself would refuse most of these
+    — defense-in-depth matches the §12.2 sanitization
+    layer.
+
+**Mid-round bug fixes.**
+
+  * `git show --stat -- <rev>` returned empty output
+    because git treats `<rev>` as a path after `--`. Fixed
+    by dropping the `--` separator (rev validation
+    already keeps it safe).
+  * Initial restore happy-path test landed a no-op
+    because the test scenario restored `initial_sha` when
+    HEAD already equaled `initial_sha`. Fixed by adding a
+    real second commit before restoring.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history_test.exs` —
+    41/41 green.
+  * `mix precommit` — 2215 tests, 0 failures, 82
+    excluded, 3 skipped. exit 0.
+
+**Skipped / not done.**
+
+  * **CLI integration tests** for the new `show`,
+    `diff`, `restore` verbs. The HomeHistory unit tests
+    cover the underlying logic; CLI dispatch is thin
+    and follows the existing `history log` pattern.
+  * `glorbo checkout <sha>` whole-tree time travel —
+    explicitly out of v1 per GEP-33 D11.
+  * `--patch` flag on `glorbo history show` — future
+    seam if `--stat`-only output proves insufficient.
+
+**Commit.** Sixteenth of the day. GEP-33 §14
+implementation phases are now ALL landed
+(Phase 1 + 2 + 3 + 4); the GEP is fully implemented.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

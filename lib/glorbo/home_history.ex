@@ -375,6 +375,158 @@ defmodule Glorbo.HomeHistory do
   def default_base!, do: default_base()
 
   @doc """
+  Show a single commit (`git show --stat <rev>`). Returns
+  `{:ok, output}` with the formatted text on success.
+
+  GEP-33 Phase 4: Director-facing history archaeology.
+  """
+  @spec show(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def show(rev, opts \\ []) when is_binary(rev) do
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+
+    with :ok <- ensure_repo_initialised(base),
+         :ok <- validate_rev(rev) do
+      case git(["show", "--stat", rev], base) do
+        {:ok, out} -> {:ok, out}
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  @doc """
+  Diff two revs (or one rev vs working tree). Mirrors
+  `git diff <rev1>..<rev2>` (two-rev) or `git diff <rev>` (one
+  rev → working tree).
+
+  Optional `:path` opt scopes the diff to one file.
+  """
+  @spec diff(String.t(), String.t() | nil, keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def diff(rev1, rev2 \\ nil, opts \\ []) when is_binary(rev1) do
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    path_opt = Keyword.get(opts, :path)
+
+    with :ok <- ensure_repo_initialised(base),
+         :ok <- validate_rev(rev1),
+         :ok <- maybe_validate_rev(rev2),
+         :ok <- maybe_validate_path(path_opt) do
+      args =
+        case rev2 do
+          nil -> ["diff", rev1]
+          r2 when is_binary(r2) -> ["diff", "#{rev1}..#{r2}"]
+        end
+
+      args = if path_opt, do: args ++ ["--", path_opt], else: args
+
+      case git(args, base) do
+        {:ok, out} -> {:ok, out}
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  @doc """
+  Restore a single tracked path from a previous revision into the
+  working tree, then create a new commit describing the restore
+  (append-only repo semantics — restore is itself a recordable
+  event).
+
+  `path` is relative to the home root. Refuses to restore
+  excluded-scope paths or paths outside the repo.
+
+  Required `meta`:
+
+    * `:actor` — who initiated the restore (typically `:director`).
+
+  Optional:
+
+    * `:confirm` — when `false`, returns
+      `{:ok, %{would_restore: path, head_commit: sha}}` without
+      mutating the working tree (dry-run).
+  """
+  @spec restore(String.t(), Path.t(), tx_meta(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def restore(rev, path, meta, opts \\ [])
+      when is_binary(rev) and is_binary(path) and is_map(meta) do
+    base = Keyword.get_lazy(opts, :base, &default_base/0)
+    confirm? = Keyword.get(opts, :confirm, true)
+
+    with :ok <- ensure_repo_initialised(base),
+         :ok <- validate_rev(rev),
+         :ok <- validate_path(path),
+         :ok <- ensure_tracked_scope(path, base) do
+      if confirm? do
+        do_restore(base, rev, path, meta)
+      else
+        {:ok, head} = git(["rev-parse", "--short", "HEAD"], base)
+        {:ok, %{would_restore: path, head_commit: String.trim(head)}}
+      end
+    end
+  end
+
+  defp do_restore(base, rev, path, meta) do
+    rel = relativise(path, base)
+    rel_str = if rel == :outside, do: path, else: rel
+
+    case git(["checkout", rev, "--", rel_str], base) do
+      {:ok, _} ->
+        # Stage + commit the restore as a new history entry. The
+        # restore-as-commit pattern keeps the repo append-only
+        # from the user's perspective: HEAD always advances, never
+        # rewinds.
+        restore_meta = %{
+          actor: Map.get(meta, :actor, :director),
+          action: "history.restore",
+          target: rel_str,
+          source: "history.restore from #{rev}"
+        }
+
+        abs_path = Path.expand(rel_str, Path.expand(base))
+        commit_marked([abs_path], restore_meta, base: base)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # Rev validation: require the rev to resolve to an object in the
+  # repo. Catches typos, hostile rev strings, and arbitrary shell
+  # injection (`git rev-parse --verify` is a strict resolver).
+  defp validate_rev(rev) do
+    cond do
+      not is_binary(rev) -> {:error, :invalid_rev}
+      rev == "" -> {:error, :invalid_rev}
+      String.contains?(rev, " ") -> {:error, :invalid_rev}
+      String.starts_with?(rev, "-") -> {:error, :invalid_rev}
+      true -> :ok
+    end
+  end
+
+  defp maybe_validate_rev(nil), do: :ok
+  defp maybe_validate_rev(rev), do: validate_rev(rev)
+
+  defp validate_path(""), do: {:error, :invalid_path}
+
+  defp validate_path(path) when is_binary(path) do
+    cond do
+      String.starts_with?(path, "-") -> {:error, :invalid_path}
+      String.starts_with?(path, "/") -> {:error, :invalid_path}
+      String.contains?(path, "..") -> {:error, :invalid_path}
+      true -> :ok
+    end
+  end
+
+  defp validate_path(_), do: {:error, :invalid_path}
+
+  defp maybe_validate_path(nil), do: :ok
+  defp maybe_validate_path(path), do: validate_path(path)
+
+  defp ensure_tracked_scope(path, base) do
+    abs_path = Path.expand(path, Path.expand(base))
+    if tracked?(abs_path, base), do: :ok, else: {:error, :path_excluded}
+  end
+
+  @doc """
   Public sanitizer used by `commit_marked/3` and exposed for
   tests + future Phase-2b callers that need to pre-sanitize meta
   before queueing it.

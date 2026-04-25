@@ -108,16 +108,11 @@ it's been in CHANGELOG for a cycle.
   Phase 4 (`history restore`/`show`/`diff` UX) is still
   ahead — additive Director ergonomics on top of an
   already-working layer; tracked separately as P3 work.
-- [ ] **GEP-33 Phase 4 — `history restore` + `show` + `diff` UX.**
-  Director-facing surface for the now-Implemented history layer:
-  `glorbo history show <rev>`, `glorbo history diff <rev>
-  [<rev2>]`, `glorbo history restore <rev> <path>`. Each writes a
-  new commit describing the restore (append-only repo
-  semantics). v1 explicitly excludes `glorbo checkout <sha>`
-  (whole-tree replace is too destructive). Bounded sub-tasks:
-  CLI parsing for the three verbs, output formatting matching
-  existing `history log` style, restore-mode confirmation
-  prompt unless `--yes`.
+- [x] **GEP-33 Phase 4 — `history show` / `diff` / `restore` UX
+  shipped 2026-04-25 (autonomous L4).** All three verbs landed
+  with defensive rev/path validation and dry-run-by-default for
+  restore. With Phase 4, every implementation phase from §14 is
+  done; GEP-33 is fully Implemented.
 - [x] **(superseded by GEP-33 Implemented entry above)
   GEP-33 Phase 2 — marked commits from write surfaces.**
   Phase 1 shipped 2026-04-25 (`Glorbo.HomeHistory` + `glorbo

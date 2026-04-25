@@ -579,6 +579,153 @@ defmodule Glorbo.HomeHistoryTest do
     on_exit(fn -> File.rm(path) end)
   end
 
+  describe "show/2" do
+    test "returns formatted output for a real rev", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: sha}} = HomeHistory.init(base: base)
+
+      assert {:ok, out} = HomeHistory.show(sha, base: base)
+      assert out =~ "glorbo: initial history import"
+      assert out =~ "Author:"
+    end
+
+    test "errors when not initialised", %{base: base} do
+      assert {:error, :not_initialised} = HomeHistory.show("HEAD", base: base)
+    end
+
+    test "rejects hostile rev strings", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      assert {:error, :invalid_rev} = HomeHistory.show("--foo", base: base)
+      assert {:error, :invalid_rev} = HomeHistory.show("a b c", base: base)
+      assert {:error, :invalid_rev} = HomeHistory.show("", base: base)
+    end
+  end
+
+  describe "diff/3" do
+    test "single-rev diff vs working tree", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: edited\n---\n")
+
+      assert {:ok, out} = HomeHistory.diff("HEAD", nil, base: base)
+      assert out =~ "company.md"
+    end
+
+    test ":path option scopes the diff", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: edited\n---\n")
+
+      assert {:ok, out} =
+               HomeHistory.diff("HEAD", nil, base: base, path: "companies/acme/company.md")
+
+      assert out =~ "company.md"
+    end
+
+    test "errors on hostile rev / path", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      assert {:error, :invalid_rev} = HomeHistory.diff("--foo", nil, base: base)
+
+      assert {:error, :invalid_path} =
+               HomeHistory.diff("HEAD", nil, base: base, path: "../etc")
+    end
+  end
+
+  describe "restore/4" do
+    test "dry-run (confirm: false) reports without mutating", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: edited\n---\n")
+
+      assert {:ok, %{would_restore: "companies/acme/company.md", head_commit: head}} =
+               HomeHistory.restore(
+                 initial_sha,
+                 "companies/acme/company.md",
+                 %{actor: :director},
+                 base: base,
+                 confirm: false
+               )
+
+      assert head == initial_sha
+      # Working tree unchanged.
+      assert File.read!(Path.join(base, "companies/acme/company.md")) =~
+               "name: edited"
+    end
+
+    test "happy path restores file + creates new history.restore commit",
+         %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      # Land a real second commit changing the file so HEAD's tree
+      # differs from the initial state. Without this, restoring
+      # `initial_sha` would produce no diff vs HEAD and commit
+      # cleanly no-ops.
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: changed-then-restored\n---\n")
+
+      assert {:ok, %{sha: _bump_sha, committed: 1}} =
+               HomeHistory.commit_marked(
+                 [path],
+                 %{actor: :director, action: "company.update", target: "company.md"},
+                 base: base
+               )
+
+      # Working tree now matches HEAD's "changed-then-restored". Restore
+      # back to initial_sha — should put `name: acme` back AND create a
+      # new history.restore commit.
+      assert {:ok, %{sha: sha, committed: 1}} =
+               HomeHistory.restore(
+                 initial_sha,
+                 "companies/acme/company.md",
+                 %{actor: :director},
+                 base: base
+               )
+
+      assert sha != ""
+
+      # Working tree restored.
+      assert File.read!(Path.join(base, "companies/acme/company.md")) =~
+               "name: acme"
+
+      # New commit subject + trailers.
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "history.restore: companies/acme/company.md"
+      assert body =~ "Glorbo-Source: history.restore from #{initial_sha}"
+    end
+
+    test "rejects excluded-scope paths", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: sha}} = HomeHistory.init(base: base)
+
+      assert {:error, :path_excluded} =
+               HomeHistory.restore(sha, "config.md", %{actor: :director}, base: base)
+    end
+
+    test "rejects hostile path / rev", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, %{initial_commit: sha}} = HomeHistory.init(base: base)
+
+      assert {:error, :invalid_path} =
+               HomeHistory.restore(sha, "../etc/passwd", %{actor: :director}, base: base)
+
+      assert {:error, :invalid_rev} =
+               HomeHistory.restore(
+                 "--foo",
+                 "companies/acme/company.md",
+                 %{actor: :director},
+                 base: base
+               )
+    end
+  end
+
   # Tiny seed — just enough that `git add -A` finds tracked files
   # and the initial commit isn't built solely on .gitignore.
   defp seed_minimal_company(base) do
