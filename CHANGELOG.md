@@ -10,26 +10,64 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.10.0] — 2026-04-25
+
+Tenth pre-1.0 minor. **GEP-33 git history layer fully implemented +
+the BLA-importer / browser-UAT unblock.** The opt-in
+`~/.glorbo/.git/` repo now captures every host-side write through
+the writer + watcher pipeline. Five GEP shifts this cycle: GEP-33
+flipped to Implemented (Phases 2 + 3 + 4 on top of v0.9.0's Phase-1
+ship); Phase-4 `glorbo history show / diff / restore` verbs landed.
+
 ### Added
 
-- **GEP-33 git history layer fully implemented** (Phases 2 + 3 + 4
-  on top of the v0.9.0 Phase-1 ship). The opt-in
-  `~/.glorbo/.git/` repo now captures every host-side write
-  through `Glorbo.HomeHistory.commit_marked/3` (Phase 2a-1) +
-  the `HomeHistory.Tx` GenServer's debounce coalescer
-  (Phase 2b). Wired into Companies / Channels / Tasks / Projects
-  / Goals / Proposals / BrainDump writers + the Router's
-  agent-side outbox flows (Phase 2c-0..2c-8). Manual filesystem
-  edits flow through the `HomeHistory.WatcherBridge` and land
-  as `External` provenance commits (Phase 3). Director-facing
-  `glorbo history show` / `diff` / `restore` verbs ship as
-  Phase 4. GEP-33 status flips to Implemented.
+- **GEP-33 Phase 2** — `HomeHistory.commit_marked/3` synchronous
+  primitive + `HomeHistory.Tx` GenServer with §6.1 debounce
+  coalescer + `with_tx/3` convenience wrapper. Wired into 8
+  writer surfaces: `Companies.update`, `Channels.{create,
+  archive}`, `Tasks.{create, trash, archive_to_history, reassign,
+  record_peer_review_verdict}`, `Projects.{ensure_stub, update}`,
+  `Goals.add_goal`, `Proposals.flip`, `BrainDump.capture`,
+  `Agents.retire`, plus the Router-side agent flows
+  (`outbox_task` / `outbox_memory_write` / `outbox_proposal`).
+- **GEP-33 Phase 3** — `HomeHistory.WatcherBridge` GenServer
+  observes existing per-company watcher events and emits
+  `External` provenance commits for manual filesystem edits.
+- **GEP-33 Phase 4** — Director-facing CLI verbs: `glorbo history
+  show <rev>`, `glorbo history diff <rev> [<rev2>] [--path P]`,
+  `glorbo history restore <rev> <path> [--yes]`. Restore is
+  dry-run-by-default; `--yes` performs the actual write.
 - **Browser UAT harness unblocked.** Playwright MCP now works
-  inside an Ubuntu distrobox (`npx playwright install chrome`
-  + `apt-get install build-essential` for muontrap NIF).
+  inside an Ubuntu distrobox (`npx playwright install chrome` +
+  `apt-get install build-essential` for muontrap NIF).
   CLAUDE.md + `docs/testing/uat.md` updated to document the
   distrobox path as preferred over the legacy Bazzite host
   workaround.
+
+### Changed
+
+- **`commit_marked/3` deletion-capable.** Switched to
+  `git add -A -- <pathspec>` so writers that move or remove
+  tracked files (e.g., `Tasks.trash`, `Channels.archive`,
+  `Agents.retire`) commit deletions natively. Per GEP-33 §7 the
+  prohibition is on whole-repo `-A`; the explicit-pathspec form
+  preserves the bulk-stage rule.
+- **`agents/.archive/` excluded** from tracked scope. Retired
+  agents' frozen subtrees no longer balloon the history repo.
+
+### Fixed
+
+- **`glorbo history restore` `--yes` semantics were inverted.**
+  Default is now dry-run; `--yes` performs the actual restore.
+  Surfaced by manual UAT against the live `~/.glorbo/`.
+- **`validate_rev/1` + `validate_path/1` defense-in-depth.**
+  Both now reject control characters, NUL bytes, tabs, and
+  newlines in addition to the prior bare-space + leading-`-`
+  + `..`-traversal guards. Matches the docstring's stated
+  scope ("catches hostile rev strings, arbitrary shell
+  injection").
 
 ## [0.9.0] — 2026-04-25
 
