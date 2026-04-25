@@ -272,5 +272,49 @@ running inside an Ubuntu distrobox and asked me to retry.
 * **Apt-installing passt + uidmap** in the distrobox. Sudo
   ask the user can opt into; not autonomous-round material.
 
-**Commit.** Will be its own commit (3rd of the day), keeping
-task 1+2 commit separate from this UAT-and-docs commit.
+**Commit.** `4d40eed` — `docs(uat): retire Bazzite workaround as
+primary; document distrobox Playwright path`. Pushed to
+`origin/main` (L4 authorised explicitly by user this round).
+
+---
+
+## Handoff — 2026-04-25 04:24 UTC
+
+**Shipped this round:**
+
+* `<task1+2 commit>` — GEP-23 `kbps_cap` won't-fix doc + FileSpec.
+  Formatter `|` block-scalar preservation (5 tests). [Earlier in
+  this journal.]
+* `4d40eed` — Browser E2E unblocked from inside Ubuntu distrobox;
+  CLAUDE.md + uat.md + todo.md updated to record the new path.
+  Pushed to `origin/main`.
+
+**Autonomy level used:** L4 explicitly for Task 3 (push authorised
+by user); L3 for Tasks 1+2 earlier.
+
+**Stopped because:** P1 cleared in respect of the post-R30.2
+chore; remaining open todo items are P2 nice-to-haves +
+GEP-33 Phase 2 (substantial scope, deserves its own dedicated
+session, not autonomous-round material). Hard 5-commit stop not
+hit (this round is at 2 commits + earlier today's release was
+its own thing).
+
+**Queued if you want more:**
+* Three review asks parked at the bottom of this journal (GEP-23
+  spec line, formatter trailing-newline normalisation, dead
+  `kind` parameter).
+* GEP-33 Phase 2 — wire `HomeHistory.begin/mark/flush` into
+  Router/Actions/scaffolders/restore.
+* `apt-get install passt newuidmap` inside the distrobox to
+  fully green the doctor (sudo ask).
+* Structured §A–§P UAT rounds against the now-unblocked harness.
+
+**For your review:**
+
+4. **Distrobox install hints, not silent installs.** I documented
+   the `apt-get install -y build-essential` + `npx playwright
+   install chrome` + `apt-get install passt newuidmap` steps in
+   uat.md §"Browser environments" rather than running them via
+   sudo on your behalf. The first two are already done (this
+   session needed them); the passt/newuidmap one is queued. Say
+   the word if you'd rather I sudo-installed during the round.
