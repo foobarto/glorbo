@@ -110,6 +110,26 @@ defmodule Glorbo.CLI.DispatchPhase5StubsTest do
       assert out =~ "Unknown history subcommand"
     end
 
+    test "init with stray args is rejected (no silent flag-drop)" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history", "init", "--force"])
+      assert out =~ "takes no arguments"
+    end
+
+    test "log --limit 0 is rejected" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history", "log", "--limit", "0"])
+      assert out =~ "must be a positive integer"
+    end
+
+    test "log --limit -5 is rejected" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history", "log", "--limit", "-5"])
+      assert out =~ "must be a positive integer"
+    end
+
+    test "log with unknown switch is rejected" do
+      assert {:history, 1, out} = Glorbo.CLI.dispatch(["history", "log", "--bogus", "x"])
+      assert out =~ "unknown switch"
+    end
+
     test "help_text mentions the history verb" do
       assert Glorbo.CLI.help_text() =~ "history"
     end

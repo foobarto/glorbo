@@ -272,25 +272,31 @@ defmodule Glorbo.CLI do
   def dispatch(["history", "--help" | _]), do: {:history, 0, history_help_text()}
   def dispatch(["history", "-h" | _]), do: {:history, 0, history_help_text()}
 
-  def dispatch(["history", "init" | _rest]) do
-    case Glorbo.HomeHistory.init([]) do
-      {:ok, %{repo: repo, initial_commit: sha, tracked: count}} ->
-        out =
-          "glorbo history — initialised\n" <>
-            "  repo: #{repo}\n" <>
-            "  initial commit: #{sha}\n" <>
-            "  tracked paths: #{count}\n"
+  def dispatch(["history", "init" | rest]) do
+    if rest != [] do
+      {:history, 1,
+       "glorbo history init — takes no arguments, got #{Enum.join(rest, " ")}\n\n" <>
+         history_help_text()}
+    else
+      case Glorbo.HomeHistory.init([]) do
+        {:ok, %{repo: repo, initial_commit: sha, tracked: count}} ->
+          out =
+            "glorbo history — initialised\n" <>
+              "  repo: #{repo}\n" <>
+              "  initial commit: #{sha}\n" <>
+              "  tracked paths: #{count}\n"
 
-        {:history, 0, out}
+          {:history, 0, out}
 
-      {:error, :already_initialised} ->
-        {:history, 1, "glorbo history — already initialised (no-op)\n"}
+        {:error, :already_initialised} ->
+          {:history, 1, "glorbo history — already initialised (no-op)\n"}
 
-      {:error, {:base_missing, base}} ->
-        {:history, 2, "glorbo history — base directory does not exist: #{base}\n"}
+        {:error, {:base_missing, base}} ->
+          {:history, 2, "glorbo history — base directory does not exist: #{base}\n"}
 
-      {:error, reason} ->
-        {:history, 2, "glorbo history — init failed: #{inspect(reason)}\n"}
+        {:error, reason} ->
+          {:history, 2, "glorbo history — init failed: #{inspect(reason)}\n"}
+      end
     end
   end
 
@@ -315,9 +321,25 @@ defmodule Glorbo.CLI do
   end
 
   def dispatch(["history", "log" | rest]) do
-    {opts, _argv, _invalid} = OptionParser.parse(rest, strict: @history_log_switches)
+    {opts, _argv, invalid} = OptionParser.parse(rest, strict: @history_log_switches)
 
-    case Glorbo.HomeHistory.log(limit: Keyword.get(opts, :limit, 20)) do
+    cond do
+      invalid != [] ->
+        unknown = invalid |> Enum.map_join(" ", fn {k, _} -> k end)
+
+        {:history, 1,
+         "glorbo history log — unknown switch(es): #{unknown}\n\n" <> history_help_text()}
+
+      not is_nil(opts[:limit]) and opts[:limit] <= 0 ->
+        {:history, 1, "glorbo history log — --limit must be a positive integer\n"}
+
+      true ->
+        run_history_log(Keyword.get(opts, :limit, 20))
+    end
+  end
+
+  defp run_history_log(limit) do
+    case Glorbo.HomeHistory.log(limit: limit) do
       {:ok, []} ->
         {:history, 0, "glorbo history — no commits\n"}
 

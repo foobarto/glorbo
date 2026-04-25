@@ -184,7 +184,24 @@ defmodule Glorbo.HomeHistoryTest do
       File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: edited\n---\n")
 
       {:ok, %{enabled: true, dirty: dirty}} = HomeHistory.status(base: base)
+      # Status code prefix preserved — `M` (modified, not staged) +
+      # leading space + path. Keeping the porcelain code makes the
+      # status output parseable downstream.
+      assert Enum.any?(dirty, &(&1 =~ ~r/^.M /))
       assert Enum.any?(dirty, &String.contains?(&1, "company.md"))
+    end
+
+    test "preserves porcelain status code for untracked files", %{base: base} do
+      seed_minimal_company(base)
+      assert {:ok, _} = HomeHistory.init(base: base)
+
+      projects = Path.join(base, "companies/acme/projects")
+      File.mkdir_p!(projects)
+      File.write!(Path.join(projects, "foo.md"), "---\nname: foo\n---\n")
+
+      {:ok, %{dirty: dirty}} = HomeHistory.status(base: base)
+      # `??` = untracked file in a tracked subtree.
+      assert Enum.any?(dirty, &String.starts_with?(&1, "?? "))
     end
   end
 
