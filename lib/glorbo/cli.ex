@@ -402,8 +402,19 @@ defmodule Glorbo.CLI do
 
   @spec help_text() :: String.t()
   def help_text do
+    # Read the version from the loaded application spec rather than
+    # hardcoding it in the help string. Each `chore(release)` bump
+    # to mix.exs would otherwise need a paired help-text edit, and
+    # in practice it didn't get one — help drifted to "0.0.4" while
+    # mix.exs sat at 0.8.0.
+    version =
+      case :application.get_key(:glorbo, :vsn) do
+        {:ok, vsn} -> List.to_string(vsn)
+        _ -> "unknown"
+      end
+
     """
-    Glorbo 0.0.4 — filesystem-first agent orchestration
+    Glorbo #{version} — filesystem-first agent orchestration
 
     USAGE
       glorbo <command> [args]
