@@ -311,23 +311,29 @@ via a `parse_weekday_bucket/4` helper — closes the
 secret-shaped values via a regex over
 `api[_-]?key|secret|token|password|auth(orization)?` keys so
 user-authored providers.toml with literal credentials doesn't
-leak via the dashboard's collapsible TOML view).
+leak via the dashboard's collapsible TOML view); **wave 20 on
+2026-04-25** closed 2 more lows (Chat rotation's
+`split_at_tail_boundary/2` switched from `String.split_at/2`
+to `binary_part/3` — `Regex.scan(:index)` returns byte offsets
+so the grapheme-aware split was corrupting messages with
+multibyte UTF-8; TaskScheduler.maybe_emit_invalid now cancels
+the prior `timer_ref` before stashing a minimal invalid-stub
+entry, preventing the orphan timer from firing against a
+now-invalid schedule).
 
-Breakdown: 0 critical, 0 high, 0 medium, 7 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 5 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 7
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 5
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
 - **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
   *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **UTF-8 offset mismatch can truncate rotated chat logs** — The new rotation logic collects header positions with `Regex.scan(..., return: :index)`, which returns byte offsets, and then feeds those offsets into `String.split_at/2`, which operates on grapheme indices. When messages contain multibyte UTF-8 characters…
-  *Paths:* `lib/glorbo/chat/rotation.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
   *Paths:* `mix.exs, config/dev.exs`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
@@ -335,8 +341,9 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 
 ### Informational (correctness / UX — not a direct security gap) — 24
 
-- **TaskComments parse swaps capture order, misreads entries** — `@message_re` defines named captures in the order `ts`, `author`, `body`. `parse/1` destructures the `Regex.scan(..., capture: :all_names)` results as `[author, body, ts]`, which does not match the capture order returned by Elixir. This causes comment entries…
-  *Paths:* `lib/glorbo/task_comments.ex`
+- ~~**TaskComments parse swaps capture order**~~ — Closed
+  wave 19 (verified: `Regex.scan(:all_names)` returns
+  alphabetical capture order, matching `[author, body, ts]`).
 - ~~**Overview goals parsing crashes on non-string goal slug**~~ —
   Closed in wave 15 (verified `safe_goal_slug/1` already filters
   non-scalar values).
@@ -357,13 +364,15 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   Closed wave 19: `parse_weekday_bucket/4` parses the optional
   `at <time>` suffix.
   *Paths:* `lib/glorbo/schedule_nl.ex`
-- **Invalid schedule stash drops timer_ref, leaving stale timers** — The commit changes invalid-cron handling to store a minimal entry (schedule/rel_path/invalid?) in state.tasks. If a task previously had a valid schedule and an armed timer, this replacement drops the existing timer_ref. When the schedule is later fixed before…
+- ~~**Invalid schedule stash drops timer_ref**~~ — Closed wave 20:
+  `maybe_emit_invalid/5` cancels the prior timer_ref.
   *Paths:* `lib/glorbo/company/task_scheduler.ex`
 - **Task budget audit ignores task-level provider override** — The dispatch pipeline resolves the provider using task-level overrides, but the new per-task budget check derives cost via Ledger.compute_cost_cents/4 using spec.provider. When a task overrides provider (or the agent spec leaves provider unset), this path…
   *Paths:* `lib/glorbo/agent/dispatch.ex`
-- **Costs ledger merges agent spend across companies** — The new /costs page builds rows per {company, slug} from the filesystem, but it queries and groups ledger data solely by agent_slug. If two companies use the same agent slug, the costs matrix will combine their spend and display the same totals under both…
-  *Paths:* `lib/glorbo_web/live/costs_live.ex, lib/glorbo/budget/ledger.ex`
-- **NL heartbeat parsing crashes on inputs like "every 9am** — Glorbo.Schedule.NL.compile/1 uses Regex.run/2 with optional minute and am/pm captures. When minutes are omitted (e.g., "every 9am", "daily at 9am", "every monday at 9am"), Regex.run returns a nil minute capture. split_rest/1 passes that nil through, and…
+- ~~**Costs ledger merges across companies**~~ — Closed wave 19
+  (verified: history_for_agents/1 keys by `{company, agent}`).
+- ~~**NL heartbeat parsing crashes on `every 9am`**~~ — Closed
+  wave 19 (verified: split_rest handles trailing-nil captures).
   *Paths:* `lib/glorbo/schedule/nl.ex, lib/glorbo/agent/parser.ex`
 - **Model alias parsing crashes on non-string YAML values** — The added model alias support converts each alias key/value with `to_string/1` without guarding against values that lack the String.Chars protocol (e.g., nested maps or lists of strings in YAML). When such a malformed `models:` block is parsed, `to_string/1`…
   *Paths:* `lib/glorbo/agent/parser.ex`

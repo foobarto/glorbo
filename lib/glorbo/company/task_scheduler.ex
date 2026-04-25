@@ -452,6 +452,11 @@ defmodule Glorbo.Company.TaskScheduler do
         reason: inspect(reason)
       })
 
+      # Cancel any timer the prior valid schedule had armed —
+      # otherwise the timer fires later and tries to dispatch
+      # a task whose schedule is now known-invalid.
+      if ref = prev[:timer_ref], do: Process.cancel_timer(ref)
+
       # Stash the invalid schedule so the next rescan sees the
       # same value via `prev[:schedule]` and skips re-emitting.
       # Keep only what dedup needs — no timer, no arming — so

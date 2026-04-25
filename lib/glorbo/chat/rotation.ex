@@ -142,11 +142,16 @@ defmodule Glorbo.Chat.Rotation do
     if total <= keep_tail do
       :short_tail
     else
-      # The tail starts at the header of message (total - keep_tail) in
-      # 0-indexed terms. Archive = everything before that offset; live =
-      # everything from that offset onward.
+      # Threatmodel: `Regex.scan(:index)` returns byte offsets, but
+      # `String.split_at/2` operates on grapheme indices. With
+      # multibyte UTF-8 in message bodies, the two diverge and the
+      # split lands mid-character — corrupting the archive + live
+      # halves. Use `binary_part/3` so the slice is byte-exact, and
+      # the `Regex.scan` byte offset is what we want.
       split_offset = Enum.at(positions, total - keep_tail)
-      {archive_part, live_part} = String.split_at(content, split_offset)
+      total_bytes = byte_size(content)
+      archive_part = binary_part(content, 0, split_offset)
+      live_part = binary_part(content, split_offset, total_bytes - split_offset)
       {:ok, archive_part, live_part}
     end
   end
