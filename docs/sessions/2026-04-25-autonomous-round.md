@@ -2553,3 +2553,67 @@ stop.
   contradicts the stated intent. Fix is small (replace with
   `./glorbo` calls + a `mix glorbo.build_local` precondition)
   but should land before the harness goes into CI.
+
+---
+
+## Task 29 — `glorbo install` / `glorbo uninstall`
+
+* **Task picked:** new feature — user-level systemd service
+  install + uninstall verbs.
+* **What shipped:**
+  * `lib/glorbo/cli/install.ex` (~225 lines) — pure unit
+    rendering + dispatch entry points + linger-state probe.
+  * `lib/glorbo/cli.ex` — wired `install`/`uninstall` dispatch,
+    verb-help routing, top-level help text, `:install`/
+    `:uninstall` verb-type entries.
+  * `test/glorbo/cli_test.exs` — 8 new tests covering help text
+    surface, top-level help inclusion, `service_unit/1`
+    rendering (incl. shell-quoting paths with spaces), and
+    `unit_path/0` XDG handling.
+  * `CHANGELOG.md` — `## [Unreleased]` block now lists the
+    install/uninstall feature + Tier-3 baselines.
+  * `README.md` — added install/uninstall to "Start" section
+    and CLI Reference.
+* **Design calls I made without you:**
+  * **Service runs `<self> serve`, not the `up`/`down` pidfile
+    dance.** `Type=simple` + `Restart=on-failure` lets systemd
+    own supervision; this avoids two competing PID owners.
+    Side benefit: clean shutdown via `systemctl --user stop`
+    sends SIGINT (set explicitly in the unit) which the
+    `serve` handler already traps cleanly.
+  * **Default behaviour: enable + start.** `--no-start` is the
+    opt-out; the user message gives the manual `enable --now`
+    incantation when they want it.
+  * **Linger detection is informational, not enforced.** We
+    print a `sudo loginctl enable-linger "$USER"` hint when
+    linger is off, but don't try to call `sudo` ourselves.
+    Refusing to run sudo from a non-interactive CLI is the
+    right call.
+  * **Systemd-availability check probes `systemctl --user show`
+    rather than `/run/systemd/system`** — the latter doesn't
+    exist inside distroboxes/containers even when the host
+    user manager is reachable through the socket. The probe
+    matches the actual precondition: can `systemctl --user`
+    talk to a running manager?
+  * **No `--cookie`-style override.** The `up` daemon path
+    carries the Erlang cookie via env; `serve` doesn't need
+    one (no remsh entry point matters for systemd-managed
+    foreground processes — distribution stays disabled, just
+    like `glorbo serve` without `up`).
+* **Gates:** `mix compile --warnings-as-errors` clean, full
+  `mix test` 2242 / 0 / 42 excluded / 3 skipped, `mix run`
+  smoke verified install/uninstall/refuse-without-force/
+  --force-overwrite/idempotent-uninstall against a tmp
+  `XDG_CONFIG_HOME`.
+* **Skipped / not done:**
+  * No `glorbo.install` mix task — only the burrito CLI verb.
+    Adding mix-task parity would solve the `scripts/ui-baseline.sh`
+    seed bug too, but it's separate scope.
+  * No `--linger-now` flag that runs `sudo loginctl
+    enable-linger` for the user. Avoiding sudo from a CLI
+    feels right for v1; revisit if requested.
+  * No tests for the side-effecting install/uninstall path
+    (would need `systemctl --user` to be available + a tmp
+    XDG); manually smoke-tested instead. If we want CI
+    coverage, add a `@tag :systemd` integration block.
+* **Commit(s):** pending — install/uninstall bundle.

@@ -16,6 +16,7 @@ defmodule Glorbo.CLI do
     DoctorFix,
     Harness,
     ImportPaperclip,
+    Install,
     Lifecycle,
     Logs,
     Migrate,
@@ -54,6 +55,8 @@ defmodule Glorbo.CLI do
           | :harness
           | :history
           | :shell
+          | :install
+          | :uninstall
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -430,6 +433,11 @@ defmodule Glorbo.CLI do
   # placeholder banner; runtime + views land in subsequent rounds.
   def dispatch(["shell" | rest]), do: Glorbo.Shell.run(rest)
 
+  # User-level systemd service install / uninstall. Linux-only;
+  # writes ~/.config/systemd/user/glorbo.service and enables it.
+  def dispatch(["install" | rest]), do: Install.run(rest)
+  def dispatch(["uninstall" | rest]), do: Install.uninstall(rest)
+
   # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
   # top-level verbs return :unknown/1.
   def dispatch([verb | _]) do
@@ -571,6 +579,9 @@ defmodule Glorbo.CLI do
                                Subcommands: init, status, log [--limit N],
                                show, diff, restore.
       shell                    [alpha] Interactive Director terminal (GEP-37 Phase 0)
+      install [--force]        Install + enable user systemd service (Linux)
+              [--no-start]
+      uninstall                Disable + remove the user systemd service
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
 
@@ -596,6 +607,8 @@ defmodule Glorbo.CLI do
   defp verb_help_text("console"), do: Console.help_text()
   defp verb_help_text("doctor"), do: doctor_help_text()
   defp verb_help_text("history"), do: history_help_text()
+  defp verb_help_text("install"), do: Install.install_help_text()
+  defp verb_help_text("uninstall"), do: Install.uninstall_help_text()
   defp verb_help_text(_other), do: help_text()
 
   defp history_help_text do

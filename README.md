@@ -223,11 +223,21 @@ glorbo logs acme ceo --follow
 glorbo down
 ```
 
+To run as a user-level systemd service that survives shell sessions:
+
+```bash
+glorbo install         # writes ~/.config/systemd/user/glorbo.service + enable --now
+sudo loginctl enable-linger "$USER"   # optional — survive logout
+glorbo uninstall       # disable + remove the unit (keeps ~/.glorbo intact)
+```
+
 ## CLI Reference
 
 ```
 glorbo init [--force] [--no-example]    Bootstrap ~/.glorbo/ and verify deps
 glorbo up | down | status | serve       Daemon lifecycle
+glorbo install [--force] [--no-start]   Install user-systemd service (Linux)
+glorbo uninstall                        Remove user-systemd service
 glorbo new company|agent|project|skill  Scaffold
 glorbo doctor [--fix]                   Verify host prerequisites
 glorbo detect-providers [--json]        Probe localhost for native providers

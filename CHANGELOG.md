@@ -10,7 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added
+
+- **`glorbo install` / `glorbo uninstall` — user-level systemd
+  service.** Writes `~/.config/systemd/user/glorbo.service` (or
+  `$XDG_CONFIG_HOME/...`) invoking `<self> serve` under
+  `Type=simple` with `Restart=on-failure`, runs
+  `systemctl --user daemon-reload`, then `enable --now` (skip with
+  `--no-start`). `glorbo uninstall` disables + removes. Linux-only;
+  on non-systemd hosts it returns exit 2 with a hint to use
+  `glorbo serve` under your supervisor of choice. `--force`
+  overwrites an existing unit. `~/.glorbo/` is never touched.
+- **Tier-3 visual-regression baselines.** Five new VR baselines
+  cover task_chain, benchmarks, brain_dump, skills, and project
+  LVs. `scripts/ui-baseline.sh` PAGES grew 13 → 18 entries.
+  `/benchmarks/:run_id` deferred until canonical fixture runs land.
 
 ## [0.10.0] — 2026-04-25
 

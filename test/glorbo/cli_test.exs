@@ -528,4 +528,96 @@ defmodule Glorbo.CLITest do
       assert output =~ "glorbo run"
     end
   end
+
+  describe ~S{dispatch(["install" | _]) and ["uninstall" | _]} do
+    test "install --help returns help text" do
+      {verb, code, output} = CLI.dispatch(["install", "--help"])
+      assert verb == :install
+      assert code == 0
+      assert output =~ "user-level systemd service"
+      assert output =~ "--force"
+      assert output =~ "--no-start"
+    end
+
+    test "uninstall --help returns help text" do
+      {verb, code, output} = CLI.dispatch(["uninstall", "--help"])
+      assert verb == :uninstall
+      assert code == 0
+      assert output =~ "disable"
+      assert output =~ "remove"
+    end
+
+    test "install + uninstall surface in top-level help" do
+      {:help, 0, help} = CLI.dispatch([])
+      assert help =~ "install"
+      assert help =~ "uninstall"
+      assert help =~ "user systemd service"
+    end
+
+    test "help <verb> routes to install/uninstall help" do
+      {:help, 0, install_help} = CLI.dispatch(["help", "install"])
+      assert install_help =~ "glorbo install"
+
+      {:help, 0, uninstall_help} = CLI.dispatch(["help", "uninstall"])
+      assert uninstall_help =~ "glorbo uninstall"
+    end
+  end
+
+  describe "Glorbo.CLI.Install.service_unit/1" do
+    alias Glorbo.CLI.Install
+
+    test "renders a valid systemd unit file" do
+      unit = Install.service_unit("/usr/local/bin/glorbo")
+
+      assert unit =~ "[Unit]"
+      assert unit =~ "[Service]"
+      assert unit =~ "[Install]"
+      assert unit =~ "Description=Glorbo"
+      assert unit =~ "Type=simple"
+      assert unit =~ "ExecStart=/usr/local/bin/glorbo serve"
+      assert unit =~ "Restart=on-failure"
+      assert unit =~ "WantedBy=default.target"
+    end
+
+    test "shell-quotes paths containing whitespace" do
+      unit = Install.service_unit("/opt/glorbo build/glorbo")
+      assert unit =~ ~s|ExecStart="/opt/glorbo build/glorbo" serve|
+    end
+
+    test "leaves clean paths unquoted" do
+      unit = Install.service_unit("/opt/glorbo/bin/glorbo")
+      refute unit =~ ~s|ExecStart="/opt|
+      assert unit =~ "ExecStart=/opt/glorbo/bin/glorbo serve"
+    end
+  end
+
+  describe "Glorbo.CLI.Install.unit_path/0" do
+    alias Glorbo.CLI.Install
+
+    test "honours XDG_CONFIG_HOME when set" do
+      old = System.get_env("XDG_CONFIG_HOME")
+      System.put_env("XDG_CONFIG_HOME", "/tmp/xdg-config-test")
+
+      try do
+        assert Install.unit_path() ==
+                 "/tmp/xdg-config-test/systemd/user/glorbo.service"
+      after
+        if old,
+          do: System.put_env("XDG_CONFIG_HOME", old),
+          else: System.delete_env("XDG_CONFIG_HOME")
+      end
+    end
+
+    test "falls back to $HOME/.config when XDG_CONFIG_HOME unset" do
+      old = System.get_env("XDG_CONFIG_HOME")
+      System.delete_env("XDG_CONFIG_HOME")
+
+      try do
+        path = Install.unit_path()
+        assert String.ends_with?(path, "/.config/systemd/user/glorbo.service")
+      after
+        if old, do: System.put_env("XDG_CONFIG_HOME", old)
+      end
+    end
+  end
 end
