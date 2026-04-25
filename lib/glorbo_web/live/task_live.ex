@@ -684,21 +684,23 @@ defmodule GlorboWeb.TaskLive do
   # every `agent.complete` in the current month's audit. Audit is
   # append-only so one pass is cheap; older months are reachable
   # via AuditLive.
+  # Threatmodel: previously slurped the entire monthly audit JSONL
+  # via File.read/1 + String.split/2, which materialised every line
+  # in RAM at once. Audit logs are append-only and grow unbounded
+  # (especially under a chatty agent), so a single TaskLive mount
+  # could OOM the BEAM. Stream the file line-by-line so memory is
+  # bounded by the longest single line.
   defp load_usage_totals(base, co, rel_path) do
     month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
+    zero = %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        |> Enum.reduce(
-          %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0},
-          fn line, acc -> accumulate_usage(line, rel_path, acc) end
-        )
-
-      _ ->
-        %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
+    if File.regular?(path) do
+      path
+      |> File.stream!([], :line)
+      |> Enum.reduce(zero, fn line, acc -> accumulate_usage(line, rel_path, acc) end)
+    else
+      zero
     end
   rescue
     _ -> %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}

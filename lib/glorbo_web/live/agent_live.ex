@@ -2100,6 +2100,12 @@ defmodule GlorboWeb.AgentLive do
       URI.encode_query(assignee: agent_slug, return_to: return_to)
   end
 
+  # Threatmodel: previously slurped the entire monthly audit JSONL
+  # via File.read + String.split + Enum.reverse, which materialised
+  # every line in RAM. Audit logs grow unbounded; we stream the
+  # file line-by-line and keep only a rolling window of the last
+  # @history_cap matching rows so memory stays bounded by N
+  # regardless of file size.
   defp load_history(base, co, ag) do
     path =
       Path.join([
@@ -2110,32 +2116,26 @@ defmodule GlorboWeb.AgentLive do
         "#{current_year_month()}.jsonl"
       ])
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        # Reverse first so the reduce picks up the newest rows and caps at
-        # @history_cap without having to walk the whole file.
-        |> Enum.reverse()
-        |> Enum.reduce_while([], &collect_history_row(&1, &2, ag))
-        # Reverse back: newest first (matches realtime-append semantics).
-        |> Enum.reverse()
-
-      _ ->
-        []
+    if File.regular?(path) do
+      path
+      |> File.stream!([], :line)
+      |> Enum.reduce([], &push_history_row(&1, &2, ag))
+      |> Enum.reverse()
+    else
+      []
     end
+  rescue
+    _ -> []
   end
 
-  defp collect_history_row(_line, acc, _ag) when length(acc) >= @history_cap do
-    {:halt, acc}
-  end
-
-  defp collect_history_row(line, acc, ag) do
+  # Append-with-cap: keep the rolling window at most @history_cap
+  # items (newest at the head). Truncate the oldest from the tail.
+  defp push_history_row(line, acc, ag) do
     with {:ok, entry} <- Jason.decode(line),
          true <- audit_for_this_agent?(entry, ag) do
-      {:cont, [to_history_row(entry) | acc]}
+      [to_history_row(entry) | Enum.take(acc, @history_cap - 1)]
     else
-      _ -> {:cont, acc}
+      _ -> acc
     end
   end
 

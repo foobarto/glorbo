@@ -481,28 +481,42 @@ defmodule GlorboWeb.InboxLive do
   @audit_limit 50
   @audit_noise_actions ~w(stdout_line heartbeat_skipped)
 
+  # Threatmodel: previously slurped the full monthly audit JSONL
+  # via File.read + String.split + Enum.reverse on every mount + every
+  # :file_event / :audit_append PubSub broadcast. Audit logs grow
+  # unbounded, so under a chatty agent this becomes O(N) work + RAM
+  # per second. Stream the file line-by-line into a rolling
+  # @audit_limit-sized window so memory stays bounded by N regardless
+  # of file size.
   defp load_recent_audit(base, company) do
     month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
     path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        |> Enum.reverse()
-        |> Enum.flat_map(&decode_audit/1)
-        |> Enum.reject(&noise?/1)
-        |> Enum.take(@audit_limit)
-
-      _ ->
-        []
+    if File.regular?(path) do
+      path
+      |> File.stream!([], :line)
+      |> Enum.reduce([], &push_audit_row/2)
+      |> Enum.reverse()
+    else
+      []
     end
+  rescue
+    _ -> []
   end
 
-  defp decode_audit(line) do
+  # Append-with-cap: keep newest @audit_limit visible rows at the head;
+  # truncate the oldest from the tail.
+  defp push_audit_row(line, acc) do
     case Jason.decode(line) do
-      {:ok, row} -> [row]
-      _ -> []
+      {:ok, row} ->
+        if noise?(row) do
+          acc
+        else
+          [row | Enum.take(acc, @audit_limit - 1)]
+        end
+
+      _ ->
+        acc
     end
   end
 

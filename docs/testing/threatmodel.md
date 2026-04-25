@@ -261,35 +261,43 @@ against attacker-uploaded huge memory files; `glorbo run` CLI
 verb now consults `TaskDefinition.requires_approval?/1` and
 refuses to dispatch a director-required task whose status
 isn't `"approved"` — closes the back-door bypass of the
-dashboard approval gate).
+dashboard approval gate); **wave 17 on 2026-04-25** verified
+3 lows already fixed at HEAD (Kanban's `kanban:move` validates
+the task path against the strict `\Aprojects/[a-z0-9-]+/tasks/
+[a-z0-9-]+\.md\z` regex + lstat — not the loose `starts_with?
+("projects/")` the finding mentioned; Reindex.cleanup_vanished
+already chunks the `where ... in` deletes at 500 to stay below
+SQLite's 999-bind-variable cap; FrontmatterWriter.yaml_scalar
+already escapes backslash / quote / NL / CR / TAB and strips
+C0 controls, not just double-quotes) and closed 3 more lows
+(TaskLive.load_usage_totals, AgentLive.load_history, and
+InboxLive.load_recent_audit all switched from `File.read +
+String.split + Enum.reverse` to `File.stream!([], :line) +
+rolling-window reduce` so memory stays bounded by the visible-
+row cap (50–200) regardless of audit-log size — closes the
+"unbounded-audit-read OOMs the BEAM" DoS family).
 
-Breakdown: 0 critical, 0 high, 0 medium, 15 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 12 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 15
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 12
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
 - **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
   *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **TaskLive audit aggregation can exhaust memory on large logs** — The new TaskLive usage strip computes totals by calling load_usage_totals, which reads the entire monthly audit JSONL file with File.read and splits it into a list of lines before reduction. Audit logs are append-only and can grow without bound from untrusted…
-  *Paths:* `lib/glorbo_web/live/task_live.ex`
 - **UTF-8 offset mismatch can truncate rotated chat logs** — The new rotation logic collects header positions with `Regex.scan(..., return: :index)`, which returns byte offsets, and then feeds those offsets into `String.split_at/2`, which operates on grapheme indices. When messages contain multibyte UTF-8 characters…
   *Paths:* `lib/glorbo/chat/rotation.ex`
-- **Inbox audit feed rereads full log on each update** — InboxLive’s recent-activity panel uses File.read/1 to load the full current-month audit log and then filters the last 50 lines. This happens during initial mount and again on every :file_event and :audit_append notification. Because audit entries are…
-  *Paths:* `lib/glorbo_web/live/inbox_live.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
   *Paths:* `mix.exs, config/dev.exs`
 - **Denial reason input can corrupt task frontmatter parsing** — The commit adds a denial-reason textarea and passes its raw contents to GlorboWeb.Actions.set_approval/4. When a denial reason is present, set_approval rebuilds task frontmatter via TaskDefinition.write_frontmatter/2. That serializer only escapes double…
   *Paths:* `lib/glorbo_web/live/approval_queue_live.ex, lib/glorbo_web/actions.ex, lib/glorbo/task_definition.ex`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
-- **Agent history loads full audit log causing potential DoS** — The history feature loads the current-month audit log with File.read and splits/reverses the entire file just to find the last 200 matching rows. Audit logs are append-only and can grow very large (especially if a malicious agent or external caller generates…
-  *Paths:* `lib/glorbo_web/live/agent_live.ex`
 - **Providers page now exposes raw TOML config contents** — The commit adds a collapsible TOML snippet for each provider. The LiveView calls read_toml/1, which does a File.read on the provider’s source_file and renders the raw text into the page. User-defined providers.toml supports env overrides and other potentially…
   *Paths:* `lib/glorbo_web/live/providers_live.ex`
 - **Kanban drag-drop trusts client paths for filesystem writes** — The new "kanban:move" LiveView event accepts a `task_path` from the browser and only validates that it starts with "projects/" and does not contain "..". It then calls `Glorbo.TaskDefinition.write/2` directly. This bypasses the stricter task-path validation…
