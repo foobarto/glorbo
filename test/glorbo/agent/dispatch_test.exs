@@ -985,6 +985,66 @@ defmodule Glorbo.Agent.DispatchTest do
       assert_received {:audit, %{action: "agent.retry", attempt: 2}}
     end
 
+    test "retries :reply_file_empty (one-turn model glitch)", ctx do
+      pid = self()
+
+      # run_fun writes the reply file but with empty body — dispatcher
+      # surfaces `:reply_file_empty`, which should be retryable
+      # (same shape as a one-turn glitch; conservative-tool-use
+      # reminder lands on retry).
+      empty_writer = fn _a, env, _b, _r ->
+        File.write!(env["GLORBO_REPLY_PATH"], "")
+        send(pid, :attempted)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      spec = %{ctx.spec | max_retries: 2}
+
+      assert {:error, :reply_file_empty} =
+               Dispatch.execute(spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: empty_writer,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      # Initial + 2 retries = 3 attempts.
+      assert_received :attempted
+      assert_received :attempted
+      assert_received :attempted
+      refute_received :attempted
+    end
+
+    test "retries :provider_unavailable (transient registry/network flap)", ctx do
+      parent = self()
+
+      # provider_fun returns nil → :unknown_provider (NOT retryable).
+      # Returning a provider whose binary cannot be resolved produces
+      # :provider_unavailable, which the new retryable? clause picks up.
+      flaky_provider_fun = fn _ ->
+        send(parent, :provider_checked)
+        # Use a stub_provider but force resolve_cli_binary failure
+        # by giving it a name with no registered binary path.
+        %{stub_provider() | name: "no-such-provider"}
+      end
+
+      spec = %{ctx.spec | max_retries: 2}
+
+      _ =
+        Dispatch.execute(spec, ctx.task,
+          base: ctx.base,
+          provider_fun: flaky_provider_fun,
+          audit_fun: ctx.audit_fun
+        )
+
+      # Initial + 2 retries = 3 provider lookups (each retry re-resolves
+      # the provider, so the flaky path runs fresh each time).
+      assert_received :provider_checked
+      assert_received :provider_checked
+      assert_received :provider_checked
+      refute_received :provider_checked
+    end
+
     test "successful dispatch with no retry doesn't emit agent.retry", ctx do
       parent = self()
 

@@ -94,8 +94,25 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
+  # Retryable failures are the ones a retry can plausibly fix.
+  # `:timeout` — provider stalled; another turn often gets through.
+  # `:reply_file_missing` — agent finished without writing the reply
+  #   file (forgot the contract); the retry note reminds them.
+  # `:reply_file_empty` — same shape: the file exists but the body
+  #   is empty. Often a one-turn model glitch (e.g. completion
+  #   truncated to nothing); retry with the same conservative-
+  #   tool-use reminder.
+  # `:provider_unavailable` — the per-dispatch provider lookup
+  #   transiently failed (network flap, registry mid-reload). Real
+  #   outages exhaust `max_retries` quickly anyway and surface as
+  #   a stuck sentinel via `LoopDetector`; retrying twice is far
+  #   cheaper than a Director ping.
+  # Everything else stays non-retryable (config errors, security
+  #  refusals, prompt-too-large) — a retry would loop forever.
   defp retryable?({:error, :timeout}), do: true
   defp retryable?({:error, :reply_file_missing}), do: true
+  defp retryable?({:error, :reply_file_empty}), do: true
+  defp retryable?({:error, :provider_unavailable}), do: true
   defp retryable?(_), do: false
 
   defp build_retry_task(task, {:error, reason}, attempt) do
