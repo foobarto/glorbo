@@ -64,6 +64,15 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
+- [ ] **VR harness fixture-seed bug.** `scripts/ui-baseline.sh`
+  calls `mix glorbo.init --no-example` and `mix glorbo.cli new
+  company acme` to seed the tmp `GLORBO_HOME`, but those mix tasks
+  don't exist (they're `./glorbo` burrito subcommands), and the
+  `|| true` swallowed the failure. Tier-1 / 2 / 3 baselines were
+  all captured against the live `~/.glorbo` instead. Fix: replace
+  with `./glorbo init --no-example` + `./glorbo new company acme`,
+  add a `mix glorbo.build_local` precondition. Land before the
+  harness goes into CI (per GEP-44 D6).
 - [ ] **Modal body `gl-form__row` in narrow viewport.** The 140px
   label column truncates awkwardly under 600px. Two options: (a) let
   labels wrap above the input below some breakpoint, (b) cap label

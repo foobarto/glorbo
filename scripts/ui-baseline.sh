@@ -27,6 +27,7 @@ THRESHOLD_PCT=0.5     # GEP-44 D2: fail if pixel delta exceeds this
 # Pages to capture: name|path|wait-for-selector
 # Tier-1 (01-08) are the load-bearing Director-daily surfaces.
 # Tier-2 (09-13) cover secondary collaboration + governance surfaces.
+# Tier-3 (14-18) cover the remaining LV routes — opportunistic coverage.
 PAGES=(
   "01-overview|/companies|h1"
   "02-company|/companies/acme|main"
@@ -41,6 +42,11 @@ PAGES=(
   "11-proposals|/companies/acme/proposals|main"
   "12-providers|/providers|main"
   "13-costs|/costs|main"
+  "14-task-chain|/companies/acme/tasks/inbox-01/chain|main"
+  "15-benchmarks|/benchmarks|main"
+  "16-braindump|/companies/acme/braindump|main"
+  "17-skills|/companies/acme/skills|main"
+  "18-project|/companies/acme/projects/inbox|main"
 )
 
 cmd="${1:-}"

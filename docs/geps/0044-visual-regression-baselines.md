@@ -112,8 +112,17 @@ Pages that a Director hits daily — regressions here block normal use:
 12. `/providers` — provider registry / config
 13. `/costs` — per-agent monthly LLM spend
 
-Tier-3 (task_chain, benchmarks, bench, brain_dump, skills, project)
-land in a later round.
+### Tier-3 LVs (added 2026-04-25) — Remaining LV surfaces
+
+14. `/companies/:co/tasks/:task_id/chain` — handoff chain timeline (GEP-40)
+15. `/benchmarks` — A/B benchmark runs index (GEP-26)
+16. `/companies/:co/braindump` — append-only daily braindump
+17. `/companies/:co/skills` — company skill registry
+18. `/companies/:co/projects/:project` — project detail / task list
+
+A `/benchmarks/:run_id` (BenchLive) detail surface is intentionally
+left out of Tier-3 until canonical fixture runs land — capturing
+the empty-state index covers the parent route.
 
 ### Harness
 
@@ -194,8 +203,11 @@ makes the visual delta legible alongside the code delta.
 
 - v1 ships eight Tier-1 baselines + the harness.
 - Tier-2 expansion: next baseline-sprint round (≈ 4 LVs:
-  channels, goals, proposals, providers, costs).
+  channels, goals, proposals, providers, costs). **Done 2026-04-25.**
 - Tier-3 expansion: opportunistic, when the LV gains real usage.
+  **Done 2026-04-25** — task_chain, benchmarks, brain_dump, skills,
+  project. `/benchmarks/:run_id` deferred until canonical fixture
+  runs land.
 
 ## Failure modes
 

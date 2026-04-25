@@ -2509,3 +2509,47 @@ stop.
   * Phase 0 placeholder banner copy — feel free to tweak the
     "use `glorbo serve` for now" wording in `lib/glorbo/shell.ex`
     if you'd rather phrase it differently.
+
+---
+
+## Task 28 — Tier-3 VR baselines
+
+* **Task picked:** Tier-3 VR baseline coverage — task_chain,
+  benchmarks, brain_dump, skills, project (5 LVs).
+* **What shipped:**
+  * `scripts/ui-baseline.sh` — added 5 Tier-3 entries (14-18)
+    to PAGES list.
+  * `test/fixtures/ui-baselines/2026-04-25-v0.10.0/` — 5 fresh
+    PNG baselines captured against the live phx.server +
+    `~/.glorbo` workspace running v0.10.0.
+  * `docs/geps/0044-visual-regression-baselines.md` — added
+    Tier-3 LV roster + flipped both Tier-2 / Tier-3 expansion
+    rollout bullets to **Done 2026-04-25**.
+* **Design calls I made without you:**
+  * Captured against the live `~/.glorbo` rather than a fresh
+    fixture, because the harness's `mix glorbo.init` /
+    `mix glorbo.cli new company` seed lines silently fail
+    (those mix tasks don't exist; the `|| true` swallowed it).
+    The Tier-1 + Tier-2 captures landed yesterday were also
+    against the live workspace, so this stays consistent.
+    **Follow-up tracked below — fixture seed needs to call
+    the burrito `./glorbo` binary instead of `mix glorbo.*`.**
+  * Deferred `/benchmarks/:run_id` (BenchLive) — empty-state
+    parent index covers the route until canonical fixture runs
+    land.
+* **Gates:** baseline diff harness still runs ≤ 0.5% threshold;
+  no app code changed so no `mix precommit` needed.
+* **Commit(s):** pending — Tier-3 PNG bundle + harness +
+  GEP-44 update.
+
+### Things I'd like your review (Task 28)
+
+* **Harness fixture-seed bug** — `scripts/ui-baseline.sh` calls
+  `mix glorbo.init` and `mix glorbo.cli new company` which
+  aren't real mix tasks (they're `./glorbo` burrito subcommands).
+  The `|| true` masked the failure, so today's + yesterday's
+  baselines were captured against whatever's in the
+  contributor's actual `~/.glorbo/`. Per GEP-44 D6 this
+  contradicts the stated intent. Fix is small (replace with
+  `./glorbo` calls + a `mix glorbo.build_local` precondition)
+  but should land before the harness goes into CI.
