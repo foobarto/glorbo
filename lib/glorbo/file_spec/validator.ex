@@ -66,10 +66,14 @@ defmodule Glorbo.FileSpec.Validator do
   # Traversal
   # ------------------------------------------------------------------
 
+  # Threatmodel: refuse to follow symlinks during validate. An agent
+  # with workspace-write access could plant a symlink to /dev/zero
+  # or /proc/kcore and DoS `glorbo validate`. lstat / read_link_info
+  # gives us the link's own type instead of the resolved target.
   defp expand_paths(path) do
-    case File.stat(path) do
-      {:ok, %{type: :regular}} -> [path]
-      {:ok, %{type: :directory}} -> walk_dir(path)
+    case :file.read_link_info(path) do
+      {:ok, {:file_info, _, :regular, _, _, _, _, _, _, _, _, _, _, _}} -> [path]
+      {:ok, {:file_info, _, :directory, _, _, _, _, _, _, _, _, _, _, _}} -> walk_dir(path)
       _ -> []
     end
   end
@@ -78,9 +82,16 @@ defmodule Glorbo.FileSpec.Validator do
     dir
     |> Path.join("**/*.*")
     |> Path.wildcard(match_dot: false)
-    |> Enum.filter(&File.regular?/1)
+    |> Enum.filter(&regular_non_symlink?/1)
     |> Enum.reject(&excluded?/1)
     |> Enum.sort()
+  end
+
+  defp regular_non_symlink?(path) do
+    case :file.read_link_info(path) do
+      {:ok, {:file_info, _, :regular, _, _, _, _, _, _, _, _, _, _, _}} -> true
+      _ -> false
+    end
   end
 
   # Skip derived artifacts: SQLite db, build outputs, git state, runtime

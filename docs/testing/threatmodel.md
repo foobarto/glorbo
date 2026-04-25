@@ -158,8 +158,8 @@ Defense-in-depth gaps or minor disclosures without a clear exploitation path.
 
 ## Open findings
 
-Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **63 open** ·
-51 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
+Codex scan (2026-04-22 / 2026-04-23 sweep, 126 findings). **58 open** ·
+56 dropped: waves 1–3 on 2026-04-22 closed 26; wave 4 on 2026-04-23
 closed 6 highs (dispatcher reply lstat, router slug validation,
 approval-gate director mark, dispatch task_id validation); wave 5
 closed 3 mediums (Kanban list_projects lstat+slug, AgentLive io
@@ -181,29 +181,29 @@ the final 3 mediums (MCP session idle reap + subscription cap +
 capacity 503, file-only CLI binary binds, GitHub Action SHA pinning);
 wave 5 also discovered 6 more mediums were
 already fixed by earlier waves
-(false-positive Codex flags; verified against HEAD).
+(false-positive Codex flags; verified against HEAD); **wave 9 on
+2026-04-25** verified 4 lows already fixed at HEAD (MCP initialize
+list-params guard, InboxLive path-approval defensive flat_map,
+ProposalsSink "proposal-file" sentinel actor, AgentLive
+find_agent_server pinned to (company, slug) tuple) and closed 1
+more low (FileSpec.Validator now uses `:file.read_link_info`
+instead of `File.stat`, refusing to follow symlinks during
+walk + dir-expand — closes the local-DoS / arbitrary-read primitive
+on `glorbo validate`).
 
-Breakdown: 0 critical, 0 high, 0 medium, 39 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 34 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 39
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 34
 
-- **MCP initialize crashes on list params, enabling local DoS** — `handle_initialize/1` now calls `Map.get(params || %{}, "protocolVersion")` to negotiate versions. However, the request parser in `MCP.Plug.extract_request/1` still treats JSON-RPC `params` arrays as valid, so `params` can be a list. `Map.get/2` on a list…
-  *Paths:* `lib/glorbo_web/mcp/server.ex, lib/glorbo_web/mcp/plug.ex`
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
 - **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
   *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **ProposalsSink trusts proposal metadata for audit actions/actors** — ProposalsSink reads any direct-child `proposals/*.md` file and derives the audit `action` and `actor` from the unvalidated frontmatter fields (`status`, `approved_by`, `proposed_by`). Since proposal files are agent-controlled when an agent has…
-  *Paths:* `lib/glorbo/company/proposals_sink.ex`
-- **InboxLive path approval crashes on malformed paths payload** — `approve_path` decodes the `paths` value directly from the LiveView event and immediately pattern-matches each element while converting `mode` with `String.to_existing_atom/1`. If a client tampers with the event payload (e.g., non-list JSON, entries missing…
-  *Paths:* `lib/glorbo_web/live/inbox_live.ex`
-- **Validator follows symlinks, enabling local DoS on validate** — Glorbo.FileSpec.Validator expands the target path using Path.wildcard and File.regular?, which follow symlinks. It then reads every matched file with File.read/1. An attacker who can write to the workspace (e.g., a malicious agent) can plant a symlink to a…
-  *Paths:* `lib/glorbo/file_spec/validator.ex`
 - **Unbounded sidebar memory scans enable low-effort UI DoS** — The sidebar now calls count_memory_files/2 for every agent row. That function performs File.ls on the agent's memory directory and walks all entries to match a regex. There is no cap or caching, and memory files are attacker-controlled via the agent outbox. A…
   *Paths:* `lib/glorbo_web/components/sidebar.ex`
 - **Unbounded memory file reads allow local DoS via huge files** — Glorbo.Agent.Memory.compose/3 introduces unbounded File.read calls for both the MEMORY.md index and each memory body file. The code enforces a 20KB output budget only after the entire file contents are loaded into memory, meaning a large file placed under…
@@ -230,8 +230,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/agent/run_log.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
   *Paths:* `mix.exs, config/dev.exs`
-- **Stop button can kill an agent in the wrong company** — Agent servers are registered with a `{kind, company_slug, agent_slug}` key, but the new LiveView stop handler calls `find_agent_server/1` with only the agent slug. That helper uses `Registry.match` with `{:agent_server, :_, slug}`, returning the first…
-  *Paths:* `lib/glorbo_web/live/agent_live.ex, lib/glorbo/agent/registry.ex`
 - **Denial reason input can corrupt task frontmatter parsing** — The commit adds a denial-reason textarea and passes its raw contents to GlorboWeb.Actions.set_approval/4. When a denial reason is present, set_approval rebuilds task frontmatter via TaskDefinition.write_frontmatter/2. That serializer only escapes double…
   *Paths:* `lib/glorbo_web/live/approval_queue_live.ex, lib/glorbo_web/actions.ex, lib/glorbo/task_definition.ex`
 - **Channel creation bypasses symlink checks and can write outside scope** — The new `create_channel` LiveView handler constructs a path and uses `File.mkdir_p` + `File.write` after only checking slug validity and `File.exists?`. This bypasses the `ensure_regular_file`/`lstat` symlink protections used in `GlorboWeb.Actions`. A…

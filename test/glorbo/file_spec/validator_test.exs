@@ -342,4 +342,35 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       assert stats.infos >= 1
     end
   end
+
+  describe "symlink rejection" do
+    test "validate skips symlinks (no follow)", %{base: base} do
+      # Threatmodel: an agent with workspace-write could plant
+      # `companies/acme/evil.md -> /etc/passwd` (or /dev/zero) to
+      # turn `glorbo validate` into a DoS / arbitrary-read primitive.
+      # Validator must skip symlinks entirely (lstat, not stat).
+      seed(base, "companies/acme/company.md", """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      ---
+      """)
+
+      decoy = Path.join([base, "companies/acme/decoy.md"])
+      File.write!(decoy, "decoy\n")
+
+      symlink = Path.join([base, "companies/acme/symlink.md"])
+      :ok = File.ln_s(decoy, symlink)
+
+      %{stats: stats, findings: findings} = Validator.validate_path(base)
+
+      # Only `company.md` and `decoy.md` were examined; the symlink
+      # didn't get walked (no findings tagged at its path either).
+      assert stats.files_examined == 2
+
+      symlink_paths = findings |> Enum.map(& &1.file) |> Enum.uniq()
+      refute Enum.any?(symlink_paths, &String.ends_with?(&1, "symlink.md"))
+    end
+  end
 end
