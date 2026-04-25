@@ -2389,3 +2389,123 @@ autonomous-bounded — needs a written plan + dedicated session.
   * `origin/main` HEAD = `ac7b0ee`.
   * Full v0.10.0 release surface: tag pushed, CHANGELOG
     finalized, landing page reflects current version.
+
+---
+
+## Task 27 — GEP-37 Phase 0 kickoff: `glorbo shell` CLI scaffold
+
+**Task picked.** User's "continue L4" after the punch-list bundle
++ docs sweep. GEP-37 was the last queued item and labelled
+"sprint-sized, not autonomous-bounded" — but Phase 0 (the CLI
+scaffold + dep wiring) is a clean bounded chunk that proves the
+dispatch path without committing to view development. Doing it
+now unblocks future rounds.
+
+**What shipped (`437d85f`).**
+
+  * **`term_ui ~> 1.0.0-rc`** added to mix.exs. Pinned to rc
+    because 0.2.0 fails to compile on Elixir 1.18 — `@module_
+    attributes` can't carry regex `Reference` values, fixed
+    upstream in the rc. Comment in mix.exs explains the
+    constraint and the revisit-on-stable plan.
+  * **`lib/glorbo/shell.ex`** — module skeleton with
+    `Glorbo.Shell.run/1` entry point. Three branches:
+    * `--help` / `-h` → help text
+    * non-TTY stdout → refuse-to-launch message (per GEP-37
+      failure-modes table)
+    * happy path → placeholder banner pointing at `glorbo serve`
+      for now
+  * **`Glorbo.CLI.dispatch(["shell" | rest])`** routes to the
+    new module; `:shell` added to the `verb` typespec.
+  * **Help-text entry** in the top-level `glorbo --help` output:
+    `shell                    [alpha] Interactive Director
+    terminal (GEP-37 Phase 0)`.
+  * **4 dispatch tests** in `test/glorbo/cli_test.exs` covering
+    `--help`, `-h` alias, top-level help inclusion, non-TTY
+    refusal.
+  * **GEP-37 history entry** dated 2026-04-25 noting Phase 0
+    landed (later than the v0.8.0 target — `Actions` carve-out
+    completed in v0.10.0 alongside GEP-33 Phase 2c, which was
+    the gating arc).
+  * **`docs/todo.md`** entry flipped from "DEFERRED" to
+    "Phase 0 SHIPPED".
+
+**Design call without you.** Pinned to `~> 1.0.0-rc` (an rc
+constraint) rather than waiting for 1.0.0 stable. The 0.2.0
+compile failure is a hard blocker on Elixir 1.18; the rc has
+been on hex since the upstream fix landed. Comment in mix.exs
+captures the revisit plan ("when 1.0.0 tags").
+
+**Mid-round bug.** Test describe used `~S|...|` sigil where the
+content contained a `|` literal — sigil terminated early.
+Switched to `~S{...}` delimiter.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean (140 term_ui
+    files compile; no warnings into our code).
+  * `mix precommit` — 2233 tests, 0 failures, 42 excluded, 3
+    skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * Phase 1 (Supervisor + Runtime + EventBus). Out of scope;
+    needs a dedicated round.
+  * Phase 2 (first view: Inbox). Out of scope.
+  * Burrito release smoke — verifying `term_ui` packages cleanly
+    in the cross-compile path. Phase 1 round will exercise
+    this when the runtime actually starts; Phase 0's
+    placeholder doesn't initialize term_ui's runtime so the
+    risk is contained.
+
+**Commit.** End-of-day. With Phase 0 down, the four-item
+queue from the prior handoff is fully closed (the previously-
+sprint-sized GEP-37 became autonomous-bounded once scoped to
+just the CLI scaffold).
+
+---
+
+## Cumulative final handoff — 2026-04-25 17:00 UTC
+
+**Total today (~25 commits):**
+
+  * GEP-33 arc end-to-end (Phases 2a-1, 2b, 2c-0..2c-8, 3, 4 +
+    polish) — ~18 commits.
+  * UAT + security review fixes (`cc6dfb8`, `d84006f`).
+  * IP scrub force-push (`09cfda7`).
+  * v0.10.0 release cut (`a30d7a4` + tag `v0.10.0`).
+  * GEP-44 + Tier-1 + Tier-2 VR baselines (`0664149`,
+    `d6fa87d`).
+  * Punch-list bundle (`d6fa87d`): 13 new tests across CLI
+    history + Agents.retire roundtrip.
+  * Docs sweep (`ac7b0ee`): version bumps + 8 fresh
+    landing-page screenshots.
+  * GEP-37 Phase 0 (`437d85f`): `glorbo shell` CLI scaffold
+    + term_ui dep + dispatch tests.
+
+**Autonomy used:** L4 throughout, with explicit user
+authorization for (a) force-push past three IP-laden commits,
+(b) the long-running sweep past the protocol's hard 5-commit
+stop.
+
+**`origin/main` HEAD:** `437d85f`.
+
+**Queued for next session:**
+
+  * **GEP-37 Phase 1** — Supervisor + Runtime + EventBus.
+    First real round of TUI work; not bounded for one autonomous
+    turn.
+  * **Tier-3 VR baselines** — task_chain, benchmarks, brain_dump,
+    skills, project. Opportunistic.
+  * **VR harness CI integration** — non-blocking gate first, then
+    promote once flake rate is measured.
+  * **Threatmodel backlog** — 63 open Codex findings carried
+    forward; closing waves of 5-10 per cycle is the established
+    pattern.
+
+**For your review:**
+
+  * GEP-37 `term_ui` rc-pin — revisit when 1.0.0 stable tags.
+  * Phase 0 placeholder banner copy — feel free to tweak the
+    "use `glorbo serve` for now" wording in `lib/glorbo/shell.ex`
+    if you'd rather phrase it differently.
