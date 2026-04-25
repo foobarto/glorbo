@@ -207,6 +207,7 @@ defmodule GlorboWeb.KanbanLive do
         severity: if(task.severity, do: Atom.to_string(task.severity), else: ""),
         requires_approval: if(task.requires_approval == :director, do: "director", else: ""),
         denial_reason: task.denial_reason || "",
+        done_when: task.done_when || "",
         body: prompt,
         comments: comments,
         attachments: list_task_attachments(company, task.project, task.task_id)
@@ -425,7 +426,12 @@ defmodule GlorboWeb.KanbanLive do
           "assigned_to" => Map.get(params, "assigned_to", "") |> String.trim(),
           "priority" => Map.get(params, "priority", ""),
           "severity" => Map.get(params, "severity", ""),
-          "requires_approval" => Map.get(params, "requires_approval", "")
+          "requires_approval" => Map.get(params, "requires_approval", ""),
+          # GEP-40 — `done_when` is the agent-facing definition of
+          # done. Empty string clears the field via
+          # `TaskDefinition.write_frontmatter/2`'s "drop empty keys"
+          # rule, matching the rest of the form's clear semantics.
+          "done_when" => Map.get(params, "done_when", "") |> String.trim()
         }
 
         prompt = Map.get(params, "body", "") |> String.trim()

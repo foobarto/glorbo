@@ -141,6 +141,70 @@ defmodule GlorboWeb.TaskLiveTest do
     assert content =~ "priority: low"
   end
 
+  # GEP-40 — `done_when:` is the agent-facing definition of done.
+  # Before this surface, the field could be set on disk but never
+  # reached/edited via the dashboard. Round-trip: render it in the
+  # form, save persists, re-render shows the saved value.
+  test "save_task persists done_when from form and re-renders it",
+       %{conn: conn, base: base} do
+    {:ok, view, html_initial} = live(conn, ~p"/companies/acme/tasks/foo-1")
+    # Initial render shows the form with an empty done_when textarea.
+    assert html_initial =~ "done when"
+
+    render_submit(view, "save_task", %{
+      "title" => "hello task",
+      "status" => "todo",
+      "assigned_to" => "ceo",
+      "priority" => "high",
+      "severity" => "",
+      "done_when" => "Tests pass.\nDocs updated."
+    })
+
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+    content = File.read!(path)
+    # GEP-40 §FileSpec.Formatter renders multi-line scalars as `|`
+    # block scalars on next reformat, but the parser writes raw on
+    # first hit — the bytes must contain the value either way.
+    assert content =~ "done_when:"
+    assert content =~ "Tests pass."
+    assert content =~ "Docs updated."
+
+    # Re-mount and confirm the form populates the textarea with the
+    # saved value (no blank-clobber on round-trip).
+    {:ok, _view2, html_after} = live(conn, ~p"/companies/acme/tasks/foo-1")
+    assert html_after =~ "Tests pass."
+  end
+
+  test "save_task with empty done_when clears the field",
+       %{conn: conn, base: base} do
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: hello task
+    assigned_to: ceo
+    status: todo
+    done_when: previous criteria
+    ---
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    render_submit(view, "save_task", %{
+      "title" => "hello task",
+      "status" => "todo",
+      "assigned_to" => "ceo",
+      "priority" => "",
+      "severity" => "",
+      "done_when" => ""
+    })
+
+    refute File.read!(path) =~ "previous criteria"
+    refute File.read!(path) =~ "done_when:"
+  end
+
   test "delete_task moves file to history/deleted/",
        %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")

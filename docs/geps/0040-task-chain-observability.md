@@ -49,6 +49,22 @@ history:
       window. Template + MCP surfaces for setting
       `done_when:` / `requested_by:` already existed through
       the Kanban new-task form and the `create_task` MCP tool.
+  - date: 2026-04-25
+    status: Implemented
+    note: |
+      Closing the dashboard-surfacing gap on `done_when:`. The
+      shared `GlorboWeb.Components.TaskDetailForm` (used by
+      both `TaskLive` and the `KanbanLive` shelf overlay) gains
+      a textarea for the field; both LVs' `save_task` handlers
+      include `done_when` in the frontmatter updates. Empty
+      string clears the field via `TaskDefinition.write_
+      frontmatter/2`'s drop-empty-keys rule; multi-line
+      content round-trips cleanly because `FileSpec.Formatter`
+      now emits `|` block scalars (changelog entry alongside).
+      Before this, `done_when:` could be set in the file but
+      was invisible to Directors editing through the
+      dashboard. 2 new TaskLive tests cover the round-trip
+      (set + persist + re-render) and the explicit-clear case.
 requires: [2, 3, 7, 25]
 see-also: [13, 19, 28, 30, 41]
 ---

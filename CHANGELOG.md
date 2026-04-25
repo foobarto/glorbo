@@ -23,6 +23,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Added
 
+- **GEP-40 — `done_when:` editable from the dashboard.** The
+  shared `TaskDetailForm` component (used by both `TaskLive`
+  and `KanbanLive`'s shelf overlay) now renders a textarea
+  for the agent-facing definition-of-done. Empty string clears
+  the field via `TaskDefinition.write_frontmatter/2`'s drop-
+  empty-keys rule; multi-line content survives the round-trip
+  because the formatter emits `|` block scalars (also this
+  cycle). Closes the GEP-40 dashboard-surfacing gap — before
+  this, `done_when:` could be set in the file but was invisible
+  to Directors.
+- **Agent autonomy — broader retry coverage.**
+  `Glorbo.Agent.Dispatch` now retries `:reply_file_empty`
+  (one-turn model truncation) and `:provider_unavailable`
+  (transient registry/network flap) in addition to the
+  existing `:timeout` and `:reply_file_missing`. Real
+  outages still exhaust `max_retries` quickly and surface
+  through `LoopDetector`'s stuck sentinel; cheap to retry,
+  expensive to ping the Director. Config-class errors
+  (`:emergency_stopped`, `:prompt_too_large`,
+  `:unknown_provider`, `:untracked_disallowed`,
+  `:symlink_loop`) stay non-retryable.
 - **GEP-33 Phase 1 — git history layer (opt-in).** New
   `Glorbo.HomeHistory` module + `glorbo history {init, status,
   log}` CLI verb. `init` bootstraps `~/.glorbo/.git/` with the

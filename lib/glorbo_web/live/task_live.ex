@@ -262,6 +262,16 @@ defmodule GlorboWeb.TaskLive do
         _ -> updates
       end
 
+    # `done_when` is intentionally separate from the reject-on-empty
+    # block above: clearing it (empty string) must persist as a
+    # frontmatter clear, not a no-op. `write_frontmatter/2` treats
+    # `""` as "remove this key" so the round-trip is honest.
+    updates =
+      case params["done_when"] do
+        nil -> updates
+        v -> Map.put(updates, "done_when", String.trim(v))
+      end
+
     case Glorbo.TaskDefinition.write_frontmatter(abs, updates) do
       :ok -> {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
       {:error, _} -> {:noreply, put_flash(socket, :error, "Could not save task.")}
@@ -358,6 +368,7 @@ defmodule GlorboWeb.TaskLive do
       requires_approval: if(task.requires_approval == :director, do: "director", else: ""),
       denial_reason: task.denial_reason || "",
       schedule: task.schedule || "",
+      done_when: task.done_when || "",
       body: String.trim(task.prompt_body || ""),
       # GEP-30 D8: thread lives in a sibling `.comments.md` file.
       comments: load_task_comments(abs_task_path)

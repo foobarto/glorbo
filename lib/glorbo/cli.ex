@@ -338,6 +338,16 @@ defmodule Glorbo.CLI do
     end
   end
 
+  def dispatch(["history", verb | _]) do
+    {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
+  end
+
+  # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
+  # top-level verbs return :unknown/1.
+  def dispatch([verb | _]) do
+    {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
+  end
+
   defp run_history_log(limit) do
     case Glorbo.HomeHistory.log(limit: limit) do
       {:ok, []} ->
@@ -358,16 +368,6 @@ defmodule Glorbo.CLI do
       {:error, reason} ->
         {:history, 2, "glorbo history — log failed: #{inspect(reason)}\n"}
     end
-  end
-
-  def dispatch(["history", verb | _]) do
-    {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
-  end
-
-  # CATCH-ALL — MUST stay last. Existing Phase-1 tests assert that unknown
-  # top-level verbs return :unknown/1.
-  def dispatch([verb | _]) do
-    {:unknown, 1, "Unknown command: #{verb}\n\n" <> help_text()}
   end
 
   defp normalize_detail_for_json(nil), do: nil

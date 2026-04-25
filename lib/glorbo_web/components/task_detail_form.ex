@@ -4,11 +4,12 @@ defmodule GlorboWeb.Components.TaskDetailForm do
   and `TaskLive` (dedicated page).
 
   Renders the save form (title / status / assigned_to / priority /
-  severity / requires_approval / body), the denial-reason notice,
-  the attachments list, and the comments feed. The parent LV owns
-  the `save_task` / `delete_task` event handlers — this component
-  just emits `phx-submit="save_task"` and `phx-click="delete_task"`
-  and lets the standard delegation bubble them to the LV.
+  severity / requires_approval / done_when / body), the
+  denial-reason notice, the attachments list, and the comments
+  feed. The parent LV owns the `save_task` / `delete_task` event
+  handlers — this component just emits `phx-submit="save_task"`
+  and `phx-click="delete_task"` and lets the standard delegation
+  bubble them to the LV.
 
   The comment-submit form stays per-caller because its layout
   (inline at the bottom of the shelf vs. a separate section on
@@ -18,8 +19,8 @@ defmodule GlorboWeb.Components.TaskDetailForm do
 
     * `:task` — the task detail map: `:task_id`, `:task_path`,
       `:title`, `:status`, `:assigned_to`, `:priority`, `:severity`,
-      `:requires_approval`, `:denial_reason`, `:body`, `:comments`,
-      `:attachments` (may be absent).
+      `:requires_approval`, `:done_when`, `:denial_reason`, `:body`,
+      `:comments`, `:attachments` (may be absent).
     * `:company_slug` — used in the footer path label.
     * `:assignee_options` — list of slugs to suggest in the
       `<datalist>`. Pass `[]` if unknown.
@@ -103,6 +104,16 @@ defmodule GlorboWeb.Components.TaskDetailForm do
             checked={@task.requires_approval == "director"}
           />
           <span>requires Director approval</span>
+        </label>
+
+        <label class="gl-task-detail__field gl-task-detail__field--body">
+          <span class="gl-muted">done when</span>
+          <textarea
+            name="done_when"
+            rows="3"
+            class="gl-input"
+            placeholder="Definition of done — what makes this task complete?"
+          >{Map.get(@task, :done_when) || ""}</textarea>
         </label>
 
         <label class="gl-task-detail__field gl-task-detail__field--body">
