@@ -63,8 +63,7 @@ defmodule Glorbo.CLI.Parsers.ClaudeJsonl do
           coerce_int(Map.get(usage, "input_tokens")) +
           coerce_int(Map.get(usage, "cache_creation_input_tokens")) +
           coerce_int(Map.get(usage, "cache_read_input_tokens")),
-      completion_tokens:
-        acc.completion_tokens + coerce_int(Map.get(usage, "output_tokens")),
+      completion_tokens: acc.completion_tokens + coerce_int(Map.get(usage, "output_tokens")),
       model: get_in(entry, ["message", "model"]) || acc.model,
       tool_calls: count_tool_calls(content, acc.tool_calls)
     }

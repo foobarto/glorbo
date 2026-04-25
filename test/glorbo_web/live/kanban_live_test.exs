@@ -566,6 +566,7 @@ defmodule GlorboWeb.KanbanLiveTest do
 
       # Expect a noop on cancel — drawer closes but no redirect.
       result = render_click(view, "new_task_cancel")
+
       refute match?({:error, {:live_redirect, _}}, result),
              "open redirect not blocked for return_to=#{hostile}"
     end

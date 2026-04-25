@@ -84,7 +84,10 @@ defmodule Glorbo.Actions.ChannelsTest do
       # must refuse writes through any pre-existing entry, dangling
       # or not.
       File.mkdir_p!(Path.join(co_dir, "channels"))
-      escape_target = Path.join(System.tmp_dir!(), "glorbo-channel-esc-#{System.unique_integer([:positive])}")
+
+      escape_target =
+        Path.join(System.tmp_dir!(), "glorbo-channel-esc-#{System.unique_integer([:positive])}")
+
       symlink = Path.join([co_dir, "channels", "eng.md"])
       :ok = File.ln_s(escape_target, symlink)
 

@@ -171,7 +171,9 @@ defmodule Glorbo.Actions.CompaniesTest do
       # follow the link and `File.rename` would clobber the target
       # outside the company scope. The lstat-based guard must
       # refuse anything that isn't a regular file (or absent).
-      escape_target = Path.join(System.tmp_dir!(), "glorbo-co-esc-#{System.unique_integer([:positive])}")
+      escape_target =
+        Path.join(System.tmp_dir!(), "glorbo-co-esc-#{System.unique_integer([:positive])}")
+
       symlink = Path.join(co_dir, "company.md")
       :ok = File.ln_s(escape_target, symlink)
 

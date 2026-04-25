@@ -457,7 +457,7 @@ defmodule Glorbo.CLI.DispatcherTest do
       # Threatmodel: agent stdout is attacker-controlled and may
       # contain invalid UTF-8. Previously String.replace/3 raised
       # ArgumentError, propagating out of the dispatcher into LV
-      #500s. The fix coerces to printable UTF-8 first.
+      # 500s. The fix coerces to printable UTF-8 first.
       bad = <<0xFF, 0xFE, "hello", 0xC0, 0x80>>
 
       assert is_binary(Dispatcher.strip_ansi(bad))

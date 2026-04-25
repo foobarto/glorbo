@@ -12,6 +12,52 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.11.1] — 2026-04-25
+
+Same-day security patch. Two Codex security scans across waves
+9–22 surfaced and closed **43 findings** end-to-end (1 high,
+3 medium, 39 low) — the entire prior-import backlog plus 4
+new findings from the post-sweep re-scan.
+
+### Security
+
+- **High** — `Glorbo.TaskDefinition.parse_file/2` followed
+  symlinks under agent-RW `projects/*/tasks/*.md`. Cross-
+  company task-content leak via MCP / LiveView surfaces was
+  possible. Now lstat-gated.
+- **Medium** — `Glorbo.Search.scan_tasks/2` Ctrl+K indexer
+  used `File.stat` (follows links). Now lstat + 1 MiB cap.
+- **Medium** — Router task-materialisation TOCTOU race
+  (`ensure_regular_file_lstat` then `File.write`). Replaced
+  with atomic `:file.open([:exclusive])` (O_EXCL).
+- **Medium** — `Actions.Tasks.write_task_file/6` predictable
+  tempfile name was attacker-guessable. Now uses
+  `crypto.strong_rand_bytes` + exclusive open.
+- **39 lows** closed across waves 9–21 — symlink-follow gaps,
+  unbounded reads, type-coercion crashes, tempfile races, slug-
+  validation gaps, UTF-8 unsafety, secret-leak masking, auth-
+  gate bypasses. Threatmodel `## Open findings` block has the
+  full per-wave log.
+
+### Fixed
+
+- `Glorbo.HomeHistory.WatcherBridge` test debounce-sleep window
+  bumped to 1s for slow CI runners (Tx + retire flake parity).
+- VR harness fixture-seed bug — `scripts/ui-baseline.sh` now
+  uses `./glorbo` burrito subcommands rather than non-existent
+  `mix glorbo.*` tasks.
+
+### Added
+
+- VR harness wired into `.github/workflows/ci.yml` as an
+  informational `continue-on-error` gate. 16/18 LVs gated;
+  `/health` + `/providers` skipped via `DIFF_SKIP` (env-
+  dependent content).
+- VR `scripts/package.json` with playwright + pngjs +
+  pixelmatch for project-local node deps.
+- VR baseline clip rect (top 30 / bottom 30) → 0.000–0.045%
+  drift across 3 back-to-back local runs.
+
 ## [0.11.0] — 2026-04-25
 
 Eleventh pre-1.0 minor. Quality-of-life cycle on top of v0.10.0:
