@@ -197,7 +197,9 @@ defmodule Glorbo.Activity.Rollup do
   end
 
   defp read_fm(path) do
-    with {:ok, content} <- File.read(path),
+    # Threatmodel wave 24: agent-RW path; lstat + 1 MiB cap guards
+    # the read against symlinks/oversized files before parsing.
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       [fm]
     else
@@ -205,13 +207,21 @@ defmodule Glorbo.Activity.Rollup do
     end
   end
 
-  defp value_for(fm, :status), do: to_string(fm["status"] || "todo")
+  # Threatmodel wave 24: status / priority can be agent-authored YAML
+  # maps or lists. `to_string/1` on those raises Protocol.UndefinedError
+  # and crashes the company-rollup render. Coerce only scalars.
+  defp value_for(fm, :status), do: safe_scalar(fm["status"], "todo")
 
   defp value_for(fm, :priority) do
     case fm["priority"] do
       nil -> "none"
       "" -> "none"
-      other -> to_string(other)
+      other -> safe_scalar(other, "none")
     end
   end
+
+  defp safe_scalar(v, _default) when is_binary(v), do: v
+  defp safe_scalar(v, _default) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_scalar(v, _default) when is_number(v), do: to_string(v)
+  defp safe_scalar(_, default), do: default
 end

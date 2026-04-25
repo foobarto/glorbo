@@ -116,30 +116,37 @@ defmodule Glorbo.Actions.AuditTest do
     end
   end
 
-  describe "scaffold_from_entry/3 threatmodel H6" do
-    test "refuses when the .tmp sibling is a pre-planted dangling symlink",
+  describe "scaffold_from_entry/3 threatmodel H6 (wave 24)" do
+    test "ignores pre-planted dangling symlink at the predictable .tmp path",
          %{base: base, audit: audit} do
       tasks_dir =
         Path.join([base, "companies", "acme", "projects", "inbox", "tasks"])
 
       File.mkdir_p!(tasks_dir)
 
-      # Dangling symlink at the .tmp path. File.exists? follows and
-      # reports false → uniqify happily accepts the base task id →
-      # refuse_if_symlink's lstat catches the link and errors out.
+      # Wave-24 hardening: write_atomic now uses a crypto-random tmp
+      # suffix + `:file.open([:exclusive])`. A pre-planted symlink at
+      # the OLD predictable `<task>.md.tmp` path is irrelevant — the
+      # write goes to `<task>.md.tmp-<int>-<8 random hex>` which the
+      # attacker can't predict, AND O_EXCL would refuse a follow even
+      # if they could. So the scaffold should now SUCCEED in the
+      # presence of the planted symlink.
       entry = sample_entry()
       expected_id = "t-audit-20260424-task-reassign"
-      tmp_path = Path.join(tasks_dir, "#{expected_id}.md.tmp")
-      File.ln_s!("/nonexistent-target-for-threatmodel-h6", tmp_path)
+      planted_tmp = Path.join(tasks_dir, "#{expected_id}.md.tmp")
+      File.ln_s!("/nonexistent-target-for-threatmodel-h6", planted_tmp)
 
-      assert {:error, :not_a_regular_file} =
+      assert {:ok, %{task_id: ^expected_id, abs_path: abs}} =
                Audit.scaffold_from_entry("acme", entry,
                  actor: "director",
                  base: base,
                  audit: audit
                )
 
-      assert FakeAudit.calls(audit) == []
+      # Real task file landed at the non-tmp path; planted symlink
+      # is undisturbed (target was never created).
+      assert File.exists?(abs)
+      refute File.exists?("/nonexistent-target-for-threatmodel-h6")
     end
   end
 

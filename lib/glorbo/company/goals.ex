@@ -70,12 +70,45 @@ defmodule Glorbo.Company.Goals do
     with {:ok, content} <- File.read(company_md_path),
          :ok <- check_slug_unique(content, slug) do
       new_content = splice_goal(content, slug, title, description)
-      tmp = company_md_path <> ".tmp"
+      atomic_open_and_rename(tx_id, company_md_path, new_content)
+    end
+  end
 
-      with :ok <- File.write(tmp, new_content),
-           :ok <- File.rename(tmp, company_md_path) do
+  # Wave 24: random suffix + `:file.open([:exclusive])` closes the
+  # predictable-`<> ".tmp"` race.
+  defp atomic_open_and_rename(tx_id, company_md_path, new_content) do
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+
+    tmp =
+      "#{company_md_path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
+
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} -> write_then_rename(fd, tmp, company_md_path, new_content, tx_id)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp write_then_rename(fd, tmp, company_md_path, new_content, tx_id) do
+    case :file.write(fd, new_content) do
+      :ok ->
+        :ok = :file.close(fd)
+        finalize_rename(tmp, company_md_path, tx_id)
+
+      {:error, _} = err ->
+        :ok = :file.close(fd)
+        _ = File.rm(tmp)
+        err
+    end
+  end
+
+  defp finalize_rename(tmp, company_md_path, tx_id) do
+    case File.rename(tmp, company_md_path) do
+      :ok ->
         Tx.mark_path(tx_id, company_md_path)
-      end
+
+      {:error, _} = err ->
+        _ = File.rm(tmp)
+        err
     end
   end
 

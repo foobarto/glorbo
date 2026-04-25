@@ -152,8 +152,11 @@ defmodule Glorbo.Search do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
           {:ok, fm, _body} ->
-            title = truncate_title(to_string(fm["title"] || task_id))
-            schedule = to_string(fm["schedule"] || "")
+            # Threatmodel wave 24: title / schedule may be agent-
+            # authored YAML maps or lists; `to_string/1` on those
+            # crashes Ctrl+K + /api/search. Coerce only scalars.
+            title = truncate_title(safe_scalar(fm["title"], task_id))
+            schedule = safe_scalar(fm["schedule"], "")
             {title, schedule}
 
           _ ->
@@ -333,4 +336,9 @@ defmodule Glorbo.Search do
   # query without having to open the task.
   defp task_label(id, title, ""), do: "#{id} · #{title}"
   defp task_label(id, title, schedule), do: "#{id} · #{title} (#{schedule})"
+
+  defp safe_scalar(v, _default) when is_binary(v), do: v
+  defp safe_scalar(v, _default) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_scalar(v, _default) when is_number(v), do: to_string(v)
+  defp safe_scalar(_, default), do: default
 end

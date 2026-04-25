@@ -225,8 +225,22 @@ defmodule Glorbo.Config do
   # tmp, then atomic rename into place. The rename preserves the
   # tmp's mode, so the final path is 0600 from the moment it exists.
   defp atomic_write_secret!(path, content) do
-    tmp = path <> ".tmp"
-    File.write!(tmp, content, [:sync])
+    # Wave 24: random suffix + `:file.open([:exclusive])` closes the
+    # predictable-tmpfile-symlink-redirect race that the `path <>
+    # ".tmp"` flow had. The exclusive-open path also opens at 0600
+    # before the write lands (matches the chmod-then-rename intent
+    # without the window where `tmp` is briefly 0644).
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
+
+    {:ok, fd} = :file.open(tmp, [:write, :raw, :exclusive, :binary])
+
+    try do
+      :ok = :file.write(fd, content)
+    after
+      :ok = :file.close(fd)
+    end
+
     File.chmod!(tmp, 0o600)
     File.rename!(tmp, path)
   end

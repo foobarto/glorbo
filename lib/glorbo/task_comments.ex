@@ -83,11 +83,24 @@ defmodule Glorbo.TaskComments do
     ts = Keyword.get_lazy(opts, :ts, fn -> DateTime.utc_now() |> DateTime.to_iso8601() end)
     task_id = Keyword.get_lazy(opts, :task_id, fn -> derive_task_id(path) end)
 
+    # Threatmodel wave 24: agent-RW `comments/*.md` paths. Add an
+    # ancestor-symlink check on top of the leaf lstat — closes the
+    # most realistic swap-the-leaf-into-a-symlink race; the
+    # ancestor-walk catches symlinked parent dirs that File.lstat
+    # on the leaf alone would miss.
     with :ok <- ensure_file(path, task_id),
-         :ok <- ensure_regular_file(path) do
+         :ok <- ensure_regular_file(path),
+         false <- ancestor_is_symlink?(path) do
       entry = "\n## #{ts} | #{author}\n#{String.trim_trailing(body)}\n"
       File.write(path, entry, [:append, :sync])
+    else
+      true -> {:error, :symlinked_ancestor}
+      err -> err
     end
+  end
+
+  defp ancestor_is_symlink?(path) do
+    Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path)
   end
 
   # ---------------------------------------------------------------------------

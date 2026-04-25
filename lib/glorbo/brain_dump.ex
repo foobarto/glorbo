@@ -165,8 +165,10 @@ defmodule Glorbo.BrainDump do
         {:error, :already_exists}
 
       false ->
+        # Wave 24: drop the lstat on the predictable `<> ".tmp"` —
+        # write_atomic now uses a crypto-random tmp + exclusive open
+        # so the predictable-tmp lstat check is moot.
         with :ok <- ensure_regular_file(abs),
-             :ok <- ensure_regular_file(abs <> ".tmp"),
              {:ok, ^rel} <- write_atomic(abs, content, rel) do
           # Best-effort — a task was successfully written; leaving the
           # brain-dump note in place would let the user convert it a
@@ -207,12 +209,15 @@ defmodule Glorbo.BrainDump do
         File.rm(path)
 
       true ->
-        tmp = path <> ".tmp"
+        # Threatmodel wave 24: random suffix + exclusive open.
+        rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+        tmp = "#{path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
 
-        with :ok <- ensure_regular_file(path),
-             :ok <- ensure_regular_file(tmp),
-             :ok <- File.write(tmp, new_content) do
-          File.rename(tmp, path)
+        with :ok <- ensure_regular_file(path) do
+          case do_atomic_open(tmp, path, new_content, :ok) do
+            {:ok, _} -> :ok
+            err -> err
+          end
         end
     end
   end
@@ -382,13 +387,39 @@ defmodule Glorbo.BrainDump do
     end
   end
 
+  # Threatmodel wave 24: random suffix + exclusive open closes the
+  # TOCTOU race the prior `<> ".tmp"` flow had in agent-RW dirs.
   defp write_atomic(abs, content, rel) do
-    tmp = abs <> ".tmp"
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{abs}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
+    do_atomic_open(tmp, abs, content, rel)
+  end
 
-    with :ok <- ensure_regular_file(tmp),
-         :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, abs) do
-      {:ok, rel}
+  defp do_atomic_open(tmp, abs, content, rel) do
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} -> finalize_atomic(fd, tmp, abs, content, rel)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp finalize_atomic(fd, tmp, abs, content, rel) do
+    case :file.write(fd, content) do
+      :ok ->
+        :ok = :file.close(fd)
+
+        case File.rename(tmp, abs) do
+          :ok ->
+            {:ok, rel}
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        :ok = :file.close(fd)
+        _ = File.rm(tmp)
+        err
     end
   end
 

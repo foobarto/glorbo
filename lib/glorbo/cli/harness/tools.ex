@@ -128,11 +128,16 @@ defmodule Glorbo.CLI.Harness.Tools do
     }
   end
 
+  # Threatmodel wave 24: model-authored `read_file` tool. Lstat-gate
+  # + 1 MiB cap before the read so a model can't trick the harness
+  # into reading a huge file or following a sandbox-visible symlink
+  # into a host path. The `read_fun` opt is preserved as a test seam
+  # but defaults to the bounded helper.
   defp read_file(%{"path" => raw_path}, config, opts)
        when is_binary(raw_path) and raw_path != "" do
     path = resolve_tool_path(raw_path, config.workspace)
     display_path = display_tool_path(path, config.workspace)
-    read_fun = Keyword.get(opts, :file_read_fun, &File.read/1)
+    read_fun = Keyword.get(opts, :file_read_fun, &bounded_read/1)
 
     case read_fun.(path) do
       {:ok, contents} ->
@@ -769,6 +774,17 @@ defmodule Glorbo.CLI.Harness.Tools do
     do: "#{host}:#{port}"
 
   defp default_http_jitter(_attempt), do: 0
+
+  # Threatmodel wave 24: lstat + 1 MiB cap. Refuses symlinks and
+  # oversized files; preserves the `{:ok, contents}` / `{:error,
+  # reason}` shape so callers + the test seam don't change.
+  defp bounded_read(path) do
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
+      {:ok, _} = ok -> ok
+      {:error, {:read_failed, reason}} -> {:error, reason}
+      {:error, other} -> {:error, other}
+    end
+  end
 
   defp read_file_tool do
     %{

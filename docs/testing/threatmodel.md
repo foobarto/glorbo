@@ -418,6 +418,46 @@ After wave 22 the re-scan finds no further new issues at HEAD
 within the prompted scope. Full breakdown: 0 critical, 0 high,
 0 medium, 0 low, 24 informational (plus 2 lows accepted by-design).
 
+**Codex re-scan #4 2026-04-25 23:00** (raw at
+`.reports/codex-security-scan-2026-04-25-2300.md`) plus a
+project-wide grep for the predictable-`<> ".tmp"` pattern caught
+**11 more findings** in **wave 24** (1 high, 3 medium, 1 low from
+the codex output + 6 additional `<> ".tmp"` sites the grep
+found):
+
+  * **High** — `Actions.Attachments.ingest/6` could write
+    through agent-planted project symlinks. Added
+    `refuse_symlink_ancestors/1` (any-symlink-in-path walk) +
+    leaf-lstat refuse-existing-non-regular guard.
+  * **Medium** — TaskComments.append/4 lstat-then-append race;
+    added ancestor-symlink check via
+    `AgentWritableFile.any_symlink_in_path?/1`.
+  * **Medium** — Activity.Rollup `to_string/1` on agent-
+    authored YAML scalars (status, priority); switched to a
+    safe-scalar helper that defaults non-scalars. Also routed
+    the read through `read_bounded`.
+  * **Medium** — Search.scan_tasks `to_string/1` on title +
+    schedule fields; same safe-scalar helper.
+  * **Low** — CLI harness `read_file` tool was unbounded;
+    routed through `AgentWritableFile.read_bounded/2` (1 MiB
+    cap) so a model can't pull host-readable secrets via the
+    sandbox-visible path.
+  * **6 grep-found sites** — `brain_dump.write_atomic/3`,
+    `brain_dump` remove_section path, `config.atomic_write_secret!/2`,
+    `Actions.Audit.do_scaffold/3`, `Router.atomic_write/2`,
+    `Company.Goals.do_add_goal_write/5` — all switched from
+    `<> ".tmp"` to `crypto.strong_rand_bytes(8)` suffix +
+    `:file.open([:exclusive])`. Updated the H6 audit-test to
+    reflect the new behaviour: a planted symlink at the OLD
+    predictable path is irrelevant with random-suffix; the
+    test now asserts scaffold succeeds (writing to a non-
+    colliding random path).
+
+Cumulative day-end tally: **75 security findings closed across
+24 waves** — 39 from the original 2026-04-22 import + 4 wave 22
+re-scan + 15 wave 23 re-scans + 11 wave 24 re-scan. Two findings
+remain accepted-by-design.
+
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 

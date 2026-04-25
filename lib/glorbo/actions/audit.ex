@@ -78,10 +78,14 @@ defmodule Glorbo.Actions.Audit do
     rel = Path.join(["projects", "inbox", "tasks", "#{task_id}.md"])
     title = "Follow up on audit event: #{audit_actor} · #{action}"
     content = render(title, ts, audit_actor, action, target, entry)
-    tmp = abs <> ".tmp"
 
-    with :ok <- refuse_if_symlink(tmp),
-         :ok <- refuse_if_symlink(abs),
+    # Wave 24: crypto-random tmp + exclusive open closes the
+    # `<> ".tmp"` symlink-redirect race in the agent-RW
+    # `projects/inbox/tasks/` dir.
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{abs}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
+
+    with :ok <- refuse_if_symlink(abs),
          :ok <- write_atomic(tmp, abs, content) do
       {:ok, %{task_id: task_id, rel_path: rel, abs_path: abs}}
     end
@@ -90,12 +94,28 @@ defmodule Glorbo.Actions.Audit do
   end
 
   defp write_atomic(tmp, abs, content) do
-    with :ok <- File.write(tmp, content, [:sync]),
-         :ok <- File.rename(tmp, abs) do
-      :ok
-    else
-      err ->
-        _ = File.rm(tmp)
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, abs) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
         err
     end
   end

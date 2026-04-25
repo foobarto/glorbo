@@ -61,11 +61,33 @@ defmodule Glorbo.Actions.Attachments do
          dest_dir =
            Path.join([base, "companies", company, "projects", project, "attachments", task_id]),
          :ok <- File.mkdir_p(dest_dir),
+         # Threatmodel wave 24: an agent with `projects:write:<p>` has
+         # write access to `projects/<p>/attachments/<task_id>/`. Walk
+         # the destination directory chain refusing any symlinked
+         # ancestor — turns a Director upload into a contained write
+         # rather than a confused-deputy host-write.
+         :ok <- refuse_symlink_ancestors(dest_dir),
          dest = Path.join(dest_dir, safe),
+         # Refuse a pre-planted symlink at the leaf too.
+         :ok <- refuse_existing_non_regular(dest),
          :ok <- File.cp(tmp_path, dest),
          rel = Path.join(["attachments", task_id, safe]),
          :ok <- emit_upload_audit(audit, company, project, task_id, rel, client_name, safe, actor) do
       {:ok, rel}
+    end
+  end
+
+  defp refuse_symlink_ancestors(path) do
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path),
+      do: {:error, :symlinked_ancestor},
+      else: :ok
+  end
+
+  defp refuse_existing_non_regular(path) do
+    case :file.read_link_info(path) do
+      {:error, :enoent} -> :ok
+      {:ok, info} when elem(info, 2) == :regular -> :ok
+      _ -> {:error, :not_regular_file}
     end
   end
 

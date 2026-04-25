@@ -1661,16 +1661,37 @@ defmodule Glorbo.Company.Router do
   end
 
   # Write with tmp+rename so a partial write never leaves a
-  # half-written memory file for the reader. Same pattern as
-  # `FrontmatterWriter` + other atomic disk writers in this tree.
+  # half-written memory file for the reader. Wave 24: random
+  # suffix + `:file.open([:exclusive])` so the agent-RW
+  # `agents/<slug>/memory/` dir can't host a pre-planted
+  # symlink at a predictable `<> ".tmp"` name.
   defp atomic_write(dest_path, content) do
-    tmp = dest_path <> ".tmp"
+    rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{dest_path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
 
-    with :ok <- File.write(tmp, content, [:sync]) do
-      case File.rename(tmp, dest_path) do
-        :ok -> :ok
-        {:error, reason} -> {:error, {:rename_failed, reason}}
-      end
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, dest_path) do
+              :ok ->
+                :ok
+
+              {:error, reason} ->
+                _ = File.rm(tmp)
+                {:error, {:rename_failed, reason}}
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        err
     end
   end
 
