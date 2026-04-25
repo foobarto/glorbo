@@ -56,6 +56,8 @@ defmodule Glorbo.Company.Router do
   alias Glorbo.Agent.Parser, as: AgentParser
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.Frontmatter
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
   alias Glorbo.Security.ACLMapper
 
   @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
@@ -768,27 +770,43 @@ defmodule Glorbo.Company.Router do
     dest_path = Path.join(project_tasks_dir, "#{task_id}.md")
     project_md = Path.join([Path.dirname(project_tasks_dir), "project.md"])
 
-    with {:ok, content} <- read_agent_writable_file(abs_path),
-         {:ok, meta, _body} <- Frontmatter.parse(content),
-         :ok <- require_task_kind(meta),
-         :ok <- require_task_title(meta),
-         {:ok, perms} <- lookup_permissions(sender, state),
-         :ok <- check_project_write_permission(perms, project),
-         :ok <- ensure_project_exists(project_md),
-         :ok <- refuse_if_exists(dest_path),
-         # threatmodel M03 (write side): `projects/<p>/tasks/` lives
-         # in a tree the sender may have RW-mounted. An agent can
-         # pre-plant a symlink at the task-id filename, turning the
-         # host-side materialise into a write through the symlink.
-         :ok <- ensure_regular_file_lstat(dest_path),
-         :ok <- File.mkdir_p(project_tasks_dir),
-         stamped_content <- stamp_with_context(content, sender),
-         :ok <- File.write(dest_path, stamped_content, [:sync]),
-         :ok <- File.rm(abs_path) do
-      emit_task_route_audit(sender, project, task_id, state)
-      maybe_request_approval(meta, dest_path, project, task_id, sender, state)
-      :ok
-    else
+    history_meta = %{
+      actor: HomeHistory.actor_from_string("agent:" <> sender),
+      action: "task.route",
+      target: "companies/#{state.company}/projects/#{project}/tasks/#{task_id}.md"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with {:ok, content} <- read_agent_writable_file(abs_path),
+             {:ok, meta, _body} <- Frontmatter.parse(content),
+             :ok <- require_task_kind(meta),
+             :ok <- require_task_title(meta),
+             {:ok, perms} <- lookup_permissions(sender, state),
+             :ok <- check_project_write_permission(perms, project),
+             :ok <- ensure_project_exists(project_md),
+             :ok <- refuse_if_exists(dest_path),
+             # threatmodel M03 (write side): `projects/<p>/tasks/` lives
+             # in a tree the sender may have RW-mounted. An agent can
+             # pre-plant a symlink at the task-id filename, turning the
+             # host-side materialise into a write through the symlink.
+             :ok <- ensure_regular_file_lstat(dest_path),
+             :ok <- File.mkdir_p(project_tasks_dir),
+             stamped_content <- stamp_with_context(content, sender),
+             :ok <- File.write(dest_path, stamped_content, [:sync]),
+             :ok <- Tx.mark_path(tx_id, dest_path),
+             :ok <- File.rm(abs_path) do
+          emit_task_route_audit(sender, project, task_id, state)
+          :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(state.base, state.company))
+          maybe_request_approval(meta, dest_path, project, task_id, sender, state)
+          {:ok, :routed}
+        end
+      end)
+
+    case history_result do
+      {:ok, :routed, _tx_id} ->
+        :ok
+
       {:error, reason} ->
         Logger.debug(
           "[router/#{state.company}] outbox task skipped sender=#{sender} project=#{project} task=#{task_id} reason=#{inspect(reason)}"
@@ -1068,25 +1086,44 @@ defmodule Glorbo.Company.Router do
       Path.join([state.base, "companies", state.company, "agents", sender, "memory"])
 
     dest_path = Path.join(memory_dir, filename)
+    memory_index = Path.join(memory_dir, "MEMORY.md")
 
-    # threatmodel M03: the outbox file is agent-authored — it can
-    # be a symlink pointing at another agent's memory directory or
-    # any host-writable file. `File.read` + atomic_write would then
-    # read from / overwrite the target. lstat and refuse non-regular
-    # files on both the source (outbox) and the destination.
-    with :ok <- ensure_regular_file_lstat(abs_path),
-         :ok <- ensure_regular_file_lstat(dest_path),
-         {:ok, content} <- File.read(abs_path),
-         :ok <- check_memory_body_size(content),
-         {:ok, meta, _body} <- Frontmatter.parse(content),
-         :ok <- check_memory_kind(meta),
-         :ok <- check_memory_type_matches_filename(meta, filename),
-         :ok <- File.mkdir_p(memory_dir),
-         :ok <- atomic_write(dest_path, content),
-         :ok <- upsert_memory_index(memory_dir, filename, meta),
-         :ok <- File.rm(abs_path) do
-      emit_memory_audit(sender, "memory.write", filename, byte_size(content), state)
-    else
+    history_meta = %{
+      actor: HomeHistory.actor_from_string("agent:" <> sender),
+      action: "memory.write",
+      target: "companies/#{state.company}/agents/#{sender}/memory/#{filename}"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        # threatmodel M03: the outbox file is agent-authored — it can
+        # be a symlink pointing at another agent's memory directory or
+        # any host-writable file. `File.read` + atomic_write would then
+        # read from / overwrite the target. lstat and refuse non-regular
+        # files on both the source (outbox) and the destination.
+        with :ok <- ensure_regular_file_lstat(abs_path),
+             :ok <- ensure_regular_file_lstat(dest_path),
+             {:ok, content} <- File.read(abs_path),
+             :ok <- check_memory_body_size(content),
+             {:ok, meta, _body} <- Frontmatter.parse(content),
+             :ok <- check_memory_kind(meta),
+             :ok <- check_memory_type_matches_filename(meta, filename),
+             :ok <- File.mkdir_p(memory_dir),
+             :ok <- atomic_write(dest_path, content),
+             :ok <- Tx.mark_path(tx_id, dest_path),
+             :ok <- upsert_memory_index(memory_dir, filename, meta),
+             :ok <- Tx.mark_path(tx_id, memory_index),
+             :ok <- File.rm(abs_path) do
+          emit_memory_audit(sender, "memory.write", filename, byte_size(content), state)
+          :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(state.base, state.company))
+          {:ok, :written}
+        end
+      end)
+
+    case history_result do
+      {:ok, :written, _tx_id} ->
+        :ok
+
       {:error, reason} ->
         Logger.warning(
           "[router/#{state.company}] memory write rejected sender=#{sender} file=#{filename} reason=#{inspect(reason)}"
@@ -1218,16 +1255,35 @@ defmodule Glorbo.Company.Router do
   defp handle_outbox_proposal(abs_path, sender, id, state) do
     dest_path = Path.join([state.base, "companies", state.company, "proposals", "#{id}.md"])
 
-    # Validation is strict; post-commit cleanup is best-effort. A
-    # successful commit must not be re-surfaced as a rejection just
-    # because we couldn't clean the outbox source — the proposal is
-    # already on disk.
-    case validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
-      {:ok, final_content, outcome} ->
-        :ok = File.mkdir_p(Path.dirname(dest_path))
-        :ok = atomic_write(dest_path, final_content)
-        maybe_audit_auto_approve(outcome, sender, id, state)
-        cleanup_outbox_source(abs_path, sender, id, state)
+    history_meta = %{
+      actor: HomeHistory.actor_from_string("agent:" <> sender),
+      action: "proposal.route",
+      target: "companies/#{state.company}/proposals/#{id}.md"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        # Validation is strict; post-commit cleanup is best-effort. A
+        # successful commit must not be re-surfaced as a rejection just
+        # because we couldn't clean the outbox source — the proposal is
+        # already on disk.
+        case validate_outbox_proposal(abs_path, sender, id, dest_path, state) do
+          {:ok, final_content, outcome} ->
+            :ok = File.mkdir_p(Path.dirname(dest_path))
+            :ok = atomic_write(dest_path, final_content)
+            :ok = Tx.mark_path(tx_id, dest_path)
+            maybe_audit_auto_approve(outcome, sender, id, state)
+            :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(state.base, state.company))
+            cleanup_outbox_source(abs_path, sender, id, state)
+            {:ok, :routed}
+
+          {:error, _} = err ->
+            err
+        end
+      end)
+
+    case history_result do
+      {:ok, :routed, _tx_id} ->
         :ok
 
       {:error, reason} ->

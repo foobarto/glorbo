@@ -350,6 +350,37 @@ history:
       flips to Implemented when Phases 2 + 3 land"). Until
       Phase 3, the GEP stays Draft but Phase 2 is in good
       shape.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-8 — Router-side agent flows wired. Closes
+      the gap from the Phase 2c summary. Three Router
+      write surfaces all go through `Tx.with_tx`:
+
+        * `handle_outbox_task` → `task.route`
+        * `handle_outbox_memory_write` → `memory.write`
+          (marks both the memory file + `MEMORY.md`
+          index)
+        * `handle_outbox_proposal` → `proposal.route`
+
+      Subject prefix `*.route` for Router-mediated writes
+      distinguishes them from Director-side surfaces:
+      `task.create` (Director, Actions) vs `task.route`
+      (agent, Router). Forge-proof actor: `{:agent,
+      sender}` from the outbox path, not the file
+      content.
+
+      Rejection paths intentionally NOT wired — when
+      validation fails, the existing `*.rejected` audit
+      fires + outbox file is dropped. No durable write
+      means no history commit. Rejections live in audit
+      log, not history.
+
+      Phase 2 is now substantively complete. Phase 3
+      (watcher fallback for manual edits) and Phase 4
+      (`history restore` UX) are still ahead. GEP-33
+      stays Draft until Phase 3 lands per the original
+      Phase-1 plan.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

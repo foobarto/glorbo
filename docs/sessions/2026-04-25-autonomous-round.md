@@ -1271,6 +1271,79 @@ no code changed.
 
 ---
 
+## Task 14 — GEP-33 Phase 2c-8: Router-side agent flows wired
+
+**Task picked.** Closes the Phase 2c gap from Task 13's
+summary. Three Router write surfaces:
+
+  * `Router.handle_outbox_task/5` — agent-authored task
+    materialised at `projects/<p>/tasks/<id>.md`. Action
+    subject: `task.route`.
+  * `Router.handle_outbox_memory_write/4` — agent memory
+    write at `agents/<sender>/memory/<file>` + the
+    `MEMORY.md` index upsert. Action: `memory.write`.
+    Marks both the memory file AND the index.
+  * `Router.handle_outbox_proposal/4` — agent proposal
+    create at `proposals/<id>.md`. Action:
+    `proposal.route`.
+
+Each runs inside the Router GenServer's
+`handle_outbox_*` private. The actor for all three is
+`{:agent, sender}` (sender slug is forge-proof — Router
+sets it from the outbox path, not the file content). Audit
+emissions land alongside the durable write inside the same
+tx so debounce coalesces them.
+
+**Design calls I made without you.**
+
+  * **Subject prefix `*.route` for Router-mediated writes**
+    distinguishes them from Director-side surfaces:
+    `task.create` (Director, Actions) vs `task.route`
+    (agent, Router). Both create task files, but the
+    provenance differs and the subject lets a future reader
+    `git log --grep "task.route"` see only agent-authored
+    tasks.
+  * **Memory write marks BOTH the memory file AND
+    `MEMORY.md` index.** The atomic_write to the memory
+    file + the `upsert_memory_index/3` to MEMORY.md are
+    treated as one logical operation; they should land in
+    one history commit.
+  * **Rejection paths NOT wired.** When validation fails
+    inside `handle_outbox_*`, the existing `proposal.
+    rejected` / `memory.rejected` audit fires + the outbox
+    file is dropped. No durable file was written, so no
+    history commit applies. The rejection audit append IS
+    in the audit jsonl, but Phase 2c writers are
+    "successful-write" oriented; rejections live in audit
+    log, not history.
+  * **`task.route` happens outside the
+    `maybe_request_approval/6` side-effect.** That helper
+    sometimes opens an approval sentinel under
+    `agents/<assignee>/inbox/`, which is excluded scope.
+    Letting it run inside the tx is fine — the inbox path
+    falls through tracked? as false, and only the task md
+    + audit jsonl reach the commit.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/company/router_test.exs` —
+    45/45 green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * Phase 3 watcher fallback. Phase 4 restore UX.
+  * GEP-33 status flip — Draft until Phase 3 lands per
+    the original Phase-1 plan.
+
+**Commit.** Fourteenth of the day. The Phase 2c arc is now
+substantively complete: every host-side writer that lands a
+durable, in-scope file goes through the history layer.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**
