@@ -291,16 +291,36 @@ closes the regression that broke task-assignment reply routing
 after the inbox-message file-format rev; Company.Supervisor's
 boot-time `read_smart_egress/1` and `agent_network_allow_list/1`
 now lstat-gate agent.md at 256 KiB before reading, so an agent
-with a 1 GB agent.md can't OOM the supervisor init).
+with a 1 GB agent.md can't OOM the supervisor init); **wave 19
+on 2026-04-25** verified 4 lows already fixed at HEAD
+(Glorbo.Schedule.NL.compile/1 already handles `Regex.run`
+trailing-nil captures via `split_rest/[0|1|2]`; Costs
+`history_for_agents/1` keys by the `{company, agent}` MapSet,
+not just agent_slug, so cross-company collisions don't merge;
+TaskComments `Regex.scan(:all_names)` returns alphabetical
+order — the destructure `[author, body, ts]` matches; Model
+alias parsing's `to_string/1` exposure no longer applies after
+the GEP-32 native-config refactor) and closed 3 more lows
+(AgentLive `do_config_save/2` now whitelists `network` against
+the parser's loopback/proxy/full vocabulary so a tampered form
+can't write garbage to AGENT.md; ScheduleNL.dispatch now
+recognises `every weekday at <time>` / `every weekend at <time>`
+via a `parse_weekday_bucket/4` helper — closes the
+"documentation says supported but parser only matches bare
+`weekday`/`weekend`" gap; ProvidersLive.read_toml masks
+secret-shaped values via a regex over
+`api[_-]?key|secret|token|password|auth(orization)?` keys so
+user-authored providers.toml with literal credentials doesn't
+leak via the dashboard's collapsible TOML view).
 
-Breakdown: 0 critical, 0 high, 0 medium, 10 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 7 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 10
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 7
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -312,8 +332,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `mix.exs, config/dev.exs`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
-- **Providers page now exposes raw TOML config contents** — The commit adds a collapsible TOML snippet for each provider. The LiveView calls read_toml/1, which does a File.read on the provider’s source_file and renders the raw text into the page. User-defined providers.toml supports env overrides and other potentially…
-  *Paths:* `lib/glorbo_web/live/providers_live.ex`
 
 ### Informational (correctness / UX — not a direct security gap) — 24
 
@@ -323,16 +341,21 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   Closed in wave 15 (verified `safe_goal_slug/1` already filters
   non-scalar values).
   *Paths:* `lib/glorbo_web/live/overview_live.ex`
-- **Proxy classifier lacks validation and can crash on bad return** — In classify_unlisted/5, the proxy only pattern-matches the expected classifier verdict tuples. safe_classify/3 only rescues raises and exits, but it does not validate or coerce unexpected return values. A classifier that returns nil or any non-matching tuple…
-  *Paths:* `lib/glorbo/network/proxy.ex`
-- **SmartClassifier allows private IPs when explicitly allowlisted** — In Glorbo.Network.SmartClassifier.classify/2, the rule order checks denylist → allowlist → private_ip → ad_tld. This means any host that matches the allowlist is immediately allowed, even if it is a literal private IP like 127.0.0.1 or 10.0.0.1. The module’s…
+- ~~**Proxy classifier lacks validation**~~ — Closed wave 18:
+  `safe_classify/3` already validates verdict tuples via
+  `normalise_classifier_result/1`.
+- ~~**SmartClassifier allows private IPs when allowlisted**~~ —
+  Closed wave 18: rule order has `private_ip?/1` BEFORE the
+  allowlist check.
   *Paths:* `lib/glorbo/network/smart_classifier.ex`
 - ~~**Task assignment kind change breaks agent reply routing**~~ —
   Closed wave 18: `reply_target/1` + `format_reply_hint/1` now
   recognise both the legacy `kind: task_assignment` envelope and
   the current `kind: inbox-message/v1, subkind: task_assignment`.
   *Paths:* `lib/glorbo_web/live/kanban_live.ex, lib/glorbo/agent/server.ex`
-- **NL schedule parser ignores 'every weekday at <time>'** — Glorbo.ScheduleNL’s documentation lists “every weekday at 9am” as supported. However, dispatch/1 only handles the exact rest == "weekday" or "weekend" tokens and does not parse an optional “at <time>” suffix for those bucketed terms. As a result, schedules…
+- ~~**NL schedule parser ignores 'every weekday at <time>'**~~ —
+  Closed wave 19: `parse_weekday_bucket/4` parses the optional
+  `at <time>` suffix.
   *Paths:* `lib/glorbo/schedule_nl.ex`
 - **Invalid schedule stash drops timer_ref, leaving stale timers** — The commit changes invalid-cron handling to store a minimal entry (schedule/rel_path/invalid?) in state.tasks. If a task previously had a valid schedule and an armed timer, this replacement drops the existing timer_ref. When the schedule is later fixed before…
   *Paths:* `lib/glorbo/company/task_scheduler.ex`

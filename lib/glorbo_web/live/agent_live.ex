@@ -455,13 +455,18 @@ defmodule GlorboWeb.AgentLive do
         ])
       )
 
+    # Threatmodel: form values are client-controlled and could carry
+    # anything (DevTools edits, replay attacks). Drop any `network`
+    # value that isn't in the parser's allowlist before persisting,
+    # otherwise we'd write garbage like `network: bogus` to AGENT.md
+    # and break subsequent parses for the entire company.
     updates =
       %{
         "provider" => params["provider"],
         "model" => params["model"],
         "reports_to" => params["reports_to"],
         "heartbeat" => params["heartbeat"],
-        "network" => params["network"],
+        "network" => sanitise_network(params["network"]),
         "autonomy" => params["autonomy"]
       }
       |> Enum.reject(fn {_, v} -> is_nil(v) end)
@@ -1947,6 +1952,12 @@ defmodule GlorboWeb.AgentLive do
     do: {"# host netns inherited", "# explicit opt-in"}
 
   defp network_line(other), do: {"# network: #{other}", ""}
+
+  # Whitelist matches Glorbo.Agent.Parser's @network_map. Anything
+  # else returns nil so the caller drops the key from the updates
+  # map (preserving the existing on-disk value).
+  defp sanitise_network(v) when v in ["loopback", "proxy", "full"], do: v
+  defp sanitise_network(_), do: nil
 
   defp provider_cmd("claude-code"), do: "claude"
   defp provider_cmd("gemini-cli"), do: "gemini"

@@ -396,14 +396,27 @@ defmodule GlorboWeb.ProvidersLive do
   defp version_display(%Provider{version: nil, probe_error: err}), do: "(#{inspect(err)})"
   defp version_display(%Provider{version: v}), do: v
 
+  # Threatmodel: the raw TOML may contain user-set env overrides
+  # such as `env = { ANTHROPIC_API_KEY = "sk-..." }`. Mask any line
+  # whose key looks secret-shaped (api_key / token / secret /
+  # password / authorization) so the dashboard doesn't render
+  # credentials in plaintext.
   defp read_toml(%Provider{source_file: path}) when is_binary(path) do
     case File.read(path) do
-      {:ok, text} -> text
+      {:ok, text} -> mask_toml_secrets(text)
       _ -> "# (could not read #{path})"
     end
   end
 
   defp read_toml(_), do: "# (no source file)"
+
+  @secret_key_re ~r/(?i)\b(api[_-]?key|secret|token|password|auth(?:orization)?|access[_-]?key)\s*=\s*"[^"]*"/
+
+  defp mask_toml_secrets(text) when is_binary(text) do
+    Regex.replace(@secret_key_re, text, fn _full, key ->
+      ~s(#{key} = "***")
+    end)
+  end
 
   defp subscribe_agent_status_all do
     co_dir = Path.join(GlorboWeb.LiveHelpers.base_dir(), "companies")

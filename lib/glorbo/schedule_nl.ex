@@ -117,11 +117,11 @@ defmodule Glorbo.ScheduleNL do
       match = parse_time_of_day(rest) ->
         match
 
-      rest == "weekday" ->
-        {:ok, "0 9 * * 1-5"}
+      match = parse_weekday_bucket(rest, "weekday", "1-5", 9) ->
+        match
 
-      rest == "weekend" ->
-        {:ok, "0 10 * * 0,6"}
+      match = parse_weekday_bucket(rest, "weekend", "0,6", 10) ->
+        match
 
       true ->
         :error
@@ -129,6 +129,24 @@ defmodule Glorbo.ScheduleNL do
   end
 
   defp dispatch(_), do: :error
+
+  # `every weekday` / `every weekend` with an optional `at <time>` suffix.
+  # Default hour: 9 for weekday, 10 for weekend.
+  defp parse_weekday_bucket(rest, label, dow, default_hour) do
+    cond do
+      rest == label ->
+        {:ok, "0 #{default_hour} * * #{dow}"}
+
+      String.starts_with?(rest, label <> " at ") ->
+        case parse_time(String.replace_prefix(rest, label <> " at ", "")) do
+          {h, m} -> {:ok, "#{m} #{h} * * #{dow}"}
+          _ -> nil
+        end
+
+      true ->
+        nil
+    end
+  end
 
   # "monday" or "monday at 9am" or "monday at 18:30"
   defp parse_weekday(rest) do
