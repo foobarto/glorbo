@@ -106,20 +106,18 @@ defmodule Glorbo.Chat.Rotation do
         dir = Path.dirname(path)
         channel = Path.basename(path, ".md")
         archive_dir = Path.join([dir, "archive", channel])
-        File.mkdir_p!(archive_dir)
 
-        ts = DateTime.truncate(now, :second) |> DateTime.to_iso8601()
-        safe_ts = String.replace(ts, [":", ".", "+"], "-") |> String.replace("T", "-")
-        archive_path = Path.join(archive_dir, safe_ts <> ".md")
-
-        header = archive_header(channel, ts)
-
-        with :ok <- File.write(archive_path, header <> archive_part, [:sync]),
-             :ok <- atomic_replace(path, live_part) do
-          kept = count_messages(live_part)
-          {:rotated, archive_path, kept}
+        # Wave 27: refuse a pre-planted `archive` or `archive/<chan>`
+        # symlink — without this an attacker with write to channels/
+        # could redirect the archive write across companies. Same
+        # check for the live channel path so a `general.md ->
+        # ../../audit/2026-04.jsonl` symlink can't get clobbered.
+        if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(archive_dir) or
+             Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path) do
+          {:error, :symlinked_ancestor}
         else
-          {:error, _} = err -> err
+          File.mkdir_p!(archive_dir)
+          do_rotate_write(path, archive_dir, channel, archive_part, live_part, now)
         end
 
       :short_tail ->
@@ -129,6 +127,22 @@ defmodule Glorbo.Chat.Rotation do
     e ->
       Logger.warning("chat rotation failed for #{path}: #{Exception.message(e)}")
       {:error, {:raised, Exception.message(e)}}
+  end
+
+  defp do_rotate_write(path, archive_dir, channel, archive_part, live_part, now) do
+    ts = DateTime.truncate(now, :second) |> DateTime.to_iso8601()
+    safe_ts = String.replace(ts, [":", ".", "+"], "-") |> String.replace("T", "-")
+    archive_path = Path.join(archive_dir, safe_ts <> ".md")
+
+    header = archive_header(channel, ts)
+
+    with :ok <- File.write(archive_path, header <> archive_part, [:sync]),
+         :ok <- atomic_replace(path, live_part) do
+      kept = count_messages(live_part)
+      {:rotated, archive_path, kept}
+    else
+      {:error, _} = err -> err
+    end
   end
 
   # Split at the Nth-from-end `## <ts> | <author>` header so the
@@ -182,14 +196,34 @@ defmodule Glorbo.Chat.Rotation do
   end
 
   defp atomic_replace(path, content) do
-    tmp = path <> ".rotate.tmp"
+    # Wave 27: random-suffix exclusive temp — predictable
+    # `<channel>.md.rotate.tmp` was attacker-plantable as a symlink
+    # if write to channels/ ever leaked.
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.rotate.tmp-#{rand}"
 
-    with :ok <- File.write(tmp, content, [:sync]),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary, :sync]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
       {:error, _} = err ->
-        _ = File.rm(tmp)
         err
     end
   end

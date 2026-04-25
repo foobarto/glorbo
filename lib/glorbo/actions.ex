@@ -254,7 +254,10 @@ defmodule Glorbo.Actions do
   defp write_mention(base, company, channel, mentioned, body, ts, audit, actor) do
     agent_dir = Path.join([base, "companies", company, "agents", mentioned])
 
-    if File.dir?(agent_dir) do
+    if File.dir?(agent_dir) and
+         not Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(
+           Path.join(agent_dir, "inbox/mentions")
+         ) do
       inbox_mentions = Path.join(agent_dir, "inbox/mentions")
       File.mkdir_p!(inbox_mentions)
 

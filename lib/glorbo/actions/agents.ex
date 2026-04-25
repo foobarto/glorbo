@@ -61,7 +61,10 @@ defmodule Glorbo.Actions.Agents do
          :ok <- ensure_no_symlink_on_path(abs_path, agent_root),
          :ok <- guard_not_exists(abs_path),
          :ok <- File.mkdir_p(Path.dirname(abs_path)),
-         :ok <- File.write(abs_path, ""),
+         # Wave 27: close the lstat→File.write TOCTOU window. Exclusive
+         # open refuses both an existing file and a freshly-planted
+         # symlink at `abs_path` in one syscall.
+         :ok <- exclusive_create(abs_path),
          :ok <- emit_audit(audit, company, slug, "agent.file_create", rel_path, actor) do
       {:ok, %{abs_path: abs_path}}
     end
@@ -88,7 +91,10 @@ defmodule Glorbo.Actions.Agents do
          agent_root = agent_dir(base, company, slug),
          {:ok, abs_path} <- resolve_workspace_path(agent_root, rel_path),
          :ok <- ensure_no_symlink_on_path(abs_path, agent_root),
-         :ok <- File.write(abs_path, content),
+         # Wave 27: write to a random-suffix exclusive temp in the same
+         # dir, then atomic rename. Closes the lstat→File.write TOCTOU
+         # window where `abs_path` could be swapped for a symlink.
+         :ok <- atomic_write(abs_path, content),
          :ok <- emit_audit(audit, company, slug, "agent.file_write", rel_path, actor) do
       {:ok, %{abs_path: abs_path}}
     end
@@ -116,14 +122,21 @@ defmodule Glorbo.Actions.Agents do
          :ok <- guard_exists(abs_path) do
       ts = System.system_time(:millisecond)
       trash_dir = Path.join([agent_root, "history", "deleted"])
-      :ok = File.mkdir_p(trash_dir)
-      dest_name = "#{ts}-#{Path.basename(rel_path)}"
-      dst = Path.join(trash_dir, dest_name)
-      dest_rel = Path.join(["history", "deleted", dest_name])
 
-      with :ok <- File.rename(abs_path, dst),
-           :ok <- emit_trash_audit(audit, company, slug, rel_path, dest_rel, actor) do
-        {:ok, %{dest_rel_path: dest_rel}}
+      # Wave 27: refuse a pre-planted `history -> ../../audit` or
+      # `history/deleted -> ../../<co>/...` symlink before mkdir_p.
+      if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(trash_dir) do
+        {:error, :symlinked_ancestor}
+      else
+        :ok = File.mkdir_p(trash_dir)
+        dest_name = "#{ts}-#{Path.basename(rel_path)}"
+        dst = Path.join(trash_dir, dest_name)
+        dest_rel = Path.join(["history", "deleted", dest_name])
+
+        with :ok <- File.rename(abs_path, dst),
+             :ok <- emit_trash_audit(audit, company, slug, rel_path, dest_rel, actor) do
+          {:ok, %{dest_rel_path: dest_rel}}
+        end
       end
     end
   end
@@ -272,6 +285,52 @@ defmodule Glorbo.Actions.Agents do
     if Path.basename(rel) in @contract_files,
       do: {:error, :contract_file},
       else: :ok
+  end
+
+  # Wave 27: O_EXCL create — refuses an existing file or a freshly-
+  # planted symlink at `path` in one syscall. Use for the
+  # zero-content seed write of `create_workspace_file/4`.
+  defp exclusive_create(path) do
+    case :file.open(path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        :file.close(fd)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # Wave 27: random-suffix exclusive temp + atomic rename — replaces
+  # the old `File.write/2` flow that left a TOCTOU window between
+  # `ensure_no_symlink_on_path/2` and the actual write.
+  defp atomic_write(path, content) do
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.tmp-#{rand}"
+
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        write_result = :file.write(fd, content)
+        :file.close(fd)
+
+        case write_result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   defp guard_not_exists(abs_path) do

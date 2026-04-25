@@ -529,10 +529,57 @@ more findings — 2 highs + 2 mediums + 1 low. All closed in
     and return structured `:invalid_models_aliases` /
     `:invalid_egress_host` errors.
 
-Cumulative tally: **85 security findings closed across 26
+**Codex re-scan #7 2026-04-26 00:19** (raw at
+`.reports/codex-security-scan-2026-04-26-0019.md`) surfaced 6
+more findings — 0 highs + 3 mediums + 3 lows. All closed in
+**wave 27** (proxy-token attribution finding deferred — see
+"Accepted risks" below):
+
+  * **Medium** — `Glorbo.Actions.Agents` workspace writers had a
+    lstat→write TOCTOU. `create_workspace_file/4` now uses
+    O_EXCL create; `write_workspace_file/4` writes through a
+    random-suffix exclusive temp + atomic rename;
+    `trash_workspace_file/3` refuses symlinked
+    `agents/<slug>/history/deleted` ancestors before mkdir_p.
+  * **Medium** — Inbox delivery and `@mention` writes did not
+    refuse symlinked ancestors. Added
+    `any_symlink_in_path?/1` guards to
+    `Glorbo.Actions.write_mention/8`,
+    `Glorbo.Actions.Inbox.deliver_task_assignment/6`,
+    `Glorbo.Company.Router.perform_routing({:agent, _}, …)` /
+    `do_write_mention/4`, and
+    `Glorbo.PathRequestGate.notify_agent_denied/3`. Each path
+    either rejects with a tagged error or silently skips
+    (durability is preserved upstream).
+  * **Medium** — `Glorbo.Search.scan_audit/2` slurped each
+    monthly audit JSONL into BEAM memory before applying the
+    500-row limit. Switched to `File.stream!([], :line) +
+    rolling-window reduce`; lstat-gates and rescues IO errors
+    silently (search must remain noiseless on missing data).
+  * **Low** — `Glorbo.Company.Proposals.read_one/1`,
+    `Glorbo_web.MCP.Tools.GetProposal`, and
+    `ListProposals.load/2` used raw `File.read/1` on the agent-
+    RW `proposals/` tree. Routed through
+    `AgentWritableFile.read/1` so symlinks are refused and
+    bodies are capped at 10 MiB.
+  * **Low** — `Glorbo.Chat.Rotation` used a predictable
+    `<channel>.md.rotate.tmp` and `mkdir_p!` on
+    `archive/<channel>/`. Now refuses symlinked ancestors for
+    both archive and live paths and uses random-suffix
+    exclusive open for the temp.
+
+Deferred:
+  * **Low** — Proxy token plumbing breaks egress attribution
+    (`agent/dispatch.ex:521`, `sandbox/bwrap.ex:785`,
+    `cli/harness/http.ex:123`). This is an attribution
+    accuracy gap, not an exploit primitive. Tracked as a non-
+    security follow-up; see issue notes.
+
+Cumulative tally: **90 security findings closed across 27
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
-+ 11 wave 24 + 11 wave 25 + 5 wave 26. Two findings remain
-accepted-by-design.
++ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27. Two findings
+remain accepted-by-design (plus the wave-27 proxy-token
+attribution gap deferred as non-security).
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.

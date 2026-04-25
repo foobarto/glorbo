@@ -139,8 +139,11 @@ defmodule Glorbo.Company.Proposals do
   # ------------------------------------------------------------------
 
   defp read_one(path) do
-    with true <- File.regular?(path),
-         {:ok, content} <- File.read(path),
+    # Wave 27: lstat + bounded read so a planted proposal symlink
+    # in the agent-RW proposals/ tree won't be followed and a
+    # multi-MB body can't OOM the dashboard. Frontmatter.parse/1
+    # has its own cap but only after the slurp.
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read(path),
          {:ok, meta, body} <- Frontmatter.parse(content) do
       id = Path.basename(path, ".md")
 

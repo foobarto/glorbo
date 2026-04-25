@@ -288,20 +288,31 @@ defmodule Glorbo.Company.Router do
         "from-#{msg.sender}"
       ])
 
-    state.fs_fun.mkdir_p!.(dir)
-    path = Path.join(dir, "#{ts}-#{msg.msg_id}.md")
+    # Wave 27: refuse a pre-planted symlinked inbox ancestor before
+    # mkdir_p!. Without this, an agent who later regains write to its
+    # own state could redirect cross-agent direct messages.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(dir) do
+      Logger.warning(
+        "[router/#{state.company}] inbox write skipped target=#{target_slug} reason=symlinked_inbox"
+      )
 
-    frontmatter = """
-    ---
-    from: "#{msg.sender}"
-    msg_id: "#{msg.msg_id}"
-    delivered_at: "#{DateTime.to_iso8601(now)}"
-    ---
+      {:error, {:invalid_message, :symlinked_inbox}}
+    else
+      state.fs_fun.mkdir_p!.(dir)
+      path = Path.join(dir, "#{ts}-#{msg.msg_id}.md")
 
-    """
+      frontmatter = """
+      ---
+      from: "#{msg.sender}"
+      msg_id: "#{msg.msg_id}"
+      delivered_at: "#{DateTime.to_iso8601(now)}"
+      ---
 
-    state.fs_fun.write!.(path, frontmatter <> msg.body)
-    :ok
+      """
+
+      state.fs_fun.write!.(path, frontmatter <> msg.body)
+      :ok
+    end
   rescue
     e ->
       Logger.error("router inbox write failed: #{Exception.message(e)}")
@@ -350,7 +361,11 @@ defmodule Glorbo.Company.Router do
     agent_dir =
       Path.join([state.base, "companies", state.company, "agents", mentioned])
 
-    if File.dir?(agent_dir) do
+    # Wave 27: refuse a `inbox/mentions -> ../../audit` symlink
+    # before mkdir_p!. Skip the mention silently if the agent has
+    # planted one — the channel message is still durable.
+    if File.dir?(agent_dir) and
+         not Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(inbox_mentions) do
       # Single DateTime to keep filename ts and delivered_at consistent
       # (same invariant as perform_routing/3).
       now = DateTime.utc_now()

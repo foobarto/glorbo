@@ -546,8 +546,19 @@ defmodule Glorbo.PathRequestGate do
         "notifications"
       ])
 
-    File.mkdir_p(inbox_dir)
+    # Wave 27: refuse a pre-planted `inbox/notifications` symlink
+    # ancestor before mkdir_p / exclusive write — keeps Director-
+    # host writes contained even if the agent later regains state
+    # write access.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(inbox_dir) do
+      {:error, :symlinked_inbox}
+    else
+      File.mkdir_p(inbox_dir)
+      write_denial_notification(inbox_dir, task_id)
+    end
+  end
 
+  defp write_denial_notification(inbox_dir, task_id) do
     content = """
     ---
     kind: inbox-message/v1

@@ -75,7 +75,9 @@ defmodule GlorboWeb.MCP.Tools.ListProposals do
   defp load(path, filename) do
     id = Path.basename(filename, ".md")
 
-    case File.read(path) do
+    # Wave 27: bounded + lstat-gated read so a planted symlink or
+    # multi-MB proposal body cannot OOM MCP clients.
+    case Glorbo.Filesystem.AgentWritableFile.read(path) do
       {:ok, content} ->
         case Frontmatter.parse(content) do
           {:ok, meta, _body} ->

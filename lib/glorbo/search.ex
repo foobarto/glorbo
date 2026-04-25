@@ -239,21 +239,37 @@ defmodule Glorbo.Search do
     month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
 
-    case File.read(path) do
-      {:ok, content} ->
-        content
-        |> String.split("\n", trim: true)
-        |> Enum.reverse()
-        |> Enum.take(@audit_scan_depth)
-        |> Enum.flat_map(fn line ->
-          case Jason.decode(line) do
-            {:ok, %{} = entry} -> [entry]
-            _ -> []
-          end
-        end)
+    # Wave 27: stream the JSONL with a rolling window of size
+    # @audit_scan_depth — keeps memory bounded by the window
+    # rather than the file size. Earlier `File.read + String.split
+    # + Enum.reverse` slurped the whole month into BEAM memory on
+    # every command-palette keystroke.
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        path
+        |> File.stream!([], :line)
+        |> Enum.reduce([], fn line, acc -> push_audit_line(line, acc) end)
 
       _ ->
         []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp push_audit_line(line, acc) do
+    case Jason.decode(String.trim(line)) do
+      {:ok, %{} = entry} ->
+        # Bounded LIFO: keep the most-recent N entries, dropping
+        # oldest from the tail.
+        if length(acc) >= @audit_scan_depth do
+          [entry | Enum.take(acc, @audit_scan_depth - 1)]
+        else
+          [entry | acc]
+        end
+
+      _ ->
+        acc
     end
   end
 

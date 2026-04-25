@@ -64,6 +64,9 @@ defmodule Glorbo.Actions.Inbox do
          agent_dir = agent_dir_path(base, company, agent),
          :ok <- guard_agent_exists(agent_dir),
          inbox_dir = Path.join(agent_dir, "inbox"),
+         # Wave 27: refuse a pre-planted `inbox -> ../../audit` or
+         # similar symlinked ancestor before mkdir_p / File.write.
+         :ok <- refuse_symlinked_ancestors(inbox_dir),
          :ok <- File.mkdir_p(inbox_dir),
          path = inbox_path(inbox_dir, task_id),
          :ok <- ensure_writable(path),
@@ -73,6 +76,12 @@ defmodule Glorbo.Actions.Inbox do
          :ok <- emit_deliver_audit(audit, company, agent, task_id, rel, actor) do
       {:ok, %{rel_path: rel, abs_path: path, agent: agent}}
     end
+  end
+
+  defp refuse_symlinked_ancestors(path) do
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path),
+      do: {:error, :symlinked_ancestor},
+      else: :ok
   end
 
   defp agent_dir_path(base, company, agent),
