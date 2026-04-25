@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.9.0] — 2026-04-25
+
+Ninth pre-1.0 minor. **Crown-jewels phase 2 + autonomy
+quality + opt-in git history + paperclip-importer hardening.**
+Closes the GEP-41 half-feature gap that v0.8.0 left open
+(reviewer auto-dispatcher) and ships the first slice of GEP-33
+(opt-in git history layer for `~/.glorbo/`). Five GEP shifts
+this cycle: GEP-42 drafted/accepted/implemented; GEP-43 pinned
+as Placeholder for the eventual SQLite→ETS pivot; GEP-33 Phase
+1 shipped with phases 2–4 deferred; GEP-40 dashboard surface
+for `done_when:` finally rendered; GEP-23 `egress.kbps_cap`
+recorded as won't-fix.
+
 ### Changed
 
 - **`FileSpec.Formatter`** now emits multi-line frontmatter strings
@@ -20,6 +35,11 @@ change between minor versions. Pin exact versions in downstream usage.
   string written without a trailing newline becomes `:changed` once
   (gains the canonical single trailing `\n`) then `:unchanged`
   forever after.
+- **`glorbo` help text** reads version from the loaded application
+  spec rather than a hardcoded string. Eight version bumps had
+  drifted "Glorbo 0.0.4" while `mix.exs` sat at 0.8.0; future
+  bumps are self-updating via `:application.get_key(:glorbo,
+  :vsn)`.
 
 ### Added
 
@@ -98,14 +118,75 @@ change between minor versions. Pin exact versions in downstream usage.
   `~/.claude` mount; no env var). Realigned with the current shape;
   also stubs `audit_fun` since the test doesn't start a per-company
   AuditLog GenServer.
+- **`InotifyToBwrapHappyPathTest`** "suite-pollution" was an
+  inotify watch-attachment race: `inotifywait` attaches kernel
+  watches asynchronously after `FileSystem.start_link/1` returns;
+  scheduler load from preceding tests made the file write win the
+  race against attachment. 250ms `Process.sleep` after
+  `Watcher.start_link/1` closes the race deterministically.
+- **`SearchControllerTest` + `AuditExportControllerTest`** read
+  `Application.fetch_env!(:glorbo, :glorbo_base)` in setup but
+  `ConnCase` doesn't put it there (only `LiveCase` does). Each
+  case now owns + restores its own tmp root via
+  `Glorbo.Test.TmpGlorboHome.setup/0` so order-dependent state
+  from other test files doesn't leak in.
+- **`OpencodeLmstudioLiveTest`** dropped the redundant
+  `:integration` moduletag (ExUnit's `--include` overrides
+  `--exclude` when tags overlap, so `:integration` defeated the
+  `:live_model` exclusion). Test reachable solely via `--include
+  live_model`. Preflight tightened to a `/v1/chat/completions`
+  probe so listed-but-not-loaded models surface honestly.
+  Fixture also gained the GEP-25 R26.2b required `kind:
+  agent/v1` + `kind: company/v1` frontmatter.
+- **`glorbo import paperclip`** wraps copied `HEARTBEAT.md` +
+  `SOUL.md` files with `kind: agent-heartbeat/v1` /
+  `kind: agent-soul/v1` frontmatter on copy. Source paperclip
+  files have no frontmatter, but Glorbo's GEP-25 R26.2b atomic
+  cut requires a `kind:` discriminator on every recognised
+  file; without the wrap, `glorbo validate` errored on every
+  imported agent. Surfaced by the v0.9.0 UAT benchmark vs
+  paperclip data — see
+  `docs/testing/benchmark-vs-paperclip-2026-04-25.md`.
+- **`Glorbo.FileSpec.AgentMd` + `CompanyMd`** added
+  `imported_from` and `imported_company` to the optional-key
+  allowlist. The importer was already writing them (so
+  Directors can grep paperclip-derived agents) but they
+  surfaced as warnings on every import.
 
 ### GEPs
 
+- **GEP-42 — reviewer auto-dispatcher (Implemented).** Drafted,
+  Accepted, and Implemented in this cycle. `Glorbo.Actions.
+  Reviews` is the new write seam; the gate calls
+  `request_peer_review/4` on the same edge as the existing
+  `peer_review.requested` audit. Two new FileSpec modules
+  (`peer-review-request/v1`, `peer-review-feedback/v1`).
+  Verdict-side cleanup deletes the request sentinel on every
+  verdict; `revise` drops a feedback sentinel into the
+  original assignee's inbox so the fix-and-resubmit loop fires
+  automatically. Missing-reviewer fails loud (D5).
+- **GEP-43 — ETS-first derived state with on-disk snapshots
+  (Placeholder).** Pinned during the SQLite-vs-ETS sidebar
+  that surfaced while diagnosing the Burrito local-build
+  issue. Hard prerequisite is GEP-34 (make budgets +
+  approvals fully derivable from audit log) before SQLite can
+  be removed safely. Most decisions intentionally open.
+- **GEP-33 — git history layer for `~/.glorbo/` (Phase 1
+  shipped, GEP stays Draft).** `Glorbo.HomeHistory` +
+  `glorbo history {init, status, log}` CLI verb. Opt-in;
+  `init` writes the GEP-33 §3 tracked-scope `.gitignore` and
+  the root commit. Phase 2 (marked commits from write
+  surfaces) and Phase 3 (watcher fallback) follow; GEP-33
+  flips to Implemented when those land.
 - **GEP-23 `egress.kbps_cap` — won't-fix.** Maintainer-recorded
   decline (2026-04-25): kbps shaping is overkill for Glorbo's
   single-user / single-host posture. The spec line stays in §Proxy
   daemon §7 as a documented opt-out but no implementation path is
   planned. GEP-23 stays Implemented.
+- **GEP-40 — `done_when:` editor surfaced in the dashboard.**
+  Phase-2 polish on the Implemented GEP. History note added.
+- **GEP-41 — history note added** pointing at GEP-42 closing
+  the auto-dispatcher gap that v0.8.0's phase-1 left open.
 
 ## [0.8.0] — 2026-04-25
 

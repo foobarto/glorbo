@@ -6,7 +6,7 @@ in `docs/`. This file is the map; the wiki is the territory.
 
 ## Project status
 
-Glorbo is at **v0.7.0** (pre-1.0). Source under `lib/`
+Glorbo is at **v0.9.0** (pre-1.0). Source under `lib/`
 (`glorbo`, `glorbo_web`). No Python runtime, no container
 runtime.
 

@@ -93,17 +93,27 @@ headers. No JS framework, no CSS build step.
   task's `handoff_chain:` frontmatter; the `/companies/:co/tasks/:id/chain`
   view reconstructs the full multi-agent route with drift detection
   against the audit log (GEP-40).
-- **Peer-review gate.** Tasks flagged `severity: major|critical` — or
-  any task whose author opts in with `peer_review_required: true` —
-  route through the `critiqueops` reviewer before Director approval
-  can clear; three-way verdict (approve/revise/block) is append-only
-  per task (GEP-41).
+- **Peer-review gate, auto-dispatched.** Tasks flagged
+  `severity: major|critical` — or any task whose author opts in with
+  `peer_review_required: true` — route through the `critiqueops`
+  reviewer before Director approval can clear; the gate drops a
+  wake sentinel into the reviewer's inbox so the review actually
+  fires without manual intervention. Three-way verdict
+  (approve/revise/block) is append-only per task; `revise` rounds
+  the loop back to the original assignee with notes (GEP-41 +
+  GEP-42).
 - **Single Director write-channel.** Every filesystem mutation the
   Director-facing LiveViews can make flows through `Glorbo.Actions.*`
   modules with slug validation, atomic writes, threatmodel-appropriate
   symlink guards, and audit emission before the `File.*` call lands
   — enforced by a Credo ratchet that rejects raw writes under
   `lib/glorbo_web/live/` (GEP-36).
+- **Optional git history.** `glorbo history init` opts the home
+  tree into a derivative git repo with a tracked-scope
+  `.gitignore` (durable state only; secrets, derived data, and
+  per-agent transport dirs excluded). `glorbo history {status, log}`
+  surface what changed since the last reindex without leaving the
+  CLI (GEP-33 Phase 1).
 - **Portable.** `glorbo backup | scp | glorbo restore` reproduces a working
   install on a fresh host.
 
@@ -299,7 +309,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.8.0** (2026-04-24). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.9.0** (2026-04-25). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /
