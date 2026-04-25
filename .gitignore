@@ -100,6 +100,9 @@ coverage/
 # Track the design-handoff screenshots (checked in as pixel references
 # cited by GEP-30). Everything else matching *.png stays ignored.
 !.design/design_handoff_glorbo_tui/screenshots/*.png
+# GEP-44 visual-regression baselines: PNG fixtures committed for
+# diff-against on every CI / pre-cut run.
+!test/fixtures/ui-baselines/**/*.png
 .claude/agents/
 
 # graphify transient outputs. `graph.json` is ~3 MB (binary-ish),
