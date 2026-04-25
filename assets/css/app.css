@@ -334,6 +334,18 @@ button { font-family: inherit; font-size: inherit; }
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Below 1100px the shortcut strip ellipses awkwardly ("g k …").
+   Power users keep ? for the full reference; the topbar's other
+   affordances (path, picker, version, dump, TWEAKS) need the
+   space more. The preceding .gl-topbar__sep visually separates
+   the version block from TWEAKS; hide it too so we don't leave
+   a dangling " │ " before TWEAKS. */
+@media (max-width: 1100px) {
+  .gl-topbar__kbd,
+  .gl-topbar__kbd + .gl-topbar__sep {
+    display: none;
+  }
+}
 .gl-topbar__kbd kbd {
   font-family: var(--gl-ff-mono);
   background: var(--gl-surface-raised);

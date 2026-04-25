@@ -111,10 +111,12 @@ it's been in CHANGELOG for a cycle.
 - [x] **Scheduler aliases list is closed.** Shipped `Glorbo.ScheduleNL`
   (#280) — handles `every morning`, `every weekday at 9am`,
   `every 5 minutes`, weekday names, etc.
-- [ ] **Topbar shortcuts truncate on narrow windows.** Current
-  behaviour: `g k kanban · …`. Consider collapsing to a single
-  "⌨ shortcuts" popover below some breakpoint instead of
-  ellipsis.
+- [x] **Topbar shortcuts truncate on narrow windows.** Shipped
+  2026-04-25. Added `@media (max-width: 1100px)` that hides
+  `.gl-topbar__kbd` (the inline shortcut strip) plus the
+  trailing separator. Power users keep the full reference via
+  the `?` modal; the topbar's path / picker / version / dump /
+  TWEAKS get the space they need. CSS-only — no markup change.
 - [ ] **Approvals power-user features on Inbox Mine tab.**
   ApprovalQueueLive was collapsed into Inbox (backlog #14), but
   its keyboard shortcuts (j/k/y/n) and prompt-diff panel weren't
