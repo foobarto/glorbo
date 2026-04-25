@@ -284,6 +284,26 @@ history:
       Router-side agent-initiated proposal CREATE flow (this
       round only covered the Director-side decision flow).
       Phase 3 watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-7 — `Glorbo.BrainDump.capture/4` wired. Brain
+      dumps qualify under §3 "track durable files a Director
+      would diff or restore" so the existing `tracked?/2`
+      fall-through-to-true branch already covers
+      `companies/<co>/braindump/YYYY-MM-DD.md`. Action subject:
+      `braindump.capture`.
+
+      `do_capture_append/5` extracted to flatten nesting after
+      the `with_tx` wrapper. Mid-round fix: with_tx unwraps
+      one `:ok` layer (`{:ok, entry}` from the inner body
+      becomes `{:ok, entry, tx_id}`), so the outer match was
+      tightened from `{:ok, {:ok, entry}, _}` (which failed) to
+      `{:ok, entry, _tx_id}` (correct).
+
+      Out of scope still: Skills LV write path. Router-side
+      proposal CREATE + memory writes. Phase 3 watcher
+      fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

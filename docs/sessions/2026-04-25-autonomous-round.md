@@ -1159,6 +1159,74 @@ brings the Director-side proposal flow into the history layer.
 
 ---
 
+## Task 12 — GEP-33 Phase 2c-7: BrainDump.capture wired
+
+**Task picked.** `Glorbo.BrainDump.capture/4` writes to
+`companies/<co>/braindump/YYYY-MM-DD.md`, which falls
+through the §3.2 exclusion list (not in
+`agents/<slug>/inbox/...` etc.) so the `tracked?/2`
+predicate returns true. Per §3 "track durable files a
+Director would diff or restore," brain dumps qualify —
+they're Director-authored persistent content. Wiring it
+brings Director quick-capture into the history layer.
+
+**What shipped.**
+
+  * `Glorbo.BrainDump.do_capture/4` wraps the existing
+    `with`-chain in `Tx.with_tx`. Action subject:
+    `braindump.capture: companies/<co>/braindump`.
+  * `do_capture_append/5` private helper extracted to
+    keep nesting flat after the wrapper.
+  * `with_tx` return-shape pattern: when the inner body
+    returns `{:ok, entry}`, `with_tx` unwraps one `:ok`
+    layer and returns `{:ok, entry, tx_id}`. The outer
+    match is `{:ok, entry, _tx_id} -> {:ok, entry}` (the
+    first iteration tried `{:ok, {:ok, entry}, _}` and
+    failed every test case — fixed mid-round).
+
+**Design calls I made without you.**
+
+  * **Actor hardcoded to `"director"` inside
+    `do_capture/4`.** BrainDump.capture is called from
+    GoalsLive (the Director-only LV). No `:actor` opt
+    threaded through; the LV doesn't carry one to pass.
+    Adding the seam can wait for the first non-Director
+    caller.
+  * **No GEP-33 §3.1 update.** §3.1 lists the canonical
+    tracked subset but caps it with "the intended rule is
+    'track durable files Director would diff or restore.'"
+    Brain dumps fit the rule but aren't on the explicit
+    list. Documenting that they're tracked could go either
+    way; I chose to leave the GEP §3.1 list as-is since
+    the implementation-level `tracked?/2` predicate is the
+    authoritative policy + it already includes brain dumps
+    by the "fall-through to true" branch.
+  * **No new test for the history wiring.** Existing 12
+    BrainDump tests cover the file-write semantics; the
+    history wiring goes through the same `with_tx` shape
+    every other Phase 2c test exercises.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/brain_dump_test.exs` — 12/12
+    green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * Skills LiveView — `SkillsLive.handle_event("toggle",
+    ...)` updates a shared `skills.md`-equivalent surface;
+    needs deeper investigation to confirm the write path
+    + actor.
+  * Router-level proposal CREATE flow + memory writes.
+  * Phase 3 watcher fallback. Phase 4 restore UX.
+
+**Commit.** Twelfth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

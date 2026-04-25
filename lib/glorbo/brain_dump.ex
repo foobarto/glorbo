@@ -53,43 +53,60 @@ defmodule Glorbo.BrainDump do
   defp do_capture(base, company, body, now) do
     dir = dir(base, company)
 
-    with :ok <- ensure_safe_dir(dir),
-         day <- date_string(now),
-         path <- Path.join(dir, "#{day}.md"),
-         :ok <- ensure_regular_file(path),
-         :ok <- File.mkdir_p(dir) do
-      title = derive_title(body)
-      ts = time_string(now)
+    history_meta = %{
+      actor: Glorbo.HomeHistory.actor_from_string("director"),
+      action: "braindump.capture",
+      target: "companies/#{company}/braindump"
+    }
 
-      section = "\n## #{ts} — #{title}\n\n#{body}\n"
-      existing? = File.regular?(path)
-
-      header =
-        if existing? do
-          ""
-        else
-          """
-          ---
-          kind: braindump/v1
-          created_at: #{DateTime.to_iso8601(DateTime.truncate(now, :second))}
-          ---
-          # Brain dump · #{day}
-          """
+    history_result =
+      Glorbo.HomeHistory.Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- ensure_safe_dir(dir),
+             day <- date_string(now),
+             path <- Path.join(dir, "#{day}.md"),
+             :ok <- ensure_regular_file(path),
+             :ok <- File.mkdir_p(dir) do
+          do_capture_append(tx_id, path, body, now, day)
         end
+      end)
 
-      case File.write(path, header <> section, [:append]) do
-        :ok ->
-          {:ok,
-           %{
-             ts: DateTime.to_iso8601(DateTime.truncate(now, :second)),
-             title: title,
-             body: body,
-             day: day
-           }}
+    case history_result do
+      # `with_tx` unwraps one `:ok` layer: if the body returns
+      # `{:ok, entry}` it produces `{:ok, entry, tx_id}`.
+      {:ok, entry, _tx_id} when is_map(entry) -> {:ok, entry}
+      {:error, _} = err -> err
+    end
+  end
 
-        err ->
-          err
+  defp do_capture_append(tx_id, path, body, now, day) do
+    title = derive_title(body)
+    ts = time_string(now)
+
+    section = "\n## #{ts} — #{title}\n\n#{body}\n"
+    existing? = File.regular?(path)
+
+    header =
+      if existing? do
+        ""
+      else
+        """
+        ---
+        kind: braindump/v1
+        created_at: #{DateTime.to_iso8601(DateTime.truncate(now, :second))}
+        ---
+        # Brain dump · #{day}
+        """
       end
+
+    with :ok <- File.write(path, header <> section, [:append]),
+         :ok <- Glorbo.HomeHistory.Tx.mark_path(tx_id, path) do
+      {:ok,
+       %{
+         ts: DateTime.to_iso8601(DateTime.truncate(now, :second)),
+         title: title,
+         body: body,
+         day: day
+       }}
     end
   end
 
