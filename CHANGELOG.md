@@ -10,6 +10,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.11.0] — 2026-04-25
+
+Eleventh pre-1.0 minor. Quality-of-life cycle on top of v0.10.0:
+the orchestrator now ships with a one-shot `glorbo install` verb
+that writes a user-level systemd unit so you can keep Glorbo
+running across shell sessions without juggling `glorbo up` /
+`down` by hand. Visual-regression coverage rounded out to all
+18 production LV routes.
+
 ### Added
 
 - **`glorbo install` / `glorbo uninstall` — user-level systemd
@@ -25,6 +36,15 @@ change between minor versions. Pin exact versions in downstream usage.
   cover task_chain, benchmarks, brain_dump, skills, and project
   LVs. `scripts/ui-baseline.sh` PAGES grew 13 → 18 entries.
   `/benchmarks/:run_id` deferred until canonical fixture runs land.
+
+### Fixed
+
+- **CI flake in concurrent-tx test.** `Glorbo.HomeHistory.TxTest`'s
+  "two open txs don't collide" case raced the §6.1 debounce
+  auto-flush on slow runners; tx_b's auto-flush fired during
+  tx_a's `do_commit` and the manual flush returned `:unknown_tx`.
+  Pinned `debounce_ms: 60_000` for that test so neither timer
+  can fire mid-test (auto-flush is exercised separately).
 
 ## [0.10.0] — 2026-04-25
 

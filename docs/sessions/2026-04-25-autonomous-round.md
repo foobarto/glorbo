@@ -2616,4 +2616,51 @@ stop.
     (would need `systemctl --user` to be available + a tmp
     XDG); manually smoke-tested instead. If we want CI
     coverage, add a `@tag :systemd` integration block.
-* **Commit(s):** pending — install/uninstall bundle.
+* **Commit(s):** `30e93d5`.
+
+---
+
+## Task 30 — CI flake fix + v0.11.0 cut
+
+* **Task picked:** make CI green, then cut a new release.
+* **What I found:**
+  * CI had been failing since at least 2026-04-25T14:31 with a
+    consistent flake on `Glorbo.HomeHistory.TxTest` "two open txs
+    don't collide". The test sets `@debounce_ms = 50` and runs two
+    explicit flushes back-to-back. On slow runners (GHA x86_64 +
+    aarch64), `do_commit/2` for tx_a takes 80–150ms, so tx_b's
+    auto-flush debounce timer fires *during* tx_a's commit. The
+    debounce_timeout message lands in the mailbox before the
+    explicit `Tx.flush(tx_b)` call, the auto-flush drops tx_b
+    from state, and the manual flush returns `{:error,
+    :unknown_tx}`.
+  * Local runs pass because `do_commit` is sub-50ms on warm
+    machines.
+* **What shipped:**
+  * `test/glorbo/home_history/tx_test.exs` — bumped that test's
+    `debounce_ms` to 60s + `hard_cap_ms` to 120s so neither timer
+    fires during the test. Auto-flush behaviour is exercised in
+    its own dedicated test.
+  * `mix.exs` — version bump 0.10.0 → 0.11.0.
+  * `CHANGELOG.md` — finalised `[Unreleased]` → `[0.11.0]` block
+    with Added (install/uninstall, Tier-3 baselines) + Fixed
+    (CI flake) sections.
+  * `README.md` — version banner v0.10.0 → v0.11.0.
+  * `assets/index.html` — three call-out pills + footer line
+    bumped to v0.11.0.
+* **Design calls I made without you:**
+  * Bumped to **v0.11.0**, not 0.10.1. The install/uninstall
+    surface is a feature add, not a patch. SemVer convention
+    for additive CLI verbs lands in MINOR.
+  * **Pin debounce in test** rather than refactor the Tx
+    auto-flush logic. The race is real but the production flow
+    is correct — auto-flush is the design feature. Tests that
+    want deterministic explicit-flush ordering need to opt out
+    of auto-flush via long debounce.
+* **Gates:** local `mix compile --warnings-as-errors`,
+  `mix credo --strict` (zero issues), `mix glorbo.docs.file_formats
+  --check` (clean) all green. Stress-tested the fixed concurrent
+  test 5× locally — no flakes. Waiting on GHA CI green for the
+  fix commit before tagging.
+* **Commit(s):** `6422f6e` for the test fix + the version-cut
+  commit pending CI confirmation.
