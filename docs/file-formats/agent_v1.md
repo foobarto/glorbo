@@ -13,7 +13,7 @@ bwrap), skills, and optional per-agent allowlist extensions
 
 **Required:** `kind`, `slug`, `role`, `provider`, `network`
 
-**Optional:** `name`, `reports_to`, `model`, `heartbeat`, `heartbeat_file`, `budget`, `skills`, `permissions`, `network_allow`, `autonomy`
+**Optional:** `name`, `reports_to`, `model`, `heartbeat`, `heartbeat_file`, `budget`, `skills`, `permissions`, `network_allow`, `autonomy`, `imported_from`, `imported_company`
 
 ### Enums
 

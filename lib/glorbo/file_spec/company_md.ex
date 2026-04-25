@@ -32,7 +32,10 @@ defmodule Glorbo.FileSpec.CompanyMd do
         :template,
         :template_version,
         :provider_pin,
-        :model_pin
+        :model_pin,
+        # Set by `glorbo import paperclip` so Directors can grep
+        # for imported companies later.
+        :imported_from
       ],
       enums: %{},
       patterns: %{

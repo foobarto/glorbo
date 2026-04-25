@@ -34,7 +34,12 @@ defmodule Glorbo.FileSpec.AgentMd do
         :skills,
         :permissions,
         :network_allow,
-        :autonomy
+        :autonomy,
+        # Set by `glorbo import paperclip` so Directors can grep
+        # for imported agents later. Free-form; the validator
+        # doesn't enforce a value.
+        :imported_from,
+        :imported_company
       ],
       enums: %{
         network: ["loopback", "proxy", "full"],

@@ -12,7 +12,7 @@ consumed by GoalsLive and the per-goal Kanban filter.
 
 **Required:** `kind`, `slug`, `name`
 
-**Optional:** `description`, `mission`, `created_at`, `goals`, `icon`, `budget`, `template`, `template_version`, `provider_pin`, `model_pin`
+**Optional:** `description`, `mission`, `created_at`, `goals`, `icon`, `budget`, `template`, `template_version`, `provider_pin`, `model_pin`, `imported_from`
 
 ### Patterns
 

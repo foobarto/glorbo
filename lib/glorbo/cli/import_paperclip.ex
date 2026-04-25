@@ -233,12 +233,23 @@ defmodule Glorbo.CLI.ImportPaperclip do
       if File.exists?(src_file) do
         content = File.read!(src_file)
         _ = detect_hints(content)
-        File.write!(Path.join(dest, fname), content)
+        File.write!(Path.join(dest, fname), wrap_companion_md(fname, content))
       end
     end
 
     {:ok, hints}
   end
+
+  # GEP-25 R26.2b: every Glorbo-recognised file needs a `kind:`
+  # discriminator in frontmatter. Paperclip's source files don't
+  # have one — wrap on copy. `TOOLS.md` is "unknown_file" by
+  # Glorbo's classifier (kept as paperclip-specific reference per
+  # the importer's contract); leave it raw.
+  defp wrap_companion_md("HEARTBEAT.md", body),
+    do: "---\nkind: agent-heartbeat/v1\n---\n\n" <> body
+
+  defp wrap_companion_md("SOUL.md", body), do: "---\nkind: agent-soul/v1\n---\n\n" <> body
+  defp wrap_companion_md(_other, body), do: body
 
   defp wrap_agent_md(agent_slug, co_slug, body) do
     """
