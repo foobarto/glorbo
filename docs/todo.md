@@ -98,11 +98,13 @@ it's been in CHANGELOG for a cycle.
   for 1–2 weeks of real PR activity. If 16/16 gated LVs stay
   under threshold across ≥10 PRs, flip to blocking by removing
   `continue-on-error`. Until then it's informational.
-- [ ] **Modal body `gl-form__row` in narrow viewport.** The 140px
-  label column truncates awkwardly under 600px. Two options: (a) let
-  labels wrap above the input below some breakpoint, (b) cap label
-  width by `ch` instead of `px`. Revisit once the UI gets real
-  narrow-screen testing.
+- [x] **Modal body `gl-form__row` in narrow viewport.** Shipped
+  2026-04-25. Added a `@media (max-width: 600px)` block that
+  switches `gl-modal__body .gl-form__row` from
+  `grid-template-columns: 140px 1fr` to `1fr` (label stacks
+  above input), with reduced row gap and the label
+  `padding-top: 0` so it sits directly above its control. No
+  layout impact above the breakpoint.
 - [x] **Close button `×` hover affordance.** Fixed in round 9 —
   hover shows a raised-surface background + border; focus-visible
   adds a 2px accent outline.

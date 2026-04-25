@@ -3295,6 +3295,15 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   align-items: start;
   gap: var(--gl-space-md);
 }
+@media (max-width: 600px) {
+  .gl-modal__body .gl-form__row {
+    grid-template-columns: 1fr;
+    gap: var(--gl-space-sm);
+  }
+  .gl-modal__body .gl-form__label {
+    padding-top: 0;
+  }
+}
 .gl-modal__body .gl-form__label {
   color: var(--gl-fg-subtle);
   text-transform: uppercase;
