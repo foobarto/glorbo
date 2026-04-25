@@ -250,23 +250,32 @@ before joining it into the alert path, refusing path-traversal
 attempts; sidebar `count_memory_files/2` caps the
 `Stream.filter` walk at 999 entries via `Enum.take` so an agent
 spamming thousands of memory files can't slow every sidebar
-render).
+render); **wave 16 on 2026-04-25** verified 1 low already fixed
+at HEAD (StdoutStreamer's pending-buffer is already capped at
+@line_max_bytes=8192 via `cap_partial_buffer/1`, so the
+unlimited-line-buffer DoS is already mitigated) and closed 2
+more lows (`Glorbo.Agent.Memory.compose/3` now lstats every
+memory body + the MEMORY.md index before reading, skipping
+files past 1 MiB or non-regular shapes — defends the BEAM heap
+against attacker-uploaded huge memory files; `glorbo run` CLI
+verb now consults `TaskDefinition.requires_approval?/1` and
+refuses to dispatch a director-required task whose status
+isn't `"approved"` — closes the back-door bypass of the
+dashboard approval gate).
 
-Breakdown: 0 critical, 0 high, 0 medium, 17 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 15 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 17
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 15
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
 - **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
   *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **Unbounded memory file reads allow local DoS via huge files** — Glorbo.Agent.Memory.compose/3 introduces unbounded File.read calls for both the MEMORY.md index and each memory body file. The code enforces a 20KB output budget only after the entire file contents are loaded into memory, meaning a large file placed under…
-  *Paths:* `lib/glorbo/agent/memory.ex`
 - **TaskLive audit aggregation can exhaust memory on large logs** — The new TaskLive usage strip computes totals by calling load_usage_totals, which reads the entire monthly audit JSONL file with File.read and splits it into a list of lines before reduction. Audit logs are append-only and can grow without bound from untrusted…
   *Paths:* `lib/glorbo_web/live/task_live.ex`
 - **UTF-8 offset mismatch can truncate rotated chat logs** — The new rotation logic collects header positions with `Regex.scan(..., return: :index)`, which returns byte offsets, and then feeds those offsets into `String.split_at/2`, which operates on grapheme indices. When messages contain multibyte UTF-8 characters…
@@ -285,10 +294,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/providers_live.ex`
 - **Kanban drag-drop trusts client paths for filesystem writes** — The new "kanban:move" LiveView event accepts a `task_path` from the browser and only validates that it starts with "projects/" and does not contain "..". It then calls `Glorbo.TaskDefinition.write/2` directly. This bypasses the stricter task-path validation…
   *Paths:* `lib/glorbo_web/live/kanban_live.ex`
-- **CLI run bypasses director approval requirements** — `glorbo run` parses the task file and immediately calls `Glorbo.Agent.Dispatch.execute/3`. It never checks `TaskDefinition.requires_approval?/1` or consults the approval gate/state, so a task with `requires_approval: director` in frontmatter will still run.…
-  *Paths:* `lib/glorbo/cli/lifecycle/run.ex, lib/glorbo/task_definition.ex`
-- **StdoutStreamer buffers unlimited line data, enabling DoS** — GlorboWeb.StdoutStreamer concatenates the previous buffer with each read chunk and retains the trailing partial line in memory until a newline appears. If an agent writes a very long line without newlines to stdout.log, `state.buf` grows by 64 KiB every poll…
-  *Paths:* `lib/glorbo_web/stdout_streamer.ex`
 - **Unbounded agent.md scan on startup enables local DoS** — The commit adds a boot-time scan that walks every agents/<slug>/agent.md to decide whether to start the Network.Proxy. This is done during Company.Supervisor.init/1 and calls Agent.Parser.parse_file/1 for each file. Agent.Parser.parse_file/1 uses File.read/1…
   *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/agent/parser.ex`
 - **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…

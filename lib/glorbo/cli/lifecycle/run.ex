@@ -65,6 +65,7 @@ defmodule Glorbo.CLI.Lifecycle.Run do
          task_path <- resolve_task_path(base, company, task_file),
          {:ok, task_def} <-
            Glorbo.TaskDefinition.parse_file(task_path, base: base, company: company),
+         :ok <- check_approval(task_def),
          task <- task_from_def(task_def, task_path),
          {:ok, result} <- Glorbo.Agent.Dispatch.execute(spec, task, []) do
       Audit.emit("run", "complete", %{
@@ -79,6 +80,12 @@ defmodule Glorbo.CLI.Lifecycle.Run do
          "(exit=#{Map.get(result, :exit_status, 0)}, " <>
          "duration_ms=#{Map.get(result, :duration_ms, 0)}).\n"}
     else
+      {:error, {:approval_required, status}} ->
+        {:run, 2,
+         "Refusing to run #{task_file}: task has `requires_approval: director` but " <>
+           "current status is #{inspect(status)}. Approve it via the dashboard before " <>
+           "invoking `glorbo run`.\n"}
+
       {:error, reason} ->
         {:run, 2,
          "Failed to run task #{task_file} for #{company}/#{agent}: #{inspect(reason)}.\n" <>
@@ -105,6 +112,20 @@ defmodule Glorbo.CLI.Lifecycle.Run do
       task_file
     else
       Path.join([base, "companies", company, task_file])
+    end
+  end
+
+  # Threatmodel: `glorbo run` previously bypassed the Director's
+  # approval gate entirely — a task with `requires_approval: director`
+  # would dispatch as soon as the CLI was invoked, regardless of its
+  # current `status`. The dashboard's approval flow + ApprovalsGate
+  # gate the inbox path; the CLI was the back door. Refuse to dispatch
+  # an approval-required task that hasn't been flipped to "approved".
+  defp check_approval(%Glorbo.TaskDefinition{} = td) do
+    if Glorbo.TaskDefinition.requires_approval?(td) and td.status != "approved" do
+      {:error, {:approval_required, td.status || "missing"}}
+    else
+      :ok
     end
   end
 

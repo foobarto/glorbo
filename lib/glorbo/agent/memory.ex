@@ -71,15 +71,38 @@ defmodule Glorbo.Agent.Memory do
     |> Enum.join("\n\n")
   end
 
+  # Threatmodel: memory files are agent-controlled. The previous
+  # `File.read/1` slurped the entire file into RAM before any cap,
+  # so a 1 GB MEMORY.md or memory body could OOM the BEAM during a
+  # single agent's compose. Pre-check size via lstat and skip
+  # anything past `@max_file_bytes`; this caps RAM regardless of
+  # what the file contains.
+  @max_file_bytes 1_048_576
+
   defp read_index(memory_dir) do
     path = Path.join(memory_dir, "MEMORY.md")
 
-    case File.read(path) do
-      {:ok, content} ->
-        content |> String.trim() |> cap(@max_index_path_bytes)
+    if oversize?(path) do
+      ""
+    else
+      case File.read(path) do
+        {:ok, content} ->
+          content |> String.trim() |> cap(@max_index_path_bytes)
+
+        _ ->
+          ""
+      end
+    end
+  end
+
+  defp oversize?(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} ->
+        # info is a tuple-shaped record; size is index 1, type is 2.
+        elem(info, 2) != :regular or elem(info, 1) > @max_file_bytes
 
       _ ->
-        ""
+        true
     end
   end
 
@@ -129,25 +152,36 @@ defmodule Glorbo.Agent.Memory do
 
   defp pack_under_budget(paths, budget) do
     paths
-    |> Enum.reduce({[], 0, 0}, fn path, {acc_bodies, acc_bytes, skipped} ->
-      case File.read(path) do
-        {:ok, content} ->
-          content = String.trim(content)
-          section = "### #{Path.basename(path)}\n\n#{content}"
-          section_bytes = byte_size(section)
-
-          added = if acc_bodies == [], do: section_bytes, else: section_bytes + 2
-
-          if acc_bytes + added <= budget do
-            {acc_bodies ++ [section], acc_bytes + added, skipped}
-          else
-            {acc_bodies, acc_bytes, skipped + 1}
-          end
-
-        _ ->
-          {acc_bodies, acc_bytes, skipped + 1}
-      end
-    end)
+    |> Enum.reduce({[], 0, 0}, &add_path_to_bundle(&1, &2, budget))
     |> then(fn {bodies, _, skipped} -> {bodies, skipped} end)
+  end
+
+  # Skip oversized / non-regular files BEFORE reading so the 20 KB
+  # output budget can't be subverted by uploading a 1 GB body that
+  # gets read into RAM and then discarded.
+  defp add_path_to_bundle(path, {acc_bodies, acc_bytes, skipped} = acc, budget) do
+    if oversize?(path) do
+      {acc_bodies, acc_bytes, skipped + 1}
+    else
+      append_under_budget(path, acc, budget)
+    end
+  end
+
+  defp append_under_budget(path, {acc_bodies, acc_bytes, skipped}, budget) do
+    case File.read(path) do
+      {:ok, content} ->
+        section = "### #{Path.basename(path)}\n\n#{String.trim(content)}"
+        section_bytes = byte_size(section)
+        added = if acc_bodies == [], do: section_bytes, else: section_bytes + 2
+
+        if acc_bytes + added <= budget do
+          {acc_bodies ++ [section], acc_bytes + added, skipped}
+        else
+          {acc_bodies, acc_bytes, skipped + 1}
+        end
+
+      _ ->
+        {acc_bodies, acc_bytes, skipped + 1}
+    end
   end
 end
