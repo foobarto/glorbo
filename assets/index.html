@@ -572,15 +572,22 @@
     // ---------- feature grid (director's surface) ------------------------
 
     const FEATURES = [
-      { t: "inbox",      s: "mine / recent / all / archive", d: "Approvals + audit activity unified. Approve or deny on the prompt diff.", more: "Type g i from anywhere. Keyboard-first. Archive collapses resolved threads." },
-      { t: "kanban",     s: "goal-scoped",                   d: "Drag a card to write task frontmatter. Recurring tasks show ↻.",         more: "Columns are writable hooks. Moving a card triggers the downstream agent's wake." },
-      { t: "chat",       s: "channels + DMs",                d: "Append-only markdown under the hood. Live-tailed in the dashboard.",      more: "Every channel is channels/<name>.md. @mentions route; tail -f works." },
-      { t: "audit",      s: "append-only jsonl",             d: "Actor-verb-object sentences. CSV export. Deep-link any task.",            more: "One file per month. Grep-friendly. Never rewritten. Perfect for compliance." },
-      { t: "goals",      s: "per-goal rollup",               d: "Progress bars over task status. Scoped Kanban one click away.",           more: "Goal = directory with tasks/. Progress derives from task frontmatter." },
-      { t: "skills",     s: "builtin + custom",              d: "Drop markdown into skills/. Used-by counts on every card.",               more: "A skill is a markdown prompt snippet. Agents reference them by name." },
-      { t: "providers",  s: "toml-driven registry · gep-32", d: "CLI adapters AND native OpenAI-compatible endpoints.",                   more: "claude · gemini · codex · opencode · hermes · pi · openai · openrouter · auto-detected ollama / lm studio / vllm / localai / llama.cpp." },
-      { t: "costs",      s: "12-month ledger",               d: "Per-agent and per-company monthly spend. Hard stops at 100%.",            more: "Caps enforced at dispatch time. Breach pauses the agent, not the company." },
-      { t: "brain dump", s: "g b",                           d: "Throwaway thoughts into a daily log. Promote any entry to a task.",       more: "One file per day under journal/. No structure required." },
+      { t: "inbox",       s: "mine / recent / all / archive",  d: "Approvals + audit activity unified. Approve or deny on the prompt diff.", more: "Type g i from anywhere. Keyboard-first. Archive collapses resolved threads." },
+      { t: "kanban",      s: "goal-scoped",                    d: "Drag a card to write task frontmatter. Recurring tasks show ↻.",         more: "Columns are writable hooks. Moving a card triggers the downstream agent's wake." },
+      { t: "chat",        s: "channels + DMs",                 d: "Append-only markdown under the hood. Live-tailed in the dashboard.",      more: "Every channel is channels/<name>.md. @mentions route; tail -f works." },
+      { t: "audit",       s: "append-only jsonl",              d: "Actor-verb-object sentences. CSV export. Deep-link any task.",            more: "One file per month. Grep-friendly. Never rewritten. Perfect for compliance." },
+      { t: "history",     s: "git-backed · gep-33",            d: "Every host-side write is a kernel-committed git commit with actor provenance.", more: "glorbo history show / diff / restore against any past version. Manual edits land as External commits via the watcher fallback." },
+      { t: "goals",       s: "per-goal rollup",                d: "Progress bars over task status. Scoped Kanban one click away.",           more: "Goal = directory with tasks/. Progress derives from task frontmatter." },
+      { t: "skills",      s: "builtin + custom",               d: "Drop markdown into skills/. Used-by counts on every card.",               more: "A skill is a markdown prompt snippet. Agents reference them by name." },
+      { t: "providers",   s: "toml-driven registry · gep-32",  d: "CLI adapters AND native OpenAI-compatible endpoints.",                   more: "claude · gemini · codex · opencode · hermes · pi · openai · openrouter · auto-detected ollama / lm studio / vllm / localai / llama.cpp." },
+      { t: "proposals",   s: "agent-created · gep-28",         d: "Agents propose hires, budgets, projects. Director approves on disk.",     more: "proposals/<id>.md frontmatter is the workflow. Auto-approve under headcount budget; everything else queued for Director sign-off." },
+      { t: "peer review", s: "two-agent gates · gep-41/42",    d: "High-severity tasks get a reviewer auto-dispatched before approval.",    more: "Reviewer's verdict appends to the task's handoff_chain. Approve unblocks the gate; revise routes back to the writer." },
+      { t: "task chain",  s: "handoff_chain · gep-40",         d: "Every reassignment, comment, peer-review event in one timeline.",         more: "Click chain on a task to see who's touched it, what they said, what was decided. Full provenance." },
+      { t: "costs",       s: "12-month ledger",                d: "Per-agent and per-company monthly spend. Hard stops at 100%.",            more: "Caps enforced at dispatch time. Breach pauses the agent, not the company." },
+      { t: "benchmarks",  s: "blind A/B · gep-26",             d: "Run the same task across multiple providers; score outputs side-by-side.", more: "glorbo bench run <template> <task-id> --providers a,b,c. Outputs land under benchmarks/runs/<id>/. Director scores blind." },
+      { t: "brain dump",  s: "g b",                            d: "Throwaway thoughts into a daily log. Promote any entry to a task.",       more: "One file per day under journal/. No structure required." },
+      { t: "doctor",      s: "host preflight",                 d: "12 checks: bwrap, pasta, namespaces, disk, paths, credentials, …",        more: "glorbo doctor --json for CI. --fix repairs what it can (chmod 0600 on credentials, mkdir -p on missing paths)." },
+      { t: "shell",       s: "[alpha] · gep-37",               d: "Interactive Director terminal — Phase 0: CLI scaffold; views land next.",  more: "term_ui-driven, drop-in parity with the LiveView surface. For Directors who'd rather stay in tmux." },
     ];
 
     function FeatureGrid() {
@@ -715,13 +722,16 @@
       { id: "companies", label: "/companies",                     caption: "Companies index — one folder per company on disk",          src: "screenshots/overview.png" },
       { id: "company",   label: "/companies/<co>",                caption: "Company — rollups · roster · org chart",                    src: "screenshots/company.png" },
       { id: "kanban",    label: "/companies/<co>/kanban",         caption: "Goal-scoped board — columns are writable hooks",            src: "screenshots/kanban.png" },
+      { id: "task",      label: "/companies/<co>/tasks/<id>",     caption: "Task — frontmatter editor + handoff chain + comments",      src: "screenshots/task.png" },
       { id: "agent",     label: "/companies/<co>/agents/<slug>",  caption: "Agent — identity · skills · audit · live stdout",           src: "screenshots/agent.png" },
       { id: "inbox",     label: "/companies/<co>/inbox",          caption: "Inbox — unified approvals · keyboard-first",                src: "screenshots/inbox.png" },
-      { id: "approvals", label: "approvals",                      caption: "Approvals queue — diff, approve, deny",                     src: "screenshots/approvals.png" },
+      { id: "channel",   label: "/companies/<co>/channels/<ch>",  caption: "Chat — append-only markdown channels + DMs",                src: "screenshots/channel.png" },
       { id: "audit",     label: "audit",                          caption: "Append-only jsonl — actor · verb · object",                 src: "screenshots/audit.png" },
+      { id: "proposals", label: "/companies/<co>/proposals",      caption: "Proposals — agent-created hires, budgets, projects (GEP-28)", src: "screenshots/proposals.png" },
       { id: "goals",     label: "goals",                          caption: "Goals — progress bars over task status",                    src: "screenshots/goals.png" },
-      { id: "skills",    label: "skills",                         caption: "Skills — reusable markdown prompt snippets",                src: "screenshots/skills.png" },
       { id: "providers", label: "/providers",                     caption: "Providers — CLI + native, auto-detected locals (GEP-32)",   src: "screenshots/providers.png" },
+      { id: "costs",     label: "/costs",                         caption: "Costs — per-agent / per-company monthly LLM spend",         src: "screenshots/costs.png" },
+      { id: "health",    label: "/health",                        caption: "Doctor — host preflight + supervisor tree + CLI tools",     src: "screenshots/health.png" },
     ];
 
     function ScreensShowcase() {
@@ -1012,7 +1022,8 @@
               Everything an agent workforce needs.<br/>Nothing it doesn't.
             </h2>
             <p style={{ color: "#7a8c80", margin: 0, marginBottom: 32, fontSize: 13, maxWidth: 620 }}>
-              You already know what it does. Your ploobis has never been cleaner.
+              Filesystem-first. Kernel-enforced. Single binary. The whole product
+              fits in your terminal and your text editor.
             </p>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
@@ -1089,8 +1100,8 @@
               Elixir watches files. bwrap sandboxes the CLI.<br/>The kernel says no.
             </h2>
             <p style={{ color: "#7a8c80", margin: 0, marginBottom: 28, fontSize: 13, maxWidth: 620 }}>
-              The blamfs rub against the chumble. That's how messages get delivered.
-              Don't overthink it. Click a step to explore it.
+              An agent wake is five steps. Files in, prompt assembled, sandbox
+              launched, CLI runs, reply routed. Click a step to expand it.
             </p>
 
             <WakeStepper />
@@ -1136,7 +1147,8 @@
               Two commands. One minute.
             </h2>
             <p style={{ color: "#7a8c80", margin: 0, marginBottom: 22, fontSize: 13, maxWidth: 620 }}>
-              Pre-schleemed. Zero hizzard leakage. One command.
+              Single Burrito-built binary. No runtime to install. No services
+              to provision. Run it from your home directory.
             </p>
 
             <InstallTabs />

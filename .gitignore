@@ -103,6 +103,8 @@ coverage/
 # GEP-44 visual-regression baselines: PNG fixtures committed for
 # diff-against on every CI / pre-cut run.
 !test/fixtures/ui-baselines/**/*.png
+# Landing-page screenshots: shipped with assets/index.html.
+!assets/screenshots/*.png
 .claude/agents/
 
 # graphify transient outputs. `graph.json` is ~3 MB (binary-ish),
