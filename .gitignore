@@ -109,3 +109,4 @@ graphify-out/
 **/graphify-out/
 .codex
 .reviews/
+.playwright-mcp/

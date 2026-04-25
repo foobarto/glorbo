@@ -8,13 +8,52 @@ Environment:
 - **Server:** `mix phx.server` on `PORT=4100`, backed by `~/.glorbo`
   (dev workspace). Fresh phx.server restart at the top of each
   round.
-- **Browser:** headless chromium via agent-browser + `--cdp 9222`
-  (see `CLAUDE.md` § "Browser UAT — the Bazzite workaround").
+- **Browser:** Playwright MCP driving Google Chrome from inside an
+  Ubuntu distrobox (preferred path — see §Browser environments
+  below). The legacy `agent-browser + --cdp 9222` Bazzite
+  workaround still applies if you must run from the host.
 - **Screenshots:** `.reports/uat-modals/` when triaging modals;
   ad-hoc `.reports/uat-<round>/` otherwise.
 
 Format: `[ ]` pending · `[x]` pass · `[!]` fail with note · `[~]`
 partial / flaky. Update inline as each case runs.
+
+---
+
+## Browser environments
+
+Two paths get a real Chromium/Chrome under Playwright. Pick the
+one that matches where Claude Code is running.
+
+### Path A — Ubuntu distrobox (preferred, 2026-04-25+)
+
+The Bazzite host is Fedora atomic and has no native Chrome
+binary, so Playwright MCP can't launch a browser there
+directly. Run Claude Code from inside an Ubuntu (24.04+)
+distrobox where `apt` works:
+
+```sh
+# one-time, inside the distrobox:
+sudo apt-get install -y build-essential   # for muontrap NIF compile
+npx playwright install chrome             # installs Google Chrome 147+
+
+# then start the dev server and drive it:
+mix phx.server                             # listens on :4000
+```
+
+The distrobox shares the host kernel so `bwrap` still works
+through `/usr/bin/bwrap`. `pasta` (passt) is missing by default
+— `apt-get install passt` if proxy egress matters for the
+round; the doctor surfaces it as a blocker check otherwise.
+`newuidmap` is also missing in a stock distrobox and surfaces
+as a doctor warn.
+
+### Path B — Bazzite host fallback (legacy)
+
+Manual chromium + `--cdp 9222` against `127.0.0.1:4100`, driven
+through `agent-browser`. Slower turnaround and historically
+flaky LiveView-form interaction; only use when distrobox path
+is unavailable.
 
 ---
 

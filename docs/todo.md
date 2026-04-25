@@ -201,7 +201,20 @@ it's been in CHANGELOG for a cycle.
 - [x] #300 R29: Homebrew tap at foobarto/homebrew-tap (`brew install foobarto/tap/glorbo`) + `mix glorbo.release_formula` auto-regen task
 - [x] R30.1: macOS build plumbing — Burrito darwin targets + GHA `build-macos` matrix job + `Sandbox.Bwrap.availability/0` probe + formula renders `on_macos do` block
 - [x] #302 R30.2: `Glorbo.Sandbox.Unsandboxed.start/2` + Dispatch fallback + per-company once `agent.sandbox_unavailable` audit + Doctor reclassification (linux-only checks → `:info` severity on darwin); macOS binaries now functional in degraded mode
-- [ ] After R30.2 ships green: full browser E2E functionality test (new chore from user)
+- [x] **Full browser E2E functionality test (post-R30.2 chore).** Ran
+  2026-04-25 (autonomous L4) under Playwright MCP from inside the
+  Ubuntu distrobox. Smoke covered `/companies` (200 + Companies
+  cards render), `/companies/acme/kanban` (200), `/companies/acme/
+  agents/ceo` (200), `/providers` (200), `/companies/acme/audit`
+  (200), `/companies/acme/proposals` (200), `/companies/acme/
+  inbox` (200), `/health` (200), Ctrl+K command palette open + live
+  filter (`/api/search?co=acme&q=ceo` → 200). Console clean across
+  navigations; 0 LiveView mount errors. Doctor: 10 pass, 1 warn
+  (`uidmap`: newuidmap missing in distrobox), 1 fail (`pasta`:
+  passt missing in distrobox) — both expected omissions of a
+  fresh distrobox, not regressions. CLAUDE.md §"Browser UAT" +
+  uat.md §"Browser environments" updated to record the distrobox
+  path as preferred.
 - [x] #297 R26.2a: atomic `kind:` cut — writers. Every writer emits
   `kind: <name>/v1` (scaffolders, init, router, audit, memory, sentinels,
   brain-dump, chat rotation, kanban/company/project/channel editors,

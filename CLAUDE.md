@@ -186,11 +186,14 @@ constraints spanning multiple files that are easy to violate:
   agent crash → only that agent restarts; company crash →
   only that company.
 
-## Browser UAT — Bazzite workaround
+## Browser UAT — host vs distrobox
 
-Playwright MCP + agent-browser daemon both misbehave on
-Bazzite. Workaround (manual chromium + `--cdp 9222`) lives
-in `docs/testing/uat.md` §Bazzite.
+Playwright MCP + agent-browser daemon both misbehave on the
+Bazzite host (no native Chrome binary; only flatpak). Run
+Claude Code from inside an Ubuntu distrobox where
+`npx playwright install chrome` works directly. Detail
+(both the legacy `--cdp 9222` workaround and the distrobox
+path) in `docs/testing/uat.md` §Browser environments.
 
 ## Off-topic
 
