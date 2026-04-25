@@ -28,6 +28,17 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINES_DIR="$REPO_ROOT/test/fixtures/ui-baselines"
 THRESHOLD_PCT=0.5     # GEP-44 D2: fail if pixel delta exceeds this
 
+# LV names whose entire purpose is to surface environment-dependent
+# data (host CLI versions, doctor check details, localhost provider
+# scan results, etc.). Captured for archive but skipped during diff
+# — they'd false-positive on every machine that isn't this exact
+# contributor's. Filed as a P2 todo for a future fix path
+# (deterministic seed data or per-LV thresholds).
+DIFF_SKIP=(
+  "08-health"
+  "12-providers"
+)
+
 # Pages to capture: name|path|wait-for-selector
 # Tier-1 (01-08) are the load-bearing Director-daily surfaces.
 # Tier-2 (09-13) cover secondary collaboration + governance surfaces.
@@ -137,6 +148,21 @@ diff_against_baseline() {
 
     if [[ ! -f "$base" ]]; then
       echo "WARN: $name has no baseline; skipping" >&2
+      continue
+    fi
+
+    # Skip the diff for environment-dependent LVs (DIFF_SKIP). They
+    # still got captured by the loop above so the dated dirs stay
+    # complete; we just don't compare them.
+    local skipped=""
+    for sk in "${DIFF_SKIP[@]}"; do
+      if [[ "$name" == "$sk" ]]; then
+        skipped=1
+        break
+      fi
+    done
+    if [[ -n "$skipped" ]]; then
+      echo "○ $name: env-dependent (DIFF_SKIP) — captured but not diffed"
       continue
     fi
 
