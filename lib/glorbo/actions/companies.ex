@@ -19,6 +19,7 @@ defmodule Glorbo.Actions.Companies do
 
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
+  alias Glorbo.HomeHistory.Tx
 
   @name_max_bytes 200
 
@@ -62,14 +63,68 @@ defmodule Glorbo.Actions.Companies do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         {:ok, fields} <- validate_params(company, params),
-         abs_path = Path.join([base, "companies", company, "company.md"]),
-         content = render(fields, params),
-         :ok <- atomic_write(abs_path, content),
-         :ok <- emit_update_audit(audit, company, actor, fields) do
-      {:ok, %{abs_path: abs_path, rel_path: "company.md"}}
+    rel_path = Path.join(["companies", company, "company.md"])
+    history_meta = %{actor: history_actor(actor), action: "company.update", target: rel_path}
+
+    # Wrap the writer + audit emission in a HomeHistory tx so both
+    # paths land in one git commit (when history is enabled). On
+    # error, `with_tx` cancels the tx so the §6.1 debounce doesn't
+    # fire a half-baked commit. On success, the §6.1 inactivity
+    # window fires; debug log records the resulting SHA.
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             {:ok, fields} <- validate_params(company, params),
+             abs_path = Path.join([base, "companies", company, "company.md"]),
+             content = render(fields, params),
+             :ok <- atomic_write(abs_path, content),
+             :ok <- Tx.mark_path(tx_id, abs_path),
+             :ok <- emit_update_audit(audit, company, actor, fields),
+             :ok <- mark_audit_path(tx_id, base, company) do
+          {:ok, %{abs_path: abs_path, rel_path: "company.md"}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
+  end
+
+  # Actor labels at the audit-emission API are free-form strings
+  # ("director", "agent:ceo", "mcp:claude-code"). Translate to the
+  # GEP-33 §4.2 actor variants `HomeHistory.commit_marked` expects.
+  # Unknown shapes default to `:system` so we still commit, just
+  # with system-level provenance. Phase 2c-2 can refine.
+  defp history_actor("director"), do: :director
+  defp history_actor("system"), do: :system
+  defp history_actor("external"), do: :external
+
+  defp history_actor("agent:" <> slug) when slug != "" do
+    {:agent, slug}
+  end
+
+  defp history_actor("mcp:" <> client) when client != "" do
+    {:mcp, client}
+  end
+
+  defp history_actor(_), do: :system
+
+  # Best-effort mark of the current month's audit jsonl. The audit
+  # GenServer writes asynchronously so the file may not exist yet
+  # at mark time — that's fine: `mark_path` is purely an in-memory
+  # set add, and the eventual `commit_marked` runs `tracked?/2` (a
+  # path predicate) plus `git add <path>` (which surfaces the file
+  # if it landed in the meantime). When the path doesn't exist by
+  # auto-flush time, `git add` errors and the commit is dropped —
+  # the working-tree audit append already succeeded so no data is
+  # lost; only the audit row's history-coupling for THIS commit is
+  # missed.
+  defp mark_audit_path(tx_id, base, company) do
+    {{y, m, _d}, _time} = :calendar.universal_time()
+    month = :io_lib.format("~4..0B-~2..0B", [y, m]) |> IO.iodata_to_binary()
+    audit_abs = Path.join([base, "companies", company, "audit", month <> ".jsonl"])
+    Tx.mark_path(tx_id, audit_abs)
   end
 
   defp atomic_write(path, content) do

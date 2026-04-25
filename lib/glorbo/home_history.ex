@@ -497,12 +497,26 @@ defmodule Glorbo.HomeHistory do
   end
 
   defp partition_tracked_paths(paths, base) do
-    {tracked, skipped} =
+    {scope_ok, scope_skipped} =
       paths
       |> Enum.uniq()
       |> Enum.split_with(&tracked?(&1, base))
 
-    {Enum.map(tracked, &relativise_or_keep(&1, base)), skipped}
+    # Existence check: a writer may mark a path optimistically
+    # before the corresponding write lands on disk (e.g., the
+    # audit jsonl that another GenServer appends to async). If the
+    # path is still missing at commit time, drop it into :skipped
+    # rather than letting `git add` fail the whole commit. The
+    # working-tree write that DID land remains correct; only the
+    # missing path's history coupling is lost for this commit.
+    {tracked_rel, missing} =
+      scope_ok
+      |> Enum.split_with(fn p -> File.exists?(Path.expand(p, Path.expand(base))) end)
+      |> then(fn {present, missing} ->
+        {Enum.map(present, &relativise_or_keep(&1, base)), missing}
+      end)
+
+    {tracked_rel, scope_skipped ++ missing}
   end
 
   defp relativise_or_keep(path, base) do

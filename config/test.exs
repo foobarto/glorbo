@@ -8,6 +8,11 @@ import Config
 config :glorbo, auto_start_companies: false
 config :glorbo, auto_boot_agents: false
 
+# GEP-33 Phase 2c: skip the production HomeHistory.Tx server under
+# `mix test` so each test can pin its own Tx to a tmp base + claim
+# the canonical registered name without a clash.
+config :glorbo, start_home_history_tx: false
+
 # Keep `~/.glorbo/run/glorbo.pid` untouched by `mix test` runs; the pidfile
 # is for real `phx.server` / `glorbo up` sessions.
 config :glorbo, write_pidfile_on_boot: false

@@ -96,6 +96,11 @@ defmodule Glorbo.HomeHistory.Tx do
   @spec mark_path(String.t(), Path.t(), keyword()) :: :ok
   def mark_path(tx_id, path, opts \\ []) when is_binary(tx_id) and is_binary(path) do
     GenServer.cast(server(opts), {:mark_path, tx_id, path})
+  catch
+    # Cast to an unregistered name raises ArgumentError; treat
+    # missing Tx as feature-disabled and drop silently.
+    :error, :badarg -> :ok
+    :exit, _ -> :ok
   end
 
   @doc """
@@ -116,6 +121,79 @@ defmodule Glorbo.HomeHistory.Tx do
   @spec cancel(String.t(), keyword()) :: :ok
   def cancel(tx_id, opts \\ []) when is_binary(tx_id) do
     GenServer.cast(server(opts), {:cancel, tx_id})
+  end
+
+  @doc """
+  Convenience: open a tx, run `fun`, and let the caller decide
+  the outcome by what `fun` returns:
+
+    * `{:ok, result}` — leave the tx open so the §6.1 debounce
+      window auto-flushes after the caller stops marking paths.
+      Returns `{:ok, result, tx_id}` so the caller can still
+      `mark_path/2` or explicit-flush later if needed.
+    * `{:error, _} = err` — `cancel/1` the tx and return `err`
+      unchanged. Nothing reaches git. The caller's
+      authoritative file write already may or may not have
+      landed; the tx layer doesn't second-guess that.
+    * Any other return — treated as `{:ok, value}`.
+    * Raised exception — `cancel/1` then re-raise.
+
+  This is the canonical Phase 2c entry point: writers wrap
+  their `with`-chain in `with_tx/3` instead of hand-rolling the
+  begin/cancel/leave-debounce-running plumbing.
+
+  ## Resilience to missing Tx server
+
+  If the Tx server is not registered (test envs that opt out,
+  production homes where the supervisor child failed to boot,
+  etc.), `with_tx/3` runs `fun` with a sentinel `tx_id` and
+  treats all `mark_path/cancel/flush` calls as silent no-ops.
+  This matches GEP-33 §12.3: a missing history layer must not
+  turn writer success into writer failure.
+  """
+  @spec with_tx(HomeHistory.tx_meta(), (String.t() -> result), keyword()) :: result
+        when result: term()
+  def with_tx(meta, fun, opts \\ []) when is_map(meta) and is_function(fun, 1) do
+    tx_id =
+      case safe_begin(meta, opts) do
+        {:ok, id} -> id
+        {:disabled, sentinel} -> sentinel
+      end
+
+    try do
+      case fun.(tx_id) do
+        {:error, _} = err ->
+          safe_cancel(tx_id, opts)
+          err
+
+        {:ok, result} ->
+          {:ok, result, tx_id}
+
+        other ->
+          {:ok, other, tx_id}
+      end
+    catch
+      kind, reason ->
+        safe_cancel(tx_id, opts)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    end
+  end
+
+  defp safe_begin(meta, opts) do
+    begin(meta, opts)
+  catch
+    :exit, {:noproc, _} -> {:disabled, "history-disabled-" <> sentinel_suffix()}
+    :exit, :noproc -> {:disabled, "history-disabled-" <> sentinel_suffix()}
+  end
+
+  defp safe_cancel(tx_id, opts) do
+    cancel(tx_id, opts)
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp sentinel_suffix do
+    :crypto.strong_rand_bytes(6) |> Base.encode32(case: :lower, padding: false)
   end
 
   defp server(opts), do: Keyword.get(opts, :server, __MODULE__)

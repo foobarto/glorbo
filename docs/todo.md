@@ -108,10 +108,17 @@ it's been in CHANGELOG for a cycle.
   §6.1 debounce semantics (500 ms inactivity, 2 s hard cap),
   fire-and-forget auto-flush, "history disabled" translation
   for unconfigured homes. Wired into `Glorbo.Application`. 12
-  Tx tests in `tx_test.exs`. Phase 2c wires Router, Actions,
-  scaffolders, restore — one writer at a time. Phase 3
-  follows with watcher-fallback `External` commits for manual
-  edits; Phase 4 adds `show`/`diff`/`restore`.
+  Tx tests in `tx_test.exs`. **Phase 2c-0 + 2c-1 shipped
+  2026-04-25 (autonomous L4):** `Tx.with_tx/3` helper +
+  resilient-to-missing-server fallback; first writer wired
+  (`Actions.Companies.update/3`) + integration test;
+  `commit_marked/3` gained an existence filter so optimistic
+  marks of async-written audit paths don't break the whole
+  commit. Phase 2c-2..N wires the remaining writers (Tasks,
+  Channels, Goals, Skills, Projects, Proposals, Agents) one
+  at a time. Phase 3 follows with watcher-fallback `External`
+  commits for manual edits; Phase 4 adds
+  `show`/`diff`/`restore`.
 - [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
   2026-04-24. Implementation queued **behind** the crown-jewels arc
   (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer

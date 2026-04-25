@@ -165,6 +165,74 @@ defmodule Glorbo.Actions.CompaniesTest do
     end
   end
 
+  describe "GEP-33 Phase 2c: home-history wiring" do
+    alias Glorbo.HomeHistory
+    alias Glorbo.HomeHistory.Tx
+
+    setup %{base: base} do
+      # Bootstrap the history repo for the tmp tree so update/3
+      # actually has somewhere to commit to.
+      File.write!(Path.join(base, "config.md"), "secret_key_base: x\n")
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      # Per-test Tx server pinned to the tmp base + tight timers
+      # so the suite stays fast. Production Tx is skipped under
+      # `mix test` (config :glorbo, :start_home_history_tx, false)
+      # so the canonical registered name is free.
+      {:ok, _tx_pid} =
+        Tx.start_link(
+          name: Glorbo.HomeHistory.Tx,
+          base: base,
+          debounce_ms: 30,
+          hard_cap_ms: 200
+        )
+
+      {:ok, initial_sha: initial_sha}
+    end
+
+    test "successful update lands the company.md change as a kernel-committed history commit",
+         %{base: base, audit: audit} do
+      assert {:ok, _} =
+               Companies.update(
+                 "acme",
+                 %{"name" => "Acme Inc", "monthly_usd" => "25"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      # Auto-flush via the tight 30 ms debounce window.
+      Process.sleep(150)
+
+      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      assert head.subject == "company.update: companies/acme/company.md"
+      assert head.author_name == "Director"
+
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Actor: director"
+      assert body =~ "Glorbo-Action: company.update"
+      assert body =~ "Glorbo-Target: companies/acme/company.md"
+      assert body =~ "Glorbo-Paths: companies/acme/company.md"
+    end
+
+    test "validation failure does NOT produce a history commit",
+         %{base: base, audit: audit, initial_sha: initial_sha} do
+      assert {:error, :name_required} =
+               Companies.update(
+                 "acme",
+                 %{"name" => "   "},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+  end
+
   describe "atomic_write semantics" do
     test "no .tmp sibling remains after a successful write",
          %{base: base, audit: audit, co_dir: co_dir} do

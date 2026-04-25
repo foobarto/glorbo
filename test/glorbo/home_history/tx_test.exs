@@ -292,4 +292,98 @@ defmodule Glorbo.HomeHistory.TxTest do
       {:ok, _} = Tx.begin(%{actor: :director, action: "x", target: "y"}, server: tx)
     end
   end
+
+  describe "with_tx/3" do
+    test "happy path — fun returns {:ok, x}, debounce auto-flushes", %{base: base} do
+      {:ok, _} = init_repo(base)
+      tx = start_server(base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert {:ok, :result_value, tx_id} =
+               Tx.with_tx(
+                 %{actor: :director, action: "with_tx.test", target: "x"},
+                 fn tx_id ->
+                   :ok = Tx.mark_path(tx_id, path, server: tx)
+                   {:ok, :result_value}
+                 end,
+                 server: tx
+               )
+
+      assert tx_id =~ ~r/^history-/
+
+      # Auto-flush should land it within the debounce window.
+      Process.sleep(@debounce_ms * 4)
+
+      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      assert head.subject == "with_tx.test: x"
+    end
+
+    test "error short-circuits and cancels — no commit", %{base: base} do
+      {:ok, %{initial_commit: initial_sha}} = init_repo(base)
+      tx = start_server(base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert {:error, :validation_failed} =
+               Tx.with_tx(
+                 %{actor: :director, action: "with_tx.test", target: "x"},
+                 fn tx_id ->
+                   :ok = Tx.mark_path(tx_id, path, server: tx)
+                   {:error, :validation_failed}
+                 end,
+                 server: tx
+               )
+
+      Process.sleep(@debounce_ms * 4)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+
+    test "raised exception cancels then re-raises", %{base: base} do
+      {:ok, %{initial_commit: initial_sha}} = init_repo(base)
+      tx = start_server(base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert_raise RuntimeError, "boom", fn ->
+        Tx.with_tx(
+          %{actor: :director, action: "with_tx.test", target: "x"},
+          fn tx_id ->
+            :ok = Tx.mark_path(tx_id, path, server: tx)
+            raise "boom"
+          end,
+          server: tx
+        )
+      end
+
+      Process.sleep(@debounce_ms * 4)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+
+    test "non-tagged return value is treated as ok-success",
+         %{base: base} do
+      {:ok, _} = init_repo(base)
+      tx = start_server(base)
+
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited\n---\n")
+
+      assert {:ok, "plain", _tx_id} =
+               Tx.with_tx(
+                 %{actor: :director, action: "with_tx.test", target: "x"},
+                 fn tx_id ->
+                   :ok = Tx.mark_path(tx_id, path, server: tx)
+                   "plain"
+                 end,
+                 server: tx
+               )
+    end
+  end
 end

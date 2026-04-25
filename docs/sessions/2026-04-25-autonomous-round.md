@@ -670,6 +670,154 @@ per protocol's "log the override in the journal."
 
 ---
 
+## Task 6 — GEP-33 Phase 2c-0 + 2c-1: with_tx + first writer wired
+
+**Task picked.** Continuation scope "continue until I tell you to
+stop" after the 5-commit Phase 2b ship. Continuing the
+GEP-33 arc by:
+
+  1. Adding the `Tx.with_tx/3` convenience helper (Phase 2c-0)
+     so writers don't hand-roll begin/cancel/leave-debounce-
+     running plumbing.
+  2. Wiring the first actual writer
+     (`Actions.Companies.update/3`) through it, end-to-end
+     committing the canonical `company.update` event into the
+     history layer (Phase 2c-1).
+
+Bounded scope: one helper + one writer + the production
+gate to make the Tx server skip-able in tests. ~150 lines
+of new code + ~120 lines of new tests, three files touched.
+
+**What shipped.**
+
+  * **`Tx.with_tx(meta, fn tx_id -> ... end, opts)`** —
+    opens a tx, runs the body, returns:
+    * `{:error, _}` from the body → cancel + return as-is.
+    * `{:ok, value}` from the body → leave debounce
+      running, return `{:ok, value, tx_id}` so the caller
+      can mark/flush more if needed.
+    * any other return → treated as `{:ok, value}`.
+    * raised exception → cancel + re-raise.
+  * **`Tx.with_tx` resilience.** `safe_begin/2` catches
+    `:exit, :noproc` and `:exit, {:noproc, _}`, returning a
+    sentinel `"history-disabled-..."` id. The body then
+    runs unchanged; subsequent `mark_path/2` calls (now
+    also wrapped in a `:badarg`/`:exit, _` catch) silently
+    drop. `safe_cancel/2` likewise tolerates a vanished
+    server. This is the §12.3 "best-effort" guarantee:
+    Phase 2c-1 callers are never blocked by a missing or
+    crashed Tx.
+  * **`Glorbo.Actions.Companies.update/3` wired.** New
+    `history_actor/1` translates the existing free-form
+    actor strings (`"director"`, `"agent:ceo"`, `"mcp:claude
+    -code"`, `"system"`, `"external"`) into the `actor()`
+    variants `commit_marked/3` expects. The whole
+    `with`-chain runs inside `with_tx`; on success, both
+    `companies/<co>/company.md` AND the current-month
+    `companies/<co>/audit/YYYY-MM.jsonl` get marked, so
+    the §6.1 inactivity window fires one combined commit.
+  * **`commit_marked/3` existence filter.** New behaviour
+    in `partition_tracked_paths/2`: paths that pass the
+    tracked-scope predicate but don't exist on disk at
+    commit time get dropped into `:skipped` instead of
+    failing the whole `git add` invocation. The motivating
+    case is the audit jsonl: the writer marks it
+    optimistically before `AuditLog.append` finishes its
+    async write. If the audit hasn't landed by auto-flush
+    time, only the audit's history-coupling for THIS
+    commit is missed — the working-tree audit append still
+    succeeds, and the next history commit picks up the
+    audit jsonl as either part of its own paths or via the
+    Phase 3 watcher fallback when that lands.
+  * **Production gate**: `:start_home_history_tx` config
+    flag, default `true`. `config/test.exs` sets it
+    `false` so each test can pin its own Tx to a tmp base
+    + claim the canonical registered name. Mirrors the
+    pre-existing `:auto_start_companies` /
+    `:auto_boot_agents` test gates.
+
+**Tests.**
+
+  * 4 new `with_tx/3` tests in
+    `test/glorbo/home_history/tx_test.exs`:
+    * happy path — body returns `{:ok, value}`, debounce
+      auto-flushes the commit.
+    * error short-circuit — body returns `{:error, _}`,
+      no commit lands.
+    * raised exception — body raises, cancel runs, no
+      commit lands, exception re-raises.
+    * non-tagged return — body returns a plain value,
+      treated as ok-success, debounce fires.
+  * 2 new Companies.update integration tests in
+    `test/glorbo/actions/companies_test.exs`:
+    * Successful update produces a kernel-committed
+      history commit with `Glorbo-Actor: director` /
+      `Glorbo-Action: company.update` / `Glorbo-Target:
+      companies/acme/company.md` / `Glorbo-Paths:
+      companies/acme/company.md` trailers and
+      `Director` author + `Glorbo Kernel` committer.
+    * Validation failure (`name_required`) does NOT
+      produce a history commit — `head.sha` stays at the
+      initial-import sha after the debounce window.
+
+**Design calls I made without you.**
+
+  * **Best-effort silence over loud failure.** A missing
+    audit jsonl at commit time + a crashed Tx server +
+    a non-tracked path all degrade to "drop into skipped /
+    silent no-op" rather than errors. GEP-33 is
+    explicit on §12.3, but the corollary ("don't even
+    surface a warning when the issue is structural and
+    expected") is my call. Cleaner than a stream of
+    routine warnings every test run.
+  * **Module-level config gate, not env var.** Matches
+    `:auto_start_companies` precedent. Production reads
+    config; test config overrides; nothing in
+    `start_link/1` opts.
+  * **Audit path computed inline in
+    Companies.update.** I didn't refactor AuditLog.append
+    to return its target file path, even though that
+    would let writers thread the path through cleanly.
+    Phase 2c is supposed to wire writers, not refactor
+    AuditLog. The inline path computation duplicates the
+    `audit/YYYY-MM.jsonl` shape — acceptable for now
+    given how stable that shape has been (GEP-3 §audit
+    log layout, untouched since GEP-3 shipped). If a
+    future GEP changes the audit file layout, the
+    duplicate breaks visibly here too — both surfaces
+    must update.
+  * **`history_actor/1` defaults to `:system`.** Unknown
+    actor strings shouldn't block writers; defaulting to
+    `:system` provenance is honest about "we don't know
+    who" without losing the commit.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history* test/glorbo/
+    actions/companies_test.exs` — 57/57 green.
+  * `mix precommit` — 2193 tests, 0 failures, 82
+    excluded, 3 skipped. format + credo + docs all clean.
+    exit 0.
+
+**Skipped / not done.**
+
+  * **Phase 2c-2..N — remaining writers.** Tasks,
+    Channels, Goals, Skills, Projects, Proposals, Agents.
+    Each one is its own bounded round.
+  * **Phase 3 watcher fallback.** Out of scope.
+  * **Phase 4 restore UX.** Out of scope.
+  * **AuditLog.append target-path return value.** A
+    follow-up that would clean up the inline audit-path
+    computation in Companies.update (and every future
+    Phase 2c writer); deferred until at least 3 writers
+    have it duplicated and the pattern is undeniable.
+
+**Commit.** Sixth of the day. User's "continue until I
+tell you to stop" still in force.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

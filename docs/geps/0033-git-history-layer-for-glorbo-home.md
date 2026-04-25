@@ -112,6 +112,48 @@ history:
       restore UX. The Tx GenServer runs in production but is
       currently unused — only tests exercise it. Phase 2c lands
       next, one writer at a time.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-0 + 2c-1 — `with_tx/3` convenience helper + first
+      writer wired. `Tx.with_tx(meta, fn tx_id -> ... end)` opens a
+      tx, runs the body, cancels-on-error, leaves debounce running
+      on success. Resilient to a missing Tx server: catches
+      `:exit, :noproc` at begin time and runs the body with a
+      sentinel id; subsequent `mark_path` calls become silent
+      no-ops. Matches §12.3 — a missing history layer must not
+      turn writer success into writer failure.
+
+      First writer wired: `Glorbo.Actions.Companies.update/3`.
+      Now wraps its `with`-chain in `with_tx`, marks the
+      `company.md` write + the current month's audit jsonl path,
+      and lets the §6.1 debounce fire one commit covering both.
+      Validation failures cancel the tx without committing.
+
+      `commit_marked/3` gained an existence filter: paths that
+      are tracked-scope-OK but missing on disk at commit time get
+      dropped into `:skipped` rather than failing the whole `git
+      add`. Audit jsonls written async by the AuditLog GenServer
+      are the motivating case — the writer marks the path
+      optimistically; if the audit append hasn't landed yet
+      (FakeAudit in tests, or a slow disk in prod), only the
+      audit's history-coupling for THIS commit is missed; the
+      working-tree audit append itself still succeeds.
+
+      Production gate: under `mix test`, the application supervisor
+      skips the canonical Tx server (config :glorbo,
+      :start_home_history_tx, false) so each test can pin its own
+      Tx instance to a tmp base + claim the canonical name.
+
+      Test surface: 4 `with_tx/3` tests added (happy + error +
+      raise + non-tagged-return) + 2 Companies.update integration
+      tests (successful update produces a kernel-committed history
+      commit with full Glorbo-* trailers; validation failure does
+      NOT). 2193 tests across the suite, 0 failures.
+
+      Out of scope still: Phase 2c-2..N — Tasks, Channels, Goals,
+      Skills, Projects, Proposals, Agents writers (one PR each).
+      Phase 3 watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home
