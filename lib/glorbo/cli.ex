@@ -381,7 +381,11 @@ defmodule Glorbo.CLI do
   end
 
   def dispatch(["history", "restore", rev, path | rest]) do
-    confirm? = "--yes" not in rest
+    # `--yes` performs the actual restore; default is dry-run so a
+    # mistyped command never silently mutates the working tree.
+    # `HomeHistory.restore/4`'s `:confirm` opt means "the caller has
+    # confirmed; do the write" — so map `--yes` → `confirm: true`.
+    confirm? = "--yes" in rest
 
     case Glorbo.HomeHistory.restore(rev, path, %{actor: :director}, confirm: confirm?) do
       {:ok, %{would_restore: path, head_commit: sha}} ->

@@ -1772,6 +1772,134 @@ staging refactor + Agents.retire wiring.
 
 ---
 
+## Task 19 — End-to-end UAT (autonomous L3) + Phase 4 CLI bug fix
+
+**Task picked.** Scope requested for the UAT pass at L3 (push
+authority not requested; final gate review at the end).
+Goal: validate the GEP-33 layer end-to-end against the live
+dev workspace at `~/.glorbo/`, exercising Director flows
+through Playwright and the watcher-fallback bridge through
+direct file edits.
+
+**Setup.**
+
+  * `apt-get install inotify-tools` in the distrobox so
+    the Watcher backend boots cleanly (was falling back
+    to polling without it; the WatcherBridge would have
+    worked but slowly).
+  * `glorbo history init` against the live `~/.glorbo/` →
+    initial commit `98ff343`, 20 tracked paths.
+  * `mix phx.server` on `:4000`.
+
+**Director flows exercised (via Playwright).**
+
+  * **Kanban new-task** at `/companies/acme/kanban?
+    new_task=1` — typed "UAT smoke task — verifies GEP-33
+    wiring", clicked "+ create task." Result:
+    `task.create: companies/acme/projects/inbox/tasks`
+    landed as commit `4953adc`. Trailers: `Glorbo-Actor:
+    director`, `Glorbo-Action: task.create`, `Glorbo-
+    Paths: companies/acme/audit/2026-04.jsonl,
+    companies/acme/projects/inbox/tasks/inbox-01.md`,
+    `Glorbo-Tx: history-2zizzt46jyaqvl3e`. Author
+    `Director`, committer `Glorbo Kernel`. ✓
+  * **Company.update** at `/companies/acme` — clicked
+    "✎ edit company.md", added a description, clicked
+    save. Result: `company.update:
+    companies/acme/company.md` as commit `c99dd95`.
+    Trailers correctly capture both the company.md +
+    audit jsonl paths. ✓
+
+**WatcherBridge fallback exercised.**
+
+  * `echo "manual edit ..." >> agents/ceo/AGENT.md` from
+    outside the app, slept 3 s, checked log. Result:
+    `external.edit: companies/acme/agents/ceo/AGENT.md`
+    as commit `d646468`. Author `External`, source
+    `watcher`. ✓
+
+**Phase 4 CLI verbs exercised.**
+
+  * `glorbo history log --limit 5` → all 4 commits
+    listed with relative timestamps + author names. ✓
+  * `glorbo history show HEAD` → full commit body +
+    `--stat` summary. ✓
+  * `glorbo history diff <rev1> <rev2> --path
+    companies/acme/company.md` → real diff output. ✓
+  * **`glorbo history restore <rev> <path>` —
+    INVERTED-FLAG BUG FOUND.** Without `--yes`, the
+    restore actually executed (mutated the working tree
+    + created a new commit). With `--yes`, it produced
+    the dry-run "would restore" message. The intended
+    semantics were the opposite — `--yes` = confirm,
+    no-arg = preview.
+
+**Bug fix.**
+
+`lib/glorbo/cli.ex` line 384:
+
+  * was: `confirm? = "--yes" not in rest`
+  * now: `confirm? = "--yes" in rest`
+
+Plus a comment explaining the `:confirm` opt's contract
+on `HomeHistory.restore/4` (`true` = caller confirmed,
+do the write; `false` = preview).
+
+Re-ran the dispatch after the fix:
+
+  * dry-run: "would restore companies/acme/company.md
+    from 98ff343 (HEAD=c2622bc)" + "Re-run with --yes…"
+    ✓
+  * `--yes`: "restored companies/acme/company.md from
+    98ff343 (commit cb80b15)" — actual restore landed. ✓
+
+**Design calls I made without you.**
+
+  * **No regression test for the CLI dispatch flag
+    semantic.** The fix is one boolean inversion;
+    adding a CLI integration test would need a tmp home
+    + history.init scaffolding that doesn't exist
+    elsewhere in `cli_test.exs`. That's the broader
+    Phase 4 CLI integration tests todo I already
+    flagged. The manual-UAT regression is captured here
+    in the journal; future test-coverage rounds will
+    add the dispatch test.
+  * **Skipped Agents.retire end-to-end test** because
+    the live workspace only has one agent (`ceo`) and
+    retiring it would leave `acme` empty. Unit tests
+    cover the wiring; a dedicated retire-roundtrip
+    integration test deserves its own round.
+  * **Left the live `~/.glorbo/.git/` repo in place.**
+    Generated 5 commits during this UAT — they're
+    legit history that records what the UAT actually
+    did. Removing the repo would erase that audit
+    trail.
+
+**Gates.**
+
+  * Live UAT: 4 distinct subjects landed in real `git
+    log` against the live workspace; trailers verified
+    by direct `git log` inspection.
+  * `mix precommit` — 2216 tests, 0 failures, 42
+    excluded, 3 skipped. format + credo + docs all
+    clean. exit 0. (Excluded count dropped from 82
+    to 42 because `inotify-tools` is now installed in
+    the distrobox, so previously-tagged inotify
+    integration tests now run.)
+
+**Skipped / not done.**
+
+  * CLI integration test for the `--yes` regression
+    (deferred to a Phase 4 CLI-test round).
+  * `Agents.retire` end-to-end roundtrip (deferred —
+    needs a fixture-fresh tmp company).
+  * Performance smoke for WatcherBridge under bursty
+    load.
+
+**Commit.** Twentieth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**
