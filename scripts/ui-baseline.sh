@@ -25,6 +25,8 @@ BASELINES_DIR="$REPO_ROOT/test/fixtures/ui-baselines"
 THRESHOLD_PCT=0.5     # GEP-44 D2: fail if pixel delta exceeds this
 
 # Pages to capture: name|path|wait-for-selector
+# Tier-1 (01-08) are the load-bearing Director-daily surfaces.
+# Tier-2 (09-13) cover secondary collaboration + governance surfaces.
 PAGES=(
   "01-overview|/companies|h1"
   "02-company|/companies/acme|main"
@@ -34,6 +36,11 @@ PAGES=(
   "06-agent|/companies/acme/agents/ceo|main"
   "07-task|/companies/acme/tasks/inbox-01|main"
   "08-health|/health|h1"
+  "09-channel|/companies/acme/channels/general|main"
+  "10-goals|/companies/acme/goals|main"
+  "11-proposals|/companies/acme/proposals|main"
+  "12-providers|/providers|main"
+  "13-costs|/costs|main"
 )
 
 cmd="${1:-}"

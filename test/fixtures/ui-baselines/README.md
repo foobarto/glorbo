@@ -37,22 +37,33 @@ yet implemented — if you find a Tier-1 LV that consistently flakes
 above 0.5%, file a follow-up to either add an override OR mask the
 flaky region in the harness.
 
-## Page list (Tier-1, v1)
+## Page list
 
-| # | LV         | URL                                  |
-|---|------------|--------------------------------------|
-| 1 | overview   | `/companies`                         |
-| 2 | company    | `/companies/acme`                    |
-| 3 | kanban     | `/companies/acme/kanban`             |
-| 4 | audit      | `/companies/acme/audit`              |
-| 5 | inbox      | `/companies/acme/inbox`              |
-| 6 | agent      | `/companies/acme/agents/ceo`         |
-| 7 | task       | `/companies/acme/tasks/inbox-01`     |
-| 8 | health     | `/health`                            |
+### Tier-1 — Director-daily surfaces
 
-Tier-2 (channels, goals, proposals, providers, costs) and Tier-3
-(task_chain, benchmarks, brain_dump, skills, project) expansion is
-queued per the GEP-44 rollout plan.
+| #  | LV         | URL                                  |
+|----|------------|--------------------------------------|
+| 01 | overview   | `/companies`                         |
+| 02 | company    | `/companies/acme`                    |
+| 03 | kanban     | `/companies/acme/kanban`             |
+| 04 | audit      | `/companies/acme/audit`              |
+| 05 | inbox      | `/companies/acme/inbox`              |
+| 06 | agent      | `/companies/acme/agents/ceo`         |
+| 07 | task       | `/companies/acme/tasks/inbox-01`     |
+| 08 | health     | `/health`                            |
+
+### Tier-2 — Secondary collaboration + governance
+
+| #  | LV         | URL                                  |
+|----|------------|--------------------------------------|
+| 09 | channel    | `/companies/acme/channels/general`   |
+| 10 | goals      | `/companies/acme/goals`              |
+| 11 | proposals  | `/companies/acme/proposals`          |
+| 12 | providers  | `/providers`                         |
+| 13 | costs      | `/costs`                             |
+
+Tier-3 (task_chain, benchmarks, brain_dump, skills, project)
+expansion is queued per the GEP-44 rollout plan.
 
 ## When to update vs investigate
 

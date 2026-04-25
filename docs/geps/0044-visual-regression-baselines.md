@@ -91,7 +91,7 @@ Each baseline set is timestamp+version-named so the history of
 -- test/fixtures/ui-baselines/`. The `current/` symlink points at
 the active comparison target.
 
-### Tier-1 LVs (v1 scope)
+### Tier-1 LVs (v1 scope) — Director-daily surfaces
 
 Pages that a Director hits daily — regressions here block normal use:
 
@@ -104,9 +104,16 @@ Pages that a Director hits daily — regressions here block normal use:
 7. `/companies/:co/tasks/:task_id` — single task editor
 8. `/health` — doctor surface
 
-Tier-2 (channel, goals, proposals, providers, costs) and Tier-3
-(task_chain, benchmarks, bench, brain_dump, skills, project) land
-in later rounds.
+### Tier-2 LVs (added 2026-04-25) — Secondary collaboration + governance
+
+9.  `/companies/:co/channels/:channel` — chat / channel log
+10. `/companies/:co/goals` — goal tracker
+11. `/companies/:co/proposals` — agent-created proposals queue
+12. `/providers` — provider registry / config
+13. `/costs` — per-agent monthly LLM spend
+
+Tier-3 (task_chain, benchmarks, bench, brain_dump, skills, project)
+land in a later round.
 
 ### Harness
 

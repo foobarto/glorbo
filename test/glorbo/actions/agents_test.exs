@@ -266,4 +266,119 @@ defmodule Glorbo.Actions.AgentsTest do
       assert FakeAudit.calls(audit) == []
     end
   end
+
+  describe "GEP-33 Phase 2c: history wiring on retire/3" do
+    # End-to-end roundtrip: scaffold a writer-style agent with a
+    # tracked-scope subtree (AGENT.md + memory/), wire HomeHistory.Tx
+    # so the dispatch captures into a real history repo, retire,
+    # then verify:
+    #   * working-tree shape (src gone, dest lives in .archive/)
+    #   * audit event landed
+    #   * git history captured the deletion of every tracked-scope
+    #     file under the agent's old dir (archive subtree is
+    #     excluded scope, so it does NOT show up as additions)
+    #   * commit subject + actor identity match GEP-33 §4.2
+
+    alias Glorbo.HomeHistory
+    alias Glorbo.HomeHistory.Tx
+
+    setup %{base: base, ag_dir: ag_dir} do
+      # Seed tracked-scope content the retire should capture as
+      # deletions. The outer setup only creates `workspace/`
+      # (excluded scope), so add the canonical durable files
+      # explicitly.
+      File.write!(Path.join(ag_dir, "AGENT.md"), "---\nkind: agent/v1\nname: ceo\n---\n")
+      File.write!(Path.join(ag_dir, "SOUL.md"), "soul body\n")
+      File.write!(Path.join(ag_dir, "HEARTBEAT.md"), "heartbeat body\n")
+      File.mkdir_p!(Path.join(ag_dir, "memory"))
+      File.write!(Path.join(ag_dir, "memory/notes.md"), "memory body\n")
+
+      # Stage a config.md so HomeHistory.init/1 stays away from it
+      # (excluded scope per GEP-33 §3.2).
+      File.write!(Path.join(base, "config.md"), "secret_key_base: x\n")
+
+      {:ok, %{initial_commit: initial_sha}} = HomeHistory.init(base: base)
+
+      # Per-test Tx server pinned to the tmp base + tight timers.
+      {:ok, _tx_pid} =
+        Tx.start_link(
+          name: Glorbo.HomeHistory.Tx,
+          base: base,
+          debounce_ms: 30,
+          hard_cap_ms: 200
+        )
+
+      {:ok, initial_sha: initial_sha}
+    end
+
+    test "retire roundtrip captures deletions as a history.agent.retire commit",
+         %{base: base, audit: audit, initial_sha: initial_sha} do
+      assert {:ok, %{archive_rel_path: archive_rel}} =
+               Agents.retire("acme", "ceo",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      # Working-tree shape is correct.
+      refute File.exists?(Path.join([base, "companies/acme/agents/ceo"]))
+      assert File.exists?(Path.join([base, "companies/acme", archive_rel, "AGENT.md"]))
+      assert File.exists?(Path.join([base, "companies/acme", archive_rel, "memory/notes.md"]))
+
+      # Audit landed.
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "agent.retire"
+      assert event[:target] == "agents/ceo"
+
+      # Wait for the Tx debounce to fire the auto-commit.
+      Process.sleep(150)
+
+      {:ok, log} = HomeHistory.log(base: base, limit: 5)
+      [head | _] = log
+      refute head.sha == initial_sha
+      assert head.subject =~ "agent.retire: companies/acme/agents/ceo"
+      assert head.author_name == "Director"
+
+      # Inspect commit body via git directly.
+      {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)
+      assert body =~ "Glorbo-Actor: director"
+      assert body =~ "Glorbo-Action: agent.retire"
+
+      # The Glorbo-Paths trailer should reference the deleted source
+      # files (AGENT.md, SOUL.md, HEARTBEAT.md, memory/notes.md).
+      assert body =~ "agents/ceo/AGENT.md"
+      assert body =~ "agents/ceo/SOUL.md"
+      assert body =~ "agents/ceo/memory/notes.md"
+
+      # Verify the commit's diff actually staged DELETIONS — every
+      # named-status line for our tracked source files should be `D`.
+      {name_status, 0} =
+        System.cmd("git", ["log", "-1", "--name-status", "--pretty=%H"], cd: base)
+
+      # Each tracked-scope file under the old agent dir lands as `D`.
+      assert name_status =~ ~r/^D\s+companies\/acme\/agents\/ceo\/AGENT\.md/m
+      assert name_status =~ ~r/^D\s+companies\/acme\/agents\/ceo\/SOUL\.md/m
+      assert name_status =~ ~r/^D\s+companies\/acme\/agents\/ceo\/HEARTBEAT\.md/m
+      assert name_status =~ ~r/^D\s+companies\/acme\/agents\/ceo\/memory\/notes\.md/m
+
+      # And NO additions under .archive/ — that subtree is excluded
+      # per GEP-33 §3.2 / Phase 2c-3 follow-up.
+      refute name_status =~ ~r/^A\s+.*\.archive\//m
+    end
+
+    test "retire with non-existent agent does not produce a history commit",
+         %{base: base, audit: audit, initial_sha: initial_sha} do
+      assert {:error, :not_found} =
+               Agents.retire("acme", "ghost",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      Process.sleep(150)
+
+      {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
+      assert head.sha == initial_sha
+    end
+  end
 end

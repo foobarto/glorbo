@@ -309,4 +309,191 @@ defmodule Glorbo.CLITest do
       assert is_binary(output)
     end
   end
+
+  describe ~S|dispatch(["history", ...]) (GEP-33 Phase 4)| do
+    # GEP-44 follow-up from the Phase 4 security review pass: lock
+    # in the dispatch shape for `history show / diff / restore` so
+    # future regressions like the `--yes` inversion get caught
+    # immediately instead of surfacing in manual UAT.
+
+    setup do
+      base =
+        Path.join(System.tmp_dir!(), "glorbo_cli_history_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join(base, "companies/acme"))
+      File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: acme\n---\n")
+      File.write!(Path.join(base, "config.md"), "secret_key_base: x\n")
+
+      {:ok, %{initial_commit: initial_sha}} = Glorbo.HomeHistory.init(base: base)
+
+      prior = System.get_env("GLORBO_HOME")
+      System.put_env("GLORBO_HOME", base)
+
+      on_exit(fn ->
+        if prior, do: System.put_env("GLORBO_HOME", prior), else: System.delete_env("GLORBO_HOME")
+        File.rm_rf!(base)
+      end)
+
+      {:ok, base: base, initial_sha: initial_sha}
+    end
+
+    test "history show <rev> dispatches to :history with formatted output",
+         %{initial_sha: sha} do
+      {verb, code, output} = CLI.dispatch(["history", "show", sha])
+      assert verb == :history
+      assert code == 0
+      assert output =~ "glorbo: initial history import"
+      assert output =~ "Author:"
+    end
+
+    test "history show without rev arg returns help" do
+      {verb, code, output} = CLI.dispatch(["history", "show"])
+      assert verb == :history
+      assert code == 1
+      assert output =~ "missing revision argument"
+    end
+
+    test "history show with hostile rev rejects via validator" do
+      {verb, code, output} = CLI.dispatch(["history", "show", "--upload-pack=/bin/sh"])
+      assert verb == :history
+      assert code == 1
+      assert output =~ "invalid revision"
+    end
+
+    test "history diff with one rev produces a diff (or empty if HEAD matches working tree)",
+         %{base: base, initial_sha: initial_sha} do
+      # Create a real second commit so diff has something to compare.
+      File.write!(Path.join(base, "companies/acme/company.md"), "---\nname: changed\n---\n")
+
+      {:ok, _} =
+        Glorbo.HomeHistory.commit_marked(
+          [Path.join(base, "companies/acme/company.md")],
+          %{actor: :director, action: "company.update", target: "x"},
+          base: base
+        )
+
+      {verb, code, output} =
+        CLI.dispatch([
+          "history",
+          "diff",
+          initial_sha,
+          "HEAD",
+          "--path",
+          "companies/acme/company.md"
+        ])
+
+      assert verb == :history
+      assert code == 0
+      # Diff output contains the changed name — exact format is git's
+      # `diff --git`, but we just want to know we hit the dispatch.
+      assert output =~ "changed"
+    end
+
+    test "history diff without rev returns help" do
+      {verb, code, output} = CLI.dispatch(["history", "diff"])
+      assert verb == :history
+      assert code == 1
+      assert output =~ "missing revision argument"
+    end
+
+    test "history restore WITHOUT --yes is a dry-run; working tree NOT mutated",
+         %{base: base, initial_sha: initial_sha} do
+      # Edit the file so a restore would actually do something.
+      path = Path.join(base, "companies/acme/company.md")
+      File.write!(path, "---\nname: edited-not-restored\n---\n")
+
+      {:ok, _} =
+        Glorbo.HomeHistory.commit_marked(
+          [path],
+          %{actor: :director, action: "company.update", target: "x"},
+          base: base
+        )
+
+      File.write!(path, "---\nname: edited-yet-again\n---\n")
+
+      {verb, code, output} =
+        CLI.dispatch(["history", "restore", initial_sha, "companies/acme/company.md"])
+
+      assert verb == :history
+      assert code == 0
+      # Dry-run signal: "would restore" + "Re-run with --yes"
+      assert output =~ "would restore"
+      assert output =~ "--yes"
+
+      # Working tree NOT mutated — file still has the latest local edit.
+      assert File.read!(path) =~ "edited-yet-again"
+    end
+
+    test "history restore WITH --yes performs the restore + creates a new commit",
+         %{base: base, initial_sha: initial_sha} do
+      path = Path.join(base, "companies/acme/company.md")
+
+      # Land a second commit so restoring back is a real diff.
+      File.write!(path, "---\nname: changed\n---\n")
+
+      {:ok, _} =
+        Glorbo.HomeHistory.commit_marked(
+          [path],
+          %{actor: :director, action: "company.update", target: "x"},
+          base: base
+        )
+
+      {verb, code, output} =
+        CLI.dispatch([
+          "history",
+          "restore",
+          initial_sha,
+          "companies/acme/company.md",
+          "--yes"
+        ])
+
+      assert verb == :history
+      assert code == 0
+      # Restore signal: "restored" with a new commit sha
+      assert output =~ "restored"
+      assert output =~ ~r/commit [a-f0-9]+/
+
+      # Working tree restored to initial state.
+      assert File.read!(path) =~ "name: acme"
+      refute File.read!(path) =~ "changed"
+    end
+
+    test "history restore on excluded-scope path is rejected", %{initial_sha: sha} do
+      {verb, code, output} = CLI.dispatch(["history", "restore", sha, "config.md", "--yes"])
+      assert verb == :history
+      assert code == 1
+      assert output =~ "outside tracked scope"
+    end
+
+    test "history restore with hostile rev rejects via validator" do
+      {verb, code, output} =
+        CLI.dispatch([
+          "history",
+          "restore",
+          "--upload-pack=/bin/sh",
+          "companies/acme/company.md",
+          "--yes"
+        ])
+
+      assert verb == :history
+      assert code == 1
+      assert output =~ "invalid revision"
+    end
+
+    test "history restore with hostile path rejects via validator", %{initial_sha: sha} do
+      {verb, code, output} =
+        CLI.dispatch(["history", "restore", sha, "../etc/passwd", "--yes"])
+
+      assert verb == :history
+      assert code == 1
+      assert output =~ "invalid path"
+    end
+
+    test "history restore without args returns help" do
+      {verb, code, output} = CLI.dispatch(["history", "restore"])
+      assert verb == :history
+      assert code == 1
+      assert output =~ "missing arguments"
+    end
+  end
 end
