@@ -123,10 +123,11 @@ defmodule GlorboWeb.MCP.Tools.GetCompanyHealth do
   end
 
   defp read_task_status(path) do
-    case File.read(path) do
+    # Threatmodel wave 25: lstat + 1 MiB cap on agent-RW task md.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
       {:ok, content} ->
         case Frontmatter.parse(content) do
-          {:ok, meta, _} -> Map.get(meta, "status", "unknown")
+          {:ok, meta, _} -> safe_status(Map.get(meta, "status", "unknown"))
           _ -> "unknown"
         end
 
@@ -134,6 +135,11 @@ defmodule GlorboWeb.MCP.Tools.GetCompanyHealth do
         "unknown"
     end
   end
+
+  defp safe_status(v) when is_binary(v), do: v
+  defp safe_status(v) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
+  defp safe_status(v) when is_number(v), do: to_string(v)
+  defp safe_status(_), do: "unknown"
 
   defp count_pending_approvals(co_path) do
     co_path
@@ -158,19 +164,37 @@ defmodule GlorboWeb.MCP.Tools.GetCompanyHealth do
   defp last_line_timestamp(co_path, filename) do
     path = Path.join([co_path, "audit", filename])
 
-    with {:ok, content} <- File.read(path),
-         [last | _] <- content |> String.split("\n", trim: true) |> Enum.reverse(),
-         {:ok, %{} = entry} <- Jason.decode(last) do
-      # Audit schema (GEP-7 / FileSpec.AuditMonthJsonl) uses `ts`,
-      # not `timestamp`.
-      Map.get(entry, "ts")
+    # Threatmodel wave 25: stream the audit file line-by-line,
+    # keeping only the last non-empty line. Memory bounded by line
+    # length regardless of file size.
+    if File.regular?(path) do
+      last_line =
+        path
+        |> File.stream!([], :line)
+        |> Enum.reduce("", fn line, acc ->
+          trimmed = String.trim_trailing(line, "\n")
+          if trimmed == "", do: acc, else: trimmed
+        end)
+
+      with last when last != "" <- last_line,
+           {:ok, %{} = entry} <- Jason.decode(last) do
+        Map.get(entry, "ts")
+      else
+        _ -> nil
+      end
     else
-      _ -> nil
+      nil
     end
+  rescue
+    _ -> nil
   end
 
   defp company_headcount_budget(co_path) do
-    case File.read(Path.join(co_path, "company.md")) do
+    # Wave 25: lstat + 1 MiB cap on company.md.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(
+           Path.join(co_path, "company.md"),
+           1_048_576
+         ) do
       {:ok, content} ->
         case Frontmatter.parse(content) do
           {:ok, meta, _} -> Map.get(meta, "headcount_budget")

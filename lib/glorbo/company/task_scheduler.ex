@@ -219,7 +219,8 @@ defmodule Glorbo.Company.TaskScheduler do
   end
 
   defp scan_one(path, state) do
-    with {:ok, content} <- File.read(path),
+    # Threatmodel wave 25: agent-RW task md, lstat + 1 MiB cap.
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
          {:ok, fm, body} <- Frontmatter.parse(content),
          schedule when is_binary(schedule) and schedule != "" <- Map.get(fm, "schedule") do
       handle_scheduled(state, path, fm, schedule, body)
@@ -277,7 +278,8 @@ defmodule Glorbo.Company.TaskScheduler do
   defp fire(state, task_id, entry) do
     # Re-read file — the schedule or assignee may have changed, and the
     # file may have been deleted. Defensive re-read avoids firing stale.
-    case File.read(entry.path) do
+    # Wave 25: lstat + 1 MiB cap on the agent-RW path.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(entry.path, 1_048_576) do
       {:ok, content} ->
         case Frontmatter.parse(content) do
           {:ok, fm, body} ->

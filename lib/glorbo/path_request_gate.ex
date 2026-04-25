@@ -348,10 +348,14 @@ defmodule Glorbo.PathRequestGate do
     File.mkdir_p(dir)
   end
 
+  # Threatmodel wave 25: agent-RW `state/` dir; predictable
+  # `path-pending-<task_id>-<seq>.md` was guessable. Random suffix
+  # makes the path unguessable; exclusive open refuses follow.
   defp build_pending_sentinel_path(agent_slug, task_id, state) do
     state_dir = Path.join([state.base, "companies", state.company, "agents", agent_slug, "state"])
     seq = System.unique_integer([:positive, :monotonic])
-    Path.join(state_dir, "path-pending-#{task_id}-#{seq}.md")
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    Path.join(state_dir, "path-pending-#{task_id}-#{seq}-#{rand}.md")
   end
 
   defp write_pending_sentinel(path, meta, agent_slug, _state) do
@@ -375,9 +379,25 @@ defmodule Glorbo.PathRequestGate do
     Path access request from agent `#{agent_slug}` for task `#{meta.task_id}`.
     """
 
-    case File.write(path, content, [:sync]) do
-      :ok -> :ok
-      {:error, reason} -> {:error, {:write_sentinel_failed, reason}}
+    # Exclusive open refuses to follow a pre-planted symlink in the
+    # agent's `state/` dir AND fails-fast on the (vanishingly
+    # unlikely) random-suffix collision.
+    case :file.open(path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            _ = File.rm(path)
+            {:error, {:write_sentinel_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:error, {:write_sentinel_failed, reason}}
     end
   end
 
@@ -407,7 +427,9 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp read_sentinel_meta(path) do
-    with {:ok, content} <- File.read(path),
+    # Threatmodel wave 25: 64 KiB cap on the agent-RW sentinel.
+    # Real sentinels are < 1 KiB; cap is generous.
+    with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 65_536),
          {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       %{
         task_id: Map.get(meta, "task_id"),
@@ -521,9 +543,32 @@ defmodule Glorbo.PathRequestGate do
     Your path access request for task `#{task_id}` was denied.
     """
 
+    # Wave 25: random suffix + exclusive open. inbox/ is `--ro-bind`
+    # for the agent inside the sandbox, so a planted symlink there
+    # is rare — but Director-host writes go through this path so
+    # the host-side defense is consistent with other writes.
     ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(":", "-")
-    filename = "path-request-denied-#{task_id}-#{ts}.md"
-    File.write(Path.join(inbox_dir, filename), content, [:sync])
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    filename = "path-request-denied-#{task_id}-#{ts}-#{rand}.md"
+    full_path = Path.join(inbox_dir, filename)
+
+    case :file.open(full_path, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :ok = :file.close(fd)
+
+        case result do
+          :ok ->
+            :ok
+
+          {:error, _} = err ->
+            _ = File.rm(full_path)
+            err
+        end
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   # ---------------------------------------------------------------------------

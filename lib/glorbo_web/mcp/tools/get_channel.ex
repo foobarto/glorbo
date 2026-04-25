@@ -59,7 +59,10 @@ defmodule GlorboWeb.MCP.Tools.GetChannel do
     base = context[:base] || Glorbo.Filesystem.Hierarchy.default_root()
     path = Path.join([base, "companies", company, "channels", "#{channel}.md"])
 
-    case File.read(path) do
+    # Threatmodel wave 25: agent-RW channel md. 5 MiB cap is
+    # generous (rotation kicks in much earlier in practice); prevents
+    # a runaway write OOM-ing MCP clients reading the channel.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 5_242_880) do
       {:ok, content} ->
         messages =
           @message_re

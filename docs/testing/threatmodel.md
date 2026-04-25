@@ -453,10 +453,48 @@ found):
     test now asserts scaffold succeeds (writing to a non-
     colliding random path).
 
-Cumulative day-end tally: **75 security findings closed across
-24 waves** — 39 from the original 2026-04-22 import + 4 wave 22
-re-scan + 15 wave 23 re-scans + 11 wave 24 re-scan. Two findings
-remain accepted-by-design.
+**Codex re-scan #5 2026-04-25 23:30** (raw at
+`.reports/codex-security-scan-2026-04-25-2330.md`) surfaced 5
+more findings — 1 already-fixed (PathRequestGate sentinels, just
+done in this wave) + 2 highs + 2 mediums. All closed in
+**wave 25**:
+
+  * **High** — DNS rebinding via Proxy.open_and_splice. Hostname
+    allowlists were resolved at connect-time inside
+    `:gen_tcp.connect/4`, so an attacker controlling DNS for an
+    allowlisted host could return loopback/RFC1918/link-local
+    and reach host-internal services. New `resolve_public_ip/1`
+    pre-resolves A/AAAA, runs `public_ip?/1` against the result
+    (rejects 0.0.0.0, 127/8, ::1, RFC1918, 169.254/16, fe80::/10,
+    ULA fc00::/7, CGNAT 100.64/10), and connects to the vetted
+    IP literal. New test `P10b` verifies loopback-via-allowlist
+    is now refused with 403.
+  * **High** — PathRequestGate sentinels predictable + unbounded.
+    `state/path-pending-<task_id>-<seq>.md` was an attacker-
+    guessable name in agent-RW state dir. Now uses
+    `crypto.strong_rand_bytes(8)` suffix +
+    `:file.open([:exclusive])` for the write, and
+    `read_bounded(_, 64 KiB)` for sentinel parsing. Same fix
+    applied to the inbox `path-request-denied-<task_id>-<ts>.md`
+    notification path.
+  * **Medium** — TaskScheduler reads task files unbounded. Both
+    `scan_one/2` and `fire/3` switched from raw `File.read/1` to
+    `AgentWritableFile.read_bounded(_, 1 MiB)`.
+  * **Medium** — MCP `get_company_health` reads task md + audit
+    files unbounded. `read_task_status/1` now uses
+    `read_bounded(_, 1 MiB)` + `safe_status/1` scalar coercion;
+    `last_line_timestamp/2` switched from `File.read +
+    String.split + Enum.reverse` to `File.stream!([], :line) +
+    Enum.reduce` (memory bounded by line length);
+    `company_headcount_budget/1` uses `read_bounded`.
+  * **Medium** — MCP `get_channel` slurped before applying limit.
+    Switched to `AgentWritableFile.read_bounded(_, 5 MiB)` so
+    a runaway channel write can't OOM MCP clients.
+
+Cumulative day-end tally: **80 security findings closed across
+25 waves** — 39 from the original 2026-04-22 import + 4 wave 22
++ 15 wave 23 + 11 wave 24 + 11 wave 25 (8 from codex v5 + earlier
+PathRequestGate fix). Two findings remain accepted-by-design.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.

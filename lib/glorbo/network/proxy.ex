@@ -50,6 +50,7 @@ defmodule Glorbo.Network.Proxy do
   use GenServer
 
   require Logger
+  import Bitwise, only: [band: 2]
 
   # Idle-tunnel ceiling. A CONNECT tunnel carrying no bytes for this long
   # gets torn down by relay_bytes/3's `after` clause. 5 minutes aligns
@@ -575,9 +576,36 @@ defmodule Glorbo.Network.Proxy do
     {:unknown, :classifier_malformed}
   end
 
+  # Threatmodel wave 25: DNS rebinding defense. The classifier
+  # allowlists by HOSTNAME, but `:gen_tcp.connect/4` resolves the
+  # name at connect-time. An attacker controlling DNS for an
+  # allowlisted host can return loopback / RFC1918 / link-local /
+  # ULA / unspecified addresses and reach host-internal services.
+  # Resolve A/AAAA ourselves first, refuse private destinations,
+  # and connect to the vetted IP literal.
   defp open_and_splice(host, port, client_sock, task_sup) do
+    case resolve_public_ip(host) do
+      {:ok, ip_charlist} ->
+        do_connect(ip_charlist, host, port, client_sock, task_sup)
+
+      {:error, :private_address} ->
+        Logger.info(
+          "[network.proxy] DNS-rebind block host=#{host} resolved to private/loopback/link-local"
+        )
+
+        write_response(client_sock, "HTTP/1.1 403 Forbidden\r\n\r\n")
+        safe_close(client_sock)
+
+      {:error, reason} ->
+        Logger.info("[network.proxy] DNS resolve failed host=#{host}: #{inspect(reason)}")
+        write_response(client_sock, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+        safe_close(client_sock)
+    end
+  end
+
+  defp do_connect(ip_charlist, host, port, client_sock, task_sup) do
     case :gen_tcp.connect(
-           String.to_charlist(host),
+           ip_charlist,
            port,
            [:binary, packet: :raw, active: false],
            5_000
@@ -592,6 +620,54 @@ defmodule Glorbo.Network.Proxy do
         safe_close(client_sock)
     end
   end
+
+  # A/AAAA lookup; rejects loopback / RFC1918 / link-local / ULA /
+  # unspecified addresses. Returns the first public IP as charlist.
+  defp resolve_public_ip(host) do
+    host_charlist = String.to_charlist(host)
+
+    case :inet.getaddrs(host_charlist, :inet, 5_000) do
+      {:ok, [_ | _] = addrs} ->
+        case Enum.find(addrs, &public_ip?/1) do
+          nil -> {:error, :private_address}
+          ip -> {:ok, :inet.ntoa(ip)}
+        end
+
+      _ ->
+        case :inet.getaddrs(host_charlist, :inet6, 5_000) do
+          {:ok, [_ | _] = addrs} ->
+            case Enum.find(addrs, &public_ip?/1) do
+              nil -> {:error, :private_address}
+              ip -> {:ok, :inet.ntoa(ip)}
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  # Reject any IP we'd consider "internal":
+  #   * 0.0.0.0 / ::                  unspecified
+  #   * 127.0.0.0/8 / ::1             loopback
+  #   * 10/8, 172.16/12, 192.168/16   RFC1918
+  #   * 169.254/16 / fe80::/10        link-local
+  #   * fc00::/7                      ULA (unique local)
+  #   * 100.64.0.0/10                 CGNAT (technically private)
+  defp public_ip?({0, 0, 0, 0}), do: false
+  defp public_ip?({127, _, _, _}), do: false
+  defp public_ip?({10, _, _, _}), do: false
+  defp public_ip?({172, b, _, _}) when b in 16..31, do: false
+  defp public_ip?({192, 168, _, _}), do: false
+  defp public_ip?({169, 254, _, _}), do: false
+  defp public_ip?({100, b, _, _}) when b in 64..127, do: false
+  defp public_ip?({_, _, _, _}), do: true
+  defp public_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: false
+  defp public_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: false
+  defp public_ip?({a, _, _, _, _, _, _, _}) when band(a, 0xFFC0) == 0xFE80, do: false
+  defp public_ip?({a, _, _, _, _, _, _, _}) when band(a, 0xFE00) == 0xFC00, do: false
+  defp public_ip?({_, _, _, _, _, _, _, _}), do: true
+  defp public_ip?(_), do: false
 
   # Bidirectional byte relay via two supervised tasks. Using async_nolink
   # (TODO.md Critical #3) so a pipe-task crash doesn't :EXIT-kill its
