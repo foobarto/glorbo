@@ -3,7 +3,9 @@
 #
 # Usage:
 #   bash scripts/ui-baseline.sh capture <DEST_DIR>
-#       Boot phx.server, screenshot all 8 Tier-1 LVs into <DEST_DIR>.
+#       Boot phx.server with a fresh tmp GLORBO_HOME, seed an `acme`
+#       fixture company via `./glorbo init` + `./glorbo new company`,
+#       screenshot all 18 LVs into <DEST_DIR>.
 #   bash scripts/ui-baseline.sh check
 #       Capture into a tmp dir + diff each PNG vs current/. Exit 1
 #       if any LV's pixel delta exceeds the threshold.
@@ -12,7 +14,9 @@
 #       test/fixtures/ui-baselines/, repoint current/ symlink.
 #
 # Requires:
-#   - mix (project Elixir env)
+#   - mix (project Elixir env, for `phx.server` + `glorbo.build_local`)
+#   - ./glorbo (the burrito-built CLI, for fixture seeding — built
+#     on demand if missing)
 #   - npx playwright (browser automation; install once with
 #     `npx playwright install chrome`)
 #   - npx pixelmatch (perceptual diff)
@@ -49,51 +53,42 @@ PAGES=(
   "18-project|/companies/acme/projects/inbox|main"
 )
 
-cmd="${1:-}"
-case "$cmd" in
-  capture)
-    DEST="${2:?usage: $0 capture <DEST_DIR>}"
-    mkdir -p "$DEST"
-    capture_pages "$DEST"
-    ;;
-  check)
-    if [[ ! -L "$BASELINES_DIR/current" ]]; then
-      echo "FATAL: $BASELINES_DIR/current symlink missing — run 'update' first." >&2
-      exit 2
-    fi
-    TMP_DIR="$(mktemp -d -t glorbo-vr-XXXX)"
-    trap 'rm -rf "$TMP_DIR"' EXIT
-    capture_pages "$TMP_DIR"
-    diff_against_baseline "$TMP_DIR" "$BASELINES_DIR/current"
-    ;;
-  update)
-    NEW_VERSION="$(date +%Y-%m-%d)-$(get_app_version)"
-    DEST="$BASELINES_DIR/$NEW_VERSION"
-    mkdir -p "$DEST"
-    capture_pages "$DEST"
-    ln -snf "$NEW_VERSION" "$BASELINES_DIR/current"
-    echo "✓ baseline updated → $DEST"
-    echo "  (current/ → $NEW_VERSION)"
-    ;;
-  *)
-    sed -n '3,18p' "$0" >&2
-    exit 1
-    ;;
-esac
-
-# ---------------------------------------------------------------------
-
 capture_pages() {
   local dest="$1"
   local glorbo_home; glorbo_home="$(mktemp -d -t glorbo-vr-home-XXXX)"
 
+  # Seed via the burrito CLI. There's no `mix glorbo.init` /
+  # `mix glorbo.cli` mix task — those live on the burrito-built
+  # `./glorbo` binary. Build it locally if missing so the harness
+  # can run against a fresh tmp GLORBO_HOME (GEP-44 D6).
+  if [[ ! -x "$REPO_ROOT/glorbo" ]]; then
+    echo "→ ./glorbo missing — building local burrito (mix glorbo.build_local)"
+    (cd "$REPO_ROOT" && mix glorbo.build_local >/dev/null) || {
+      echo "FATAL: mix glorbo.build_local failed; cannot seed fixture." >&2
+      return 1
+    }
+  fi
+
   echo "→ booting phx.server with GLORBO_HOME=$glorbo_home"
+  # `./glorbo init` may exit 1 if host-side doctor checks fail
+  # (e.g., missing CLI tool inside this distrobox). The
+  # filesystem layout still gets written, which is what matters
+  # for the harness. Treat presence of the `companies/` dir as
+  # the success signal rather than the exit code.
   GLORBO_HOME="$glorbo_home" \
-    mix glorbo.init --no-example >/dev/null 2>&1 || true
+    "$REPO_ROOT/glorbo" init --no-example >/dev/null 2>&1 || true
+
+  if [[ ! -d "$glorbo_home/companies" ]]; then
+    echo "FATAL: ./glorbo init didn't create $glorbo_home/companies" >&2
+    return 1
+  fi
 
   # Seed canonical fixture company so each LV has predictable content.
   GLORBO_HOME="$glorbo_home" \
-    mix glorbo.cli new company acme >/dev/null 2>&1 || true
+    "$REPO_ROOT/glorbo" new company acme >/dev/null 2>&1 || {
+      echo "FATAL: ./glorbo new company acme failed" >&2
+      return 1
+    }
 
   GLORBO_HOME="$glorbo_home" \
     nohup mix phx.server > /tmp/ui-baseline-phx.log 2>&1 &
@@ -157,5 +152,39 @@ get_app_version() {
   grep -E '^\s+version: "' mix.exs | head -1 | sed -E 's/.*version: "(.+)".*/\1/'
 }
 
-# Re-entry: bash sources file then runs $cmd. The functions above are
-# defined; the case block at the top dispatched to one of them.
+# Dispatch comes after all function defs so bash has them parsed
+# before we reach the case block. Earlier revisions had this case
+# at the top, which silently failed at runtime ("command not found:
+# capture_pages") — masked because contributors invoked the node
+# capture script directly.
+cmd="${1:-}"
+case "$cmd" in
+  capture)
+    DEST="${2:?usage: $0 capture <DEST_DIR>}"
+    mkdir -p "$DEST"
+    capture_pages "$DEST"
+    ;;
+  check)
+    if [[ ! -L "$BASELINES_DIR/current" ]]; then
+      echo "FATAL: $BASELINES_DIR/current symlink missing — run 'update' first." >&2
+      exit 2
+    fi
+    TMP_DIR="$(mktemp -d -t glorbo-vr-XXXX)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+    capture_pages "$TMP_DIR"
+    diff_against_baseline "$TMP_DIR" "$BASELINES_DIR/current"
+    ;;
+  update)
+    NEW_VERSION="$(date +%Y-%m-%d)-$(get_app_version)"
+    DEST="$BASELINES_DIR/$NEW_VERSION"
+    mkdir -p "$DEST"
+    capture_pages "$DEST"
+    ln -snf "$NEW_VERSION" "$BASELINES_DIR/current"
+    echo "✓ baseline updated → $DEST"
+    echo "  (current/ → $NEW_VERSION)"
+    ;;
+  *)
+    sed -n '3,20p' "$0" >&2
+    exit 1
+    ;;
+esac

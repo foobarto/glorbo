@@ -64,15 +64,30 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
-- [ ] **VR harness fixture-seed bug.** `scripts/ui-baseline.sh`
-  calls `mix glorbo.init --no-example` and `mix glorbo.cli new
-  company acme` to seed the tmp `GLORBO_HOME`, but those mix tasks
-  don't exist (they're `./glorbo` burrito subcommands), and the
-  `|| true` swallowed the failure. Tier-1 / 2 / 3 baselines were
-  all captured against the live `~/.glorbo` instead. Fix: replace
-  with `./glorbo init --no-example` + `./glorbo new company acme`,
-  add a `mix glorbo.build_local` precondition. Land before the
-  harness goes into CI (per GEP-44 D6).
+- [x] **VR harness fixture-seed bug.** Shipped 2026-04-25 — harness
+  now uses `./glorbo init` + `./glorbo new company acme` against
+  a fresh tmp `GLORBO_HOME`, with a `mix glorbo.build_local`
+  fallback when the burrito symlink is missing. Also moved the
+  case-dispatch block AFTER the function definitions (the prior
+  ordering silently failed at runtime — masked because
+  contributors invoked the node script directly). Baselines
+  recaptured into `2026-04-25-0.11.0/`.
+- [ ] **VR harness `check` mode flake risk — topbar-path + clock
+  noise.** The fresh-fixture baselines bake the random
+  `/tmp/glorbo-vr-home-XXXX` path into the topbar breadcrumb;
+  the bottom-right status bar shows wall-clock time +
+  `uptime Nm`. Anti-aliasing on these strings could push diff
+  past the 0.5% threshold across runs. Likely fix: pass
+  Playwright a `clip` rect that excludes the topbar (top ~30px)
+  and the bottom status row (bottom ~24px). Validate by running
+  `check` 5× back-to-back; if all stay under 0.5%, ship as-is.
+- [ ] **VR harness needs project-local node_modules.** Currently
+  relies on `NODE_PATH=/home/user/projects/hermes-agent/...`
+  to find playwright + pngjs + pixelmatch. CI / contributors
+  won't have that path. Add a `package.json` under `scripts/` (or
+  the repo root) with `playwright`, `pngjs`, `pixelmatch` listed
+  as devDependencies, plus a `npm install` precondition in the
+  harness.
 - [ ] **Modal body `gl-form__row` in narrow viewport.** The 140px
   label column truncates awkwardly under 600px. Two options: (a) let
   labels wrap above the input below some breakpoint, (b) cap label
