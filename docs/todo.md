@@ -177,20 +177,15 @@ it's been in CHANGELOG for a cycle.
   paths. Phase 3 follows with watcher-fallback `External`
   commits for manual edits; Phase 4 adds
   `show`/`diff`/`restore`.
-- [ ] **GEP-37 `glorbo shell` implementation — Phase 0 SHIPPED
-  2026-04-25 (v0.10.0).** CLI verb wired, `term_ui ~> 1.0.0-rc`
-  installed, `Glorbo.Shell` skeleton + placeholder banner +
-  non-TTY guard. 4 dispatch tests. Phase 1 (Supervisor + Runtime
-  + EventBus) and Phase 2+ (views in drop-in parity order)
-  remain queued. Originally:
-  2026-04-24. Implementation queued **behind** the crown-jewels arc
-  (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer
-  direction. Once the chain-observability + peer-review infra lands
-  as v0.8.0, shell work resumes targeting v0.9.0. Phased shipping
-  plan unchanged: (1) `Glorbo.Actions` extraction (happens as part of
-  v0.8.0 anyway); (2) `term_ui` dep + Shell supervisor + Runtime
-  wired under `glorbo shell` subcommand; (3) views in drop-in parity
-  order.
+- [ ] **GEP-37 `glorbo shell` Phase 1 — Supervisor + Runtime +
+  EventBus.** Phase 0 shipped 2026-04-25 (v0.10.0): CLI verb
+  wired, `term_ui ~> 1.0.0-rc` installed, `Glorbo.Shell`
+  skeleton + placeholder banner + non-TTY guard, 4 dispatch
+  tests. Phase 1 builds the OTP runtime (Shell.Supervisor,
+  Shell.Runtime GenServer driving the term_ui render loop,
+  Shell.EventBus pub/sub for per-LV drop-in views). Phase 2+
+  ships views in drop-in parity order with the Phoenix
+  dashboard. Sprint-sized; not autonomous-bounded.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with
@@ -227,11 +222,14 @@ it's been in CHANGELOG for a cycle.
   `score_task/3` scores a schedule substring match at 35 (below
   title/id). Task labels decorate with `(<schedule>)` when the
   task has a schedule. 5 new tests in `search_test.exs`.
-- [ ] **Visual regression tests.** We'd catch the topbar wrap /
-  modal-body-unstyled class of bugs earlier with a
-  screenshot-baseline test per LV. Baseline sprint: pick
-  agent-browser via CDP (CLAUDE.md pattern) + diff screenshots,
-  store baselines in `test/fixtures/ui-baselines/`.
+- [x] **Visual regression tests.** Shipped 2026-04-25 as
+  GEP-44. `scripts/ui-baseline.sh` drives Playwright over 18
+  LV routes, diffs against
+  `test/fixtures/ui-baselines/current/` via pixelmatch, gates
+  PRs in CI as informational drift annotations. Two env-
+  dependent LVs (`/health`, `/providers`) are in `DIFF_SKIP`;
+  remaining 16 sit at 0.048–0.311% drift on CI. Flipping to
+  blocking-mode is gated on a 1–2 week soak (separate todo).
 
 ---
 
