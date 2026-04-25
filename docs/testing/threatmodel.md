@@ -192,16 +192,26 @@ walk + dir-expand); **wave 10 on 2026-04-25** closed 2 more lows
 (Kanban return_to open-redirect tightened — `same_origin_path?/1`
 rejects `//evil.com` + `/\\windows`-style protocol-relative URLs;
 Scheduler.default_heartbeat_lookup/3 lstat'd to refuse symlinks +
-non-regular files, blocking DoS-via-/dev/zero pivot).
+non-regular files, blocking DoS-via-/dev/zero pivot); **wave 11 on
+2026-04-25** verified 1 low already fixed at HEAD (TaskLive
+`delete_task` now delegates to `Actions.Tasks.trash/3` which
+emits the `task.trash` audit entry through the home-history Tx)
+and closed 2 more lows (Channels.create's `guard_not_exists/1`
+switched from `File.exists?` to `:file.read_link_info` so a
+dangling symlink at `channels/<n>.md` no longer lets an attacker
+clobber an arbitrary path via `File.write`; Companies.update's
+`atomic_write/2` now lstat-gates the destination + uses a
+unique-per-call temp filename to defeat the predictable-tmpfile
+race that let attackers redirect the rename target).
 
-Breakdown: 0 critical, 0 high, 0 medium, 32 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 29 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 32
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 29
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -221,8 +231,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/task_definition.ex`
 - **strip_ansi crashes on non‑UTF‑8 reply/STDOUT output** — The commit adds strip_ansi/1 and applies it to both stdout fallback replies and on-disk reply reads. strip_ansi relies on String.replace/3, which requires valid UTF‑8 binaries. Agent/CLI output is attacker-controlled and may contain arbitrary bytes; invalid…
   *Paths:* `lib/glorbo/cli/dispatcher.ex`
-- **TaskLive deletes tasks without recording audit events** — TaskLive now supports delete_task, but the handler directly renames the task file into history/deleted without emitting an audit event. This diverges from KanbanLive’s delete path, which explicitly appends a task.delete audit entry. As a result, anyone with…
-  *Paths:* `lib/glorbo_web/live/task_live.ex, lib/glorbo_web/live/kanban_live.ex`
 - **Task goal frontmatter can crash parsing on non-scalar values** — TaskDefinition.parse_frontmatter now reads the optional goal key and passes it to as_string. as_string blindly calls to_string for non-binary values, which raises Protocol.UndefinedError for YAML maps or lists. A task file containing goal: {foo: bar} or goal:…
   *Paths:* `lib/glorbo/task_definition.ex`
 - **Inbox audit feed rereads full log on each update** — InboxLive’s recent-activity panel uses File.read/1 to load the full current-month audit log and then filters the last 50 lines. This happens during initial mount and again on every :file_event and :audit_append notification. Because audit entries are…
@@ -233,10 +241,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `mix.exs, config/dev.exs`
 - **Denial reason input can corrupt task frontmatter parsing** — The commit adds a denial-reason textarea and passes its raw contents to GlorboWeb.Actions.set_approval/4. When a denial reason is present, set_approval rebuilds task frontmatter via TaskDefinition.write_frontmatter/2. That serializer only escapes double…
   *Paths:* `lib/glorbo_web/live/approval_queue_live.ex, lib/glorbo_web/actions.ex, lib/glorbo/task_definition.ex`
-- **Channel creation bypasses symlink checks and can write outside scope** — The new `create_channel` LiveView handler constructs a path and uses `File.mkdir_p` + `File.write` after only checking slug validity and `File.exists?`. This bypasses the `ensure_regular_file`/`lstat` symlink protections used in `GlorboWeb.Actions`. A…
-  *Paths:* `lib/glorbo_web/live/channel_live.ex`
-- **company.md editor allows symlink-based file overwrite** — The commit adds a dashboard modal that rewrites company.md by writing to `company.md.tmp` and renaming it. The implementation does not verify that either `company.md` or the temporary path is a regular file, nor does it use an exclusive/unique temp file. If…
-  *Paths:* `lib/glorbo_web/live/company_live.ex`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
 - **CLI failure logging can crash on non‑UTF‑8 stdout** — The new maybe_log_run_output/4 helper logs a snippet of CLI stdout when exit status is non‑zero or a reply file is missing. It converts the raw stdout to a string and calls String.slice/3. However, stdout is captured as raw binary from the bwrap port (with…

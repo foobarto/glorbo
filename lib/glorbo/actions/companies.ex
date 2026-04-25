@@ -97,16 +97,43 @@ defmodule Glorbo.Actions.Companies do
     end
   end
 
+  # Threatmodel: previously wrote to a predictable `path.tmp` then
+  # renamed. Two issues —
+  #   1. `path` could be a symlink the attacker planted before the
+  #      Director hits Save; `File.rename` would clobber the link
+  #      target rather than the in-tree file.
+  #   2. `path.tmp` was a predictable name an attacker could
+  #      pre-plant as a symlink to redirect the write.
+  # Fix: lstat the destination, refuse anything that's not a
+  # regular file (or absent — first-time create). Use a unique
+  # temp name (`path.<unique>.tmp`) to defeat the predictable-
+  # tmpfile race. The unique-name approach keeps File.rename
+  # atomic on the same filesystem.
   defp atomic_write(path, content) do
-    tmp = path <> ".tmp"
+    case ensure_regular_or_absent(path) do
+      :ok ->
+        tmp = "#{path}.#{System.unique_integer([:positive, :monotonic])}.tmp"
 
-    with :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
+        with :ok <- File.write(tmp, content),
+             :ok <- File.rename(tmp, path) do
+          :ok
+        else
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
       {:error, _} = err ->
-        _ = File.rm(tmp)
         err
+    end
+  end
+
+  defp ensure_regular_or_absent(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} when elem(info, 2) == :regular -> :ok
+      {:ok, _info} -> {:error, :not_regular_file}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

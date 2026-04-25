@@ -74,6 +74,31 @@ defmodule Glorbo.Actions.ChannelsTest do
       assert FakeAudit.calls(audit) == []
     end
 
+    test "refuses to write through a pre-existing dangling symlink",
+         %{base: base, audit: audit, co_dir: co_dir} do
+      # Threatmodel: an attacker plants
+      # `channels/eng.md -> /tmp/escape-NNN` (target doesn't exist).
+      # `File.exists?/1` follows the link and returns false, so a
+      # naive guard would proceed and `File.write/2` would create
+      # the target outside the company scope. The lstat-based guard
+      # must refuse writes through any pre-existing entry, dangling
+      # or not.
+      File.mkdir_p!(Path.join(co_dir, "channels"))
+      escape_target = Path.join(System.tmp_dir!(), "glorbo-channel-esc-#{System.unique_integer([:positive])}")
+      symlink = Path.join([co_dir, "channels", "eng.md"])
+      :ok = File.ln_s(escape_target, symlink)
+
+      assert {:error, :already_exists} =
+               Channels.create("acme", "eng",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      refute File.exists?(escape_target)
+      assert FakeAudit.calls(audit) == []
+    end
+
     test "rejects invalid channel slug",
          %{base: base, audit: audit} do
       assert {:error, {:invalid_slug, :channel, "foo bar"}} =

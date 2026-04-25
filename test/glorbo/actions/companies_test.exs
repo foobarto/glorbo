@@ -163,6 +163,28 @@ defmodule Glorbo.Actions.CompaniesTest do
         Companies.update("acme", %{"name" => "x"}, base: base, audit: audit)
       end
     end
+
+    test "refuses to write when company.md is a symlink",
+         %{base: base, audit: audit, co_dir: co_dir} do
+      # Threatmodel: an attacker plants `company.md -> /tmp/escape`
+      # before the Director hits Save. Previous atomic_write would
+      # follow the link and `File.rename` would clobber the target
+      # outside the company scope. The lstat-based guard must
+      # refuse anything that isn't a regular file (or absent).
+      escape_target = Path.join(System.tmp_dir!(), "glorbo-co-esc-#{System.unique_integer([:positive])}")
+      symlink = Path.join(co_dir, "company.md")
+      :ok = File.ln_s(escape_target, symlink)
+
+      assert {:error, :not_regular_file} =
+               Companies.update("acme", %{"name" => "Acme"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      refute File.exists?(escape_target)
+      assert FakeAudit.calls(audit) == []
+    end
   end
 
   describe "GEP-33 Phase 2c: home-history wiring" do

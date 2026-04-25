@@ -132,8 +132,18 @@ defmodule Glorbo.Actions.Channels do
   defp archive_dir_path(base, company),
     do: Path.join([base, "companies", company, "channels", ".archive"])
 
+  # `File.exists?/1` follows symlinks. If an attacker has planted a
+  # dangling symlink at `channels/<name>.md -> /tmp/escape`, a
+  # follow-and-check would return false and the subsequent
+  # `File.write/2` would then create the target. lstat the path so
+  # we refuse to write through any pre-existing entry, dangling or
+  # not.
   defp guard_not_exists(abs) do
-    if File.exists?(abs), do: {:error, :already_exists}, else: :ok
+    case :file.read_link_info(abs) do
+      {:ok, _info} -> {:error, :already_exists}
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp guard_exists(abs) do
