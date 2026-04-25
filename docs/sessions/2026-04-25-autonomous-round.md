@@ -923,6 +923,70 @@ writers using the shared shape.
 
 ---
 
+## Task 8 — GEP-33 Phase 2c-3: Projects + Tasks-mutation surface wired
+
+**Task picked.** Continuing the Phase 2c arc. Four more writers go
+through `with_tx` this round; same shape as Phase 2c-2:
+
+  * `Projects.ensure_stub/3` — `project.create`.
+  * `Projects.update/4` — `project.update`.
+  * `Tasks.trash/3` — `task.trash` (marks both src + dst).
+  * `Tasks.archive_to_history/3` — `task.archive` (marks
+    src + history dest).
+
+Each marks the durable file path(s) plus the current month's
+audit jsonl. `commit_marked/3`'s existence filter handles
+sequencing: the audit jsonl is async-written but the writer
+marks optimistically; if it lands by auto-flush time it's in
+the commit, else only that one path drops to `:skipped`.
+
+**Design calls I made without you.**
+
+  * **`Projects.ensure_stub/3` returns `{:ok, :exists}` for the
+    no-op case unchanged.** When the project.md is already on
+    disk, `Tx.with_tx` auto-flushes a clean no-op (empty
+    `committed`). The caller doesn't see any difference.
+  * **`Tasks.archive_to_history/3` post-`with` body inlined.**
+    The original code had a chunk of code AFTER the `with`
+    closing `do` (`maybe_move_attachments`, `dest_rel`
+    computation, `emit_archive_audit`). Lifted those into the
+    `with_tx` callback and threaded `tx_id` through the
+    `mark_path` calls; preserves the exact return-shape
+    callers depend on.
+  * **`create_or_skip_stub/7` helper extracted from
+    `Projects.ensure_stub`.** Credo complained about the body
+    nesting depth (4) once the with_tx wrapper added a
+    layer. The helper flattens it back to depth 3.
+  * **No new integration tests for these four.** The Phase
+    2c-1 + Phase 2c-2 tests already exercise the
+    `with_tx` shape thoroughly; adding a parallel pair for
+    every writer would be ~12 boilerplate tests with low
+    incremental signal. The writer-specific unit tests
+    already verified the file-write + audit-emit semantics
+    didn't regress.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/actions/` — 99/99 green.
+  * `mix precommit` — 2198 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs all clean. exit 0.
+
+**Skipped / not done.**
+
+  * `Tasks.reassign/4`, `Tasks.record_peer_review_verdict/5`
+    — both file-mutation surfaces, both wireable via the same
+    pattern. Saved for the next round.
+  * `Goals.update`, `Skills.update`, `Proposals.{create,
+    flip_status}`, `Agents.retire/3` (multi-file dir rename;
+    needs more thought).
+  * Router-level proposal + memory paths — still blind.
+  * Phase 3 watcher fallback. Phase 4 restore UX.
+
+**Commit.** Eighth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

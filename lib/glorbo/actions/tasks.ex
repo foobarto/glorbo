@@ -235,14 +235,31 @@ defmodule Glorbo.Actions.Tasks do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         {:ok, project} <- project_of(task_rel_path),
-         abs_src = Path.join([base, "companies", company, task_rel_path]),
-         :ok <- ensure_regular_file(abs_src),
-         {:ok, dest_rel, abs_dest} <- build_trash_dest(base, company, project, abs_src),
-         :ok <- File.rename(abs_src, abs_dest),
-         :ok <- emit_trash_audit(audit, company, task_rel_path, dest_rel, actor) do
-      {:ok, %{dest_rel_path: dest_rel}}
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.trash",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             {:ok, project} <- project_of(task_rel_path),
+             abs_src = Path.join([base, "companies", company, task_rel_path]),
+             :ok <- ensure_regular_file(abs_src),
+             {:ok, dest_rel, abs_dest} <- build_trash_dest(base, company, project, abs_src),
+             :ok <- File.rename(abs_src, abs_dest),
+             :ok <- Tx.mark_path(tx_id, abs_src),
+             :ok <- Tx.mark_path(tx_id, abs_dest),
+             :ok <- emit_trash_audit(audit, company, task_rel_path, dest_rel, actor),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{dest_rel_path: dest_rel}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
   end
 
@@ -277,34 +294,53 @@ defmodule Glorbo.Actions.Tasks do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         {:ok, project} <- project_of(task_rel_path),
-         abs_src = Path.join([base, "companies", company, task_rel_path]),
-         :ok <- ensure_regular_file(abs_src),
-         {:ok, filename, task_id} <- parse_task_filename(task_rel_path),
-         history_dir =
-           Path.join([base, "companies", company, "projects", project, "history", "tasks"]),
-         :ok <- ensure_no_symlink_directory(history_dir),
-         :ok <- File.mkdir_p(history_dir),
-         history_md = Path.join(history_dir, filename),
-         :ok <- ensure_regular_file_or_absent(history_md),
-         :ok <- File.rename(abs_src, history_md) do
-      attachments_moved =
-        maybe_move_attachments(base, company, project, task_id)
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.archive",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
 
-      dest_rel = "projects/#{project}/history/tasks/#{filename}"
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             {:ok, project} <- project_of(task_rel_path),
+             abs_src = Path.join([base, "companies", company, task_rel_path]),
+             :ok <- ensure_regular_file(abs_src),
+             {:ok, filename, task_id} <- parse_task_filename(task_rel_path),
+             history_dir =
+               Path.join([base, "companies", company, "projects", project, "history", "tasks"]),
+             :ok <- ensure_no_symlink_directory(history_dir),
+             :ok <- File.mkdir_p(history_dir),
+             history_md = Path.join(history_dir, filename),
+             :ok <- ensure_regular_file_or_absent(history_md),
+             :ok <- File.rename(abs_src, history_md) do
+          attachments_moved =
+            maybe_move_attachments(base, company, project, task_id)
 
-      :ok =
-        emit_archive_audit(
-          audit,
-          company,
-          task_rel_path,
-          dest_rel,
-          attachments_moved,
-          actor
-        )
+          dest_rel = "projects/#{project}/history/tasks/#{filename}"
 
-      {:ok, %{dest_rel_path: dest_rel, attachments_moved: attachments_moved}}
+          :ok = Tx.mark_path(tx_id, abs_src)
+          :ok = Tx.mark_path(tx_id, history_md)
+
+          :ok =
+            emit_archive_audit(
+              audit,
+              company,
+              task_rel_path,
+              dest_rel,
+              attachments_moved,
+              actor
+            )
+
+          :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company))
+
+          {:ok, %{dest_rel_path: dest_rel, attachments_moved: attachments_moved}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
     end
   end
 

@@ -192,6 +192,35 @@ history:
       reassign, record_peer_review_verdict}, plus the Router
       wires (proposal create / decide, memory write). Phase 3
       watcher fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c-3 — Projects + Tasks-mutation surface wired.
+      Four more writers go through `with_tx`:
+
+        * `Projects.ensure_stub/3` — `project.create:
+          companies/<co>/projects/<p>/project.md`. Marks the
+          stub + audit jsonl. Returns `:exists` (no-op) when
+          the project.md is already on disk; the Tx
+          auto-flushes empty.
+        * `Projects.update/4` — `project.update: ...`. Marks
+          the project.md + audit jsonl.
+        * `Tasks.trash/3` — `task.trash: companies/<co>/<rel>`.
+          Marks both src (now removed) + dst (timestamped
+          trash dest) + audit jsonl.
+        * `Tasks.archive_to_history/3` — `task.archive: ...`.
+          Marks src + history dest + audit jsonl.
+
+      Refactored `Projects.ensure_stub/3` body into a
+      `create_or_skip_stub/7` helper to flatten nesting (credo
+      "function body too deep" warning).
+
+      Out of scope still: `Tasks.reassign/4`, `Tasks.
+      record_peer_review_verdict/5`, Goals, Skills, Proposals,
+      Agents, Inbox writers (the latter mostly write to
+      excluded `inbox/` paths per §3.2 so wiring them is a
+      no-op). Router-level proposal + memory writes still
+      blind. Phase 3 watcher fallback. Phase 4 restore UX.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

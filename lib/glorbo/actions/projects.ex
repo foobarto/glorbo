@@ -26,6 +26,8 @@ defmodule Glorbo.Actions.Projects do
 
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @type ensure_stub_opts ::
           [actor: String.t(), base: Path.t(), audit: atom()]
@@ -56,20 +58,28 @@ defmodule Glorbo.Actions.Projects do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(project, :project),
-         abs_path = project_md_path(base, company, project),
-         :ok <- ensure_writable(abs_path) do
-      if File.exists?(abs_path) do
-        {:ok, :exists}
-      else
-        stub = "---\nkind: project/v1\nslug: #{project}\n---\n"
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "project.create",
+      target: "companies/#{company}/projects/#{project}/project.md"
+    }
 
-        with :ok <- File.write(abs_path, stub),
-             :ok <- emit_create_audit(audit, company, project, actor) do
-          {:ok, :created}
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(project, :project),
+             abs_path = project_md_path(base, company, project),
+             :ok <- ensure_writable(abs_path) do
+          create_or_skip_stub(tx_id, abs_path, base, company, project, actor, audit)
         end
-      end
+      end)
+
+    case history_result do
+      # `:exists` means the file was already on disk — no diff, no
+      # commit. The Tx auto-flushes as a clean no-op.
+      {:ok, :exists, _tx_id} -> {:ok, :exists}
+      {:ok, :created, _tx_id} -> {:ok, :created}
+      {:error, _} = err -> err
     end
   end
 
@@ -90,15 +100,46 @@ defmodule Glorbo.Actions.Projects do
     path = project_md_path(base, company, project)
     tmp = path <> ".tmp"
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(project, :project),
-         :ok <- ensure_writable(path),
-         :ok <- ensure_writable(tmp),
-         {:ok, content} <- File.read(path),
-         new_content = render_new_content(content, meta),
-         :ok <- atomic_write(tmp, path, new_content),
-         :ok <- emit_update_audit(audit, company, project, actor, meta) do
-      {:ok, %{abs_path: path}}
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "project.update",
+      target: "companies/#{company}/projects/#{project}/project.md"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(project, :project),
+             :ok <- ensure_writable(path),
+             :ok <- ensure_writable(tmp),
+             {:ok, content} <- File.read(path),
+             new_content = render_new_content(content, meta),
+             :ok <- atomic_write(tmp, path, new_content),
+             :ok <- Tx.mark_path(tx_id, path),
+             :ok <- emit_update_audit(audit, company, project, actor, meta),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{abs_path: path}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp create_or_skip_stub(tx_id, abs_path, base, company, project, actor, audit) do
+    if File.exists?(abs_path) do
+      {:ok, :exists}
+    else
+      stub = "---\nkind: project/v1\nslug: #{project}\n---\n"
+
+      with :ok <- File.write(abs_path, stub),
+           :ok <- Tx.mark_path(tx_id, abs_path),
+           :ok <- emit_create_audit(audit, company, project, actor),
+           :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+        {:ok, :created}
+      end
     end
   end
 
