@@ -111,9 +111,11 @@ headers. No JS framework, no CSS build step.
 - **Optional git history.** `glorbo history init` opts the home
   tree into a derivative git repo with a tracked-scope
   `.gitignore` (durable state only; secrets, derived data, and
-  per-agent transport dirs excluded). `glorbo history {status, log}`
-  surface what changed since the last reindex without leaving the
-  CLI (GEP-33 Phase 1).
+  per-agent transport dirs excluded). Every host-side write
+  (Director or agent) lands as a kernel-committed commit with
+  actor provenance; manual filesystem edits flow through the
+  watcher fallback as `External` commits. CLI: `glorbo history
+  {status, log, show, diff, restore}` (GEP-33).
 - **Portable.** `glorbo backup | scp | glorbo restore` reproduces a working
   install on a fresh host.
 
@@ -309,7 +311,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.9.0** (2026-04-25). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.10.0** (2026-04-25). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /
