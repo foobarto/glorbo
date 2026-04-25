@@ -558,11 +558,13 @@ defmodule Glorbo.Agent.Server do
       is_binary(channel = Map.get(meta, "channel")) and channel != "" ->
         {:ok, "chat:#{channel}"}
 
-      # Task assignment notifications carry `kind: task_assignment` + the
-      # task id. Reply is appended to the task file as a comment (same
-      # format as `GlorboWeb.Actions.post_task_comment`). Handled by
-      # `write_task_comment_reply/3` instead of the outbox Router path.
-      Map.get(meta, "kind") == "task_assignment" and is_binary(Map.get(meta, "task_id")) ->
+      # Task assignment notifications. Two on-disk shapes are valid
+      # because the schema migrated from a flat `kind: task_assignment`
+      # to a `kind: inbox-message/v1, subkind: task_assignment` envelope
+      # (FileSpec inbox_message_md). Match either so older inbox
+      # entries on disk still route to the task-comment reply path
+      # rather than falling through to :no_reply_target.
+      task_assignment_kind?(meta) and is_binary(Map.get(meta, "task_id")) ->
         {:ok, {:task_comment, Map.get(meta, "task_id")}}
 
       is_binary(from = Map.get(meta, "from")) and from == "director" ->
@@ -573,6 +575,14 @@ defmodule Glorbo.Agent.Server do
 
       true ->
         {:error, :no_reply_target}
+    end
+  end
+
+  defp task_assignment_kind?(meta) do
+    case Map.get(meta, "kind") do
+      "task_assignment" -> true
+      "inbox-message/v1" -> Map.get(meta, "subkind") == "task_assignment"
+      _ -> false
     end
   end
 
@@ -1248,7 +1258,24 @@ defmodule Glorbo.Agent.Server do
     "Your reply posts to the `##{ch}` channel as a message."
   end
 
+  defp format_reply_hint(
+         %{"kind" => "inbox-message/v1", "subkind" => "task_assignment", "task_id" => tid} = _meta
+       )
+       when is_binary(tid) do
+    format_task_assignment_hint(tid)
+  end
+
   defp format_reply_hint(%{"kind" => "task_assignment", "task_id" => tid}) when is_binary(tid) do
+    format_task_assignment_hint(tid)
+  end
+
+  defp format_reply_hint(%{"from" => from}) when is_binary(from) and from != "director" do
+    "Your reply goes to `@#{from}`'s inbox as an inter-agent message."
+  end
+
+  defp format_reply_hint(_), do: "Reply lands wherever the triggering message specifies."
+
+  defp format_task_assignment_hint(tid) do
     """
     Your reply appends as a comment on task `#{tid}` — the Director sees it in the task detail overlay.
 
@@ -1270,12 +1297,6 @@ defmodule Glorbo.Agent.Server do
     Omit the ACTIONS block if no state change is needed.
     """
   end
-
-  defp format_reply_hint(%{"from" => from}) when is_binary(from) and from != "director" do
-    "Your reply goes to `@#{from}`'s inbox as an inter-agent message."
-  end
-
-  defp format_reply_hint(_), do: "Reply lands wherever the triggering message specifies."
 
   defp read_system_prompt(spec, base) do
     agent_dir = Path.join([base, "companies", spec.company, "agents", spec.slug])

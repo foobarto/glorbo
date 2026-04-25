@@ -211,8 +211,18 @@ defmodule Glorbo.Company.Supervisor do
   # Returns a single-element list when the agent opts into a mode
   # that needs a classifier; empty list otherwise. Flat-mapped
   # across all agents by pick_smart_agent/2.
+  #
+  # Threatmodel: agent.md files are agent-controlled. The boot scan
+  # walks every one to decide whether to start the network proxy;
+  # without a size guard, an agent with a 1 GB agent.md could OOM
+  # the supervisor init. lstat-gate at @max_agent_md_bytes (256 KiB
+  # — agent.md is YAML frontmatter + a system prompt; 256 KB is
+  # already absurdly generous).
+  @max_agent_md_bytes 262_144
+
   defp read_smart_egress(agent_md_path) do
-    with {:ok, content} <- File.read(agent_md_path),
+    with :ok <- ensure_under_size(agent_md_path),
+         {:ok, content} <- File.read(agent_md_path),
          {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
          egress when is_map(egress) <- Map.get(meta, "egress"),
          mode <- to_string(Map.get(egress, "mode", "allow")),
@@ -241,6 +251,19 @@ defmodule Glorbo.Company.Supervisor do
   defp list_or_empty(list) when is_list(list), do: Enum.map(list, &String.downcase/1)
   defp list_or_empty(_), do: []
 
+  defp ensure_under_size(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} ->
+        case {elem(info, 2), elem(info, 1)} do
+          {:regular, size} when size <= @max_agent_md_bytes -> :ok
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
   defp mode_atom("strict"), do: :strict
   defp mode_atom("smart"), do: :smart
 
@@ -266,7 +289,8 @@ defmodule Glorbo.Company.Supervisor do
   end
 
   defp agent_network_allow_list(agent_md_path) do
-    with {:ok, content} <- File.read(agent_md_path),
+    with :ok <- ensure_under_size(agent_md_path),
+         {:ok, content} <- File.read(agent_md_path),
          {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
          list when is_list(list) <- Map.get(meta, "network_allow") do
       list

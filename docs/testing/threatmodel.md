@@ -275,16 +275,32 @@ InboxLive.load_recent_audit all switched from `File.read +
 String.split + Enum.reverse` to `File.stream!([], :line) +
 rolling-window reduce` so memory stays bounded by the visible-
 row cap (50–200) regardless of audit-log size — closes the
-"unbounded-audit-read OOMs the BEAM" DoS family).
+"unbounded-audit-read OOMs the BEAM" DoS family); **wave 18 on
+2026-04-25** verified 2 lows already fixed at HEAD
+(SmartClassifier rule order — `private_ip?/1` runs BEFORE the
+allowlist check per threatmodel T8, so an explicitly-allowlisted
+host that's also a private IP still gets denied; Proxy
+`safe_classify/3` already validates classifier verdicts via
+`normalise_classifier_result/1` and degrades non-tuple returns
+to `{:unknown, :classifier_malformed}` per threatmodel T14) and
+closed 2 more lows (Agent.Server's `reply_target/1` +
+`format_reply_hint/1` now match BOTH the legacy
+`kind: task_assignment` and the current
+`kind: inbox-message/v1, subkind: task_assignment` envelope —
+closes the regression that broke task-assignment reply routing
+after the inbox-message file-format rev; Company.Supervisor's
+boot-time `read_smart_egress/1` and `agent_network_allow_list/1`
+now lstat-gate agent.md at 256 KiB before reading, so an agent
+with a 1 GB agent.md can't OOM the supervisor init).
 
-Breakdown: 0 critical, 0 high, 0 medium, 12 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 10 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 12
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 10
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -294,18 +310,10 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/chat/rotation.ex`
 - **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
   *Paths:* `mix.exs, config/dev.exs`
-- **Denial reason input can corrupt task frontmatter parsing** — The commit adds a denial-reason textarea and passes its raw contents to GlorboWeb.Actions.set_approval/4. When a denial reason is present, set_approval rebuilds task frontmatter via TaskDefinition.write_frontmatter/2. That serializer only escapes double…
-  *Paths:* `lib/glorbo_web/live/approval_queue_live.ex, lib/glorbo_web/actions.ex, lib/glorbo/task_definition.ex`
 - **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
   *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
 - **Providers page now exposes raw TOML config contents** — The commit adds a collapsible TOML snippet for each provider. The LiveView calls read_toml/1, which does a File.read on the provider’s source_file and renders the raw text into the page. User-defined providers.toml supports env overrides and other potentially…
   *Paths:* `lib/glorbo_web/live/providers_live.ex`
-- **Kanban drag-drop trusts client paths for filesystem writes** — The new "kanban:move" LiveView event accepts a `task_path` from the browser and only validates that it starts with "projects/" and does not contain "..". It then calls `Glorbo.TaskDefinition.write/2` directly. This bypasses the stricter task-path validation…
-  *Paths:* `lib/glorbo_web/live/kanban_live.ex`
-- **Unbounded agent.md scan on startup enables local DoS** — The commit adds a boot-time scan that walks every agents/<slug>/agent.md to decide whether to start the Network.Proxy. This is done during Company.Supervisor.init/1 and calls Agent.Parser.parse_file/1 for each file. Agent.Parser.parse_file/1 uses File.read/1…
-  *Paths:* `lib/glorbo/company/supervisor.ex, lib/glorbo/agent/parser.ex`
-- **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…
-  *Paths:* `lib/glorbo/filesystem/reindex.ex`
 
 ### Informational (correctness / UX — not a direct security gap) — 24
 
@@ -319,7 +327,10 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/network/proxy.ex`
 - **SmartClassifier allows private IPs when explicitly allowlisted** — In Glorbo.Network.SmartClassifier.classify/2, the rule order checks denylist → allowlist → private_ip → ad_tld. This means any host that matches the allowlist is immediately allowed, even if it is a literal private IP like 127.0.0.1 or 10.0.0.1. The module’s…
   *Paths:* `lib/glorbo/network/smart_classifier.ex`
-- **Task assignment kind change breaks agent reply routing** — The commit changes task assignment notifications to use a new kind/subkind schema (`kind: inbox-message/v1`, `subkind: task_assignment`). Agent.Server’s `reply_target/1` still checks for `kind == "task_assignment"` and otherwise skips messages from the…
+- ~~**Task assignment kind change breaks agent reply routing**~~ —
+  Closed wave 18: `reply_target/1` + `format_reply_hint/1` now
+  recognise both the legacy `kind: task_assignment` envelope and
+  the current `kind: inbox-message/v1, subkind: task_assignment`.
   *Paths:* `lib/glorbo_web/live/kanban_live.ex, lib/glorbo/agent/server.ex`
 - **NL schedule parser ignores 'every weekday at <time>'** — Glorbo.ScheduleNL’s documentation lists “every weekday at 9am” as supported. However, dispatch/1 only handles the exact rest == "weekday" or "weekend" tokens and does not parse an optional “at <time>” suffix for those bucketed terms. As a result, schedules…
   *Paths:* `lib/glorbo/schedule_nl.ex`
