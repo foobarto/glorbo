@@ -304,6 +304,52 @@ history:
       Out of scope still: Skills LV write path. Router-side
       proposal CREATE + memory writes. Phase 3 watcher
       fallback. Phase 4 restore UX.
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2c interim summary. After 2c-0 through 2c-7 the
+      in-app **Director-initiated** writer surface is wired:
+
+        * Companies.update — `company.update`
+        * Channels.create / archive — `channel.create` /
+          `channel.archive`
+        * Tasks.create / trash / archive_to_history /
+          reassign / record_peer_review_verdict —
+          `task.create` / `task.trash` / `task.archive` /
+          `task.reassign` / `task.peer_review.<verdict>`
+        * Projects.ensure_stub / update — `project.create` /
+          `project.update`
+        * Goals.add_goal — `company.add_goal`
+        * Proposals.flip — `proposal.approved` /
+          `proposal.denied`
+        * BrainDump.capture — `braindump.capture`
+
+      Skills LiveView is read-only (no Skills mutation
+      surface in-app — overrides land via manual edits to
+      `~/.glorbo/companies/<co>/skills/*.md`). That makes
+      it a Phase 3 watcher-fallback target, not a Phase 2c
+      one.
+
+      Remaining Phase 2c work for full coverage:
+
+        * **Router-side agent-initiated proposal CREATE
+          flow** in `Glorbo.Company.Router` — `lib/glorbo/
+          company/router.ex` lines ~786 / ~1085 / ~1228 +
+          memory write at ~1656 / ~1682. The Router is a
+          larger surface because it spans proposal /
+          memory / outbox routing, has its own per-company
+          state, and needs careful actor-attribution
+          (sender slug → `{:agent, slug}`, MCP client →
+          `{:mcp, client}`). Saved for a dedicated round.
+
+      Phase 3 (watcher fallback for manual edits) and Phase
+      4 (`history restore` + `show` + `diff` UX) are still
+      ahead. With the Router-side wiring done, Phase 2 is
+      substantively complete and GEP-33 status flips to
+      Implemented per the original Phase-1 plan ("status
+      flips to Implemented when Phases 2 + 3 land"). Until
+      Phase 3, the GEP stays Draft but Phase 2 is in good
+      shape.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

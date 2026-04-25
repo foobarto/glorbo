@@ -1227,6 +1227,50 @@ brings Director quick-capture into the history layer.
 
 ---
 
+## Task 13 — GEP-33 Phase 2c interim summary
+
+**Task picked.** After investigating Skills LV and finding
+it read-only (toggle event is UI-only, no file mutation),
+the in-app Director-initiated writer surface is wired.
+Time to write a docs-only summary capturing the state of
+Phase 2c, the remaining gap (Router-side agent flows), and
+what triggers a Phase-2 → Implemented status flip.
+
+**What shipped.** A new GEP-33 history entry summarising:
+
+  * The 8 Phase-2c subphases that landed today (2c-0
+    helper + 2c-1..2c-7 writers).
+  * The 9 distinct subjects now appearing in the history
+    log (`company.update`, `channel.{create,archive}`,
+    `task.{create,trash,archive,reassign,peer_review.*}`,
+    `project.{create,update}`, `company.add_goal`,
+    `proposal.{approved,denied}`, `braindump.capture`).
+  * The remaining gap: Router-side agent proposal create +
+    memory writes (a single surface in
+    `lib/glorbo/company/router.ex` with multiple
+    write-points — needs a dedicated round given its
+    actor-attribution complexity).
+  * The status-flip plan: GEP-33 stays `Draft` until
+    Phase 3 (watcher fallback) lands; Phase 2 is
+    substantively done modulo the Router-side gap.
+
+No code changes this round.
+
+**Gates.** Docs-only commit. `mix glorbo.docs.file_formats
+--check` clean (untouched). Skipping full precommit since
+no code changed.
+
+**Skipped / not done.**
+
+  * Router-side wiring — saved for a dedicated round.
+  * Phase 3 watcher fallback — substantial new
+    sub-module.
+  * Phase 4 restore UX — substantial new CLI surface.
+
+**Commit.** Thirteenth of the day.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**
