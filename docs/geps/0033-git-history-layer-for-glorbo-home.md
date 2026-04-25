@@ -465,6 +465,35 @@ history:
       With Phase 4 landed, every implementation phase
       from §14 is shipped. 2215 tests across the suite,
       0 failures.
+  - date: 2026-04-25
+    status: Implemented
+    note: |
+      Phase 2c polish: `agents/.archive/` excluded from
+      tracked scope (retire-frozen subtree shouldn't
+      track ongoing changes); `commit_marked/3` switched
+      to `git add -A -- <pathspec>` so deletions of
+      in-HEAD-but-now-gone paths stage correctly while
+      preserving §7's "no whole-repo `-A`" rule (the
+      restriction is specifically about pathspec-less
+      invocations); `Glorbo.Actions.Agents.retire/3`
+      wired through `Tx.with_tx` — snapshots tracked
+      files pre-rename, marks them post-rename so the
+      retire commit records the deletion of AGENT.md /
+      SOUL.md / HEARTBEAT.md / memory/* (the dest in
+      the newly-excluded `.archive/` scope never reaches
+      the commit). Action subject: `agent.retire`.
+
+      `partition_tracked_paths/2` widens its existence
+      filter to "exists on disk OR tracked in HEAD" so
+      audit-jsonl-async-not-yet-landed paths still drop
+      to `:skipped` while in-HEAD-but-deleted paths
+      pass through to `git add -A`. New `in_head?/2`
+      uses `git cat-file -e HEAD:<rel>` (O(1)).
+
+      Phase 2c is now genuinely complete — every Action
+      module + Router-side outbox flow that lands a
+      durable file in tracked scope flows through the
+      history layer. 2216 tests, 0 failures.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

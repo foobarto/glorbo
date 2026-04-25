@@ -33,6 +33,8 @@ defmodule Glorbo.Actions.Agents do
 
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
+  alias Glorbo.HomeHistory
+  alias Glorbo.HomeHistory.Tx
 
   @contract_files ~w(AGENT.md stdout.log)
 
@@ -139,21 +141,93 @@ defmodule Glorbo.Actions.Agents do
     base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
     audit = Keyword.get(opts, :audit, AuditLog)
 
-    with :ok <- Support.validate_slug(company, :company),
-         :ok <- Support.validate_slug(slug, :agent),
-         src = agent_dir(base, company, slug),
-         :ok <- guard_exists_dir(src) do
-      ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(~r/[:.]/, "-")
-      archive_root = Path.join([base, "companies", company, "agents", ".archive"])
-      dst_name = "#{slug}-#{ts}"
-      dst = Path.join(archive_root, dst_name)
-      archive_rel = Path.join(["agents", ".archive", dst_name])
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "agent.retire",
+      target: "companies/#{company}/agents/#{slug}"
+    }
 
-      with :ok <- File.mkdir_p(archive_root),
-           :ok <- File.rename(src, dst),
-           :ok <- emit_retire_audit(audit, company, slug, archive_rel, actor) do
-        {:ok, %{archive_rel_path: archive_rel}}
-      end
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             :ok <- Support.validate_slug(slug, :agent),
+             src = agent_dir(base, company, slug),
+             :ok <- guard_exists_dir(src) do
+          do_retire_move(tx_id, src, base, company, slug, actor: actor, audit: audit)
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp do_retire_move(tx_id, src, base, company, slug, opts) do
+    actor = Keyword.fetch!(opts, :actor)
+    audit = Keyword.fetch!(opts, :audit)
+
+    ts = DateTime.utc_now() |> DateTime.to_iso8601() |> String.replace(~r/[:.]/, "-")
+    archive_root = Path.join([base, "companies", company, "agents", ".archive"])
+    dst_name = "#{slug}-#{ts}"
+    dst = Path.join(archive_root, dst_name)
+    archive_rel = Path.join(["agents", ".archive", dst_name])
+
+    # Snapshot the tracked-scope files under the agent dir BEFORE
+    # the rename so each one can be marked individually. The dest
+    # is in excluded scope (`agents/.archive/...`) — only the
+    # source-side deletions reach the history commit. The retire
+    # event itself is the durable record; the archive subtree is
+    # frozen.
+    tracked_files = list_tracked_files_under(src, base)
+
+    with :ok <- File.mkdir_p(archive_root),
+         :ok <- File.rename(src, dst),
+         :ok <- mark_each(tx_id, tracked_files),
+         :ok <- emit_retire_audit(audit, company, slug, archive_rel, actor),
+         :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+      {:ok, %{archive_rel_path: archive_rel}}
+    end
+  end
+
+  defp mark_each(_tx_id, []), do: :ok
+
+  defp mark_each(tx_id, [path | rest]) do
+    case Tx.mark_path(tx_id, path) do
+      :ok -> mark_each(tx_id, rest)
+    end
+  end
+
+  # Walk the agent dir collecting every tracked-scope file (e.g.,
+  # `AGENT.md`, `SOUL.md`, `HEARTBEAT.md`, `memory/**`). Excluded-
+  # scope subdirs (inbox/outbox/state/workspace/stdout.log) are
+  # filtered out by `HomeHistory.tracked?/2`, so the resulting set
+  # is exactly what would land in `Glorbo-Paths` after the retire.
+  defp list_tracked_files_under(src, base) do
+    if File.dir?(src) do
+      src
+      |> walk_files()
+      |> Enum.filter(&HomeHistory.tracked?(&1, base))
+    else
+      []
+    end
+  end
+
+  defp walk_files(path) do
+    case File.ls(path) do
+      {:ok, entries} ->
+        Enum.flat_map(entries, fn entry ->
+          full = Path.join(path, entry)
+
+          cond do
+            File.dir?(full) -> walk_files(full)
+            File.regular?(full) -> [full]
+            true -> []
+          end
+        end)
+
+      _ ->
+        []
     end
   end
 

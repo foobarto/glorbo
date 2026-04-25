@@ -707,21 +707,43 @@ defmodule Glorbo.HomeHistory do
       |> Enum.uniq()
       |> Enum.split_with(&tracked?(&1, base))
 
-    # Existence check: a writer may mark a path optimistically
-    # before the corresponding write lands on disk (e.g., the
-    # audit jsonl that another GenServer appends to async). If the
-    # path is still missing at commit time, drop it into :skipped
-    # rather than letting `git add` fail the whole commit. The
-    # working-tree write that DID land remains correct; only the
-    # missing path's history coupling is lost for this commit.
+    # Existence-or-in-HEAD check: a writer may mark a path
+    # optimistically before the corresponding write lands on disk
+    # (audit jsonl async-written by AuditLog GenServer); marked
+    # paths that match neither working tree nor HEAD's tree would
+    # cause `git add -A -- <path>` to fail with "did not match any
+    # files." Drop those into `:skipped` rather than failing the
+    # whole commit. Paths that are gone from disk but PRESENT in
+    # HEAD still pass through — `git add -A` will stage their
+    # deletion (channels.archive src, etc.).
     {tracked_rel, missing} =
       scope_ok
-      |> Enum.split_with(fn p -> File.exists?(Path.expand(p, Path.expand(base))) end)
+      |> Enum.split_with(fn p ->
+        File.exists?(Path.expand(p, Path.expand(base))) or
+          in_head?(p, base)
+      end)
       |> then(fn {present, missing} ->
         {Enum.map(present, &relativise_or_keep(&1, base)), missing}
       end)
 
     {tracked_rel, scope_skipped ++ missing}
+  end
+
+  defp in_head?(path, base) do
+    rel =
+      case relativise(path, base) do
+        :outside -> path
+        "" -> path
+        r -> r
+      end
+
+    case System.cmd("git", ["cat-file", "-e", "HEAD:" <> rel],
+           cd: base,
+           stderr_to_stdout: true
+         ) do
+      {_, 0} -> true
+      _ -> false
+    end
   end
 
   defp relativise_or_keep(path, base) do
@@ -832,8 +854,22 @@ defmodule Glorbo.HomeHistory do
   defp commit_count(_sha, tracked), do: length(tracked)
 
   defp git_add_paths(base, paths) do
+    # `git add -A -- <path>` stages adds + modifies + DELETIONS for
+    # the specific pathspec — necessary so writers that move/delete
+    # tracked files (`Agents.retire`, `Tasks.trash`,
+    # `Channels.archive`) can commit the deletion without a
+    # separate `git rm` pass. Per GEP-33 §7 the prohibition is on
+    # the WHOLE-REPO `git add -A` (no pathspec); restricting `-A`
+    # to an explicit pathspec preserves the "never bulk-stage" rule
+    # while letting deletions land naturally.
+    #
+    # Non-existent paths that are also absent from HEAD become a
+    # silent no-op (git stages nothing) — the same shape the old
+    # existence-filter produced, but without the up-front
+    # `File.exists?/1` check. Audit jsonls written async by the
+    # AuditLog GenServer are the motivating case.
     Enum.reduce_while(paths, :ok, fn rel, _ ->
-      case git(["add", "--", rel], base) do
+      case git(["add", "-A", "--", rel], base) do
         {:ok, _} -> {:cont, :ok}
         {:error, _} = err -> {:halt, err}
       end

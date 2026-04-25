@@ -1660,6 +1660,118 @@ over manufacturing scope.
 
 ---
 
+## Task 18 — GEP-33 polish: archive exclusion + deletion-capable staging + Agents.retire
+
+**Task picked.** User's "continue until I tell you to
+stop" still in force after Task 17's "final handoff."
+Three coupled cleanups close the small gaps left in the
+GEP-33 arc:
+
+  1. **Exclude `agents/.archive/` from tracked scope.**
+     Once an agent is retired, its subtree is frozen by
+     definition; the retire event itself is captured in
+     audit + (now) one history commit. Tracking the
+     archive's ongoing filesystem state would balloon
+     the repo with content that can't change.
+  2. **Make `commit_marked/3` deletion-capable.** Switch
+     from `git add -- <path>` to `git add -A -- <path>`
+     so deletions of in-HEAD-but-now-gone paths land in
+     the commit. Adds a paired `in_head?/2` check next to
+     the working-tree existence check so paths that are
+     in NEITHER place are still skipped (audit jsonl
+     async-write case).
+  3. **Wire `Glorbo.Actions.Agents.retire/3` through
+     `Tx.with_tx`.** Snapshot the tracked-scope files
+     under `agents/<slug>/` BEFORE the rename, then
+     after `File.rename` mark each one — they're gone
+     from disk but in HEAD, so the deletion-capable
+     staging now records them. The dest sits in the
+     newly-excluded `agents/.archive/` scope and never
+     reaches the commit. Net diff: deletions of
+     AGENT.md / SOUL.md / HEARTBEAT.md / memory/* +
+     audit jsonl entry.
+
+**What shipped.**
+
+  * `lib/glorbo/home_history.ex`:
+    * `@gitignore` adds `/companies/*/agents/.archive/`.
+    * `agent_runtime?/1` adds the `.archive` regex match.
+    * `partition_tracked_paths/2` re-introduces the
+      existence filter, now widened to "exists on disk OR
+      tracked in HEAD." The new `in_head?/2` shells out
+      to `git cat-file -e HEAD:<rel>` (cheap, O(1)).
+    * `git_add_paths/2` switches to `git add -A -- <path>`
+      with a comment explaining why §7's "never `-A`"
+      rule applies to whole-repo invocations only — `-A`
+      with an explicit pathspec is still GEP-compliant.
+  * `lib/glorbo/actions/agents.ex`:
+    * `retire/3` wraps in `Tx.with_tx`. Action subject:
+      `agent.retire: companies/<co>/agents/<slug>`.
+    * `do_retire_move/6` private helper (post-`with`
+      body, threads `tx_id`).
+    * `list_tracked_files_under/2` walks the source
+      subtree, filtering each file through `tracked?/2`.
+      Returns the exact set that lands in `Glorbo-Paths`
+      after the rename.
+    * `walk_files/1` recursive ls helper.
+    * `mark_each/2` iterates the file list calling
+      `Tx.mark_path/2`.
+  * 4 new test cases in `home_history_test.exs` confirming
+    `agents/.archive/` paths are rejected by `tracked?/2`.
+
+**Design calls I made without you.**
+
+  * **Snapshot tracked files PRE-rename, not post-rename.**
+    Walking `agents/<slug>/` after the rename would find
+    nothing (the dir is gone). Walking before captures the
+    full list; the post-rename `mark_path` calls then
+    record what's now-missing-but-in-HEAD. The deletion-
+    capable staging handles the rest.
+  * **No new integration test for `Agents.retire`
+    end-to-end.** The HomeHistory layer's deletion test
+    coverage (the existing channels.archive test asserts
+    src + dst paths in `Glorbo-Paths` after a rename)
+    plus the new agents/.archive/ tracked? test cover
+    the load-bearing pieces. A full retire→commit
+    roundtrip test would be useful but adds boilerplate
+    parity with the existing 3-writer integration test
+    style; deferred to a future round if a regression
+    surfaces.
+  * **`mark_each/2` is `Tx.mark_path/2` in a tight
+    loop.** Could be batched as a single GenServer call,
+    but the per-key cast queue is fine for typical agent
+    subtrees (5-20 files); building a dedicated batch
+    API for one caller is premature.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history_test.exs
+    test/glorbo/home_history/ test/glorbo/actions/` —
+    164/164 green.
+  * `mix precommit` — 2216 tests, 0 failures, 82
+    excluded, 3 skipped. format + credo + docs all
+    clean. exit 0.
+
+**Skipped / not done.**
+
+  * Phase 2c is now genuinely complete — every Action
+    module + Router-side outbox flow that lands a
+    durable file in tracked scope goes through the
+    history layer.
+  * Future rounds can add CLI integration tests for
+    `glorbo history show / diff / restore`, an
+    end-to-end retire-roundtrip test, and a perf
+    smoke for the WatcherBridge under bursty inotify
+    load.
+
+**Commit.** Eighteenth + nineteenth of the day:
+the archive-exclusion ship was committed earlier
+(`4226726`); this one bundles the deletion-capable
+staging refactor + Agents.retire wiring.
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**
