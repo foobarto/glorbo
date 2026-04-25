@@ -195,7 +195,10 @@ jobs:
           mix assets.build
           # Install harness node deps + Playwright Chrome.
           (cd scripts && npm install --no-audit --no-fund)
-          (cd scripts && npx playwright install --with-deps chrome)
+          # The capture script calls `chromium.launch()` which needs
+          # the chromium browser, not Chrome stable — they're separate
+          # downloads in Playwright's cache.
+          (cd scripts && npx playwright install --with-deps chromium)
           # Run the diff. `continue-on-error` swallows a non-zero
           # exit, but the per-LV drift lines still appear in the
           # log so reviewers can eyeball regressions.
