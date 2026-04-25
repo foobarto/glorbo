@@ -10,20 +10,20 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
   Tagged `:integration` + `:inotify` — requires inotify-tools on the
   host; otherwise skipped via the global tag gate in `test_helper.exs`.
 
-  ## Known suite-pollution caveat
+  ## Watch-attachment race (fixed 2026-04-25)
 
-  Passes consistently in isolation (`mix test --include integration
-  test/integration/inotify_to_bwrap_happy_path_test.exs`) but
-  reproducibly fails when `agent_crash_isolation_test.exs` runs
-  earlier in the same `mix test` invocation. Symptom: the
-  `assert_receive {:dispatched, ...}` times out with an empty
-  mailbox — the inotify event chain (Watcher → PubSub →
-  AgentServer wake → dispatch_fun) never reaches the test pid.
-  Bumping the timeout to 30s does not help, so it isn't timing.
-  Root cause unresolved as of 2026-04-25; `Application.ensure_
-  all_started(:glorbo)` in agent_crash leaves something in a
-  state the per-test Watcher + AgentServer can't recover from.
-  Tracked in `docs/todo.md` (P3).
+  Earlier this test failed reproducibly when other agent-spawning
+  integration tests ran before it in the same `mix test` invocation,
+  yet passed consistently in isolation. The cause turned out to be
+  an inotify watch-attachment race rather than state pollution:
+  `Glorbo.Filesystem.Watcher.start_link/1` returns as soon as its
+  GenServer is up, but the `inotifywait` subprocess attaches kernel
+  watches asynchronously over the next tens of ms. Other tests
+  populating the scheduler made the file write fire before watches
+  were attached, so the inotify event was silently dropped. A
+  small settling sleep (`Process.sleep(250)`) after `Watcher.
+  start_link/1` and before the file write closes the race
+  deterministically.
   """
   use ExUnit.Case, async: false
 
@@ -170,6 +170,20 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       )
 
     on_exit(fn -> if Process.alive?(watcher_pid), do: GenServer.stop(watcher_pid) end)
+
+    # `Glorbo.Filesystem.Watcher.start_link/1` returns as soon as the
+    # `:file_system` GenServer is up, but `inotifywait` (the subprocess
+    # `:file_system` spawns) attaches inotify watches asynchronously over
+    # the next tens of milliseconds. Without a small settling pause,
+    # the file write below races the watch attachment — events are
+    # silently dropped — and the failure mode shows up exactly as
+    # the documented suite-pollution: an empty mailbox after 5s. Other
+    # tests filling the BEAM scheduler beforehand make this race far
+    # more likely to lose (which is why this test passed in isolation
+    # but failed after `agent_crash_isolation_test.exs`). 250ms is
+    # well under the assert_receive timeout and on this host enough
+    # for `inotifywait` to settle.
+    Process.sleep(250)
 
     # Per-agent Task.Supervisor + Agent.Server. The server subscribes to
     # `company:<co>:inbox` by default, so PubSub broadcasts from the Watcher

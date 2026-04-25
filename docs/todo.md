@@ -87,15 +87,15 @@ it's been in CHANGELOG for a cycle.
 
 ## P3 — thinking out loud
 
-- [ ] **InotifyToBwrapHappyPathTest suite-pollution.** Test
-  passes alone but fails reproducibly when
-  `agent_crash_isolation_test.exs` runs earlier — the
-  `assert_receive {:dispatched, ...}` times out with an empty
-  mailbox. Not timing (30s also fails). Likely something
-  `Application.ensure_all_started(:glorbo)` leaves in a state the
-  per-test Watcher + AgentServer can't recover from. Investigate
-  with `:sys.trace/2` on the watcher + agent server pid in the
-  failing run.
+- [x] **InotifyToBwrapHappyPathTest suite-pollution — root-caused
+  + fixed (2026-04-25).** Wasn't pollution at all: an inotify
+  watch-attachment race. `Watcher.start_link/1` returned before
+  `inotifywait` had attached its kernel watches; concurrent
+  scheduler load from preceding agent-spawning tests made the
+  file write fire ahead of attachment more often, so events
+  were silently dropped. Fix: 250ms settling sleep after
+  `Watcher.start_link/1` in the test, with rationale captured
+  in the test moduledoc.
 - [ ] **GEP-33 Phase 2 — marked commits from write surfaces.**
   Phase 1 shipped 2026-04-25 (`Glorbo.HomeHistory` + `glorbo
   history {init, status, log}`). Phase 2 wires
