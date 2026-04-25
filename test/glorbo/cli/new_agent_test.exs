@@ -260,19 +260,14 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert out =~ "researcher"
     end
 
-    @tag :skip
-    test "template referencing missing skills warns the Director (superseded)", %{home: _home} do
-      # Superseded by the builtin-skill fallback added with PLAN P2-4:
-      # every builtin template now references `glorbo` which ships as
-      # `priv/templates/skills/glorbo.md`, and the detection treats the
-      # builtin dir as a valid source (parity with
-      # `Glorbo.Skills.Resolver.resolve_skill_src/3`). The warning now
-      # only fires for skills that exist in neither the company's
-      # `skills/` nor the builtin dir — harder to trigger deterministically
-      # from a CLI test without shadowing the user template dir (fixed at
-      # `~/.glorbo/templates/agents` and not honoring GLORBO_HOME).
-      :skipped
-    end
+    # NOTE: an earlier "missing-skill warning" test was removed once
+    # PLAN P2-4 added the builtin-skill fallback (every template now
+    # references `glorbo` which ships as `priv/templates/skills/glorbo.md`).
+    # The warning only fires for skills that exist in neither the
+    # company's `skills/` nor the builtin dir — hard to trigger
+    # deterministically from a CLI test without shadowing the user
+    # template dir (fixed at `~/.glorbo/templates/agents`, not
+    # GLORBO_HOME-aware). See git log for the original test body.
 
     test "scaffolder writes SOUL.md when the template has one (#118)", %{home: home} do
       assert {:new_agent, 0, _} = Agent.run(["acme/eng", "--template", "engineer"])

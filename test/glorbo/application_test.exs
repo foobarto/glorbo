@@ -2,10 +2,16 @@ defmodule Glorbo.ApplicationTest do
   use ExUnit.Case, async: false
 
   @moduledoc """
-  Asserts the OTP supervision tree shape DESIGN.md §4.1 requires.
+  Asserts the OTP supervision tree shape DESIGN.md §4.1 requires —
+  every branch is reachable by name, and the per-company supervisor
+  brings up the full 10-child fleet (AuditLog, Watcher, Router,
+  Scheduler, TaskScheduler, BudgetTracker, Approvals.Gate,
+  PathRequestGate, ProposalsSink, AgentFleet).
 
-  In Phase 1 the tree is all stubs, but every branch must be addressable by
-  name so later phases can reach into them without renaming.
+  Original Plan 01 wording said "Phase 1 stubs" — every module is
+  real now (Phases 2-5 filled them in). The shape assertion remains
+  the load-bearing invariant: a missing branch here means a real
+  module was accidentally removed.
   """
 
   test "Glorbo.Application supervision tree starts cleanly" do
