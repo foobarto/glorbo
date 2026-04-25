@@ -93,6 +93,13 @@ defmodule Glorbo.Application do
       # CompanySupervisor so the first dispatch can register + the
       # Proxy can resolve without racing table creation.
       Glorbo.Network.ProxyTokens,
+      # GEP-33 Phase 2b: durable-history transaction buffer. Wraps
+      # `HomeHistory.commit_marked/3` with the §6.1 debounce window
+      # so multi-file logical operations land as one commit. Safe to
+      # run when `.git/` is absent — flush translates the
+      # `:not_initialised` strict error into a clean no-op so Phase 2c
+      # callers can ignore the result. Phase 2c will wire writers.
+      Glorbo.HomeHistory.Tx,
       {DynamicSupervisor, name: Glorbo.CompanySupervisor, strategy: :one_for_one},
       # M-series fix: enumerate companies on disk at boot and start a
       # per-company supervisor for each. Without this, the dashboard

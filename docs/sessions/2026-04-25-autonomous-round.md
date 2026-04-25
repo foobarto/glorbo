@@ -522,6 +522,154 @@ review if four is one too many. Hard 5-commit stop respected.
 
 ---
 
+## Task 5 — GEP-33 Phase 2b: Tx GenServer with debounce coalescer
+
+**Task picked.** Continuation scope "continue until I tell you to
+stop" after the 4-commit handoff — explicit override of both
+the 3-commit soft checkpoint and the 5-commit hard stop. The
+protocol notes those are overridable when the user asks for
+a long loop, so this is a sanctioned shift in cadence.
+
+Phase 2b is the natural follow-up to Phase 2a-1: wrap the
+synchronous `commit_marked/3` primitive in a GenServer that
+buffers a logical operation's path mutations under §6.1's
+debounce window, so a single approval-flow that touches
+both the task file and the audit append lands as one commit.
+
+**What shipped.** New module `Glorbo.HomeHistory.Tx` at
+`lib/glorbo/home_history/tx.ex`:
+
+  * `start_link/1` accepts `:base`, `:debounce_ms` (default
+    500), `:hard_cap_ms` (default 2000), `:name` (defaults to
+    the module name; `nil` skips registration so tests can
+    address servers by pid without leaking dynamic atoms —
+    credo-W flagged the dynamic-atom alternative).
+  * Public API:
+    * `Tx.begin(meta, opts) → {:ok, tx_id}` — opens a tx,
+      starts the hard-cap timer immediately, auto-generates
+      `tx_id` if absent in `meta`.
+    * `Tx.mark_path(tx_id, path, opts) → :ok` — adds path,
+      resets debounce timer. Cast — fire-and-forget.
+    * `Tx.flush(tx_id, opts) → {:ok, commit_result} |
+      {:error, _}` — explicit synchronous flush, cancels
+      both timers, drops the tx whether commit succeeded or
+      failed.
+    * `Tx.cancel(tx_id, opts) → :ok` — drops without
+      committing; idempotent on unknown ids.
+  * State: `%{base, debounce_ms, hard_cap_ms, txs: %{tx_id =>
+    %{paths, meta, debounce_ref, hard_cap_ref}}}`.
+  * `auto_flush/3` handles both timer messages
+    (`{:debounce_timeout, tx_id}` /
+    `{:hard_cap_timeout, tx_id}`); fires `commit_marked/3`,
+    logs the resulting sha at debug or the error at warning,
+    drops the tx.
+  * "History disabled" translation: `do_commit/2` catches
+    the strict primitive's `{:error, :not_initialised}` and
+    rewrites it as `{:ok, %{sha: "", committed: 0, skipped:
+    paths}}` so Phase 2c callers can ignore the result
+    without distinguishing "feature off" from "no diff."
+
+**Application supervisor wiring.** Added `Glorbo.HomeHistory.Tx`
+between `Glorbo.Network.ProxyTokens` and the
+`Glorbo.CompanySupervisor` `DynamicSupervisor` in
+`lib/glorbo/application.ex`. Safe to start with no `.git/` —
+flush is a fast no-op in that mode.
+
+**12 new tests** in
+`test/glorbo/home_history/tx_test.exs` (per-test isolated
+servers via `name: nil` + pid; debounce 50 ms + hard cap
+200 ms for fast suite execution):
+
+  * Single-path explicit flush — commits with the canonical
+    `Glorbo-Tx: <tx_id>` trailer round-tripped.
+  * Multi-mark same tx → one commit with both paths in the
+    `Glorbo-Paths` trailer.
+  * Debounce auto-flush after inactivity window (verified by
+    `{:error, :unknown_tx}` on a follow-up flush + matching
+    log entry).
+  * Hard-cap auto-flush under continuous mark activity (loop
+    sleeps below debounce so the cap is the only timer that
+    can fire).
+  * `Tx.cancel/1` drops without committing; idempotent on
+    unknown ids.
+  * Two concurrent txs don't collide — tx_a + tx_b each get
+    their own commit with distinct authors (Director + Agent
+    ceo).
+  * History-disabled flush returns `{:ok, %{sha: "",
+    committed: 0, skipped: [path]}}`.
+  * History-disabled auto-flush silently clears state.
+  * Caller-supplied `tx_id` preserved through `begin`.
+  * Flush on never-begun id returns `{:error, :unknown_tx}`.
+  * `mark_path` on unknown tx silently drops + server stays
+    alive.
+
+**Design calls I made without you.**
+
+  * **Cast for `mark_path`, call for `begin/flush`.** The
+    write hot path benefits from fire-and-forget; the read
+    paths (`begin` returning the assigned tx_id, `flush`
+    returning the commit result) need the round-trip
+    anyway.
+  * **`cancel` is idempotent.** GEP-33 §5.3 doesn't require
+    this, but cancel-on-already-flushed is a real race
+    (auto-flush fires while the caller is about to call
+    `cancel`). Returning `:ok` either way matches typical
+    fire-and-forget semantics and avoids spurious caller
+    error handling.
+  * **Hard-cap timer started in `begin`, not on first
+    `mark_path`.** §6.1 says "2 s hard cap" without
+    specifying the anchor. Anchoring at `begin` matches the
+    "logical operation lifetime" framing better than
+    anchoring at first mark — the operation is live from the
+    moment the writer announces it.
+  * **`Tx.flush` cancels timers before committing.**
+    Otherwise a debounce timer could fire mid-commit and try
+    to commit a now-empty tx state. Cleaner to cancel-then-
+    process.
+  * **`name: nil` skip-registration option** instead of
+    `Module.concat(__MODULE__, "tx-N")`-style dynamic atoms.
+    Dynamic atom creation in tests is the credo W↗ warning
+    that fired on the first iteration; passing the pid
+    directly through the `:server` option is the cleaner
+    fix.
+  * **No supervised-tree restart strategy override.** The Tx
+    GenServer is a plain `:permanent` child of the root
+    supervisor with the inherited `max_restarts: 100,
+    max_seconds: 5`. State is intentionally ephemeral — a
+    crash drops in-flight txs (the writers' authoritative
+    file writes already happened, so the working tree is
+    correct), and the restarted server starts fresh.
+
+**Gates.**
+
+  * `mix compile --warnings-as-errors` — clean.
+  * `mix test test/glorbo/home_history*` — 43/43 green.
+  * `mix precommit` — 2187 tests, 0 failures, 82 excluded,
+    3 skipped. format + credo + docs.file_formats + docs
+    moduledoc check + reindex round-trips all green.
+    exit 0.
+
+**Skipped / not done.**
+
+  * **Phase 2c (caller wiring).** Router, Actions,
+    scaffolders, restore — none touched. Each writer lands
+    as its own commit so the wiring is reviewable a
+    surface at a time.
+  * **Phase 3 watcher fallback.** Manual-edit capture.
+  * **Phase 4 restore UX.** `show`/`diff`/`restore`.
+  * **Telemetry counters.** `home_history.tx.flushed.ok` /
+    `.failed` / `.noop` would be useful for observability
+    but the protocol's "no features beyond what was asked"
+    rule applies; the GEP doesn't call for them as part of
+    Phase 2.
+
+**Commit.** Fifth of the day — exceeds the 5-commit hard
+stop. The user's explicit "continue until I tell you to
+stop" overrides this checkpoint. Logging the override here
+per protocol's "log the override in the journal."
+
+---
+
 ## Handoff (revised) — 2026-04-25 04:30 UTC
 
 **Shipped this round (cumulative):**

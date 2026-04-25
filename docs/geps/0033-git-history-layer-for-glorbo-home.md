@@ -69,6 +69,49 @@ history:
       adds zero new caller-visible behaviour to the running app —
       it's foundation for Phase 2b. 12 new unit tests added to
       `home_history_test.exs` (31 total in that file).
+  - date: 2026-04-25
+    status: Draft
+    note: |
+      Phase 2b — `Glorbo.HomeHistory.Tx` GenServer landed.
+      Wraps the Phase 2a-1 `commit_marked/3` primitive with the
+      §6.1 debounce coalescer so a multi-file logical operation
+      (task approval = task file + audit append, channel send =
+      chat log + audit append) lands as one commit instead of
+      one per inode event.
+
+      API: `Tx.begin(meta) → {:ok, tx_id}`, `Tx.mark_path(tx_id,
+      path)`, `Tx.flush(tx_id) → {:ok, commit_result}`,
+      `Tx.cancel(tx_id)`. `start_link/1` accepts `:debounce_ms`
+      / `:hard_cap_ms` overrides for tests.
+
+      Debounce semantics: 500 ms inactivity timer (reset on each
+      `mark_path`), 2 s hard cap from `begin`. Auto-flush is
+      fire-and-forget — failures log a warning and drop the tx;
+      caller's authoritative file write already succeeded so the
+      working tree stays correct (§12.3). Explicit `flush/1`
+      returns the underlying `{:error, _}`.
+
+      "History disabled" path: when `.git/` is absent, `Tx.flush`
+      translates the `commit_marked` `{:error, :not_initialised}`
+      into `{:ok, %{sha: "", committed: 0, skipped: <paths>}}`
+      so Phase 2c callers can ignore the result without
+      distinguishing "feature off" from "actually nothing
+      changed." Auto-flush in disabled mode logs nothing.
+
+      Wired into `Glorbo.Application` between `ProxyTokens` and
+      `CompanySupervisor`. Safe to start with no `.git/`. 12
+      tests in `test/glorbo/home_history/tx_test.exs` covering:
+      explicit flush happy paths, multi-mark coalescing, debounce
+      auto-flush, hard-cap auto-flush under continuous mark
+      activity, cancel idempotence, concurrent transactions, the
+      history-disabled translation, explicit tx_id preservation,
+      and unknown-tx error/silent-drop cases.
+
+      Out of scope still: Phase 2c caller wiring (Router, Actions,
+      scaffolders, restore), Phase 3 watcher fallback, Phase 4
+      restore UX. The Tx GenServer runs in production but is
+      currently unused — only tests exercise it. Phase 2c lands
+      next, one writer at a time.
 ---
 
 # GEP-33: Git History Layer for Glorbo Home

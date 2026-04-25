@@ -103,11 +103,15 @@ it's been in CHANGELOG for a cycle.
   primitive — kernel committer + actor-aware author + sanitized
   GEP-33 §4.3 trailers + tracked-scope filter + no-op-on-empty
   semantics. 12 new tests; 31 total in `home_history_test.exs`.
-  Phase 2b will wrap it in a `begin/mark/flush` GenServer with
-  the §6.1 debounce coalescer; Phase 2c wires Router, Actions,
-  scaffolders, restore. Phase 3 follows with watcher-fallback
-  `External` commits for manual edits; Phase 4 adds
-  `show`/`diff`/`restore`.
+  **Phase 2b shipped 2026-04-25 (autonomous L4):**
+  `Glorbo.HomeHistory.Tx` GenServer wraps the primitive with
+  §6.1 debounce semantics (500 ms inactivity, 2 s hard cap),
+  fire-and-forget auto-flush, "history disabled" translation
+  for unconfigured homes. Wired into `Glorbo.Application`. 12
+  Tx tests in `tx_test.exs`. Phase 2c wires Router, Actions,
+  scaffolders, restore — one writer at a time. Phase 3
+  follows with watcher-fallback `External` commits for manual
+  edits; Phase 4 adds `show`/`diff`/`restore`.
 - [ ] **GEP-37 `glorbo shell` implementation — DEFERRED.** Accepted
   2026-04-24. Implementation queued **behind** the crown-jewels arc
   (GEP-40 + GEP-41 + `Glorbo.Actions` cleanup) per maintainer
