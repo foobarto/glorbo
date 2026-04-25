@@ -202,16 +202,24 @@ dangling symlink at `channels/<n>.md` no longer lets an attacker
 clobber an arbitrary path via `File.write`; Companies.update's
 `atomic_write/2` now lstat-gates the destination + uses a
 unique-per-call temp filename to defeat the predictable-tmpfile
-race that let attackers redirect the rename target).
+race that let attackers redirect the rename target); **wave 12
+on 2026-04-25** closed 3 more lows (TaskDefinition's `as_string/1`
+now refuses to coerce maps/lists — agent-controlled YAML can no
+longer crash parsing on `schedule: {foo: bar}` or `goal: [a, b]`,
+which fixes both the recurring-schedule and goal-frontmatter
+findings; AuditLog's `entry_company/1` validates the company
+against the canonical slug regex and buckets path-traversal
+attempts like `company: "../../etc"` into the `_system` bucket
+rather than scribbling outside `companies/`).
 
-Breakdown: 0 critical, 0 high, 0 medium, 29 low, 24 informational.
+Breakdown: 0 critical, 0 high, 0 medium, 26 low, 24 informational.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 29
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 26
 
 - **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
   *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
@@ -227,12 +235,8 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo_web/live/task_live.ex`
 - **UTF-8 offset mismatch can truncate rotated chat logs** — The new rotation logic collects header positions with `Regex.scan(..., return: :index)`, which returns byte offsets, and then feeds those offsets into `String.split_at/2`, which operates on grapheme indices. When messages contain multibyte UTF-8 characters…
   *Paths:* `lib/glorbo/chat/rotation.ex`
-- **Recurring schedule parsing can crash on non-string YAML values** — The commit adds a schedule field and recurring-task loop-back logic. Both the parser and the recurring check call to_string on the raw YAML value. If an attacker (agent or any process writing task files) sets schedule to a non-scalar YAML value such as a map…
-  *Paths:* `lib/glorbo/task_definition.ex`
 - **strip_ansi crashes on non‑UTF‑8 reply/STDOUT output** — The commit adds strip_ansi/1 and applies it to both stdout fallback replies and on-disk reply reads. strip_ansi relies on String.replace/3, which requires valid UTF‑8 binaries. Agent/CLI output is attacker-controlled and may contain arbitrary bytes; invalid…
   *Paths:* `lib/glorbo/cli/dispatcher.ex`
-- **Task goal frontmatter can crash parsing on non-scalar values** — TaskDefinition.parse_frontmatter now reads the optional goal key and passes it to as_string. as_string blindly calls to_string for non-binary values, which raises Protocol.UndefinedError for YAML maps or lists. A task file containing goal: {foo: bar} or goal:…
-  *Paths:* `lib/glorbo/task_definition.ex`
 - **Inbox audit feed rereads full log on each update** — InboxLive’s recent-activity panel uses File.read/1 to load the full current-month audit log and then filters the last 50 lines. This happens during initial mount and again on every :file_event and :audit_append notification. Because audit entries are…
   *Paths:* `lib/glorbo_web/live/inbox_live.ex`
 - **RunLog crashes on malformed duration_ms in audit JSONL** — The new Glorbo.Agent.RunLog reader converts detail["duration_ms"] with String.to_integer/1. If an audit JSONL entry contains a non-numeric duration_ms (e.g., tampered or malformed log line), String.to_integer raises an ArgumentError, which bubbles out of…
@@ -267,8 +271,6 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
   *Paths:* `lib/glorbo/company/budget_tracker.ex`
 - **Batch reindex deletes can exceed SQLite parameter limit** — The updated cleanup_vanished/1 batches deletes with `where ... in ^vanished`. SQLite (the default backend) caps the number of bind variables (typically 999). If a large number of markdown files were previously indexed and later removed (e.g., an untrusted…
   *Paths:* `lib/glorbo/filesystem/reindex.ex`
-- **AuditLog append uses unsanitized company in file path** — The new AuditLog implementation derives the audit log file path directly from `entry[:company]`/`entry["company"]`. `entry_company/1` converts the value to a string without any slug/path validation, and `jsonl_path/3` passes it straight into `Path.join/1`. If…
-  *Paths:* `lib/glorbo/company/audit_log.ex`
 - **Symlink escape in reindex allows out-of-scope file reads** — Glorbo.Filesystem.Reindex.safe_markdown_files/1 claims to enforce a symlink escape defense by checking that each candidate path stays under the companies directory. However, it uses Path.expand on the symlink path, which is purely lexical and does not resolve…
   *Paths:* `lib/glorbo/filesystem/reindex.ex`
 

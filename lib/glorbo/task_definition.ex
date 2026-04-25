@@ -410,8 +410,14 @@ defmodule Glorbo.TaskDefinition do
   defp recurring?(content) do
     case Frontmatter.parse(content) do
       {:ok, fm, _body} ->
-        value = to_string(fm["schedule"] || "")
-        value != ""
+        # Same protection as as_string/1: agent-controlled YAML can
+        # set `schedule:` to a map / list / anything; refuse to
+        # coerce non-scalar values (treat as "not recurring").
+        case as_string(fm["schedule"]) do
+          nil -> false
+          "" -> false
+          _ -> true
+        end
 
       _ ->
         false
@@ -824,8 +830,16 @@ defmodule Glorbo.TaskDefinition do
 
   defp as_string(nil), do: nil
   defp as_string(str) when is_binary(str), do: str
-  # Keep status values lenient — if yaml coerced to integer/bool/etc., stringify.
-  defp as_string(other), do: to_string(other)
+  # Threatmodel: YAML frontmatter is agent-controlled. A task file
+  # with `schedule: {foo: bar}` or `goal: [a, b]` would feed a map
+  # or list into `to_string/1`, which raises Protocol.UndefinedError
+  # for those types and crashes the parser. Coerce only the scalar
+  # types we actually want (atoms / numbers); anything else degrades
+  # to nil rather than blowing up the caller.
+  defp as_string(value) when is_atom(value) or is_number(value),
+    do: to_string(value)
+
+  defp as_string(_other), do: nil
 
   defp finalize(partial, task_path, body, file_path) do
     {:ok,

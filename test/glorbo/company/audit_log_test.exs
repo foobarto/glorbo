@@ -137,6 +137,35 @@ defmodule Glorbo.Company.AuditLogTest do
       assert decoded["detail"]["step"] == "hierarchy"
     end
 
+    test "Test 6b: rejects path-traversal company names by bucketing into _system",
+         %{base: base, name: name} do
+      # Threatmodel: callers can stuff anything into entry["company"];
+      # the previous implementation passed it straight to Path.join,
+      # which doesn't normalize ".." segments. A `company: "../../etc"`
+      # entry could write outside the companies/ subtree. With the
+      # slug-validation guard, anything that isn't a valid slug or
+      # the literal "_system" sentinel gets bucketed into _system.
+      :ok =
+        AuditLog.append(name, %{
+          company: "../../etc",
+          actor: "system",
+          action: "test.escape"
+        })
+
+      # Nothing landed under the would-be `companies/../../etc/audit/`
+      # subtree (the unsanitised Path.join target).
+      escape_target = Path.join([base, "companies", "..", "..", "etc"])
+      refute File.exists?(escape_target)
+      # ...and the entry surfaces in the _system bucket instead.
+      sys_path = Path.wildcard(Path.join([base, "audit", "_system", "*.jsonl"]))
+      assert length(sys_path) == 1
+
+      decoded =
+        sys_path |> List.first() |> File.read!() |> String.trim_trailing() |> Jason.decode!()
+
+      assert decoded["action"] == "test.escape"
+    end
+
     test "Test 7: mirror failure does not lose JSONL (JSONL is source of truth)", %{
       base: base,
       name: name

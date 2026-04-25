@@ -190,9 +190,39 @@ defmodule Glorbo.Company.AuditLog do
     end
   end
 
+  # Threatmodel: callers can stuff anything into `entry["company"]`
+  # — atoms, integers, an unsanitised string with `../`. The downstream
+  # `jsonl_path/3` builds the audit jsonl path with `Path.join`, which
+  # does not normalise `..` segments. An entry with
+  # `company: "../../etc"` would scribble outside `companies/`. Coerce
+  # to string then validate against the canonical slug regex; fall
+  # back to the `_system` bucket on anything that doesn't match so
+  # the audit still lands somewhere on disk.
   defp entry_company(entry) do
-    raw = entry["company"] || "_system"
-    to_string(raw)
+    case entry["company"] do
+      nil ->
+        "_system"
+
+      raw ->
+        co = to_string(raw)
+
+        cond do
+          # The host's "no-company" sentinel — kept literal, doesn't
+          # match the slug regex (leading underscore).
+          co == "_system" ->
+            co
+
+          Glorbo.Actions.Support.valid_slug?(co) ->
+            co
+
+          true ->
+            Logger.warning(
+              "audit: rejecting non-slug company=#{inspect(co)}; bucketing into _system"
+            )
+
+            "_system"
+        end
+    end
   end
 
   defp drop_known_keys(entry) do
