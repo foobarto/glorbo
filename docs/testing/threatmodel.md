@@ -319,25 +319,76 @@ so the grapheme-aware split was corrupting messages with
 multibyte UTF-8; TaskScheduler.maybe_emit_invalid now cancels
 the prior `timer_ref` before stashing a minimal invalid-stub
 entry, preventing the orphan timer from firing against a
-now-invalid schedule).
+now-invalid schedule); **wave 21 on 2026-04-25** verified 3
+lows already fixed at HEAD (MCP post_message mention fanout
+already propagates the actor via `safe_actor_tag/1` so MCP-
+originated mentions land with `from: "mcp:<client>"` not
+`from: "director"` — threatmodel T6; Task budget audit's
+`cost_cents_from_usage/2` rescues to 0 on a nil
+`spec.provider`, and `Dispatch.reconcile_task_provider/2`
+already enforces M10 — task.provider mismatches are pinned
+to spec.provider, so the cost computation always matches the
+provider that actually ran; the `/mcp` JSON-RPC endpoint is
+now wrapped in the `:dashboard` pipeline per threatmodel T11
+— if `dashboard_token` is configured, MCP clients must
+authenticate via `Authorization: Bearer <token>` just like
+the dashboard) and **moved 2 to "accepted risk / by-design"**
+(Stdout spoofed dispatch/exit markers — the audit log's
+`agent.complete` event is the authoritative exit_status; UI
+marker spoofing is cosmetic, fix would require a UI-side
+audit cross-reference; Release boot check
+`validate_compile_env: false` — deliberate per the rationale
+in mix.exs:113-124, CI always builds with MIX_ENV=prod, the
+LV / endpoint compile-env keys aren't load-bearing at runtime).
 
-Breakdown: 0 critical, 0 high, 0 medium, 5 low, 24 informational.
+**Codex import: fully closed.** All 39 originally-imported lows
+have been either fixed (37) or moved to documented accepted-
+risk status (2). The 24 informational entries remain as a
+correctness/UX backlog; they are not direct security gaps and
+will be triaged into general bug-fix waves rather than security
+sweeps.
+
+Breakdown: 0 critical, 0 high, 0 medium, 0 low, 24 informational
+(plus 2 lows accepted by-design).
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
 
 ### Medium (constrained exploit — local access or misconfig) — 0
 
-### Low (defense-in-depth / bounded DoS / integrity gaps) — 5
+### Low (defense-in-depth / bounded DoS / integrity gaps) — 0
 
-- **MCP post_message mentions spoof director in agent inboxes** — The commit adds MCP write tooling that calls Actions.post_message/4 with a caller-controlled actor (mcp:<client>). Actions.post_message now records that actor in the channel log and audit entry, but its mention fanout still routes through…
-  *Paths:* `lib/glorbo_web/mcp/tools/post_message.ex, lib/glorbo_web/actions.ex`
-- **MCP endpoint exposed without dashboard token or auth gate** — The commit adds a new MCP JSON-RPC endpoint at /mcp and explicitly forwards it outside the :dashboard pipeline that enforces the optional bearer token. The only guard is an Origin host check, but the plug also allows requests with no Origin header (for CLI…
-  *Paths:* `lib/glorbo_web/router.ex, lib/glorbo_web/mcp/plug.ex`
-- **Release boot check disabled, allowing dev debug flags in prod** — The commit sets `validate_compile_env: false` in the release configuration. Phoenix uses compile‑time settings for endpoint flags like `debug_errors` and `code_reloader`. If release artifacts are compiled under dev/test (which sets these to true) and then run…
-  *Paths:* `mix.exs, config/dev.exs`
-- **Stdout parsing allows spoofed dispatch/exit markers** — StdoutStreamer now classifies any line matching the dispatch/exit regexes as metadata and StdoutTail renders those lines as special cards, omitting the raw body. Because agent stdout is attacker-controlled, an agent can emit lines like "=== exit 0 ===" or…
-  *Paths:* `lib/glorbo_web/stdout_streamer.ex, lib/glorbo_web/components/stdout_tail.ex`
+
+### Accepted risks (by-design / out-of-scope for v1) — 2
+
+These findings are documented as deliberate trade-offs rather
+than open lows. Re-evaluate during the v1 cut.
+
+- **Stdout-streamer dispatch/exit marker spoofing**.
+  StdoutStreamer regex-classifies stdout lines as `:header` /
+  `:exit` / `:body`. An attacker-controlled agent can emit
+  literal `=== glorbo dispatch <ts> ===` / `=== exit 0 ===`
+  lines mid-output, which the LV renders as styled dispatch
+  cards. Impact is purely cosmetic — the audit log's
+  `agent.complete` event carries the authoritative exit_status,
+  and KanbanLive / TaskLive surface the audit-derived state.
+  A true fix requires UI-side cross-reference between the
+  marker stream and audit events; deferred to the GEP-37 shell
+  redesign which already has a stronger event-bus boundary.
+  *Paths:* `lib/glorbo_web/stdout_streamer.ex,
+  lib/glorbo_web/components/stdout_tail.ex`.
+
+- **Release boot check `validate_compile_env: false`**.
+  `mix.exs:113-124` documents this as a deliberate trade-off —
+  the LV / endpoint compile-env keys (code_reloader,
+  debug_errors, force_ssl, enable_expensive_runtime_checks)
+  aren't load-bearing at runtime, and the validator was
+  emitting confusing "compile-time vs runtime" errors against
+  Burrito-cached releases when _build/ contained any non-prod
+  compile artefacts. CI always builds with `MIX_ENV: prod`
+  (.github/workflows/ci.yml), so the dev-flag-leak path the
+  finding describes can't actually occur in shipped artefacts.
+  *Paths:* `mix.exs, config/dev.exs`.
 
 ### Informational (correctness / UX — not a direct security gap) — 24
 
@@ -367,7 +418,11 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 - ~~**Invalid schedule stash drops timer_ref**~~ — Closed wave 20:
   `maybe_emit_invalid/5` cancels the prior timer_ref.
   *Paths:* `lib/glorbo/company/task_scheduler.ex`
-- **Task budget audit ignores task-level provider override** — The dispatch pipeline resolves the provider using task-level overrides, but the new per-task budget check derives cost via Ledger.compute_cost_cents/4 using spec.provider. When a task overrides provider (or the agent spec leaves provider unset), this path…
+- ~~**Task budget audit ignores task-level provider override**~~ —
+  Closed wave 21 (verified: M10 enforcement at
+  `Dispatch.reconcile_task_provider/2` pins task.provider
+  mismatches to spec.provider, so the cost computation always
+  matches the provider that ran).
   *Paths:* `lib/glorbo/agent/dispatch.ex`
 - ~~**Costs ledger merges across companies**~~ — Closed wave 19
   (verified: history_for_agents/1 keys by `{company, agent}`).
