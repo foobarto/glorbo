@@ -671,6 +671,54 @@ Overlays.*, Theme, Keybindings, Actions}`.
 
 ---
 
+## 2026-04-26 — GEP-34 reindex shape + audit-action drift
+
+### `Reindex.run/1` result-map keys are additive, never removed
+
+Each phase of GEP-34 added a fresh key to the result map
+(`audit_events` Phase 1, `tasks_approval_state` Phase 2,
+`budgets` Phase 3) on top of the original `indexed`/`skipped`/
+`deleted` triplet. Callers in the tree pattern-match the
+known keys and ignore extras, so additive extension was safe
+pre-1.0. If you're adding a Phase 4 derived projection, follow
+the same rule: never rename or drop a key.
+
+### Audit-action names: trust the writer, not the GEP spec
+
+GEP-34 §Phase-3 named the budget audit action `usage.recorded`,
+but the writer (`Company.BudgetTracker.safe_record/3`) emits
+`budget.usage`. If a reindex phase silently inserts zero rows,
+suspect a spec/writer drift before suspecting a bug — the
+canonical source for action names is the emit site, not the
+prose spec. Same caveat applies to the `_system` audit path:
+the writer puts orchestrator events at
+`<base>/audit/_system/<YYYY-MM>.jsonl` (subdirectory), not
+flat under `<base>/audit/`. Phase 1 was wrong about this for
+a few hours; the reader was fixed in commit 8d9f3b1.
+
+### `alerts_fired` is not on the `budgets` schema
+
+GEP-34's open-questions block worried about reconstructing
+the `alerts_fired` MapSet. False alarm: it's GenServer state
+in `Company.BudgetTracker`, NOT a column on `budgets`. The
+tracker's moduledoc says it rehydrates from `alerts/*.md` on
+boot. Reindex doesn't touch it. If you find yourself
+re-evaluating threshold ladders during a reindex, you're
+solving the wrong problem.
+
+### Phase 2 needs chronological fold; Phase 3 doesn't
+
+`tasks_approval_state` has lifecycle ordering — a later
+`granted`/`denied` line must overwrite an earlier `awaiting`
+state — so Phase 2 sorts JSONL filenames lexicographically
+(YYYY-MM zero-padded ⇒ lex sort = chrono sort) and relies on
+`File.stream!` preserving append order. `budgets` is pure
+summation, addition is commutative, so Phase 3 skips the sort
+entirely. If you add a Phase 4 projection, ask whether order
+matters before reaching for `Enum.sort/1`.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

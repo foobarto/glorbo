@@ -12,6 +12,66 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.12.0] — 2026-04-26
+
+Same-day minor cut. Lands GEP-34 (Reindex v2) end-to-end and
+makes `glorbo.db` fully derivable from disk for the first
+time. The CLAUDE.md load-bearing invariant — "SQLite is
+derived and must be rebuildable from disk via `glorbo
+reindex`" — was previously aspirational for three tables;
+this release makes it true for all of them.
+
+### Added — GEP-34 phases 1–3 (Reindex v2)
+
+`Glorbo.Filesystem.Reindex.run/1` now rebuilds three derived
+tables from the on-disk audit JSONL during a full reindex
+pass. Result map gains three new counts:
+`audit_events`, `tasks_approval_state`, `budgets`.
+
+- **`audit_events`** is rebuilt from
+  `companies/<co>/audit/<YYYY-MM>.jsonl` and
+  `<base>/audit/_system/<YYYY-MM>.jsonl`. Lines are streamed
+  via `File.stream!([], :line)`, JSON-decoded, batched 500
+  rows per `Repo.insert_all`. Malformed and oversize
+  (> 64 KiB) lines are skipped with a warning so reindex
+  never crashes on a bad audit entry.
+- **`tasks_approval_state`** is rebuilt by folding
+  `approval.{requested,granted,denied}` lines chronologically
+  per `task_path`. Resolutions without a matching `requested`
+  line synthesize a row, so retention-truncated audit logs
+  still surface the resolution. Sentinel-retention question
+  decided audit-only (GEP-34 D4): the gate continues to
+  delete the awaiting sentinel on resolution; no resolved
+  sentinel is written.
+- **`budgets`** is rebuilt by summing `budget.usage` lines
+  per `{company_slug, agent_slug, year_month}`, with
+  `year_month` derived via the writer's own
+  `Budget.Ledger.month_bucket/1` (GEP-34 D7) so replay rows
+  match live rows bind-for-bind. The `alerts_fired` MapSet
+  the spec worried about is GenServer state in
+  `Company.BudgetTracker`, not a column on the schema, and
+  is already rehydrated from `alerts/*.md` on tracker boot.
+
+GEP-34 status: Draft → Implemented. Decision log carries
+D1–D7.
+
+### Fixed
+
+- `rebuild_audit_events/1` now reads `_system` events from
+  `<base>/audit/_system/*.jsonl` (writer's canonical
+  subdirectory) instead of `<base>/audit/*.jsonl` (flat).
+  Production system events were being silently skipped on
+  every reindex. Pre-1.0 behavioural change with no compat
+  shim — the writer never emitted flat-path files.
+
+### Tests
+
+24 new tests across `test/glorbo/filesystem/reindex_test.exs`
+covering each phase's happy path, idempotency, edge cases
+(missing-request synthesis, multi-month splits, multi-agent
+isolation, cross-company isolation, oversized-line cap, and
+the `_system` subdirectory fix).
+
 ## [0.11.3] — 2026-04-26
 
 Same-day security/quality patch. Wave 28 closes 4 more
