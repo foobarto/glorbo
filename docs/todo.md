@@ -440,6 +440,19 @@ it's been in CHANGELOG for a cycle.
   ledger routing, year_month override, fail-open on Repo
   raise, view with/without cap). Last-wake column +
   pill-status are still future work.
+- [x] **GEP-37 Phase 3f-revisit — Chat composer modal.**
+  Shipped post-v0.15.1 (autonomous L4). `i` opens a
+  modal composer; chars accumulate into a buffer, Enter
+  posts via `Glorbo.Actions.post_message/4`, Esc cancels.
+  Same modal shape as the Inbox deny prompt. State carries
+  `mode :: :list | {:compose, buf}` + `last_action`;
+  successful posts refresh the list and render `✓ posted`,
+  failures render `✗ post failed: <reason>` without
+  clobbering the existing list. `:post_fn` injection so
+  tests don't shell out. 11 new tests (chat_test only —
+  no new Data tests since composer is write-side).
+  Channel switching + slash-command parsing are still
+  future work.
 - [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
   Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
   Kanban-style stacked-vertical layout: each lane

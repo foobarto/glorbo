@@ -10,7 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added — GEP-37 Phase 3f-revisit (Chat composer modal)
+
+The Chat view picks up a write path. Pressing `i` opens a
+modal composer; keystrokes accumulate into a buffer, Enter
+posts the message via `Glorbo.Actions.post_message/4` (the
+same Action seam the LV's chat form goes through, so
+audit-log + isolation invariants are honoured), and Esc
+cancels without touching disk. After a successful post the
+view refreshes the message list and renders a `✓ posted`
+status line; failures surface as `✗ post failed: <reason>`
+without clobbering the existing list. State carries an
+explicit `mode :: :list | {:compose, buf}` plus a
+`last_action` field for the feedback line — same modal
+shape as the Inbox deny prompt. `:post_fn` is injected so
+tests don't actually shell out to `post_message`. 11 new
+tests.
 
 ## [0.15.1] — 2026-04-26
 

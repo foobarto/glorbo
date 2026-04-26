@@ -180,6 +180,177 @@ defmodule Glorbo.Shell.Views.ChatTest do
     end
   end
 
+  describe "Phase 3f-revisit — composer modal" do
+    defp init_with_composer(opts \\ []) do
+      action_calls = make_ref()
+      Process.put({:post_calls, action_calls}, [])
+
+      post_fn = fn co, ch, body, kw ->
+        prior = Process.get({:post_calls, action_calls})
+        Process.put({:post_calls, action_calls}, prior ++ [{co, ch, body, kw}])
+        Keyword.get(opts, :post_result, :ok)
+      end
+
+      loader_fn = fn _b, _c, _ch -> Keyword.get(opts, :refreshed, sample_messages()) end
+
+      state =
+        Chat.init(
+          messages: sample_messages(),
+          channel: "general",
+          company: "acme",
+          base: "/tmp/glorbo",
+          post_fn: post_fn,
+          loader_fn: loader_fn
+        )
+
+      {state, fn -> Process.get({:post_calls, action_calls}) end}
+    end
+
+    test "`i` opens the composer modal" do
+      assert Chat.event_to_msg(%Key{key: :char, char: "i"}, %{mode: :list}) ==
+               {:msg, :compose_open}
+
+      {state, _} = init_with_composer()
+      {state, []} = Chat.update(:compose_open, state)
+      assert state.mode == {:compose, ""}
+    end
+
+    test "compose mode routes Enter/Esc/backspace/chars to prompt actions" do
+      state = %{mode: {:compose, "abc"}}
+
+      assert Chat.event_to_msg(%Key{key: :enter}, state) == {:msg, :compose_submit}
+      assert Chat.event_to_msg(%Key{key: :escape}, state) == {:msg, :compose_cancel}
+      assert Chat.event_to_msg(%Key{key: :backspace}, state) == {:msg, :compose_backspace}
+
+      assert Chat.event_to_msg(%Key{key: :char, char: "x"}, state) ==
+               {:msg, {:compose_input, "x"}}
+
+      # `j`/`k` are valid input chars while composing — they go into the
+      # buffer rather than moving the cursor. Non-char nav keys (arrows)
+      # are absorbed silently.
+      assert Chat.event_to_msg(%Key{key: :char, char: "j"}, state) ==
+               {:msg, {:compose_input, "j"}}
+
+      assert Chat.event_to_msg(%Key{key: :down}, state) == :ignore
+    end
+
+    test "typing accumulates into the buffer; backspace drops the last char" do
+      {state, _calls} = init_with_composer()
+      {state, []} = Chat.update(:compose_open, state)
+      {state, []} = Chat.update({:compose_input, "h"}, state)
+      {state, []} = Chat.update({:compose_input, "i"}, state)
+      assert state.mode == {:compose, "hi"}
+
+      {state, []} = Chat.update(:compose_backspace, state)
+      assert state.mode == {:compose, "h"}
+
+      # Backspace on empty buffer is a no-op.
+      state = %{state | mode: {:compose, ""}}
+      {state, []} = Chat.update(:compose_backspace, state)
+      assert state.mode == {:compose, ""}
+    end
+
+    test "Enter on non-empty buffer calls post_fn and refreshes messages" do
+      {state, calls} = init_with_composer(refreshed: [hd(sample_messages())])
+      state = %{state | mode: {:compose, "Hello world"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert calls.() == [
+               {"acme", "general", "Hello world", [base: "/tmp/glorbo"]}
+             ]
+
+      assert state.last_action == {:ok, :post, nil}
+      assert state.mode == :list
+      assert length(state.messages) == 1
+    end
+
+    test "Enter on empty buffer is a silent cancel (no post_fn call)" do
+      {state, calls} = init_with_composer()
+      state = %{state | mode: {:compose, ""}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert calls.() == []
+      assert state.mode == :list
+      # No last_action — silent cancel.
+      assert state.last_action == nil
+    end
+
+    test "Esc cancels without calling post_fn" do
+      {state, calls} = init_with_composer()
+      state = %{state | mode: {:compose, "draft"}}
+
+      {state, []} = Chat.update(:compose_cancel, state)
+
+      assert calls.() == []
+      assert state.mode == :list
+    end
+
+    test "post_fn returning {:error, reason} surfaces in last_action and skips refresh" do
+      {state, _calls} = init_with_composer(post_result: {:error, :enoent})
+      state = %{state | mode: {:compose, "test"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.last_action == {:error, :post, :enoent}
+      assert state.mode == :list
+      # Messages unchanged (no refresh on error).
+      assert state.messages == sample_messages()
+    end
+
+    test "post without :company / :base records :no_company error" do
+      state = Chat.init(messages: [], channel: "general")
+      state = %{state | mode: {:compose, "x"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.last_action == {:error, :post, :no_company}
+      assert state.mode == :list
+    end
+
+    test "view in compose mode appends the composer overlay" do
+      state = %{
+        messages: [],
+        channel: "general",
+        cursor: 0,
+        mode: {:compose, "draft text"},
+        last_action: nil
+      }
+
+      rendered = render_to_strings(Chat.view(state))
+      assert Enum.any?(rendered, &String.contains?(&1, "Compose (Enter to send"))
+      assert Enum.any?(rendered, &String.contains?(&1, "> draft text_"))
+    end
+
+    test "view appends `✓ posted` after a successful post" do
+      state = %{
+        messages: sample_messages(),
+        channel: "general",
+        cursor: 0,
+        mode: :list,
+        last_action: {:ok, :post, nil}
+      }
+
+      rendered = render_to_strings(Chat.view(state))
+      assert Enum.any?(rendered, &String.contains?(&1, "✓ posted"))
+    end
+
+    test "view appends `✗ post failed` after a failed post" do
+      state = %{
+        messages: [],
+        channel: "general",
+        cursor: 0,
+        mode: :list,
+        last_action: {:error, :post, :enoent}
+      }
+
+      rendered = render_to_strings(Chat.view(state))
+      assert Enum.any?(rendered, &String.contains?(&1, "✗ post failed"))
+      assert Enum.any?(rendered, &String.contains?(&1, ":enoent"))
+    end
+  end
+
   defp render_to_strings(%TermUI.Component.RenderNode{type: :text, content: content}),
     do: [content]
 
