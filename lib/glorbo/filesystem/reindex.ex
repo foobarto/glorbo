@@ -54,7 +54,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   alias Glorbo.{Agent, AuditEvent, Budget, Company, Repo, TasksApprovalState}
   alias Glorbo.Budget.Ledger
-  alias Glorbo.Filesystem.{Frontmatter, ReindexState}
+  alias Glorbo.Filesystem.{AgentWritableFile, Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
 
   @type result :: %{indexed: integer(), skipped: integer(), deleted: integer()}
@@ -410,6 +410,26 @@ defmodule Glorbo.Filesystem.Reindex do
   # large) and slurping them into the SQLite `detail` column wastes disk.
   @max_audit_line_bytes 64 * 1024
 
+  # Wave 29 (defense-in-depth, post-v0.12.0): audit-dir walks in all three
+  # rebuild paths must refuse symlinked ancestors before iterating. The
+  # kernel sandbox already prevents agents from creating these symlinks,
+  # but mirroring the `safe_markdown_files/1` discipline at the
+  # application layer keeps the two enforcement points in sync — the
+  # CLAUDE.md "kernel is policy, application also enforces" invariant.
+  defp safe_audit_dir(path) do
+    cond do
+      not File.dir?(path) ->
+        nil
+
+      AgentWritableFile.any_symlink_in_path?(path) ->
+        Logger.warning("reindex rejected audit dir (symlinked ancestor segment): #{path}")
+        nil
+
+      true ->
+        path
+    end
+  end
+
   # Wipe the table once, then stream every JSONL file under
   # `companies/<co>/audit/` and `<base>/audit/_system/` (system events) back
   # into the mirror. Returns the count of imported rows. The system path
@@ -425,8 +445,10 @@ defmodule Glorbo.Filesystem.Reindex do
           entries
           |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
           |> Enum.flat_map(fn co ->
-            audit_dir = Path.join([companies_dir, co, "audit"])
-            if File.dir?(audit_dir), do: [{co, audit_dir}], else: []
+            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
+              nil -> []
+              audit_dir -> [{co, audit_dir}]
+            end
           end)
           |> Enum.reduce(0, fn {co, audit_dir}, acc -> acc + import_audit_dir(co, audit_dir) end)
 
@@ -434,12 +456,11 @@ defmodule Glorbo.Filesystem.Reindex do
           0
       end
 
-    system_audit_dir = Path.join([base, "audit", "_system"])
-
     system_count =
-      if File.dir?(system_audit_dir),
-        do: import_audit_dir("_system", system_audit_dir),
-        else: 0
+      case safe_audit_dir(Path.join([base, "audit", "_system"])) do
+        nil -> 0
+        dir -> import_audit_dir("_system", dir)
+      end
 
     company_count + system_count
   end
@@ -565,8 +586,10 @@ defmodule Glorbo.Filesystem.Reindex do
           entries
           |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
           |> Enum.reduce(%{}, fn co, acc ->
-            audit_dir = Path.join([companies_dir, co, "audit"])
-            if File.dir?(audit_dir), do: fold_approval_dir(audit_dir, acc), else: acc
+            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
+              nil -> acc
+              audit_dir -> fold_approval_dir(audit_dir, acc)
+            end
           end)
 
         _ ->
@@ -735,8 +758,10 @@ defmodule Glorbo.Filesystem.Reindex do
           entries
           |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
           |> Enum.reduce(%{}, fn co, acc ->
-            audit_dir = Path.join([companies_dir, co, "audit"])
-            if File.dir?(audit_dir), do: sum_budget_dir(co, audit_dir, acc), else: acc
+            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
+              nil -> acc
+              audit_dir -> sum_budget_dir(co, audit_dir, acc)
+            end
           end)
 
         _ ->

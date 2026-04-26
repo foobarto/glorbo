@@ -306,6 +306,60 @@ defmodule Glorbo.Filesystem.ReindexTest do
     end
   end
 
+  describe "audit dir symlink rejection (wave 29 defense-in-depth)" do
+    alias Glorbo.{AuditEvent, Budget, TasksApprovalState}
+
+    test "all three rebuild paths refuse a symlinked companies/<co>/audit/" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      # Real audit dir somewhere reindex won't walk; we'll point a symlink
+      # at it from the place where reindex DOES walk and confirm the
+      # symlink is refused.
+      decoy_dir = Path.join(base, "decoy_audit")
+      File.mkdir_p!(decoy_dir)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n| <>
+          ~s|{"ts":"2026-04-26T10:01:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n| <>
+          ~s|{"ts":"2026-04-26T10:02:00Z","company":"acme","actor":"ceo","action":"task.create","target":"x"}\n|
+
+      File.write!(Path.join(decoy_dir, "2026-04.jsonl"), jsonl)
+
+      audit_dir = Path.join([base, "companies", "acme", "audit"])
+      File.ln_s!(decoy_dir, audit_dir)
+
+      log = ExUnit.CaptureLog.capture_log(fn -> Reindex.run(base: base) end)
+      assert log =~ "rejected audit dir (symlinked ancestor segment)"
+
+      # All three projections must be empty — no row was imported via the
+      # symlink path.
+      assert Repo.all(AuditEvent) == []
+      assert Repo.all(TasksApprovalState) == []
+      assert Repo.all(Budget) == []
+    end
+
+    test "_system audit symlink at <base>/audit/_system is refused" do
+      base = TmpGlorboHome.setup()
+      File.mkdir_p!(Path.join(base, "companies"))
+
+      decoy_dir = Path.join(base, "decoy_system_audit")
+      File.mkdir_p!(decoy_dir)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:00:00Z","actor":"system","action":"orchestrator.boot","target":"all"}\n|
+
+      File.write!(Path.join(decoy_dir, "2026-04.jsonl"), jsonl)
+
+      File.mkdir_p!(Path.join(base, "audit"))
+      File.ln_s!(decoy_dir, Path.join([base, "audit", "_system"]))
+
+      log = ExUnit.CaptureLog.capture_log(fn -> Reindex.run(base: base) end)
+      assert log =~ "rejected audit dir (symlinked ancestor segment)"
+      assert Repo.all(AuditEvent) == []
+    end
+  end
+
   describe "tasks_approval_state rebuild from JSONL (GEP-34 Phase 2)" do
     alias Glorbo.TasksApprovalState
 

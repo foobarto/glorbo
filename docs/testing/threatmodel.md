@@ -621,11 +621,37 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **94 security findings closed across 28
+Cumulative tally: **95 security findings closed across 29
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
-+ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28.
++ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
++ 1 wave 29.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
+
+### Wave 29 closure (post-v0.12.0 self-review, 2026-04-26)
+
+Found by reviewing the GEP-34 reindex code I just shipped in
+v0.12.0 — the audit-dir walks in `Reindex.rebuild_audit_events/1`,
+`rebuild_tasks_approval_state/1`, and `rebuild_budgets/1` were
+calling `File.dir?/1` on `companies/<co>/audit/` and
+`<base>/audit/_system/` without lstat'ing first. `File.dir?`
+follows symlinks, so an agent that planted a symlink at
+`companies/<co>/audit/` (kernel sandbox prevents this today,
+but defense-in-depth at the application layer should mirror
+the kernel boundary) could redirect the reindex walk into an
+arbitrary directory. The reader skips malformed JSON, but
+attacker-controlled valid JSON-Lines would be imported into
+the SQLite mirror with attacker-chosen `actor`/`action`/
+`target` values. Closed by introducing a single
+`safe_audit_dir/1` helper that calls
+`AgentWritableFile.any_symlink_in_path?/1` (same pattern as
+`safe_markdown_files/1` already uses for the markdown walk)
+and routing all three call sites through it. 2 new tests in
+`reindex_test.exs` confirm that a symlinked
+`companies/<co>/audit/` AND a symlinked `<base>/audit/_system/`
+both result in zero rows imported across all three projections.
+*Paths:* `lib/glorbo/filesystem/reindex.ex,
+test/glorbo/filesystem/reindex_test.exs`.
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.

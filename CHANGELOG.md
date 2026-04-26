@@ -10,7 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Security (wave 29)
+
+- **Low** — `Reindex` audit-dir walks now lstat before iterating.
+  The Phase 1/2/3 rebuild paths shipped in v0.12.0 were calling
+  `File.dir?/1` on `companies/<co>/audit/` and
+  `<base>/audit/_system/` without symlink discipline; the kernel
+  sandbox already prevents agents from planting these symlinks,
+  but mirroring the `safe_markdown_files/1` discipline at the
+  application layer keeps the two enforcement points in sync.
+  Single `safe_audit_dir/1` helper routes all three rebuild
+  paths through `AgentWritableFile.any_symlink_in_path?/1`.
+  2 new tests cover the rejection at both per-company and
+  `_system` boundaries.
 
 ## [0.12.0] — 2026-04-26
 

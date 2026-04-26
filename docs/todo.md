@@ -97,6 +97,17 @@ it's been in CHANGELOG for a cycle.
   flat-path files are ignored. Doctor / FileSpec / portability
   fixtures all already use the subdirectory layout, so reindex
   was the lone outlier.
+- [x] **Wave 29 (post-v0.12.0): audit-dir walks lstat'd.**
+  Self-review of the just-shipped GEP-34 code surfaced a
+  defense-in-depth gap: `Reindex.rebuild_audit_events/1`,
+  `rebuild_tasks_approval_state/1`, and `rebuild_budgets/1`
+  used `File.dir?/1` (follows symlinks) on
+  `companies/<co>/audit/` and `<base>/audit/_system/`. Single
+  `safe_audit_dir/1` helper now routes all three call sites
+  through `AgentWritableFile.any_symlink_in_path?/1`. 2 new
+  tests cover both per-company + `_system` symlink rejection
+  paths. Closed in [Unreleased] CHANGELOG block; threatmodel
+  cumulative tally bumped to 95 / 29 waves.
 
 ## P2 — nice to have
 
