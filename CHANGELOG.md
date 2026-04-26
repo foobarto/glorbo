@@ -10,7 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added — GEP-37 Phase 3f-revisit-3 (composer slash commands)
+
+The Chat composer parses `/`-prefixed buffers as commands
+instead of posting them to the channel. Three commands ship:
+`/switch <channel>` swaps to the named channel and reloads
+through the existing `:loader_fn` seam (same path the
+modal switcher uses); `/help` shows the available commands
+on the action line; `/cancel` is a silent exit (no
+last_action change, alias for Esc). Unknown commands record
+`{:error, :command, {:unknown_command, name}}`; `/switch`
+to a missing channel records
+`{:error, :command, {:unknown_channel, name}}`; `/switch`
+without an argument records
+`{:error, :command, {:missing_argument, "switch"}}`. Errors
+render on the action line as `✗ unknown command: /<name>` /
+`✗ unknown channel: #<name>` / `✗ missing argument:
+/<name> <arg>`. A buffer that begins with whitespace is
+treated as a regular post even if `/` follows — only a
+leading `/` invokes the parser. Composer hint line now
+mentions `/help`. 8 new tests.
 
 ## [0.16.0] — 2026-04-27
 

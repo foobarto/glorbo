@@ -467,6 +467,143 @@ defmodule Glorbo.Shell.Views.ChatTest do
     end
   end
 
+  describe "Phase 3f-revisit-3 — composer slash commands" do
+    defp init_with_slash(opts \\ []) do
+      post_calls = make_ref()
+      Process.put({:slash_post_calls, post_calls}, [])
+
+      post_fn = fn co, ch, body, kw ->
+        prior = Process.get({:slash_post_calls, post_calls})
+        Process.put({:slash_post_calls, post_calls}, prior ++ [{co, ch, body, kw}])
+        :ok
+      end
+
+      load_calls = make_ref()
+      Process.put({:slash_load_calls, load_calls}, [])
+
+      loader_fn = fn _b, _c, ch ->
+        prior = Process.get({:slash_load_calls, load_calls})
+        Process.put({:slash_load_calls, load_calls}, prior ++ [ch])
+        Keyword.get(opts, :messages, sample_messages())
+      end
+
+      list_channels_fn = fn _b, _c ->
+        Keyword.get(opts, :channels, ["alerts", "general", "incidents"])
+      end
+
+      state =
+        Chat.init(
+          messages: sample_messages(),
+          channel: "general",
+          base: "/tmp/glorbo",
+          company: "acme",
+          post_fn: post_fn,
+          loader_fn: loader_fn,
+          list_channels_fn: list_channels_fn
+        )
+
+      {state,
+       %{
+         posts: fn -> Process.get({:slash_post_calls, post_calls}) end,
+         loads: fn -> Process.get({:slash_load_calls, load_calls}) end
+       }}
+    end
+
+    test "submitting `/switch <ch>` swaps channel and refreshes; no post_fn call" do
+      {state, calls} = init_with_slash()
+      state = %{state | mode: {:compose, "/switch incidents"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.channel == "incidents"
+      assert state.mode == :list
+      assert state.cursor == 0
+      assert calls.posts.() == []
+      assert calls.loads.() == ["incidents"]
+    end
+
+    test "`/switch` to a non-existent channel records :unknown_channel and stays put" do
+      {state, calls} = init_with_slash(channels: ["alerts", "general"])
+      state = %{state | mode: {:compose, "/switch nope"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.channel == "general"
+      assert state.last_action == {:error, :command, {:unknown_channel, "nope"}}
+      assert state.mode == :list
+      assert calls.loads.() == []
+    end
+
+    test "`/switch` with no argument records :missing_argument" do
+      {state, _calls} = init_with_slash()
+      state = %{state | mode: {:compose, "/switch"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.last_action == {:error, :command, {:missing_argument, "switch"}}
+      assert state.mode == :list
+      assert state.channel == "general"
+    end
+
+    test "`/help` records help text and exits compose without posting" do
+      {state, calls} = init_with_slash()
+      state = %{state | mode: {:compose, "/help"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert {:ok, :help, _help} = state.last_action
+      assert state.mode == :list
+      assert calls.posts.() == []
+    end
+
+    test "`/cancel` is a silent exit (no last_action change, no post)" do
+      {state, calls} = init_with_slash()
+      state = %{state | last_action: nil, mode: {:compose, "/cancel"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.last_action == nil
+      assert state.mode == :list
+      assert calls.posts.() == []
+    end
+
+    test "unknown slash command records :unknown_command" do
+      {state, calls} = init_with_slash()
+      state = %{state | mode: {:compose, "/zoinks something"}}
+
+      {state, []} = Chat.update(:compose_submit, state)
+
+      assert state.last_action == {:error, :command, {:unknown_command, "zoinks"}}
+      assert state.mode == :list
+      assert calls.posts.() == []
+    end
+
+    test "leading whitespace + `/`-only buffer is treated as a regular post" do
+      {state, calls} = init_with_slash()
+      # Buffer starts with whitespace, so it's not a slash command —
+      # post_fn sees it verbatim.
+      state = %{state | mode: {:compose, " /not a command"}}
+
+      {_state, []} = Chat.update(:compose_submit, state)
+
+      assert calls.posts.() == [{"acme", "general", " /not a command", [base: "/tmp/glorbo"]}]
+    end
+
+    test "view in compose mode appends a hint about /help" do
+      state = %{
+        messages: [],
+        channel: "general",
+        cursor: 0,
+        mode: {:compose, ""},
+        last_action: nil
+      }
+
+      rendered = render_to_strings(Chat.view(state))
+      # Slash commands are advertised in the composer hint line.
+      assert Enum.any?(rendered, &String.contains?(&1, "/help"))
+    end
+  end
+
   defp render_to_strings(%TermUI.Component.RenderNode{type: :text, content: content}),
     do: [content]
 

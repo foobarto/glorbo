@@ -1,19 +1,19 @@
 defmodule Glorbo.Shell.Views.Chat do
   @moduledoc """
-  GEP-37 Phase 3f + 3f-revisit + 3f-revisit-2 — TUI Chat view.
+  GEP-37 Phase 3f + 3f-revisit + 3f-revisit-2 + 3f-revisit-3 —
+  TUI Chat view.
 
   Phase 3f shipped read-only message rendering. Phase 3f-revisit
   added the composer modal: `i` enters `{:compose, buffer}` mode
   where keystrokes accumulate, Enter submits via
   `Glorbo.Actions.post_message/4`, Esc cancels. Phase 3f-revisit-2
-  (this version) adds the channel switcher: `s` enters
-  `{:switch, %{channels, cursor}}` mode where j/k navigate the
-  channel list, Enter selects, Esc cancels. Both modals follow
-  the same shape as Inbox's deny prompt.
-
-  Slash-command parsing inside the composer is still future work;
-  today the composer always posts to the active channel as a
-  plain body.
+  added the channel switcher: `s` enters `{:switch, %{channels,
+  cursor}}` mode where j/k navigate, Enter selects, Esc cancels.
+  Phase 3f-revisit-3 (this version) parses slash commands inside
+  the composer: `/switch <ch>` swaps channel, `/help` lists
+  commands, `/cancel` exits without posting; unknown commands +
+  unknown channels surface in `:last_action`. All three modals
+  follow the same shape as Inbox's deny prompt.
 
   Implements `TermUI.Elm`. State shape:
 
@@ -222,17 +222,28 @@ defmodule Glorbo.Shell.Views.Chat do
       {:ok, :post, _} ->
         lines ++ [text("✓ posted")]
 
+      {:ok, :help, help_text} ->
+        lines ++ [text("ℹ #{help_text}")]
+
       {:error, :post, reason} ->
         lines ++ [text("✗ post failed: #{inspect(reason)}")]
+
+      {:error, :command, reason} ->
+        lines ++ [text("✗ #{format_command_error(reason)}")]
     end
   end
+
+  defp format_command_error({:unknown_command, name}), do: "unknown command: /#{name}"
+  defp format_command_error({:unknown_channel, name}), do: "unknown channel: ##{name}"
+  defp format_command_error({:missing_argument, name}), do: "missing argument: /#{name} <arg>"
+  defp format_command_error(other), do: inspect(other)
 
   defp append_composer(lines, state) do
     case Map.get(state, :mode, :list) do
       {:compose, buf} ->
         lines ++
           [
-            text("Compose (Enter to send, Esc to cancel):"),
+            text("Compose (Enter to send, Esc to cancel; /help for commands):"),
             text("> #{buf}_")
           ]
 
@@ -271,6 +282,10 @@ defmodule Glorbo.Shell.Views.Chat do
     {%{state | mode: :list}, []}
   end
 
+  defp apply_post(state, "/" <> rest) do
+    apply_command(state, rest)
+  end
+
   defp apply_post(state, buf) do
     with co when is_binary(co) <- state.company,
          base when is_binary(base) <- state.base do
@@ -278,6 +293,51 @@ defmodule Glorbo.Shell.Views.Chat do
       apply_post_result(state, result)
     else
       _ -> {%{state | mode: :list, last_action: {:error, :post, :no_company}}, []}
+    end
+  end
+
+  # Slash-command parser. Whitespace before the `/` is treated as a
+  # regular post (caught by the catch-all apply_post/2 above).
+  @help_text "Commands: /switch <ch>, /help, /cancel"
+
+  defp apply_command(state, rest) do
+    case String.split(rest, " ", parts: 2, trim: false) do
+      ["switch", arg] when arg != "" ->
+        apply_switch_command(state, String.trim(arg))
+
+      ["switch"] ->
+        {%{state | mode: :list, last_action: {:error, :command, {:missing_argument, "switch"}}},
+         []}
+
+      ["switch", ""] ->
+        {%{state | mode: :list, last_action: {:error, :command, {:missing_argument, "switch"}}},
+         []}
+
+      ["help"] ->
+        {%{state | mode: :list, last_action: {:ok, :help, @help_text}}, []}
+
+      ["cancel"] ->
+        {%{state | mode: :list}, []}
+
+      [name | _] ->
+        {%{state | mode: :list, last_action: {:error, :command, {:unknown_command, name}}}, []}
+    end
+  end
+
+  defp apply_switch_command(state, channel) do
+    if is_binary(state.base) and is_binary(state.company) and
+         channel in state.list_channels_fn.(state.base, state.company) do
+      refreshed = state.loader_fn.(state.base, state.company, channel)
+
+      {%{
+         state
+         | mode: :list,
+           channel: channel,
+           messages: refreshed,
+           cursor: 0
+       }, []}
+    else
+      {%{state | mode: :list, last_action: {:error, :command, {:unknown_channel, channel}}}, []}
     end
   end
 

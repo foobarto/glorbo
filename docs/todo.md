@@ -462,8 +462,17 @@ it's been in CHANGELOG for a cycle.
   `mode :: :list | {:compose, buf} | {:switch, %{channels,
   cursor}}`. `:list_channels_fn` injection so tests skip
   the filesystem. 8 new tests; 35 total in chat_test.exs.
-  Slash-command parsing inside the composer is still
-  future work.
+- [x] **GEP-37 Phase 3f-revisit-3 — composer slash commands.**
+  Shipped post-v0.16.0 (autonomous L4). Composer parses
+  `/`-prefixed buffers as commands: `/switch <ch>` (swap
+  channel, reload), `/help` (advertise commands on the
+  action line), `/cancel` (silent exit alias for Esc).
+  Unknown command / unknown channel / missing argument
+  surface as `{:error, :command, _}` last_action variants
+  with dedicated render strings. Leading-whitespace+`/`
+  buffer is still treated as a regular post (only a leading
+  `/` invokes the parser). Composer hint line now mentions
+  `/help`. 8 new tests; 43 total in chat_test.exs.
 - [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
   Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
   Kanban-style stacked-vertical layout: each lane
