@@ -10,6 +10,14 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.16.0] — 2026-04-27
+
+GEP-37 Phase 3f-revisit slice. The Chat view picks up its
+write path and a channel switcher, completing the LV's
+chat-surface parity for the v1 TUI.
+
 ### Added — GEP-37 Phase 3f-revisit (Chat composer modal)
 
 The Chat view picks up a write path. Pressing `i` opens a
