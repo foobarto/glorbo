@@ -14,14 +14,12 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [0.12.5] — 2026-04-26
 
-Same-day patch bundling wave 33 (Medium) + wave 34 (Low) +
-the aarch64 CI flake fix. Supersedes v0.12.3 and v0.12.4 as
-publish targets — both prior tags were pushed but had their
-publish jobs skipped because an aarch64 build+test job
-flaked on `tasks_test.exs:711`'s short
-`Process.sleep(150)` (HomeHistory.Tx debounce window). The
-fix in this release matches v0.11.3's earlier
-`channels_test.exs` 150 → 1000ms remediation.
+Same-day patch on top of v0.12.4. Bundles the aarch64 CI
+flake fix from `tasks_test.exs:711`'s
+`Process.sleep(150)` HomeHistory.Tx debounce window. The
+v0.12.3 tag failed the same flake (publish-skipped); v0.12.4
+got lucky on the intermittent failure and published; v0.12.5
+makes the fix permanent so future patches don't flake.
 
 Cumulative threatmodel: **100 security findings closed across
 34 waves**. Three Medium-severity isolation findings
@@ -76,19 +74,18 @@ remain accepted-by-design.
   aarch64 build+test success); v0.12.5 is the first patch
   in this trio to actually land a signed GitHub Release.
 
-## [0.12.4] — 2026-04-26 (tagged, publish-skipped — superseded by v0.12.5)
+## [0.12.4] — 2026-04-26
 
-> **Tag exists in git history but no GitHub Release was created.** The
-> `aarch64 build + test` CI job flaked on
-> `tasks_test.exs:711`'s 150ms debounce sleep, which skipped the
-> `Publish signed release` job. v0.12.5 supersedes this tag with the
-> same content plus the flake fix; binaries for v0.12.4 were never
-> signed nor uploaded.
+Same-day security patch on top of v0.12.3 (which was tagged
+but had its publish job skipped — see below). v0.12.4's
+aarch64 CI job passed and the release published; v0.12.4
+is therefore the FIRST release in the wave-33 trio
+(0.12.3 / 0.12.4 / 0.12.5) to actually appear on GitHub.
 
-Same-day security patch on top of v0.12.3. Ships the wave-33
-Medium-severity follow-up that closed the JSONL `company:`
-spoof for Phase 1 (`audit_events`), unifying the dirname-as-
-canonical discipline across all three GEP-34 projections.
+Ships the wave-33 Medium-severity follow-up that closed the
+JSONL `company:` spoof for Phase 1 (`audit_events`),
+unifying the dirname-as-canonical discipline across all
+three GEP-34 projections.
 
 A sixth self-review pass after wave 33 returned clean — no
 further cross-company isolation gaps in the GEP-34 surface
