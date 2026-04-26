@@ -191,6 +191,103 @@ defmodule Glorbo.Filesystem.ReindexTest do
     end
   end
 
+  describe "audit_events rebuild from JSONL (GEP-34 / wave-29)" do
+    alias Glorbo.AuditEvent
+
+    test "stream-imports company audit JSONL into audit_events on full reindex" do
+      base = TmpGlorboHome.setup()
+      _co = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:23:45Z","company":"acme","actor":"ceo","action":"task.create","target":"projects/x/tasks/x-01.md"}\n| <>
+          ~s|{"ts":"2026-04-26T01:24:00Z","company":"acme","actor":"director","action":"approval.granted","target":"projects/x/tasks/x-01.md","detail":"ok"}\n|
+
+      _audit = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 2}} = Reindex.run(base: base)
+
+      events = AuditEvent |> Repo.all() |> Enum.sort_by(& &1.ts)
+      assert length(events) == 2
+      [first, second] = events
+      assert first.actor == "ceo"
+      assert first.action == "task.create"
+      assert first.company == "acme"
+      assert second.action == "approval.granted"
+      # `detail` column is JSON-encoded — the inline `detail` key from
+      # the JSONL is preserved while the well-known top-level keys are
+      # peeled off.
+      assert {:ok, %{"detail" => "ok"}} = Jason.decode(second.detail)
+      refute Jason.decode!(second.detail) |> Map.has_key?("ts")
+      refute Jason.decode!(second.detail) |> Map.has_key?("actor")
+    end
+
+    test "wipes existing rows so reindex is idempotent" do
+      base = TmpGlorboHome.setup()
+      _co = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:23:45Z","company":"acme","actor":"ceo","action":"task.create","target":"x"}\n|
+
+      _audit = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
+      assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
+      # 1 row, not 2 — second run wiped the table before re-importing.
+      assert length(Repo.all(AuditEvent)) == 1
+    end
+
+    test "imports `_system` events under company `_system`" do
+      base = TmpGlorboHome.setup()
+      File.mkdir_p!(Path.join(base, "companies"))
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:00:00Z","actor":"system","action":"orchestrator.boot","target":"all"}\n|
+
+      _audit = write!(base, "audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(AuditEvent)
+      assert row.company == "_system"
+      assert row.action == "orchestrator.boot"
+    end
+
+    test "skips malformed JSONL lines without crashing" do
+      base = TmpGlorboHome.setup()
+      _co = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      mixed =
+        ~s|{"ts":"2026-04-26T01:00:00Z","actor":"ceo","action":"good","target":"x"}\n| <>
+          "not-json garbage line\n" <>
+          ~s|{"missing":"required-fields"}\n| <>
+          ~s|{"ts":"2026-04-26T01:01:00Z","actor":"ceo","action":"good2","target":"y"}\n|
+
+      _audit = write!(base, "companies/acme/audit/2026-04.jsonl", mixed)
+
+      assert {:ok, %{audit_events: 2}} = Reindex.run(base: base)
+      events = Repo.all(AuditEvent)
+      assert Enum.map(events, & &1.action) |> Enum.sort() == ["good", "good2"]
+    end
+
+    test "drops oversized lines (> 64KiB) with a warning" do
+      base = TmpGlorboHome.setup()
+      _co = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      huge_target = String.duplicate("X", 70_000)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:00:00Z","actor":"ceo","action":"big","target":"#{huge_target}"}\n| <>
+          ~s|{"ts":"2026-04-26T01:01:00Z","actor":"ceo","action":"small","target":"y"}\n|
+
+      _audit = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      log = ExUnit.CaptureLog.capture_log(fn -> Reindex.run(base: base) end)
+      assert log =~ "oversized line"
+
+      [row] = Repo.all(AuditEvent)
+      assert row.action == "small"
+    end
+  end
+
   describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do
     test "process_path/2 indexes a single file without a full run" do
       base = TmpGlorboHome.setup()

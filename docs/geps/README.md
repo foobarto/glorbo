@@ -57,7 +57,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Implemented |
 | 0032 | [Native Agent Harness — OpenAI v1-Compatible Provider](./0032-native-agent-harness.md)     | Standards     | Implemented |
 | 0033 | [Git History Layer for Glorbo Home](./0033-git-history-layer-for-glorbo-home.md)           | Standards     | Implemented |
-| 0034 | [Reindex v2 — full derived-state rebuild](./0034-reindex-v2-derived-state-rebuild.md)       | Standards     | Placeholder |
+| 0034 | [Reindex v2 — full derived-state rebuild](./0034-reindex-v2-derived-state-rebuild.md)       | Standards     | Draft       |
 | 0035 | [Router split + AgentWritableFile seam](./0035-router-split-and-agent-writable-file-seam.md) | Standards   | Placeholder |
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Implemented |
 | 0037 | [`glorbo shell` — interactive terminal session for the Director](./0037-glorbo-shell.md) | Standards     | Accepted    |

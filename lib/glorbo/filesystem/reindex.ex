@@ -8,8 +8,16 @@ defmodule Glorbo.Filesystem.Reindex do
   vanished from disk. GEP-32 phase 3 also rebuilds the derived
   `provider_models` table from `cache/providers/*.json`.
 
-  `audit_events` is still NOT rebuilt from disk here — JSONL remains the
-  source of truth on that axis.
+  GEP-34 / wave-29: `audit_events` IS rebuilt from disk now —
+  `companies/<co>/audit/YYYY-MM.jsonl` is streamed line-by-line into
+  the SQLite mirror so `glorbo reindex` produces a fully-derivable
+  `audit_events` table. JSONL remains the source of truth; SQLite is
+  re-derived from it. `_system` events at `<base>/audit/*.jsonl` are
+  imported under company `"_system"`.
+
+  Two of GEP-34's three identified gaps remain (`budgets`,
+  `tasks_approval_state`) — those need separate per-table audit
+  replay logic and are tracked in GEP-34's open-questions block.
 
   **B4 contract (load-bearing):** `process_file/1` is PRIVATE. Plan 04 will
   add a public `process_path/2` wrapper for the watcher integration; do
@@ -27,7 +35,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   import Ecto.Query
 
-  alias Glorbo.{Agent, Company, Repo}
+  alias Glorbo.{Agent, AuditEvent, Company, Repo}
   alias Glorbo.Filesystem.{Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
 
@@ -115,8 +123,9 @@ defmodule Glorbo.Filesystem.Reindex do
 
     deleted = cleanup_vanished(files)
     :ok = ModelCatalog.rebuild_projection_from_cache(Path.dirname(companies_dir))
+    audit_imported = rebuild_audit_events(companies_dir)
 
-    {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted}}
+    {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted, audit_events: audit_imported}}
   end
 
   # Returns the absolute path to the immediate child of `companies_dir` that
@@ -363,4 +372,148 @@ defmodule Glorbo.Filesystem.Reindex do
 
     length(vanished)
   end
+
+  # ---------------------------------------------------------------------------
+  # GEP-34 / wave-29: audit_events rebuild from JSONL
+  # ---------------------------------------------------------------------------
+
+  # Cap each line at this many bytes — JSON-Lines entries beyond this are
+  # almost certainly corrupted (the AuditLog writer doesn't emit lines this
+  # large) and slurping them into the SQLite `detail` column wastes disk.
+  @max_audit_line_bytes 64 * 1024
+
+  # Wipe the table once, then stream every JSONL file under
+  # `companies/<co>/audit/` and `<base>/audit/` (system events) back into
+  # the mirror. Returns the count of imported rows.
+  defp rebuild_audit_events(companies_dir) do
+    base = Path.dirname(companies_dir)
+    Repo.delete_all(AuditEvent)
+
+    company_count =
+      case File.ls(companies_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
+          |> Enum.flat_map(fn co ->
+            audit_dir = Path.join([companies_dir, co, "audit"])
+            if File.dir?(audit_dir), do: [{co, audit_dir}], else: []
+          end)
+          |> Enum.reduce(0, fn {co, audit_dir}, acc -> acc + import_audit_dir(co, audit_dir) end)
+
+        _ ->
+          0
+      end
+
+    system_audit_dir = Path.join(base, "audit")
+
+    system_count =
+      if File.dir?(system_audit_dir),
+        do: import_audit_dir("_system", system_audit_dir),
+        else: 0
+
+    company_count + system_count
+  end
+
+  defp import_audit_dir(company, audit_dir) do
+    case File.ls(audit_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".jsonl"))
+        |> Enum.reduce(0, fn fname, acc ->
+          path = Path.join(audit_dir, fname)
+          acc + import_audit_file(company, path)
+        end)
+
+      _ ->
+        0
+    end
+  end
+
+  defp import_audit_file(company, path) do
+    # `:line` stream is byte-bounded by the underlying file driver, but we
+    # still cap each decoded line so a single 100MB JSON blob can't OOM the
+    # BEAM. Lines that fail to decode or exceed the cap are skipped with a
+    # warning; reindex never crashes on a malformed audit entry.
+    rows =
+      path
+      |> File.stream!([], :line)
+      |> Stream.chunk_every(500)
+      |> Enum.reduce(0, fn lines, acc ->
+        decoded =
+          lines
+          |> Enum.flat_map(&decode_audit_line(&1, company, path))
+
+        if decoded != [] do
+          Repo.insert_all(AuditEvent, decoded)
+        end
+
+        acc + length(decoded)
+      end)
+
+    rows
+  rescue
+    e ->
+      Logger.warning(
+        "audit reindex skipped #{path}: #{Exception.message(e)} (JSONL stays authoritative)"
+      )
+
+      0
+  end
+
+  defp decode_audit_line(line, company, path) do
+    line = String.trim_trailing(line, "\n")
+
+    cond do
+      line == "" ->
+        []
+
+      byte_size(line) > @max_audit_line_bytes ->
+        Logger.warning("audit reindex skipped oversized line in #{path} (> 64KiB)")
+        []
+
+      true ->
+        case Jason.decode(line) do
+          {:ok, %{} = entry} -> build_audit_row(entry, company)
+          _ -> []
+        end
+    end
+  end
+
+  defp build_audit_row(entry, fallback_company) do
+    actor = Map.get(entry, "actor")
+    action = Map.get(entry, "action")
+    ts = parse_audit_ts(Map.get(entry, "ts"))
+
+    if is_binary(actor) and is_binary(action) and ts != nil do
+      detail = Map.drop(entry, ["ts", "company", "actor", "action", "target"])
+
+      [
+        %{
+          company: stringify_or(Map.get(entry, "company"), fallback_company),
+          actor: actor,
+          action: action,
+          target: stringify_or(Map.get(entry, "target"), nil),
+          detail: Jason.encode!(detail),
+          ts: ts
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp stringify_or(nil, fallback), do: fallback
+  defp stringify_or(v, _) when is_binary(v), do: v
+  defp stringify_or(v, _), do: to_string(v)
+
+  defp parse_audit_ts(nil), do: nil
+
+  defp parse_audit_ts(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _offset} -> DateTime.truncate(dt, :second)
+      _ -> nil
+    end
+  end
+
+  defp parse_audit_ts(_), do: nil
 end
