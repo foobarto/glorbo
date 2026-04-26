@@ -309,12 +309,31 @@ defmodule Glorbo.Filesystem.ReindexTest do
   describe "slug validation on JSONL fields (wave 30 defense-in-depth)" do
     alias Glorbo.{AuditEvent, Budget, TasksApprovalState}
 
-    test "Phase 1: bad `company` slug in JSONL falls back to dirname" do
+    test "Phase 1: bad `company` slug in JSONL is ignored (dirname canonical)" do
       base = TmpGlorboHome.setup()
       _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
 
       jsonl =
         ~s|{"ts":"2026-04-26T10:00:00Z","company":"../../etc","actor":"ceo","action":"task.create","target":"x"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(AuditEvent)
+      assert row.company == "acme"
+    end
+
+    test "Phase 1 wave 33: dirname is canonical — JSONL spoof of `company:` is ignored" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+      _ = write!(base, "companies/beta/company.md", "---\nname: beta\n---\n")
+
+      # An attacker-crafted line in acme's audit dir claiming
+      # `company: "beta"`. Pre-wave-33 behaviour would have stored
+      # this as a row attributed to beta, polluting beta's audit
+      # feed.
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"beta","actor":"ceo","action":"task.create","target":"x"}\n|
 
       _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
 

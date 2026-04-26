@@ -139,6 +139,19 @@ it's been in CHANGELOG for a cycle.
   canonical for Phase 2 + 3; Phase 1 keeps wave-30 semantics
   (audit_events legitimately stores cross-routed events).
   2 new spoof-rejection tests; cumulative tally 98 / 32 waves.
+- [x] **Wave 33 (post-v0.12.3, MEDIUM): Phase 1 audit_events
+  also locks dirname.** Fifth self-review pass: wave 32 left
+  Phase 1 on `safe_company_slug` with the rationale that
+  audit_events legitimately stores cross-routed events. On
+  reflection that argument applies only to the writer side
+  (which routes by JSONL `company:`); the reader's dirname
+  has already encoded the canonical company. Same spoof
+  worked in Phase 1 — attacker writing into acme's audit dir
+  with `company: "beta"` polluted beta's dashboard audit
+  feed. New `audit_company_slug/1` makes the dirname
+  canonical for Phase 1 too (with `_system` allowance for
+  the system audit dir). `safe_company_slug/2` removed, no
+  callers left. 1 new test; cumulative tally 99 / 33 waves.
 
 ## P2 — nice to have
 

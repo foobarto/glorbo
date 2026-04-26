@@ -621,10 +621,10 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **98 security findings closed across 32
+Cumulative tally: **99 security findings closed across 33
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
 + 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
-+ 1 wave 29 + 1 wave 30 + 1 wave 31 + 1 wave 32.
++ 1 wave 29 + 1 wave 30 + 1 wave 31 + 1 wave 32 + 1 wave 33.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 
@@ -650,6 +650,44 @@ and routing all three call sites through it. 2 new tests in
 `reindex_test.exs` confirm that a symlinked
 `companies/<co>/audit/` AND a symlinked `<base>/audit/_system/`
 both result in zero rows imported across all three projections.
+*Paths:* `lib/glorbo/filesystem/reindex.ex,
+test/glorbo/filesystem/reindex_test.exs`.
+
+### Wave 33 closure (post-v0.12.3 self-review, 2026-04-26)
+
+**Medium severity — JSONL `company:` spoof remained open in
+Phase 1 (`audit_events`) after wave 32.**
+
+Fifth self-review of the GEP-34 reindex code (after wave 32).
+Wave 32 closed the cross-company spoofing path for Phase 2 +
+Phase 3 by introducing `dirname_company_slug/1`, but left
+Phase 1 on the wave-30 lenient `safe_company_slug/2` with the
+rationale "audit_events legitimately stores cross-routed
+events." On reflection, that argument applied only to the
+writer side: `Company.AuditLog.entry_company/1` uses the JSONL
+field to ROUTE the event to the correct dir at write time. By
+the time the reader iterates `companies/<co>/audit/`, the
+dirname IS the canonical company; accepting a JSONL `company:`
+override still let an attacker who could write into one
+company's audit dir pollute another company's audit feed in
+the dashboard.
+
+Closed by introducing `audit_company_slug/1` and routing
+`build_audit_row/2` through it. The dirname is now canonical
+for Phase 1 too, with `_system` allowance for the system audit
+dir (`<base>/audit/_system/` has dirname == "_system" already).
+`safe_company_slug/2` is removed (no remaining callers); the
+moduledoc-style comment block traces the wave 30 → 32 → 33
+evolution for future readers.
+
+1 new test in Phase 1's section: an attacker-crafted line in
+acme's audit dir with `company: "beta"` lands as a row
+attributed to acme, not beta.
+
+This closes the JSONL-`company:`-field-spoof attack surface
+across all three GEP-34 projections in a unified way; every
+phase now derives the row's company from its on-disk
+location.
 *Paths:* `lib/glorbo/filesystem/reindex.ex,
 test/glorbo/filesystem/reindex_test.exs`.
 

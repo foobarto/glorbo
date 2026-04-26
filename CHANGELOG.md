@@ -10,7 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Security (wave 33)
+
+- **Medium** — `Reindex` Phase 1 (`audit_events`) now also
+  treats the on-disk dirname as canonical, mirroring wave 32.
+  Wave 32 closed the cross-company spoof for Phase 2 + 3 but
+  left Phase 1's `safe_company_slug` lenient because
+  `audit_events` legitimately stores cross-routed events. On
+  reflection, that argument applied only to the writer side
+  (`Company.AuditLog.entry_company/1` routes to the right dir
+  based on the JSONL field). At the read path the dirname has
+  already encoded the canonical company by the time we
+  iterate — accepting a JSONL `company:` override still let an
+  attacker who could write into one company's audit dir
+  pollute another company's audit feed in the dashboard.
+  New helper `audit_company_slug/1` makes the dirname
+  authoritative for Phase 1 with `_system` allowance for the
+  system-audit dir; `safe_company_slug/2` removed (no
+  remaining callers). 1 new spoof-rejection test.
 
 ## [0.12.3] — 2026-04-26
 

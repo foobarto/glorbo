@@ -439,39 +439,20 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
-  # Wave 30 (defense-in-depth, post-v0.12.0): mirror the writer-side
-  # `Company.AuditLog.entry_company/1` discipline at the read path.
-  # JSONL lines on disk should always carry a slug-shaped `company`
-  # (or `"_system"`) because the writer enforces it, but hand-edited or
-  # backup-restored JSONL might not.
+  # Wave 30 → 33 evolution (security hardening at the read path):
   #
-  # **Used by Phase 1 (`audit_events`) only.** Phase 1 stores events
-  # the writer cross-routed across companies (via `entry_company/1`),
-  # so respecting the JSONL `company:` field over the dirname is
-  # correct: a `_system` event written from a company gate ends up
-  # under `<base>/audit/_system/` already.
+  # * Wave 30 introduced `safe_company_slug/2` which preferred the
+  #   JSONL `company:` field over the dirname. Defense-in-depth
+  #   mirroring of the writer's `Company.AuditLog.entry_company/1`.
+  # * Wave 32 added `dirname_company_slug/1` for Phase 2 + Phase 3,
+  #   making the dirname canonical there because the JSONL field
+  #   could be attacker-spoofed within a single company's audit dir.
+  # * Wave 33 (this version) extended that to Phase 1 via
+  #   `audit_company_slug/1` — same threat model, with `_system`
+  #   allowance for the system audit dir.
   #
-  # Wave 32 split: Phase 2 (`tasks_approval_state`) and Phase 3
-  # (`budgets`) use `dirname_company_slug/1` instead — for those
-  # tables, the on-disk dir IS canonical and the JSONL `company:`
-  # field is decoration. Allowing JSONL override there would let an
-  # attacker who can write to one company's audit dir create spoofed
-  # rows in another company's projection.
-  defp safe_company_slug(entry, fallback) do
-    case Map.get(entry, "company") do
-      nil ->
-        fallback
-
-      raw ->
-        co = stringify_or(raw, fallback)
-
-        cond do
-          co == "_system" -> co
-          ActionsSupport.valid_slug?(co) -> co
-          true -> fallback
-        end
-    end
-  end
+  # `safe_company_slug/2` was removed in wave 33 — every call site now
+  # uses one of the dirname-canonical helpers below.
 
   # Wave 32 (post-v0.12.2): for Phase 2 + Phase 3 the dirname is
   # canonical. Returns the dirname if valid-slug-shaped, else nil so
@@ -480,6 +461,20 @@ defmodule Glorbo.Filesystem.Reindex do
     if is_binary(dirname) and ActionsSupport.valid_slug?(dirname),
       do: dirname,
       else: nil
+  end
+
+  # Wave 33 (post-v0.12.3): for Phase 1 (`audit_events`) the dirname
+  # is also canonical, with `"_system"` allowed (system audit lives at
+  # `<base>/audit/_system/`, dirname == "_system"). Returns the
+  # dirname unchanged when valid; nil otherwise so the row is dropped.
+  # The JSONL `company:` field is ignored — same threat model as
+  # wave 32 but for the audit_events display table.
+  defp audit_company_slug(dirname) do
+    cond do
+      dirname == "_system" -> dirname
+      is_binary(dirname) and ActionsSupport.valid_slug?(dirname) -> dirname
+      true -> nil
+    end
   end
 
   # Wave 30: agent_slug from a JSONL line must be slug-shaped to enter
@@ -594,13 +589,14 @@ defmodule Glorbo.Filesystem.Reindex do
     actor = Map.get(entry, "actor")
     action = Map.get(entry, "action")
     ts = parse_audit_ts(Map.get(entry, "ts"))
+    company = audit_company_slug(fallback_company)
 
-    if is_binary(actor) and is_binary(action) and ts != nil do
+    if is_binary(actor) and is_binary(action) and ts != nil and company != nil do
       detail = Map.drop(entry, ["ts", "company", "actor", "action", "target"])
 
       [
         %{
-          company: safe_company_slug(entry, fallback_company),
+          company: company,
           actor: actor,
           action: action,
           target: stringify_or(Map.get(entry, "target"), nil),
