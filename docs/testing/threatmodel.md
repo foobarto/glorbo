@@ -621,10 +621,10 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **95 security findings closed across 29
+Cumulative tally: **96 security findings closed across 30
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
 + 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
-+ 1 wave 29.
++ 1 wave 29 + 1 wave 30.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 
@@ -650,6 +650,34 @@ and routing all three call sites through it. 2 new tests in
 `reindex_test.exs` confirm that a symlinked
 `companies/<co>/audit/` AND a symlinked `<base>/audit/_system/`
 both result in zero rows imported across all three projections.
+*Paths:* `lib/glorbo/filesystem/reindex.ex,
+test/glorbo/filesystem/reindex_test.exs`.
+
+### Wave 30 closure (post-v0.12.0 self-review, 2026-04-26)
+
+Second self-review pass on the GEP-34 reindex code. The writer
+side (`Company.AuditLog.entry_company/1`) validates JSONL
+`company:` fields against the canonical slug regex, falling
+back to the `_system` bucket on garbage. The replay side did
+not — Phase 1/2/3 inserted whatever JSONL claimed verbatim
+into `audit_events.company`,
+`tasks_approval_state.agent_slug`, and
+`budgets.{company_slug,agent_slug}`. Hand-edited or
+backup-restored JSONL with `company: "../../etc"` or
+`agent: "../etc"` would write garbage cell values used later
+by lookup queries (`find_awaiting_row` / budget scoping). No
+SQL injection — `Repo.insert_all` parameterizes — but the
+column data was untrusted.
+Closed by introducing two helpers in `Reindex` that mirror
+the writer-side discipline: `safe_company_slug/2` validates
+the JSONL `company:` against `Actions.Support.valid_slug?/1`
+and falls back to the on-disk dirname (allows `_system`);
+`safe_agent_slug/1` returns nil on non-slug input so callers
+skip the row. Phase 3 additionally rejects `company:
+"_system"` because budget events are strictly per-company.
+6 new tests cover bad-`company`-fallback, non-slug-`agent`-skip
+across all three projections, granted-resolution synthesis
+with bad agent, and the `_system` rejection.
 *Paths:* `lib/glorbo/filesystem/reindex.ex,
 test/glorbo/filesystem/reindex_test.exs`.
 

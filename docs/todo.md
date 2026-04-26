@@ -108,6 +108,14 @@ it's been in CHANGELOG for a cycle.
   tests cover both per-company + `_system` symlink rejection
   paths. Closed in [Unreleased] CHANGELOG block; threatmodel
   cumulative tally bumped to 95 / 29 waves.
+- [x] **Wave 30 (post-v0.12.0): JSONL slug fields validated
+  during replay.** Second self-review pass: writer-side
+  enforces canonical slugs on JSONL `company:` and `agent:`
+  fields, replay-side did not. `safe_company_slug/2` +
+  `safe_agent_slug/1` helpers added and wired through Phase
+  1/2/3. Phase 3 also rejects `_system` company (budgets are
+  strictly per-company). 6 new tests; cumulative tally 96 /
+  30 waves.
 
 ## P2 — nice to have
 

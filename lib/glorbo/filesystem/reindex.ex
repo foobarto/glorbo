@@ -53,6 +53,7 @@ defmodule Glorbo.Filesystem.Reindex do
   import Ecto.Query
 
   alias Glorbo.{Agent, AuditEvent, Budget, Company, Repo, TasksApprovalState}
+  alias Glorbo.Actions.Support, as: ActionsSupport
   alias Glorbo.Budget.Ledger
   alias Glorbo.Filesystem.{AgentWritableFile, Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
@@ -430,6 +431,37 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
+  # Wave 30 (defense-in-depth, post-v0.12.0): mirror the writer-side
+  # `Company.AuditLog.entry_company/1` discipline at the read path.
+  # JSONL lines on disk should always carry a slug-shaped `company`
+  # (or `"_system"`) because the writer enforces it, but hand-edited or
+  # backup-restored JSONL might not. Returns the validated slug if the
+  # entry's `company` field is valid; otherwise falls back to the
+  # caller-supplied dirname (the company-from-on-disk-path).
+  defp safe_company_slug(entry, fallback) do
+    case Map.get(entry, "company") do
+      nil ->
+        fallback
+
+      raw ->
+        co = stringify_or(raw, fallback)
+
+        cond do
+          co == "_system" -> co
+          ActionsSupport.valid_slug?(co) -> co
+          true -> fallback
+        end
+    end
+  end
+
+  # Wave 30: agent_slug from a JSONL line must be slug-shaped to enter
+  # `tasks_approval_state.agent_slug` or `budgets.agent_slug`. Returns
+  # nil for any non-slug input so callers can skip the row instead of
+  # writing garbage.
+  defp safe_agent_slug(value) do
+    if is_binary(value) and ActionsSupport.valid_slug?(value), do: value
+  end
+
   # Wipe the table once, then stream every JSONL file under
   # `companies/<co>/audit/` and `<base>/audit/_system/` (system events) back
   # into the mirror. Returns the count of imported rows. The system path
@@ -540,7 +572,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
       [
         %{
-          company: stringify_or(Map.get(entry, "company"), fallback_company),
+          company: safe_company_slug(entry, fallback_company),
           actor: actor,
           action: action,
           target: stringify_or(Map.get(entry, "target"), nil),
@@ -653,10 +685,10 @@ defmodule Glorbo.Filesystem.Reindex do
 
   defp apply_approval_event("approval.requested", entry, acc) do
     task_path = entry["target"]
-    agent = entry["agent"] || entry["actor"]
+    agent = safe_agent_slug(entry["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
 
-    if is_binary(task_path) and is_binary(agent) and ts != nil do
+    if is_binary(task_path) and agent != nil and ts != nil do
       Map.put(acc, task_path, %{
         task_path: task_path,
         agent_slug: agent,
@@ -692,9 +724,9 @@ defmodule Glorbo.Filesystem.Reindex do
 
       case Map.get(acc, task_path) do
         nil ->
-          agent = entry["agent"]
+          agent = safe_agent_slug(entry["agent"])
 
-          if is_binary(agent) do
+          if agent != nil do
             Map.put(acc, task_path, %{
               task_path: task_path,
               agent_slug: agent,
@@ -821,14 +853,22 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp apply_budget_usage(entry, fallback_company, acc) do
-    co = stringify_or(Map.get(entry, "company"), fallback_company)
-    agent = entry["agent"] || entry["actor"]
+    # Phase 3 budgets are strictly per-company; an unbucketable JSONL line
+    # (no `company:`, non-slug `company:`, fallback dirname not slug-shaped)
+    # has no defensible target row, so reject rather than synthesize.
+    co =
+      case safe_company_slug(entry, fallback_company) do
+        "_system" -> nil
+        slug -> if ActionsSupport.valid_slug?(slug), do: slug, else: nil
+      end
+
+    agent = safe_agent_slug(entry["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
     prompt = non_neg_int(entry["prompt_tokens"])
     completion = non_neg_int(entry["completion_tokens"])
     cost = non_neg_int(entry["cost_usd_cents"])
 
-    if is_binary(co) and is_binary(agent) and ts != nil do
+    if is_binary(co) and agent != nil and ts != nil do
       year_month = Ledger.month_bucket(ts)
       key = {co, agent, year_month}
 

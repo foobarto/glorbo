@@ -10,11 +10,11 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Security (wave 29)
+### Security (waves 29 + 30)
 
-- **Low** — `Reindex` audit-dir walks now lstat before iterating.
-  The Phase 1/2/3 rebuild paths shipped in v0.12.0 were calling
-  `File.dir?/1` on `companies/<co>/audit/` and
+- **Low (wave 29)** — `Reindex` audit-dir walks now lstat before
+  iterating. The Phase 1/2/3 rebuild paths shipped in v0.12.0
+  were calling `File.dir?/1` on `companies/<co>/audit/` and
   `<base>/audit/_system/` without symlink discipline; the kernel
   sandbox already prevents agents from planting these symlinks,
   but mirroring the `safe_markdown_files/1` discipline at the
@@ -23,6 +23,21 @@ change between minor versions. Pin exact versions in downstream usage.
   paths through `AgentWritableFile.any_symlink_in_path?/1`.
   2 new tests cover the rejection at both per-company and
   `_system` boundaries.
+- **Low (wave 30)** — `Reindex` now mirrors the writer-side
+  `Company.AuditLog.entry_company/1` slug discipline at the
+  read path. Phase 1/2/3 replay was inserting JSONL-supplied
+  `company:` and `agent:` fields verbatim into the SQLite
+  mirrors. Hand-edited or backup-restored JSONL with `company:
+  "../../etc"` or `agent: "../etc"` would have written garbage
+  values into `audit_events.company`,
+  `tasks_approval_state.agent_slug`, and
+  `budgets.{company_slug,agent_slug}`. Two helpers added:
+  `safe_company_slug/2` (validates against
+  `Actions.Support.valid_slug?/1`, falls back to the on-disk
+  dirname; allows `_system`) and `safe_agent_slug/1` (returns
+  nil on non-slug, callers skip the row). Phase 3 also rejects
+  `company: "_system"` since budget events are strictly
+  per-company. 6 new tests across the three projections.
 
 ## [0.12.0] — 2026-04-26
 

@@ -306,6 +306,97 @@ defmodule Glorbo.Filesystem.ReindexTest do
     end
   end
 
+  describe "slug validation on JSONL fields (wave 30 defense-in-depth)" do
+    alias Glorbo.{AuditEvent, Budget, TasksApprovalState}
+
+    test "Phase 1: bad `company` slug in JSONL falls back to dirname" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"../../etc","actor":"ceo","action":"task.create","target":"x"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(AuditEvent)
+      assert row.company == "acme"
+    end
+
+    test "Phase 2: non-slug `agent` skips the row" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"../etc","action":"approval.requested","agent":"../etc","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 0}} = Reindex.run(base: base)
+      assert Repo.all(TasksApprovalState) == []
+    end
+
+    test "Phase 2: granted resolution synthesis with non-slug agent skips" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      # No prior request line — resolution would normally synthesize a row,
+      # but the `agent` is non-slug, so reject instead.
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:05:00Z","company":"acme","actor":"director","action":"approval.granted","agent":"../etc","target":"projects/z/tasks/z-03.md","approved_at":"2026-04-26T10:05:00Z"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 0}} = Reindex.run(base: base)
+      assert Repo.all(TasksApprovalState) == []
+    end
+
+    test "Phase 3: non-slug `agent` skips the row" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"../etc","action":"budget.usage","agent":"../etc","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 0}} = Reindex.run(base: base)
+      assert Repo.all(Budget) == []
+    end
+
+    test "Phase 3: non-slug `company` field falls back to dirname when valid" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"../../malicious","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(Budget)
+      assert row.company_slug == "acme"
+    end
+
+    test "Phase 3: budget event with `_system` company is rejected" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+
+      # Budget events are strictly per-company; if a JSONL line claims
+      # `_system` we reject rather than synthesize.
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"_system","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      # Wait — fallback_company is "acme" (the dirname), but the JSONL says
+      # `_system`. With the wave-30 fix, safe_company_slug returns "_system"
+      # (a valid bucketing token), then the budget-specific guard rejects
+      # `_system` → nil → row skipped.
+      assert {:ok, %{budgets: 0}} = Reindex.run(base: base)
+    end
+  end
+
   describe "audit dir symlink rejection (wave 29 defense-in-depth)" do
     alias Glorbo.{AuditEvent, Budget, TasksApprovalState}
 
