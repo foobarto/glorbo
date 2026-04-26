@@ -51,7 +51,10 @@ defmodule Glorbo.Shell.Views.Overview.Data do
   @spec load_companies(Path.t(), keyword()) :: [overview_row()]
   def load_companies(base, opts \\ []) do
     ledger_fetch_fn = Keyword.get(opts, :ledger_fetch_fn, &Ledger.fetch/3)
-    year_month = Keyword.get_lazy(opts, :year_month, fn -> Ledger.month_bucket(DateTime.utc_now()) end)
+
+    year_month =
+      Keyword.get_lazy(opts, :year_month, fn -> Ledger.month_bucket(DateTime.utc_now()) end)
+
     ctx = %{ledger_fetch_fn: ledger_fetch_fn, year_month: year_month}
 
     co_dir = Path.join(base, "companies")

@@ -58,7 +58,10 @@ defmodule Glorbo.Shell.Views.Agents.Data do
   @spec load_agents(Path.t(), String.t(), keyword()) :: [agent_row()]
   def load_agents(base, company, opts \\ []) do
     ledger_fetch_fn = Keyword.get(opts, :ledger_fetch_fn, &Ledger.fetch/3)
-    year_month = Keyword.get_lazy(opts, :year_month, fn -> Ledger.month_bucket(DateTime.utc_now()) end)
+
+    year_month =
+      Keyword.get_lazy(opts, :year_month, fn -> Ledger.month_bucket(DateTime.utc_now()) end)
+
     ctx = %{ledger_fetch_fn: ledger_fetch_fn, year_month: year_month, company: company}
 
     agents_dir = Path.join([base, "companies", company, "agents"])

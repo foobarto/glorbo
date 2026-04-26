@@ -148,9 +148,7 @@ defmodule Glorbo.Shell.Views.Agents.DataTest do
       seed_agent(base, "acme", "ceo")
 
       [row] =
-        Data.load_agents(base, "acme",
-          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
-        )
+        Data.load_agents(base, "acme", ledger_fetch_fn: fn _co, _ag, _ym -> nil end)
 
       assert row.budget_cap_cents == nil
       assert row.budget_used_cents == 0
@@ -167,9 +165,7 @@ defmodule Glorbo.Shell.Views.Agents.DataTest do
       )
 
       [row] =
-        Data.load_agents(base, "acme",
-          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
-        )
+        Data.load_agents(base, "acme", ledger_fetch_fn: fn _co, _ag, _ym -> nil end)
 
       assert row.budget_cap_cents == 2500
     end
@@ -185,9 +181,7 @@ defmodule Glorbo.Shell.Views.Agents.DataTest do
       )
 
       [row] =
-        Data.load_agents(base, "acme",
-          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
-        )
+        Data.load_agents(base, "acme", ledger_fetch_fn: fn _co, _ag, _ym -> nil end)
 
       # 12.345 → 1234.5 → round → 1235 cents
       assert row.budget_cap_cents == 1235
