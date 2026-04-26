@@ -7,9 +7,9 @@ modules cluster together). This file sits between the two — a
 human-written summary keyed to module paths — and is maintained
 alongside code changes per the CLAUDE.md six-phase step 6.
 
-## The six subsystems
+## The seven subsystems
 
-Glorbo's code clusters into six roughly-cohesive subsystems. Each
+Glorbo's code clusters into seven roughly-cohesive subsystems. Each
 is rooted at one or two hub modules that show up near the top of
 the knowledge-graph "god nodes" list.
 
@@ -153,6 +153,33 @@ policy and timeout handling. The same subsystem also owns
 `Glorbo.CLI.Registry` and its built-in/user TOML provider loading, so
 provider schema changes tend to touch CLI code even when the Director
 experience is in LiveView.
+
+### 7. TUI shell (GEP-37) — `lib/glorbo/shell/`
+
+**Entry points:** `Glorbo.Shell.Launcher.run/1` (CLI verb
+target for `glorbo shell <company>`),
+`Glorbo.Shell.{Supervisor, EventBus, Runtime}` (Phase 1
+plumbing), `Glorbo.Shell.AppRoot` (Phase 3a chord-prefix
+view manager), `Glorbo.Shell.Views.{Inbox, Health, Overview,
+Agents, Audit, Chat, Tasks}` (Phase 2/3 views), and
+`Glorbo.Shell.Views.Common` (shared cursor-list nav helpers).
+
+The `term_ui` Elm-architecture TUI replicates the LV's
+director surface inside a single-binary terminal app. State
+is local to the process (no Repo write seam in the view
+layer); writes funnel through the same `Glorbo.Actions.*`
+seams the LV uses, so audit-log + isolation invariants are
+honoured. AppRoot owns the `C-c <letter>` chord prefix and
+routes to per-view modules; each view is a `TermUI.Elm`
+implementor with `init/1`, `event_to_msg/2`, `update/2`,
+`view/1`. Modal modes (Inbox deny prompt, Chat composer,
+Chat channel switcher) all follow the same shape: a tagged
+tuple in `state.mode` with absorption arms in
+`event_to_msg/2` so the chord prefix doesn't leak through.
+Loaders are injected via `:loader_fn` opts so the test
+suite never touches the real filesystem or the Repo. The LV
+remains the canonical surface; the TUI is a bounded subset
+that follows the same Action seams.
 
 ## Graph caveats
 
