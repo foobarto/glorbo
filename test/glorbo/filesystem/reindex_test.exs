@@ -576,6 +576,34 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert length(Repo.all(TasksApprovalState)) == 1
     end
 
+    test "wave 31: two companies with same relative task_path get isolated rows" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+      _ = write!(base, "companies/beta/company.md", "---\nname: beta\n---\n")
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/foo/tasks/x.md","task_id":"x"}\n|
+        )
+
+      _ =
+        write!(
+          base,
+          "companies/beta/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-26T10:00:00Z","company":"beta","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/foo/tasks/x.md","task_id":"x"}\n|
+        )
+
+      assert {:ok, %{tasks_approval_state: 2}} = Reindex.run(base: base)
+
+      [acme_row, beta_row] = Repo.all(TasksApprovalState) |> Enum.sort_by(& &1.company_slug)
+      assert acme_row.company_slug == "acme"
+      assert acme_row.task_path == "projects/foo/tasks/x.md"
+      assert beta_row.company_slug == "beta"
+      assert beta_row.task_path == "projects/foo/tasks/x.md"
+    end
+
     test "non-approval audit lines are ignored" do
       base = TmpGlorboHome.setup()
       seed_acme(base)

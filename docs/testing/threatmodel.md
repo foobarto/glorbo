@@ -621,10 +621,10 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **96 security findings closed across 30
+Cumulative tally: **97 security findings closed across 31
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
 + 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
-+ 1 wave 29 + 1 wave 30.
++ 1 wave 29 + 1 wave 30 + 1 wave 31.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 
@@ -652,6 +652,50 @@ and routing all three call sites through it. 2 new tests in
 both result in zero rows imported across all three projections.
 *Paths:* `lib/glorbo/filesystem/reindex.ex,
 test/glorbo/filesystem/reindex_test.exs`.
+
+### Wave 31 closure (post-v0.12.1 self-review, 2026-04-26)
+
+**Medium severity — cross-company bleed in `tasks_approval_state`.**
+Third self-review of the GEP-34 reindex code surfaced a
+load-bearing invariant violation that long predated v0.12.0:
+the `tasks_approval_state` schema had a unique index on
+`task_path` alone, with no `company_slug` column. If two
+companies had awaiting tasks at the same relative path,
+`Approvals.Gate.upsert_awaiting` (with
+`conflict_target: [:task_path]` + `on_conflict: :nothing`)
+silently no-op'd the second insert; `find_awaiting_row(state,
+task_path)` returned the wrong company's row. Director
+clicking "approve" on the wrong company's dashboard would
+flip the *other* company's task state.
+
+Violates CLAUDE.md "Company isolation is absolute" — the
+invariant the security model relies on. Pre-v0.12.0 the
+silent no-op would have been masked by the absence of a
+JSONL-replay path; v0.12.0's GEP-34 Phase 2 made the bug
+observable across reindex roundtrips.
+
+Closed by migration `20260426170000`: drop the table, recreate
+with `company_slug NOT NULL` and a composite
+`(company_slug, task_path)` unique index. SQLite doesn't
+support ALTER COLUMN to make an added column NOT NULL after
+backfill, so drop+recreate is the correct path; pre-fix rows
+are wiped — `glorbo reindex` regenerates the table from
+on-disk audit JSONL via the GEP-34 Phase 2 fold (which now
+keys by `{company, task_path}`).
+
+Three Gate write paths updated: `upsert_awaiting`,
+`upsert_resolved`, `find_awaiting_row` all carry
+`company_slug` from `state.company`. Reindex Phase 2 plumbs
+company through `apply_approval_event/4` + `update_resolution/6`.
+2 new isolation tests (gate-side + reindex-side) confirm
+that two companies with the same relative path yield two
+isolated rows.
+*Paths:* `priv/repo/migrations/20260426170000_scope_tasks_
+approval_state_by_company.exs, lib/glorbo/tasks_approval_
+state.ex, lib/glorbo/approvals/gate.ex, lib/glorbo/filesystem/
+reindex.ex, test/glorbo/tasks_approval_state_test.exs,
+test/glorbo/approvals/gate_test.exs, test/glorbo/filesystem/
+reindex_test.exs`.
 
 ### Wave 30 closure (post-v0.12.0 self-review, 2026-04-26)
 

@@ -318,6 +318,7 @@ defmodule Glorbo.Approvals.Gate do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     attrs = %{
+      company_slug: state.company,
       task_path: td.task_path,
       agent_slug: agent,
       status: "awaiting",
@@ -326,11 +327,15 @@ defmodule Glorbo.Approvals.Gate do
 
     changeset = TasksApprovalState.changeset(%TasksApprovalState{}, attrs)
 
-    # Unique index on task_path — if a row already exists, leave it
-    # alone. "awaiting" is the starting state; if it's already approved
-    # or denied the Director is re-opening the task, which is out of
-    # scope for v0.0.1 (D-37 — denied tasks move to history/).
-    case state.repo.insert(changeset, on_conflict: :nothing, conflict_target: [:task_path]) do
+    # Composite unique index on `(company_slug, task_path)` (wave 31 — pre-fix
+    # was task_path alone, allowing cross-company bleed). If a row already
+    # exists, leave it. "awaiting" is the starting state; if already
+    # approved or denied the Director is re-opening — out of scope for
+    # v0.0.1 (D-37, denied tasks move to history/).
+    case state.repo.insert(changeset,
+           on_conflict: :nothing,
+           conflict_target: [:company_slug, :task_path]
+         ) do
       {:ok, _} -> :ok
       {:error, _} -> :ok
     end
@@ -746,6 +751,7 @@ defmodule Glorbo.Approvals.Gate do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     attrs = %{
+      company_slug: state.company,
       task_path: td.task_path,
       agent_slug: agent,
       status: status,
@@ -758,7 +764,7 @@ defmodule Glorbo.Approvals.Gate do
 
     case state.repo.insert(changeset,
            on_conflict: [set: [status: status, resolved_at: now, reason: reason]],
-           conflict_target: [:task_path]
+           conflict_target: [:company_slug, :task_path]
          ) do
       {:ok, _} -> :ok
       {:error, _} -> :ok
@@ -766,7 +772,11 @@ defmodule Glorbo.Approvals.Gate do
   end
 
   defp find_awaiting_row(state, task_path) do
-    state.repo.get_by(TasksApprovalState, task_path: task_path, status: "awaiting")
+    state.repo.get_by(TasksApprovalState,
+      company_slug: state.company,
+      task_path: task_path,
+      status: "awaiting"
+    )
   end
 
   defp audit(state, entry) do

@@ -1004,4 +1004,66 @@ defmodule Glorbo.Approvals.GateTest do
       assert still_denied.peer_review_verdict == "block"
     end
   end
+
+  describe "wave 31: cross-company isolation on tasks_approval_state" do
+    test "two gates with same task_path produce two isolated rows", ctx do
+      # Set up a second company sibling to acme.
+      beta_dir = Path.join([ctx.base, "companies", "beta"])
+      File.mkdir_p!(Path.join(beta_dir, "projects/foo/tasks"))
+      File.mkdir_p!(Path.join(beta_dir, "agents/engineer/state"))
+      File.mkdir_p!(Path.join(beta_dir, "history/tasks"))
+      File.mkdir_p!(Path.join(beta_dir, "audit"))
+
+      # Both companies have a task at the SAME relative path.
+      task_rel = "projects/foo/tasks/cross.md"
+
+      acme_path =
+        write_task(ctx, "cross", status: "pending-approval", requires_approval: "director")
+
+      File.cp!(acme_path, Path.join(beta_dir, task_rel))
+
+      acme_gate = start_gate(ctx)
+
+      beta_opts = [
+        company: "beta",
+        base: ctx.base,
+        audit_fun: ctx.audit_fun,
+        agent_wake_fun: ctx.wake_fun,
+        repo: Repo
+      ]
+
+      {:ok, beta_pid} = Gate.start_link(beta_opts)
+
+      # Drive each gate to request approval for its own task.
+      acme_td =
+        elem(td_for(ctx, "cross", status: "pending-approval", requires_approval: "director"), 1)
+
+      {:ok, beta_td} =
+        TaskDefinition.parse_file(Path.join(beta_dir, task_rel), base: ctx.base, company: "beta")
+
+      Gate.request_approval(acme_gate.pid, %{
+        agent: "engineer",
+        task_definition: acme_td,
+        requesting_trigger: :pickup
+      })
+
+      Gate.request_approval(beta_pid, %{
+        agent: "engineer",
+        task_definition: beta_td,
+        requesting_trigger: :pickup
+      })
+
+      # `request_approval/2` is sync (handle_call); the row is committed
+      # before the call returns. No additional sync needed.
+
+      # Both rows must coexist (pre-fix one would silently no-op).
+      rows = Repo.all(TasksApprovalState) |> Enum.sort_by(& &1.company_slug)
+      assert length(rows) == 2
+      [acme_row, beta_row] = rows
+      assert acme_row.company_slug == "acme"
+      assert acme_row.task_path == task_rel
+      assert beta_row.company_slug == "beta"
+      assert beta_row.task_path == task_rel
+    end
+  end
 end

@@ -628,7 +628,7 @@ defmodule Glorbo.Filesystem.Reindex do
           |> Enum.reduce(%{}, fn co, acc ->
             case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
               nil -> acc
-              audit_dir -> fold_approval_dir(audit_dir, acc)
+              audit_dir -> fold_approval_dir(co, audit_dir, acc)
             end
           end)
 
@@ -639,7 +639,7 @@ defmodule Glorbo.Filesystem.Reindex do
     insert_approval_rows(states)
   end
 
-  defp fold_approval_dir(audit_dir, acc) do
+  defp fold_approval_dir(company, audit_dir, acc) do
     case File.ls(audit_dir) do
       {:ok, files} ->
         files
@@ -648,7 +648,7 @@ defmodule Glorbo.Filesystem.Reindex do
         # are append-order. Together this gives a global chronological fold.
         |> Enum.sort()
         |> Enum.reduce(acc, fn fname, a ->
-          fold_approval_file(Path.join(audit_dir, fname), a)
+          fold_approval_file(company, Path.join(audit_dir, fname), a)
         end)
 
       _ ->
@@ -656,10 +656,10 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
-  defp fold_approval_file(path, acc) do
+  defp fold_approval_file(company, path, acc) do
     path
     |> File.stream!([], :line)
-    |> Enum.reduce(acc, &fold_approval_line(&1, path, &2))
+    |> Enum.reduce(acc, &fold_approval_line(&1, company, path, &2))
   rescue
     e ->
       Logger.warning(
@@ -669,7 +669,7 @@ defmodule Glorbo.Filesystem.Reindex do
       acc
   end
 
-  defp fold_approval_line(line, path, acc) do
+  defp fold_approval_line(line, company, path, acc) do
     line = String.trim_trailing(line, "\n")
 
     cond do
@@ -683,7 +683,7 @@ defmodule Glorbo.Filesystem.Reindex do
       true ->
         case Jason.decode(line) do
           {:ok, %{"action" => action} = entry} when action in @approval_actions ->
-            apply_approval_event(action, entry, acc)
+            apply_approval_event(action, entry, company, acc)
 
           _ ->
             acc
@@ -691,13 +691,15 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
-  defp apply_approval_event("approval.requested", entry, acc) do
+  defp apply_approval_event("approval.requested", entry, company, acc) do
     task_path = entry["target"]
     agent = safe_agent_slug(entry["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
+    co = safe_company_slug(entry, company)
 
-    if is_binary(task_path) and agent != nil and ts != nil do
-      Map.put(acc, task_path, %{
+    if is_binary(task_path) and agent != nil and ts != nil and ActionsSupport.valid_slug?(co) do
+      Map.put(acc, {co, task_path}, %{
+        company_slug: co,
         task_path: task_path,
         agent_slug: agent,
         status: "awaiting",
@@ -710,12 +712,12 @@ defmodule Glorbo.Filesystem.Reindex do
     end
   end
 
-  defp apply_approval_event("approval.granted", entry, acc) do
-    update_resolution(entry, acc, "approved", entry["approved_at"], nil)
+  defp apply_approval_event("approval.granted", entry, company, acc) do
+    update_resolution(entry, company, acc, "approved", entry["approved_at"], nil)
   end
 
-  defp apply_approval_event("approval.denied", entry, acc) do
-    update_resolution(entry, acc, "denied", entry["denied_at"], entry["denial_reason"])
+  defp apply_approval_event("approval.denied", entry, company, acc) do
+    update_resolution(entry, company, acc, "denied", entry["denied_at"], entry["denial_reason"])
   end
 
   # Fold a resolution event over the existing fold-state. If we never saw the
@@ -723,19 +725,21 @@ defmodule Glorbo.Filesystem.Reindex do
   # we synthesize a row from the resolution event so the table still reflects
   # what's known. The resolution timestamp prefers the action-specific field
   # (`approved_at`/`denied_at`) and falls back to the entry-level `ts`.
-  defp update_resolution(entry, acc, status, resolution_ts_field, reason) do
+  defp update_resolution(entry, company, acc, status, resolution_ts_field, reason) do
     task_path = entry["target"]
     ts = parse_audit_ts(resolution_ts_field) || parse_audit_ts(entry["ts"])
+    co = safe_company_slug(entry, company)
 
-    if is_binary(task_path) and ts != nil do
+    if is_binary(task_path) and ts != nil and ActionsSupport.valid_slug?(co) do
       reason_str = if is_binary(reason), do: reason, else: nil
 
-      case Map.get(acc, task_path) do
+      case Map.get(acc, {co, task_path}) do
         nil ->
           agent = safe_agent_slug(entry["agent"])
 
           if agent != nil do
-            Map.put(acc, task_path, %{
+            Map.put(acc, {co, task_path}, %{
+              company_slug: co,
               task_path: task_path,
               agent_slug: agent,
               status: status,
@@ -748,7 +752,7 @@ defmodule Glorbo.Filesystem.Reindex do
           end
 
         existing ->
-          Map.put(acc, task_path, %{
+          Map.put(acc, {co, task_path}, %{
             existing
             | status: status,
               resolved_at: ts,

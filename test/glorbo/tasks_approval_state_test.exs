@@ -6,7 +6,8 @@ defmodule Glorbo.TasksApprovalStateTest do
   describe "changeset/2" do
     test "valid changeset with required fields" do
       attrs = %{
-        task_path: "companies/acme/projects/redesign/tasks/t-01.md",
+        company_slug: "acme",
+        task_path: "projects/redesign/tasks/t-01.md",
         agent_slug: "engineer",
         status: "awaiting",
         requested_at: ~U[2026-04-16 12:00:00Z]
@@ -19,6 +20,7 @@ defmodule Glorbo.TasksApprovalStateTest do
     test "accepts valid statuses" do
       for status <- ["awaiting", "approved", "denied"] do
         attrs = %{
+          company_slug: "acme",
           task_path: "path/#{status}",
           agent_slug: "eng",
           status: status,
@@ -32,6 +34,7 @@ defmodule Glorbo.TasksApprovalStateTest do
 
     test "rejects invalid status" do
       attrs = %{
+        company_slug: "acme",
         task_path: "some/path",
         agent_slug: "eng",
         status: "invalid",
@@ -46,6 +49,7 @@ defmodule Glorbo.TasksApprovalStateTest do
     test "rejects missing required fields" do
       changeset = TasksApprovalState.changeset(%TasksApprovalState{}, %{})
       refute changeset.valid?
+      assert %{company_slug: ["can't be blank"]} = errors_on(changeset)
       assert %{task_path: ["can't be blank"]} = errors_on(changeset)
       assert %{agent_slug: ["can't be blank"]} = errors_on(changeset)
       assert %{status: ["can't be blank"]} = errors_on(changeset)
@@ -53,10 +57,11 @@ defmodule Glorbo.TasksApprovalStateTest do
     end
   end
 
-  describe "unique constraint" do
-    test "rejects duplicate task_path" do
+  describe "unique constraint (wave 31: composite (company_slug, task_path))" do
+    test "rejects duplicate (company_slug, task_path) pair" do
       attrs = %{
-        task_path: "companies/acme/projects/redesign/tasks/t-01.md",
+        company_slug: "acme",
+        task_path: "projects/redesign/tasks/t-01.md",
         agent_slug: "engineer",
         status: "awaiting",
         requested_at: ~U[2026-04-16 12:00:00Z]
@@ -72,7 +77,36 @@ defmodule Glorbo.TasksApprovalStateTest do
                  })
                )
 
-      assert %{task_path: ["has already been taken"]} = errors_on(changeset)
+      # Ecto reports composite-unique-constraint errors against the first
+      # field listed in the unique_constraint/2 call.
+      assert %{company_slug: ["has already been taken"]} = errors_on(changeset)
+    end
+
+    test "same task_path under a different company_slug is allowed" do
+      base = %{
+        task_path: "projects/foo/tasks/t-01.md",
+        agent_slug: "engineer",
+        status: "awaiting",
+        requested_at: ~U[2026-04-16 12:00:00Z]
+      }
+
+      {:ok, _} =
+        Repo.insert(
+          TasksApprovalState.changeset(
+            %TasksApprovalState{},
+            Map.put(base, :company_slug, "acme")
+          )
+        )
+
+      {:ok, _} =
+        Repo.insert(
+          TasksApprovalState.changeset(
+            %TasksApprovalState{},
+            Map.put(base, :company_slug, "beta")
+          )
+        )
+
+      assert Repo.aggregate(TasksApprovalState, :count) == 2
     end
   end
 

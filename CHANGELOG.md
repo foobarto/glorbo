@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security (wave 31)
+
+- **Medium** — `tasks_approval_state` schema scoped by company.
+  Pre-fix, the table had a unique index on `task_path` alone
+  with no `company_slug` column. If two companies had awaiting
+  tasks at the same relative path (`projects/foo/tasks/x.md`),
+  `Approvals.Gate.upsert_awaiting`'s `conflict_target:
+  [:task_path]` silently no-op'd the second insert, and
+  `find_awaiting_row(state, task_path)` returned the wrong
+  company's row. Director clicking "approve" on company B's
+  dashboard would update company A's row. Violates the
+  CLAUDE.md "Company isolation is absolute" load-bearing
+  invariant. Migration `20260426170000` drops + recreates the
+  table with `company_slug NOT NULL` and a composite
+  `(company_slug, task_path)` unique index (SQLite doesn't
+  support ALTER COLUMN to make a column NOT NULL after
+  backfill, so drop+recreate is the right call; the GEP-34
+  Phase 2 reindex regenerates rows from JSONL on next
+  `glorbo reindex`). All three Gate write paths
+  (`upsert_awaiting`, `upsert_resolved`, `find_awaiting_row`)
+  now scope by company; Reindex Phase 2 fold keys by
+  `{company, task_path}` instead of just `task_path`. 2 new
+  tests cover the cross-company isolation contract end-to-end
+  (gate-side + reindex-side).
+
 ### Changed
 
 - `glorbo reindex` CLI verb, `glorbo init` reindex step, and the

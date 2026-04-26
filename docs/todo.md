@@ -116,6 +116,17 @@ it's been in CHANGELOG for a cycle.
   1/2/3. Phase 3 also rejects `_system` company (budgets are
   strictly per-company). 6 new tests; cumulative tally 96 /
   30 waves.
+- [x] **Wave 31 (post-v0.12.1, MEDIUM): cross-company bleed in
+  tasks_approval_state.** Third self-review pass: the schema
+  had unique index on `task_path` alone, no `company_slug`
+  column. Two companies with awaiting tasks at the same
+  relative path collided silently; director approve/deny
+  flipped the wrong company's state. CLAUDE.md "Company
+  isolation is absolute" violation. Migration drops + recreates
+  the table with composite `(company_slug, task_path)` unique
+  index; Gate's three call sites + Reindex Phase 2 fold all
+  scope by company now. 2 new isolation tests; cumulative tally
+  97 / 31 waves.
 
 ## P2 — nice to have
 
