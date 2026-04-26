@@ -69,6 +69,31 @@ history:
       `Glorbo.Shell` module structure left flat
       (`Glorbo.Shell.{Supervisor, Runtime, EventBus,
       Views.*}`) per D2 in this GEP.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 1 landed: `Glorbo.Shell.{Supervisor, EventBus,
+      Runtime}` modules + `Glorbo.Application`'s conditional
+      surface flip. Supervisor uses `:rest_for_one` over two
+      children (EventBus → Runtime) per D6. EventBus subscribes
+      to per-company PubSub topics (`projects`, `channels`,
+      `agents`, `audit`, `approvals`) plus `glorbo:companies`
+      and forwards each broadcast to Runtime as a
+      `{:shell_event, raw_msg}` cast. Runtime is a minimal
+      state holder for Phase 1 — accumulates the most recent
+      256 events, exposes `state/1` for tests; Phase 2 turns
+      it into the term_ui app module driving the render loop.
+      Application gained `apply_surface/2` reading
+      `:glorbo, :surface` (`:web` default keeps existing
+      Endpoint-only tree; `:tui` swaps Endpoint for Shell.
+      Supervisor; `:headless` runs neither). 12 new tests
+      across `runtime_test.exs`, `event_bus_test.exs`,
+      `supervisor_test.exs` covering init state, event
+      accumulation, the @max_events cap, PubSub forwarding,
+      `:rest_for_one` restart semantics (Runtime crash
+      restarts only Runtime; EventBus crash restarts both),
+      and a Runtime-not-alive drop path in EventBus. 2300/2300
+      total tests green; mix credo --strict zero findings.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

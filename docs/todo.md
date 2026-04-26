@@ -282,15 +282,20 @@ it's been in CHANGELOG for a cycle.
   paths. Phase 3 follows with watcher-fallback `External`
   commits for manual edits; Phase 4 adds
   `show`/`diff`/`restore`.
-- [ ] **GEP-37 `glorbo shell` Phase 1 — Supervisor + Runtime +
-  EventBus.** Phase 0 shipped 2026-04-25 (v0.10.0): CLI verb
-  wired, `term_ui ~> 1.0.0-rc` installed, `Glorbo.Shell`
-  skeleton + placeholder banner + non-TTY guard, 4 dispatch
-  tests. Phase 1 builds the OTP runtime (Shell.Supervisor,
-  Shell.Runtime GenServer driving the term_ui render loop,
-  Shell.EventBus pub/sub for per-LV drop-in views). Phase 2+
-  ships views in drop-in parity order with the Phoenix
-  dashboard. Sprint-sized; not autonomous-bounded.
+- [x] **GEP-37 `glorbo shell` Phase 1 — Supervisor + Runtime +
+  EventBus.** Shipped post-v0.12.5 (autonomous L4). Three new
+  modules under `Glorbo.Shell.*` + Application conditional
+  surface flip via `apply_surface/2` reading
+  `:glorbo, :surface` config (`:web` default, `:tui` swaps
+  Endpoint for Shell.Supervisor, `:headless` strips both).
+  Supervisor uses `:rest_for_one` per D6: EventBus → Runtime
+  (crash of EventBus restarts both; crash of Runtime
+  restarts only itself). EventBus subscribes to per-company
+  PubSub topics + `glorbo:companies` and forwards as
+  `{:shell_event, raw_msg}` casts. Runtime accumulates last
+  256 events; Phase 2 turns it into the term_ui app module.
+  12 new tests covering init, accumulation, cap, forwarding,
+  restart semantics, drop-on-runtime-down. 2300/2300 total.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

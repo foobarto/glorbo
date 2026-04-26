@@ -151,6 +151,16 @@ defmodule Glorbo.Application do
         end)
       end
 
+    # GEP-37 Phase 1: surface selection. `:web` (default) keeps the
+    # current Endpoint-only tree; `:tui` swaps `Endpoint` for the
+    # `Glorbo.Shell.Supervisor` subtree (EventBus + Runtime, see
+    # GEP-37 D6); `:headless` strips both. Setting :surface is the
+    # job of the CLI verb (`glorbo shell` / `glorbo serve`) before
+    # Application boot. Per-test isolation: the shell modules are
+    # spun up directly by `test/glorbo/shell/*_test.exs` against
+    # unique registered names, so the canonical names stay free.
+    children = apply_surface(children, Application.get_env(:glorbo, :surface, :web))
+
     # #145: raise the parent supervisor's restart intensity too — when
     # streamer test tests rapidly churn children, the default
     # `max_restarts: 3, max_seconds: 5` can cascade and kill the whole
@@ -158,6 +168,35 @@ defmodule Glorbo.Application do
     # anywhere near this rate, so a higher tolerance is pure test ergonomics.
     opts = [strategy: :one_for_one, name: Glorbo.Supervisor, max_restarts: 100, max_seconds: 5]
     Supervisor.start_link(children, opts)
+  end
+
+  # GEP-37 Phase 1 — surface selection, see runtime-shape section in
+  # docs/geps/0037-glorbo-shell.md. Phase 1 ships the OTP plumbing;
+  # Phase 2 will wire the term_ui app module into Runtime. The
+  # default `:web` keeps existing behaviour; `:tui` swaps in the
+  # shell subtree; `:headless` runs neither and is reserved for
+  # CI / orchestrator-only deployments (no UI surface, no MCP
+  # endpoint that depends on Endpoint).
+  defp apply_surface(children, :web), do: children
+
+  defp apply_surface(children, :tui) do
+    children
+    |> Enum.reject(&match?(GlorboWeb.Endpoint, &1))
+    |> Kernel.++([{Glorbo.Shell.Supervisor, [eventbus_opts: shell_eventbus_opts()]}])
+  end
+
+  defp apply_surface(children, :headless) do
+    Enum.reject(children, &match?(GlorboWeb.Endpoint, &1))
+  end
+
+  defp apply_surface(children, _other), do: children
+
+  defp shell_eventbus_opts do
+    # Phase 1 ships an empty roster; the shell currently surfaces no
+    # views so live PubSub traffic has nowhere to render. Phase 2
+    # will enumerate companies from `Glorbo.Repo` at boot time and
+    # subscribe per-company before the first view paints.
+    [companies: []]
   end
 
   defp maybe_write_pidfile do

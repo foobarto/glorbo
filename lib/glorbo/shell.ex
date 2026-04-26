@@ -13,8 +13,8 @@ defmodule Glorbo.Shell do
 
   | Phase | Surface | Status |
   |-------|---------|--------|
-  | Phase 0 | CLI wiring + module skeleton + `term_ui` dep | this commit |
-  | Phase 1 | `Glorbo.Shell.{Supervisor, Runtime, EventBus}` | next round |
+  | Phase 0 | CLI wiring + module skeleton + `term_ui` dep | shipped v0.10.0 |
+  | Phase 1 | `Glorbo.Shell.{Supervisor, Runtime, EventBus}` | shipped post-v0.12.5 |
   | Phase 2 | First view (Inbox) — drop-in parity with the LV inbox | next round |
   | Phase 3 | Remaining views in drop-in parity order | next round |
 
