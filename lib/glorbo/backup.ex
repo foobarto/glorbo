@@ -175,7 +175,17 @@ defmodule Glorbo.Backup do
       end)
 
     File.mkdir_p!(Path.dirname(output))
-    tmp = output <> ".tmp." <> Integer.to_string(System.unique_integer([:positive, :monotonic]))
+
+    # Random suffix — backup tarballs include `config.md` which carries
+    # `secret_key_base`. The earlier `unique_integer` suffix was
+    # predictable, so an attacker with write to `Path.dirname(output)`
+    # (e.g. backup destined to /tmp on a shared box) could pre-plant
+    # a symlink at the next-integer name and have :erl_tar.create
+    # follow it. 8-byte cryto-random suffix makes the path
+    # unguessable; chmod 0o600 is set before rename so the final file
+    # is private from the moment it appears at `output`.
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{output}.tmp-#{rand}"
 
     case :erl_tar.create(String.to_charlist(tmp), files, [:compressed, :write]) do
       :ok ->
