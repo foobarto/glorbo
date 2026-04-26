@@ -10,6 +10,15 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.17.0] — 2026-04-27
+
+GEP-37 Phase 3-revisit slice: the Chat composer learns slash
+commands and the Tasks view picks up per-status glyph pills.
+Both ride the existing read-side seams without growing the
+filesystem or Repo dependency.
+
 ### Added — GEP-37 Phase 3g-revisit (Tasks status pill)
 
 Each task row in the TUI Tasks view now carries a single-char
