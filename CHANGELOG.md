@@ -10,7 +10,30 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added — GEP-37 Phase 3e-revisit (Audit older-page navigation)
+
+The Audit view picks up cross-month navigation. `p` moves to
+the next-older bucket, `n` to the next-newer; both are
+no-ops at the boundaries. Header line shows the active
+month plus `(p older)` / `(n newer)` hints whenever more
+pages exist (so the keybinding is discoverable without a
+help screen). Empty-state placeholder names the active
+month. State now carries `:year_month` (the bucket being
+viewed) and `:available_months` (newest-first list of
+on-disk buckets, with the current month always at index 0
+even when no JSONL file exists yet for it).
+
+`Audit.Data.load_tail/3` migrated from positional
+`(base, company, n)` to keyword opts `(base, company, opts)`
+where opts can carry `:year_month` and `:n`. The view's
+`:loader_fn` injection seam is now 3-arity
+`(base, company, year_month)`. New `Audit.Data.list_year_months/2`
+enumerates on-disk buckets, filters out non-jsonl entries
+and malformed names (out-of-range months, garbage
+filenames), and dedups the always-included current month.
+
+12 new tests (5 view + 5 Data + 2 event_to_msg / boundary
+no-ops); 2579/2579 suite total.
 
 ## [0.17.0] — 2026-04-27
 

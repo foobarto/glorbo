@@ -88,7 +88,7 @@ defmodule Glorbo.Shell.Views.Audit.DataTest do
 
     seed_audit(base, "acme", lines)
 
-    rows = Data.load_tail(base, "acme", 3)
+    rows = Data.load_tail(base, "acme", n: 3)
     assert length(rows) == 3
     # Last 3 lines (a8, a9, a10) — appended-order preserved.
     assert Enum.map(rows, & &1.action) == ["a8", "a9", "a10"]
@@ -126,5 +126,77 @@ defmodule Glorbo.Shell.Views.Audit.DataTest do
     # Last 100 — actions a51..a150.
     assert hd(rows).action == "a51"
     assert List.last(rows).action == "a150"
+  end
+
+  describe "Phase 3e-revisit — :year_month opt + list_year_months/2" do
+    test ":year_month opt reads a different bucket" do
+      base = TmpGlorboHome.setup()
+
+      write!(
+        base,
+        "companies/acme/audit/2026-02.jsonl",
+        ~s|{"ts":"2026-02-15T10:00:00Z","actor":"ceo","action":"feb-event","target":"x"}\n|
+      )
+
+      rows = Data.load_tail(base, "acme", year_month: "2026-02")
+      assert length(rows) == 1
+      assert hd(rows).action == "feb-event"
+    end
+
+    test ":year_month + :n compose" do
+      base = TmpGlorboHome.setup()
+
+      lines =
+        for i <- 1..5 do
+          ~s|{"ts":"2026-01-01T00:00:00Z","actor":"ceo","action":"jan#{i}","target":"x"}|
+        end
+        |> Enum.join("\n")
+        |> Kernel.<>("\n")
+
+      write!(base, "companies/acme/audit/2026-01.jsonl", lines)
+
+      rows = Data.load_tail(base, "acme", year_month: "2026-01", n: 2)
+      assert Enum.map(rows, & &1.action) == ["jan4", "jan5"]
+    end
+
+    test "list_year_months/2 returns on-disk buckets sorted desc + always includes current" do
+      base = TmpGlorboHome.setup()
+      File.mkdir_p!(Path.join([base, "companies/acme/audit"]))
+      write!(base, "companies/acme/audit/2026-01.jsonl", "")
+      write!(base, "companies/acme/audit/2026-03.jsonl", "")
+      write!(base, "companies/acme/audit/2026-02.jsonl", "")
+
+      months = Data.list_year_months(base, "acme")
+
+      # Sorted desc; current month always at index 0; no duplicates.
+      assert hd(months) == current_ym()
+      assert "2026-03" in months
+      assert "2026-02" in months
+      assert "2026-01" in months
+      # No duplicates even if current month also has a file on disk.
+      assert length(months) == length(Enum.uniq(months))
+    end
+
+    test "list_year_months/2 ignores non-jsonl entries and malformed names" do
+      base = TmpGlorboHome.setup()
+      File.mkdir_p!(Path.join([base, "companies/acme/audit"]))
+      write!(base, "companies/acme/audit/2026-01.jsonl", "")
+      write!(base, "companies/acme/audit/junk.txt", "")
+      # Out-of-range month — should be filtered out.
+      write!(base, "companies/acme/audit/2026-13.jsonl", "")
+      # Bad shape — should be filtered out.
+      write!(base, "companies/acme/audit/notamonth.jsonl", "")
+
+      months = Data.list_year_months(base, "acme")
+      assert "2026-01" in months
+      refute "junk" in months
+      refute "2026-13" in months
+      refute "notamonth" in months
+    end
+
+    test "list_year_months/2 with no audit dir → just current month" do
+      base = TmpGlorboHome.setup()
+      assert Data.list_year_months(base, "acme") == [current_ym()]
+    end
   end
 end

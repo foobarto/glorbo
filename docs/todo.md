@@ -473,6 +473,16 @@ it's been in CHANGELOG for a cycle.
   buffer is still treated as a regular post (only a leading
   `/` invokes the parser). Composer hint line now mentions
   `/help`. 8 new tests; 43 total in chat_test.exs.
+- [x] **GEP-37 Phase 3e-revisit — Audit older-page navigation.**
+  Shipped post-v0.17.0 (autonomous L4). `p`/`n` step the
+  Audit view through month buckets; header shows active
+  month + directional hints. State carries `:year_month`
+  + `:available_months`. `Audit.Data.load_tail/3` migrated
+  from positional N to keyword opts (`:year_month`, `:n`);
+  loader_fn seam is 3-arity. New `Audit.Data.list_year_months/2`
+  enumerates on-disk buckets, filters malformed names,
+  always seeds current month at index 0. 12 new tests;
+  2579 total.
 - [x] **GEP-37 Phase 3g-revisit — Tasks status pill.**
   Shipped post-v0.16.0 (autonomous L4). Every task row now
   carries a single-char status glyph between the cursor
