@@ -12,6 +12,109 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.14.0] — 2026-04-26
+
+GEP-37 Phase 3 — six new views land the chord-driven view-
+switching machinery + five drop-in-parity views beyond the
+v0.13.0 Inbox. The TUI now has every view its `C-c <letter>`
+keybinding table claims except `:tasks` (the kanban-style
+flagship; deferred to v0.15.0 because it breaks the simple
+list pattern).
+
+### Added — GEP-37 Phase 3a (chord-prefix scaffold)
+
+`Glorbo.Shell.AppRoot` is the new top-level Elm view that
+wraps per-view modules and owns the `C-c <letter>` chord
+state machine (`:idle | :c_c`). Ctrl+c flips into chord
+mode; the next keystroke selects a view (one of `o/t/a/c/p/
+h/u`); Esc cancels. Unknown / not-yet-implemented chord
+letters surface a `chord_hint` footer line without
+changing the active view. View swap forwards `:base` +
+`:company` opts to the new view's `init/1`. Launcher
+updated to use AppRoot as root instead of Inbox directly;
+`init/1` accepts a new `:initial_view` opt for non-default
+starts.
+
+### Added — GEP-37 Phase 3b (Health view)
+
+`Glorbo.Shell.Views.Health` mirrors `glorbo doctor` output
+as a cursor-navigated list: one line per check with
+pass/fail glyph (`✓`/`✗`) + severity tag (`[blocker]` /
+`[warning]` / `[info]`). `r` re-runs `Doctor.run_checks/0`
+for live reload. AppRoot routes `C-c h`.
+
+### Added — GEP-37 Phase 3c (Overview view)
+
+`Glorbo.Shell.Views.Overview` is the cross-company
+workspace list: one row per `companies/<slug>/` with
+`slug (name) — N agents, M alerts`. The active company
+(launched workspace) gets a `*` glyph; cursor lands on
+the active row on first paint. FS-only read — Repo-backed
+spend/in-progress/goals columns deferred to a later phase.
+AppRoot routes `C-c o`.
+
+### Added — GEP-37 Phase 3d (Agents view)
+
+`Glorbo.Shell.Views.Agents` is the per-company roster.
+Each row: `<slug> [<role>] <provider>/<model> · <network>
+→ <reports_to>` (the trailing arrow only when set).
+FS-only read of `agents/<slug>/AGENT.md` (or legacy
+`agent.md`); `.archive/` + dotfile dirs hidden; agents
+without an AGENT.md are not surfaced (not bootable).
+AppRoot routes `C-c a`.
+
+### Added — GEP-37 Phase 3e (Audit view)
+
+`Glorbo.Shell.Views.Audit` renders the current-month
+JSONL audit tail. Each line: `[<ts>] <actor> <action>
+<target>` with ts trimmed to YYYY-MM-DDTHH:MM. Bounded-
+memory tail strategy mirrors the LV's load_tail (default
+last 100 entries). AppRoot routes `C-c u` (the "aUdit"
+mapping per D10).
+
+### Added — GEP-37 Phase 3f (Chat view)
+
+`Glorbo.Shell.Views.Chat` renders a channel's message
+stream. Header `#<channel>`; one line per message:
+`[<ts>] <author>: <first body line>`. Multi-line bodies
+collapsed to first line for the cursor list (Phase 3g
+adds Enter-to-expand + slash-command composer). Mirrors
+the LV's `## <ts> | <author>` parse contract; sub-headers
+inside a body don't terminate the message. AppRoot routes
+`C-c c`.
+
+### Test count
+
+2481 (up from 2348 at v0.13.0) — 133 net new tests across
+the six Phase-3 views.
+
+### What's left in GEP-37
+
+- **Phase 3 / `:tasks`** — kanban-style flagship; the only
+  remaining view. Breaks the simple list pattern (multiple
+  status-group lanes), so deferred to v0.15.0.
+- **Phase 3g** — channel switcher + slash-command composer
+  for Chat; Enter-to-expand for full message body.
+- **Phase 3f-2** — live-tail EventBus subscription for the
+  Audit view (Phase-1 supervisor already forwards
+  `company:<co>:audit` broadcasts; wire-up is a
+  Runtime → AppRoot routing question).
+- **Phase 3e (Agents+)** — Repo-backed budget tracking +
+  last-wake hint + pill status (matches the LV's heavier
+  `build_agent_row/5` slice).
+- **Phase 3 (Overview+)** — spend / in-progress task /
+  goals-progress columns (Repo-backed).
+
+End-to-end in a real TTY:
+
+    $ glorbo shell acme         # Inbox
+    C-c o                       # Overview (acme highlighted)
+    C-c a                       # Agents (acme's roster)
+    C-c u                       # aUdit (current-month tail)
+    C-c c                       # Chat (#general)
+    C-c h                       # Health (doctor checks)
+    C-c p                       # back to Inbox
+
 ## [0.13.0] — 2026-04-26
 
 First launchable `glorbo shell`. GEP-37 Phases 1 + 2 + 2b + 2c
