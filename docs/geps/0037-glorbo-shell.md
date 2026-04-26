@@ -431,6 +431,50 @@ history:
         C-c a                       # Agents (acme's roster)
         C-c h                       # Health
         C-c p                       # back to Inbox
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3e landed: Audit view (fifth real view).
+      `Glorbo.Shell.Views.Audit` renders the current-month
+      JSONL audit tail. Each line:
+      `[<ts>] <actor> <action> <target>`. Cursor + j/k;
+      `r` reloads, `q` quits. Empty target omits trailing
+      space; ts trimmed to YYYY-MM-DDTHH:MM (16 chars).
+
+      `Glorbo.Shell.Views.Audit.Data` streams the file
+      line-by-line keeping only the last N (default 100),
+      mirroring `GlorboWeb.AuditLive.load_tail/2`'s
+      bounded-memory strategy. Malformed JSON / blank
+      lines skipped silently.
+
+      Phase 3e is current-month-only + read-only. Phase 3f
+      adds live-tail via the Phase-1 EventBus subscription
+      (already forwarding `company:<co>:audit` broadcasts
+      to Runtime — wire-up is a Runtime → AppRoot routing
+      question) plus older-page navigation.
+
+      AppRoot: `view :: ... | :audit`; `@views_implemented`
+      gains `:audit`; `view_module/1` arm added. Chord
+      letter `u` (the "aUdit" mapping per D10) now routes
+      to a real view instead of the not-implemented hint
+      branch.
+
+      22 new tests across `views/audit/data_test.exs` (7) +
+      `views/audit_test.exs` (15). 2454/2454 total tests
+      green.
+
+      End-to-end:
+
+        $ glorbo shell acme         # Inbox
+        C-c o                       # Overview
+        C-c a                       # Agents
+        C-c u                       # aUdit (current-month tail)
+        C-c h                       # Health
+        C-c p                       # back to Inbox
+
+      Phase 3+ continues with `:tasks` (the kanban
+      flagship; largest remaining view) and `:chat`
+      (channel-log stream; similar shape to Audit).
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

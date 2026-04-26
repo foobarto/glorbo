@@ -390,6 +390,17 @@ it's been in CHANGELOG for a cycle.
   total. Phase 3e widens to budget tracking +
   last-wake (Repo-backed columns); Phase 3+ continues
   with tasks/chat/audit.
+- [x] **GEP-37 `glorbo shell` Phase 3e — Audit view.**
+  Shipped post-v0.13.0 (autonomous L4). Current-month
+  JSONL tail rendered as a cursor-navigated event log:
+  `[<ts>] <actor> <action> <target>`. Bounded-memory
+  read mirrors `GlorboWeb.AuditLive.load_tail/2`. ts
+  trimmed to 16 chars; empty target omits trailing space;
+  malformed lines skipped silently. AppRoot wires
+  `C-c u` → audit. 22 new tests (7 Data + 15 view);
+  2454/2454 total. Phase 3f adds the live-tail EventBus
+  subscription + older-page navigation; Phase 3+
+  continues with tasks/chat.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with
