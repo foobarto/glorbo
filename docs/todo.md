@@ -338,6 +338,19 @@ it's been in CHANGELOG for a cycle.
   terminal `glorbo shell acme` now invokes
   `TermUI.Runtime.run/1` for the first time. Phase 3
   adds the remaining views.
+- [x] **GEP-37 `glorbo shell` Phase 3a — AppRoot + chord
+  prefix.** Shipped post-v0.13.0 (autonomous L4).
+  `Glorbo.Shell.AppRoot` is the new top-level Elm view
+  that wraps per-view modules and owns the
+  `C-c <letter>` chord-prefix state machine per D10's
+  keybinding table (`:idle ↔ :c_c`). Ctrl+c flips into
+  chord mode, next keystroke selects a view, Esc cancels.
+  Unknown / Phase-3b+ chords surface a `chord_hint` footer
+  line; only `p` (Approvals = Inbox) actually routes in
+  Phase 3a. Launcher updated to use AppRoot as root
+  instead of Inbox directly. 18 new tests; 2366/2366 total.
+  Phase 3b adds Health as the second view to validate the
+  chord-driven swap.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

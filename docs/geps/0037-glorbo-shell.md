@@ -236,6 +236,47 @@ history:
       the first time. Phase 3 widens to multi-view
       (overview, kanban, audit, channels, agents, costs,
       providers, health, memory, command palette).
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3a landed: `Glorbo.Shell.AppRoot` view-manager +
+      `C-c <letter>` chord-prefix dispatcher per D10's
+      keybinding table. AppRoot wraps the per-view
+      `TermUI.Elm` modules and owns the chord state
+      (`:idle | :c_c`); Ctrl+c flips into chord mode, the
+      next keystroke selects a view, Esc cancels. Unknown
+      chords surface a `chord_hint` footer line; chord
+      letters mapped to Phase-3b+ views (h, o, t, a, c, u)
+      surface a "view not yet implemented (Phase 3b+)"
+      hint while keeping the current view active. Only `p`
+      (Approvals = Inbox) actually routes through in
+      Phase 3a — the chord scaffold is exercised end-to-end
+      with one view, and Phase 3b adds the second view as
+      the actual swap target.
+
+      Launcher updated: `build_runner_opts/2` now uses
+      `Glorbo.Shell.AppRoot` as the root view instead of
+      `Glorbo.Shell.Views.Inbox` directly. AppRoot's
+      `init/1` forwards opts to its initial sub-view (Inbox)
+      so the Phase 2c launch contract is preserved.
+
+      18 new tests across `app_root_test.exs`: init shape,
+      Ctrl+c → chord_start_c_c, plain `c` propagates,
+      single-key in :c_c → chord_select, Esc → chord_cancel,
+      non-Ctrl+c events propagate, chord_start clears prior
+      hint, chord_cancel returns to :idle + clears hint,
+      `p` routes to :approvals, unknown chord surfaces
+      hint, not-implemented chord (h) surfaces Phase-3b+
+      hint without changing view, sub-view delegation
+      (cursor_down passes through to Inbox), :noreply
+      propagates back unchanged, view rendering empty +
+      with chord active + with hint set. 2366/2366 total
+      tests green; mix credo --strict zero findings.
+
+      Phase 3b adds the second view (Health, the simplest
+      one — read-only supervision-tree snapshot per D10's
+      "C-c h" mapping); that's the bounded chunk where the
+      actual chord-driven view swap becomes visible.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

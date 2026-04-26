@@ -24,7 +24,7 @@ defmodule Glorbo.Shell.Launcher do
   """
 
   alias Glorbo.Filesystem.Hierarchy
-  alias Glorbo.Shell.Views.Inbox
+  alias Glorbo.Shell.AppRoot
 
   @typedoc "Reason an argv→opts compose can fail."
   @type compose_error :: :usage | :unknown_company | {:invalid_slug, String.t()}
@@ -73,8 +73,12 @@ defmodule Glorbo.Shell.Launcher do
   @doc false
   @spec build_runner_opts(Path.t(), String.t()) :: keyword()
   def build_runner_opts(base, company) do
+    # Phase 3a: AppRoot is the new root view, owning the
+    # `C-c <letter>` chord prefix that switches between views.
+    # AppRoot's init/1 forwards opts to its initial sub-view
+    # (Inbox today; Phase 3b adds Health/Overview/etc.).
     [
-      root: Inbox,
+      root: AppRoot,
       opts: [base: base, company: company]
     ]
   end

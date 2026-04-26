@@ -41,7 +41,7 @@ defmodule Glorbo.Shell.LauncherTest do
   describe "build_runner_opts/2" do
     test "returns root + opts for the Inbox view" do
       opts = Launcher.build_runner_opts("/tmp/glorbo-base", "acme")
-      assert Keyword.fetch!(opts, :root) == Glorbo.Shell.Views.Inbox
+      assert Keyword.fetch!(opts, :root) == Glorbo.Shell.AppRoot
       view_opts = Keyword.fetch!(opts, :opts)
       assert Keyword.fetch!(view_opts, :base) == "/tmp/glorbo-base"
       assert Keyword.fetch!(view_opts, :company) == "acme"
@@ -64,7 +64,7 @@ defmodule Glorbo.Shell.LauncherTest do
       assert {:ok, 0, ""} = Launcher.run(["acme"], base: base, runner_fn: runner_fn)
 
       runner_opts = Process.get({:runner_called, ref})
-      assert Keyword.fetch!(runner_opts, :root) == Glorbo.Shell.Views.Inbox
+      assert Keyword.fetch!(runner_opts, :root) == Glorbo.Shell.AppRoot
       view_opts = Keyword.fetch!(runner_opts, :opts)
       assert Keyword.fetch!(view_opts, :company) == "acme"
       assert Keyword.fetch!(view_opts, :base) == base
