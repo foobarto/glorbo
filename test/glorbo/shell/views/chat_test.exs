@@ -351,6 +351,122 @@ defmodule Glorbo.Shell.Views.ChatTest do
     end
   end
 
+  describe "Phase 3f-revisit-2 — channel switcher modal" do
+    defp init_with_switcher(channels, opts \\ []) do
+      list_channels_fn = fn _b, _c -> channels end
+
+      loader_calls = make_ref()
+      Process.put({:load_calls, loader_calls}, [])
+
+      loader_fn = fn _b, _c, ch ->
+        prior = Process.get({:load_calls, loader_calls})
+        Process.put({:load_calls, loader_calls}, prior ++ [ch])
+        Keyword.get(opts, :messages, sample_messages())
+      end
+
+      state =
+        Chat.init(
+          messages: sample_messages(),
+          channel: "general",
+          base: "/tmp/glorbo",
+          company: "acme",
+          list_channels_fn: list_channels_fn,
+          loader_fn: loader_fn
+        )
+
+      {state, fn -> Process.get({:load_calls, loader_calls}) end}
+    end
+
+    test "`s` opens the switcher modal and loads channels with cursor on current" do
+      assert Chat.event_to_msg(%Key{key: :char, char: "s"}, %{mode: :list}) ==
+               {:msg, :switch_open}
+
+      {state, _calls} = init_with_switcher(["alerts", "general", "incidents"])
+      {state, []} = Chat.update(:switch_open, state)
+      assert {:switch, %{channels: ["alerts", "general", "incidents"], cursor: 1}} = state.mode
+    end
+
+    test "switch mode routes j/k/arrows/Enter/Esc; absorbs everything else" do
+      state = %{mode: {:switch, %{channels: ["a", "b"], cursor: 0}}}
+
+      assert Chat.event_to_msg(%Key{key: :down}, state) == {:msg, :switch_cursor_down}
+      assert Chat.event_to_msg(%Key{key: :up}, state) == {:msg, :switch_cursor_up}
+      assert Chat.event_to_msg(%Key{key: :char, char: "j"}, state) == {:msg, :switch_cursor_down}
+      assert Chat.event_to_msg(%Key{key: :char, char: "k"}, state) == {:msg, :switch_cursor_up}
+      assert Chat.event_to_msg(%Key{key: :enter}, state) == {:msg, :switch_select}
+      assert Chat.event_to_msg(%Key{key: :escape}, state) == {:msg, :switch_cancel}
+
+      # Random keys absorbed (no leak into list-mode handler).
+      assert Chat.event_to_msg(%Key{key: :char, char: "x"}, state) == :ignore
+      assert Chat.event_to_msg(%Key{key: :char, char: "i"}, state) == :ignore
+    end
+
+    test ":switch_cursor_down/up clamp at list boundaries" do
+      state = %{mode: {:switch, %{channels: ["a", "b", "c"], cursor: 2}}}
+      {state, []} = Chat.update(:switch_cursor_down, state)
+      assert {:switch, %{cursor: 2}} = state.mode
+
+      state = %{mode: {:switch, %{channels: ["a", "b", "c"], cursor: 0}}}
+      {state, []} = Chat.update(:switch_cursor_up, state)
+      assert {:switch, %{cursor: 0}} = state.mode
+    end
+
+    test ":switch_select sets channel, reloads via loader_fn, exits modal" do
+      {state, calls} = init_with_switcher(["alerts", "general", "incidents"])
+      {state, []} = Chat.update(:switch_open, state)
+      # Move cursor to "incidents".
+      {state, []} = Chat.update(:switch_cursor_down, state)
+      {state, []} = Chat.update(:switch_cursor_down, state)
+      {state, []} = Chat.update(:switch_select, state)
+
+      assert state.channel == "incidents"
+      assert state.mode == :list
+      assert state.cursor == 0
+      # init's auto-load saw "general"; switch_select reloaded "incidents".
+      assert calls.() == ["incidents"]
+    end
+
+    test ":switch_cancel exits without touching channel" do
+      {state, calls} = init_with_switcher(["alerts", "general"])
+      {state, []} = Chat.update(:switch_open, state)
+      {state, []} = Chat.update(:switch_cursor_down, state)
+      {state, []} = Chat.update(:switch_cancel, state)
+
+      assert state.channel == "general"
+      assert state.mode == :list
+      # No load call happened on cancel.
+      assert calls.() == []
+    end
+
+    test ":switch_open with no :base/:company is a no-op" do
+      state = Chat.init(messages: sample_messages(), channel: "general")
+      {state, []} = Chat.update(:switch_open, state)
+      assert state.mode == :list
+    end
+
+    test ":switch_open with empty channel list still enters mode (Esc to leave)" do
+      {state, _calls} = init_with_switcher([])
+      {state, []} = Chat.update(:switch_open, state)
+      assert {:switch, %{channels: [], cursor: 0}} = state.mode
+    end
+
+    test "view in switch mode renders the channel list with `>` on cursor row" do
+      state = %{
+        messages: sample_messages(),
+        channel: "general",
+        cursor: 0,
+        mode: {:switch, %{channels: ["alerts", "general", "incidents"], cursor: 2}},
+        last_action: nil
+      }
+
+      rendered = render_to_strings(Chat.view(state))
+      assert Enum.any?(rendered, &String.contains?(&1, "Switch channel"))
+      assert Enum.any?(rendered, &String.contains?(&1, "  #alerts"))
+      assert Enum.any?(rendered, &String.contains?(&1, "  #general"))
+      assert Enum.any?(rendered, &String.contains?(&1, "> #incidents"))
+    end
+  end
+
   defp render_to_strings(%TermUI.Component.RenderNode{type: :text, content: content}),
     do: [content]
 

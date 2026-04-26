@@ -1,29 +1,35 @@
 defmodule Glorbo.Shell.Views.Chat do
   @moduledoc """
-  GEP-37 Phase 3f + 3f-revisit — TUI Chat view.
+  GEP-37 Phase 3f + 3f-revisit + 3f-revisit-2 — TUI Chat view.
 
   Phase 3f shipped read-only message rendering. Phase 3f-revisit
-  (this version) adds the composer modal: pressing `i` enters
-  `{:compose, buffer}` mode where keystrokes accumulate, Enter
-  submits via `Glorbo.Actions.post_message/4`, Esc cancels.
-  Same modal pattern as Inbox's deny prompt.
+  added the composer modal: `i` enters `{:compose, buffer}` mode
+  where keystrokes accumulate, Enter submits via
+  `Glorbo.Actions.post_message/4`, Esc cancels. Phase 3f-revisit-2
+  (this version) adds the channel switcher: `s` enters
+  `{:switch, %{channels, cursor}}` mode where j/k navigate the
+  channel list, Enter selects, Esc cancels. Both modals follow
+  the same shape as Inbox's deny prompt.
 
-  Channel switching + slash-command parsing inside the composer
-  are still future work; today the composer always posts to the
-  active channel as a plain body.
+  Slash-command parsing inside the composer is still future work;
+  today the composer always posts to the active channel as a
+  plain body.
 
   Implements `TermUI.Elm`. State shape:
 
       %{
-        messages:    [Chat.Data.message_row()],
-        channel:     String.t(),
-        cursor:      non_neg_integer(),
-        mode:        :list | {:compose, String.t()},
-        last_action: {:ok | :error, atom(), term()} | nil,
-        company:     String.t() | nil,
-        base:        Path.t() | nil,
-        loader_fn:   function()  # injected for tests
-        post_fn:     function()  # injected for tests
+        messages:         [Chat.Data.message_row()],
+        channel:          String.t(),
+        cursor:           non_neg_integer(),
+        mode:             :list
+                          | {:compose, String.t()}
+                          | {:switch, %{channels: [String.t()], cursor: non_neg_integer()}},
+        last_action:      {:ok | :error, atom(), term()} | nil,
+        company:          String.t() | nil,
+        base:             Path.t() | nil,
+        loader_fn:        function(),         # injected for tests
+        post_fn:          function(),         # injected for tests
+        list_channels_fn: function()          # injected for tests
       }
   """
 
@@ -39,6 +45,7 @@ defmodule Glorbo.Shell.Views.Chat do
   def init(opts) do
     loader_fn = Keyword.get(opts, :loader_fn, &Data.load_messages/3)
     post_fn = Keyword.get(opts, :post_fn, &Glorbo.Actions.post_message/4)
+    list_channels_fn = Keyword.get(opts, :list_channels_fn, &Data.list_channels/2)
     base = Keyword.get(opts, :base)
     company = Keyword.get(opts, :company)
     channel = Keyword.get(opts, :channel, @default_channel)
@@ -59,7 +66,8 @@ defmodule Glorbo.Shell.Views.Chat do
       company: company,
       base: base,
       loader_fn: loader_fn,
-      post_fn: post_fn
+      post_fn: post_fn,
+      list_channels_fn: list_channels_fn
     }
   end
 
@@ -77,9 +85,27 @@ defmodule Glorbo.Shell.Views.Chat do
 
   def event_to_msg(_event, %{mode: {:compose, _}}), do: :ignore
 
-  # List-mode bindings — `i` opens composer first, then fall through to
-  # the shared cursor-list nav arms (j/k/arrows/r/q).
+  # Channel switcher modal — j/k/arrows navigate; Enter selects;
+  # Esc cancels. Other keys are absorbed so the chord prefix can't
+  # leak through.
+  def event_to_msg(%Key{key: :enter}, %{mode: {:switch, _}}), do: {:msg, :switch_select}
+  def event_to_msg(%Key{key: :escape}, %{mode: {:switch, _}}), do: {:msg, :switch_cancel}
+  def event_to_msg(%Key{key: :down}, %{mode: {:switch, _}}), do: {:msg, :switch_cursor_down}
+  def event_to_msg(%Key{key: :up}, %{mode: {:switch, _}}), do: {:msg, :switch_cursor_up}
+
+  def event_to_msg(%Key{key: :char, char: "j"}, %{mode: {:switch, _}}),
+    do: {:msg, :switch_cursor_down}
+
+  def event_to_msg(%Key{key: :char, char: "k"}, %{mode: {:switch, _}}),
+    do: {:msg, :switch_cursor_up}
+
+  def event_to_msg(_event, %{mode: {:switch, _}}), do: :ignore
+
+  # List-mode bindings — `i` opens composer, `s` opens the channel
+  # switcher, then fall through to the shared cursor-list nav arms
+  # (j/k/arrows/r/q).
   def event_to_msg(%Key{key: :char, char: "i"}, _state), do: {:msg, :compose_open}
+  def event_to_msg(%Key{key: :char, char: "s"}, _state), do: {:msg, :switch_open}
   def event_to_msg(event, _state), do: Common.cursor_nav_event(event)
 
   @impl TermUI.Elm
@@ -121,6 +147,51 @@ defmodule Glorbo.Shell.Views.Chat do
     apply_post(state, buf)
   end
 
+  # Phase 3f-revisit-2 channel switcher arms.
+  def update(:switch_open, state) do
+    if is_binary(state.base) and is_binary(state.company) do
+      channels = state.list_channels_fn.(state.base, state.company)
+      cursor = Enum.find_index(channels, &(&1 == state.channel)) || 0
+      {%{state | mode: {:switch, %{channels: channels, cursor: cursor}}}, []}
+    else
+      {state, []}
+    end
+  end
+
+  def update(
+        :switch_cursor_down,
+        %{mode: {:switch, %{channels: channels, cursor: c} = m}} = state
+      ) do
+    new_cursor = min(c + 1, max(length(channels) - 1, 0))
+    {%{state | mode: {:switch, %{m | cursor: new_cursor}}}, []}
+  end
+
+  def update(:switch_cursor_up, %{mode: {:switch, %{cursor: c} = m}} = state) do
+    new_cursor = max(c - 1, 0)
+    {%{state | mode: {:switch, %{m | cursor: new_cursor}}}, []}
+  end
+
+  def update(:switch_cancel, %{mode: {:switch, _}} = state) do
+    {%{state | mode: :list}, []}
+  end
+
+  def update(:switch_select, %{mode: {:switch, %{channels: [], cursor: _}}} = state) do
+    {%{state | mode: :list}, []}
+  end
+
+  def update(:switch_select, %{mode: {:switch, %{channels: channels, cursor: c}}} = state) do
+    chosen = Enum.at(channels, c)
+    refreshed = state.loader_fn.(state.base, state.company, chosen)
+
+    {%{
+       state
+       | mode: :list,
+         channel: chosen,
+         messages: refreshed,
+         cursor: 0
+     }, []}
+  end
+
   def update(_msg, _state), do: :noreply
 
   @impl TermUI.Elm
@@ -138,6 +209,7 @@ defmodule Glorbo.Shell.Views.Chat do
       [header, body]
       |> append_action_line(state)
       |> append_composer(state)
+      |> append_switcher(state)
 
     stack(:vertical, lines)
   end
@@ -157,15 +229,35 @@ defmodule Glorbo.Shell.Views.Chat do
 
   defp append_composer(lines, state) do
     case Map.get(state, :mode, :list) do
-      :list ->
-        lines
-
       {:compose, buf} ->
         lines ++
           [
             text("Compose (Enter to send, Esc to cancel):"),
             text("> #{buf}_")
           ]
+
+      _ ->
+        lines
+    end
+  end
+
+  defp append_switcher(lines, state) do
+    case Map.get(state, :mode, :list) do
+      {:switch, %{channels: channels, cursor: cursor}} ->
+        header_line = text("Switch channel (j/k navigate, Enter select, Esc cancel):")
+
+        channel_lines =
+          channels
+          |> Enum.with_index()
+          |> Enum.map(fn {ch, idx} ->
+            prefix = if idx == cursor, do: "> ", else: "  "
+            text("#{prefix}##{ch}")
+          end)
+
+        lines ++ [header_line | channel_lines]
+
+      _ ->
+        lines
     end
   end
 

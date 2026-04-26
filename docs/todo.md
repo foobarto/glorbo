@@ -453,6 +453,17 @@ it's been in CHANGELOG for a cycle.
   no new Data tests since composer is write-side).
   Channel switching + slash-command parsing are still
   future work.
+- [x] **GEP-37 Phase 3f-revisit-2 — Chat channel switcher.**
+  Shipped post-v0.15.1 (autonomous L4). `s` in list mode
+  opens a switcher modal: j/k navigate the on-disk channel
+  list, Enter switches and reloads via the existing
+  `:loader_fn` seam, Esc cancels. Cursor seeds on the
+  current channel. State now carries
+  `mode :: :list | {:compose, buf} | {:switch, %{channels,
+  cursor}}`. `:list_channels_fn` injection so tests skip
+  the filesystem. 8 new tests; 35 total in chat_test.exs.
+  Slash-command parsing inside the composer is still
+  future work.
 - [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
   Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
   Kanban-style stacked-vertical layout: each lane

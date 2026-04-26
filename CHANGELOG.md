@@ -27,6 +27,19 @@ shape as the Inbox deny prompt. `:post_fn` is injected so
 tests don't actually shell out to `post_message`. 11 new
 tests.
 
+### Added — GEP-37 Phase 3f-revisit-2 (Chat channel switcher)
+
+`s` in list mode opens a channel switcher modal listing
+every channel the company has on disk (via
+`Chat.Data.list_channels/2`). j/k navigate, Enter switches
+to the highlighted channel and reloads its messages
+through the existing `:loader_fn` seam, Esc cancels. Cursor
+seeds onto the currently active channel so the modal opens
+"in place." Same modal shape as the composer. State now
+carries `mode :: :list | {:compose, buf} | {:switch,
+%{channels, cursor}}`. `:list_channels_fn` injection so
+tests don't hit the filesystem. 8 new tests.
+
 ## [0.15.1] — 2026-04-26
 
 GEP-37 Phase 3-revisit slice — two views gain Repo-backed
