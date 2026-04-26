@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-37 Phase 3c-revisit (Overview+ spend column)
+
+`Glorbo.Shell.Views.Overview.Data.load_companies/2` now sums
+each company's current-month spend across agents (via
+`Glorbo.Budget.Ledger.fetch/3`) and surfaces it as
+`:spend_cents` on the row. The view appends `, $X.YZ spent`
+after the alerts column when spend > 0; quiet companies stay
+visually distinct. Same fail-open-with-0 + `:ledger_fetch_fn`
+injection pattern as Agents+. The LV's heavier `in_progress_count`
++ `goals_summary` columns are still future work — they walk
+every task file per company so the cost grows with workspace
+count. 7 new tests.
+
 ### Added — GEP-37 Phase 3d-revisit (Agents+ budget columns)
 
 `Glorbo.Shell.Views.Agents.Data.load_agents/3` now reads

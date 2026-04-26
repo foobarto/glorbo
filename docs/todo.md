@@ -414,6 +414,17 @@ it's been in CHANGELOG for a cycle.
   16 view); 2481/2481 total. Phase 3+ continues with
   the `:tasks` kanban flagship (last remaining
   GEP-37 view).
+- [x] **GEP-37 Phase 3c-revisit — Overview+ spend column.**
+  Shipped post-v0.15.0 (autonomous L4).
+  `Overview.Data.load_companies/2` now sums each
+  company's current-month spend across agents via
+  `Glorbo.Budget.Ledger.fetch/3`. View appends `, $X.YZ
+  spent` after the alerts column when spend > 0. Fail-open-
+  with-0 + `:ledger_fetch_fn` injection (same pattern as
+  Agents+). 7 new tests (5 Data + 2 view).
+  `in_progress_count` + `goals_summary` columns are still
+  future work (walk every task per company; defer until
+  read pattern stabilises).
 - [x] **GEP-37 Phase 3d-revisit — Agents+ budget
   columns.** Shipped post-v0.15.0 (autonomous L4).
   `Agents.Data.load_agents/3` now reads

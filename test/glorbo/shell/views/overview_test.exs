@@ -162,6 +162,26 @@ defmodule Glorbo.Shell.Views.OverviewTest do
       assert Enum.any?(rendered, &String.contains?(&1, "    acme"))
       assert Enum.any?(rendered, &String.contains?(&1, "    beta"))
     end
+
+    test "Phase 3c-revisit: spend column rendered when spend_cents > 0" do
+      companies = [
+        %{slug: "acme", name: "Acme Co", agent_count: 3, alert_count: 0, spend_cents: 1801}
+      ]
+
+      state = Overview.init(companies: companies, company: "acme")
+      [line | _] = render_to_strings(Overview.view(state))
+      assert line == "> * acme (Acme Co) — 3 agents, 0 alerts, $18.01 spent"
+    end
+
+    test "Phase 3c-revisit: spend_cents=0 suppresses the spend column" do
+      companies = [
+        %{slug: "acme", name: "Acme", agent_count: 1, alert_count: 0, spend_cents: 0}
+      ]
+
+      state = Overview.init(companies: companies, company: "acme")
+      [line | _] = render_to_strings(Overview.view(state))
+      assert line == "> * acme (Acme) — 1 agent, 0 alerts"
+    end
   end
 
   defp render_to_strings(%TermUI.Component.RenderNode{type: :text, content: content}),

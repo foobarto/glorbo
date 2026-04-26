@@ -129,4 +129,91 @@ defmodule Glorbo.Shell.Views.Overview.DataTest do
     # No `companies/` subdir created at all.
     assert Data.load_companies(base) == []
   end
+
+  describe "Phase 3c-revisit — spend_cents column" do
+    test "no agents → spend_cents is 0" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+
+      [row] =
+        Data.load_companies(base, ledger_fetch_fn: fn _, _, _ -> nil end)
+
+      assert row.spend_cents == 0
+    end
+
+    test "sums each agent's ledger row across the company" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+      seed_agent(base, "acme", "engineer")
+
+      ledger_fetch_fn = fn _co, agent, _ym ->
+        case agent do
+          "ceo" -> %{cost_usd_cents: 1234}
+          "engineer" -> %{cost_usd_cents: 567}
+          _ -> nil
+        end
+      end
+
+      [row] = Data.load_companies(base, ledger_fetch_fn: ledger_fetch_fn)
+      assert row.spend_cents == 1801
+    end
+
+    test "ledger fetch raising → 0 (fail open on no Repo connection)" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+
+      [row] =
+        Data.load_companies(base,
+          ledger_fetch_fn: fn _, _, _ -> raise "no Repo" end
+        )
+
+      assert row.spend_cents == 0
+    end
+
+    test "skips non-directory entries under agents/ when summing" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+      File.mkdir_p!(Path.join([base, "companies/acme/agents"]))
+      File.write!(Path.join([base, "companies/acme/agents/stray.md"]), "junk\n")
+
+      ref = make_ref()
+      Process.put({:fetch_calls, ref}, [])
+
+      ledger_fetch_fn = fn _co, agent, _ym ->
+        prior = Process.get({:fetch_calls, ref})
+        Process.put({:fetch_calls, ref}, [agent | prior])
+        %{cost_usd_cents: 100}
+      end
+
+      [row] = Data.load_companies(base, ledger_fetch_fn: ledger_fetch_fn)
+      # Only ceo (real dir) was queried — stray.md was filtered.
+      assert Process.get({:fetch_calls, ref}) == ["ceo"]
+      assert row.spend_cents == 100
+    end
+
+    test ":year_month opt is forwarded to the ledger lookup" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+
+      ref = make_ref()
+      Process.put({:ledger_args, ref}, nil)
+
+      ledger_fetch_fn = fn co, ag, ym ->
+        Process.put({:ledger_args, ref}, {co, ag, ym})
+        nil
+      end
+
+      _ =
+        Data.load_companies(base,
+          ledger_fetch_fn: ledger_fetch_fn,
+          year_month: "2024-01"
+        )
+
+      assert Process.get({:ledger_args, ref}) == {"acme", "ceo", "2024-01"}
+    end
+  end
 end

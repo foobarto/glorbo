@@ -96,17 +96,36 @@ defmodule Glorbo.Shell.Views.Overview do
     |> Enum.map(fn {row, idx} ->
       cursor_glyph = if idx == cursor, do: "> ", else: "  "
       active_glyph = if row.slug == active, do: "*", else: " "
+      spend = format_spend(row)
 
       text(
         "#{cursor_glyph}#{active_glyph} #{row.slug} (#{row.name}) — " <>
           "#{row.agent_count} agent#{plural(row.agent_count)}, " <>
-          "#{row.alert_count} alert#{plural(row.alert_count)}"
+          "#{row.alert_count} alert#{plural(row.alert_count)}" <>
+          spend
       )
     end)
   end
 
   defp plural(1), do: ""
   defp plural(_), do: "s"
+
+  # Phase 3c-revisit: spend column. Suppressed when zero so
+  # quiet companies stay visually distinct from spending ones.
+  # Map.get/3 keeps legacy Phase-3c row shapes (without
+  # `:spend_cents`) renderable.
+  defp format_spend(row) do
+    case Map.get(row, :spend_cents, 0) do
+      cents when is_integer(cents) and cents > 0 -> ", $#{format_cents(cents)} spent"
+      _ -> ""
+    end
+  end
+
+  defp format_cents(cents) when is_integer(cents) and cents >= 0 do
+    dollars = div(cents, 100)
+    pennies = rem(cents, 100)
+    "#{dollars}.#{String.pad_leading(Integer.to_string(pennies), 2, "0")}"
+  end
 
   # Cursor lands on the active-company row when present so the
   # Director's chord-target row is the highlighted one on first
