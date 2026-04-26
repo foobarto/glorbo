@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.12.2] — 2026-04-26
+
+Same-day security/quality patch on top of v0.12.1. Ships the
+wave-31 Medium-severity cross-company-bleed fix off the
+[Unreleased] surface (per `docs/project-profile.md` P0 rule:
+no Medium security findings sliding past a version cut),
+plus the GEP-34 projection-count seam-surfacing and schema
+moduledoc refresh that accumulated since v0.12.1.
+
+Cumulative threatmodel: **97 security findings closed across
+31 waves**. Two findings remain accepted-by-design.
+
 ### Security (wave 31)
 
 - **Medium** — `tasks_approval_state` schema scoped by company.
