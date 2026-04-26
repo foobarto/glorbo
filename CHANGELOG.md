@@ -10,7 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Security (wave 32)
+
+- **Medium** — `Reindex` Phase 2 (approvals) and Phase 3
+  (budgets) now treat the on-disk audit dirname as the
+  canonical company, ignoring the JSONL `company:` field.
+  Wave 30 introduced `safe_company_slug/2` which preferred
+  the JSONL field over the dirname; wave 31 added the
+  `company_slug` column to `tasks_approval_state`. Together
+  those left a cross-company spoofing path: an attacker who
+  could write an audit JSONL line into one company's audit
+  dir (e.g. via a misconfigured operator path-grant) could
+  set `company: "<other-company>"` and create a spoofed row
+  in the other company's projection — defeating the wave-31
+  isolation fix. Phase 1 (audit_events) keeps the original
+  permissive behaviour because that table stores
+  cross-routed events the writer intentionally tags. New
+  helper `dirname_company_slug/1` makes the dirname
+  authoritative for Phase 2 + 3; rejects non-slug dirnames
+  (so `_system` and other non-company tokens drop the row).
+  2 new tests confirm cross-spoofing attempts via JSONL
+  `company:` are ignored at both phases.
 
 ## [0.12.2] — 2026-04-26
 

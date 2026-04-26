@@ -443,9 +443,20 @@ defmodule Glorbo.Filesystem.Reindex do
   # `Company.AuditLog.entry_company/1` discipline at the read path.
   # JSONL lines on disk should always carry a slug-shaped `company`
   # (or `"_system"`) because the writer enforces it, but hand-edited or
-  # backup-restored JSONL might not. Returns the validated slug if the
-  # entry's `company` field is valid; otherwise falls back to the
-  # caller-supplied dirname (the company-from-on-disk-path).
+  # backup-restored JSONL might not.
+  #
+  # **Used by Phase 1 (`audit_events`) only.** Phase 1 stores events
+  # the writer cross-routed across companies (via `entry_company/1`),
+  # so respecting the JSONL `company:` field over the dirname is
+  # correct: a `_system` event written from a company gate ends up
+  # under `<base>/audit/_system/` already.
+  #
+  # Wave 32 split: Phase 2 (`tasks_approval_state`) and Phase 3
+  # (`budgets`) use `dirname_company_slug/1` instead — for those
+  # tables, the on-disk dir IS canonical and the JSONL `company:`
+  # field is decoration. Allowing JSONL override there would let an
+  # attacker who can write to one company's audit dir create spoofed
+  # rows in another company's projection.
   defp safe_company_slug(entry, fallback) do
     case Map.get(entry, "company") do
       nil ->
@@ -460,6 +471,15 @@ defmodule Glorbo.Filesystem.Reindex do
           true -> fallback
         end
     end
+  end
+
+  # Wave 32 (post-v0.12.2): for Phase 2 + Phase 3 the dirname is
+  # canonical. Returns the dirname if valid-slug-shaped, else nil so
+  # the caller skips the row.
+  defp dirname_company_slug(dirname) do
+    if is_binary(dirname) and ActionsSupport.valid_slug?(dirname),
+      do: dirname,
+      else: nil
   end
 
   # Wave 30: agent_slug from a JSONL line must be slug-shaped to enter
@@ -695,9 +715,9 @@ defmodule Glorbo.Filesystem.Reindex do
     task_path = entry["target"]
     agent = safe_agent_slug(entry["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
-    co = safe_company_slug(entry, company)
+    co = dirname_company_slug(company)
 
-    if is_binary(task_path) and agent != nil and ts != nil and ActionsSupport.valid_slug?(co) do
+    if is_binary(task_path) and agent != nil and ts != nil and co != nil do
       Map.put(acc, {co, task_path}, %{
         company_slug: co,
         task_path: task_path,
@@ -728,9 +748,9 @@ defmodule Glorbo.Filesystem.Reindex do
   defp update_resolution(entry, company, acc, status, resolution_ts_field, reason) do
     task_path = entry["target"]
     ts = parse_audit_ts(resolution_ts_field) || parse_audit_ts(entry["ts"])
-    co = safe_company_slug(entry, company)
+    co = dirname_company_slug(company)
 
-    if is_binary(task_path) and ts != nil and ActionsSupport.valid_slug?(co) do
+    if is_binary(task_path) and ts != nil and co != nil do
       reason_str = if is_binary(reason), do: reason, else: nil
 
       case Map.get(acc, {co, task_path}) do
@@ -865,22 +885,19 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp apply_budget_usage(entry, fallback_company, acc) do
-    # Phase 3 budgets are strictly per-company; an unbucketable JSONL line
-    # (no `company:`, non-slug `company:`, fallback dirname not slug-shaped)
-    # has no defensible target row, so reject rather than synthesize.
-    co =
-      case safe_company_slug(entry, fallback_company) do
-        "_system" -> nil
-        slug -> if ActionsSupport.valid_slug?(slug), do: slug, else: nil
-      end
-
+    # Phase 3 budgets are strictly per-company. Wave 32: the on-disk
+    # dirname is canonical — the JSONL `company:` field is decoration.
+    # Allowing JSONL override would let an attacker who writes to one
+    # company's audit dir create spoofed budget rows in another
+    # company's projection.
+    co = dirname_company_slug(fallback_company)
     agent = safe_agent_slug(entry["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
     prompt = non_neg_int(entry["prompt_tokens"])
     completion = non_neg_int(entry["completion_tokens"])
     cost = non_neg_int(entry["cost_usd_cents"])
 
-    if is_binary(co) and agent != nil and ts != nil do
+    if co != nil and agent != nil and ts != nil do
       year_month = Ledger.month_bucket(ts)
       key = {co, agent, year_month}
 

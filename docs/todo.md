@@ -127,6 +127,18 @@ it's been in CHANGELOG for a cycle.
   index; Gate's three call sites + Reindex Phase 2 fold all
   scope by company now. 2 new isolation tests; cumulative tally
   97 / 31 waves.
+- [x] **Wave 32 (post-v0.12.2, MEDIUM): JSONL `company:` spoof
+  defeats wave-31 isolation.** Fourth self-review pass: wave
+  30's `safe_company_slug/2` let JSONL `company:` override the
+  dirname when both were valid slugs. Combined with wave 31's
+  `(company_slug, task_path)` index, that meant an attacker
+  who wrote one line into company A's audit dir with
+  `company: "B"` could create a spoofed row in company B's
+  projection — defeating the isolation. New
+  `dirname_company_slug/1` helper makes the on-disk dirname
+  canonical for Phase 2 + 3; Phase 1 keeps wave-30 semantics
+  (audit_events legitimately stores cross-routed events).
+  2 new spoof-rejection tests; cumulative tally 98 / 32 waves.
 
 ## P2 — nice to have
 

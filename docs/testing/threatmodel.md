@@ -621,10 +621,10 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **97 security findings closed across 31
+Cumulative tally: **98 security findings closed across 32
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
 + 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
-+ 1 wave 29 + 1 wave 30 + 1 wave 31.
++ 1 wave 29 + 1 wave 30 + 1 wave 31 + 1 wave 32.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 
@@ -650,6 +650,48 @@ and routing all three call sites through it. 2 new tests in
 `reindex_test.exs` confirm that a symlinked
 `companies/<co>/audit/` AND a symlinked `<base>/audit/_system/`
 both result in zero rows imported across all three projections.
+*Paths:* `lib/glorbo/filesystem/reindex.ex,
+test/glorbo/filesystem/reindex_test.exs`.
+
+### Wave 32 closure (post-v0.12.2 self-review, 2026-04-26)
+
+**Medium severity — cross-company spoofing via JSONL `company:`
+field in approval/budget replay.**
+
+Fourth self-review of the GEP-34 reindex code (after wave 31
+shipped) found that wave 30's `safe_company_slug/2` helper
+preferred the JSONL `company:` field over the dirname when the
+JSONL field was a valid slug. Wave 31 added the `company_slug`
+column to `tasks_approval_state` and made the schema enforce
+`(company_slug, task_path)` uniqueness — but the FOLD that
+populated `company_slug` was using `safe_company_slug`, which
+let a JSONL line in `companies/acme/audit/` set `company:
+"beta"` and synthesize a row attributed to beta.
+
+Defeats wave 31's isolation guarantee. An attacker who could
+write a single line into one company's audit JSONL (operator
+path-grant misconfiguration, hand-edited backup restore, agent
+escape that reaches the audit dir, etc.) could spawn rows in
+arbitrary other companies' approval/budget projections.
+
+Closed by introducing `dirname_company_slug/1` which validates
+the iteration's on-disk company dirname only and ignores the
+JSONL `company:` field. Routed Phase 2 (`apply_approval_event`,
+`update_resolution`) and Phase 3 (`apply_budget_usage`) through
+it. Phase 1 (`build_audit_row`) keeps the wave-30 helper
+because `audit_events` stores cross-routed events the writer
+intentionally tags via `Company.AuditLog.entry_company/1`.
+
+2 new tests:
+  * Phase 2: line in acme's audit dir with `company: "beta"`
+    → row attributed to acme.
+  * Phase 3: line in acme's audit dir with `company: "beta"`
+    → row attributed to acme.
+
+Plus an updated wave-30 test ("traversal-shaped `company:` is
+ignored") whose semantics shifted from "non-slug falls back to
+dirname" to "JSONL field is ignored regardless of shape" —
+same on-the-wire behaviour, clearer intent.
 *Paths:* `lib/glorbo/filesystem/reindex.ex,
 test/glorbo/filesystem/reindex_test.exs`.
 

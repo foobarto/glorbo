@@ -336,6 +336,24 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert Repo.all(TasksApprovalState) == []
     end
 
+    test "Phase 2 wave 32: dirname is canonical — JSONL `company:` is ignored" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+      _ = write!(base, "companies/beta/company.md", "---\nname: beta\n---\n")
+
+      # An attacker-crafted line in acme's audit dir claiming
+      # `company: "beta"`. Wave 32 ignores the JSONL field — the row
+      # gets attributed to acme (the dirname).
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"beta","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x.md","task_id":"x"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(Glorbo.TasksApprovalState)
+      assert row.company_slug == "acme"
+    end
+
     test "Phase 2: granted resolution synthesis with non-slug agent skips" do
       base = TmpGlorboHome.setup()
       _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
@@ -364,7 +382,25 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert Repo.all(Budget) == []
     end
 
-    test "Phase 3: non-slug `company` field falls back to dirname when valid" do
+    test "Phase 3 wave 32: dirname is canonical — JSONL `company:` is ignored" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+      _ = write!(base, "companies/beta/company.md", "---\nname: beta\n---\n")
+
+      # An attacker-crafted line in acme's audit dir trying to spoof
+      # cross-company attribution by claiming `company: "beta"`. Wave 32
+      # ignores the JSONL field — the dirname (acme) is canonical.
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"beta","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(Budget)
+      assert row.company_slug == "acme"
+    end
+
+    test "Phase 3 wave 32: traversal-shaped `company:` field is ignored" do
       base = TmpGlorboHome.setup()
       _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
 
@@ -376,24 +412,6 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
       [row] = Repo.all(Budget)
       assert row.company_slug == "acme"
-    end
-
-    test "Phase 3: budget event with `_system` company is rejected" do
-      base = TmpGlorboHome.setup()
-      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
-
-      # Budget events are strictly per-company; if a JSONL line claims
-      # `_system` we reject rather than synthesize.
-      jsonl =
-        ~s|{"ts":"2026-04-26T10:00:00Z","company":"_system","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
-
-      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
-
-      # Wait — fallback_company is "acme" (the dirname), but the JSONL says
-      # `_system`. With the wave-30 fix, safe_company_slug returns "_system"
-      # (a valid bucketing token), then the budget-specific guard rejects
-      # `_system` → nil → row skipped.
-      assert {:ok, %{budgets: 0}} = Reindex.run(base: base)
     end
   end
 
