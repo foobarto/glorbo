@@ -10,6 +10,44 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.12.5] — 2026-04-26
+
+Same-day patch bundling wave 33 (Medium) + wave 34 (Low) +
+the aarch64 CI flake fix. Supersedes v0.12.3 and v0.12.4 as
+publish targets — both prior tags were pushed but had their
+publish jobs skipped because an aarch64 build+test job
+flaked on `tasks_test.exs:711`'s short
+`Process.sleep(150)` (HomeHistory.Tx debounce window). The
+fix in this release matches v0.11.3's earlier
+`channels_test.exs` 150 → 1000ms remediation.
+
+Cumulative threatmodel: **100 security findings closed across
+34 waves**. Three Medium-severity isolation findings
+(waves 31 + 32 + 33) and two Low defense-in-depth findings
+(waves 29 + 30 + 34) closed in the same day. Two findings
+remain accepted-by-design.
+
+### Security (wave 33)
+
+- **Medium** — `Reindex` Phase 1 (`audit_events`) now also
+  treats the on-disk dirname as canonical, mirroring wave 32.
+  Wave 32 closed the cross-company spoof for Phase 2 + 3 but
+  left Phase 1's `safe_company_slug` lenient because
+  `audit_events` legitimately stores cross-routed events. On
+  reflection, that argument applied only to the writer side
+  (`Company.AuditLog.entry_company/1` routes to the right dir
+  based on the JSONL field). At the read path the dirname has
+  already encoded the canonical company by the time we
+  iterate — accepting a JSONL `company:` override still let an
+  attacker who could write into one company's audit dir
+  pollute another company's audit feed in the dashboard.
+  New helper `audit_company_slug/1` makes the dirname
+  authoritative for Phase 1 with `_system` allowance for the
+  system-audit dir; `safe_company_slug/2` removed (no
+  remaining callers). 1 new spoof-rejection test.
+
 ### Security (wave 34)
 
 - **Low** — `Company.BudgetTracker.parse_alert_key/2` now
@@ -26,6 +64,17 @@ change between minor versions. Pin exact versions in downstream usage.
   frontmatter-only `agent:` mismatches are ignored. 1 new
   test confirming the rehydrate prefers the filename's
   agent over the frontmatter's.
+
+### Fixed
+
+- `test/glorbo/actions/tasks_test.exs` aarch64 CI flake on
+  HomeHistory.Tx debounce (`Assertion with =~ failed` at
+  line 714 + 738). Two `Process.sleep(150)` windows bumped
+  to 1000ms with a comment naming the debounce config and
+  the historical v0.11.3 channels_test precedent. The flake
+  blocked v0.12.3 + v0.12.4 publish jobs (publish depends on
+  aarch64 build+test success); v0.12.5 is the first patch
+  in this trio to actually land a signed GitHub Release.
 
 ## [0.12.4] — 2026-04-26
 
