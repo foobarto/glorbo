@@ -414,6 +414,21 @@ it's been in CHANGELOG for a cycle.
   16 view); 2481/2481 total. Phase 3+ continues with
   the `:tasks` kanban flagship (last remaining
   GEP-37 view).
+- [x] **GEP-37 Phase 3d-revisit — Agents+ budget
+  columns.** Shipped post-v0.15.0 (autonomous L4).
+  `Agents.Data.load_agents/3` now reads
+  `budget.monthly_usd` from agent frontmatter (normalised
+  to cents) + current spend from
+  `Glorbo.Budget.Ledger.fetch/3`. View renders
+  `· $used.dd/$cap.dd` after the network column when a
+  cap is declared; agents without a cap stay visually
+  distinct. Ledger calls wrapped in rescue → 0 so view
+  renders even without a Repo connection.
+  `:ledger_fetch_fn` opt for testability. 9 new tests
+  across Data + view (cap normalisation int/float/string,
+  ledger routing, year_month override, fail-open on Repo
+  raise, view with/without cap). Last-wake column +
+  pill-status are still future work.
 - [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
   Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
   Kanban-style stacked-vertical layout: each lane

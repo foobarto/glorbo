@@ -86,11 +86,13 @@ defmodule Glorbo.Shell.Views.Agents do
     |> Enum.map(fn {row, idx} ->
       prefix = if idx == cursor, do: "> ", else: "  "
       provider_model = format_provider_model(row.provider, row.model)
+      budget = format_budget(row)
       reports_to = if row.reports_to, do: " → #{row.reports_to}", else: ""
 
       text(
         "#{prefix}#{row.slug} [#{row.role}] " <>
           "#{provider_model} · #{row.network}" <>
+          budget <>
           reports_to
       )
     end)
@@ -98,4 +100,26 @@ defmodule Glorbo.Shell.Views.Agents do
 
   defp format_provider_model(provider, ""), do: provider
   defp format_provider_model(provider, model), do: "#{provider}/#{model}"
+
+  # Phase 3d-revisit: budget column. Shows nothing when no cap is
+  # declared (matches the LV's "tracked? = cap > 0" gate); shows
+  # `$used.dd/$cap.dd` otherwise. `budget_used_cents` defaults to
+  # 0 when state shape is missing the field — keeps the legacy
+  # Phase-3d row shape (without budget cents) renderable.
+  defp format_budget(row) do
+    cap = Map.get(row, :budget_cap_cents)
+    used = Map.get(row, :budget_used_cents, 0)
+
+    if is_integer(cap) and cap > 0 do
+      " · $#{format_cents(used)}/$#{format_cents(cap)}"
+    else
+      ""
+    end
+  end
+
+  defp format_cents(cents) when is_integer(cents) and cents >= 0 do
+    dollars = div(cents, 100)
+    pennies = rem(cents, 100)
+    "#{dollars}.#{String.pad_leading(Integer.to_string(pennies), 2, "0")}"
+  end
 end

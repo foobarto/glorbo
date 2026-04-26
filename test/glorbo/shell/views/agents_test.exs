@@ -181,6 +181,66 @@ defmodule Glorbo.Shell.Views.AgentsTest do
       assert Enum.any?(rendered, &String.contains?(&1, "  ceo"))
       assert Enum.any?(rendered, &String.contains?(&1, "> engineer"))
     end
+
+    test "Phase 3d-revisit: budget column rendered when cap is set" do
+      agents = [
+        %{
+          slug: "ceo",
+          name: "ceo",
+          role: "Strategist",
+          provider: "ollama",
+          model: "qwen3:8b",
+          network: "outgoing",
+          reports_to: nil,
+          budget_used_cents: 547,
+          budget_cap_cents: 2500
+        }
+      ]
+
+      state = Agents.init(agents: agents)
+      [line | _] = render_to_strings(Agents.view(state))
+      assert line =~ "ceo [Strategist] ollama/qwen3:8b · outgoing · $5.47/$25.00"
+    end
+
+    test "Phase 3d-revisit: cap=nil suppresses the budget column" do
+      agents = [
+        %{
+          slug: "minimal",
+          name: "minimal",
+          role: "—",
+          provider: "—",
+          model: "",
+          network: "loopback",
+          reports_to: nil,
+          budget_used_cents: 0,
+          budget_cap_cents: nil
+        }
+      ]
+
+      state = Agents.init(agents: agents)
+      [line | _] = render_to_strings(Agents.view(state))
+      assert line == "> minimal [—] — · loopback"
+    end
+
+    test "Phase 3d-revisit: cap=0 suppresses the budget column (untracked)" do
+      agents = [
+        %{
+          slug: "free",
+          name: "free",
+          role: "—",
+          provider: "—",
+          model: "",
+          network: "loopback",
+          reports_to: nil,
+          budget_used_cents: 100,
+          budget_cap_cents: 0
+        }
+      ]
+
+      state = Agents.init(agents: agents)
+      [line | _] = render_to_strings(Agents.view(state))
+      refute String.contains?(line, "$")
+    end
   end
 
   defp render_to_strings(%TermUI.Component.RenderNode{type: :text, content: content}),

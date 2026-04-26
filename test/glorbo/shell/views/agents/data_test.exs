@@ -140,4 +140,107 @@ defmodule Glorbo.Shell.Views.Agents.DataTest do
     seed_company(base, "acme")
     assert Data.load_agents(base, "acme") == []
   end
+
+  describe "Phase 3d-revisit — budget columns" do
+    test "no budget block in frontmatter → cap nil, used 0" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+
+      [row] =
+        Data.load_agents(base, "acme",
+          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
+        )
+
+      assert row.budget_cap_cents == nil
+      assert row.budget_used_cents == 0
+    end
+
+    test "cap declared as integer dollars converts to cents" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+
+      write!(
+        base,
+        "companies/acme/agents/ceo/AGENT.md",
+        "---\nkind: agent/v1\nname: ceo\nbudget:\n  monthly_usd: 25\n---\n"
+      )
+
+      [row] =
+        Data.load_agents(base, "acme",
+          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
+        )
+
+      assert row.budget_cap_cents == 2500
+    end
+
+    test "cap declared as float dollars rounds to cents" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+
+      write!(
+        base,
+        "companies/acme/agents/ceo/AGENT.md",
+        "---\nkind: agent/v1\nname: ceo\nbudget:\n  monthly_usd: 12.345\n---\n"
+      )
+
+      [row] =
+        Data.load_agents(base, "acme",
+          ledger_fetch_fn: fn _co, _ag, _ym -> nil end
+        )
+
+      # 12.345 → 1234.5 → round → 1235 cents
+      assert row.budget_cap_cents == 1235
+    end
+
+    test "ledger fetch result populates budget_used_cents" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+
+      write!(
+        base,
+        "companies/acme/agents/ceo/AGENT.md",
+        "---\nkind: agent/v1\nname: ceo\nbudget:\n  monthly_usd: 10\n---\n"
+      )
+
+      ledger_fetch_fn = fn _co, _ag, _ym -> %{cost_usd_cents: 547} end
+
+      [row] = Data.load_agents(base, "acme", ledger_fetch_fn: ledger_fetch_fn)
+      assert row.budget_used_cents == 547
+      assert row.budget_cap_cents == 1000
+    end
+
+    test "ledger fetch raising → fail open with used 0 (no Repo on shell boot)" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+
+      ledger_fetch_fn = fn _co, _ag, _ym -> raise "no Repo connection" end
+
+      [row] = Data.load_agents(base, "acme", ledger_fetch_fn: ledger_fetch_fn)
+      assert row.budget_used_cents == 0
+    end
+
+    test ":year_month opt is forwarded to the ledger lookup" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_agent(base, "acme", "ceo")
+
+      ref = make_ref()
+      Process.put({:ledger_args, ref}, nil)
+
+      ledger_fetch_fn = fn co, ag, ym ->
+        Process.put({:ledger_args, ref}, {co, ag, ym})
+        nil
+      end
+
+      _ =
+        Data.load_agents(base, "acme",
+          ledger_fetch_fn: ledger_fetch_fn,
+          year_month: "2024-01"
+        )
+
+      assert Process.get({:ledger_args, ref}) == {"acme", "ceo", "2024-01"}
+    end
+  end
 end

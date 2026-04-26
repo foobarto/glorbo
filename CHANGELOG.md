@@ -10,7 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added — GEP-37 Phase 3d-revisit (Agents+ budget columns)
+
+`Glorbo.Shell.Views.Agents.Data.load_agents/3` now reads
+each agent's monthly budget cap from frontmatter
+(`budget.monthly_usd`, normalised to cents — handles
+integer / float / string declarations) and current spend
+from `Glorbo.Budget.Ledger.fetch/3`. Tests inject a
+`:ledger_fetch_fn` stub to bypass the Repo; production
+reads through. The view renders a `· $used.dd/$cap.dd`
+column after `· network` when a cap is set; agents without
+a declared cap (or with `0`) keep the cleaner pre-revisit
+shape so untracked agents stay visually distinct.
+
+Failure mode: the ledger fetch is wrapped in a `rescue
+... -> 0` so the view still renders even when the Repo
+isn't connected (e.g. `glorbo shell` boots before DB on
+a recovery path). 9 new tests across the Data + view test
+files covering cap normalisation, ledger fetch routing,
+year_month override, and view rendering with/without
+cap.
 
 ## [0.15.0] — 2026-04-26
 
