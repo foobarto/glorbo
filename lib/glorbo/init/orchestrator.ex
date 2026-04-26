@@ -143,7 +143,10 @@ defmodule Glorbo.Init.Orchestrator do
       {:ok, m} ->
         %{
           status: :ok,
-          detail: "indexed=#{m.indexed} skipped=#{m.skipped} deleted=#{m.deleted}"
+          detail:
+            "indexed=#{m.indexed} skipped=#{m.skipped} deleted=#{m.deleted} " <>
+              "audit_events=#{m.audit_events} approvals=#{m.tasks_approval_state} " <>
+              "budgets=#{m.budgets}"
         }
 
       other ->

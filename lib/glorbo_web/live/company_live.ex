@@ -886,10 +886,14 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   def handle_event("reindex", _params, socket) do
-    {:ok, %{indexed: i, skipped: s, deleted: d}} =
-      Glorbo.Filesystem.Reindex.run(base: base_dir())
+    {:ok, m} = Glorbo.Filesystem.Reindex.run(base: base_dir())
 
-    {:noreply, put_flash(socket, :info, "reindex ok — indexed=#{i} skipped=#{s} deleted=#{d}")}
+    msg =
+      "reindex ok — indexed=#{m.indexed} skipped=#{m.skipped} deleted=#{m.deleted} " <>
+        "audit_events=#{m.audit_events} approvals=#{m.tasks_approval_state} " <>
+        "budgets=#{m.budgets}"
+
+    {:noreply, put_flash(socket, :info, msg)}
   end
 
   def handle_event("backup", _params, socket) do

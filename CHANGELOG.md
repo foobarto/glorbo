@@ -10,7 +10,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Changed
+
+- `glorbo reindex` CLI verb, `glorbo init` reindex step, and the
+  Director-side reindex flash on CompanyLive now surface all
+  three GEP-34 projection counts:
+  `audit_events=N approvals=N budgets=N` alongside the existing
+  `indexed/skipped/deleted` triplet. Pre-v0.12.1 callers had no
+  visibility that the new projections had rebuilt successfully.
+  `Reindex.run/1`'s no-companies-dir short-circuit also gained
+  the three new zero-value keys so callers don't `KeyError`
+  on an empty tree.
 
 ## [0.12.1] — 2026-04-26
 

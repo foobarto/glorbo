@@ -104,7 +104,15 @@ defmodule Glorbo.Filesystem.Reindex do
     if File.dir?(companies_dir) do
       do_run(companies_dir)
     else
-      {:ok, %{indexed: 0, skipped: 0, deleted: 0}}
+      {:ok,
+       %{
+         indexed: 0,
+         skipped: 0,
+         deleted: 0,
+         audit_events: 0,
+         tasks_approval_state: 0,
+         budgets: 0
+       }}
     end
   end
 

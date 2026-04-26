@@ -220,6 +220,9 @@ defmodule Glorbo.CLITest do
     assert code == 0
     assert output =~ "glorbo reindex"
     assert output =~ "indexed=0"
+    assert output =~ "audit_events=0"
+    assert output =~ "approvals=0"
+    assert output =~ "budgets=0"
   end
 
   test "dispatch([\"bogus\"]) returns :unknown with exit_code 1 and help text" do

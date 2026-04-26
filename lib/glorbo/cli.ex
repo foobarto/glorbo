@@ -165,8 +165,13 @@ defmodule Glorbo.CLI do
     repo_started? = ensure_repo_started()
 
     try do
-      {:ok, %{indexed: i, skipped: s, deleted: d}} = Glorbo.Filesystem.Reindex.run(base: base)
-      output = "glorbo reindex — indexed=#{i} skipped=#{s} deleted=#{d}\n"
+      {:ok, m} = Glorbo.Filesystem.Reindex.run(base: base)
+
+      output =
+        "glorbo reindex — indexed=#{m.indexed} skipped=#{m.skipped} deleted=#{m.deleted} " <>
+          "audit_events=#{m.audit_events} approvals=#{m.tasks_approval_state} " <>
+          "budgets=#{m.budgets}\n"
+
       {:reindex, 0, output}
     after
       if repo_started?, do: Glorbo.Repo.stop(5_000)
