@@ -12,6 +12,104 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.13.0] — 2026-04-26
+
+First launchable `glorbo shell`. GEP-37 Phases 1 + 2 + 2b + 2c
+land in this release; the alpha TUI is now real software a
+Director can drop into a terminal and use to triage approvals
+end-to-end. The LiveView dashboard remains the primary surface
+until Phase 3 widens the TUI to view parity.
+
+### Added — GEP-37 Phases 1 / 2 / 2b / 2c (alpha shell)
+
+- **Phase 1** — `Glorbo.Shell.{Supervisor, EventBus, Runtime}`.
+  Supervisor uses `:rest_for_one` per GEP-37 D6 (EventBus →
+  Runtime) — sibling of `CompanySupervisor` under
+  `Glorbo.Application` so a shell crash cannot kill agents,
+  router, audit, or any core service. EventBus subscribes to
+  per-company PubSub topics (`projects` / `channels` / `agents`
+  / `audit` / `approvals`) plus the cross-company
+  `glorbo:companies` topic and forwards each broadcast as
+  `{:shell_event, raw_msg}` casts to Runtime. Runtime
+  accumulates the most-recent 256 events and exposes
+  `state/1` for tests + future Phase-3 view callbacks.
+  `Glorbo.Application` gained `apply_surface/2` reading
+  `:glorbo, :surface` config (`:web` keeps the existing
+  Endpoint-only tree; `:tui` swaps in the shell subtree;
+  `:headless` runs neither).
+
+- **Phase 2** — `Glorbo.Shell.Views.Inbox` implements
+  `TermUI.Elm` for the approvals list with cursor navigation
+  (arrows + j/k, q to quit, empty-state placeholder).
+  `Glorbo.Shell.Views.Inbox.Data` is the disk-read layer
+  loading `agents/*/state/awaiting-approval-*.md` sentinels;
+  sentinels without matching task files surface with
+  `task_path: nil` so the Director can clear dangling state
+  via Phase 2b.
+
+- **Phase 2b** — approve (`a`) / deny (`d`) actions wired to
+  the wave-31 `Glorbo.Actions.set_approval/4` API. Both paths
+  are dependency-injected via `:approve_fn` + `:loader_fn`
+  for test isolation. After success, the approvals list
+  refreshes and the cursor reclamps within new bounds.
+  Defensive arms: empty list, sentinel-without-task, missing
+  company/base, and `set_approval`-returns-error all surface
+  via `last_action: {:error, decision, reason}` without
+  crashing.
+
+- **Phase 2c** — deny-reason prompt UX (modal `:deny_prompt`
+  mode with buffered keystrokes; Enter submits with
+  `denial_reason:`, Esc cancels) + new `Glorbo.Shell.Launcher`
+  composing `TermUI.Runtime.run/1` opts from CLI argv +
+  `~/.glorbo`. `glorbo shell <company>` is the first
+  end-to-end-working alpha shell launch path. Validates the
+  company is a slug + the dir exists; rejects bad input with
+  operator-friendly exit-2 messages. Production callers use
+  the default `runner_fn: &TermUI.Runtime.run/1`; the test
+  suite passes a recording double so it never boots term_ui.
+
+  **Production launch path is now end-to-end working.** In a
+  real TTY, `glorbo shell acme` invokes
+  `TermUI.Runtime.run/1` for the first time and renders the
+  `term_ui`-driven Inbox view. The Director can navigate
+  approvals (arrows/jk), approve (`a`), deny with reason
+  (`d` → buffer → Enter), and quit (`q`).
+
+### Changed — Housecleaning refactor
+
+Per the code-reviewer agent's punch list (six items closed in
+one bundled commit, +87/-116 net deletion, no behavior change):
+
+- Extract `walk_company_audit_dirs/3` helper in
+  `Reindex` — the three GEP-34 rebuild phases now share the
+  list-companies / filter-dirs / `safe_audit_dir/1` walk via
+  a single 3-arity helper.
+- Extract `decode_capped_line/3` helper for the per-line
+  blank-line / 64-KiB cap / Jason.decode logic that the
+  three audit-replay phases used to duplicate.
+- Collapse byte-identical `infer_company_name/1` +
+  `infer_agent_name/1` → `parent_dir_basename/1`.
+- `BudgetTracker.parse_alert_key/2` now uses
+  `Frontmatter.parse/1` (already aliased) for the `month:`
+  field instead of a homemade regex; the `extract_yaml_field/2`
+  helper is removed.
+- `reindex_test.exs` — promote two duplicate
+  `seed_acme*/1` helpers into a top-level
+  `seed_company/2` with a default slug arg.
+
+### Fixed — pre-emptive flake remediation
+
+- Three more `Process.sleep(150)` bumps (→ 1000ms) in
+  `agents_test.exs` + `companies_test.exs` matching the
+  v0.11.3 `channels_test.exs` + v0.12.5 `tasks_test.exs`
+  HomeHistory.Tx debounce-flake pattern. Pre-emptive sweep
+  to harden CI before the flakes bite a future release tag.
+
+### Test count
+
+2348 (up from 2265 at v0.11.3) — 83 net new tests across the
+GEP-37 phases, housecleaning, and CI hardening.
+
 ## [0.12.5] — 2026-04-26
 
 Same-day patch on top of v0.12.4. Bundles the aarch64 CI
