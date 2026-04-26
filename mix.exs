@@ -4,7 +4,7 @@ defmodule Glorbo.MixProject do
   def project do
     [
       app: :glorbo,
-      version: "0.12.2",
+      version: "0.12.3",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

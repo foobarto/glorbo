@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.12.3] — 2026-04-26
+
+Same-day security patch on top of v0.12.2. Ships the wave-32
+Medium-severity follow-up that closed a cross-company spoofing
+path left open by waves 30 + 31. Per
+`docs/project-profile.md` P0 rule (no Medium security findings
+sliding past a version cut), wave 32 demanded its own patch
+release the moment v0.12.2 landed.
+
+Cumulative threatmodel: **98 security findings closed across
+32 waves**. Two Medium-severity isolation findings (waves
+31 + 32) closed in the same day, both surfaced by self-
+review of the GEP-34 reindex code shipped in v0.12.0. Two
+findings remain accepted-by-design.
+
 ### Security (wave 32)
 
 - **Medium** — `Reindex` Phase 2 (approvals) and Phase 3
