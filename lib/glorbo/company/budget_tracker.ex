@@ -171,8 +171,8 @@ defmodule Glorbo.Company.BudgetTracker do
   defp parse_alert_key(filename, path) do
     with agent when is_binary(agent) <- agent_from_alert_filename(filename),
          {:ok, contents} <- File.read(path),
-         [_, frontmatter, _] <- String.split(contents, "---", parts: 3),
-         month when is_binary(month) <- extract_yaml_field(frontmatter, "month") do
+         {:ok, meta, _body} <- Frontmatter.parse(contents),
+         month when is_binary(month) <- meta["month"] do
       {:ok, {agent, month}}
     else
       _ -> :error
@@ -182,13 +182,6 @@ defmodule Glorbo.Company.BudgetTracker do
   defp agent_from_alert_filename(filename) do
     case String.split(filename, "-budget.md", parts: 2) do
       [agent, ""] when agent != "" -> agent
-      _ -> nil
-    end
-  end
-
-  defp extract_yaml_field(frontmatter, key) do
-    case Regex.run(~r/^#{key}:\s*"?([^"\n]+)"?\s*$/m, frontmatter) do
-      [_full, value] -> String.trim(value)
       _ -> nil
     end
   end

@@ -13,6 +13,13 @@ defmodule Glorbo.Filesystem.ReindexTest do
     full
   end
 
+  # Helper: write a minimal `companies/acme/company.md` so reindex's
+  # group-by-company filter accepts the audit JSONL siblings the test
+  # then writes. Returns the file path.
+  defp seed_company(base, slug \\ "acme") do
+    write!(base, "companies/#{slug}/company.md", "---\nname: #{slug}\n---\n")
+  end
+
   describe "run/1 (Tests 5–11)" do
     test "Test 5: empty companies tree returns {:ok, %{indexed: 0, skipped: 0, deleted: 0}}" do
       base = TmpGlorboHome.setup()
@@ -491,9 +498,7 @@ defmodule Glorbo.Filesystem.ReindexTest do
   describe "tasks_approval_state rebuild from JSONL (GEP-34 Phase 2)" do
     alias Glorbo.TasksApprovalState
 
-    defp seed_acme(base) do
-      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
-    end
+    defp seed_acme(base), do: seed_company(base, "acme")
 
     test "awaiting-only request lands as status: awaiting" do
       base = TmpGlorboHome.setup()
@@ -678,9 +683,7 @@ defmodule Glorbo.Filesystem.ReindexTest do
   describe "budgets rebuild from JSONL (GEP-34 Phase 3)" do
     alias Glorbo.Budget
 
-    defp seed_acme_budget(base) do
-      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
-    end
+    defp seed_acme_budget(base), do: seed_company(base, "acme")
 
     test "single budget.usage line lands as one row" do
       base = TmpGlorboHome.setup()

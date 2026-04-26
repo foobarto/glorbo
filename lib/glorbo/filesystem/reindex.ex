@@ -318,7 +318,7 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp upsert_company(path, meta) do
-    name = meta["name"] || infer_company_name(path)
+    name = meta["name"] || parent_dir_basename(path)
     mission = meta["mission"]
 
     Repo.insert!(
@@ -329,7 +329,7 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp upsert_agent(path, meta) do
-    name = meta["name"] || infer_agent_name(path)
+    name = meta["name"] || parent_dir_basename(path)
     role = meta["role"]
     provider = meta["provider"]
     model = meta["model"]
@@ -365,13 +365,10 @@ defmodule Glorbo.Filesystem.Reindex do
   defp maybe_id(nil), do: nil
   defp maybe_id(%{id: id}), do: id
 
-  # Given .../companies/<co>/company.md → "<co>"
-  defp infer_company_name(path) do
-    path |> Path.split() |> Enum.reverse() |> Enum.at(1)
-  end
-
-  # Given .../companies/<co>/agents/<name>/agent.md → "<name>"
-  defp infer_agent_name(path) do
+  # Returns the parent directory's basename — used for both
+  # `.../companies/<co>/company.md → "<co>"` and
+  # `.../companies/<co>/agents/<name>/AGENT.md → "<name>"`.
+  defp parent_dir_basename(path) do
     path |> Path.split() |> Enum.reverse() |> Enum.at(1)
   end
 
@@ -485,6 +482,60 @@ defmodule Glorbo.Filesystem.Reindex do
     if is_binary(value) and ActionsSupport.valid_slug?(value), do: value
   end
 
+  # Shared GEP-34 walker: list `companies/`, filter to dirs, fold each
+  # company's `audit/` dir (after the wave-29 lstat guard) through
+  # `per_co_fun.(company_slug, audit_dir, acc)`. Phases 1/2/3 each
+  # provide their own `per_co_fun` and `init` accumulator shape (int
+  # for Phase 1's row count, map for Phase 2's `{co, task_path}` →
+  # state, map for Phase 3's `{co, agent, year_month}` → totals).
+  defp walk_company_audit_dirs(companies_dir, init, per_co_fun)
+       when is_function(per_co_fun, 3) do
+    case File.ls(companies_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
+        |> Enum.reduce(init, fn co, acc ->
+          case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
+            nil -> acc
+            audit_dir -> per_co_fun.(co, audit_dir, acc)
+          end
+        end)
+
+      _ ->
+        init
+    end
+  end
+
+  # Shared per-line cap+decode used by Phases 1/2/3. Returns one of:
+  #
+  #   * `{:ok, decoded_map}` — well-formed JSON object under the cap
+  #   * `:empty`             — blank line (after trim)
+  #   * `:oversize`          — > 64 KiB; warning logged, line dropped
+  #   * `:bad_json`          — Jason.decode failed or the top level
+  #                            wasn't a JSON object
+  #
+  # `kind` is interpolated into the warning string ("audit",
+  # "approval", "budget") so reading the log line still tells you
+  # which phase saw the bad data.
+  defp decode_capped_line(line, path, kind) do
+    line = String.trim_trailing(line, "\n")
+
+    cond do
+      line == "" ->
+        :empty
+
+      byte_size(line) > @max_audit_line_bytes ->
+        Logger.warning("#{kind} reindex skipped oversized line in #{path} (> 64KiB)")
+        :oversize
+
+      true ->
+        case Jason.decode(line) do
+          {:ok, %{} = entry} -> {:ok, entry}
+          _ -> :bad_json
+        end
+    end
+  end
+
   # Wipe the table once, then stream every JSONL file under
   # `companies/<co>/audit/` and `<base>/audit/_system/` (system events) back
   # into the mirror. Returns the count of imported rows. The system path
@@ -495,21 +546,9 @@ defmodule Glorbo.Filesystem.Reindex do
     Repo.delete_all(AuditEvent)
 
     company_count =
-      case File.ls(companies_dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
-          |> Enum.flat_map(fn co ->
-            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
-              nil -> []
-              audit_dir -> [{co, audit_dir}]
-            end
-          end)
-          |> Enum.reduce(0, fn {co, audit_dir}, acc -> acc + import_audit_dir(co, audit_dir) end)
-
-        _ ->
-          0
-      end
+      walk_company_audit_dirs(companies_dir, 0, fn co, audit_dir, acc ->
+        acc + import_audit_dir(co, audit_dir)
+      end)
 
     system_count =
       case safe_audit_dir(Path.join([base, "audit", "_system"])) do
@@ -567,21 +606,9 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp decode_audit_line(line, company, path) do
-    line = String.trim_trailing(line, "\n")
-
-    cond do
-      line == "" ->
-        []
-
-      byte_size(line) > @max_audit_line_bytes ->
-        Logger.warning("audit reindex skipped oversized line in #{path} (> 64KiB)")
-        []
-
-      true ->
-        case Jason.decode(line) do
-          {:ok, %{} = entry} -> build_audit_row(entry, company)
-          _ -> []
-        end
+    case decode_capped_line(line, path, "audit") do
+      {:ok, entry} -> build_audit_row(entry, company)
+      _ -> []
     end
   end
 
@@ -636,21 +663,7 @@ defmodule Glorbo.Filesystem.Reindex do
   defp rebuild_tasks_approval_state(companies_dir) do
     Repo.delete_all(TasksApprovalState)
 
-    states =
-      case File.ls(companies_dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
-          |> Enum.reduce(%{}, fn co, acc ->
-            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
-              nil -> acc
-              audit_dir -> fold_approval_dir(co, audit_dir, acc)
-            end
-          end)
-
-        _ ->
-          %{}
-      end
+    states = walk_company_audit_dirs(companies_dir, %{}, &fold_approval_dir/3)
 
     insert_approval_rows(states)
   end
@@ -686,24 +699,12 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp fold_approval_line(line, company, path, acc) do
-    line = String.trim_trailing(line, "\n")
+    case decode_capped_line(line, path, "approval") do
+      {:ok, %{"action" => action} = entry} when action in @approval_actions ->
+        apply_approval_event(action, entry, company, acc)
 
-    cond do
-      line == "" ->
+      _ ->
         acc
-
-      byte_size(line) > @max_audit_line_bytes ->
-        Logger.warning("approval reindex skipped oversized line in #{path} (> 64KiB)")
-        acc
-
-      true ->
-        case Jason.decode(line) do
-          {:ok, %{"action" => action} = entry} when action in @approval_actions ->
-            apply_approval_event(action, entry, company, acc)
-
-          _ ->
-            acc
-        end
     end
   end
 
@@ -812,21 +813,7 @@ defmodule Glorbo.Filesystem.Reindex do
   defp rebuild_budgets(companies_dir) do
     Repo.delete_all(Budget)
 
-    sums =
-      case File.ls(companies_dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
-          |> Enum.reduce(%{}, fn co, acc ->
-            case safe_audit_dir(Path.join([companies_dir, co, "audit"])) do
-              nil -> acc
-              audit_dir -> sum_budget_dir(co, audit_dir, acc)
-            end
-          end)
-
-        _ ->
-          %{}
-      end
+    sums = walk_company_audit_dirs(companies_dir, %{}, &sum_budget_dir/3)
 
     insert_budget_rows(sums)
   end
@@ -859,24 +846,12 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp sum_budget_line(line, company, path, acc) do
-    line = String.trim_trailing(line, "\n")
+    case decode_capped_line(line, path, "budget") do
+      {:ok, %{"action" => "budget.usage"} = entry} ->
+        apply_budget_usage(entry, company, acc)
 
-    cond do
-      line == "" ->
+      _ ->
         acc
-
-      byte_size(line) > @max_audit_line_bytes ->
-        Logger.warning("budget reindex skipped oversized line in #{path} (> 64KiB)")
-        acc
-
-      true ->
-        case Jason.decode(line) do
-          {:ok, %{"action" => "budget.usage"} = entry} ->
-            apply_budget_usage(entry, company, acc)
-
-          _ ->
-            acc
-        end
     end
   end
 
