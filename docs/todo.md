@@ -308,6 +308,17 @@ it's been in CHANGELOG for a cycle.
   2323/2323 total. Phase 2b adds approve/deny/archive
   actions on top of the wave-31 Gate API; Phase 3 adds the
   remaining views.
+- [x] **GEP-37 `glorbo shell` Phase 2b — approve/deny actions.**
+  Shipped post-v0.12.5 (autonomous L4). Wires the Inbox view
+  to `Glorbo.Actions.set_approval/4` (the wave-31 Gate API):
+  `a` approves, `d` denies. Both paths are dependency-
+  injected via `:approve_fn` + `:loader_fn` for testability.
+  Defensive arms cover empty list, sentinel-without-task,
+  missing company/base, and `set_approval`-returns-error.
+  After success, the approvals list refreshes and cursor
+  reclamps. 8 new tests. 2331/2331 total. Phase 2c brings
+  the deny-reason prompt UX + term_ui.runtime.run wire-up
+  so the Director can finally launch the shell.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

@@ -30,7 +30,12 @@ defmodule Glorbo.Shell.Views.InboxTest do
     end
 
     test "with no opts and no base/company, returns empty state" do
-      assert Inbox.init([]) == %{approvals: [], cursor: 0}
+      state = Inbox.init([])
+      assert state.approvals == []
+      assert state.cursor == 0
+      assert state.company == nil
+      assert state.base == nil
+      assert state.last_action == nil
     end
   end
 
@@ -52,8 +57,118 @@ defmodule Glorbo.Shell.Views.InboxTest do
       assert Inbox.event_to_msg(%Key{key: :char, char: "q"}, %{}) == {:msg, :quit}
     end
 
+    test "a → :approve, d → :deny (Phase 2b)" do
+      assert Inbox.event_to_msg(%Key{key: :char, char: "a"}, %{}) == {:msg, :approve}
+      assert Inbox.event_to_msg(%Key{key: :char, char: "d"}, %{}) == {:msg, :deny}
+    end
+
     test "unmapped key → :ignore" do
       assert Inbox.event_to_msg(%Key{key: :char, char: "x"}, %{}) == :ignore
+    end
+  end
+
+  describe "Phase 2b — :approve / :deny actions" do
+    defp init_with_actions(approvals, opts \\ []) do
+      action_calls = make_ref()
+      Process.put({:action_calls, action_calls}, [])
+
+      approve_fn = fn co, tp, decision, kw ->
+        prior = Process.get({:action_calls, action_calls})
+        Process.put({:action_calls, action_calls}, prior ++ [{co, tp, decision, kw}])
+        Keyword.get(opts, :approve_result, :ok)
+      end
+
+      loader_fn = fn _base, _company -> Keyword.get(opts, :refreshed, []) end
+
+      state =
+        Inbox.init(
+          approvals: approvals,
+          company: "acme",
+          base: "/tmp/glorbo_test_base",
+          approve_fn: approve_fn,
+          loader_fn: loader_fn
+        )
+
+      {state, fn -> Process.get({:action_calls, action_calls}) end}
+    end
+
+    test ":approve calls set_approval(:approved) and refreshes the list" do
+      {state, calls} = init_with_actions(sample_approvals(), refreshed: [])
+
+      {state, []} = Inbox.update(:approve, state)
+
+      assert calls.() == [
+               {"acme", "projects/demo/tasks/task-a.md", :approved,
+                [base: "/tmp/glorbo_test_base"]}
+             ]
+
+      assert state.approvals == []
+      assert state.last_action == {:ok, :approved, nil}
+    end
+
+    test ":deny calls set_approval(:denied) and refreshes the list" do
+      {state, calls} = init_with_actions(sample_approvals(), refreshed: [])
+
+      {state, []} = Inbox.update(:deny, state)
+
+      assert calls.() == [
+               {"acme", "projects/demo/tasks/task-a.md", :denied, [base: "/tmp/glorbo_test_base"]}
+             ]
+
+      assert state.last_action == {:ok, :denied, nil}
+    end
+
+    test ":approve at cursor 1 targets the second row" do
+      {state, calls} = init_with_actions(sample_approvals())
+      state = %{state | cursor: 1}
+
+      {_state, []} = Inbox.update(:approve, state)
+
+      assert [{_, "projects/demo/tasks/task-b.md", :approved, _}] = calls.()
+    end
+
+    test ":approve on a sentinel-without-task row records :no_actionable_row" do
+      {state, calls} = init_with_actions(sample_approvals())
+      # Cursor at index 2 — task-c has task_path: nil
+      state = %{state | cursor: 2}
+
+      {state, []} = Inbox.update(:approve, state)
+
+      assert calls.() == []
+      assert state.last_action == {:error, :approved, :no_actionable_row}
+    end
+
+    test ":approve when set_approval returns {:error, reason}" do
+      {state, _calls} = init_with_actions(sample_approvals(), approve_result: {:error, :enoent})
+
+      {state, []} = Inbox.update(:approve, state)
+
+      assert state.last_action == {:error, :approved, :enoent}
+      # Approvals list is NOT refreshed on error.
+      assert state.approvals == sample_approvals()
+    end
+
+    test ":approve on empty approvals list is a no-op" do
+      {state, calls} = init_with_actions([])
+
+      {state, []} = Inbox.update(:approve, state)
+
+      assert calls.() == []
+      assert state.last_action == {:error, :approved, :no_actionable_row}
+    end
+
+    test ":approve refreshes cursor to clamp within new bounds" do
+      original = sample_approvals()
+      shrunken = Enum.take(original, 1)
+      {state, _calls} = init_with_actions(original, refreshed: shrunken)
+      # Cursor at index 1 (task-b — has valid task_path); after refresh
+      # the new list has only 1 row so the cursor must clamp to 0.
+      state = %{state | cursor: 1}
+
+      {state, []} = Inbox.update(:approve, state)
+
+      assert state.approvals == shrunken
+      assert state.cursor == 0
     end
   end
 

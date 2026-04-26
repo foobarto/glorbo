@@ -134,6 +134,56 @@ history:
       converge into a launchable shell. Today the verb still
       prints the placeholder banner; the Inbox view is unit-
       tested but not yet visible. 2323/2323 tests green.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 2b landed: approve/deny actions on the wave-31
+      `Glorbo.Actions.set_approval/4` API. New keybindings:
+
+        * `a` → approve the cursor row (calls
+          `set_approval(co, task_path, :approved, base: base)`).
+        * `d` → deny the cursor row (calls
+          `set_approval(co, task_path, :denied, base: base)`).
+          Phase 2b submits with no `denial_reason:`; the
+          deny-reason prompt UX lands in Phase 2c.
+
+      Architecture: `Glorbo.Shell.Views.Inbox.update/2` now
+      handles `:approve` / `:deny` synchronously (term_ui's
+      `Command` set is small — `:timer`, `:file_read`,
+      `:send_after`, etc. — and doesn't cover arbitrary
+      Elixir-function calls, so doing the side effect in
+      `update/2` is the practical path for v1; the function
+      is dependency-injected via `:approve_fn` for tests).
+      After a successful action, the approvals list is
+      refreshed via `:loader_fn` (defaults to
+      `Inbox.Data.load_approvals/2`), and the cursor is
+      reclamped within the new bounds. State carries a
+      `last_action: {:ok|:error, decision, term()}` slot for
+      post-action feedback rendering.
+
+      Defensive arms in `apply_decision/2`:
+        * Empty approvals list → `:no_actionable_row`.
+        * Cursor row with `task_path: nil` (sentinel without
+          a matching task) → `:no_actionable_row`. Phase 2c
+          adds a separate "clear dangling sentinel" action
+          for those.
+        * Missing company / base in state → `:no_actionable_row`.
+        * `set_approval` returns `{:error, reason}` →
+          `last_action` records the reason; the approvals
+          list is NOT refreshed on error.
+
+      8 new tests: approve happy path; deny happy path;
+      cursor-1 targets second row; sentinel-without-task
+      records error; set_approval error path; empty list
+      no-op; cursor reclamping after refresh; the new `a`/`d`
+      event_to_msg arms. 2331/2331 total tests green.
+
+      Still not wired: term_ui's `Runtime.run/1`. The Inbox
+      view + actions are fully unit-tested but the verb
+      still prints the Phase 0 placeholder banner. Phase 2c
+      converges Phase 1's supervisor + Phase 2 view + Phase
+      2b actions into a launchable shell, plus the
+      deny-reason prompt UX.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
