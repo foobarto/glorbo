@@ -608,9 +608,22 @@ manual sweep instead). Three defense-in-depth hardenings:
     ../../audit` symlink and have Director-side scaffolds land
     elsewhere. Now refuses symlinked ancestors first.
 
-Cumulative tally: **93 security findings closed across 28
+**Wave 28 follow-up** 2026-04-26 ~02:50 (continuing the manual
+sweep after the codex scans were abandoned):
+
+  * **Low** — `Glorbo.Backup.write_archive/2` `tmp = output <>
+    ".tmp." <> Integer.to_string(unique_integer)`. Backup
+    tarballs include `config.md` (carries
+    `secret_key_base`); the predictable temp name in a user-
+    chosen output dir (e.g. `/tmp` on a shared box) was
+    attacker-plantable as a symlink before the chmod 0o600
+    + rename gate locked the file private. `:erl_tar.create/3`
+    doesn't expose O_EXCL, so the 8-byte random suffix
+    is the load-bearing defense.
+
+Cumulative tally: **94 security findings closed across 28
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
-+ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 3 wave 28.
++ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 

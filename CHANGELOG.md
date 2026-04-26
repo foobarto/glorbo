@@ -35,6 +35,13 @@ Three defense-in-depth hardenings caught by manual sweep
   GEP-22 the skills dir is RW for agents holding
   `skills:install`, so an agent compromise could redirect
   Director-side scaffolds.
+- **Low** — `Backup.write_archive/2` switched from
+  `unique_integer`-suffixed tempfile to
+  `crypto.strong_rand_bytes(8)` suffix. Backup tarballs
+  include `config.md` (carries `secret_key_base`), so
+  predictable temp names in a user-chosen output directory
+  (e.g. `/tmp` on a shared box) were attacker-plantable as
+  symlinks before chmod 0600 sealed the file.
 
 ### Fixed
 
