@@ -94,6 +94,46 @@ history:
       restarts only Runtime; EventBus crash restarts both),
       and a Runtime-not-alive drop path in EventBus. 2300/2300
       total tests green; mix credo --strict zero findings.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 2 landed (read-only): `Glorbo.Shell.Views.Inbox`
+      implements `TermUI.Elm` for the approvals list, with
+      `Glorbo.Shell.Views.Inbox.Data` as the disk-read layer
+      mirroring `InboxLive.load_sentinels/2` +
+      `sentinel_row/4`. Phase 2 surface:
+
+        * Read-only list of `awaiting-approval-*` sentinels
+          per company (sentinel filename → row map).
+        * Cursor navigation: arrow keys + `j`/`k`.
+        * `q` for quit.
+        * Empty-state placeholder when no approvals pending.
+        * Sentinel-without-matching-task rows are surfaced
+          with `task_path: nil` so the Director can clear
+          dangling sentinels (Phase 2b adds the action).
+
+      23 new tests across `views/inbox/data_test.exs` (6) and
+      `views/inbox_test.exs` (17). Disk read tested with
+      a fixture filesystem; view tested with injected
+      `approvals: [...]` opts so no FS dependency. View tests
+      flatten the `TermUI.Component.RenderNode` tree into
+      content strings to assert on visible text.
+
+      Phase 2 ships READ-ONLY — the Director can navigate but
+      not act on approvals from the TUI yet. Phase 2b lands
+      the action handlers (approve / deny / archive) on top
+      of the wave-31 `(company_slug, task_path)` Gate API;
+      Phase 3+ adds the remaining views (overview, kanban,
+      audit, channels, agents, costs, providers, health,
+      memory, command palette).
+
+      Not yet wired: term_ui's `Runtime.run/1` loop. Phase 1's
+      `Glorbo.Shell.Runtime` is still an event-accumulator
+      stub; the term_ui app-module integration that drives
+      the actual TTY render loop lands when Phase 2 + Phase 2b
+      converge into a launchable shell. Today the verb still
+      prints the placeholder banner; the Inbox view is unit-
+      tested but not yet visible. 2323/2323 tests green.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

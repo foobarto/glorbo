@@ -296,6 +296,18 @@ it's been in CHANGELOG for a cycle.
   256 events; Phase 2 turns it into the term_ui app module.
   12 new tests covering init, accumulation, cap, forwarding,
   restart semantics, drop-on-runtime-down. 2300/2300 total.
+- [x] **GEP-37 `glorbo shell` Phase 2 — Inbox view (read-only).**
+  Shipped post-v0.12.5 (autonomous L4).
+  `Glorbo.Shell.Views.Inbox` implements `TermUI.Elm` with
+  cursor-navigated approvals list (arrows + j/k, q to quit,
+  empty-state placeholder). `Glorbo.Shell.Views.Inbox.Data`
+  is the disk-read layer mirroring `InboxLive.load_sentinels/2`
+  + `sentinel_row/4`; sentinels without matching task files
+  surface with `task_path: nil` so the Director can clear
+  them via Phase 2b actions. 23 new tests (6 Data + 17 view).
+  2323/2323 total. Phase 2b adds approve/deny/archive
+  actions on top of the wave-31 Gate API; Phase 3 adds the
+  remaining views.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with
