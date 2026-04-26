@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.12.1] — 2026-04-26
+
+Same-day security/quality patch on top of v0.12.0. Two
+defense-in-depth lows closed via post-ship self-review of the
+GEP-34 reindex code, plus an unrelated inotify-race test
+stabilization caught while reviewing the wave-30 work.
+Cumulative: **96 security findings closed across 30 waves**.
+
 ### Security (waves 29 + 30)
 
 - **Low (wave 29)** — `Reindex` audit-dir walks now lstat before
