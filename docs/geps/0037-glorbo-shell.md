@@ -334,6 +334,41 @@ history:
       same pattern (Data fetcher + Elm view module +
       register in `view_module/1` + add to
       `@views_implemented`).
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3c landed: Overview view (third real view).
+      `Glorbo.Shell.Views.Overview` is the cross-company
+      workspace list — one row per `companies/<slug>/` dir,
+      showing `slug (name) — N agents, M alerts`. Active
+      company highlighted with a `*` glyph; cursor lands on
+      the active row on first paint. `r` re-runs the loader
+      for live reload; `q` quits.
+
+      `Glorbo.Shell.Views.Overview.Data` is the FS-only
+      read layer: slug from dirname, name from
+      `company.md` frontmatter (falls back to slug), agent
+      count from `agents/*/[Aa][Gg][Ee][Nn][Tt].md`
+      wildcard, alert count from `alerts/*-budget.md`. No
+      Repo dependency — Phase 3d adds the spend / in-progress
+      / goals-progress columns the LV Overview shows.
+
+      AppRoot updates: `view :: :approvals | :health |
+      :overview`; `@views_implemented` adds `:overview`;
+      `view_module/1` arm for `:overview`.
+
+      26 new tests across `views/overview/data_test.exs` (9)
+      + `views/overview_test.exs` (16) + AppRoot's swap-
+      target test (1, swapped from `:overview` (now real) to
+      `:tasks` (still Phase 3+)). 2408/2408 total tests
+      green.
+
+      End-to-end visible in a real TTY:
+
+        $ glorbo shell acme         # Inbox
+        C-c h                       # → Health
+        C-c o                       # → Overview (acme highlighted)
+        C-c p                       # → back to Inbox
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

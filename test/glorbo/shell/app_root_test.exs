@@ -125,15 +125,25 @@ defmodule Glorbo.Shell.AppRootTest do
       assert Map.has_key?(state.sub_state, :checks)
     end
 
-    test "{:chord_select, <not-yet-implemented>} surfaces a hint" do
-      # Phase 3b implements :approvals + :health. Phase 3+ adds
-      # :overview, :tasks, :agents, :chat, :audit; until each
-      # ships the chord routes to the not-implemented branch.
-      state = %{init_state() | chord: :c_c}
+    test "{:chord_select, \"o\"} routes to :overview (Phase 3c)" do
+      state = AppRoot.init(approvals: [], companies: [])
+      state = %{state | chord: :c_c}
+
       {state, []} = AppRoot.update({:chord_select, "o"}, state)
       assert state.chord == :idle
+      assert state.view == :overview
+      assert state.chord_hint == nil
+    end
+
+    test "{:chord_select, <not-yet-implemented>} surfaces a hint" do
+      # Phase 3c implements :approvals + :health + :overview.
+      # Phase 3+ adds :tasks, :agents, :chat, :audit; until each
+      # ships the chord routes to the not-implemented branch.
+      state = %{init_state() | chord: :c_c}
+      {state, []} = AppRoot.update({:chord_select, "t"}, state)
+      assert state.chord == :idle
       assert state.chord_hint =~ "not yet implemented"
-      assert state.chord_hint =~ "overview"
+      assert state.chord_hint =~ "tasks"
       # The :approvals view stays selected — failed switch is a no-op.
       assert state.view == :approvals
     end

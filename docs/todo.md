@@ -366,6 +366,18 @@ it's been in CHANGELOG for a cycle.
   Health, `C-c p` swaps back. Phase 3+ adds remaining
   views one at a time (overview, tasks, agents, chat,
   audit) following the same pattern.
+- [x] **GEP-37 `glorbo shell` Phase 3c — Overview view.**
+  Shipped post-v0.13.0 (autonomous L4). Cross-company
+  workspace list (one row per `companies/<slug>/`):
+  `slug (name) — N agents, M alerts`. Active company
+  highlighted with `*`; cursor lands on it on first paint.
+  `r` refreshes; `q` quits. FS-only read (no Repo
+  dependency); spend/in-progress/goals columns deferred
+  to Phase 3d. AppRoot registers `:overview` in
+  `@views_implemented`; `C-c o` is now a real swap.
+  26 new tests (9 Data + 16 view + 1 AppRoot swap-target
+  fixture refresh). 2408/2408 total. Phase 3+ continues
+  with tasks/agents/chat/audit one at a time.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with
