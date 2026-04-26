@@ -411,8 +411,10 @@ defmodule Glorbo.Filesystem.Reindex do
   @max_audit_line_bytes 64 * 1024
 
   # Wipe the table once, then stream every JSONL file under
-  # `companies/<co>/audit/` and `<base>/audit/` (system events) back into
-  # the mirror. Returns the count of imported rows.
+  # `companies/<co>/audit/` and `<base>/audit/_system/` (system events) back
+  # into the mirror. Returns the count of imported rows. The system path
+  # mirrors `Glorbo.Company.AuditLog.jsonl_path/3` — system events live in a
+  # `_system/` subdirectory, NOT directly under `<base>/audit/`.
   defp rebuild_audit_events(companies_dir) do
     base = Path.dirname(companies_dir)
     Repo.delete_all(AuditEvent)
@@ -432,7 +434,7 @@ defmodule Glorbo.Filesystem.Reindex do
           0
       end
 
-    system_audit_dir = Path.join(base, "audit")
+    system_audit_dir = Path.join([base, "audit", "_system"])
 
     system_count =
       if File.dir?(system_audit_dir),

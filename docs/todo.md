@@ -88,16 +88,15 @@ it's been in CHANGELOG for a cycle.
   filtering, missing-token defaulting. GEP-34 D6+D7 captured.
   **GEP-34 → Implemented.** Every gap-table identified in the
   GEP is now derived from the on-disk source.
-- [ ] **Phase 1 `_system` audit reindex path mismatch.** The
-  writer puts orchestrator events at
-  `<base>/audit/_system/<YYYY-MM>.jsonl` (subdirectory) but
-  Phase 1's `rebuild_audit_events/1` lists `*.jsonl` files
-  directly under `<base>/audit/`. The reindex_test passes because
-  tests write to the flat path; production layout is the
-  subdirectory. Either reindex should descend into `_system/` or
-  the writer should flatten — defer pending decision on which
-  path is canonical (probably the subdirectory writer is right;
-  reindex needs to match).
+- [x] **Phase 1 `_system` audit reindex path mismatch fixed
+  2026-04-26.** Aligned reindex with the writer's canonical
+  layout: `rebuild_audit_events/1` now reads
+  `<base>/audit/_system/*.jsonl` instead of
+  `<base>/audit/*.jsonl`. Updated the stale reindex_test that
+  wrote to the flat path; added a defensive test confirming
+  flat-path files are ignored. Doctor / FileSpec / portability
+  fixtures all already use the subdirectory layout, so reindex
+  was the lone outlier.
 
 ## P2 — nice to have
 

@@ -277,3 +277,73 @@ session-log append.
     missing"). Result map now carries `indexed`, `skipped`,
     `deleted`, `audit_events`, `tasks_approval_state`, `budgets`
     — every projection from the GEP plus the original three.
+
+---
+
+## Task 3 — Phase 1 `_system` audit reindex path mismatch
+
+**Task picked.** I flagged this in Task 1's review block as a
+real `glorbo reindex` correctness gap: the AuditLog writer puts
+orchestrator events at `<base>/audit/_system/<YYYY-MM>.jsonl`
+(subdirectory) but Phase 1's `rebuild_audit_events/1` was
+listing `*.jsonl` files directly under `<base>/audit/`, so
+production system events never replayed. Continuation scope "continue."
+
+**What shipped.** `lib/glorbo/filesystem/reindex.ex`:
+
+  * `rebuild_audit_events/1` — `system_audit_dir` now joins
+    `[base, "audit", "_system"]`, matching the writer's
+    `Company.AuditLog.jsonl_path/3` `_system` branch. Comment
+    block updated to reference the writer-side function so the
+    coupling is explicit.
+
+**Tests** — `test/glorbo/filesystem/reindex_test.exs`:
+
+  * Updated the existing `_system` test to write to
+    `audit/_system/2026-04.jsonl` (production layout) and
+    renamed it for clarity.
+  * Added a defensive negative test confirming that JSONL files
+    placed at the legacy flat `<base>/audit/*.jsonl` path are
+    ignored — they're not what the writer emits, so reindex
+    correctly skips them.
+
+**Cross-checks.** Verified the rest of the codebase already
+uses the subdirectory layout — Doctor (`lib/glorbo/doctor.ex`),
+the auto-fixer (`lib/glorbo/doctor/fixer.ex`), the FileSpec
+(`lib/glorbo/file_spec/audit_month_jsonl.ex`), and the
+portability test fixtures (`test/support/portability_fixtures.ex`)
+all reference `audit/_system/`. Reindex was the only outlier.
+
+**Design calls I made without you.**
+
+  * **Pre-1.0 = no compat shim.** I considered making the
+    reader fall back to flat-path files for backward-compat,
+    but the writer never wrote them. Any flat file in
+    production is operator detritus or an old test artifact —
+    safer to ignore than to silently import inconsistent data.
+    The new defensive test locks in the ignore behaviour.
+
+**Gates.**
+
+  * `mix test test/glorbo/filesystem/reindex_test.exs` — 35/35
+    green (1 updated + 1 new test on top of the 34 from
+    earlier today).
+  * `mix precommit` — 2274/2274 green, 42 excluded, 2 skipped,
+    52.2s wall, exit 0.
+
+**Skipped / not done.**
+
+  * No code beyond reindex.ex + the test changes; no
+    documentation drift to chase down (the reader was the
+    odd one out).
+
+**Commit.** Pending.
+
+### Things I'd like your review (Task 3)
+
+  * **One-line behavioural change.** A user who has been
+    running this branch with `_system` events in flat-path
+    files would see them stop importing after this fix. Given
+    the writer never produced flat files, this is an empty
+    set in practice — but worth noting as a "behavioural
+    change in reindex" line for any release notes.

@@ -236,19 +236,37 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert length(Repo.all(AuditEvent)) == 1
     end
 
-    test "imports `_system` events under company `_system`" do
+    test "imports `_system` events under company `_system` (subdirectory layout)" do
       base = TmpGlorboHome.setup()
       File.mkdir_p!(Path.join(base, "companies"))
 
       jsonl =
         ~s|{"ts":"2026-04-26T01:00:00Z","actor":"system","action":"orchestrator.boot","target":"all"}\n|
 
-      _audit = write!(base, "audit/2026-04.jsonl", jsonl)
+      # Production layout: `Company.AuditLog.jsonl_path/3` puts orchestrator
+      # events at `<base>/audit/_system/<YYYY-MM>.jsonl` (subdirectory),
+      # not flat under `<base>/audit/`.
+      _audit = write!(base, "audit/_system/2026-04.jsonl", jsonl)
 
       assert {:ok, %{audit_events: 1}} = Reindex.run(base: base)
       [row] = Repo.all(AuditEvent)
       assert row.company == "_system"
       assert row.action == "orchestrator.boot"
+    end
+
+    test "ignores legacy flat `<base>/audit/*.jsonl` (writer never produces this)" do
+      base = TmpGlorboHome.setup()
+      File.mkdir_p!(Path.join(base, "companies"))
+
+      # Pre-fix layout written under the wrong path. The fixed reader looks
+      # under `audit/_system/` only, so this file is correctly ignored.
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:00:00Z","actor":"system","action":"orchestrator.boot","target":"all"}\n|
+
+      _ = write!(base, "audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{audit_events: 0}} = Reindex.run(base: base)
+      assert Repo.all(AuditEvent) == []
     end
 
     test "skips malformed JSONL lines without crashing" do
