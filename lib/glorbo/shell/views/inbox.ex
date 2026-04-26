@@ -37,6 +37,7 @@ defmodule Glorbo.Shell.Views.Inbox do
 
   use TermUI.Elm
 
+  alias Glorbo.Shell.Views.Common
   alias Glorbo.Shell.Views.Inbox.Data
   alias TermUI.Event.Key
 
@@ -103,28 +104,18 @@ defmodule Glorbo.Shell.Views.Inbox do
 
   def event_to_msg(_event, %{mode: {:deny_prompt, _}}), do: :ignore
 
-  # List-mode bindings.
-  def event_to_msg(%Key{key: :up}, _state), do: {:msg, :cursor_up}
-  def event_to_msg(%Key{key: :down}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "j"}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "k"}, _state), do: {:msg, :cursor_up}
+  # List-mode bindings — Inbox-specific arms first, then fall
+  # through to the shared cursor-list nav arms (j/k/arrows/r/q).
   def event_to_msg(%Key{key: :char, char: "a"}, _state), do: {:msg, :approve}
   def event_to_msg(%Key{key: :char, char: "d"}, _state), do: {:msg, :deny}
-  def event_to_msg(%Key{key: :char, char: "q"}, _state), do: {:msg, :quit}
-  def event_to_msg(_event, _state), do: :ignore
+  def event_to_msg(event, _state), do: Common.cursor_nav_event(event)
 
   @impl TermUI.Elm
-  def update(:cursor_down, state) do
-    last = max(0, length(state.approvals) - 1)
-    {%{state | cursor: min(state.cursor + 1, last)}, []}
-  end
-
-  def update(:cursor_up, state) do
-    {%{state | cursor: max(state.cursor - 1, 0)}, []}
-  end
+  def update(:cursor_down, state), do: Common.cursor_down(state, length(state.approvals))
+  def update(:cursor_up, state), do: Common.cursor_up(state)
 
   def update({:approvals_changed, list}, state) do
-    {%{state | approvals: list, cursor: clamp_cursor(state.cursor, length(list))}, []}
+    {%{state | approvals: list, cursor: Common.clamp_cursor(state.cursor, length(list))}, []}
   end
 
   def update(:approve, state), do: apply_decision(state, :approved, nil)
@@ -237,7 +228,7 @@ defmodule Glorbo.Shell.Views.Inbox do
     new_state = %{
       state
       | approvals: refreshed,
-        cursor: clamp_cursor(state.cursor, length(refreshed)),
+        cursor: Common.clamp_cursor(state.cursor, length(refreshed)),
         last_action: {:ok, decision, nil}
     }
 
@@ -261,10 +252,4 @@ defmodule Glorbo.Shell.Views.Inbox do
       text("#{prefix}#{row.task_id} — #{row.title} [#{assignee}]")
     end)
   end
-
-  defp clamp_cursor(_cursor, 0), do: 0
-
-  defp clamp_cursor(cursor, len) when cursor >= len, do: len - 1
-
-  defp clamp_cursor(cursor, _len), do: cursor
 end

@@ -26,8 +26,8 @@ defmodule Glorbo.Shell.Views.Tasks do
 
   use TermUI.Elm
 
+  alias Glorbo.Shell.Views.Common
   alias Glorbo.Shell.Views.Tasks.Data
-  alias TermUI.Event.Key
 
   @impl TermUI.Elm
   def init(opts) do
@@ -53,23 +53,11 @@ defmodule Glorbo.Shell.Views.Tasks do
   end
 
   @impl TermUI.Elm
-  def event_to_msg(%Key{key: :up}, _state), do: {:msg, :cursor_up}
-  def event_to_msg(%Key{key: :down}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "j"}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "k"}, _state), do: {:msg, :cursor_up}
-  def event_to_msg(%Key{key: :char, char: "r"}, _state), do: {:msg, :refresh}
-  def event_to_msg(%Key{key: :char, char: "q"}, _state), do: {:msg, :quit}
-  def event_to_msg(_event, _state), do: :ignore
+  def event_to_msg(event, _state), do: Common.cursor_nav_event(event)
 
   @impl TermUI.Elm
-  def update(:cursor_down, state) do
-    last = max(0, length(state.rows) - 1)
-    {%{state | cursor: min(state.cursor + 1, last)}, []}
-  end
-
-  def update(:cursor_up, state) do
-    {%{state | cursor: max(state.cursor - 1, 0)}, []}
-  end
+  def update(:cursor_down, state), do: Common.cursor_down(state, length(state.rows))
+  def update(:cursor_up, state), do: Common.cursor_up(state)
 
   def update(:refresh, state) do
     refreshed =
@@ -77,7 +65,7 @@ defmodule Glorbo.Shell.Views.Tasks do
         do: state.loader_fn.(state.base, state.company) |> sort_by_lane(),
         else: state.rows
 
-    new_cursor = clamp_cursor(state.cursor, length(refreshed))
+    new_cursor = Common.clamp_cursor(state.cursor, length(refreshed))
     {%{state | rows: refreshed, cursor: new_cursor}, []}
   end
 
@@ -123,10 +111,6 @@ defmodule Glorbo.Shell.Views.Tasks do
       text("#{prefix}#{row.task_id} — #{row.title}#{assignee}")
     end)
   end
-
-  defp clamp_cursor(_cursor, 0), do: 0
-  defp clamp_cursor(cursor, len) when cursor >= len, do: len - 1
-  defp clamp_cursor(cursor, _len), do: cursor
 
   # Sort rows by lane in canonical order so the cursor index over
   # `rows` lines up with the rendered (lane-grouped) display.

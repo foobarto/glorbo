@@ -27,7 +27,7 @@ defmodule Glorbo.Shell.Views.Chat do
   use TermUI.Elm
 
   alias Glorbo.Shell.Views.Chat.Data
-  alias TermUI.Event.Key
+  alias Glorbo.Shell.Views.Common
 
   @default_channel "general"
 
@@ -56,23 +56,11 @@ defmodule Glorbo.Shell.Views.Chat do
   end
 
   @impl TermUI.Elm
-  def event_to_msg(%Key{key: :up}, _state), do: {:msg, :cursor_up}
-  def event_to_msg(%Key{key: :down}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "j"}, _state), do: {:msg, :cursor_down}
-  def event_to_msg(%Key{key: :char, char: "k"}, _state), do: {:msg, :cursor_up}
-  def event_to_msg(%Key{key: :char, char: "r"}, _state), do: {:msg, :refresh}
-  def event_to_msg(%Key{key: :char, char: "q"}, _state), do: {:msg, :quit}
-  def event_to_msg(_event, _state), do: :ignore
+  def event_to_msg(event, _state), do: Common.cursor_nav_event(event)
 
   @impl TermUI.Elm
-  def update(:cursor_down, state) do
-    last = max(0, length(state.messages) - 1)
-    {%{state | cursor: min(state.cursor + 1, last)}, []}
-  end
-
-  def update(:cursor_up, state) do
-    {%{state | cursor: max(state.cursor - 1, 0)}, []}
-  end
+  def update(:cursor_down, state), do: Common.cursor_down(state, length(state.messages))
+  def update(:cursor_up, state), do: Common.cursor_up(state)
 
   def update(:refresh, state) do
     refreshed =
@@ -80,7 +68,7 @@ defmodule Glorbo.Shell.Views.Chat do
         do: state.loader_fn.(state.base, state.company, state.channel),
         else: state.messages
 
-    new_cursor = clamp_cursor(state.cursor, length(refreshed))
+    new_cursor = Common.clamp_cursor(state.cursor, length(refreshed))
     {%{state | messages: refreshed, cursor: new_cursor}, []}
   end
 
@@ -124,8 +112,4 @@ defmodule Glorbo.Shell.Views.Chat do
     do: String.slice(ts, 0, 16)
 
   defp format_ts(ts), do: ts
-
-  defp clamp_cursor(_cursor, 0), do: 0
-  defp clamp_cursor(cursor, len) when cursor >= len, do: len - 1
-  defp clamp_cursor(cursor, _len), do: cursor
 end
