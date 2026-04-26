@@ -17,7 +17,7 @@ defmodule Glorbo.Shell do
   | Phase 1 | `Glorbo.Shell.{Supervisor, Runtime, EventBus}` | shipped post-v0.12.5 |
   | Phase 2 | First view (Inbox) — drop-in parity with the LV inbox (read-only) | shipped post-v0.12.5 |
   | Phase 2b | Inbox actions: approve (`a`) + deny (`d`) | shipped post-v0.12.5 |
-  | Phase 2c | Deny-reason prompt UX + term_ui.runtime.run wire-up | next round |
+  | Phase 2c | Deny-reason prompt UX + term_ui.runtime.run wire-up via Launcher | shipped post-v0.12.5 |
   | Phase 3 | Remaining views in drop-in parity order | next round |
 
   ## Why a placeholder
@@ -51,8 +51,33 @@ defmodule Glorbo.Shell do
       not interactive_tty?() ->
         {:shell, 1, non_tty_message()}
 
+      args == [] ->
+        # Phase 2c entry-point still defaults to the placeholder when
+        # no company is supplied, but emits a usage hint pointing at
+        # the new positional-argv shape.
+        {:shell, 0, placeholder_banner_with_usage()}
+
       true ->
-        {:shell, 0, placeholder_banner()}
+        # Phase 2c — `glorbo shell <company>` boots the Inbox view via
+        # `Glorbo.Shell.Launcher`, which composes the term_ui runner
+        # opts and invokes `TermUI.Runtime.run/1`.
+        case Glorbo.Shell.Launcher.run(args) do
+          {:ok, code, output} ->
+            {:shell, code, output}
+
+          {:error, :usage} ->
+            {:shell, 2, "glorbo shell: missing company argument.\n\n#{help_text()}"}
+
+          {:error, :unknown_company} ->
+            [company | _] = args
+
+            {:shell, 2,
+             "glorbo shell: company '#{company}' not found under ~/.glorbo/companies/.\n"}
+
+          {:error, {:invalid_slug, raw}} ->
+            {:shell, 2,
+             "glorbo shell: '#{raw}' is not a valid company slug (lowercase + digits + hyphen).\n"}
+        end
     end
   end
 
@@ -65,17 +90,23 @@ defmodule Glorbo.Shell do
     IO.ANSI.enabled?()
   end
 
-  defp placeholder_banner do
+  defp placeholder_banner_with_usage do
     """
     ▚ glorbo shell — interactive Director terminal (alpha)
 
-    Phase 0 scaffold: the CLI verb is wired and the term_ui dependency
-    is on the path. Phase 1 (runtime + supervisor + event bus) and
-    Phase 2 (first view: Inbox) land in subsequent rounds — see
-    docs/geps/0037-glorbo-shell.md for the full roadmap.
+    USAGE
+      glorbo shell <company>     # boot the Inbox view for <company>
 
-    Until then: use `glorbo serve` + the LiveView dashboard at
-    http://localhost:4000 for interactive Director work.
+    Phase 2c (post-v0.12.5): supplying a company slug boots the
+    `term_ui`-driven Inbox view and lets you approve (`a`) or
+    deny (`d`) pending tasks. Other views (overview, kanban,
+    audit, channels, agents, costs, providers, health, memory,
+    palette) land in Phase 3.
+
+    For non-interactive use:
+      glorbo serve              # full LiveView dashboard at :4000
+      glorbo run <agent>        # one-shot agent dispatch
+      glorbo doctor --json      # machine-readable health
     """
   end
 

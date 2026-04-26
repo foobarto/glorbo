@@ -106,16 +106,32 @@ defmodule Glorbo.Shell.Views.InboxTest do
       assert state.last_action == {:ok, :approved, nil}
     end
 
-    test ":deny calls set_approval(:denied) and refreshes the list" do
+    test ":deny opens the deny-reason prompt; Enter submits with the buffer as denial_reason" do
       {state, calls} = init_with_actions(sample_approvals(), refreshed: [])
 
+      # Step 1 — :deny enters prompt mode, no API call yet.
       {state, []} = Inbox.update(:deny, state)
+      assert state.mode == {:deny_prompt, ""}
+      assert calls.() == []
 
-      assert calls.() == [
-               {"acme", "projects/demo/tasks/task-a.md", :denied, [base: "/tmp/glorbo_test_base"]}
-             ]
+      # Step 2 — type "out of scope" via :deny_prompt_input msgs.
+      {state, []} = Inbox.update({:deny_prompt_input, "o"}, state)
+      {state, []} = Inbox.update({:deny_prompt_input, "u"}, state)
+      {state, []} = Inbox.update({:deny_prompt_input, "t"}, state)
+      assert state.mode == {:deny_prompt, "out"}
+
+      # Step 3 — Enter submits set_approval with denial_reason: "out".
+      {state, []} = Inbox.update(:deny_prompt_submit, state)
+
+      [{co, tp, decision, opts}] = calls.()
+      assert co == "acme"
+      assert tp == "projects/demo/tasks/task-a.md"
+      assert decision == :denied
+      assert Keyword.get(opts, :base) == "/tmp/glorbo_test_base"
+      assert Keyword.get(opts, :denial_reason) == "out"
 
       assert state.last_action == {:ok, :denied, nil}
+      assert state.mode == :list
     end
 
     test ":approve at cursor 1 targets the second row" do
@@ -169,6 +185,118 @@ defmodule Glorbo.Shell.Views.InboxTest do
 
       assert state.approvals == shrunken
       assert state.cursor == 0
+    end
+  end
+
+  describe "Phase 2c — deny-reason prompt modal" do
+    test "Esc cancels the prompt without calling set_approval" do
+      action_calls = make_ref()
+      Process.put({:action_calls, action_calls}, [])
+
+      approve_fn = fn co, tp, dec, kw ->
+        Process.put({:action_calls, action_calls}, [{co, tp, dec, kw}])
+        :ok
+      end
+
+      state =
+        Inbox.init(
+          approvals: sample_approvals(),
+          company: "acme",
+          base: "/tmp/glorbo_test_base",
+          approve_fn: approve_fn,
+          loader_fn: fn _, _ -> [] end
+        )
+
+      {state, []} = Inbox.update(:deny, state)
+      {state, []} = Inbox.update({:deny_prompt_input, "x"}, state)
+      assert state.mode == {:deny_prompt, "x"}
+
+      {state, []} = Inbox.update(:deny_prompt_cancel, state)
+      assert state.mode == :list
+      assert Process.get({:action_calls, action_calls}) == []
+      assert state.last_action == nil
+    end
+
+    test "backspace drops the last character of the buffer" do
+      state = %{
+        approvals: sample_approvals(),
+        cursor: 0,
+        mode: {:deny_prompt, "abc"},
+        company: "acme",
+        base: "/tmp",
+        last_action: nil,
+        approve_fn: fn _, _, _, _ -> :ok end,
+        loader_fn: fn _, _ -> [] end
+      }
+
+      {state, []} = Inbox.update(:deny_prompt_backspace, state)
+      assert state.mode == {:deny_prompt, "ab"}
+    end
+
+    test "backspace on empty buffer is a no-op" do
+      state = %{
+        approvals: sample_approvals(),
+        cursor: 0,
+        mode: {:deny_prompt, ""},
+        company: "acme",
+        base: "/tmp",
+        last_action: nil,
+        approve_fn: fn _, _, _, _ -> :ok end,
+        loader_fn: fn _, _ -> [] end
+      }
+
+      {state, []} = Inbox.update(:deny_prompt_backspace, state)
+      assert state.mode == {:deny_prompt, ""}
+    end
+
+    test "Enter on empty buffer submits with denial_reason: nil" do
+      action_calls = make_ref()
+      Process.put({:action_calls, action_calls}, [])
+
+      approve_fn = fn co, tp, dec, kw ->
+        Process.put({:action_calls, action_calls}, [{co, tp, dec, kw}])
+        :ok
+      end
+
+      state =
+        Inbox.init(
+          approvals: sample_approvals(),
+          company: "acme",
+          base: "/tmp",
+          approve_fn: approve_fn,
+          loader_fn: fn _, _ -> [] end
+        )
+        |> Map.put(:mode, {:deny_prompt, ""})
+
+      {state, []} = Inbox.update(:deny_prompt_submit, state)
+
+      [{_, _, :denied, opts}] = Process.get({:action_calls, action_calls})
+      refute Keyword.has_key?(opts, :denial_reason)
+      assert state.mode == :list
+    end
+
+    test "event_to_msg in deny_prompt mode routes to prompt actions" do
+      state = %{mode: {:deny_prompt, "abc"}}
+
+      assert Inbox.event_to_msg(%Key{key: :enter}, state) == {:msg, :deny_prompt_submit}
+      assert Inbox.event_to_msg(%Key{key: :escape}, state) == {:msg, :deny_prompt_cancel}
+      assert Inbox.event_to_msg(%Key{key: :backspace}, state) == {:msg, :deny_prompt_backspace}
+
+      assert Inbox.event_to_msg(%Key{key: :char, char: "x"}, state) ==
+               {:msg, {:deny_prompt_input, "x"}}
+
+      # Arrow keys are ignored — they don't leak to list-mode handlers.
+      assert Inbox.event_to_msg(%Key{key: :up}, state) == :ignore
+    end
+
+    test "view/1 in deny_prompt mode appends the prompt overlay" do
+      state =
+        Inbox.init(approvals: sample_approvals())
+        |> Map.put(:mode, {:deny_prompt, "out of scope"})
+
+      rendered = render_to_strings(Inbox.view(state))
+      assert Enum.any?(rendered, &String.contains?(&1, "Deny reason"))
+      assert Enum.any?(rendered, &String.contains?(&1, "> out of scope_"))
     end
   end
 

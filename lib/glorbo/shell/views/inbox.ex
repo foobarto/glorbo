@@ -1,23 +1,26 @@
 defmodule Glorbo.Shell.Views.Inbox do
   @moduledoc """
-  GEP-37 Phase 2 + 2b — the TUI Inbox view.
+  GEP-37 Phase 2 + 2b + 2c — the TUI Inbox view.
 
   Phase 2 (read-only) shipped: list of `awaiting-approval-*`
   sentinels per company, cursor navigation up/down (arrows + j/k),
   `q` to quit, empty-state placeholder.
 
-  Phase 2b (this version) adds approve/deny actions wired through
-  `Glorbo.Actions.set_approval/4` (which is wave-31-aware: company-
-  scoped Gate calls + composite-key SQL writes). Single-keystroke
-  bindings: `a` approves the cursor row, `d` denies it. Phase 2c
-  will add the deny-reason prompt UX (today denies submit with
-  reason: nil, which `set_approval` accepts).
+  Phase 2b shipped approve/deny actions wired through
+  `Glorbo.Actions.set_approval/4` (wave-31-aware). `a` approves;
+  `d` denies.
+
+  Phase 2c (this version) adds the deny-reason prompt UX. Pressing
+  `d` enters a modal `:deny_prompt` mode where keystrokes accumulate
+  into a buffer until Enter submits or Esc cancels. The buffer is
+  passed to `set_approval` as `denial_reason:`.
 
   Implements `TermUI.Elm`. State shape:
 
       %{
         approvals:       [Inbox.Data.approval_row()],
         cursor:          non_neg_integer(),
+        mode:            :list | {:deny_prompt, String.t()},
         company:         String.t() | nil,
         base:            Path.t() | nil,
         last_action:     {:ok | :error, atom(), term()} | nil,
@@ -37,10 +40,14 @@ defmodule Glorbo.Shell.Views.Inbox do
   alias Glorbo.Shell.Views.Inbox.Data
   alias TermUI.Event.Key
 
+  @typedoc "Modal mode — `:list` or a deny-prompt with an accumulating buffer."
+  @type mode :: :list | {:deny_prompt, String.t()}
+
   @typedoc "Inbox view state."
   @type state :: %{
           approvals: [Data.approval_row()],
           cursor: non_neg_integer(),
+          mode: mode(),
           company: String.t() | nil,
           base: Path.t() | nil,
           last_action: {:ok | :error, atom(), term()} | nil,
@@ -70,6 +77,7 @@ defmodule Glorbo.Shell.Views.Inbox do
     %{
       approvals: approvals,
       cursor: 0,
+      mode: :list,
       company: company,
       base: base,
       last_action: nil,
@@ -79,6 +87,23 @@ defmodule Glorbo.Shell.Views.Inbox do
   end
 
   @impl TermUI.Elm
+  # Deny-prompt modal absorbs every keystroke for buffer editing.
+  # Branched first so list-mode bindings don't leak in.
+  def event_to_msg(%Key{key: :enter}, %{mode: {:deny_prompt, _}}), do: {:msg, :deny_prompt_submit}
+
+  def event_to_msg(%Key{key: :escape}, %{mode: {:deny_prompt, _}}),
+    do: {:msg, :deny_prompt_cancel}
+
+  def event_to_msg(%Key{key: :backspace}, %{mode: {:deny_prompt, _}}),
+    do: {:msg, :deny_prompt_backspace}
+
+  def event_to_msg(%Key{key: :char, char: ch}, %{mode: {:deny_prompt, _}})
+      when is_binary(ch) and byte_size(ch) > 0,
+      do: {:msg, {:deny_prompt_input, ch}}
+
+  def event_to_msg(_event, %{mode: {:deny_prompt, _}}), do: :ignore
+
+  # List-mode bindings.
   def event_to_msg(%Key{key: :up}, _state), do: {:msg, :cursor_up}
   def event_to_msg(%Key{key: :down}, _state), do: {:msg, :cursor_down}
   def event_to_msg(%Key{key: :char, char: "j"}, _state), do: {:msg, :cursor_down}
@@ -102,9 +127,35 @@ defmodule Glorbo.Shell.Views.Inbox do
     {%{state | approvals: list, cursor: clamp_cursor(state.cursor, length(list))}, []}
   end
 
-  def update(:approve, state), do: apply_decision(state, :approved)
+  def update(:approve, state), do: apply_decision(state, :approved, nil)
 
-  def update(:deny, state), do: apply_decision(state, :denied)
+  # Deny in list mode opens the prompt instead of submitting; buffer
+  # starts empty. Phase 2c modal — Enter submits, Esc cancels.
+  def update(:deny, state) do
+    {%{state | mode: {:deny_prompt, ""}}, []}
+  end
+
+  def update({:deny_prompt_input, ch}, %{mode: {:deny_prompt, buf}} = state) do
+    {%{state | mode: {:deny_prompt, buf <> ch}}, []}
+  end
+
+  def update(:deny_prompt_backspace, %{mode: {:deny_prompt, ""}} = state),
+    do: {state, []}
+
+  def update(:deny_prompt_backspace, %{mode: {:deny_prompt, buf}} = state) do
+    new_buf = String.slice(buf, 0, String.length(buf) - 1)
+    {%{state | mode: {:deny_prompt, new_buf}}, []}
+  end
+
+  def update(:deny_prompt_submit, %{mode: {:deny_prompt, buf}} = state) do
+    reason = if buf == "", do: nil, else: buf
+    {new_state, cmds} = apply_decision(%{state | mode: :list}, :denied, reason)
+    {new_state, cmds}
+  end
+
+  def update(:deny_prompt_cancel, %{mode: {:deny_prompt, _}} = state) do
+    {%{state | mode: :list}, []}
+  end
 
   def update(_msg, _state), do: :noreply
 
@@ -117,7 +168,13 @@ defmodule Glorbo.Shell.Views.Inbox do
         stack(:vertical, render_approval_lines(state))
       end
 
-    case state[:last_action] do
+    body
+    |> append_action_line(state)
+    |> append_deny_prompt(state)
+  end
+
+  defp append_action_line(body, state) do
+    case Map.get(state, :last_action) do
       nil ->
         body
 
@@ -126,6 +183,20 @@ defmodule Glorbo.Shell.Views.Inbox do
 
       {:error, action, reason} ->
         stack(:vertical, [body, text("✗ #{action} failed: #{inspect(reason)}")])
+    end
+  end
+
+  defp append_deny_prompt(body, state) do
+    case Map.get(state, :mode, :list) do
+      :list ->
+        body
+
+      {:deny_prompt, buf} ->
+        stack(:vertical, [
+          body,
+          text("Deny reason (Enter to submit, Esc to cancel):"),
+          text("> #{buf}_")
+        ])
     end
   end
 
@@ -141,12 +212,19 @@ defmodule Glorbo.Shell.Views.Inbox do
   #     sentinel" action can recover those).
   #   * `company` or `base` are missing (init was passed
   #     `approvals:` directly without enough state to act on).
-  defp apply_decision(state, decision) do
+  defp apply_decision(state, decision, denial_reason) do
     with %{} = row <- Enum.at(state.approvals, state.cursor),
          tp when is_binary(tp) <- row.task_path,
          co when is_binary(co) <- state.company,
          base when is_binary(base) <- state.base do
-      result = state.approve_fn.(co, tp, decision, base: base)
+      opts = [base: base]
+
+      opts =
+        if is_binary(denial_reason),
+          do: Keyword.put(opts, :denial_reason, denial_reason),
+          else: opts
+
+      result = state.approve_fn.(co, tp, decision, opts)
       apply_decision_result(state, decision, result)
     else
       _ -> {%{state | last_action: {:error, decision, :no_actionable_row}}, []}

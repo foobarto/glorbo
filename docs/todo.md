@@ -319,6 +319,25 @@ it's been in CHANGELOG for a cycle.
   reclamps. 8 new tests. 2331/2331 total. Phase 2c brings
   the deny-reason prompt UX + term_ui.runtime.run wire-up
   so the Director can finally launch the shell.
+- [x] **GEP-37 `glorbo shell` Phase 2c — deny prompt + Launcher.**
+  Shipped post-v0.12.5 (autonomous L4). Inbox view gained
+  a modal `:deny_prompt` mode: pressing `d` opens a
+  buffer-driven prompt (chars append, Backspace drops last,
+  Enter submits with `denial_reason:`, Esc cancels). New
+  `Glorbo.Shell.Launcher` composes `TermUI.Runtime.run/1`
+  opts from CLI argv (`glorbo shell <company>`) +
+  `GLORBO_HOME`, with a mockable `:runner_fn`. Validates
+  the company slug + the dir exists; returns
+  `{:error, :usage | :unknown_company | {:invalid_slug,
+  raw}}` on failure. `Glorbo.Shell.run/1` updated to call
+  Launcher when argv is non-empty; surfaces error tuples
+  as operator-friendly exit-2 messages. The no-argv path
+  prints a placeholder-with-usage banner. 17 new tests
+  (6 prompt arms + 11 Launcher). 2348/2348 total.
+  Production launch path is TTY-bound; from a real
+  terminal `glorbo shell acme` now invokes
+  `TermUI.Runtime.run/1` for the first time. Phase 3
+  adds the remaining views.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

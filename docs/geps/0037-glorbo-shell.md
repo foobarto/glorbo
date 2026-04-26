@@ -184,6 +184,58 @@ history:
       converges Phase 1's supervisor + Phase 2 view + Phase
       2b actions into a launchable shell, plus the
       deny-reason prompt UX.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 2c landed: deny-reason prompt UX + Launcher wire-up.
+
+      Inbox view: pressing `d` now enters a `:deny_prompt`
+      modal — keystrokes accumulate into a buffer rendered
+      inline below the approvals list, Enter submits with
+      `denial_reason: <buffer>` (nil if empty), Esc cancels
+      back to `:list` mode without calling `set_approval`.
+      Backspace drops the last char; arrow keys are absorbed
+      so they don't leak to list-mode handlers. State gains
+      a `mode :: :list | {:deny_prompt, String.t()}` slot.
+      View renders the prompt as two extra lines below the
+      list ("Deny reason (Enter to submit, Esc to cancel):"
+      and a `> <buffer>_` cursor line).
+
+      `Glorbo.Shell.Launcher` is a new module that composes
+      `TermUI.Runtime.run/1` inputs from CLI argv + the
+      `~/.glorbo` base. Argv shape: `glorbo shell <company>`.
+      Validates the company is a valid slug (rejects e.g.
+      `"../etc"`, `"Acme"`) and that the company dir exists
+      on disk; returns `{:error, :usage | :unknown_company |
+      {:invalid_slug, raw}}` on failure with no side
+      effects. Production callers use the default
+      `runner_fn: &TermUI.Runtime.run/1`; the launcher_test
+      passes a recording double so the suite never boots
+      term_ui.
+
+      `Glorbo.Shell.run/1` updated: `--help`/`-h` and the
+      non-TTY guard remain; the no-argv path now prints a
+      placeholder-with-usage banner pointing at the new
+      argv shape; the with-argv path delegates to
+      `Glorbo.Shell.Launcher.run/2` and surfaces its
+      error tuples as `{:shell, 2, ...}` with operator-
+      friendly messages.
+
+      Tests: 31 Inbox tests (was 25; 6 new Phase-2c arms
+      covering Esc cancel, backspace, empty-buffer Enter,
+      modal event_to_msg routing, view overlay rendering,
+      and the deny-prompt → input → submit happy path).
+      11 Launcher tests covering parse_argv (5), validate
+      (2), build (1), and run/2 (3 — happy + 3 error
+      paths). 2348/2348 total tests green; mix credo
+      --strict zero findings.
+
+      Production launch path remains TTY-bound; `glorbo
+      shell acme` (when run from a real terminal) now
+      composes opts and invokes `TermUI.Runtime.run/1` for
+      the first time. Phase 3 widens to multi-view
+      (overview, kanban, audit, channels, agents, costs,
+      providers, health, memory, command palette).
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
