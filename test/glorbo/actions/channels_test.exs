@@ -224,7 +224,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                  audit: audit
                )
 
-      Process.sleep(150)
+      Process.sleep(1000)
 
       {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
       assert head.subject == "channel.create: companies/acme/channels/engineering.md"
@@ -247,7 +247,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                )
 
       # Wait for the create commit to land before archiving.
-      Process.sleep(150)
+      Process.sleep(1000)
 
       assert {:ok, _} =
                Channels.archive("acme", "engineering",
@@ -256,7 +256,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                  audit: audit
                )
 
-      Process.sleep(150)
+      Process.sleep(1000)
 
       {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
       assert head.subject =~ "channel.archive:"
@@ -278,7 +278,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                  audit: audit
                )
 
-      Process.sleep(150)
+      Process.sleep(1000)
 
       {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
       assert head.sha == initial_sha
