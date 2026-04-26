@@ -288,6 +288,165 @@ defmodule Glorbo.Filesystem.ReindexTest do
     end
   end
 
+  describe "tasks_approval_state rebuild from JSONL (GEP-34 Phase 2)" do
+    alias Glorbo.TasksApprovalState
+
+    defp seed_acme(base) do
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+    end
+
+    test "awaiting-only request lands as status: awaiting" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.task_path == "projects/x/tasks/x-01.md"
+      assert row.agent_slug == "ceo"
+      assert row.status == "awaiting"
+      assert row.resolved_at == nil
+      assert row.reason == nil
+      assert DateTime.to_iso8601(row.requested_at) == "2026-04-26T10:00:00Z"
+    end
+
+    test "request → granted folds chronologically into approved row" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n| <>
+          ~s|{"ts":"2026-04-26T10:05:00Z","company":"acme","actor":"director","action":"approval.granted","agent":"ceo","target":"projects/x/tasks/x-01.md","approved_at":"2026-04-26T10:05:00Z"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.status == "approved"
+      assert row.agent_slug == "ceo"
+      assert DateTime.to_iso8601(row.requested_at) == "2026-04-26T10:00:00Z"
+      assert DateTime.to_iso8601(row.resolved_at) == "2026-04-26T10:05:00Z"
+      assert row.reason == nil
+    end
+
+    test "request → denied carries denial_reason and denied_at" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"editor","action":"approval.requested","agent":"editor","target":"projects/y/tasks/y-02.md","task_id":"y-02"}\n| <>
+          ~s|{"ts":"2026-04-26T10:07:00Z","company":"acme","actor":"director","action":"approval.denied","agent":"editor","target":"projects/y/tasks/y-02.md","denied_at":"2026-04-26T10:07:00Z","denial_reason":"out of scope"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.status == "denied"
+      assert row.reason == "out of scope"
+      assert DateTime.to_iso8601(row.resolved_at) == "2026-04-26T10:07:00Z"
+    end
+
+    test "resolution without prior request synthesizes a row" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      # Audit log truncated to retention window — the original request line
+      # is gone, but a granted line remains. Replay must still surface it.
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:05:00Z","company":"acme","actor":"director","action":"approval.granted","agent":"ceo","target":"projects/z/tasks/z-03.md","approved_at":"2026-04-26T10:05:00Z"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.status == "approved"
+      assert row.agent_slug == "ceo"
+      # When request is missing, requested_at falls back to the resolution ts.
+      assert row.requested_at == row.resolved_at
+    end
+
+    test "events spread across two monthly files fold across the boundary" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-03.jsonl",
+          ~s|{"ts":"2026-03-31T23:59:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n|
+        )
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-01T00:01:00Z","company":"acme","actor":"director","action":"approval.granted","agent":"ceo","target":"projects/x/tasks/x-01.md","approved_at":"2026-04-01T00:01:00Z"}\n|
+        )
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.status == "approved"
+      assert DateTime.to_iso8601(row.requested_at) == "2026-03-31T23:59:00Z"
+      assert DateTime.to_iso8601(row.resolved_at) == "2026-04-01T00:01:00Z"
+    end
+
+    test "rebuild is idempotent — re-running does not double rows" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/x/tasks/x-01.md","task_id":"x-01"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+      assert length(Repo.all(TasksApprovalState)) == 1
+    end
+
+    test "non-approval audit lines are ignored" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T01:23:45Z","company":"acme","actor":"ceo","action":"task.create","target":"projects/x/tasks/x-01.md"}\n| <>
+          ~s|{"ts":"2026-04-26T01:24:00Z","company":"acme","actor":"director","action":"agent.error","target":"projects/x/tasks/x-01.md"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 0}} = Reindex.run(base: base)
+      assert Repo.all(TasksApprovalState) == []
+    end
+
+    test "drops oversized lines (> 64KiB) without crashing" do
+      base = TmpGlorboHome.setup()
+      seed_acme(base)
+
+      huge = String.duplicate("X", 70_000)
+
+      jsonl =
+        ~s|{"ts":"2026-04-26T10:00:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"#{huge}","task_id":"big"}\n| <>
+          ~s|{"ts":"2026-04-26T10:01:00Z","company":"acme","actor":"ceo","action":"approval.requested","agent":"ceo","target":"projects/y/tasks/y-02.md","task_id":"y-02"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      log = ExUnit.CaptureLog.capture_log(fn -> Reindex.run(base: base) end)
+      assert log =~ "oversized line"
+
+      [row] = Repo.all(TasksApprovalState)
+      assert row.task_path == "projects/y/tasks/y-02.md"
+    end
+  end
+
   describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do
     test "process_path/2 indexes a single file without a full run" do
       base = TmpGlorboHome.setup()

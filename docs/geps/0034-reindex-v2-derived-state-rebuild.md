@@ -32,6 +32,29 @@ history:
       identified in this GEP — `budgets` running aggregates and
       `tasks_approval_state.resolved_at` / `reason` — are still open
       and need their own audit-log replay logic.
+  - date: 2026-04-26
+    status: Draft
+    note: |
+      Phase 2 landed: `tasks_approval_state` is now rebuilt by
+      folding `approval.requested` / `approval.granted` /
+      `approval.denied` lines chronologically per `target` (task
+      path). Per-company JSONL files are read in filename order
+      (YYYY-MM.jsonl sorts chronologically); within each file
+      `File.stream!` preserves append order. The fold builds a
+      `task_path => state` map and bulk-inserts the final state via
+      `Repo.insert_all` chunks of 100 rows (7 columns × 100 stays
+      well under SQLite's 999-bind-parameter ceiling). Resolution
+      events without a matching `requested` line synthesize a row
+      using the resolution timestamp as `requested_at`, so a
+      retention-truncated audit log still surfaces the resolution.
+      Decision on the open Phase 2 question (sentinel retention):
+      went audit-only — the `Approvals.Gate` continues to delete
+      resolved sentinels, since audit JSONL is authoritative and the
+      dashboard already streams the same info. Result map gains a
+      `:tasks_approval_state` count. 8 new tests cover awaiting,
+      grant, deny+reason, missing-request synthesis, cross-month
+      fold, idempotency, non-approval-line filtering, and the 64-KiB
+      oversized-line cap. Only `budgets` remains.
 see-also: [3, 7, 19]
 ---
 
@@ -116,16 +139,30 @@ Implementation: `lib/glorbo/filesystem/reindex.ex` —
 `import_audit_file/2`, `decode_audit_line/3`,
 `build_audit_row/2`. Result map gains an `:audit_events` count.
 
-### Phase 2 — `tasks_approval_state` *(open)*
+### Phase 2 — `tasks_approval_state` *(landed 2026-04-26)*
 
-Audit JSONL carries `approval.granted` / `approval.denied`
-events with `actor` + `target` (task path) + `ts` + the
-`reason` field in `detail`. Reindex replays those into the
-`tasks_approval_state` table. Open: also retain
-`state/resolved-approval-<id>.md` sentinels post-resolution as
-a redundant on-disk source? Probably yes for forensic clarity
-even though audit is sufficient — write decision when this
-phase ships.
+`Reindex.run/1` folds `approval.requested` / `approval.granted` /
+`approval.denied` audit lines chronologically per `target` (task
+path). Per-company JSONL files are read in filename order
+(YYYY-MM.jsonl sorts chronologically); within each file
+`File.stream!` preserves append order. The fold builds a
+`task_path => state` map and bulk-inserts the final state via
+`Repo.insert_all` chunks of 100. Resolutions without a matching
+`requested` line synthesize a row using the resolution timestamp
+as `requested_at`, so retention-truncated audit logs still surface
+resolutions.
+
+Sentinel-retention question: went audit-only. The
+`Approvals.Gate` continues to delete `state/awaiting-approval-<id>.md`
+on resolution — audit JSONL is authoritative and the dashboard
+already streams the same info. No second on-disk source is needed.
+
+Implementation: `lib/glorbo/filesystem/reindex.ex` —
+`rebuild_tasks_approval_state/1`, `fold_approval_dir/2`,
+`fold_approval_file/2`, `fold_approval_line/3`,
+`apply_approval_event/3`, `update_resolution/5`,
+`insert_approval_rows/1`. Result map gains a
+`:tasks_approval_state` count.
 
 ### Phase 3 — `budgets` *(open)*
 
@@ -154,13 +191,12 @@ JSONL line format is GEP-19 / audit-log stable.
 ## Open questions
 
 - **Phase 2 storage choice — sentinel retention vs audit-only
-  replay?** Sentinels add disk ergonomics for `ls
-  state/resolved-approval-*` forensics but require the
-  `Approvals.Gate` to write a second file at resolution time.
-  Audit-only replay keeps the gate simpler but makes "show me
-  every approval decision for this task" require a JSONL grep.
-  Lean toward audit-only — the dashboard already streams audit
-  to surface the same info.
+  replay?** *Resolved 2026-04-26 — audit-only.* The
+  `Approvals.Gate` continues to delete the `awaiting-approval-<id>.md`
+  sentinel at resolution; the audit JSONL is authoritative. Adding
+  a second on-disk write at resolution time would couple the gate
+  to a redundant artifact for forensics that the dashboard already
+  surfaces by streaming audit lines.
 - **Phase 3 alerts_fired bitmap reconstruction.** Replaying
   `usage.recorded` and re-evaluating thresholds gives the
   *eventual* bitmap correctly, but in-order evaluation matters
@@ -203,6 +239,33 @@ crashes on a bad line, the user is stuck. Skipping preserves
 recovery while logging the issue. The 64 KiB cap matches
 `AgentWritableFile.read_bounded`'s philosophy: bound the worst
 case so a corrupted multi-GB line cannot OOM the BEAM.
+
+### D4. Audit-only replay for `tasks_approval_state`
+
+**Decided** 2026-04-26 (Phase 2). The `Approvals.Gate` continues
+to delete the `awaiting-approval-<id>.md` sentinel on resolution;
+no resolved-approval sentinel is written. Replay folds
+`approval.{requested,granted,denied}` lines from JSONL.
+
+**Why:** the audit JSONL line carries every field the schema
+needs (`agent`, `target`, `ts`, `denial_reason`); writing a second
+file at resolution time would couple the gate to a redundant
+forensic artifact already surfaced by the dashboard's audit
+stream. One source of truth beats two.
+
+### D5. Chronological fold via filename + line order
+
+**Decided** 2026-04-26 (Phase 2). The fold relies on
+`YYYY-MM.jsonl` filenames sorting chronologically when sorted
+lexicographically, plus `File.stream!` preserving append order
+within each file.
+
+**Why:** the on-disk audit format already enforces this ordering
+(GEP-19 / append-only). Adding an explicit ts-sort on every
+streamed line would force the fold to materialize all lines
+before processing — defeating the bounded-memory goal in §Goals.
+The fold is correct as long as the writer respects append
+ordering, which it does.
 
 ### D3. Wipe-and-rebuild, not incremental
 

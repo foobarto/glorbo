@@ -15,9 +15,19 @@ defmodule Glorbo.Filesystem.Reindex do
   re-derived from it. `_system` events at `<base>/audit/*.jsonl` are
   imported under company `"_system"`.
 
-  Two of GEP-34's three identified gaps remain (`budgets`,
-  `tasks_approval_state`) — those need separate per-table audit
-  replay logic and are tracked in GEP-34's open-questions block.
+  GEP-34 Phase 2: `tasks_approval_state` is rebuilt by folding the
+  per-company `approval.requested` / `approval.granted` /
+  `approval.denied` audit lines chronologically per `task_path`. The
+  final fold-state per task is bulk-inserted; awaiting-but-never-
+  resolved tasks land as `status: "awaiting"`, resolved tasks land as
+  `approved` / `denied` with the original `requested_at` and the
+  resolution timestamp. Audit JSONL is the only source — the
+  resolved-approval sentinel files written by the gate are deleted
+  post-resolution and never consulted here.
+
+  GEP-34's last identified gap remains: `budgets` — separate
+  per-table audit replay logic, tracked in GEP-34's open-questions
+  block.
 
   **B4 contract (load-bearing):** `process_file/1` is PRIVATE. Plan 04 will
   add a public `process_path/2` wrapper for the watcher integration; do
@@ -35,7 +45,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   import Ecto.Query
 
-  alias Glorbo.{Agent, AuditEvent, Company, Repo}
+  alias Glorbo.{Agent, AuditEvent, Company, Repo, TasksApprovalState}
   alias Glorbo.Filesystem.{Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
 
@@ -124,8 +134,16 @@ defmodule Glorbo.Filesystem.Reindex do
     deleted = cleanup_vanished(files)
     :ok = ModelCatalog.rebuild_projection_from_cache(Path.dirname(companies_dir))
     audit_imported = rebuild_audit_events(companies_dir)
+    approvals_imported = rebuild_tasks_approval_state(companies_dir)
 
-    {:ok, %{indexed: indexed, skipped: skipped, deleted: deleted, audit_events: audit_imported}}
+    {:ok,
+     %{
+       indexed: indexed,
+       skipped: skipped,
+       deleted: deleted,
+       audit_events: audit_imported,
+       tasks_approval_state: approvals_imported
+     }}
   end
 
   # Returns the absolute path to the immediate child of `companies_dir` that
@@ -516,4 +534,174 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp parse_audit_ts(_), do: nil
+
+  # ---------------------------------------------------------------------------
+  # GEP-34 Phase 2: tasks_approval_state rebuild from JSONL
+  # ---------------------------------------------------------------------------
+
+  @approval_actions ~w(approval.requested approval.granted approval.denied)
+
+  # Wipe-and-rebuild via chronological audit replay. Per-company only —
+  # `_system` audit never carries approval events (the gate runs per-company).
+  # Returns the count of inserted rows.
+  defp rebuild_tasks_approval_state(companies_dir) do
+    Repo.delete_all(TasksApprovalState)
+
+    states =
+      case File.ls(companies_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
+          |> Enum.reduce(%{}, fn co, acc ->
+            audit_dir = Path.join([companies_dir, co, "audit"])
+            if File.dir?(audit_dir), do: fold_approval_dir(audit_dir, acc), else: acc
+          end)
+
+        _ ->
+          %{}
+      end
+
+    insert_approval_rows(states)
+  end
+
+  defp fold_approval_dir(audit_dir, acc) do
+    case File.ls(audit_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".jsonl"))
+        # YYYY-MM.jsonl filenames sort chronologically; lines within a file
+        # are append-order. Together this gives a global chronological fold.
+        |> Enum.sort()
+        |> Enum.reduce(acc, fn fname, a ->
+          fold_approval_file(Path.join(audit_dir, fname), a)
+        end)
+
+      _ ->
+        acc
+    end
+  end
+
+  defp fold_approval_file(path, acc) do
+    path
+    |> File.stream!([], :line)
+    |> Enum.reduce(acc, &fold_approval_line(&1, path, &2))
+  rescue
+    e ->
+      Logger.warning(
+        "approval reindex skipped #{path}: #{Exception.message(e)} (JSONL stays authoritative)"
+      )
+
+      acc
+  end
+
+  defp fold_approval_line(line, path, acc) do
+    line = String.trim_trailing(line, "\n")
+
+    cond do
+      line == "" ->
+        acc
+
+      byte_size(line) > @max_audit_line_bytes ->
+        Logger.warning("approval reindex skipped oversized line in #{path} (> 64KiB)")
+        acc
+
+      true ->
+        case Jason.decode(line) do
+          {:ok, %{"action" => action} = entry} when action in @approval_actions ->
+            apply_approval_event(action, entry, acc)
+
+          _ ->
+            acc
+        end
+    end
+  end
+
+  defp apply_approval_event("approval.requested", entry, acc) do
+    task_path = entry["target"]
+    agent = entry["agent"] || entry["actor"]
+    ts = parse_audit_ts(entry["ts"])
+
+    if is_binary(task_path) and is_binary(agent) and ts != nil do
+      Map.put(acc, task_path, %{
+        task_path: task_path,
+        agent_slug: agent,
+        status: "awaiting",
+        requested_at: ts,
+        resolved_at: nil,
+        reason: nil
+      })
+    else
+      acc
+    end
+  end
+
+  defp apply_approval_event("approval.granted", entry, acc) do
+    update_resolution(entry, acc, "approved", entry["approved_at"], nil)
+  end
+
+  defp apply_approval_event("approval.denied", entry, acc) do
+    update_resolution(entry, acc, "denied", entry["denied_at"], entry["denial_reason"])
+  end
+
+  # Fold a resolution event over the existing fold-state. If we never saw the
+  # matching `approval.requested` (audit log truncated, retention policy, etc.)
+  # we synthesize a row from the resolution event so the table still reflects
+  # what's known. The resolution timestamp prefers the action-specific field
+  # (`approved_at`/`denied_at`) and falls back to the entry-level `ts`.
+  defp update_resolution(entry, acc, status, resolution_ts_field, reason) do
+    task_path = entry["target"]
+    ts = parse_audit_ts(resolution_ts_field) || parse_audit_ts(entry["ts"])
+
+    if is_binary(task_path) and ts != nil do
+      reason_str = if is_binary(reason), do: reason, else: nil
+
+      case Map.get(acc, task_path) do
+        nil ->
+          agent = entry["agent"]
+
+          if is_binary(agent) do
+            Map.put(acc, task_path, %{
+              task_path: task_path,
+              agent_slug: agent,
+              status: status,
+              requested_at: ts,
+              resolved_at: ts,
+              reason: reason_str
+            })
+          else
+            acc
+          end
+
+        existing ->
+          Map.put(acc, task_path, %{
+            existing
+            | status: status,
+              resolved_at: ts,
+              reason: reason_str
+          })
+      end
+    else
+      acc
+    end
+  end
+
+  defp insert_approval_rows(states) when map_size(states) == 0, do: 0
+
+  defp insert_approval_rows(states) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    rows =
+      states
+      |> Map.values()
+      |> Enum.map(&Map.merge(&1, %{inserted_at: now, updated_at: now}))
+
+    rows
+    # SQLite ~999 bind parameters per query; 7 columns × 142 rows = ~994.
+    # Chunk at 100 to stay comfortably under every supported SQLite.
+    |> Enum.chunk_every(100)
+    |> Enum.reduce(0, fn chunk, acc ->
+      {n, _} = Repo.insert_all(TasksApprovalState, chunk)
+      acc + n
+    end)
+  end
 end

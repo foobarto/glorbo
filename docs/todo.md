@@ -61,6 +61,28 @@ it's been in CHANGELOG for a cycle.
   v0.0.3's single-digit task counts, but watch it past 1000 tasks.
   If it becomes hot, cache mtime like Search.scan_tasks already
   does.
+- [x] **GEP-34 Phase 2 — `tasks_approval_state` rebuild from
+  audit JSONL.** Shipped 2026-04-26. `Reindex.run/1` folds
+  `approval.{requested,granted,denied}` lines chronologically per
+  task_path into the schema's `{status, agent_slug, requested_at,
+  resolved_at, reason}` shape, bulk-inserts in chunks of 100.
+  Resolutions without a matching request synthesize a row from
+  the resolution event. Decided sentinel-retention question
+  audit-only (gate keeps deleting the awaiting sentinel; no
+  resolved sentinel written; audit JSONL is authoritative).
+  GEP-34 D4+D5 captured. 8 new tests; result map gains
+  `:tasks_approval_state` count. Only `budgets` (Phase 3)
+  remains.
+- [ ] **Phase 1 `_system` audit reindex path mismatch.** The
+  writer puts orchestrator events at
+  `<base>/audit/_system/<YYYY-MM>.jsonl` (subdirectory) but
+  Phase 1's `rebuild_audit_events/1` lists `*.jsonl` files
+  directly under `<base>/audit/`. The reindex_test passes because
+  tests write to the flat path; production layout is the
+  subdirectory. Either reindex should descend into `_system/` or
+  the writer should flatten — defer pending decision on which
+  path is canonical (probably the subdirectory writer is right;
+  reindex needs to match).
 
 ## P2 — nice to have
 
