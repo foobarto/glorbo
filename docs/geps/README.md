@@ -56,7 +56,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0030 | [Director Dashboard TUI Redesign (V1)](./0030-tui-redesign.md)                             | Standards     | Implemented |
 | 0031 | [Network-namespace isolation for `:proxy` agents](./0031-netns-isolation-for-proxy-agents.md) | Standards  | Implemented |
 | 0032 | [Native Agent Harness — OpenAI v1-Compatible Provider](./0032-native-agent-harness.md)     | Standards     | Implemented |
-| 0033 | [Git History Layer for Glorbo Home](./0033-git-history-layer-for-glorbo-home.md)           | Standards     | Draft       |
+| 0033 | [Git History Layer for Glorbo Home](./0033-git-history-layer-for-glorbo-home.md)           | Standards     | Implemented |
 | 0034 | [Reindex v2 — full derived-state rebuild](./0034-reindex-v2-derived-state-rebuild.md)       | Standards     | Placeholder |
 | 0035 | [Router split + AgentWritableFile seam](./0035-router-split-and-agent-writable-file-seam.md) | Standards   | Placeholder |
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Implemented |
@@ -67,6 +67,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0041 | [Agent peer-review gate — severity-based + opt-in escalation](./0041-agent-peer-review-gate.md) | Standards     | Implemented |
 | 0042 | [Reviewer auto-dispatcher — close the GEP-41 peer-review loop](./0042-reviewer-auto-dispatcher.md) | Standards     | Implemented |
 | 0043 | [ETS-first derived state with on-disk snapshots for cold boot](./0043-ets-derived-state-with-snapshots.md) | Standards     | Placeholder |
+| 0044 | [Visual regression baselines for the LiveView dashboard](./0044-visual-regression-baselines.md) | Process       | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

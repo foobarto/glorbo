@@ -2,7 +2,7 @@
 gep: 44
 title: Visual regression baselines for the LiveView dashboard
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Process
 created: 2026-04-25
 see-also: [6, 30]
@@ -16,6 +16,20 @@ history:
       `npm exec` so contributors don't need a project-level node
       install. Diff threshold set conservatively at 0.5% pixel
       delta; can be tightened once we see real cross-run noise.
+  - date: 2026-04-26
+    status: Implemented
+    note: |
+      Tier-2 + Tier-3 baselines added (16/18 LVs gated; `/health`
+      and `/providers` excluded via `DIFF_SKIP` because their
+      content is env-dependent — captured but not diffed).
+      `.github/workflows/ci.yml` runs the VR check step as an
+      informational `continue-on-error` gate (x86_64 only — VR
+      harness depends on Playwright Chromium which isn't
+      available on aarch64 GHA runners). Cross-run drift settled
+      at 0.000–0.045% across three back-to-back local runs after
+      adding the top-30/bottom-30 clip rect that excludes the
+      browser path bar + clock. v0.11.1 CHANGELOG records the
+      ship.
 ---
 
 # GEP-44: Visual regression baselines for the LiveView dashboard
@@ -304,14 +318,19 @@ new content during the capture.
 
 ## Open questions
 
-- **Should we add Tier-2 LVs in this v1 cut, or wait?** Going with
-  "wait" — the v1 baseline-sprint deliverable is small + reviewable;
-  adding 4 more LVs would push the harness debugging surface
-  larger without commensurate value.
-- **Per-LV threshold overrides?** Not yet. If a Tier-1 LV proves
-  noisier than 0.5% in practice we'll add an override; until then
-  one threshold keeps the harness simple.
-- **Mobile / narrow-viewport variants?** Out of scope for v1;
+- ~~**Should we add Tier-2 LVs in this v1 cut, or wait?**~~
+  *Resolved 2026-04-26:* Tier-2 + Tier-3 expanded; 16/18 LVs
+  gated. `/health` and `/providers` carved out via `DIFF_SKIP`
+  because their content is env-dependent.
+- **Per-LV threshold overrides?** Not yet. After three local
+  runs at 0.000–0.045% drift the global 0.5% threshold has
+  plenty of headroom; revisit if any LV proves noisier in
+  practice.
+- **Mobile / narrow-viewport variants?** Still out of scope.
   Director's primary use is desktop. Narrow-viewport bugs
-  (the topbar truncate-popover punch-list item) deserve their own
-  baseline set when the design lands.
+  (the topbar truncate-popover punch-list item) deserve their
+  own baseline set when the design lands.
+- **aarch64 / Apple-Silicon CI parity?** Currently x86_64-only
+  on GHA — Playwright Chromium isn't available on `ubuntu-24.04-arm`
+  runners. Tracked but not blocking; adding aarch64 baselines
+  needs a separate fixture set anyway since fonts/AA differ.
