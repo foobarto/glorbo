@@ -347,3 +347,159 @@ all reference `audit/_system/`. Reindex was the only outlier.
     the writer never produced flat files, this is an empty
     set in practice — but worth noting as a "behavioural
     change in reindex" line for any release notes.
+
+---
+
+## Task 4 — v0.12.0 release-gate walk + cut
+
+**Task picked.** With every gap-table from GEP-34 now derived
+from disk, this was the natural moment to roll the work onto a
+release surface. Continuation scope "continue to autonomously L4," so I
+walked `docs/workflow/release-gate.md` end-to-end as a single
+bounded task.
+
+**What shipped (Step 1 — doc-drift pass).**
+
+  * `mix.exs`: `version: "0.11.3"` → `"0.12.0"`.
+  * `CHANGELOG.md`: promoted `[Unreleased]` to
+    `[0.12.0] — 2026-04-26` with a description of the GEP-34
+    phases plus the `_system` audit subdirectory fix; reset
+    `[Unreleased]` to "(nothing yet — next cycle)".
+  * `README.md`: "Latest release **v0.11.1** (2026-04-25)" →
+    "**v0.12.0** (2026-04-26)" in the Project Status block.
+  * `docs/geps/README.md`: GEP-34 row flipped Draft →
+    Implemented in the index (file frontmatter was already
+    Implemented; `mix gep.validate` caught the index drift).
+
+**What shipped (Step 2 — graphify refresh).** Ran
+`graphify update lib`; the report grew to **3312 nodes / 6230
+edges / 118 communities** (was 2478 / 4478 / 103 at the v0.11
+baseline) — that's roughly +25% on every dimension, reflecting
+the FileSpec / Actions / native-harness / GEP-32 / GEP-34 work
+since v0.11.0. Moved the regenerated `GRAPH_REPORT.md` into
+`docs/knowledge-graph/`. Appended a fresh tacit-knowledge
+section to `notes.md` capturing four facts I learned today:
+
+  1. `Reindex.run/1` result-map keys are additive, never
+     removed (additive extension is safe pre-1.0).
+  2. Trust the writer for audit-action names — GEP specs can
+     drift (the `usage.recorded` vs `budget.usage` divergence
+     I hit in Phase 3).
+  3. `alerts_fired` isn't on the `budgets` schema (it's
+     GenServer state in `BudgetTracker`, rehydrated from
+     `alerts/*.md`).
+  4. Phase 2 needs chronological fold, Phase 3 doesn't —
+     order matters for lifecycle, not for summation.
+
+**What shipped (Step 3 — tests + Credo).**
+
+  * `mix test` → 2274 / 2274 green, 42 excluded, 2 skipped,
+    50.6s wall.
+  * `mix credo --strict` → 5389 mods/funs, no issues, exit 0
+    (verified explicitly with `echo $?` per the gate's "Credo
+    doesn't exit non-zero on refactor warnings" caveat).
+
+**What shipped (Step 4 — UAT smoke).** N/A for a reindex-
+internals release (no UI surface change). The CLI E2E was
+already covered by `mix precommit`'s release-binary smoke
+chain (`init → new company → reindex → post_doctor`) which
+ran in Step 3 with `reindex — indexed=5 skipped=0 deleted=0`
+exit 0. Documented as such in the commit body so the gate
+walk is auditable.
+
+**What shipped (Step 5 — security review).**
+
+  * Open Critical / High / Medium / Low: **0 / 0 / 0 / 0**
+    in `docs/testing/threatmodel.md`.
+  * 2 Accepted Risks documented inline (stdout-streamer marker
+    spoofing; release-boot `validate_compile_env: false`).
+  * 24 Informational rows remain — explicitly flagged
+    "correctness / UX — not a direct security gap" by the
+    threatmodel itself; not blockers per
+    `docs/project-profile.md` §"P0 definition" which scopes
+    P0-deferral specifically to security findings.
+  * Reviewed the diff itself for new attack surface: JSONL
+    inputs are bounded by the existing 64-KiB line cap; all
+    integer fields go through `non_neg_int/1`; `Repo.insert_all`
+    uses parameterized binds; `Path.join` uses pre-validated
+    `companies_dir`. Clean.
+
+**What shipped (Step 6 — release).**
+
+  * Local pre-flight: `mix gep.validate` (1 error caught + fixed:
+    GEP-34 README index Draft → Implemented), `mix glorbo.docs.
+    file_formats --check` (clean).
+  * Single release commit `50c393c chore(release): cut v0.12.0`
+    bundling all 6 files with the gate-walk evidence as the
+    commit body.
+  * `git tag -a v0.12.0 -m v0.12.0` — annotated tag at HEAD.
+  * `git push origin main` (b6fb71c..50c393c) +
+    `git push origin v0.12.0`.
+  * Three CI runs kicked off: main-branch CI, tag-triggered CI
+    (the publish job), and Pages deploy. Armed `ci-monitor` on
+    the tag run (24952972187) which handles the Burrito build +
+    signed GitHub Release upload; will notify on completion.
+
+**Design calls I made without you.**
+
+  * **Bumped 0.11.3 → 0.12.0 (minor), not 0.11.4 (patch).**
+    GEP-34 is a load-bearing FS-as-source-of-truth invariant
+    — `glorbo.db` is now genuinely rebuildable for the first
+    time. That's behavioural, not just a bugfix; minor cut is
+    the honest call. Pre-1.0 SemVer is loose, but this matches
+    the v0.10 → v0.11 precedent (GEP-44 + harness work).
+
+  * **Skipped browser UAT.** Per CLAUDE.md the browser path
+    requires distrobox; I'm on the host. The release ships
+    no UI changes, so the CLI smoke from precommit's
+    release-binary chain covers the actual change set.
+    Documented this in the commit body so the next reviewer
+    sees the reasoning.
+
+  * **Single bundled release commit.** Considered splitting
+    the version bump from the docs/graph refresh, but the
+    release-gate output IS a single atomic event from the
+    user's perspective. One commit is easier to revert if the
+    tag has to be pulled.
+
+**Gates.**
+
+  * All 6 release-gate steps green.
+  * Tag pushed; CI monitoring armed.
+
+**Skipped / not done (and why).**
+
+  * `gh release view v0.12.0` verification — depends on the
+    tag-triggered CI publishing the assets first.
+  * `mix glorbo.release_formula --write` — the task fetches
+    `SHA256SUMS` from the live GitHub release, which doesn't
+    exist until CI completes the publish job. Will be the
+    next-step trigger after the CI monitor fires success.
+  * `brew upgrade glorbo` smoke + `git push` to the tap repo
+    — needs the user's local environment / authentication on
+    the homebrew-tap repo. Will surface as a follow-up ask
+    once CI lands and the formula regenerates clean.
+
+**Commit(s).** `50c393c chore(release): cut v0.12.0
+(GEP-34 reindex v2 fully Implemented)` — the single release
+commit; tag `v0.12.0` annotated at the same SHA.
+
+### Things I'd like your review (Task 4)
+
+  * **Release-formula + tap push are still pending CI.**
+    When the monitor fires success, I'll run
+    `mix glorbo.release_formula --write` against
+    `../homebrew-tap` if that sibling exists, otherwise dump
+    the formula and ask you to drop it in place. The
+    `git push` to the tap repo is a separate-confirmation
+    step (touches a different repo). Same with
+    `brew upgrade glorbo` — your-machine action.
+
+  * **Behavioural-change footnote on `_system` audit.** The
+    fix in commit 8d9f3b1 silently changes which JSONL files
+    `glorbo reindex` will read. For any user who hand-placed
+    files at the legacy flat path, those events stop being
+    indexed. The CHANGELOG records this as a `Fixed` line —
+    flagging it explicitly here in case you'd rather call it
+    out as a "Behaviour change" subheading in the release
+    notes.
