@@ -148,7 +148,7 @@ defmodule Glorbo.Company.BudgetTracker do
         |> Enum.reduce(MapSet.new(), fn name, acc ->
           path = Path.join(alerts_dir, name)
 
-          case parse_alert_key(path) do
+          case parse_alert_key(name, path) do
             {:ok, key} -> MapSet.put(acc, key)
             _ -> acc
           end
@@ -159,14 +159,30 @@ defmodule Glorbo.Company.BudgetTracker do
     end
   end
 
-  defp parse_alert_key(path) do
-    with {:ok, contents} <- File.read(path),
+  # Wave 34 (defense-in-depth): the canonical agent slug for the
+  # alert key comes from the FILENAME (`<agent>-budget.md`), not from
+  # the frontmatter. The writer puts both fields and they always match,
+  # but on a hand-edited / operator-tampered alert file the frontmatter
+  # could disagree with the filename. Trusting the frontmatter would
+  # let an attacker write `editor-budget.md` with `agent: "ceo"` and
+  # silently suppress ceo's real alerts (the MapSet would carry the
+  # wrong key). The filename is the on-disk truth — same dirname-vs-
+  # content discipline as waves 31-33 in the GEP-34 reindex paths.
+  defp parse_alert_key(filename, path) do
+    with agent when is_binary(agent) <- agent_from_alert_filename(filename),
+         {:ok, contents} <- File.read(path),
          [_, frontmatter, _] <- String.split(contents, "---", parts: 3),
-         agent when is_binary(agent) <- extract_yaml_field(frontmatter, "agent"),
          month when is_binary(month) <- extract_yaml_field(frontmatter, "month") do
       {:ok, {agent, month}}
     else
       _ -> :error
+    end
+  end
+
+  defp agent_from_alert_filename(filename) do
+    case String.split(filename, "-budget.md", parts: 2) do
+      [agent, ""] when agent != "" -> agent
+      _ -> nil
     end
   end
 

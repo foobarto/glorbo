@@ -400,6 +400,58 @@ defmodule Glorbo.Company.BudgetTrackerTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Wave 34: alert filename is canonical (defense-in-depth)
+  # ---------------------------------------------------------------------------
+
+  test "wave 34: rehydrate uses filename, not frontmatter, for the agent slug" do
+    base = TmpGlorboHome.setup()
+    company = "acme"
+    alerts_dir = Path.join([base, "companies", company, "alerts"])
+    File.mkdir_p!(alerts_dir)
+
+    # Write a tampered alert file: filename says editor, frontmatter
+    # claims agent: ceo. Pre-wave-34 this would have populated the
+    # MapSet with {ceo, <month>}, suppressing real ceo alerts. Post-fix
+    # it populates {editor, <month>} (the filename is canonical).
+    ym = Ledger.month_bucket(DateTime.utc_now())
+
+    File.write!(Path.join(alerts_dir, "editor-budget.md"), """
+    ---
+    agent: "ceo"
+    month: "#{ym}"
+    used_usd: 10.00
+    cap_usd: 10.00
+    threshold_pct: 80
+    created_at: "2026-04-26T10:00:00Z"
+    ---
+    """)
+
+    caps = %{"ceo" => 10_000, "editor" => 10_000}
+    budgets_fun = fn slug -> Map.get(caps, slug) end
+
+    test_pid = self()
+
+    {:ok, pid} =
+      BudgetTracker.start_link(
+        name: Glorbo.Test.UniqueName.gen("bt_wave34"),
+        company: company,
+        base: base,
+        budgets_fun: budgets_fun,
+        audit_fun: capturing_audit_fun(test_pid)
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :normal) end)
+    Sandbox.allow(Glorbo.Repo, self(), pid)
+
+    state = :sys.get_state(pid)
+
+    # The filename was `editor-budget.md` — the rehydrated key must
+    # be {"editor", <month>}, NOT the frontmatter's {"ceo", <month>}.
+    assert MapSet.member?(state.alerts_fired, {"editor", ym})
+    refute MapSet.member?(state.alerts_fired, {"ceo", ym})
+  end
+
+  # ---------------------------------------------------------------------------
   # Unconfigured agent cap (Test 13)
   # ---------------------------------------------------------------------------
 

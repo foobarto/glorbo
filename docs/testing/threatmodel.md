@@ -621,10 +621,11 @@ sweep after the codex scans were abandoned):
     doesn't expose O_EXCL, so the 8-byte random suffix
     is the load-bearing defense.
 
-Cumulative tally: **99 security findings closed across 33
+Cumulative tally: **100 security findings closed across 34
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
 + 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 4 wave 28
-+ 1 wave 29 + 1 wave 30 + 1 wave 31 + 1 wave 32 + 1 wave 33.
++ 1 wave 29 + 1 wave 30 + 1 wave 31 + 1 wave 32 + 1 wave 33
++ 1 wave 34.
 Two findings remain accepted-by-design (plus the wave-27
 proxy-token attribution gap deferred as non-security).
 
@@ -652,6 +653,45 @@ and routing all three call sites through it. 2 new tests in
 both result in zero rows imported across all three projections.
 *Paths:* `lib/glorbo/filesystem/reindex.ex,
 test/glorbo/filesystem/reindex_test.exs`.
+
+### Wave 34 closure (post-v0.12.4 cross-area review, 2026-04-26)
+
+**Low severity — alert filename vs frontmatter mismatch in
+`Company.BudgetTracker.parse_alert_key/2`.**
+
+Adjacent-area review after the GEP-34 reindex closures (waves
+29-33) found the same dirname-vs-content discipline gap in
+`BudgetTracker.rehydrate_alerts_fired/2`. The function reads
+`<base>/companies/<co>/alerts/*.md` files and extracts the
+agent slug from the frontmatter `agent:` field. The writer
+(`do_write_alert_file/5`) names the file `<agent>-budget.md`
+AND puts `agent: "<agent_slug>"` in frontmatter — they always
+match in production. But on a hand-edited alert file (operator
+tampering or path-grant misconfiguration) the two could
+disagree.
+
+If the disagreement happens, the MapSet of fired alerts gets
+the wrong key. An attacker writing `editor-budget.md` with
+`agent: "ceo"` in frontmatter could silently suppress ceo's
+real alert for that month — when ceo legitimately crosses the
+threshold, the tracker sees `{ceo, <month>}` already in the
+fired set and skips the alert.
+
+Severity Low: agents are bwrap-prevented from writing to
+`alerts/`, so the threat surface is operator-only.
+
+Closed by inverting the parse priority: filename is now
+canonical (`agent_from_alert_filename/1` extracts the prefix
+of `<agent>-budget.md`), and the frontmatter is read only for
+the `month:` field. Same dirname-canonical discipline as
+waves 31-33 in the GEP-34 reindex paths — the lesson
+generalized.
+
+1 new test: tampered alert file (filename `editor-budget.md`,
+frontmatter `agent: "ceo"`) → MapSet contains `{editor,
+<month>}`, NOT `{ceo, <month>}`.
+*Paths:* `lib/glorbo/company/budget_tracker.ex,
+test/glorbo/company/budget_tracker_test.exs`.
 
 ### Wave 33 closure (post-v0.12.3 self-review, 2026-04-26)
 

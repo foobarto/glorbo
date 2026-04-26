@@ -152,6 +152,16 @@ it's been in CHANGELOG for a cycle.
   canonical for Phase 1 too (with `_system` allowance for
   the system audit dir). `safe_company_slug/2` removed, no
   callers left. 1 new test; cumulative tally 99 / 33 waves.
+- [x] **Wave 34 (post-v0.12.4, LOW): BudgetTracker alert
+  rehydrate uses filename canonically.** Cross-area review:
+  same dirname-vs-content pattern in
+  `BudgetTracker.parse_alert_key/2`. Reading `agent:` from
+  frontmatter let an operator-tampered `editor-budget.md`
+  with `agent: "ceo"` populate the MapSet with the wrong
+  key, silently suppressing ceo's real alert for that month.
+  Filename is now canonical via
+  `agent_from_alert_filename/1`. 1 new test; cumulative
+  tally 100 / 34 waves.
 
 ## P2 — nice to have
 

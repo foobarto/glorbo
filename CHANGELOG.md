@@ -10,7 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Security (wave 34)
+
+- **Low** — `Company.BudgetTracker.parse_alert_key/2` now
+  derives the agent slug from the alert filename
+  (`<agent>-budget.md`) instead of the frontmatter `agent:`
+  field. Same dirname-vs-content discipline as waves 31-33,
+  applied to BudgetTracker's `alerts_fired` rehydrate path.
+  Pre-fix, an attacker who could write to `<base>/companies/
+  <co>/alerts/` (operator-only attack surface — agents are
+  bwrap-prevented) could write `editor-budget.md` with
+  `agent: "ceo"` in frontmatter, populating the MapSet with
+  `{ceo, <month>}` and silently suppressing ceo's real
+  alerts for that month. Post-fix the filename is canonical;
+  frontmatter-only `agent:` mismatches are ignored. 1 new
+  test confirming the rehydrate prefers the filename's
+  agent over the frontmatter's.
 
 ## [0.12.4] — 2026-04-26
 
