@@ -10,6 +10,30 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-37 Phase 3g-revisit (Tasks status pill)
+
+Each task row in the TUI Tasks view now carries a single-char
+status glyph between the cursor prefix and the task id. Glyphs
+distinguish the four review-lane sub-states (pending /
+pending-approval / approved / denied) which all collapse into
+the same lane bucket and were previously visually
+indistinguishable. The mapping mirrors the LV's
+`gl-status--<status>` colour split:
+
+  · todo
+  ▸ in-progress
+  ? pending / pending-approval
+  + approved
+  ✗ denied
+  ✓ done
+  ? unknown
+
+`Tasks.Data.status_glyph/1` is the new helper; the view
+threads it into each row render before the task id. 9 new
+tests (1 in tasks_test.exs covering all six glyphs in one
+sweep + 8 in data_test.exs covering each status individually
+plus unknown fallback).
+
 ### Added — GEP-37 Phase 3f-revisit-3 (composer slash commands)
 
 The Chat composer parses `/`-prefixed buffers as commands

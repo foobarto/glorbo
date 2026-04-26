@@ -107,8 +107,9 @@ defmodule Glorbo.Shell.Views.Tasks do
     |> Enum.map(fn {row, idx} ->
       absolute_idx = offset + idx
       prefix = if absolute_idx == cursor, do: "  > ", else: "    "
+      glyph = Data.status_glyph(row.status)
       assignee = if row.assignee, do: " [#{row.assignee}]", else: ""
-      text("#{prefix}#{row.task_id} — #{row.title}#{assignee}")
+      text("#{prefix}#{glyph} #{row.task_id} — #{row.title}#{assignee}")
     end)
   end
 

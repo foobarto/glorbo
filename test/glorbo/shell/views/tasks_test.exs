@@ -183,11 +183,11 @@ defmodule Glorbo.Shell.Views.TasksTest do
       state = Tasks.init(rows: sample_rows())
       rendered = render_to_strings(Tasks.view(state))
 
-      assert Enum.any?(rendered, &String.contains?(&1, "  > t-1 — Todo One [ceo]"))
+      assert Enum.any?(rendered, &String.contains?(&1, "  > · t-1 — Todo One [ceo]"))
       # t-2 has no assignee — no bracket.
-      assert Enum.any?(rendered, &String.contains?(&1, "    t-2 — Todo Two"))
+      assert Enum.any?(rendered, &String.contains?(&1, "    · t-2 — Todo Two"))
       refute Enum.any?(rendered, &(String.contains?(&1, "t-2") and String.contains?(&1, "[")))
-      assert Enum.any?(rendered, &String.contains?(&1, "    t-3 — Active [engineer]"))
+      assert Enum.any?(rendered, &String.contains?(&1, "    ▸ t-3 — Active [engineer]"))
     end
 
     test "cursor moves across lane boundaries (flat row index)" do
@@ -195,9 +195,58 @@ defmodule Glorbo.Shell.Views.TasksTest do
       state = %{Tasks.init(rows: sample_rows()) | cursor: 3}
       rendered = render_to_strings(Tasks.view(state))
 
-      assert Enum.any?(rendered, &String.contains?(&1, "  > t-4 — Review"))
+      assert Enum.any?(rendered, &String.contains?(&1, "  > ? t-4 — Review"))
       # t-1 is no longer the cursor row.
-      assert Enum.any?(rendered, &String.contains?(&1, "    t-1 — Todo One"))
+      assert Enum.any?(rendered, &String.contains?(&1, "    · t-1 — Todo One"))
+    end
+
+    test "every task row carries a per-status glyph prefix" do
+      rows = [
+        %{task_id: "a", project: "p", title: "A", status: "todo", assignee: nil, lane: :todo},
+        %{
+          task_id: "b",
+          project: "p",
+          title: "B",
+          status: "in-progress",
+          assignee: nil,
+          lane: :in_progress
+        },
+        %{
+          task_id: "c",
+          project: "p",
+          title: "C",
+          status: "pending-approval",
+          assignee: nil,
+          lane: :review
+        },
+        %{
+          task_id: "d",
+          project: "p",
+          title: "D",
+          status: "approved",
+          assignee: nil,
+          lane: :review
+        },
+        %{
+          task_id: "e",
+          project: "p",
+          title: "E",
+          status: "denied",
+          assignee: nil,
+          lane: :review
+        },
+        %{task_id: "f", project: "p", title: "F", status: "done", assignee: nil, lane: :done}
+      ]
+
+      state = Tasks.init(rows: rows)
+      rendered = render_to_strings(Tasks.view(state))
+
+      assert Enum.any?(rendered, &String.contains?(&1, "· a — A"))
+      assert Enum.any?(rendered, &String.contains?(&1, "▸ b — B"))
+      assert Enum.any?(rendered, &String.contains?(&1, "? c — C"))
+      assert Enum.any?(rendered, &String.contains?(&1, "+ d — D"))
+      assert Enum.any?(rendered, &String.contains?(&1, "✗ e — E"))
+      assert Enum.any?(rendered, &String.contains?(&1, "✓ f — F"))
     end
   end
 

@@ -43,6 +43,22 @@ defmodule Glorbo.Shell.Views.Tasks.Data do
   def lane_label(:done), do: "DONE"
   def lane_label(:other), do: "OTHER"
 
+  @doc """
+  Single-char status glyph for the Tasks view. Distinguishes the
+  four review-lane statuses (pending / pending-approval / approved
+  / denied) from each other since they all collapse into the same
+  lane bucket. Mirrors the LV's `gl-status--<status>` colour split.
+  """
+  @spec status_glyph(String.t()) :: String.t()
+  def status_glyph("todo"), do: "·"
+  def status_glyph("in-progress"), do: "▸"
+  def status_glyph("pending"), do: "?"
+  def status_glyph("pending-approval"), do: "?"
+  def status_glyph("approved"), do: "+"
+  def status_glyph("denied"), do: "✗"
+  def status_glyph("done"), do: "✓"
+  def status_glyph(_), do: "?"
+
   @spec load_tasks(Path.t(), String.t()) :: [task_row()]
   def load_tasks(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])

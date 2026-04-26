@@ -175,5 +175,18 @@ defmodule Glorbo.Shell.Views.Tasks.DataTest do
       assert Data.lane_label(:done) == "DONE"
       assert Data.lane_label(:other) == "OTHER"
     end
+
+    test "status_glyph/1 distinguishes every status (incl. review-lane sub-states)" do
+      assert Data.status_glyph("todo") == "·"
+      assert Data.status_glyph("in-progress") == "▸"
+      assert Data.status_glyph("pending") == "?"
+      assert Data.status_glyph("pending-approval") == "?"
+      assert Data.status_glyph("approved") == "+"
+      assert Data.status_glyph("denied") == "✗"
+      assert Data.status_glyph("done") == "✓"
+      # Unknown statuses fall back to ?.
+      assert Data.status_glyph("blocked") == "?"
+      assert Data.status_glyph("") == "?"
+    end
   end
 end

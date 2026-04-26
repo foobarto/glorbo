@@ -473,6 +473,17 @@ it's been in CHANGELOG for a cycle.
   buffer is still treated as a regular post (only a leading
   `/` invokes the parser). Composer hint line now mentions
   `/help`. 8 new tests; 43 total in chat_test.exs.
+- [x] **GEP-37 Phase 3g-revisit — Tasks status pill.**
+  Shipped post-v0.16.0 (autonomous L4). Every task row now
+  carries a single-char status glyph between the cursor
+  prefix and the task id (· todo, ▸ in-progress, ? pending,
+  + approved, ✗ denied, ✓ done). The four review-lane
+  sub-states (pending / pending-approval / approved / denied)
+  are now visually distinguishable inside the same lane.
+  `Tasks.Data.status_glyph/1` is the new helper. 9 new tests
+  (1 view + 8 Data). Last-wake column still future work
+  (would need agent mtime/ledger reads per task — defer
+  until read pattern stabilises).
 - [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
   Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
   Kanban-style stacked-vertical layout: each lane
