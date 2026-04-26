@@ -10,6 +10,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-37 Phase 3a-revisit (AppRoot help overlay)
+
+`?` in idle mode opens a full-screen keymap reference: chord
+prefix table, list-nav primer (`j`/`k`/arrows/`r`/`q`),
+plus per-view modal triggers (Inbox `a`/`d`, Chat `i`/`s`,
+the three slash commands, Audit `p`/`n`). Esc or `?` again
+dismiss. While the overlay is open, every other keystroke
+is absorbed so the user can't accidentally navigate the
+underlying view or trigger a chord. State gains a
+`:help_open` boolean. 5 new tests.
+
 ### Added — GEP-37 Phase 3e-revisit (Audit older-page navigation)
 
 The Audit view picks up cross-month navigation. `p` moves to

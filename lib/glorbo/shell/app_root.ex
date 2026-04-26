@@ -1,11 +1,11 @@
 defmodule Glorbo.Shell.AppRoot do
   @moduledoc """
-  GEP-37 Phase 3a — top-level shell view + chord-prefix dispatcher.
+  GEP-37 Phase 3a + 3a-revisit — top-level shell view +
+  chord-prefix dispatcher + help overlay.
 
-  Wraps the per-view `TermUI.Elm` modules (Phase 2/2b/2c shipped
-  the Inbox; Phase 3b adds Health, Overview, etc.) and owns the
-  Emacs-style `C-c <letter>` chord that flips between them per
-  GEP-37 D10's keybinding table:
+  Wraps the per-view `TermUI.Elm` modules and owns the
+  Emacs-style `C-c <letter>` chord that flips between them
+  per GEP-37 D10's keybinding table:
 
       | C-c o | Overview            |
       | C-c t | Tasks               |
@@ -15,18 +15,19 @@ defmodule Glorbo.Shell.AppRoot do
       | C-c h | Health              |
       | C-c u | aUdit               |
 
-  Phase 3a (this version) ships the chord scaffold + Inbox routing
-  only. Pressing `C-c p` re-renders the Inbox; every other letter
-  surfaces a "view not yet implemented in Phase 3a" footer line.
-  Phase 3b adds the second view and validates the chord-driven swap
-  by actually transitioning the rendered surface.
+  Phase 3a-revisit (this version) adds a `?`-toggled help
+  overlay listing every chord, list-nav binding, and
+  view-specific modal trigger in one place — discoverable
+  without leaving the shell.
 
   ## State shape
 
       %{
-        view:          atom(),      # currently :approvals
-        sub_state:     map(),       # the active view's state
-        chord:         :idle | :c_c # chord-prefix tracker
+        view:       atom(),         # currently :approvals
+        sub_state:  map(),          # the active view's state
+        chord:      :idle | :c_c,   # chord-prefix tracker
+        chord_hint: String.t() | nil,
+        help_open:  boolean()
       }
 
   ## How chords work
@@ -58,7 +59,8 @@ defmodule Glorbo.Shell.AppRoot do
           view: view(),
           sub_state: map(),
           chord: chord(),
-          chord_hint: String.t() | nil
+          chord_hint: String.t() | nil,
+          help_open: boolean()
         }
 
   # Implemented views — chord letters mapped here actually swap.
@@ -75,10 +77,24 @@ defmodule Glorbo.Shell.AppRoot do
     # working.
     initial_view = Keyword.get(opts, :initial_view, :approvals)
     sub_state = view_module(initial_view).init(opts)
-    %{view: initial_view, sub_state: sub_state, chord: :idle, chord_hint: nil}
+
+    %{
+      view: initial_view,
+      sub_state: sub_state,
+      chord: :idle,
+      chord_hint: nil,
+      help_open: false
+    }
   end
 
   @impl TermUI.Elm
+  # Help overlay absorbs every keystroke; only `?` and Esc dismiss
+  # it. Sits above the chord-mode arms so an open help panel can't
+  # be navigated through.
+  def event_to_msg(%Key{key: :escape}, %{help_open: true}), do: {:msg, :help_close}
+  def event_to_msg(%Key{key: :char, char: "?"}, %{help_open: true}), do: {:msg, :help_close}
+  def event_to_msg(_event, %{help_open: true}), do: :ignore
+
   # Chord mode — the next keystroke is a view-switch letter.
   def event_to_msg(%Key{key: :escape}, %{chord: :c_c}), do: {:msg, :chord_cancel}
 
@@ -88,14 +104,20 @@ defmodule Glorbo.Shell.AppRoot do
 
   def event_to_msg(_event, %{chord: :c_c}), do: {:msg, :chord_cancel}
 
-  # Idle mode — Ctrl+c starts a chord; everything else delegates.
+  # Idle mode — Ctrl+c starts a chord; `?` opens the help overlay;
+  # everything else delegates.
   def event_to_msg(%Key{key: :char, char: "c", modifiers: mods}, _state) do
     if :ctrl in mods, do: {:msg, :chord_start_c_c}, else: :propagate
   end
 
+  def event_to_msg(%Key{key: :char, char: "?"}, _state), do: {:msg, :help_open}
+
   def event_to_msg(_event, _state), do: :propagate
 
   @impl TermUI.Elm
+  def update(:help_open, state), do: {%{state | help_open: true}, []}
+  def update(:help_close, state), do: {%{state | help_open: false}, []}
+
   def update(:chord_start_c_c, state) do
     {%{state | chord: :c_c, chord_hint: nil}, []}
   end
@@ -138,9 +160,55 @@ defmodule Glorbo.Shell.AppRoot do
 
   @impl TermUI.Elm
   def view(state) do
-    active = view_module(state.view)
-    body = active.view(state.sub_state)
-    append_chord_hint(body, state)
+    if state.help_open do
+      help_overlay()
+    else
+      active = view_module(state.view)
+      body = active.view(state.sub_state)
+      append_chord_hint(body, state)
+    end
+  end
+
+  # Static keymap reference. Rendered as a stack of text lines so
+  # the existing render_to_strings test helper can flatten it.
+  # Mirrors the chord-prefix table in `view_letter_map/0` plus the
+  # per-view bindings each view module already documents.
+  defp help_overlay do
+    stack(:vertical, [
+      text("Glorbo Shell — Help (? or Esc to close)"),
+      text(""),
+      text("View switcher (chord prefix):"),
+      text("  C-c o   Overview"),
+      text("  C-c t   Tasks"),
+      text("  C-c a   Agents"),
+      text("  C-c c   Chat"),
+      text("  C-c p   Approvals (Inbox)"),
+      text("  C-c h   Health"),
+      text("  C-c u   aUdit"),
+      text(""),
+      text("List navigation (every view):"),
+      text("  j / ↓   cursor down"),
+      text("  k / ↑   cursor up"),
+      text("  r       refresh"),
+      text("  q       quit"),
+      text(""),
+      text("Inbox (Approvals):"),
+      text("  a       approve highlighted"),
+      text("  d       deny → opens reason prompt"),
+      text("  Enter   submit deny reason"),
+      text("  Esc     cancel deny prompt"),
+      text(""),
+      text("Chat:"),
+      text("  i       open composer modal"),
+      text("  s       open channel switcher modal"),
+      text("  /switch <ch>   slash: swap channel"),
+      text("  /help          slash: list commands"),
+      text("  /cancel        slash: silent exit"),
+      text(""),
+      text("Audit:"),
+      text("  p       previous month"),
+      text("  n       next month")
+    ])
   end
 
   # ----------------------------------------------------------------

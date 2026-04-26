@@ -473,6 +473,14 @@ it's been in CHANGELOG for a cycle.
   buffer is still treated as a regular post (only a leading
   `/` invokes the parser). Composer hint line now mentions
   `/help`. 8 new tests; 43 total in chat_test.exs.
+- [x] **GEP-37 Phase 3a-revisit — AppRoot help overlay.**
+  Shipped post-v0.17.0 (autonomous L4). `?` in idle mode
+  toggles a full-screen keymap reference covering chord
+  prefix, list nav, and per-view modal triggers (Inbox /
+  Chat / Audit). Esc or `?` dismiss; all other keys are
+  absorbed while open (no underlying-view leakage).
+  AppRoot state gains `:help_open` boolean. 5 new tests;
+  2584 total.
 - [x] **GEP-37 Phase 3e-revisit — Audit older-page navigation.**
   Shipped post-v0.17.0 (autonomous L4). `p`/`n` step the
   Audit view through month buckets; header shows active

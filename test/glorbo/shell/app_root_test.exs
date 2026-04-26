@@ -9,11 +9,12 @@ defmodule Glorbo.Shell.AppRootTest do
   end
 
   describe "init/1" do
-    test "starts in :idle chord, :approvals view, with Inbox sub-state" do
+    test "starts in :idle chord, :approvals view, with Inbox sub-state, help closed" do
       state = init_state()
       assert state.chord == :idle
       assert state.view == :approvals
       assert state.chord_hint == nil
+      assert state.help_open == false
       assert is_map(state.sub_state)
       assert state.sub_state.approvals == []
     end
@@ -205,6 +206,53 @@ defmodule Glorbo.Shell.AppRootTest do
       state = %{init_state() | chord_hint: "unknown chord: C-c z"}
       rendered = render_to_strings(AppRoot.view(state))
       assert Enum.any?(rendered, &String.contains?(&1, "[chord] unknown chord: C-c z"))
+    end
+  end
+
+  describe "Phase 3a-revisit — help overlay" do
+    test "`?` in idle mode opens the help overlay" do
+      assert AppRoot.event_to_msg(%Key{key: :char, char: "?"}, %{chord: :idle, help_open: false}) ==
+               {:msg, :help_open}
+    end
+
+    test "Esc and `?` while help is open both close it" do
+      open = %{help_open: true}
+      assert AppRoot.event_to_msg(%Key{key: :escape}, open) == {:msg, :help_close}
+      assert AppRoot.event_to_msg(%Key{key: :char, char: "?"}, open) == {:msg, :help_close}
+    end
+
+    test "all other keys are absorbed while help is open (no leak to view or chord)" do
+      open = %{help_open: true}
+      assert AppRoot.event_to_msg(%Key{key: :char, char: "j"}, open) == :ignore
+      assert AppRoot.event_to_msg(%Key{key: :down}, open) == :ignore
+
+      assert AppRoot.event_to_msg(%Key{key: :char, char: "c", modifiers: [:ctrl]}, open) ==
+               :ignore
+    end
+
+    test ":help_open / :help_close flip the boolean" do
+      state = init_state()
+      {state, []} = AppRoot.update(:help_open, state)
+      assert state.help_open == true
+
+      {state, []} = AppRoot.update(:help_close, state)
+      assert state.help_open == false
+    end
+
+    test "view in help mode renders the keymap reference (not the active sub-view)" do
+      state = %{init_state() | help_open: true}
+      rendered = render_to_strings(AppRoot.view(state))
+
+      assert Enum.any?(rendered, &String.contains?(&1, "Glorbo Shell — Help"))
+      assert Enum.any?(rendered, &String.contains?(&1, "C-c o   Overview"))
+      assert Enum.any?(rendered, &String.contains?(&1, "C-c u   aUdit"))
+      # List-nav primer.
+      assert Enum.any?(rendered, &String.contains?(&1, "j / ↓"))
+      # Per-view bindings exposed.
+      assert Enum.any?(rendered, &String.contains?(&1, "i       open composer"))
+      assert Enum.any?(rendered, &String.contains?(&1, "p       previous month"))
+      # Inbox empty-state placeholder is NOT rendered while help is open.
+      refute Enum.any?(rendered, &String.contains?(&1, "Inbox empty"))
     end
   end
 
