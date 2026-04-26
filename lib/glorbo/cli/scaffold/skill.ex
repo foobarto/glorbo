@@ -76,7 +76,17 @@ defmodule Glorbo.CLI.Scaffold.Skill do
   defp scaffold_default(company, name, skill_path) do
     Audit.emit("new_skill", "start", %{company: company, skill: name, template: nil})
 
-    File.mkdir_p!(Path.dirname(skill_path))
+    # Wave 28b: `companies/<co>/skills/` is agent-RW for agents
+    # holding `skills:install` (GEP-22). Refuse a planted
+    # `skills -> ../../audit` symlink before mkdir_p so an agent
+    # compromise cannot redirect Director skill scaffolds.
+    skills_dir = Path.dirname(skill_path)
+
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(skills_dir) do
+      raise "refusing to scaffold skill into a symlinked path: #{skills_dir}"
+    end
+
+    File.mkdir_p!(skills_dir)
 
     File.write!(skill_path, """
     ---
@@ -107,7 +117,15 @@ defmodule Glorbo.CLI.Scaffold.Skill do
   defp scaffold_from_template(company, name, skill_path, entry) do
     Audit.emit("new_skill", "start", %{company: company, skill: name, template: entry.name})
 
-    File.mkdir_p!(Path.dirname(skill_path))
+    # Wave 28b: same symlinked-ancestor refusal as the default
+    # path above — keeps the template-rendered write contained.
+    skills_dir = Path.dirname(skill_path)
+
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(skills_dir) do
+      raise "refusing to scaffold skill into a symlinked path: #{skills_dir}"
+    end
+
+    File.mkdir_p!(skills_dir)
 
     # Skill templates get the same var map as agent templates, with
     # `name` defaulting to the skill slug as-is (not upcased — skill

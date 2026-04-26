@@ -7,7 +7,35 @@ defmodule GlorboWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {GlorboWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+
+    # Wave 28b defense-in-depth: layer a Content-Security-Policy on
+    # top of Phoenix's default secure-header set. The dashboard is
+    # localhost-only, so the threat is XSS via agent-rendered chat /
+    # task body content (sanitised by HtmlSanitizeEx, but CSP is the
+    # second line). Settings keep LiveView working:
+    #   * `default-src 'self'` blocks any external resource by default
+    #   * `script-src 'self'` blocks third-party JS — `app.js` is bundled
+    #   * `style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com` —
+    #     unsafe-inline kept for HEEx-inlined styles; cdn entry for
+    #     font-awesome (already SRI-pinned in root layout)
+    #   * `font-src 'self' cdnjs.cloudflare.com data:` — same cdn
+    #   * `img-src 'self' data:` — data: needed for inline SVG icons
+    #   * `connect-src 'self'` — LiveView WS is same-origin
+    #   * `frame-ancestors 'none'` — no clickjacking
+    #   * `base-uri 'self'` — block <base> hijack
+    #   * `form-action 'self'` — block off-site form submission
+    plug :put_secure_browser_headers, %{
+      "content-security-policy" =>
+        "default-src 'self'; " <>
+          "script-src 'self'; " <>
+          "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " <>
+          "font-src 'self' https://cdnjs.cloudflare.com data:; " <>
+          "img-src 'self' data:; " <>
+          "connect-src 'self'; " <>
+          "frame-ancestors 'none'; " <>
+          "base-uri 'self'; " <>
+          "form-action 'self'"
+    }
   end
 
   # Optional bearer-token gate for LAN exposure (D-06). Active only when
