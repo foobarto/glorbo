@@ -10,10 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.11.3] — 2026-04-26
+
+Same-day security/quality patch. Wave 28 closes 4 more
+findings (1 medium, 3 low) plus two CI test fixes. Cumulative
+**94 findings closed across 28 waves** since the 2026-04-22
+security import.
+
 ### Security (wave 28)
 
-Three defense-in-depth hardenings caught by manual sweep
-(codex scans v8 + v8b both hung past 30 min and were killed).
+Defense-in-depth hardenings caught by manual sweep (codex
+scans v8 + v8b both hung past 30 min and were abandoned).
 
 - **Medium** — `Actions.Reviews.atomic_write/2` and
   `FileSpec.Formatter.atomic_write/2` switched from
@@ -51,6 +60,13 @@ Three defense-in-depth hardenings caught by manual sweep
   commit hadn't landed in 150ms; head was still
   `glorbo: initial history import`). Matches the
   WatcherBridge / Tx debounce-flake remediation pattern.
+- `test/glorbo/sandbox/bwrap_test.exs` switched from
+  `async: true` to `async: false`. Test "B13: prompt tempfile
+  is cleaned up after invocation (no leak)" enumerates `/tmp`
+  for `glorbo_bwrap_prompt_*` files before + after a
+  `Bwrap.start/2` call; with concurrent siblings B11/B12 also
+  creating tempfiles, B13's after-snapshot was picking up an
+  in-flight sibling's tempfile and reporting a false leak.
 
 ### Docs
 
@@ -61,8 +77,7 @@ Three defense-in-depth hardenings caught by manual sweep
   from "Draft" to "Implemented" (file frontmatter was already
   Implemented; index drifted).
 - `docs/testing/threatmodel.md` updated with the wave 28
-  closure log; cumulative tally **93 findings closed across 28
-  waves**.
+  closure log.
 
 ## [0.11.2] — 2026-04-26
 
