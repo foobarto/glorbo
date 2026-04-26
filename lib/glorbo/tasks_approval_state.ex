@@ -8,6 +8,13 @@ defmodule Glorbo.TasksApprovalState do
   or `denied` (D-31/D-32).
 
   Unique on `task_path` — one approval state per task at a time.
+
+  **Rebuildable from disk** (GEP-34 Phase 2, v0.12.0): `glorbo reindex`
+  folds `approval.{requested,granted,denied}` audit lines chronologically
+  per `task_path` and bulk-inserts the final state via
+  `Glorbo.Filesystem.Reindex.rebuild_tasks_approval_state/1`. Dropping
+  `glorbo.db` is safe — `glorbo reindex` reconstructs every active and
+  resolved approval row from the on-disk audit log.
   """
   use Ecto.Schema
 

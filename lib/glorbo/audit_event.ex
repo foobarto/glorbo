@@ -7,9 +7,11 @@ defmodule Glorbo.AuditEvent do
   (beyond the well-known keys ts / actor / action / target) so the dashboard
   can filter without re-parsing the JSONL file.
 
-  **W2 scope note:** Phase-2 reindex does NOT rebuild this table from disk.
-  JSONL-to-SQLite import is deferred to Phase 3. Dropping `glorbo.db` does
-  not affect the on-disk audit log.
+  **Rebuildable from disk** (GEP-34 Phase 1, v0.12.0): `glorbo reindex`
+  streams every `companies/<co>/audit/<YYYY-MM>.jsonl` and
+  `<base>/audit/_system/<YYYY-MM>.jsonl` line-by-line back into this
+  table via `Glorbo.Filesystem.Reindex.rebuild_audit_events/1`. Dropping
+  `glorbo.db` is safe — `glorbo reindex` regenerates the full mirror.
   """
   use Ecto.Schema
 

@@ -12,6 +12,13 @@ defmodule Glorbo.Budget do
   caps stay isolated even when two companies reuse the same agent slug.
   Plan 02's BudgetTracker upserts against that conflict target with atomic
   `inc:` (see RESEARCH Pitfall 4 for the safe Ecto pattern).
+
+  **Rebuildable from disk** (GEP-34 Phase 3, v0.12.0): `glorbo reindex`
+  sums `budget.usage` audit lines per `{company, agent, year_month}` via
+  `Glorbo.Filesystem.Reindex.rebuild_budgets/1`. The `alerts_fired`
+  bitmap is GenServer state in `Company.BudgetTracker` (rehydrated from
+  `alerts/*.md` on tracker boot), not on this schema, so reindex doesn't
+  touch it. Dropping `glorbo.db` is safe.
   """
   use Ecto.Schema
 
