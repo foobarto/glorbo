@@ -76,7 +76,14 @@ remain accepted-by-design.
   aarch64 build+test success); v0.12.5 is the first patch
   in this trio to actually land a signed GitHub Release.
 
-## [0.12.4] — 2026-04-26
+## [0.12.4] — 2026-04-26 (tagged, publish-skipped — superseded by v0.12.5)
+
+> **Tag exists in git history but no GitHub Release was created.** The
+> `aarch64 build + test` CI job flaked on
+> `tasks_test.exs:711`'s 150ms debounce sleep, which skipped the
+> `Publish signed release` job. v0.12.5 supersedes this tag with the
+> same content plus the flake fix; binaries for v0.12.4 were never
+> signed nor uploaded.
 
 Same-day security patch on top of v0.12.3. Ships the wave-33
 Medium-severity follow-up that closed the JSONL `company:`
@@ -116,7 +123,14 @@ Two findings remain accepted-by-design.
   system-audit dir; `safe_company_slug/2` removed (no
   remaining callers). 1 new spoof-rejection test.
 
-## [0.12.3] — 2026-04-26
+## [0.12.3] — 2026-04-26 (tagged, publish-skipped — superseded by v0.12.5)
+
+> **Tag exists in git history but no GitHub Release was created.** The
+> `aarch64 build + test` CI job flaked on
+> `tasks_test.exs:711`'s 150ms debounce sleep, which skipped the
+> `Publish signed release` job. v0.12.5 supersedes this tag with the
+> same content plus the wave-33 / wave-34 closures and the flake fix;
+> binaries for v0.12.3 were never signed nor uploaded.
 
 Same-day security patch on top of v0.12.2. Ships the wave-32
 Medium-severity follow-up that closed a cross-company spoofing
