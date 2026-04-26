@@ -708,7 +708,10 @@ defmodule Glorbo.Actions.TasksTest do
                  audit: audit
                )
 
-      Process.sleep(150)
+      # debounce_ms 30 + hard_cap_ms 200; aarch64 CI runners need
+      # the larger window per v0.11.3's channels_test fix pattern
+      # (CI flaked at 150ms, stable at 1000ms across both archs).
+      Process.sleep(1000)
 
       {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
       assert head.subject =~ ~r/^task\.create:/
@@ -732,7 +735,10 @@ defmodule Glorbo.Actions.TasksTest do
                  audit: audit
                )
 
-      Process.sleep(150)
+      # debounce_ms 30 + hard_cap_ms 200; aarch64 CI runners need
+      # the larger window per v0.11.3's channels_test fix pattern
+      # (CI flaked at 150ms, stable at 1000ms across both archs).
+      Process.sleep(1000)
 
       {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
       assert head.sha == initial_sha
