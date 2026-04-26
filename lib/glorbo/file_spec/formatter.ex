@@ -406,19 +406,38 @@ defmodule Glorbo.FileSpec.Formatter do
     end
   end
 
-  # Atomic tmp+rename — same pattern as the other filesystem
-  # writers in the tree (Router, Memory.Writer, FrontmatterWriter).
-  # A crash between write and rename leaves the original intact.
+  # Wave 28: random-suffix + O_EXCL — `mix glorbo fmt` operates on
+  # agent-RW files (task md, AGENT.md, etc.). Predictable
+  # `<file>.tmp.<monotonic-int>` was attacker-plantable as a
+  # symlink in the same directory. Same pattern as Router /
+  # Memory.Writer / FrontmatterWriter post-wave-22.
   defp atomic_write(path, content) do
-    tmp = path <> ".tmp." <> Integer.to_string(System.unique_integer([:positive]))
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.tmp-#{rand}"
 
-    with :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      {:error, reason} ->
-        _ = File.rm(tmp)
-        {:error, reason}
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        err
     end
   end
 

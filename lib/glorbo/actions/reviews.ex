@@ -294,15 +294,36 @@ defmodule Glorbo.Actions.Reviews do
   end
 
   defp atomic_write(path, content) do
-    tmp = path <> ".tmp." <> Integer.to_string(System.unique_integer([:positive]))
+    # Wave 28: sentinel writes land in `agents/<reviewer>/inbox/`,
+    # which the reviewer agent has RW on. A predictable
+    # `<sentinel>.tmp.<monotonic-int>` was attacker-plantable as a
+    # symlink. Random-suffix + O_EXCL closes the TOCTOU.
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    tmp = "#{path}.tmp-#{rand}"
 
-    with :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      {:error, reason} ->
-        _ = File.rm(tmp)
-        {:error, reason}
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        result = :file.write(fd, content)
+        :file.close(fd)
+
+        case result do
+          :ok ->
+            case File.rename(tmp, path) do
+              :ok ->
+                :ok
+
+              {:error, _} = err ->
+                _ = File.rm(tmp)
+                err
+            end
+
+          {:error, _} = err ->
+            _ = File.rm(tmp)
+            err
+        end
+
+      {:error, _} = err ->
+        err
     end
   end
 
