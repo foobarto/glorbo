@@ -534,6 +534,72 @@ history:
       breaks the simple list pattern (multiple lanes).
       Phase 3g revisits Chat for channel switcher + the
       composer with slash-command surface.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3g landed: Tasks view (seventh and last view —
+      every D10 chord letter now routes to a real view).
+
+      `Glorbo.Shell.Views.Tasks` is the kanban-style
+      flagship. Stacked-vertical layout: each lane gets
+      a header `▾ <LANE> (<count>)` followed by indented
+      task rows `<task_id> — <title> [<assignee>]`. Five
+      lanes in canonical order (TODO, IN PROGRESS, REVIEW,
+      DONE, OTHER). REVIEW collects pending/pending-
+      approval/approved/denied to mirror
+      `KanbanLive.group_by_column/1`; OTHER catches
+      unknown statuses. Empty lanes still render their
+      headers so the Director sees a "no tasks here yet"
+      signal at a glance. Cursor navigates the FLAT
+      sequence of task rows (lane headers skipped); j/k +
+      arrows move one task across lane boundaries.
+
+      `Glorbo.Shell.Views.Tasks.Data` walks
+      `companies/<co>/projects/*/tasks/*.md` — same
+      pipeline as `KanbanLive.load_tasks/2`. Rows carry
+      `{task_id, project, title, status, assignee, lane}`.
+      `group_by_lane/1` buckets in canonical order;
+      `lanes/0` + `lane_label/1` give the view stable
+      header text.
+
+      AppRoot updates: chord letter `t` (per D10) now
+      routes to `:tasks`. With this, every letter in
+      `view_letter_map/0` (o/t/a/c/p/h/u) is wired —
+      there is no longer a not-yet-implemented path
+      through normal letters; only unmapped letters
+      (e.g. `z`) hit the unknown-chord branch.
+
+      28 new tests across `views/tasks/data_test.exs` (12)
+      + `views/tasks_test.exs` (16). Data tests cover
+      empty projects, full + minimal frontmatter, lane
+      mapping (review-collected statuses, done, unknown),
+      multi-project collection, non-md filter,
+      group_by_lane canonical order + empty-lane
+      preservation, helpers. View tests cover init shapes
+      (canonical lane sort on init, shuffled rearrangement,
+      loader injection, no-opts empty), all event_to_msg
+      arms, update arms (cursor clamping, refresh +
+      reclamp, no-op without base, unmapped → :noreply),
+      view rendering (empty placeholder, lane headers
+      with counts including OTHER (0), indented rows
+      with assignee bracket conditional, cursor across
+      lane boundaries).
+
+      End-to-end:
+
+        $ glorbo shell acme         # Inbox
+        C-c t                       # Tasks (kanban lanes)
+        C-c o / a / u / c / h       # Overview / Agents / Audit / Chat / Health
+        C-c p                       # back to Inbox
+
+      **GEP-37 Phase 3 complete.** All seven D10 chord-
+      target views are implemented + reachable. The v1
+      surface as defined in this GEP is shippable as
+      v0.15.0. Future phases revisit existing views
+      (Repo-backed columns, slash-command composer,
+      live-tail EventBus subscription, channel switcher).
+
+      2509/2509 total tests green.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

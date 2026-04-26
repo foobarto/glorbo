@@ -414,6 +414,24 @@ it's been in CHANGELOG for a cycle.
   16 view); 2481/2481 total. Phase 3+ continues with
   the `:tasks` kanban flagship (last remaining
   GEP-37 view).
+- [x] **GEP-37 `glorbo shell` Phase 3g — Tasks view +
+  Phase 3 complete.** Shipped post-v0.14.0 (autonomous L4).
+  Kanban-style stacked-vertical layout: each lane
+  (TODO / IN PROGRESS / REVIEW / DONE / OTHER) gets a
+  `▾ <LANE> (<count>)` header followed by indented task
+  rows `<task_id> — <title> [<assignee>]`. Cursor
+  navigates the flat sequence; j/k crosses lane
+  boundaries. `Tasks.Data.group_by_lane/1` mirrors the
+  LV's `group_by_column/1` (REVIEW collects pending /
+  pending-approval / approved / denied; OTHER is the
+  unknown-status catch-all). AppRoot wires `C-c t` →
+  tasks. **All seven D10 chord-target views now
+  implemented — GEP-37 Phase 3 complete.** 28 new tests
+  (12 Data + 16 view); 2509/2509 total. v1 surface as
+  defined in the GEP is shippable as v0.15.0. Future
+  phases revisit existing views for Repo-backed columns,
+  slash-command composer, live-tail subscriptions, and
+  channel switcher.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

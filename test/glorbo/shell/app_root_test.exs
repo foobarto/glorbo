@@ -135,17 +135,14 @@ defmodule Glorbo.Shell.AppRootTest do
       assert state.chord_hint == nil
     end
 
-    test "{:chord_select, <not-yet-implemented>} surfaces a hint" do
-      # Phase 3c implements :approvals + :health + :overview.
-      # Phase 3+ adds :tasks, :agents, :chat, :audit; until each
-      # ships the chord routes to the not-implemented branch.
-      state = %{init_state() | chord: :c_c}
+    test "{:chord_select, \"t\"} routes to :tasks (Phase 3g — last D10 letter)" do
+      state = AppRoot.init(approvals: [], rows: [])
+      state = %{state | chord: :c_c}
+
       {state, []} = AppRoot.update({:chord_select, "t"}, state)
       assert state.chord == :idle
-      assert state.chord_hint =~ "not yet implemented"
-      assert state.chord_hint =~ "tasks"
-      # The :approvals view stays selected — failed switch is a no-op.
-      assert state.view == :approvals
+      assert state.view == :tasks
+      assert state.chord_hint == nil
     end
 
     test "view swap forwards :base + :company opts to the new view's init" do
