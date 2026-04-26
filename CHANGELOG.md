@@ -12,6 +12,61 @@ change between minor versions. Pin exact versions in downstream usage.
 
 *(nothing yet — next cycle)*
 
+## [0.15.0] — 2026-04-26
+
+GEP-37 Phase 3 *complete* lands on the release surface.
+Phase 3g (Tasks view, the kanban-style flagship) ships
+alongside the post-Phase-3 housecleaning refactor that
+extracted `Glorbo.Shell.Views.Common` for shared
+cursor-list helpers across all seven views. With this,
+the GEP-37 v1 surface as defined in D8 ("View list
+matches web surface 1:1") is shippable.
+
+### Added — GEP-37 Phase 3g (Tasks view)
+
+`Glorbo.Shell.Views.Tasks` is the kanban-style flagship —
+the seventh and last GEP-37 view. Stacked-vertical layout
+with five lanes (TODO / IN PROGRESS / REVIEW / DONE /
+OTHER); each lane gets a `▾ <LANE> (<count>)` header
+followed by indented task rows `<task_id> — <title>
+[<assignee>]`. REVIEW collects pending / pending-approval /
+approved / denied (mirrors `KanbanLive.group_by_column/1`);
+OTHER catches unknown statuses. Cursor navigates the flat
+sequence of task rows across lane boundaries; rows are
+sorted into canonical lane order on init/refresh so the
+cursor index always matches the rendered order.
+
+`Glorbo.Shell.Views.Tasks.Data` walks
+`companies/<co>/projects/*/tasks/*.md` via
+`Glorbo.TaskDefinition.parse_file/2`. Helpers
+`group_by_lane/1`, `lanes/0`, `lane_label/1` give the
+view stable bucketing + header text.
+
+AppRoot wires `C-c t` → `:tasks`. With this, every letter
+in `view_letter_map/0` (o/t/a/c/p/h/u) routes to a real
+view — there is no longer a not-yet-implemented path
+through normal letters; only unmapped letters (e.g. `z`)
+hit the unknown-chord branch.
+
+**GEP-37 Phase 3 complete.** All seven D10 chord-target
+views are implemented and reachable via the chord prefix.
+
+### Changed — Phase 3 housecleaning refactor
+
+Extracted `Glorbo.Shell.Views.Common` — shared cursor-list
+helpers (`cursor_nav_event/1`, `cursor_down/2`, `cursor_up
+/1`, `clamp_cursor/2`). All seven Phase-3 views routed
+through it; Inbox keeps its view-specific arms ahead of
+the cursor-nav fallthrough. **Net –111 LOC** (-149 from
+view dedup, +38 from the new module + tests) with zero
+behavior change. Future view additions inherit the helpers
+automatically.
+
+### Test count
+
+2522 (up from 2481 at v0.14.0) — 41 net new tests:
++28 Tasks view + 13 Common helpers.
+
 ## [0.14.0] — 2026-04-26
 
 GEP-37 Phase 3 — six new views land the chord-driven view-
