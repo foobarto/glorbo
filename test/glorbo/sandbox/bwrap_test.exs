@@ -1,5 +1,13 @@
 defmodule Glorbo.Sandbox.BwrapTest do
-  use ExUnit.Case, async: true
+  # async: false — test "B13: prompt tempfile is cleaned up after
+  # invocation (no leak)" enumerates `/tmp` for `glorbo_bwrap_prompt_*`
+  # files before and after a Bwrap.start/2 call. Sibling tests in this
+  # module also create real tempfiles in the same /tmp dir; if they run
+  # concurrently with B13, B13's `after_files` can pick up a sibling's
+  # in-flight tempfile and report a false leak. CI run 24944610056
+  # showed exactly this. The whole module is sync; correctness of the
+  # leak assertion matters more than the milliseconds saved.
+  use ExUnit.Case, async: false
 
   alias Glorbo.Sandbox.Bwrap
 
