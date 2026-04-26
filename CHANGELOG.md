@@ -10,6 +10,15 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.15.1] — 2026-04-26
+
+GEP-37 Phase 3-revisit slice — two views gain Repo-backed
+columns matching the LV's heavier surface. Same dependency-
+injection pattern (`:ledger_fetch_fn`) so tests don't hit
+the Repo; production reads through.
+
 ### Added — GEP-37 Phase 3c-revisit (Overview+ spend column)
 
 `Glorbo.Shell.Views.Overview.Data.load_companies/2` now sums
