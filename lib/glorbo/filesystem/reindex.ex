@@ -25,9 +25,16 @@ defmodule Glorbo.Filesystem.Reindex do
   resolved-approval sentinel files written by the gate are deleted
   post-resolution and never consulted here.
 
-  GEP-34's last identified gap remains: `budgets` — separate
-  per-table audit replay logic, tracked in GEP-34's open-questions
-  block.
+  GEP-34 Phase 3: `budgets` is rebuilt by summing `budget.usage`
+  audit lines per `{company, agent, year_month}` (year_month is
+  derived from each line's `ts` via `Budget.Ledger.month_bucket/1`,
+  matching the writer). The `alerts_fired` MapSet that
+  `Company.BudgetTracker` carries in GenServer state is NOT in the
+  `budgets` schema and stays untouched — it rehydrates on tracker
+  startup by scanning `alerts/*.md` (per its moduledoc), so
+  reindex doesn't need to reconstruct it.
+
+  GEP-34 is fully Implemented as of Phase 3.
 
   **B4 contract (load-bearing):** `process_file/1` is PRIVATE. Plan 04 will
   add a public `process_path/2` wrapper for the watcher integration; do
@@ -45,7 +52,8 @@ defmodule Glorbo.Filesystem.Reindex do
 
   import Ecto.Query
 
-  alias Glorbo.{Agent, AuditEvent, Company, Repo, TasksApprovalState}
+  alias Glorbo.{Agent, AuditEvent, Budget, Company, Repo, TasksApprovalState}
+  alias Glorbo.Budget.Ledger
   alias Glorbo.Filesystem.{Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
 
@@ -135,6 +143,7 @@ defmodule Glorbo.Filesystem.Reindex do
     :ok = ModelCatalog.rebuild_projection_from_cache(Path.dirname(companies_dir))
     audit_imported = rebuild_audit_events(companies_dir)
     approvals_imported = rebuild_tasks_approval_state(companies_dir)
+    budgets_imported = rebuild_budgets(companies_dir)
 
     {:ok,
      %{
@@ -142,7 +151,8 @@ defmodule Glorbo.Filesystem.Reindex do
        skipped: skipped,
        deleted: deleted,
        audit_events: audit_imported,
-       tasks_approval_state: approvals_imported
+       tasks_approval_state: approvals_imported,
+       budgets: budgets_imported
      }}
   end
 
@@ -701,6 +711,144 @@ defmodule Glorbo.Filesystem.Reindex do
     |> Enum.chunk_every(100)
     |> Enum.reduce(0, fn chunk, acc ->
       {n, _} = Repo.insert_all(TasksApprovalState, chunk)
+      acc + n
+    end)
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-34 Phase 3: budgets rebuild from JSONL
+  # ---------------------------------------------------------------------------
+
+  # Wipe-and-rebuild via per-company audit replay. Sums `budget.usage` lines
+  # into `{company, agent, year_month}` aggregates (year_month derived from
+  # each line's `ts`, matching the writer's `month_bucket`). `alerts_fired`
+  # bitmap is GenServer-only state — rehydrated by tracker boot from
+  # `alerts/*.md`, not in this schema. Returns the count of inserted rows.
+  defp rebuild_budgets(companies_dir) do
+    Repo.delete_all(Budget)
+
+    sums =
+      case File.ls(companies_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(&File.dir?(Path.join(companies_dir, &1)))
+          |> Enum.reduce(%{}, fn co, acc ->
+            audit_dir = Path.join([companies_dir, co, "audit"])
+            if File.dir?(audit_dir), do: sum_budget_dir(co, audit_dir, acc), else: acc
+          end)
+
+        _ ->
+          %{}
+      end
+
+    insert_budget_rows(sums)
+  end
+
+  defp sum_budget_dir(company, audit_dir, acc) do
+    case File.ls(audit_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".jsonl"))
+        |> Enum.reduce(acc, fn fname, a ->
+          sum_budget_file(company, Path.join(audit_dir, fname), a)
+        end)
+
+      _ ->
+        acc
+    end
+  end
+
+  defp sum_budget_file(company, path, acc) do
+    path
+    |> File.stream!([], :line)
+    |> Enum.reduce(acc, &sum_budget_line(&1, company, path, &2))
+  rescue
+    e ->
+      Logger.warning(
+        "budget reindex skipped #{path}: #{Exception.message(e)} (JSONL stays authoritative)"
+      )
+
+      acc
+  end
+
+  defp sum_budget_line(line, company, path, acc) do
+    line = String.trim_trailing(line, "\n")
+
+    cond do
+      line == "" ->
+        acc
+
+      byte_size(line) > @max_audit_line_bytes ->
+        Logger.warning("budget reindex skipped oversized line in #{path} (> 64KiB)")
+        acc
+
+      true ->
+        case Jason.decode(line) do
+          {:ok, %{"action" => "budget.usage"} = entry} ->
+            apply_budget_usage(entry, company, acc)
+
+          _ ->
+            acc
+        end
+    end
+  end
+
+  defp apply_budget_usage(entry, fallback_company, acc) do
+    co = stringify_or(Map.get(entry, "company"), fallback_company)
+    agent = entry["agent"] || entry["actor"]
+    ts = parse_audit_ts(entry["ts"])
+    prompt = non_neg_int(entry["prompt_tokens"])
+    completion = non_neg_int(entry["completion_tokens"])
+    cost = non_neg_int(entry["cost_usd_cents"])
+
+    if is_binary(co) and is_binary(agent) and ts != nil do
+      year_month = Ledger.month_bucket(ts)
+      key = {co, agent, year_month}
+
+      Map.update(
+        acc,
+        key,
+        %{prompt_tokens: prompt, completion_tokens: completion, cost_usd_cents: cost},
+        fn existing ->
+          %{
+            prompt_tokens: existing.prompt_tokens + prompt,
+            completion_tokens: existing.completion_tokens + completion,
+            cost_usd_cents: existing.cost_usd_cents + cost
+          }
+        end
+      )
+    else
+      acc
+    end
+  end
+
+  defp non_neg_int(n) when is_integer(n) and n >= 0, do: n
+  defp non_neg_int(_), do: 0
+
+  defp insert_budget_rows(sums) when map_size(sums) == 0, do: 0
+
+  defp insert_budget_rows(sums) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    rows =
+      Enum.map(sums, fn {{co, agent, ym}, totals} ->
+        %{
+          company_slug: co,
+          agent_slug: agent,
+          year_month: ym,
+          prompt_tokens: totals.prompt_tokens,
+          completion_tokens: totals.completion_tokens,
+          cost_usd_cents: totals.cost_usd_cents,
+          inserted_at: now,
+          updated_at: now
+        }
+      end)
+
+    rows
+    # 8 cols × 100 rows = 800 binds, well under SQLite's 999 ceiling.
+    |> Enum.chunk_every(100)
+    |> Enum.reduce(0, fn chunk, acc ->
+      {n, _} = Repo.insert_all(Budget, chunk)
       acc + n
     end)
   end

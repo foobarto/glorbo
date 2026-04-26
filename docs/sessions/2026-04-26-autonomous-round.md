@@ -151,3 +151,129 @@ the table by replaying those lines chronologically.
     decision flip is just a few lines in `Approvals.Gate` and
     a new `kind: sentinel-resolution/v1` FileSpec. Audit-only
     is the simpler, more-orthogonal call IMO.
+
+---
+
+## Task 2 — GEP-34 Phase 3: `budgets` rebuild from audit JSONL
+
+**Task picked.** Phase 3 was the last open phase in GEP-34 — user
+said "go for it" after Phase 2 shipped. Bounded; followed the
+same shape as Phase 2 (wipe-and-rebuild, per-company JSONL fold,
+chunked bulk insert).
+
+**What shipped.** `lib/glorbo/filesystem/reindex.ex`:
+
+  * `rebuild_budgets/1` — wipes the table, walks every
+    `companies/<co>/audit/` dir, sums `budget.usage` lines into a
+    `{company, agent, year_month} => totals` map, bulk-inserts.
+  * `sum_budget_dir/3` + `sum_budget_file/3` + `sum_budget_line/4`
+    — same streaming + 64-KiB-line cap + JSON-decode skip-with-
+    warn discipline as Phase 1 / Phase 2.
+  * `apply_budget_usage/3` — extracts `agent`, `prompt_tokens`,
+    `completion_tokens`, `cost_usd_cents` from each line; derives
+    `year_month` via `Budget.Ledger.month_bucket/1` (the writer's
+    own helper — see D7 below); folds into per-key sums.
+  * `non_neg_int/1` — coerces missing / non-integer / negative
+    fields to 0 so a malformed event can't insert a row with NULL
+    or negative tokens (the schema's `validate_number greater_
+    than_or_equal_to: 0` only fires on `Repo.insert/2`, not
+    `insert_all`).
+  * `insert_budget_rows/1` — chunks of 100 (8 cols × 100 = 800
+    binds, well under SQLite's 999 ceiling). Provides explicit
+    `inserted_at`/`updated_at`.
+  * `do_run/1` calls the new rebuild after Phase 2 and adds
+    `:budgets` to the result map.
+  * Moduledoc updated with Phase 3 description + the
+    `alerts_fired` clarification (it's tracker GenServer state,
+    not schema columns; rehydrated from `alerts/*.md` on boot).
+
+**Tests** — 8 new in `reindex_test.exs`:
+
+  * single `budget.usage` line lands as one row
+  * multiple events in same month sum into one row
+  * events spread across months produce separate rows
+  * different agents in same month produce separate rows
+  * two companies stay isolated
+  * idempotent re-run (wipes before re-import; row count stays 1)
+  * non-budget lines (`task.create`, `approval.granted`) ignored
+  * missing/invalid token fields default to 0
+
+**Design calls I made without you.**
+
+  * **Audit action name is `budget.usage`, not `usage.recorded`.**
+    GEP-34's spec said `usage.recorded` but the actual writer
+    (`Company.BudgetTracker.safe_record/3`) emits
+    `action: "budget.usage"`. Used the real name; updated the
+    GEP §Phase-3 paragraph to call out the spec drift. Matters
+    because had I followed the spec literally, replay would have
+    silently inserted zero rows.
+
+  * **`alerts_fired` bitmap is out of scope.** GEP-34's open-
+    questions block worried about reconstructing the bitmap by
+    re-evaluating threshold ladders. False alarm: the bitmap is
+    GenServer state in `Company.BudgetTracker`, not a column on
+    the `budgets` schema, and the tracker's moduledoc says it
+    rehydrates from `alerts/*.md` on boot. Reindex doesn't need
+    to touch it. Captured by flipping the §Open-Questions entry
+    to "Resolved 2026-04-26 — moot".
+
+  * **No chronological fold for budgets (D6).** Phase 2 needed
+    chronological order because a later `granted` line must
+    overwrite an earlier `awaiting` state. Phase 3 is pure
+    summation — addition is commutative — so I skipped the
+    `Enum.sort/1` on filenames. Each event carries its own `ts`
+    and therefore its own `year_month` bucket; cross-month
+    behaviour falls out naturally.
+
+  * **Use the writer's `month_bucket/1` (D7).** Imported
+    `Budget.Ledger` and called `Ledger.month_bucket/1` rather
+    than reimplementing the YYYY-MM derivation. If the writer's
+    bucketing logic ever changes (e.g. fiscal-year buckets),
+    replay tracks automatically. Slight tradeoff: a circular-
+    looking dep in the alias list, but it's an existing module
+    + pure function — no boot-order issue.
+
+  * **Defensive integer coercion via `non_neg_int/1`.** The
+    schema validates non-negative ints in changeset, but
+    `Repo.insert_all` skips changesets entirely. A malformed
+    audit line with `"prompt_tokens": null` or
+    `"prompt_tokens": -5` would write garbage. Coerce to 0 at
+    the seam.
+
+**Gates.**
+
+  * `mix test test/glorbo/filesystem/reindex_test.exs` — 34/34
+    green (8 new + 26 from earlier today).
+  * `mix test test/glorbo/budget/ test/glorbo/company/budget_tracker_test.exs`
+    — 38/38 green (writer side untouched).
+  * `mix test` (full suite) — 2273/2273 green, 42 excluded, 2
+    skipped, 51.1s wall.
+
+**Skipped / not done.**
+
+  * The Phase 1 `_system` audit path mismatch I flagged in Task 1
+    is still open — separate fix.
+  * `mix precommit` not yet re-run (next step).
+  * GEP-34 status flipped to **Implemented**; commit pending.
+
+**Commit(s).** Pending — bundle code + GEP edit + todo update +
+session-log append.
+
+### Things I'd like your review (Task 2)
+
+  * **Spec-vs-writer drift.** GEP-34 said `usage.recorded`, the
+    writer emits `budget.usage`. I updated the GEP. Worth a
+    glance at whether other GEPs reference an action name and
+    might be similarly stale — quick `grep -r "action.*usage" docs/`
+    didn't surface anything obvious but I didn't grind further.
+    File a P3 todo to audit GEP audit-action references? Or
+    not worth it, the only consumer is reindex which now matches
+    the writer.
+
+  * **GEP-34 → Implemented.** All three phases shipped today.
+    Please verify the Implemented status flip in the frontmatter
+    is appropriate — I'm assuming it is per the original spec
+    ("after rm glorbo.db && glorbo reindex, no derived field is
+    missing"). Result map now carries `indexed`, `skipped`,
+    `deleted`, `audit_events`, `tasks_approval_state`, `budgets`
+    — every projection from the GEP plus the original three.

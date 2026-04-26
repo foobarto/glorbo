@@ -73,6 +73,21 @@ it's been in CHANGELOG for a cycle.
   GEP-34 D4+D5 captured. 8 new tests; result map gains
   `:tasks_approval_state` count. Only `budgets` (Phase 3)
   remains.
+- [x] **GEP-34 Phase 3 — `budgets` rebuild from audit JSONL.**
+  Shipped 2026-04-26. `Reindex.run/1` sums `budget.usage` lines
+  per `{company_slug, agent_slug, year_month}` (year_month
+  derived via the writer's own `Budget.Ledger.month_bucket/1`).
+  Discovered the spec's `usage.recorded` audit action name
+  doesn't match the writer (`budget.usage` is what
+  `Company.BudgetTracker` actually emits) — replay uses the
+  real name. The `alerts_fired` bitmap concern is moot — that
+  state lives in tracker GenServer state, not the schema, and
+  rehydrates from `alerts/*.md` on boot. 8 new tests cover
+  single-event, multi-event sum, multi-month split, multi-agent
+  split, cross-company isolation, idempotency, non-budget-line
+  filtering, missing-token defaulting. GEP-34 D6+D7 captured.
+  **GEP-34 → Implemented.** Every gap-table identified in the
+  GEP is now derived from the on-disk source.
 - [ ] **Phase 1 `_system` audit reindex path mismatch.** The
   writer puts orchestrator events at
   `<base>/audit/_system/<YYYY-MM>.jsonl` (subdirectory) but

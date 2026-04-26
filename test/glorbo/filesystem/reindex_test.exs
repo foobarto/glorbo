@@ -447,6 +447,171 @@ defmodule Glorbo.Filesystem.ReindexTest do
     end
   end
 
+  describe "budgets rebuild from JSONL (GEP-34 Phase 3)" do
+    alias Glorbo.Budget
+
+    defp seed_acme_budget(base) do
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+    end
+
+    test "single budget.usage line lands as one row" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":120,"completion_tokens":40,"cost_usd_cents":7,"model":"qwen3:8b"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Budget)
+      assert row.company_slug == "acme"
+      assert row.agent_slug == "ceo"
+      assert row.year_month == "2026-04"
+      assert row.prompt_tokens == 120
+      assert row.completion_tokens == 40
+      assert row.cost_usd_cents == 7
+    end
+
+    test "multiple events in same month sum into one row" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-01T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n| <>
+          ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":200,"completion_tokens":50,"cost_usd_cents":10}\n| <>
+          ~s|{"ts":"2026-04-30T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":50,"completion_tokens":20,"cost_usd_cents":3}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Budget)
+      assert row.prompt_tokens == 350
+      assert row.completion_tokens == 100
+      assert row.cost_usd_cents == 18
+    end
+
+    test "events spread across months produce separate rows" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-03.jsonl",
+          ~s|{"ts":"2026-03-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+        )
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":200,"completion_tokens":60,"cost_usd_cents":11}\n|
+        )
+
+      assert {:ok, %{budgets: 2}} = Reindex.run(base: base)
+
+      rows = Budget |> Repo.all() |> Enum.sort_by(& &1.year_month)
+      assert Enum.map(rows, & &1.year_month) == ["2026-03", "2026-04"]
+      assert Enum.at(rows, 0).cost_usd_cents == 5
+      assert Enum.at(rows, 1).cost_usd_cents == 11
+    end
+
+    test "different agents in same month produce separate rows" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n| <>
+          ~s|{"ts":"2026-04-16T10:00:00Z","company":"acme","actor":"editor","action":"budget.usage","agent":"editor","prompt_tokens":200,"completion_tokens":60,"cost_usd_cents":11}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 2}} = Reindex.run(base: base)
+
+      rows = Budget |> Repo.all() |> Enum.sort_by(& &1.agent_slug)
+      assert Enum.map(rows, & &1.agent_slug) == ["ceo", "editor"]
+    end
+
+    test "two companies stay isolated" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme/company.md", "---\nname: acme\n---\n")
+      _ = write!(base, "companies/beta/company.md", "---\nname: beta\n---\n")
+
+      _ =
+        write!(
+          base,
+          "companies/acme/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+        )
+
+      _ =
+        write!(
+          base,
+          "companies/beta/audit/2026-04.jsonl",
+          ~s|{"ts":"2026-04-15T10:00:00Z","company":"beta","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":700,"completion_tokens":200,"cost_usd_cents":42}\n|
+        )
+
+      assert {:ok, %{budgets: 2}} = Reindex.run(base: base)
+
+      rows = Budget |> Repo.all() |> Enum.sort_by(& &1.company_slug)
+      [acme, beta] = rows
+      assert acme.company_slug == "acme"
+      assert acme.cost_usd_cents == 5
+      assert beta.company_slug == "beta"
+      assert beta.cost_usd_cents == 42
+    end
+
+    test "rebuild is idempotent — re-running does not double rows" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo","prompt_tokens":100,"completion_tokens":30,"cost_usd_cents":5}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+      [row] = Repo.all(Budget)
+      assert row.prompt_tokens == 100
+      assert row.cost_usd_cents == 5
+    end
+
+    test "non-budget lines are ignored" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"task.create","target":"x"}\n| <>
+          ~s|{"ts":"2026-04-15T10:01:00Z","company":"acme","actor":"director","action":"approval.granted","agent":"ceo","target":"x","approved_at":"2026-04-15T10:01:00Z"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 0}} = Reindex.run(base: base)
+      assert Repo.all(Budget) == []
+    end
+
+    test "missing/invalid token fields default to zero" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      jsonl =
+        ~s|{"ts":"2026-04-15T10:00:00Z","company":"acme","actor":"ceo","action":"budget.usage","agent":"ceo"}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Budget)
+      assert row.prompt_tokens == 0
+      assert row.completion_tokens == 0
+      assert row.cost_usd_cents == 0
+    end
+  end
+
   describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do
     test "process_path/2 indexes a single file without a full run" do
       base = TmpGlorboHome.setup()

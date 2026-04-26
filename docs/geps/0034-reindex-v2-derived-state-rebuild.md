@@ -2,7 +2,7 @@
 gep: 0034
 title: Reindex v2 — full derived-state rebuild from disk + audit JSONL
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-04-24
 history:
@@ -55,6 +55,28 @@ history:
       grant, deny+reason, missing-request synthesis, cross-month
       fold, idempotency, non-approval-line filtering, and the 64-KiB
       oversized-line cap. Only `budgets` remains.
+  - date: 2026-04-26
+    status: Implemented
+    note: |
+      Phase 3 landed: `budgets` is now rebuilt by summing
+      `budget.usage` audit lines per
+      `{company_slug, agent_slug, year_month}` (year_month derived
+      from each line's `ts` via `Budget.Ledger.month_bucket/1`,
+      matching the writer). 8-column bulk insert chunked at 100
+      rows. Discovered the spec's `usage.recorded` audit-action name
+      doesn't match the actual writer (`Company.BudgetTracker`
+      emits `budget.usage`); replay uses the actual name. The
+      spec's worry about `alerts_fired` bitmap reconstruction is
+      moot — that bitmap lives in `BudgetTracker` GenServer state,
+      not in the `budgets` schema, and is already rehydrated on
+      tracker boot from `alerts/*.md`. Result map gains a
+      `:budgets` count. 8 new tests cover single-event,
+      multi-event sum, multi-month split, multi-agent split,
+      cross-company isolation, idempotent re-run, non-budget-line
+      filtering, and missing/invalid-token defaulting. With Phase 3
+      shipped, every gap-table identified in the GEP is now
+      derived from the on-disk source — `glorbo.db` is fully
+      rebuildable. Status flipped to **Implemented**.
 see-also: [3, 7, 19]
 ---
 
@@ -164,16 +186,27 @@ Implementation: `lib/glorbo/filesystem/reindex.ex` —
 `insert_approval_rows/1`. Result map gains a
 `:tasks_approval_state` count.
 
-### Phase 3 — `budgets` *(open)*
+### Phase 3 — `budgets` *(landed 2026-04-26)*
 
-Audit JSONL carries `usage.recorded` events with `tokens_in`,
-`tokens_out`, `cost_usd_cents`, agent slug, ts. Reindex sums
-per-`{company, agent, year_month}` and rebuilds the
-`budgets.{tokens, cost_usd_cents}` aggregates. The
-`alerts_fired` bitmap requires per-event evaluation against
-the agent's threshold ladder (`Glorbo.Budget.Ledger.alert_at/2`)
-to know which thresholds were crossed; replay needs to reproduce
-that evaluation.
+`Reindex.run/1` sums `budget.usage` audit lines (the writer's
+actual action name — the spec's `usage.recorded` was an early
+draft that never matched the writer) per
+`{company_slug, agent_slug, year_month}`. The `year_month`
+string is derived from each line's `ts` via
+`Budget.Ledger.month_bucket/1` so the replay format always
+matches the writer. Per-line fields used: `agent`,
+`prompt_tokens`, `completion_tokens`, `cost_usd_cents`, `ts`.
+Bulk insert in 100-row chunks (8 cols × 100 = 800 binds).
+
+The `alerts_fired` MapSet that the spec worried about is NOT
+in the `budgets` schema — it lives in `Company.BudgetTracker`
+GenServer state and rehydrates on boot by scanning
+`alerts/*.md` (per its moduledoc). Reindex doesn't touch it.
+
+Implementation: `lib/glorbo/filesystem/reindex.ex` —
+`rebuild_budgets/1`, `sum_budget_dir/3`, `sum_budget_file/3`,
+`sum_budget_line/4`, `apply_budget_usage/3`,
+`insert_budget_rows/1`. Result map gains a `:budgets` count.
 
 ## Migration
 
@@ -197,12 +230,14 @@ JSONL line format is GEP-19 / audit-log stable.
   a second on-disk write at resolution time would couple the gate
   to a redundant artifact for forensics that the dashboard already
   surfaces by streaming audit lines.
-- **Phase 3 alerts_fired bitmap reconstruction.** Replaying
-  `usage.recorded` and re-evaluating thresholds gives the
-  *eventual* bitmap correctly, but in-order evaluation matters
-  (an alert fires only on threshold-crossing events). Verify the
-  `Ledger.alert_at/2` logic is pure-functional over `(prev_total,
-  new_total)` so replay is deterministic.
+- **Phase 3 alerts_fired bitmap reconstruction.** *Resolved
+  2026-04-26 — moot.* The `alerts_fired` MapSet is GenServer
+  state inside `Company.BudgetTracker`, not a column on the
+  `budgets` schema, and is already rehydrated from
+  `alerts/*.md` files on tracker boot. Reindex never needed to
+  re-evaluate threshold ladders. The audit action name was also
+  wrong in the spec — the writer emits `budget.usage`, not
+  `usage.recorded`.
 - **Projection ordering.** Phase 1 runs `audit_events` last —
   after `companies` / `agents`. Phase 2 + 3 must run AFTER
   Phase 1 since they may want to dedupe against
@@ -252,6 +287,35 @@ needs (`agent`, `target`, `ts`, `denial_reason`); writing a second
 file at resolution time would couple the gate to a redundant
 forensic artifact already surfaced by the dashboard's audit
 stream. One source of truth beats two.
+
+### D6. Sum-fold for `budgets`, no chronological dependency
+
+**Decided** 2026-04-26 (Phase 3). The `budgets` rebuild folds
+per-event token / cost deltas into per-`{company, agent,
+year_month}` aggregates. Order does not matter — addition is
+commutative — so we don't sort filenames or lines.
+
+**Why:** Phase 2's chronological fold was load-bearing (a
+later resolution event must overwrite an earlier `awaiting`
+state). Phase 3's fold is just summation. Skipping the sort
+keeps the code simpler and the cross-month behaviour falls out
+naturally because each event's `ts` carries its own
+`year_month` bucket.
+
+### D7. Use writer's `month_bucket/1`, don't reinvent
+
+**Decided** 2026-04-26 (Phase 3). The replay imports
+`Glorbo.Budget.Ledger.month_bucket/1` and calls it on each
+event's `ts`. The format ("YYYY-MM") is the same one the
+writer uses to populate the `year_month` column in live
+recording, so replay rows are bind-for-bind identical to live
+rows.
+
+**Why:** if reindex computed `year_month` differently (e.g.
+direct `String.slice/3` on the ISO 8601 string), a future
+writer-side change to `month_bucket/1` would silently desync
+live rows from replayed rows. Importing the same helper makes
+the coupling explicit.
 
 ### D5. Chronological fold via filename + line order
 
