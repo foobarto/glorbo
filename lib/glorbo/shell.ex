@@ -21,7 +21,8 @@ defmodule Glorbo.Shell do
   | Phase 3a | AppRoot view-manager + `C-c <letter>` chord prefix | shipped post-v0.13.0 |
   | Phase 3b | Health view (validates chord swap end-to-end) | shipped post-v0.13.0 |
   | Phase 3c | Overview view (cross-company workspace list) | shipped post-v0.13.0 |
-  | Phase 3 | Remaining views (tasks, agents, chat, audit) | next rounds |
+  | Phase 3d | Agents view (per-company roster) | shipped post-v0.13.0 |
+  | Phase 3 | Remaining views (tasks, chat, audit) | next rounds |
 
   ## Why a placeholder
 

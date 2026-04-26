@@ -378,6 +378,18 @@ it's been in CHANGELOG for a cycle.
   26 new tests (9 Data + 16 view + 1 AppRoot swap-target
   fixture refresh). 2408/2408 total. Phase 3+ continues
   with tasks/agents/chat/audit one at a time.
+- [x] **GEP-37 `glorbo shell` Phase 3d — Agents view.**
+  Shipped post-v0.13.0 (autonomous L4). Per-company
+  roster: `<slug> [<role>] <provider>/<model> · <network>
+  → <reports_to>` (the trailing `→ ...` only when set).
+  FS-only read of `agents/<slug>/AGENT.md` (or legacy
+  `agent.md`); `.archive/` + dotfile dirs hidden; agents
+  without an AGENT.md are not surfaced (not bootable).
+  `r` refreshes; `q` quits. AppRoot wires `C-c a` →
+  agents. 24 new tests (10 Data + 14 view); 2432/2432
+  total. Phase 3e widens to budget tracking +
+  last-wake (Repo-backed columns); Phase 3+ continues
+  with tasks/chat/audit.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

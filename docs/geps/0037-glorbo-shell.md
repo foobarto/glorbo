@@ -369,6 +369,68 @@ history:
         C-c h                       # → Health
         C-c o                       # → Overview (acme highlighted)
         C-c p                       # → back to Inbox
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3d landed: Agents view (fourth real view).
+
+      `Glorbo.Shell.Views.Agents` is the per-company roster.
+      Each row: `<slug> [<role>] <provider>/<model> ·
+      <network> → <reports_to>`. Cursor navigation via
+      arrows + j/k; `r` reloads; `q` quits. Empty-state
+      placeholder when the company has no bootable agents.
+      `→ <reports_to>` is appended only when the agent
+      declares a reports-to relationship.
+
+      `Glorbo.Shell.Views.Agents.Data` is the FS-only
+      read layer. Each agent row carries:
+        * `slug` — agent dir name.
+        * `name` — `name:` from frontmatter, falls back
+          to slug.
+        * `role` — `role:` or `"—"`.
+        * `provider` — `provider:` or `"—"`.
+        * `model` — `model:` or `""`.
+        * `network` — `network:` or `"loopback"` (matches
+          the LV's default).
+        * `reports_to` — `reports_to:` or nil.
+
+      Reads `AGENT.md` (canonical) OR `agent.md` (legacy
+      lowercase, still tolerated per the wave-30-era
+      reindex pattern). Agents without either file are
+      hidden — they're not bootable. `.archive/` (retired
+      agents) and other dotfile entries are filtered out
+      so the roster only shows the active company.
+
+      Phase 3d ships FS-only — no budget tracking, no
+      last-wake hint, no pill status. Phase 3e widens
+      to those Repo-backed columns (the LV's heavier
+      `build_agent_row/5` slice).
+
+      AppRoot updates:
+        * `view :: ... | :agents`.
+        * `@views_implemented` adds `:agents`.
+        * `view_module/1` arm for `:agents`.
+
+      24 new tests across `views/agents/data_test.exs` (10)
+      + `views/agents_test.exs` (14). Data tests cover
+      empty dir, full frontmatter, default fallbacks,
+      no-AGENT.md hidden, legacy agent.md accepted,
+      alphabetical sort, `.archive/` filtered, non-dir
+      entries skipped, missing `agents/` dir → empty.
+      View tests cover init shapes, all event_to_msg arms,
+      cursor clamping, refresh + reclamping, refresh
+      no-op without base/company, view rendering with
+      provider/model formatting (joined with `/`, model
+      omitted when empty), `→ reports_to` only-when-set,
+      cursor placement.
+
+      2432/2432 total tests green. End-to-end:
+
+        $ glorbo shell acme         # Inbox
+        C-c o                       # Overview
+        C-c a                       # Agents (acme's roster)
+        C-c h                       # Health
+        C-c p                       # back to Inbox
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
