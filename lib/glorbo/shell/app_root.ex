@@ -44,11 +44,11 @@ defmodule Glorbo.Shell.AppRoot do
 
   use TermUI.Elm
 
-  alias Glorbo.Shell.Views.Inbox
+  alias Glorbo.Shell.Views.{Health, Inbox}
   alias TermUI.Event.Key
 
-  @typedoc "Active view identifier. Phase 3a only Inbox; Phase 3b adds the rest."
-  @type view :: :approvals
+  @typedoc "Active view identifier. Grows as Phase 3 ships more views."
+  @type view :: :approvals | :health
 
   @typedoc "Chord-prefix tracker."
   @type chord :: :idle | :c_c
@@ -61,12 +61,21 @@ defmodule Glorbo.Shell.AppRoot do
           chord_hint: String.t() | nil
         }
 
-  @views_phase_3a [:approvals]
+  # Implemented views — chord letters mapped here actually swap.
+  # Letters in `view_letter_map/0` but NOT in this list surface a
+  # "view not yet implemented" hint instead of switching.
+  @views_implemented [:approvals, :health]
 
   @impl TermUI.Elm
   def init(opts) do
-    sub_state = Inbox.init(opts)
-    %{view: :approvals, sub_state: sub_state, chord: :idle, chord_hint: nil}
+    # Initial view defaults to :approvals (the existing Phase 2c
+    # contract); callers can pass `:initial_view` to start
+    # elsewhere. The opts pass through to the chosen view's
+    # init/1 so per-view setup (`:base`, `:company`, mocks) keeps
+    # working.
+    initial_view = Keyword.get(opts, :initial_view, :approvals)
+    sub_state = view_module(initial_view).init(opts)
+    %{view: initial_view, sub_state: sub_state, chord: :idle, chord_hint: nil}
   end
 
   @impl TermUI.Elm
@@ -100,11 +109,17 @@ defmodule Glorbo.Shell.AppRoot do
       nil ->
         {%{state | chord: :idle, chord_hint: "unknown chord: C-c #{ch}"}, []}
 
-      view when view in @views_phase_3a ->
-        {%{state | chord: :idle, view: view, chord_hint: nil}, []}
+      view when view in @views_implemented ->
+        # Phase 3b: chord-driven view swap. Spin up the target
+        # view's `init/1` with a fresh state. Carries forward the
+        # current sub_state's company/base if present so the new
+        # view boots with the same workspace context.
+        opts = forward_opts(state.sub_state)
+        new_sub = view_module(view).init(opts)
+        {%{state | chord: :idle, view: view, sub_state: new_sub, chord_hint: nil}, []}
 
       view ->
-        {%{state | chord: :idle, chord_hint: "view '#{view}' not yet implemented (Phase 3b+)"}, []}
+        {%{state | chord: :idle, chord_hint: "view '#{view}' not yet implemented (Phase 3+)"}, []}
     end
   end
 
@@ -147,8 +162,24 @@ defmodule Glorbo.Shell.AppRoot do
   end
 
   defp view_module(:approvals), do: Inbox
-  # Phase 3b adds: defp view_module(:health), do: Health, etc.
+  defp view_module(:health), do: Health
+  # Phase 3+ adds: :overview, :tasks, :agents, :chat, :audit.
+  # The fallback is :approvals because that's the boot view; an
+  # unimplemented view never reaches `view_module/1` (the
+  # `chord_select` arm filters via `@views_implemented`).
   defp view_module(_), do: Inbox
+
+  # Carry forward the sub_state's `:base` + `:company` when swapping
+  # views so the next one boots with the same workspace context.
+  # Tests that bypass the company/base path (passing `:approvals`
+  # directly to Inbox) get an empty opts list, which the new view's
+  # init/1 still tolerates.
+  defp forward_opts(sub_state) do
+    sub_state
+    |> Map.take([:base, :company])
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Enum.into([])
+  end
 
   defp append_chord_hint(body, %{chord: :c_c}) do
     stack(:vertical, [body, text("(C-c …) — pick a view: o/t/a/c/p/h/u, Esc to cancel")])

@@ -277,6 +277,63 @@ history:
       one — read-only supervision-tree snapshot per D10's
       "C-c h" mapping); that's the bounded chunk where the
       actual chord-driven view swap becomes visible.
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3b landed: read-only Health view + chord-driven
+      swap from the Inbox.
+
+      `Glorbo.Shell.Views.Health` mirrors the surface of
+      `glorbo doctor` (without the JSON formatter): one line
+      per check, each tagged with a pass/fail glyph
+      (`✓`/`✗`) + severity in brackets (`[blocker]` /
+      `[warning]` / `[info]`). Cursor navigation via arrows
+      + j/k; `r` re-runs `Doctor.run_checks/0` for live
+      reload (Phase 3c will add periodic auto-refresh once
+      the term_ui timer-Command surface is wired); `q`
+      quits. The checks-fn is dependency-injected for
+      testability; production passes through to
+      `&Glorbo.Doctor.run_checks/0`.
+
+      AppRoot updates:
+        * `view :: :approvals | :health` (was
+          `:approvals` only).
+        * New `@views_implemented [:approvals, :health]`
+          replaces `@views_phase_3a [:approvals]` —
+          Phase 3+ views are added here as they ship.
+        * `init/1` accepts `:initial_view` opt to start
+          in a non-default view (handy for tests + future
+          deep-link launches like `glorbo shell acme
+          --view health`).
+        * Chord swap (`C-c h` / `C-c p`) calls
+          `forward_opts/1` to carry `:base` + `:company`
+          from the current sub_state to the new view's
+          init/1, so per-view setup keeps working across
+          swaps without re-passing argv.
+
+      `view_module/1` arms expanded:
+        * `:approvals` → `Glorbo.Shell.Views.Inbox`
+        * `:health` → `Glorbo.Shell.Views.Health`
+        * fallback still maps to Inbox (unreachable in
+          practice — `chord_select` filters via
+          `@views_implemented`).
+
+      Tests: 16 new across `views/health_test.exs` (13)
+      and `app_root_test.exs` (3 — chord-h-routes-health,
+      chord-o-still-not-implemented, view-swap-forwards-
+      base-company; plus the existing
+      `:initial_view` opt test). 2382/2382 total tests
+      green; mix credo --strict zero findings.
+
+      End-to-end now visible in a real TTY: `glorbo shell
+      acme` boots into the Inbox, `C-c h` swaps to the
+      Health view rendering the doctor checks, `C-c p`
+      swaps back. Phase 3+ widens to the remaining views
+      (overview, tasks, agents, chat, audit) one at a
+      time; each is roughly Phase-3b-sized and follows the
+      same pattern (Data fetcher + Elm view module +
+      register in `view_module/1` + add to
+      `@views_implemented`).
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

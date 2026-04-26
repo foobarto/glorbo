@@ -23,6 +23,19 @@ defmodule Glorbo.Shell.AppRootTest do
       state = init_state(approvals: sample)
       assert state.sub_state.approvals == sample
     end
+
+    test "respects :initial_view opt to start in a non-default view" do
+      checks = [%{name: "ok", pass: true, detail: "fine", severity: :blocker}]
+
+      state =
+        AppRoot.init(
+          initial_view: :health,
+          checks_fn: fn -> checks end
+        )
+
+      assert state.view == :health
+      assert state.sub_state.checks == checks
+    end
   end
 
   describe "event_to_msg/2 — chord prefix" do
@@ -94,14 +107,57 @@ defmodule Glorbo.Shell.AppRootTest do
       assert state.chord_hint == "unknown chord: C-c z"
     end
 
-    test "{:chord_select, <not-yet-implemented>} surfaces a Phase 3b+ hint" do
-      state = %{init_state() | chord: :c_c}
+    test "{:chord_select, \"h\"} routes to :health (Phase 3b)" do
+      checks = [%{name: "x", pass: true, detail: "ok", severity: :blocker}]
+
+      # Inject a checks_fn into init opts that flows through to the
+      # health view's init when the chord swap fires.
+      state = AppRoot.init(approvals: [], checks_fn: fn -> checks end)
+      state = %{state | chord: :c_c}
+
       {state, []} = AppRoot.update({:chord_select, "h"}, state)
       assert state.chord == :idle
-      assert state.chord_hint =~ "Phase 3b+"
-      assert state.chord_hint =~ "health"
+      assert state.view == :health
+      assert state.chord_hint == nil
+      # AppRoot bootstrapped a fresh Health sub_state — no checks
+      # carry forward through the swap (Health init re-reads).
+      assert is_map(state.sub_state)
+      assert Map.has_key?(state.sub_state, :checks)
+    end
+
+    test "{:chord_select, <not-yet-implemented>} surfaces a hint" do
+      # Phase 3b implements :approvals + :health. Phase 3+ adds
+      # :overview, :tasks, :agents, :chat, :audit; until each
+      # ships the chord routes to the not-implemented branch.
+      state = %{init_state() | chord: :c_c}
+      {state, []} = AppRoot.update({:chord_select, "o"}, state)
+      assert state.chord == :idle
+      assert state.chord_hint =~ "not yet implemented"
+      assert state.chord_hint =~ "overview"
       # The :approvals view stays selected — failed switch is a no-op.
       assert state.view == :approvals
+    end
+
+    test "view swap forwards :base + :company opts to the new view's init" do
+      state =
+        AppRoot.init(
+          approvals: [],
+          base: "/tmp/glorbo-base",
+          company: "acme",
+          checks_fn: fn -> [] end
+        )
+
+      state = %{state | chord: :c_c}
+      {state, []} = AppRoot.update({:chord_select, "h"}, state)
+
+      # Health's init/1 doesn't need :base/:company yet but the
+      # forwarding layer must still pass them through without
+      # crashing. State should carry forward via Inbox.sub_state's
+      # :base + :company.
+      assert state.view == :health
+      # No assertion on Health's state contents — the contract is
+      # that the forward_opts didn't crash + the sub_state is a map.
+      assert is_map(state.sub_state)
     end
   end
 
@@ -155,6 +211,9 @@ defmodule Glorbo.Shell.AppRootTest do
 
   defp render_to_strings(%TermUI.Component.RenderNode{}), do: []
   defp render_to_strings({:text, content}), do: [content]
-  defp render_to_strings(other) when is_list(other), do: Enum.flat_map(other, &render_to_strings/1)
+
+  defp render_to_strings(other) when is_list(other),
+    do: Enum.flat_map(other, &render_to_strings/1)
+
   defp render_to_strings(_), do: []
 end

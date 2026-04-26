@@ -351,6 +351,21 @@ it's been in CHANGELOG for a cycle.
   instead of Inbox directly. 18 new tests; 2366/2366 total.
   Phase 3b adds Health as the second view to validate the
   chord-driven swap.
+- [x] **GEP-37 `glorbo shell` Phase 3b — Health view.**
+  Shipped post-v0.13.0 (autonomous L4).
+  `Glorbo.Shell.Views.Health` mirrors `glorbo doctor`
+  output: one line per check with pass/fail glyph +
+  severity tag, cursor-navigated, `r` to refresh. AppRoot
+  registers `:health` in `@views_implemented` and routes
+  `C-c h` → Health, `C-c p` → Inbox. View swap forwards
+  `:base` + `:company` opts to the new view's init.
+  `init/1` gained `:initial_view` opt for non-default
+  starts. 16 new tests (13 Health + 3 AppRoot swap
+  semantics); 2382/2382 total. End-to-end in a real TTY:
+  `glorbo shell acme` boots Inbox, `C-c h` swaps to
+  Health, `C-c p` swaps back. Phase 3+ adds remaining
+  views one at a time (overview, tasks, agents, chat,
+  audit) following the same pattern.
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with
