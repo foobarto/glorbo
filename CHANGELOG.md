@@ -10,7 +10,52 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Security (wave 28)
+
+Three defense-in-depth hardenings caught by manual sweep
+(codex scans v8 + v8b both hung past 30 min and were killed).
+
+- **Medium** — `Actions.Reviews.atomic_write/2` and
+  `FileSpec.Formatter.atomic_write/2` switched from
+  `unique_integer`-suffixed temp files to
+  `crypto.strong_rand_bytes(8)` + `:file.open([:exclusive])`.
+  Reviews writes peer-review request sentinels into agent-RW
+  inbox dirs; Formatter operates on agent-RW project / agent
+  markdown.
+- **Low** — `GlorboWeb.Router` `:browser` pipeline now sets an
+  explicit Content-Security-Policy header
+  (`default-src 'self'`, `script-src 'self'`,
+  `frame-ancestors 'none'`, etc.) via the
+  `put_secure_browser_headers/2` map argument. Defense-in-depth
+  on top of `HtmlSanitizeEx`. Locked in by
+  `test/glorbo_web/security_headers_test.exs`.
+- **Low** — `CLI.Scaffold.Skill.scaffold_default/3` and
+  `scaffold_from_template/4` refuse symlinked
+  `companies/<co>/skills/` ancestors before `mkdir_p`. Per
+  GEP-22 the skills dir is RW for agents holding
+  `skills:install`, so an agent compromise could redirect
+  Director-side scaffolds.
+
+### Fixed
+
+- `test/glorbo/actions/channels_test.exs` history-debounce
+  sleep windows bumped 150ms → 1000ms after the v0.11.2 release
+  CI run flaked on the slow GHA runner (the post-`Channels.create`
+  commit hadn't landed in 150ms; head was still
+  `glorbo: initial history import`). Matches the
+  WatcherBridge / Tx debounce-flake remediation pattern.
+
+### Docs
+
+- GEP-44 (visual-regression baselines) bumped Draft →
+  Implemented. Tier-2 + Tier-3 baselines landed; CI gate is
+  live as informational `continue-on-error` x86_64 step.
+- GEP-33 (git history layer) README index entry corrected
+  from "Draft" to "Implemented" (file frontmatter was already
+  Implemented; index drifted).
+- `docs/testing/threatmodel.md` updated with the wave 28
+  closure log; cumulative tally **93 findings closed across 28
+  waves**.
 
 ## [0.11.2] — 2026-04-26
 
