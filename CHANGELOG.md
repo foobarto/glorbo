@@ -10,6 +10,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.12.4] — 2026-04-26
+
+Same-day security patch on top of v0.12.3. Ships the wave-33
+Medium-severity follow-up that closed the JSONL `company:`
+spoof for Phase 1 (`audit_events`), unifying the dirname-as-
+canonical discipline across all three GEP-34 projections.
+
+A sixth self-review pass after wave 33 returned clean — no
+further cross-company isolation gaps in the GEP-34 surface
+(approvals readers all scope by `company_slug`; budget
+readers all scope by `company_slug`; audit dashboard reads
+JSONL directly, not the mirror; incremental reindex doesn't
+touch GEP-34 projections; the wave-31/32/33 fixes cover the
+attack surface comprehensively).
+
+Cumulative threatmodel: **99 security findings closed across
+33 waves**. Three Medium-severity isolation findings (waves
+31 + 32 + 33) closed in the same day, all from progressive
+self-review of the GEP-34 reindex code shipped in v0.12.0.
+Two findings remain accepted-by-design.
+
 ### Security (wave 33)
 
 - **Medium** — `Reindex` Phase 1 (`audit_events`) now also
