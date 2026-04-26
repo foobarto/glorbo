@@ -575,11 +575,44 @@ Deferred:
     accuracy gap, not an exploit primitive. Tracked as a non-
     security follow-up; see issue notes.
 
-Cumulative tally: **90 security findings closed across 27
+**Wave 28** 2026-04-26 ~02:20 (no codex scan — both v8 and
+v8b hung past 30 min and were killed; closure driven by a
+manual sweep instead). Three defense-in-depth hardenings:
+
+  * **Medium** — `Glorbo.Actions.Reviews.atomic_write/2` and
+    `Glorbo.FileSpec.Formatter.atomic_write/2` both used
+    `path <> ".tmp." <> Integer.to_string(unique_integer)` —
+    attacker-plantable as a symlink in agent-RW directories.
+    `Reviews` writes peer-review request sentinels into
+    `agents/<reviewer>/inbox/`; `Formatter` operates on
+    agent-RW project / agent.md files. Both switched to
+    `crypto.strong_rand_bytes(8)` random suffix +
+    `:file.open([:exclusive])` — the canonical wave-22+ pattern.
+  * **Low** — `lib/glorbo_web/router.ex` `:browser` pipeline now
+    sets a Content-Security-Policy header via the
+    `put_secure_browser_headers` map argument:
+    `default-src 'self'; script-src 'self'; style-src 'self'
+    'unsafe-inline' cdnjs.cloudflare.com; font-src 'self'
+    cdnjs.cloudflare.com data:; img-src 'self' data:;
+    connect-src 'self'; frame-ancestors 'none'; base-uri
+    'self'; form-action 'self'`. Defense-in-depth on top of
+    `HtmlSanitizeEx` for agent-rendered chat / task content;
+    blocks external-script-load XSS vectors. `unsafe-inline`
+    retained for HEEx-inlined styles — known gap, can tighten
+    later via CSP nonce.
+  * **Low** — `Glorbo.CLI.Scaffold.Skill.scaffold_default/3`
+    and `scaffold_from_template/4` walked into
+    `companies/<co>/skills/` via plain `mkdir_p!`. Per GEP-22
+    the skills dir is RW for agents holding `skills:install`,
+    so an agent compromise could plant a `skills ->
+    ../../audit` symlink and have Director-side scaffolds land
+    elsewhere. Now refuses symlinked ancestors first.
+
+Cumulative tally: **93 security findings closed across 28
 waves** — 39 from the 2026-04-22 import + 4 wave 22 + 15 wave 23
-+ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27. Two findings
-remain accepted-by-design (plus the wave-27 proxy-token
-attribution gap deferred as non-security).
++ 11 wave 24 + 11 wave 25 + 5 wave 26 + 5 wave 27 + 3 wave 28.
+Two findings remain accepted-by-design (plus the wave-27
+proxy-token attribution gap deferred as non-security).
 
 Format per row: **title** — short gist. *Paths:* touched files.
 See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-finding URLs) and the wave-1/2/3 closure log.
