@@ -24,8 +24,16 @@ defmodule Glorbo.Filesystem.WatcherTest do
     # bogus reindex into the test mailbox. audit/ specifically is
     # required by wait_until_armed!'s arm probe (events under audit/
     # classify as :audit — no reindex, no PubSub).
+    #
+    # `proposals/` is in this list because W6 (GEP-28) writes a direct-
+    # child markdown file inside it. Without pre-creation, W6's
+    # `File.mkdir_p!` lands AFTER `wait_until_armed!` returns, racing
+    # against inotify attaching a watch to the freshly-created dir.
+    # The race produced an intermittent W6 flake (Assertion failed,
+    # no matching message after 2000ms) — pre-creating means the
+    # parent watch is attached during the arm-probe window.
     for sub <- ~w(
-          audit channels projects
+          audit channels projects proposals
           agents/ceo/inbox agents/ceo/outbox agents/ceo/state
           agents/engineer/inbox agents/engineer/outbox agents/engineer/state
         ) do
@@ -349,7 +357,8 @@ defmodule Glorbo.Filesystem.WatcherTest do
       {_pid, co, dir, _base} = start_watcher()
       :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:proposals")
 
-      File.mkdir_p!(Path.join(dir, "proposals"))
+      # `proposals/` is pre-created in start_watcher so the inotify
+      # watch is already attached before the file write fires.
       proposal_file = Path.join([dir, "proposals", "hire-writer-2026-04-22.md"])
       write!(proposal_file, "---\nkind: proposal/v1\nstatus: pending-approval\n---\n")
 

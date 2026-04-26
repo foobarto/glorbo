@@ -39,6 +39,20 @@ change between minor versions. Pin exact versions in downstream usage.
   `company: "_system"` since budget events are strictly
   per-company. 6 new tests across the three projections.
 
+### Fixed
+
+- `test/glorbo/filesystem/watcher_test.exs` W6 (GEP-28
+  proposals broadcast) intermittent flake. `start_watcher/1`
+  now pre-creates `proposals/` alongside the other watched
+  subdirs so the inotify watch is attached during
+  `wait_until_armed!`'s probe window instead of racing
+  the W6 file write. Reproducer was `mix test --seed 0`
+  with the wave-30 module ordering: arm-probe completes,
+  W6 mkdir's `proposals/`, file write fires before the new
+  dir's watch attaches, `assert_receive` times out at 2s.
+  10 isolation runs + 3 full-watcher-suite runs + 2 full-mix-test
+  runs at fixed seeds 0 and 999 all green post-fix.
+
 ## [0.12.0] — 2026-04-26
 
 Same-day minor cut. Lands GEP-34 (Reindex v2) end-to-end and
