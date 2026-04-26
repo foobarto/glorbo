@@ -23,7 +23,8 @@ defmodule Glorbo.Shell do
   | Phase 3c | Overview view (cross-company workspace list) | shipped post-v0.13.0 |
   | Phase 3d | Agents view (per-company roster) | shipped post-v0.13.0 |
   | Phase 3e | Audit view (current-month JSONL tail) | shipped post-v0.13.0 |
-  | Phase 3 | Remaining views (tasks, chat) | next rounds |
+  | Phase 3f | Chat view (channel message stream, default `general`) | shipped post-v0.13.0 |
+  | Phase 3 | Tasks view (kanban-style; flagship layout) | next rounds |
 
   ## Why a placeholder
 

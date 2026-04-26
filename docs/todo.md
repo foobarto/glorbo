@@ -401,6 +401,19 @@ it's been in CHANGELOG for a cycle.
   2454/2454 total. Phase 3f adds the live-tail EventBus
   subscription + older-page navigation; Phase 3+
   continues with tasks/chat.
+- [x] **GEP-37 `glorbo shell` Phase 3f — Chat view.**
+  Shipped post-v0.13.0 (autonomous L4). Per-channel
+  message stream (default `general`): header `#<channel>`,
+  one line per message `[<ts>] <author>: <first body
+  line>`. Multi-line bodies collapsed to first line for
+  the cursor list (Phase 3g adds Enter-to-expand + the
+  slash-command composer). `Chat.Data` mirrors the LV's
+  `## <ts> | <author>` regex contract; `list_channels/2`
+  enumerates available channels for the future switcher.
+  AppRoot wires `C-c c` → chat. 27 new tests (11 Data +
+  16 view); 2481/2481 total. Phase 3+ continues with
+  the `:tasks` kanban flagship (last remaining
+  GEP-37 view).
 - [x] **GEP-40 implementation (crown-jewels phase 1a).** Shipped
   2026-04-24: FileSpec schema (`done_when:`, `handoff_chain:`,
   `requested_by:`, `severity:`, `peer_review_required:` with

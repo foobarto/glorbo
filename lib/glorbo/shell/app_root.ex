@@ -44,11 +44,11 @@ defmodule Glorbo.Shell.AppRoot do
 
   use TermUI.Elm
 
-  alias Glorbo.Shell.Views.{Agents, Audit, Health, Inbox, Overview}
+  alias Glorbo.Shell.Views.{Agents, Audit, Chat, Health, Inbox, Overview}
   alias TermUI.Event.Key
 
   @typedoc "Active view identifier. Grows as Phase 3 ships more views."
-  @type view :: :approvals | :health | :overview | :agents | :audit
+  @type view :: :approvals | :health | :overview | :agents | :audit | :chat
 
   @typedoc "Chord-prefix tracker."
   @type chord :: :idle | :c_c
@@ -64,7 +64,7 @@ defmodule Glorbo.Shell.AppRoot do
   # Implemented views — chord letters mapped here actually swap.
   # Letters in `view_letter_map/0` but NOT in this list surface a
   # "view not yet implemented" hint instead of switching.
-  @views_implemented [:approvals, :health, :overview, :agents, :audit]
+  @views_implemented [:approvals, :health, :overview, :agents, :audit, :chat]
 
   @impl TermUI.Elm
   def init(opts) do
@@ -166,7 +166,8 @@ defmodule Glorbo.Shell.AppRoot do
   defp view_module(:overview), do: Overview
   defp view_module(:agents), do: Agents
   defp view_module(:audit), do: Audit
-  # Phase 3+ adds: :tasks, :chat.
+  defp view_module(:chat), do: Chat
+  # Phase 3+ adds: :tasks.
   # The fallback is :approvals because that's the boot view; an
   # unimplemented view never reaches `view_module/1` (the
   # `chord_select` arm filters via `@views_implemented`).

@@ -475,6 +475,65 @@ history:
       Phase 3+ continues with `:tasks` (the kanban
       flagship; largest remaining view) and `:chat`
       (channel-log stream; similar shape to Audit).
+  - date: 2026-04-26
+    status: Accepted
+    note: |
+      Phase 3f landed: Chat view (sixth real view).
+
+      `Glorbo.Shell.Views.Chat` renders a single channel's
+      message stream. Header `#<channel>`; one line per
+      message: `[<ts>] <author>: <first body line>`. Multi-
+      line bodies are collapsed to the first line for the
+      cursor list (Phase 3g will add Enter-to-expand +
+      slash-command composer). Cursor + j/k; `r` reloads;
+      `q` quits. Default channel is `general`; init/1
+      accepts `:channel` opt for non-default starts.
+
+      `Glorbo.Shell.Views.Chat.Data` mirrors
+      `GlorboWeb.ChannelLive`'s message-parse contract:
+      same regex, same `## <ts> | <author>` header split,
+      with sub-headers (`## non-timestamp`) inside a body
+      not terminating the message. Skips the HEEx markdown
+      rendering — TUI surfaces raw body text. `list_channels/2`
+      enumerates `<channel>.md` files for Phase 3g's
+      switcher.
+
+      AppRoot updates:
+        * `view :: ... | :chat`.
+        * `@views_implemented` adds `:chat`.
+        * `view_module/1` arm for `:chat`.
+        * Chord letter `c` (per D10) now routes to a real
+          view instead of the not-implemented hint branch.
+
+      27 new tests across `views/chat/data_test.exs` (11) +
+      `views/chat_test.exs` (16). Data tests cover missing
+      file, single-message decode, multi-message order
+      preservation, multi-line bodies, sub-header inside
+      body, missing channel, channel listing (sort, .md-
+      only filter, dotfile/.archive filter, missing dir).
+      View tests cover init shapes, default channel, all
+      event_to_msg + update arms, view rendering with
+      header + per-channel empty state + first-line
+      collapse + empty-body handling + cursor placement.
+
+      End-to-end visible in a real TTY:
+
+        $ glorbo shell acme         # Inbox
+        C-c o                       # Overview
+        C-c a                       # Agents
+        C-c u                       # aUdit
+        C-c c                       # Chat (#general)
+        C-c h                       # Health
+        C-c p                       # back to Inbox
+
+      2481/2481 total tests green; mix credo --strict zero
+      findings.
+
+      Phase 3+ continues with `:tasks` — the kanban-style
+      flagship; the largest remaining view because it
+      breaks the simple list pattern (multiple lanes).
+      Phase 3g revisits Chat for channel switcher + the
+      composer with slash-command surface.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
