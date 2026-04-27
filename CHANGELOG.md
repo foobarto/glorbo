@@ -10,6 +10,15 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+*(nothing yet — next cycle)*
+
+## [0.18.0] — 2026-04-27
+
+GEP-37 Phase 3-revisit slice continues: AppRoot picks up a
+discoverability overlay, the Audit view picks up cross-month
+navigation. Plus a test-suite cleanup round and the GEP-37
+decision-log now records every revisit slice.
+
 ### Added — GEP-37 Phase 3a-revisit (AppRoot help overlay)
 
 `?` in idle mode opens a full-screen keymap reference: chord
@@ -44,7 +53,22 @@ and malformed names (out-of-range months, garbage
 filenames), and dedups the always-included current month.
 
 12 new tests (5 view + 5 Data + 2 event_to_msg / boundary
-no-ops); 2579/2579 suite total.
+no-ops).
+
+### Changed
+
+  - Test-suite cleanup round (–13 tests, –127 LOC). Removed
+    `test/glorbo/stubs_test.exs` (pure `function_exported?`
+    smoke checks; compile-time guaranteed), three OTP-stdlib
+    `Registry` tests in `agent/registry_test.exs` (testing
+    BEAM, not project code), and a self-admitted duplicate
+    block + a non-contractual log-disjunction match. No
+    coverage loss verified by re-running the full suite.
+  - `docs/geps/0037-glorbo-shell.md` now records the eight
+    Phase 3-revisit slices that shipped from v0.15.1 → v0.18.0
+    plus the three structural deferrals (Tasks last-wake,
+    Overview in_progress_count + goals_summary, Audit live-
+    tail EventBus subscription) with reasons for each.
 
 ## [0.17.0] — 2026-04-27
 
