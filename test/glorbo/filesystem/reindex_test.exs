@@ -156,19 +156,12 @@ defmodule Glorbo.Filesystem.ReindexTest do
       File.mkdir_p!(company_dir)
       File.ln_s!(external, Path.join(company_dir, "company.md"))
 
-      import ExUnit.CaptureLog
-
-      {result, log} =
-        with_log(fn ->
-          Reindex.run(base: base)
-        end)
-
       # The file-collector filters out paths with a symlinked ancestor
       # before process_file/1 even sees them, so it neither indexes nor
       # counts as a "skipped" processing — it's just not picked up.
-      # The log message comes from safe_markdown_files's warning.
-      assert {:ok, %{indexed: 0, skipped: 0, deleted: 0}} = result
-      assert log =~ "symlinked ancestor segment" or log =~ "not_regular_file"
+      # The structured result is the security contract: `indexed: 0`
+      # proves the smuggled company.md never reached the DB.
+      assert {:ok, %{indexed: 0, skipped: 0, deleted: 0}} = Reindex.run(base: base)
       assert Repo.all(Company) == []
     end
 

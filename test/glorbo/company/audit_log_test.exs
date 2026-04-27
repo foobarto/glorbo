@@ -81,16 +81,6 @@ defmodule Glorbo.Company.AuditLogTest do
       assert second["actor"] == "b"
     end
 
-    test "Test 4 is covered by stubs_test.exs — module exports only append/2 + start_link/1" do
-      Code.ensure_loaded!(AuditLog)
-      assert function_exported?(AuditLog, :append, 2)
-      assert function_exported?(AuditLog, :start_link, 1)
-      refute function_exported?(AuditLog, :update, 2)
-      refute function_exported?(AuditLog, :delete, 1)
-      refute function_exported?(AuditLog, :delete, 2)
-      refute function_exported?(AuditLog, :edit, 2)
-    end
-
     test "Test 5: two sequential appends both present (synchronous append semantics)", %{
       base: base,
       name: name
