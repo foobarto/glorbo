@@ -37,16 +37,21 @@ defmodule Glorbo.CLI.DispatchPhase5StubsTest do
     end
   end
 
-  test "dispatch new company returns :new_company" do
-    assert {:new_company, _, _} = Glorbo.CLI.dispatch(["new", "company", "acme"])
+  # `new <sub> --help` exercises the routing without triggering
+  # filesystem scaffolding — the latter would call `Scaffold.*`
+  # which reads the global `GLORBO_HOME` env var and races with
+  # other async tests that mutate it (cli_case.ex, restore_test.exs,
+  # cli_test.exs, import_paperclip_test.exs).
+  test "dispatch new company routes to :new_company" do
+    assert {:new_company, _, _} = Glorbo.CLI.dispatch(["new", "company", "--help"])
   end
 
-  test "dispatch new agent returns :new_agent" do
-    assert {:new_agent, _, _} = Glorbo.CLI.dispatch(["new", "agent", "acme/ceo"])
+  test "dispatch new agent routes to :new_agent" do
+    assert {:new_agent, _, _} = Glorbo.CLI.dispatch(["new", "agent", "--help"])
   end
 
-  test "dispatch new project returns :new_project" do
-    assert {:new_project, _, _} = Glorbo.CLI.dispatch(["new", "project", "acme/website"])
+  test "dispatch new project routes to :new_project" do
+    assert {:new_project, _, _} = Glorbo.CLI.dispatch(["new", "project", "--help"])
   end
 
   test "dispatch new widget (unknown sub) returns :unknown exit 1" do
