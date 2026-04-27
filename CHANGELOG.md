@@ -10,7 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-*(nothing yet — next cycle)*
+### Added — AppRoot idle-mode discovery footer
+
+The shell now renders a one-line footer beneath every view's
+body when no chord or chord-error is active:
+
+    (? help · C-c o/t/a/c/p/h/u to switch view · q quit)
+
+Pre-Phase-3a-revisit the help overlay was reachable only by
+typing `?` blindly, and the chord prefix only via `C-c`. Both
+are now discoverable on first launch without consulting docs.
+Footer is suppressed during chord mode (already shown its own
+`(C-c …)` hint) and after a chord error (showing the
+`[chord] unknown chord: …` line) to avoid visual stacking.
 
 ## [0.18.0] — 2026-04-27
 

@@ -260,9 +260,15 @@ defmodule Glorbo.Shell.AppRoot do
     stack(:vertical, [body, text("(C-c …) — pick a view: o/t/a/c/p/h/u, Esc to cancel")])
   end
 
-  defp append_chord_hint(body, %{chord_hint: nil}), do: body
-
   defp append_chord_hint(body, %{chord_hint: hint}) when is_binary(hint) do
     stack(:vertical, [body, text("[chord] #{hint}")])
+  end
+
+  # Idle mode with no recent chord error: show a one-line discovery
+  # footer so the chord prefix + help overlay are reachable without
+  # reading docs. Pre-Phase-3a-revisit the shell rendered the active
+  # view body alone, which left `?` and `C-c` invisible to a fresh user.
+  defp append_chord_hint(body, _state) do
+    stack(:vertical, [body, text("(? help · C-c o/t/a/c/p/h/u to switch view · q quit)")])
   end
 end

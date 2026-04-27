@@ -187,25 +187,31 @@ defmodule Glorbo.Shell.AppRootTest do
   end
 
   describe "view/1" do
-    test "no chord active → renders the active view's body unchanged" do
+    test "no chord active → renders the active view body + idle discovery footer" do
       state = init_state()
-      view = AppRoot.view(state)
-      # Body is the Inbox empty-state placeholder.
-      assert %TermUI.Component.RenderNode{type: :text, content: content} = view
-      assert content =~ "Inbox empty"
+      rendered = render_to_strings(AppRoot.view(state))
+      # Body still carries the Inbox empty-state placeholder.
+      assert Enum.any?(rendered, &String.contains?(&1, "Inbox empty"))
+      # Plus a one-line footer pointing at the help overlay + chord prefix.
+      assert Enum.any?(rendered, &String.contains?(&1, "? help"))
+      assert Enum.any?(rendered, &String.contains?(&1, "C-c o/t/a/c/p/h/u"))
     end
 
-    test ":c_c chord active → appends the chord-hint footer" do
+    test ":c_c chord active → appends the chord-hint footer (idle footer suppressed)" do
       state = %{init_state() | chord: :c_c}
       rendered = render_to_strings(AppRoot.view(state))
       assert Enum.any?(rendered, &String.contains?(&1, "(C-c …)"))
       assert Enum.any?(rendered, &String.contains?(&1, "o/t/a/c/p/h/u"))
+      # Idle footer is suppressed while the chord is active to avoid
+      # visual noise.
+      refute Enum.any?(rendered, &String.contains?(&1, "? help"))
     end
 
-    test "chord_hint set → appended as a `[chord]` line" do
+    test "chord_hint set → appended as a `[chord]` line (idle footer suppressed)" do
       state = %{init_state() | chord_hint: "unknown chord: C-c z"}
       rendered = render_to_strings(AppRoot.view(state))
       assert Enum.any?(rendered, &String.contains?(&1, "[chord] unknown chord: C-c z"))
+      refute Enum.any?(rendered, &String.contains?(&1, "? help"))
     end
   end
 
