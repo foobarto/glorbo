@@ -600,6 +600,90 @@ history:
       live-tail EventBus subscription, channel switcher).
 
       2509/2509 total tests green.
+  - id: 32
+    title: Phase 3-revisit slice
+    status: Accepted
+    summary: |
+      Phase 3-revisit shipped across v0.15.1 → v0.17.0,
+      pulling Repo-backed columns + write-side surfaces +
+      cross-month nav + discoverability into the Phase-3
+      views. None changed the GEP D-decisions; all rode
+      existing read-side seams or the same Action seams the
+      LV uses.
+
+      Shipped slices:
+
+        - 3c-revisit (v0.15.1) — Overview+ spend column.
+          Sums each company's current-month
+          `cost_usd_cents` across agents via
+          `Glorbo.Budget.Ledger.fetch/3`. Fail-open with 0
+          when Repo isn't connected. `:ledger_fetch_fn`
+          injection.
+
+        - 3d-revisit (v0.15.1) — Agents+ budget columns.
+          `budget.monthly_usd` from frontmatter (normalised
+          to cents) + current spend from ledger. Same
+          fail-open + `:ledger_fetch_fn` discipline.
+
+        - 3f-revisit (v0.16.0) — Chat composer modal. `i`
+          enters `{:compose, buf}` mode; Enter posts via
+          `Glorbo.Actions.post_message/4` (same Action seam
+          the LV uses); Esc cancels. `:post_fn` injection.
+
+        - 3f-revisit-2 (v0.16.0) — Chat channel switcher
+          modal. `s` opens a switcher listing on-disk
+          channels; j/k navigate, Enter switches and
+          reloads through `:loader_fn`, Esc cancels.
+          `:list_channels_fn` injection.
+
+        - 3f-revisit-3 (v0.17.0) — composer slash commands.
+          `/switch <ch>`, `/help`, `/cancel` parsed as
+          `/`-prefixed buffers. Unknown command / channel /
+          missing arg surface as `{:error, :command, _}`
+          last_action variants.
+
+        - 3g-revisit (v0.17.0) — Tasks status pill. Single-
+          char glyph (`· ▸ ? + ✗ ✓`) per row distinguishes
+          the four review-lane sub-states (pending /
+          pending-approval / approved / denied) which all
+          collapse into the same lane bucket.
+
+        - 3a-revisit (post-v0.17.0) — AppRoot help overlay.
+          `?` toggles a full-screen keymap reference.
+          Discovery surface for chord prefix + list nav +
+          per-view modal triggers. State gains
+          `:help_open :: boolean()`.
+
+        - 3e-revisit (post-v0.17.0) — Audit older-page
+          navigation. `p`/`n` step the Audit view through
+          month buckets. State carries `:year_month` +
+          `:available_months`. `Audit.Data.load_tail/3`
+          migrated from positional N to keyword opts;
+          `Audit.Data.list_year_months/2` enumerates on-
+          disk buckets with always-current-month-first
+          seeding.
+
+      Still future work (deferred for documented
+      structural reasons):
+
+        - Tasks last-wake column — needs per-task agent
+          mtime / ledger reads. Defer until the read
+          pattern stabilises with more agents in use.
+        - Overview `in_progress_count` + `goals_summary` —
+          walks every task per company; cost grows with
+          workspace count. Defer until either the read
+          pattern is bounded or we find a cheaper
+          approximation (mtime-based?).
+        - Audit live-tail EventBus subscription — PubSub →
+          AppRoot routing for arbitrary mailbox messages
+          is structurally awkward in pure Elm-arch
+          (term_ui's runtime expects `TermUI.Event.*`
+          shapes). The bounded `:refresh` + `p`/`n` reload
+          surface is sufficient for v1.
+
+      ~50 new tests across these slices; 2571 total green
+      after a parallel test-suite cleanup round dropped
+      ~13 dead-weight assertions.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]
