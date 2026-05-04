@@ -105,7 +105,7 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
       assert p.auth == :none
       assert p.usage_parser == "native-v1"
       assert p.usage_path == %{kind: :json_file, path: "{workspace}/.glorbo/run/usage.json"}
-      assert p.model_list == %{shape: :openai, path: "/v1/models"}
+      assert p.model_list == %{shape: :openai, path: "/v1/models", models: []}
       assert p.binary == nil
       assert p.args == []
       assert p.reply_dir == "{workspace}/.glorbo/outbox"
@@ -378,6 +378,74 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
 
       assert {:error, {:invalid_model_list, _, _}} =
                Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "static shape parses inline models list", %{builtin_dir: dir} do
+      write!(dir, "broker.toml", """
+      name        = "broker"
+      kind        = "cli"
+      binary      = "broker"
+      args        = ["acp"]
+      prompt_mode = "acp"
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{invocation_id}.md"
+
+      [model_list]
+      shape  = "static"
+      models = ["auto", "model-a", "model-b"]
+      """)
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert p.model_list == %{
+               shape: :static,
+               path: nil,
+               models: ["auto", "model-a", "model-b"]
+             }
+    end
+
+    test "static shape rejects empty / non-string models", %{builtin_dir: dir} do
+      write!(dir, "broker.toml", """
+      name        = "broker"
+      kind        = "cli"
+      binary      = "broker"
+      args        = ["acp"]
+      prompt_mode = "acp"
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{invocation_id}.md"
+
+      [model_list]
+      shape  = "static"
+      models = ["", "ok"]
+      """)
+
+      assert {:error, {:invalid_model_list, _, msg}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert msg =~ "non-empty strings"
+    end
+
+    test "static shape requires the models list", %{builtin_dir: dir} do
+      write!(dir, "broker.toml", """
+      name        = "broker"
+      kind        = "cli"
+      binary      = "broker"
+      args        = ["acp"]
+      prompt_mode = "acp"
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{invocation_id}.md"
+
+      [model_list]
+      shape = "static"
+      """)
+
+      assert {:error, {:invalid_model_list, _, msg}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+
+      assert msg =~ "required"
     end
 
     test "native provider requires model_list.path when shape != none", %{builtin_dir: dir} do

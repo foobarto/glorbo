@@ -41,6 +41,24 @@ defmodule Glorbo.Providers.ModelCatalogTest do
     }
   end
 
+  # Broker-style provider declared via `model_list.shape = "static"`
+  # — no HTTP catalog fetch, models come straight from the registry.
+  defp static_provider(name, models) do
+    %Provider{
+      name: name,
+      kind: :cli,
+      prompt_mode: :acp,
+      binary: name,
+      args: ["acp"],
+      reply_dir: "{workspace}/.glorbo/outbox",
+      reply_filename_template: "{invocation_id}.md",
+      model_list: %{shape: :static, path: nil, models: models},
+      source: :test,
+      source_file: "<test>",
+      usage_parser: "none"
+    }
+  end
+
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
   describe "rows_from_response/3 — openai shape" do
@@ -203,6 +221,44 @@ defmodule Glorbo.Providers.ModelCatalogTest do
 
       assert Glorbo.Repo.aggregate(ProviderModel, :count) == 0
     end
+
+    test "static-shape provider projects models from registry without an HTTP fetch", ctx do
+      base = tmp_base(ctx)
+
+      stado = static_provider("stado", ["auto", "claude-sonnet-4-5", "gpt-5"])
+
+      assert :ok =
+               ModelCatalog.rebuild_projection_from_cache(base, providers: [stado])
+
+      rows = Glorbo.Repo.all(ProviderModel)
+      ids = rows |> Enum.filter(&(&1.alias == "stado")) |> Enum.map(& &1.model_id) |> Enum.sort()
+      assert ids == ["auto", "claude-sonnet-4-5", "gpt-5"]
+    end
+
+    test "static-shape ignores the cache file even if one exists", ctx do
+      base = tmp_base(ctx)
+
+      # Plant a misleading openai-shaped cache at the static provider's
+      # path. The static branch must ignore it and use the registry list.
+      File.write!(
+        Path.join([base, "cache", "providers", "stado.json"]),
+        Jason.encode!(%{"data" => [%{"id" => "from-the-cache"}]})
+      )
+
+      stado = static_provider("stado", ["auto", "model-x"])
+
+      assert :ok =
+               ModelCatalog.rebuild_projection_from_cache(base, providers: [stado])
+
+      ids =
+        Glorbo.Repo.all(ProviderModel)
+        |> Enum.filter(&(&1.alias == "stado"))
+        |> Enum.map(& &1.model_id)
+        |> Enum.sort()
+
+      assert ids == ["auto", "model-x"]
+      refute "from-the-cache" in ids
+    end
   end
 
   describe "GenServer refresh_provider/2" do
@@ -241,6 +297,46 @@ defmodule Glorbo.Providers.ModelCatalogTest do
 
       assert File.exists?(Path.join([ctx.base, "cache", "providers", "openai.json"]))
       assert [%ProviderModel{model_id: "gpt-5"}] = Glorbo.Repo.all(ProviderModel)
+    end
+
+    test "static-shape refresh skips HTTP and projects from registry models", ctx do
+      # request_fun must NEVER be called for a static-shape provider —
+      # if it is, the wiring is wrong (we'd be silently doing HTTP for
+      # a broker provider that has no endpoint).
+      counter = :counters.new(1, [])
+
+      request_fun = fn _req ->
+        :counters.add(counter, 1, 1)
+        {:ok, %{status: 200, body: "this should never be parsed"}}
+      end
+
+      stado = static_provider("stado", ["auto", "claude-sonnet-4-5", "gpt-5"])
+
+      name =
+        start_catalog!(
+          base: ctx.base,
+          registry_name: stub_registry([stado]),
+          request_fun: request_fun,
+          credentials_read_fun: fn _ -> {:error, :enoent} end
+        )
+
+      assert {:ok, %{status: :ready, model_count: 3, refreshed_at: %DateTime{}}} =
+               ModelCatalog.refresh_provider("stado", name)
+
+      assert :counters.get(counter, 1) == 0,
+             "static-shape providers must not trigger an HTTP request"
+
+      ids =
+        Glorbo.Repo.all(ProviderModel)
+        |> Enum.filter(&(&1.alias == "stado"))
+        |> Enum.map(& &1.model_id)
+        |> Enum.sort()
+
+      assert ids == ["auto", "claude-sonnet-4-5", "gpt-5"]
+
+      # No cache file is written for static providers — the registry
+      # is the authority.
+      refute File.exists?(Path.join([ctx.base, "cache", "providers", "stado.json"]))
     end
 
     test "401 → :auth status with no cache write", ctx do

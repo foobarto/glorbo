@@ -118,6 +118,31 @@ defmodule Glorbo.Providers.ModelCatalog do
     end
   end
 
+  # `:static` providers (broker-style, e.g. stado) have no HTTP catalog
+  # to fetch — the model alias list lives in the registry TOML's
+  # `model_list.models` array. Project those directly without touching
+  # the cache file. `refreshed_at` is nil because there's no cache
+  # mtime; the projection is current-as-of-load.
+  def read_cache_rows(_base, %Provider{
+        name: alias_name,
+        model_list: %{shape: :static, models: models}
+      })
+      when is_list(models) do
+    rows =
+      Enum.map(models, fn model_id ->
+        %{
+          alias: alias_name,
+          model_id: model_id,
+          context_window: nil,
+          family: nil,
+          raw_json: ~s({"id":#{Jason.encode!(model_id)}}),
+          refreshed_at: nil
+        }
+      end)
+
+    {:ok, rows}
+  end
+
   def read_cache_rows(_base, _provider), do: {:ok, []}
 
   @spec rows_from_response(Provider.t(), binary(), DateTime.t()) ::
@@ -281,6 +306,14 @@ defmodule Glorbo.Providers.ModelCatalog do
       %Provider{kind: :native, model_list: %{shape: shape}} when shape in [:openai, :ollama] ->
         true
 
+      # Broker-style providers (e.g. stado as ACP server) declare their
+      # known model aliases inline via `model_list.shape = "static"`.
+      # No HTTP fetch — the projection is rebuilt directly from the
+      # registry's TOML-declared list.
+      %Provider{model_list: %{shape: :static, models: models}}
+      when is_list(models) and models != [] ->
+        true
+
       _ ->
         false
     end)
@@ -323,6 +356,31 @@ defmodule Glorbo.Providers.ModelCatalog do
 
   defp normalize_refresh_result({:ok, entry}), do: {:ok, entry}
   defp normalize_refresh_result({:error, reason, entry}), do: {:error, reason, entry}
+
+  defp refresh_one(
+         %Provider{model_list: %{shape: :static}} = provider,
+         state,
+         owner
+       ) do
+    # No HTTP fetch — broker-style providers ship their model list in
+    # the registry TOML. Projection is rebuilt from `read_cache_rows/2`,
+    # which short-circuits to the static list.
+    alias_name = provider.name
+    refreshed_at = normalize_now(state.now_fun.())
+
+    case read_cache_rows(state.base, provider) do
+      {:ok, rows} ->
+        rows = Enum.map(rows, &Map.put(&1, :refreshed_at, refreshed_at))
+        :ok = replace_projection(state.repo, alias_name, rows, owner)
+        entry = %{status: :ready, model_count: length(rows), refreshed_at: refreshed_at}
+        {{:ok, entry}, Map.put(entry, :detail, nil)}
+
+      {:error, reason} ->
+        count = model_count(state.repo, alias_name, owner)
+        entry = %{status: :shape, model_count: count, refreshed_at: nil}
+        {{:error, reason, entry}, Map.put(entry, :detail, reason)}
+    end
+  end
 
   defp refresh_one(provider, state, owner) do
     alias_name = provider.name

@@ -115,7 +115,7 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
                path: "{workspace}/.glorbo-run/{task_id}/usage.json"
              }
 
-      assert prov.model_list == %{shape: :openai, path: "/v1/models"}
+      assert prov.model_list == %{shape: :openai, path: "/v1/models", models: []}
     end
   end
 

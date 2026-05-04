@@ -27,12 +27,12 @@ defmodule Glorbo.CLI.Registry.Provider do
   @prompt_modes ~w(stdin stdin_dash argv tmpfile_argv acp)a
   @kinds ~w(cli native)a
   @auth_modes ~w(none bearer api_key)a
-  @model_list_shapes ~w(openai ollama none)a
+  @model_list_shapes ~w(openai ollama static none)a
 
   @type prompt_mode :: :stdin | :stdin_dash | :argv | :tmpfile_argv | :acp
   @type kind :: :cli | :native
   @type auth_mode :: :none | :bearer | :api_key
-  @type model_list_shape :: :openai | :ollama | :none
+  @type model_list_shape :: :openai | :ollama | :static | :none
   @type source :: :builtin | :user
 
   @type usage_path_spec :: %{
@@ -54,7 +54,8 @@ defmodule Glorbo.CLI.Registry.Provider do
 
   @type model_list :: %{
           required(:shape) => model_list_shape(),
-          required(:path) => String.t() | nil
+          required(:path) => String.t() | nil,
+          optional(:models) => [String.t()]
         }
 
   @type t :: %__MODULE__{

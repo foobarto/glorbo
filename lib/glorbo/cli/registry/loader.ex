@@ -371,15 +371,22 @@ defmodule Glorbo.CLI.Registry.Loader do
     {:error, {:missing_field, path, "auth"}}
   end
 
-  @model_list_shapes %{"openai" => :openai, "ollama" => :ollama, "none" => :none}
+  @model_list_shapes %{
+    "openai" => :openai,
+    "ollama" => :ollama,
+    "static" => :static,
+    "none" => :none
+  }
 
   defp parse_model_list(%{"model_list" => map}, path) when is_map(map) do
     shape_raw = Map.get(map, "shape", "none")
     path_raw = Map.get(map, "path")
+    models_raw = Map.get(map, "models")
 
     with {:ok, shape} <- parse_model_list_shape(shape_raw, path),
-         :ok <- validate_model_list_path(shape, path_raw, path) do
-      {:ok, %{shape: shape, path: path_raw}}
+         :ok <- validate_model_list_path(shape, path_raw, path),
+         {:ok, models} <- parse_static_models(shape, models_raw, path) do
+      {:ok, %{shape: shape, path: path_raw, models: models}}
     end
   end
 
@@ -396,7 +403,7 @@ defmodule Glorbo.CLI.Registry.Loader do
     end
   end
 
-  defp validate_model_list_path(shape, nil, _path) when shape in [:none], do: :ok
+  defp validate_model_list_path(shape, nil, _path) when shape in [:none, :static], do: :ok
 
   defp validate_model_list_path(shape, value, _path)
        when shape in [:openai, :ollama] and is_binary(value),
@@ -411,6 +418,29 @@ defmodule Glorbo.CLI.Registry.Loader do
   defp validate_model_list_path(_shape, _value, path) do
     {:error, {:invalid_model_list, path, "`model_list.path` must be a string"}}
   end
+
+  # `models` is required when shape is :static (broker-style providers
+  # like stado declare their known model aliases inline so the catalog
+  # has something to project without an HTTP probe). For other shapes
+  # the field is ignored.
+  defp parse_static_models(:static, models, path)
+       when is_list(models) and models != [] do
+    if Enum.all?(models, fn m -> is_binary(m) and m != "" end) do
+      {:ok, models}
+    else
+      {:error,
+       {:invalid_model_list, path,
+        "`model_list.models` must be a list of non-empty strings when shape = \"static\""}}
+    end
+  end
+
+  defp parse_static_models(:static, _models, path) do
+    {:error,
+     {:invalid_model_list, path,
+      "`model_list.models` is required and must be a non-empty list of strings when shape = \"static\""}}
+  end
+
+  defp parse_static_models(_shape, _models, _path), do: {:ok, []}
 
   defp parse_version_regex(%{"version_regex" => pattern}, path) when is_binary(pattern) do
     case Regex.compile(pattern) do

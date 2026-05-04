@@ -53,3 +53,36 @@ mode    = "ro"
 host    = "~/.local/share/stado"
 sandbox = "/workspace/.local/share/stado"
 mode    = "rw"
+
+# Broker-style providers like stado don't expose an HTTP /models
+# endpoint — they pick a backend (anthropic / openai / ollama / etc.)
+# at runtime based on `defaults.provider` in `~/.config/stado/config.toml`.
+# Declaring a static list lets `Glorbo.Providers.ModelCatalog` populate
+# the LV agent-wizard combobox + KanbanLive new-task model picker
+# without an HTTP probe (GEP-32 ↔ GEP-45 wiring).
+#
+# Operators who want a different default set can drop a user override
+# at `~/.glorbo/providers/stado.toml` with their own `model_list.models`
+# list — GEP-8 already supports this override pattern.
+#
+# `auto` first because that's stado's recommended setting (delegate
+# the model pick to whatever local runner / cloud preset is currently
+# active). The other entries are well-known aliases stado understands
+# across its supported backends.
+[model_list]
+shape  = "static"
+models = [
+  "auto",
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5",
+  "claude-opus-4-7",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-oss-120b",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "qwen3-32b",
+  "qwen3-coder-30b",
+  "gemma3-27b",
+  "deepseek-r1-32b"
+]
