@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 Phase 1b foundation: ACP framing + message types
+
+`Glorbo.CLI.Dispatcher.Acp.Framing` + `.Message` + `.RpcError` ship
+the wire-format half of the ACP JSON-RPC client. Message types are
+tagged tuples — `{:request, id, method, params}` /
+`{:notification, method, params}` / `{:response, id, result}` /
+`{:error_response, id, %RpcError{}}` — keeping the client state
+machine matchable on tuples without parsing JSON inline.
+
+The framing layer encodes any tagged tuple into iodata terminated
+by `\n` (ACP uses line-delimited JSON, NOT LSP's Content-Length
+headers — confirmed against `stado/internal/acp/jsonrpc.go`'s
+`bufio.ReadSlice('\n')`), and decodes inbound bytes via
+`parse_stream/2` which handles partial-line buffering across
+arbitrary kernel chunk boundaries — caller passes the previous
+remainder + the fresh chunk, gets back parsed messages + new
+remainder.
+
+20 round-trip + edge-case unit tests covering all four message
+kinds, partial-line buffering across multiple reads, malformed-
+line tolerance (one bad message doesn't drop surrounding good
+ones), and JSON-RPC 2.0 contract violations (wrong version,
+missing fields, malformed error object).
+
+The actual client state machine + bwrap port wiring + dispatcher
+integration land in subsequent Phase 1b sub-slices.
+
 ### Added — GEP-45 Phase 1a: stado provider registry entry + ACP prompt_mode
 
 Phase 1a of GEP-45's stado-as-provider integration ships the registry
