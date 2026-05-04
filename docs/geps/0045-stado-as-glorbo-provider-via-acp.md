@@ -191,7 +191,7 @@ integration, not MCP injection.
 | 0 | This GEP (Draft → Accepted) | In progress |
 | 1 | `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client; provider loader accepts `prompt_mode = "acp"`; `priv/providers/stado.toml` ships; FileSpec validator accepts `provider: stado` (registry-driven so this is automatic). | Implemented (1a + 1b shipped 2026-05-04: f7eaf6b, 21b994d, 18dcfcc, 80826e5) |
 | 2 | Smoke + bench: a `bench-htb` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Implemented — see `docs/research/gep-45-bench-htb.md`. Audit-log capture deferred to Phase 3 (handshake/dispatch path verified end-to-end against pinned stado v0.26.4). |
-| 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). Audit-log capture of the ACP message exchange (carried over from Phase 2). | Pending |
+| 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). Audit-log capture of the ACP message exchange (carried over from Phase 2). | In progress — audit-log capture shipped 2026-05-04. Per-frame `cli.acp.<role>.<kind>` audit emission via injected `audit_fun` in `Acp.Client`; dispatcher result now carries `acp: %{session_id, chunks, ignored_updates}`. Stado usage-parser and GEP-32 catalog wiring still pending. |
 
 ## Decision log
 

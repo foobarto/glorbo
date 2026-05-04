@@ -575,5 +575,49 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert {:error, {:provider_timeout, :session_prompt}} =
                Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
     end
+
+    test "invoke/3 surfaces ACP metadata (session_id + chunks + ignored_updates) on success" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok, %{reply: "ok", session_id: "acp-session-42", chunks: 3, ignored_updates: 1}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:ok, result} =
+               Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
+
+      assert result.acp == %{
+               session_id: "acp-session-42",
+               chunks: 3,
+               ignored_updates: 1
+             }
+    end
+
+    test "invoke/3 forwards :audit_fun to the ACP run loop opts" do
+      # Capture the opts the run-fun was called with so we can inspect
+      # whether :audit_fun made it through the dispatcher seam.
+      captured_opts = :persistent_term.put({__MODULE__, :captured}, nil) || nil
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        :persistent_term.put({__MODULE__, :captured}, opts)
+        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      audit_fun = fn _role, _kind, _detail -> :ok end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:ok, _} =
+               Dispatcher.invoke(p, base_ctx(ws),
+                 acp_run_fun: acp_run_fun,
+                 audit_fun: audit_fun
+               )
+
+      forwarded = :persistent_term.get({__MODULE__, :captured})
+      assert Keyword.get(forwarded, :audit_fun) == audit_fun
+      _ = captured_opts
+    end
   end
 end

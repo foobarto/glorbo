@@ -80,6 +80,10 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   @default_phase_timeout_ms 30_000
   @default_protocol_version 1
 
+  @doc false
+  @spec noop_audit(atom(), atom(), map()) :: :ok
+  def noop_audit(_role, _kind, _detail), do: :ok
+
   @type ok_result :: %{
           reply: String.t(),
           session_id: String.t() | nil,
@@ -106,10 +110,18 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     * `:phase_timeout_ms` (integer, default 30_000) — read deadline
       for each phase. Streaming phase resets the deadline on every
       chunk.
+    * `:audit_fun` (`(role, kind, detail -> :ok)`, default no-op) —
+      callback invoked for every protocol-level event so the
+      dispatcher can persist a replayable trace. Roles: `:client`
+      (we sent), `:peer` (we received), `:meta` (start/complete/
+      error). Kinds match the ACP method names plus `:start` /
+      `:complete` / `:error` bookends.
   """
   @spec run(IO.t(), String.t(), keyword()) ::
           {:ok, ok_result()} | {:error, error_reason()}
   def run(%IO{} = io, prompt, opts \\ []) when is_binary(prompt) do
+    audit_fun = Keyword.get(opts, :audit_fun, &__MODULE__.noop_audit/3)
+
     state = %{
       io: io,
       buffer: "",
@@ -121,22 +133,38 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
       session_id: nil,
       reply: [],
       chunks: 0,
-      ignored_updates: 0
+      ignored_updates: 0,
+      audit_fun: audit_fun
     }
+
+    audit_fun.(:meta, :dispatch_start, %{prompt_size: byte_size(prompt)})
 
     result =
       with {:ok, state} <- phase_initialize(state),
            {:ok, state} <- phase_session_new(state),
            {:ok, state} <- phase_session_prompt(state, prompt),
            {:ok, state} <- phase_shutdown(state) do
-        {:ok,
-         %{
-           reply: state.reply |> Enum.reverse() |> Elixir.IO.iodata_to_binary(),
-           session_id: state.session_id,
-           chunks: state.chunks,
-           ignored_updates: state.ignored_updates
-         }}
+        ok = %{
+          reply: state.reply |> Enum.reverse() |> Elixir.IO.iodata_to_binary(),
+          session_id: state.session_id,
+          chunks: state.chunks,
+          ignored_updates: state.ignored_updates
+        }
+
+        audit_fun.(:meta, :dispatch_complete, %{
+          session_id: state.session_id,
+          chunks: state.chunks,
+          ignored_updates: state.ignored_updates,
+          reply_size: byte_size(ok.reply)
+        })
+
+        {:ok, ok}
       end
+
+    case result do
+      {:ok, _} -> :ok
+      {:error, reason} -> audit_fun.(:meta, :dispatch_error, %{reason: inspect(reason)})
+    end
 
     _ = io.close.()
     result
@@ -300,11 +328,28 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
 
   defp send_message(state, msg) do
     iodata = Framing.encode(msg)
+    audit_outbound(state, msg, Elixir.IO.iodata_length(iodata))
 
     case state.io.write.(iodata) do
       :ok -> :ok
       {:error, reason} -> {:error, {:provider_protocol_error, {:write_failed, reason}}}
     end
+  end
+
+  defp audit_outbound(state, {:request, id, method, _params}, byte_size) do
+    state.audit_fun.(:client, :request, %{id: id, method: method, byte_size: byte_size})
+  end
+
+  defp audit_outbound(state, {:notification, method, _params}, byte_size) do
+    state.audit_fun.(:client, :notification, %{method: method, byte_size: byte_size})
+  end
+
+  defp audit_outbound(state, {:response, id, _result}, byte_size) do
+    state.audit_fun.(:client, :response, %{id: id, byte_size: byte_size})
+  end
+
+  defp audit_outbound(state, {:error_response, id, %RpcError{code: code}}, byte_size) do
+    state.audit_fun.(:client, :error_response, %{id: id, code: code, byte_size: byte_size})
   end
 
   # `await_response/3` drains messages until one with the matching
@@ -348,6 +393,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   defp next_message(%{pending: [head | tail]} = state, phase) do
     case head do
       {:ok, msg} ->
+        audit_inbound(state, msg)
         {:ok, msg, %{state | pending: tail}}
 
       {:error, reason} ->
@@ -372,6 +418,39 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         {:error, {:provider_protocol_error, {:read_failed, reason}}}
     end
   end
+
+  # ---------- audit helpers (inbound) ----------
+
+  defp audit_inbound(state, {:response, id, _result}) do
+    state.audit_fun.(:peer, :response, %{id: id})
+  end
+
+  defp audit_inbound(state, {:error_response, id, %RpcError{code: code, message: m}}) do
+    state.audit_fun.(:peer, :error_response, %{id: id, code: code, message: m})
+  end
+
+  defp audit_inbound(state, {:notification, "session/update", params}) do
+    {kind, text_size} = update_summary(params)
+    state.audit_fun.(:peer, :session_update, %{kind: kind, text_size: text_size})
+  end
+
+  defp audit_inbound(state, {:notification, method, _params}) do
+    state.audit_fun.(:peer, :notification, %{method: method})
+  end
+
+  defp audit_inbound(state, {:request, id, method, _params}) do
+    state.audit_fun.(:peer, :request, %{id: id, method: method})
+  end
+
+  defp update_summary(%{"update" => %{"kind" => kind, "text" => text}}) when is_binary(text),
+    do: {kind, byte_size(text)}
+
+  defp update_summary(%{"kind" => kind, "text" => text}) when is_binary(text),
+    do: {kind, byte_size(text)}
+
+  defp update_summary(%{"update" => %{"kind" => kind}}), do: {kind, 0}
+  defp update_summary(%{"kind" => kind}), do: {kind, 0}
+  defp update_summary(_), do: {"unknown", 0}
 
   # ---------- helpers ----------
 

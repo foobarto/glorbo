@@ -387,6 +387,100 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
     end
   end
 
+  # ----- audit emission (GEP-45 Phase 3) -----
+
+  describe "audit_fun emission" do
+    setup do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      audit_fun = fn role, kind, detail ->
+        Agent.update(agent, fn list -> [{role, kind, detail} | list] end)
+        :ok
+      end
+
+      {:ok, audit_agent: agent, audit_fun: audit_fun}
+    end
+
+    defp audit_log(agent), do: Agent.get(agent, fn list -> Enum.reverse(list) end)
+
+    test "happy path emits dispatch_start, request/response per phase, session_update per chunk, dispatch_complete",
+         %{audit_agent: agent, audit_fun: audit_fun} do
+      mock =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          prompt_with_chunks_then_done(["Hi ", "there"]),
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, _} = Client.run(peer_io(mock), "say hi", audit_fun: audit_fun)
+
+      log = audit_log(agent)
+
+      # Bookends.
+      assert {:meta, :dispatch_start, %{prompt_size: 6}} = List.first(log)
+      assert {:meta, :dispatch_complete, summary} = List.last(log)
+      assert summary.session_id == "s-mock-1"
+      assert summary.chunks == 2
+      assert summary.reply_size == byte_size("Hi there")
+
+      # 4 outbound requests (initialize, session/new, session/prompt, shutdown).
+      client_methods =
+        for {:client, :request, %{method: m}} <- log, do: m
+
+      assert client_methods == ["initialize", "session/new", "session/prompt", "shutdown"]
+
+      # 4 peer responses matching those request ids.
+      peer_responses =
+        for {:peer, :response, %{id: id}} <- log, do: id
+
+      assert peer_responses == [1, 2, 3, 4]
+
+      # 2 session/update events with text_size capturing the chunk payload.
+      updates = for {:peer, :session_update, detail} <- log, do: detail
+      assert length(updates) == 2
+
+      assert Enum.all?(updates, fn d -> d.kind == "agent_message_chunk" end)
+      assert Enum.map(updates, & &1.text_size) == [3, 5]
+    end
+
+    test "peer JSON-RPC error emits :peer.error_response and :meta.dispatch_error",
+         %{audit_agent: agent, audit_fun: audit_fun} do
+      mock =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, id, "session/prompt", _} ->
+            [
+              Framing.encode(
+                Message.new_error_response(
+                  id,
+                  Message.internal_error_code(),
+                  "no provider configured"
+                )
+              )
+            ]
+          end
+        ])
+
+      assert {:error, {:provider_returned_error, _}} =
+               Client.run(peer_io(mock), "x", audit_fun: audit_fun)
+
+      log = audit_log(agent)
+
+      # Inbound error_response captured with code + message.
+      assert {:peer, :error_response, %{id: 3, code: -32_603, message: "no provider configured"}} =
+               Enum.find(log, fn
+                 {:peer, :error_response, _} -> true
+                 _ -> false
+               end)
+
+      # Final meta event records the failure shape.
+      assert {:meta, :dispatch_error, %{reason: reason}} = List.last(log)
+      assert reason =~ "provider_returned_error"
+    end
+  end
+
   # ----- partial-line / multi-frame chunking -----
 
   describe "transport chunk handling" do

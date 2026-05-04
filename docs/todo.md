@@ -95,6 +95,14 @@ it's been in CHANGELOG for a cycle.
   load-bearing assertion when stado has no inference backend
   configured). Bench docs at `docs/research/gep-45-bench-htb.md`.
   Audit-log capture of the ACP exchange carried into Phase 3.
+- [ ] **GEP-45 Phase 3 — operational polish.** Three deliverables:
+  audit-log capture of the ACP message exchange (✓ shipped 2026-05-04
+  — `Acp.Client` accepts an `:audit_fun` callback emitting
+  `cli.acp.<role>.<kind>` lines per frame; dispatcher result carries
+  `acp: %{session_id, chunks, ignored_updates}`), stado usage-parser
+  for token/cost ingestion via the per-session JSONL trace (pending),
+  and GEP-32 model-catalog integration so stado's known models surface
+  in the LV combobox (pending).
 - [x] **GEP-34 Phase 2 — `tasks_approval_state` rebuild from
   audit JSONL.** Shipped 2026-04-26. `Reindex.run/1` folds
   `approval.{requested,granted,denied}` lines chronologically per

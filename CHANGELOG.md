@@ -10,6 +10,34 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 Phase 3 (in progress): per-frame ACP audit-log capture
+
+`Glorbo.CLI.Dispatcher.Acp.Client.run/3` now accepts an `:audit_fun`
+callback (`(role, kind, detail -> :ok)`) invoked for every
+protocol-level event so operators can replay the exchange from
+`audit/_system/YYYY-MM.jsonl`. Roles: `:client` (we sent), `:peer`
+(we received), `:meta` (start/complete/error bookends). Kinds map
+to ACP method names plus `:dispatch_start`/`:dispatch_complete`/
+`:dispatch_error`. `:peer.session_update` carries `{kind, text_size}`
+so the audit shows what the agent said without leaking the full
+reply (which is in the outbox already).
+
+The dispatcher's ACP branch resolves the audit_fun to
+`Glorbo.CLI.Audit.emit("acp", "<role>.<kind>", detail)` by default,
+landing one audit line per frame. Tests inject a stub callback that
+captures into a list to assert exact emission shape. Adds 2 new
+client tests covering happy-path emission and error-path
+`:meta.dispatch_error`.
+
+The dispatcher's success result now also carries
+`acp: %{session_id, chunks, ignored_updates}` so callers (the agent
+runtime, future GEP-32 catalog wiring) can correlate dispatches
+with stado's own session trace under `~/.local/share/stado/sessions/`.
+
+Open Phase 3 work: stado usage-parser (token + cost ingestion via
+the per-session JSONL trace) and GEP-32 model-catalog integration.
+Tracked in `docs/geps/0045-stado-as-glorbo-provider-via-acp.md`.
+
 ### Added — GEP-45 Phase 2: bench-htb stado smoke
 
 End-to-end validation of the GEP-45 ACP transport against a real

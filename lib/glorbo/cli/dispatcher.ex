@@ -40,6 +40,7 @@ defmodule Glorbo.CLI.Dispatcher do
 
   require Logger
 
+  alias Glorbo.CLI.Audit
   alias Glorbo.CLI.Dispatcher.Acp.Client
   alias Glorbo.CLI.Dispatcher.Acp.PortIO
   alias Glorbo.CLI.Dispatcher.Acp.RpcError
@@ -104,8 +105,14 @@ defmodule Glorbo.CLI.Dispatcher do
 
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
-         {:ok, %{reply: reply_text}} <- run_acp(provider, args, ctx, opts) do
+         {:ok, %{reply: reply_text} = acp_result} <- run_acp(provider, args, ctx, opts) do
       :ok = write_reply_file!(reply_path, reply_text, provider.reply_max_bytes, fs)
+
+      acp_meta = %{
+        session_id: Map.get(acp_result, :session_id),
+        chunks: Map.get(acp_result, :chunks, 0),
+        ignored_updates: Map.get(acp_result, :ignored_updates, 0)
+      }
 
       {:ok,
        %{
@@ -114,7 +121,8 @@ defmodule Glorbo.CLI.Dispatcher do
          reply_path: reply_path,
          usage: nil,
          usage_error: nil,
-         invocation_id: invocation_id
+         invocation_id: invocation_id,
+         acp: acp_meta
        }}
     end
   end
@@ -297,7 +305,11 @@ defmodule Glorbo.CLI.Dispatcher do
       {:ok, port} ->
         io = PortIO.wrap(port)
         prompt = Map.get(run_opts_map, :prompt, "")
-        client_opts = Keyword.take(opts, [:phase_timeout_ms, :protocol_version, :client_info])
+
+        client_opts =
+          opts
+          |> Keyword.take([:phase_timeout_ms, :protocol_version, :client_info])
+          |> Keyword.put(:audit_fun, audit_fun_for_acp(opts))
 
         try do
           Client.run(io, prompt, client_opts)
@@ -309,6 +321,23 @@ defmodule Glorbo.CLI.Dispatcher do
 
       {:error, _} = err ->
         err
+    end
+  end
+
+  # Bind the per-frame audit emission to `Glorbo.CLI.Audit.emit/3` with
+  # a stable verb prefix (`acp`) and the role/kind merged into the
+  # audit phase so operators can grep one line per frame from
+  # `audit/_system/YYYY-MM.jsonl`. Tests can inject `:audit_fun`
+  # directly to bypass the AuditLog GenServer.
+  defp audit_fun_for_acp(opts) do
+    case Keyword.fetch(opts, :audit_fun) do
+      {:ok, fun} when is_function(fun, 3) ->
+        fun
+
+      :error ->
+        fn role, kind, detail ->
+          Audit.emit("acp", "#{role}.#{kind}", detail)
+        end
     end
   end
 
