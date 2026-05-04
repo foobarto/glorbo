@@ -257,16 +257,135 @@ format --check-formatted` clean, `mix credo --strict`
 
 ---
 
-## Commit(s)
+## Commit(s) — wave 1 (already shipped)
 
-Three atomic commits coming up:
+  1. `5a384b4 fix(cli): glorbo serve/up now bind port 4000`
+  2. `42c6c01 fix(test): replace flaky debounce sleeps with deterministic poll`
+  3. `f807d5e feat(doctor): migrations_pending check + 'run glorbo migrate' hint`
 
-  1. `fix(cli): glorbo serve/up now bind port 4000` —
-     bug 1 (Phoenix endpoint enable) + the CHANGELOG entry.
-  2. `fix(test): replace flaky debounce sleeps with deterministic poll` —
-     bug 2 (the aarch64 CI flake + tx_test.exs flake +
-     up_test.exs nice-to-have) + CHANGELOG entry.
-  3. `feat(doctor): migrations_pending check + 'run glorbo migrate' hint` —
-     the doctor enhancement + its CHANGELOG entry.
+CI verdict: all four jobs green on `f807d5e` (x86_64 + aarch64
+build/test, x86_64 + arm64 macOS cross-build). aarch64 flake fix
+held.
 
-Then push origin main, monitor CI for green.
+---
+
+## Task — verify glorbo dogfood items 5/6 + ship #5
+
+Scope requested which dogfood items are doc gaps vs code gaps. Glorbo
+side: **0/7 are doc gaps** — most are forward-looking feature work,
+plus item #6 was a false positive against current code.
+
+### Item #6 — inotify-tools warning fires on `--help`
+
+**Verified false positive against current code.**
+`Glorbo.Application.start/2` branches on `running_standalone?`:
+
+  * Burrito release path → `run_cli_and_halt(argv)` with an empty
+    supervisor (`Supervisor.start_link([], one_for_one)`); no
+    children, no Watcher, no warning.
+  * `mix phx.server` / `iex -S mix` / test → full
+    `start_supervision_tree/0` with CompanyBoot → company supervisor
+    → `Glorbo.Filesystem.Watcher.init/1` (where the inotify warning
+    actually emits at line 112-115).
+
+Empirical check: `./glorbo --help` / `--version` / `doctor` /
+`status` all emit zero inotify lines. Either fixed before I started
+working here, or never reproduced against the release binary. Not
+addressing.
+
+### Item #5 — `doctor --fix` should auto-install missing packages
+
+**What shipped.**
+
+  * `Glorbo.Doctor.Fixer.fixers_for/1` — opts-aware registry resolver.
+    Default returns `@explain_fixers`; `install_deps: true` returns
+    `@install_fixers` which routes `bwrap` / `pasta` / `uidmap` to
+    real installers.
+  * `install_bwrap/1` / `install_pasta/1` / `install_uidmap/1` —
+    each detects distro family via `detect_distro/0` (parses
+    `/etc/os-release`, honours `GLORBO_DOCTOR_DISTRO_OVERRIDE` test
+    seam), looks up the (family, pkg) → `(pkgmgr, pkg, args)` table,
+    runs `sudo -n <pkgmgr> <args> <pkg>`. `sudo -n` fails fast when
+    there's no cached credential AND no TTY; under an interactive
+    shell it prompts normally.
+  * Unsupported distro → returns the existing `:explain` tuple, so
+    operators on weird distros still get the printed runbook.
+  * `explain_uidmap/1` added (uidmap check was previously missing
+    from the fixer registry — now explicit on both paths).
+  * CLI flag plumbed through `Glorbo.CLI.dispatch(["doctor"|...])`
+    via the new `install_deps: :boolean` switch; `DoctorFix.run/1`
+    forwards opts unchanged.
+  * Help text updated in `cli.ex`.
+
+**Tests.** 7 new in `test/glorbo/doctor/fixer_test.exs`:
+
+  * `uidmap` is now in the registered-fixer-names table.
+  * `explain_uidmap` returns guidance with `shadow-utils` + `uidmap`.
+  * `fixers_for([])` == `Fixer.fixers()` (default identity).
+  * `fixers_for(install_deps: true)` swaps host-package fixers but
+    leaves filesystem ones untouched.
+  * `detect_distro` honours `GLORBO_DOCTOR_DISTRO_OVERRIDE` for
+    fedora / debian / arch and returns `:error` on unknown values.
+  * `install_bwrap` / `install_pasta` / `install_uidmap` on an
+    unsupported distro fall back to `:explain` (no sudo invocation
+    under test).
+
+  Positive-path testing (sudo dnf install ACTUALLY succeeds) skipped
+  by design — would mutate the test machine.
+
+**Design calls I made without you.**
+
+  * Opt-in `--install-deps` flag, not implicit-on-`--fix`. Running
+    sudo without explicit consent is bad UX; the flag IS the
+    consent. Default `--fix` keeps current `:explain` behavior so no
+    existing user is surprised.
+  * `sudo -n` so the install fails fast in non-interactive contexts
+    (CI, headless) rather than blocking forever on a password prompt.
+  * `dnf install -y` / `apt install -y` / `pacman -S --noconfirm` —
+    bypass the package-manager prompts. The user already opted in
+    via the flag; double-confirming is friction.
+  * Did NOT touch the `uidmap` fixer to also handle the rootless-
+    Podman setup script some distros bundle — out of scope for this
+    pass.
+
+### Task — Makefile at project root
+
+Scope requested for a Makefile that "compile glorbo binary and drop it
+to root project folder". Existing `mix glorbo.build_local` already
+materialises `./glorbo` as a symlink — Makefile wraps it.
+
+**What shipped.**
+
+  * `make` (default) → builds Burrito linux_x86_64 + symlinks
+    `./glorbo`. Same end-state as `mix glorbo.build_local`.
+  * `make build-real` → copies the real binary to `./glorbo`
+    (no symlink) for tarball / container packaging.
+  * Wrappers around common verbs: `test`, `precommit`, `format`,
+    `credo`, `setup`, `serve`, `up`, `down`, `doctor`, `migrate`.
+  * `make clean` + `make clean-burrito` for cleanup.
+  * `make help` lists everything.
+
+The symlink-vs-copy distinction is real: dogfood often wants the
+real-file form when the project root is being shipped somewhere
+that doesn't preserve symlinks (tar without --copy-links, OCI image
+layers, etc.). Default stays symlink so the fast-rebuild loop
+isn't slowed by an extra copy.
+
+**Gates.** `mix compile --warnings-as-errors` clean,
+`mix format --check-formatted` clean, `mix credo --strict` 0 issues,
+`mix precommit` 2542/2542 pass.
+
+---
+
+## Commit(s) — wave 2
+
+Two atomic commits coming next:
+
+  1. `feat(doctor): --install-deps actually runs sudo <pkgmgr> install` —
+     fixer registry switch + 3 install_X fixers + distro detection
+     + 7 new tests + CHANGELOG entry + cli.ex flag wiring.
+  2. `feat(build): Makefile wraps mix glorbo.build_local + common verbs` —
+     project-root Makefile + CHANGELOG entry.
+
+Then rebuild burrito (already kicked off in background) so `./glorbo`
+is on the new code, push origin main, monitor CI.

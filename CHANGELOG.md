@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — `make` Makefile wraps `mix glorbo.build_local` + common verbs
+
+Convenience target file at the project root. `make` (default) builds
+the Burrito linux_x86_64 release and materialises `./glorbo` as a
+symlink — same end state as `mix glorbo.build_local`. Other targets
+mirror common dev verbs (`make test`, `make precommit`, `make credo`,
+`make serve`, `make doctor`, `make migrate`) plus `make build-real`
+to drop a real binary file at `./glorbo` (no symlink) for tarball /
+container packaging. `make help` lists everything.
+
 ### Added — `glorbo doctor --fix --install-deps` actually installs missing host packages
 
 Previously `--fix` for `bwrap` / `pasta` / `uidmap` only printed the
