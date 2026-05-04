@@ -31,7 +31,19 @@ defmodule Glorbo.CLI.Migrate do
 
       {:ok, path} ->
         try do
-          applied = Ecto.Migrator.run(Glorbo.Repo, path, :up, all: true)
+          # CLI runs in a short-lived process that does NOT boot the
+          # full Application supervision tree, so `Glorbo.Repo` is not
+          # already started. `Ecto.Migrator.with_repo/2` starts the
+          # repo (and its `:ecto_sql` dependency), runs the function,
+          # and stops the repo on exit — matching the canonical
+          # release-migration pattern from the Phoenix docs.
+          {:ok, _started} = Application.ensure_all_started(:ecto_sql)
+
+          {:ok, applied, _stopped} =
+            Ecto.Migrator.with_repo(Glorbo.Repo, fn repo ->
+              Ecto.Migrator.run(repo, path, :up, all: true)
+            end)
+
           Audit.emit("migrate", "complete", %{count: length(applied)})
           {:migrate, 0, "✓ migrations applied: #{length(applied)}\n"}
         rescue

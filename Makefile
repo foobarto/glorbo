@@ -12,23 +12,20 @@ SYMLINK    := glorbo
 .PHONY: help build build-real clean clean-burrito test precommit format credo \
         serve up down doctor migrate setup
 
-# Default — match the workflow most contributors use.
-build: $(TARGET)
+# Default — match the workflow most contributors use. Always invokes
+# the mix task; mix has its own incremental-compile + burrito staleness
+# detection, so this is cheap when nothing changed but correct when
+# Elixir source has been edited.
+build:
+	$(MIX) glorbo.build_local
 	@ln -sfn $(TARGET) $(SYMLINK)
 	@printf '✓ ./%s -> %s\n' "$(SYMLINK)" "$(TARGET)"
-
-# Burrito release. The mix task clears `~/.local/share/.burrito` first
-# so config changes propagate; declared as a real file target so
-# downstream rules can depend on it without forcing a rebuild every
-# invocation.
-$(TARGET):
-	$(MIX) glorbo.build_local
 
 # Materialise a real binary at `./glorbo` (copy, not symlink). Useful
 # when shipping the project root to a tarball / container that doesn't
 # preserve symlinks.
-build-real: $(TARGET)
-	cp -f $(TARGET) $(SYMLINK)
+build-real: build
+	cp -fL $(TARGET) $(SYMLINK)
 	@printf '✓ ./%s (real binary, %s)\n' "$(SYMLINK)" "$$(stat -c '%s bytes' $(SYMLINK))"
 
 # Common dev verbs. Mirror the flow already in CLAUDE.md so muscle
