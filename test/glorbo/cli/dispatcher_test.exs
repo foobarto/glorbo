@@ -482,4 +482,42 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert reply == "Plain text with red spans.\n"
     end
   end
+
+  # GEP-45 Phase 1a: ACP transport accepted by the registry but the
+  # dispatcher branch (`Glorbo.CLI.Dispatcher.Acp` JSON-RPC client)
+  # ships in Phase 1b. Until then `invoke/3` short-circuits with a
+  # structured unimplemented error rather than silently mis-driving
+  # an ACP server with the stdin tempfile path.
+  describe "GEP-45 ACP transport stub" do
+    test "invoke/3 fast-fails on prompt_mode :acp with a clear pointer to the GEP" do
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:error, {:unimplemented_prompt_mode, detail}} =
+               Dispatcher.invoke(p, base_ctx(ws))
+
+      assert detail.provider == "stado"
+      assert detail.prompt_mode == :acp
+      assert detail.gep =~ "GEP-45"
+      assert is_binary(detail.message)
+    end
+
+    test "invoke/3 does NOT call run_fun for ACP providers" do
+      called = :counters.new(1, [])
+
+      run_fun = fn _args, _env, _bwrap_opts, _run_opts ->
+        :counters.add(called, 1, 1)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:error, {:unimplemented_prompt_mode, _}} =
+               Dispatcher.invoke(p, base_ctx(ws), run_fun: run_fun)
+
+      assert :counters.get(called, 1) == 0,
+             "ACP stub must not invoke run_fun (no half-working bwrap dispatch)"
+    end
+  end
 end

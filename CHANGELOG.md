@@ -10,6 +10,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 Phase 1a: stado provider registry entry + ACP prompt_mode
+
+Phase 1a of GEP-45's stado-as-provider integration ships the registry
+half: `Glorbo.CLI.Registry.Provider` + `Loader` accept
+`prompt_mode = "acp"`, and `priv/providers/stado.toml` declares stado
+as a built-in provider with `args = ["acp", "--tools"]` plus auth_binds
+for `~/.config/stado` (ro) and `~/.local/share/stado` (rw).
+`Glorbo.CLI.Dispatcher.invoke/3` short-circuits ACP-mode providers
+with a structured `{:unimplemented_prompt_mode, %{...}}` error — no
+half-working stdin fallback, no hung port handshake — pointing
+operators at GEP-45 Phase 1b for the real JSON-RPC client.
+
+`AGENT.md` validation accepts `provider: stado` automatically — the
+FileSpec was already registry-driven, no schema change needed.
+
+Phase 1b will replace the dispatcher stub with the actual ACP
+client (initialize → session/new → session/prompt → drain
+session/update → write reply file → shutdown).
+
 ### Added — GEP-45 (Draft): stado as glorbo provider via ACP transport
 
 Captures the design for adding stado to glorbo's GEP-8 provider

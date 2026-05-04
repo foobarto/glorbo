@@ -1,0 +1,55 @@
+# Stado — bundled provider via ACP transport (GEP-45).
+#
+# Stado (foobarto/stado) is a complete standalone agent runtime: it
+# calls its own configured model (anthropic / openai / google / groq /
+# ollama-cloud / any OAI-compat preset), uses its own bundled tools
+# (webfetch, ripgrep, ast-grep, lsp, fs, bash), and emits its own
+# audit trace into a per-session git ref. Glorbo dispatches via ACP
+# (Agent Client Protocol — JSON-RPC 2.0 over stdio per Zed's spec),
+# which stado already exposes as `stado acp`.
+#
+# `prompt_mode = "acp"` opts into the GEP-45 Phase 1b dispatcher
+# branch (`Glorbo.CLI.Dispatcher.Acp`) — the JSON-RPC client that
+# does initialize → session/new → session/prompt → drain
+# session/update chunks → write reply file → shutdown. Phase 1a
+# (this file) ships the registry entry; Phase 1b implements the
+# dispatcher branch.
+
+name   = "stado"
+binary = "stado"
+
+# `--tools` opens stado's full audited executor loop. Glorbo's bwrap
+# sandbox is the outer permission boundary so giving stado its full
+# tool set inside the sandbox is safe by construction (same posture
+# as `claude-code --permission-mode bypassPermissions` in the
+# claude-code provider TOML).
+args        = ["acp", "--tools"]
+prompt_mode = "acp"
+
+# Reply contract (GEP-8 §7.4) — same as stdin-prompt providers.
+# The ACP dispatcher branch assembles streamed `session/update`
+# chunks into the reply buffer and writes once at the end; downstream
+# code (audit log, reply rendering, agent state machine) sees no
+# difference.
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+# Version probing (opted-in by default for built-ins per GEP-8 D13).
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# Stado's per-user state — its config file (provider/model selection,
+# inference presets, custom tools) and its audit/session storage.
+# Config is read-only; state dir is rw because stado writes session
+# JSONL traces there during the dispatch (see GEP-45 D4).
+[[auth_binds]]
+host    = "~/.config/stado"
+sandbox = "/workspace/.config/stado"
+mode    = "ro"
+
+[[auth_binds]]
+host    = "~/.local/share/stado"
+sandbox = "/workspace/.local/share/stado"
+mode    = "rw"

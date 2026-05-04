@@ -24,12 +24,12 @@ defmodule Glorbo.CLI.Registry.Provider do
   `nil`, `nil`, `nil`).
   """
 
-  @prompt_modes ~w(stdin stdin_dash argv tmpfile_argv)a
+  @prompt_modes ~w(stdin stdin_dash argv tmpfile_argv acp)a
   @kinds ~w(cli native)a
   @auth_modes ~w(none bearer api_key)a
   @model_list_shapes ~w(openai ollama none)a
 
-  @type prompt_mode :: :stdin | :stdin_dash | :argv | :tmpfile_argv
+  @type prompt_mode :: :stdin | :stdin_dash | :argv | :tmpfile_argv | :acp
   @type kind :: :cli | :native
   @type auth_mode :: :none | :bearer | :api_key
   @type model_list_shape :: :openai | :ollama | :none

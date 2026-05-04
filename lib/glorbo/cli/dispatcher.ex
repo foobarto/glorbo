@@ -79,7 +79,27 @@ defmodule Glorbo.CLI.Dispatcher do
     * `:rand_fun` — `(-> String.t)` for deterministic invocation_ids.
   """
   @spec invoke(Provider.t(), ctx(), keyword()) :: result()
-  def invoke(%Provider{} = provider, %{} = ctx, opts \\ []) do
+  def invoke(provider, ctx, opts \\ [])
+
+  def invoke(%Provider{prompt_mode: :acp} = provider, %{} = _ctx, _opts) do
+    # GEP-45 Phase 1a: the registry accepts `prompt_mode = "acp"` so
+    # `priv/providers/stado.toml` validates and surfaces in
+    # `glorbo doctor` / the LiveView providers panel. Phase 1b adds
+    # the actual `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client. Until
+    # then dispatching an ACP provider returns this fast-fail with a
+    # concrete pointer to the GEP — no half-working stdin fallback,
+    # no hung port handshake.
+    {:error,
+     {:unimplemented_prompt_mode,
+      %{
+        provider: provider.name,
+        prompt_mode: :acp,
+        gep: "GEP-45 Phase 1b",
+        message: "ACP transport accepted by registry; dispatcher branch ships in GEP-45 Phase 1b"
+      }}}
+  end
+
+  def invoke(%Provider{} = provider, %{} = ctx, opts) do
     fs = fs_fun(opts)
     now = Keyword.get(opts, :now_fun, &DateTime.utc_now/0).()
     invocation_id = Map.get(ctx, :invocation_id) || gen_invocation_id(opts)

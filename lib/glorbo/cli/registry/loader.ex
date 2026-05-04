@@ -246,12 +246,16 @@ defmodule Glorbo.CLI.Registry.Loader do
   end
 
   # GEP-12 compliance: map TOML strings to atoms via a closed set, never
-  # String.to_atom on user input.
+  # String.to_atom on user input. `acp` lands here as part of GEP-45
+  # Phase 1a: provider TOML accepts the mode + the dispatcher recognises
+  # it as unimplemented. Phase 1b replaces the dispatcher stub with the
+  # actual JSON-RPC client.
   @prompt_mode_map %{
     "stdin" => :stdin,
     "stdin_dash" => :stdin_dash,
     "argv" => :argv,
-    "tmpfile_argv" => :tmpfile_argv
+    "tmpfile_argv" => :tmpfile_argv,
+    "acp" => :acp
   }
 
   defp parse_prompt_mode(raw, path) do

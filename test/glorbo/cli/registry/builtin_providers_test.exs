@@ -25,19 +25,30 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   end
 
   test "all built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 8
+    assert map_size(p) == 9
 
-    for name <- ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter) do
+    for name <- ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter stado) do
       assert Map.has_key?(p, name), "missing built-in provider: #{name}"
     end
 
-    for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
+    for name <- ~w(claude-code codex gemini-cli hermes opencode pi stado) do
       assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
     end
 
     for name <- ~w(openai openrouter) do
       assert p[name].kind == :native, "#{name} must stay on the native registry path"
     end
+  end
+
+  test "stado provider declares prompt_mode :acp (GEP-45)", %{providers: p} do
+    stado = p["stado"]
+    assert stado.kind == :cli
+    assert stado.prompt_mode == :acp
+    assert stado.binary == "stado"
+    assert stado.args == ["acp", "--tools"]
+    # Both auth_binds present: config (ro) + state (rw).
+    modes = Enum.map(stado.auth_binds, & &1.mode) |> Enum.sort()
+    assert modes == [:ro, :rw]
   end
 
   test "untracked providers bind to parsers.none", %{providers: p} do
