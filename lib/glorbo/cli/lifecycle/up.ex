@@ -55,7 +55,16 @@ defmodule Glorbo.CLI.Lifecycle.Up do
 
     with {:ok, cookie} <- Glorbo.Config.erl_cookie(base),
          {:ok, binary} <- locate_binary(),
-         env <- [{~c"RELEASE_COOKIE", String.to_charlist(cookie)}],
+         env <- [
+           {~c"RELEASE_COOKIE", String.to_charlist(cookie)},
+           # Phoenix endpoints default to `server: false` in a Burrito
+           # release; runtime.exs only flips `:server` to true when
+           # PHX_SERVER is set. Without this the daemon comes up with
+           # the supervision tree healthy but port 4000 unbound — the
+           # browser fails to connect even though `glorbo status` reports
+           # running. Set it here so `up` always serves.
+           {~c"PHX_SERVER", ~c"1"}
+         ],
          {:ok, os_pid} <- Daemon.spawn_detached(binary, env),
          :ok <- safe_pidfile_write(os_pid, base) do
       # NOTE: detail MUST NOT include the cookie (T-05-02).

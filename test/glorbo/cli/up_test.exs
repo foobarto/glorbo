@@ -108,5 +108,47 @@ defmodule Glorbo.CLI.UpTest do
       assert out =~ "glorbo up"
       assert out =~ "USAGE"
     end
+
+    test "exports PHX_SERVER=1 to the daemon child env", %{home: home, tracker: t} do
+      # Regression: in a Burrito release runtime.exs only sets `server: true`
+      # when PHX_SERVER is set; without this, `glorbo up` spawned a daemon
+      # whose Phoenix endpoint never bound port 4000.
+      System.put_env("GLORBO_BINARY_PATH", fake_daemon_binary!(home))
+      on_exit(fn -> System.delete_env("GLORBO_BINARY_PATH") end)
+
+      assert {:up, 0, _out} = Up.run([])
+
+      track_pid(t, Pidfile.read!(home))
+
+      env_path = Path.join(home, "fake_glorbo.env")
+
+      # Poll for the fake daemon's env dump rather than a fixed sleep —
+      # codex review flagged the 100ms wait as a small but real timing
+      # race. 2s deadline is generous for a single shell-script write.
+      assert wait_for_env_file(env_path, 2_000) == "PHX_SERVER=1"
+    end
+  end
+
+  # Poll-with-deadline for `fake_glorbo.env` populated by the fake
+  # daemon's startup script. Returns the trimmed file contents the
+  # moment they appear; flunks on timeout.
+  defp wait_for_env_file(path, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    poll_for_env_file(path, deadline)
+  end
+
+  defp poll_for_env_file(path, deadline) do
+    case File.read(path) do
+      {:ok, body} when byte_size(body) > 0 ->
+        String.trim(body)
+
+      _ ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("fake daemon env file never appeared at #{path} within deadline")
+        else
+          Process.sleep(20)
+          poll_for_env_file(path, deadline)
+        end
+    end
   end
 end

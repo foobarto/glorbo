@@ -10,6 +10,29 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — `glorbo serve` / `glorbo up` now actually bind port 4000
+
+Phoenix endpoints default to `server: false` outside `mix phx.server`;
+in a Burrito release `config/runtime.exs` only flipped `:server` to
+`true` when `PHX_SERVER` was set in the environment. Without it,
+`glorbo serve` printed *"Glorbo serving on http://127.0.0.1:4000"*
+but the endpoint stayed in standby and never bound the port — the
+browser refused to connect even though `glorbo status` reported
+running. `glorbo up` had the same bug for the daemon path.
+
+The CLI now sets the flag on its own behalf:
+
+  * `Glorbo.CLI.Lifecycle.Serve` flips `GlorboWeb.Endpoint`'s `:server`
+    config to `true` before booting the supervision tree (gated on a
+    new `:serve_starts_endpoint` flag — `false` in the test env so
+    ConnCase suites don't collide on port 4000).
+  * `Glorbo.CLI.Lifecycle.Up` exports `PHX_SERVER=1` in the env list
+    passed to the re-exec'd Burrito daemon.
+
+Regression tests cover both paths (serve config contract +
+PHX_SERVER export to the daemon child env via the `fake_daemon_binary!`
+fixture). Operators no longer need to know about `PHX_SERVER`.
+
 ### Added — AppRoot idle-mode discovery footer
 
 The shell now renders a one-line footer beneath every view's

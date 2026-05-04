@@ -11,6 +11,12 @@ config :glorbo,
   ecto_repos: [Glorbo.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# `glorbo serve` / `glorbo up` flip GlorboWeb.Endpoint's `:server` to true at
+# CLI dispatch time so the release binary doesn't need PHX_SERVER set in the
+# environment. Tests opt out — `mix test` runs ConnCase against an unbound
+# Endpoint and starts the supervision tree without binding port 4000.
+config :glorbo, :serve_starts_endpoint, true
+
 # Configure the endpoint
 config :glorbo, GlorboWeb.Endpoint,
   url: [host: "localhost"],

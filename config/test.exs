@@ -43,11 +43,16 @@ config :glorbo, Glorbo.Repo,
   journal_mode: :wal
 
 # We don't run a server during test. If one is required,
-# you can enable the server option below.
+# you can enable the server option below. Also opt out of the
+# `glorbo serve` / `up` Endpoint auto-enable so the integration
+# `--exit-after` test starts the supervision tree without binding
+# port 4000 (would collide with parallel ConnCase suites).
 config :glorbo, GlorboWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "lNFLEuSRBYhtE7AmlKDWdk0wD7TwCsYxXVVfqohqQAyR0mKXfvbSfs7jljzmEmxX",
   server: false
+
+config :glorbo, :serve_starts_endpoint, false
 
 # Print only warnings and errors during test
 config :logger, level: :warning

@@ -9,6 +9,16 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
   declared shutdown order and drains each child — no explicit signal trap
   is needed here.
 
+  ## Endpoint auto-enable
+
+  Phoenix endpoints default to `server: false` outside `mix phx.server`.
+  In a Burrito release `runtime.exs` only flips `:server` to true when
+  `PHX_SERVER` is set. Without this, `glorbo serve` starts the tree, prints
+  the banner, and silently fails to bind port 4000. To make the binary
+  work as advertised, we set `server: true` on the Endpoint here before
+  booting the tree, gated on `:serve_starts_endpoint` so test config can
+  opt out (ConnCase runs against an unbound Endpoint).
+
   ## Test mode
 
   `--exit-after N` replaces the `Process.sleep(:infinity)` with
@@ -46,6 +56,8 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
   end
 
   defp ensure_tree_started do
+    :ok = enable_endpoint_serving()
+
     # Start distribution FIRST. If the name is already taken, that's
     # a running daemon — abort with a clear message instead of
     # booting a second supervision tree that would collide on the
@@ -76,6 +88,21 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
       {:error, {:already_started, _pid}} -> :ok
       other -> raise "start_supervision_tree_for_serve failed: #{inspect(other)}"
     end
+  end
+
+  # Flip `server: true` on the GlorboWeb.Endpoint config so the release
+  # binary binds port 4000 without needing PHX_SERVER set in the env.
+  # Idempotent + opt-out via :serve_starts_endpoint (test.exs sets false).
+  # Public for direct test exercise; not part of the supported CLI surface.
+  @doc false
+  @spec enable_endpoint_serving() :: :ok
+  def enable_endpoint_serving do
+    if Application.get_env(:glorbo, :serve_starts_endpoint, true) do
+      cfg = Application.get_env(:glorbo, GlorboWeb.Endpoint, [])
+      Application.put_env(:glorbo, GlorboWeb.Endpoint, Keyword.put(cfg, :server, true))
+    end
+
+    :ok
   end
 
   @spec help_text() :: String.t()
