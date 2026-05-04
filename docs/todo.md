@@ -61,14 +61,18 @@ it's been in CHANGELOG for a cycle.
   v0.0.3's single-digit task counts, but watch it past 1000 tasks.
   If it becomes hot, cache mtime like Search.scan_tasks already
   does.
-- [ ] **GEP-45 Phase 1 — agent-level MCP-server consumer registry.**
-  Drafted 2026-05-04 from htb-writeups dogfood feedback (stado
-  integration shape). Phase 1 = `Glorbo.MCP.Server.Registry` loader
-  for `priv/mcp_servers/*.toml`, new `mcp_servers:` field on
-  `agent/v1` FileSpec with registry-backed enum validation, AGENT.md
-  spec doc regenerated, `priv/mcp_servers/stado.toml` ships as the
-  first kit. No dispatch wiring (declaration-only). Phase 2 follows
-  with `Agent.Dispatch` composition + claude-code injection.
+- [ ] **GEP-45 Phase 1 — stado provider via ACP transport.**
+  Drafted 2026-05-04 from htb-writeups dogfood feedback. Phase 1 =
+  `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client (initialize → session/new
+  → session/prompt → drain session/update chunks → write reply file →
+  shutdown), provider loader accepts `prompt_mode = "acp"` (extends
+  the `[stdin]` allowlist), `priv/providers/stado.toml` ships with
+  `args = ["acp", "--tools"]` + auth_binds for `~/.config/stado` (ro)
+  and `~/.local/share/stado` (rw). Sandbox composition + reply-file
+  contract reused from existing stdin-prompt path. Phase 2 = bench
+  validation with a stado-driven agent. Earlier draft framed the
+  integration as MCP-injection-into-claude-code; rewritten in place
+  to the correct shape after maintainer correction.
 - [x] **GEP-34 Phase 2 — `tasks_approval_state` rebuild from
   audit JSONL.** Shipped 2026-04-26. `Reindex.run/1` folds
   `approval.{requested,granted,denied}` lines chronologically per

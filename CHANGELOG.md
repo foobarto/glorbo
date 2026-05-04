@@ -10,22 +10,39 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-### Added — GEP-45 (Draft): agent-level MCP-server consumer config injection
+### Added — GEP-45 (Draft): stado as glorbo provider via ACP transport
 
-Captures the design for agents declaring an `mcp_servers:` list in
-their AGENT.md and glorbo automatically composing the right sandbox
-binds + per-CLI MCP-config injection so the agent's outer LLM (claude-
-code, codex, etc.) can talk to external MCP servers like
-`stado mcp-server`. First validation target is stado, picking up the
-htb-writeups dogfood note that flagged the missing integration.
+Captures the design for adding stado to glorbo's GEP-8 provider
+registry as `provider: stado`, parallel to `claude-code` / `codex` /
+`gemini-cli` / `opencode`. Stado is a complete standalone agent
+runtime — it calls its own configured model with its own bundled
+tools — so the right shape is "stado IS the agent," not "stado is a
+tool source consumed by claude." The transport is ACP (JSON-RPC 2.0
+over stdio per Zed's Agent Client Protocol), which stado already
+exposes via `stado acp`.
 
-Phase 0 (this commit) = the GEP itself. Phase 1 = registry loader +
-FileSpec field + first kit shipping `priv/mcp_servers/stado.toml`.
-Phase 2 = dispatch composition. Phase 3 = codex / gemini / opencode.
-Phase 4 (deferred) = HTTP-SSE transport + loopback network bridge.
+The integration extends GEP-8 with a new `prompt_mode = "acp"` (joins
+the existing `prompt_mode = "stdin"`). Sandbox composition,
+auth_binds, the reply-file contract, and the audit pipeline all
+reuse the existing GEP-8 plumbing unchanged; only the dispatcher's
+run-loop branches between stdin-prompt and ACP.
 
-Bidirectional links added on GEP-9 (direction record) and GEP-29
-(inbound MCP server) — the new GEP is the symmetric outbound side.
+Phase 1 = `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client + provider
+loader accepting `prompt_mode = "acp"` + `priv/providers/stado.toml`
+shipping. Phase 2 = bench validation. Phase 3 = operational polish
+(usage parser for stado's session JSONL, network-policy guidance,
+GEP-32 catalog integration).
+
+Bidirectional links: GEP-8 `extended-by` gains 45; GEP-9 `extended-by`
+keeps 45 (this is the first concrete outbound protocol-level
+integration on the direction GEP-9 sketched).
+
+The earlier draft of this GEP framed the integration as
+MCP-server-injection-into-claude-code (case B in the user-preference
+memory) — the wrong shape for the dogfood ask. The Draft body was
+rewritten in place after maintainer correction; the
+MCP-injection concern is shelved unless a concrete need surfaces
+(separate future GEP if so).
 
 ### Added — `make` Makefile wraps `mix glorbo.build_local` + common verbs
 

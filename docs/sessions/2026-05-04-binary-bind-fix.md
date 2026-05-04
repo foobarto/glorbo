@@ -447,12 +447,94 @@ also be a no-op since AGENT.md FileSpec is unchanged this round.
 
 ---
 
-## Commit(s) — wave 3
+## Commit(s) — wave 3 (shipped, then corrected)
+
+  1. `f43f8ec docs(gep-45): draft agent-level MCP-server consumer
+     config injection (stado validation target)` — first GEP-45
+     draft. Wrong-shape, see correction below.
+
+---
+
+## Task — GEP-45 corrected after maintainer feedback
+
+**Maintainer correction.** Right after wave-3 pushed, maintainer flagged
+the wrong-shape framing: *"why would user need to add stado to
+claude's settings? stado is standalone completely, can work without
+claude"*.
+
+The first draft had glorbo agents using claude-code as outer LLM
+with stado-mcp-server as a tool source ("case B" in the user-
+preference memory). User corrected: stado IS the agent — calls its
+own model with its own tools. Glorbo should treat stado as a
+provider parallel to claude-code/codex/gemini ("case A"), with the
+"MCP/ACP > stdio prompt" preference referring to the TRANSPORT used
+to drive stado, not the integration model.
+
+Confirmed `stado acp` exists (cmd/stado/acp.go) — JSON-RPC 2.0 over
+stdio per Zed's Agent Client Protocol; supports
+`initialize` / `session/new` / `session/prompt` / `session/cancel` /
+`shutdown`, with `--tools` opening the audited tool loop.
+
+**What shipped (wave 4).**
+
+  * `docs/geps/0045-stado-as-glorbo-provider-via-acp.md` —
+    rewritten body. New title; `git mv` from
+    `0045-agent-mcp-client-config.md`. The replacement design
+    extends GEP-8 with `prompt_mode = "acp"` (joins
+    `prompt_mode = "stdin"`), ships `priv/providers/stado.toml`
+    with `args = ["acp", "--tools"]` + auth_binds for stado's
+    config / state dirs, and adds a new `Glorbo.CLI.Dispatcher.Acp`
+    JSON-RPC client that drives the existing bwrap-sandboxed
+    binary the same way the stdin-prompt path does — only the
+    run-loop branches.
+  * Decision log entries D1-D6 (extend-GEP-8 / keep-reply-file /
+    --tools-on / rw-state-dir / single-session / stado-as-target).
+    Open questions cover stderr drain, cancellation, network
+    policy, usage parser.
+  * Bidirectional links rebuilt: GEP-8 `extended-by` gains 45
+    (this is the right link — GEP-45 extends GEP-8's provider
+    pattern); GEP-9 `extended-by` keeps 45 (concrete protocol-
+    level integration on GEP-9's direction); GEP-29 `see-also`
+    drops 45 (first draft's symmetric-outbound framing was wrong;
+    this isn't symmetric to GEP-29 — they cover different roles).
+  * `docs/geps/README.md` row updated with new title.
+  * `CHANGELOG.md` `[Unreleased]` entry rewritten.
+  * `docs/todo.md` Phase-1 ticket rewritten.
+  * Memory note `user_stado_integration_preference.md` rewritten
+    to call out the case-A / case-B split explicitly so future
+    sessions don't repeat the misread.
+  * `MEMORY.md` index entry updated to match.
+
+**Design calls I made without you.**
+
+  * Rewrote the GEP body in place rather than superseding with a
+    new GEP. GEP-45 is still Draft; nothing was implemented; no
+    git-graveyard problem. The history block records the pivot
+    so future readers see why the title doesn't match the original
+    file slug (also renamed via `git mv` for cleanliness).
+  * Did NOT spin up GEP-46 for "the other case" (stado-mcp-server
+    as a tool source for claude-code). That's parked indefinitely.
+    If it ever becomes a real need it gets its own GEP.
+
+**Skipped / not done.**
+
+  * Phase 1 implementation (the dispatcher branch + provider TOML)
+    is still pending. Natural compaction seam — Phase 1 happens in
+    a fresh session.
+
+**Gates.** Docs-only commit; format / credo / test gates not
+applicable.
+
+---
+
+## Commit(s) — wave 4
 
 One atomic commit:
 
-  1. `docs(gep-45): draft agent-level MCP-server consumer config
-     injection (stado validation target)` — the GEP file +
-     bidirectional links + index + CHANGELOG + todo.md tracker.
+  1. `docs(gep-45): rewrite as stado-as-provider via ACP transport
+     after maintainer correction` — replaces the wrong-shape MCP-
+     injection design with a `prompt_mode = "acp"` GEP-8 extension.
+     File renamed via `git mv` to match the new title. Memory
+     note updated to capture the case-A / case-B distinction.
 
 Then push.
