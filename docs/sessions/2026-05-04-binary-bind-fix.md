@@ -527,14 +527,177 @@ applicable.
 
 ---
 
-## Commit(s) — wave 4
+## Commit(s) — wave 4 (shipped)
 
-One atomic commit:
+  1. `ef40743 docs(gep-45): rewrite as stado-as-provider via ACP
+     transport after maintainer correction` (was first staged as
+     `342f433` rename-only, amended to include the body changes).
 
-  1. `docs(gep-45): rewrite as stado-as-provider via ACP transport
-     after maintainer correction` — replaces the wrong-shape MCP-
-     injection design with a `prompt_mode = "acp"` GEP-8 extension.
-     File renamed via `git mv` to match the new title. Memory
-     note updated to capture the case-A / case-B distinction.
+CI 25319803526 green on `ef40743`.
 
-Then push.
+---
+
+## Task — GEP-45 Phase 1a
+
+**Task picked.** Continuation scope "carry on with next items on the list".
+Per `feedback_finish_partials_first.md` the GEP-45 thread is a
+half-shipped feature; Phase 1a is its first concrete code slice.
+Scoped narrowly: registry support + provider TOML + dispatcher
+stub. Phase 1b (the actual ACP client) is its own body of work.
+
+**What shipped.**
+
+  * `lib/glorbo/cli/registry/provider.ex` — `:acp` joins
+    `@prompt_modes`; `@type prompt_mode` widened.
+  * `lib/glorbo/cli/registry/loader.ex` — `"acp" => :acp` in
+    `@prompt_mode_map`. Closed-mapping discipline preserved.
+  * `priv/providers/stado.toml` — built-in entry. `binary = "stado"`,
+    `args = ["acp", "--tools"]`, `prompt_mode = "acp"`. Auth_binds:
+    `~/.config/stado` (ro), `~/.local/share/stado` (rw).
+  * `lib/glorbo/cli/dispatcher.ex` — function head + first clause
+    pattern-matches `prompt_mode: :acp` and returns
+    `{:error, {:unimplemented_prompt_mode, %{provider, gep, message,
+    ...}}}`. No half-working stdin fallback. The existing implementation
+    becomes the second clause.
+  * `test/glorbo/cli/registry/builtin_providers_test.exs` — provider
+    count expectation 8 → 9. New test asserts the stado entry's
+    shape (kind=:cli, prompt_mode=:acp, binary, args, auth_binds).
+  * `test/glorbo/cli/dispatcher_test.exs` — new "GEP-45 ACP transport
+    stub" describe block: fast-fail with GEP pointer in error
+    payload; run_fun NOT invoked under ACP mode.
+
+**Design calls I made without you.**
+
+  * Stub-and-ship rather than implement-then-ship. The registry
+    half is independently useful (provider surfaces in `glorbo
+    doctor`, AGENT.md `provider: stado` validates) and unblocks
+    later work without committing to a half-baked dispatcher
+    branch. Fast-fail with structured error is better than a hung
+    port handshake.
+  * Function-head pattern (`def invoke(p, c, opts \\ [])` followed
+    by two clauses without defaults) — Elixir's idiomatic shape
+    for multi-clause + default arg, replaces the original single-
+    clause `\\ []` form. Compiles clean; matches existing style
+    elsewhere in the codebase.
+  * Did NOT add a `prompt_mode` consumer in
+    `Glorbo.Sandbox.Bwrap.run_via_port` yet. `prompt_mode` was
+    vestigial-validation-only across all existing providers (every
+    shipped provider uses `:stdin`; the field was only consumed at
+    load-time by the loader's enum check). My Phase 1a guard at
+    `Dispatcher.invoke/3` is the first real branch on it.
+
+**Tests.** `mix test` for touched files + `mix precommit` 2545/2546
+(unrelated WatcherBridge inotify-watch flake; passes 5/5 in
+isolation, parallel-load race not introduced). Format clean,
+Credo strict 0 issues.
+
+---
+
+## Task — GEP-45 Phase 1b foundation
+
+**Task picked.** Same `feedback_finish_partials_first.md` push —
+keep building on the Phase 1a momentum rather than start a new
+ticket. Phase 1b is the actual ACP JSON-RPC client; foundation
+sub-slice is the wire-format layer (framing + message types),
+which is pure code and doesn't require touching the bwrap port
+machinery.
+
+**Pre-implementation discovery.** Read
+`stado/internal/acp/jsonrpc.go` to confirm the wire format. Key
+finding: ACP uses **line-delimited JSON** (one message per `\n`),
+NOT LSP's Content-Length header framing. The comment at the top
+of stado's jsonrpc.go is explicit:
+
+> Wire format: JSON-RPC 2.0, one message per line (LSP-style
+> Content-Length framing is NOT used by ACP — it's line-delimited
+> JSON).
+
+`bufio.Reader.ReadSlice('\n')` confirms the receiver side. Saved
+me from implementing the wrong framing.
+
+Also read `stado/internal/acp/server.go` for the inbound message
+shapes glorbo will receive from a session/prompt: `session/update`
+notifications with kind=`text`, `tool_call`, or `subagent`. Phase
+1b's text-chunk assembly only needs the `text` kind for the reply
+buffer; tool_call and subagent are surface for future audit
+integration.
+
+**What shipped.**
+
+  * `lib/glorbo/cli/dispatcher/acp/rpc_error.ex` — JSON-RPC 2.0
+    error struct (`code`, `message`, `data`). Standard codes
+    documented; mirrors stado's `acp.RPCError`.
+  * `lib/glorbo/cli/dispatcher/acp/message.ex` — tagged-tuple
+    representation (`{:request,...}`, `{:notification,...}`,
+    `{:response,...}`, `{:error_response,...}`) with id-must-be-
+    non-negative-integer constructors. Standard error-code
+    constants exposed as functions so callers don't sprinkle
+    magic numbers. Pure data.
+  * `lib/glorbo/cli/dispatcher/acp/framing.ex` — wire-format
+    encode/decode:
+      * `encode/1` — tagged tuple → iodata terminated by `\n`.
+        Drops nil params/data so wire bytes stay compact.
+      * `decode_message/1` — single line → `{:ok, tagged}` or
+        a structured `{:error, reason}`. Accepts trailing-`\n`
+        or no-`\n`. Rejects empty / malformed JSON / wrong
+        version / ambiguous shape.
+      * `parse_stream/2` — drain a stdout buffer of arbitrary
+        chunked input. Pass previous remainder + fresh chunk,
+        get back `{messages, new_remainder}`. Empty lines silently
+        dropped; malformed lines yield error tuples without
+        dropping surrounding well-formed messages.
+  * `test/glorbo/cli/dispatcher/acp/framing_test.exs` — 20 round-
+    trip + edge-case tests covering all four message kinds,
+    partial-line buffer accumulation across multiple reads,
+    malformed-line tolerance, JSON-RPC 2.0 contract violations.
+
+**Design calls I made without you.**
+
+  * Tagged tuples over structs for message representation. More
+    idiomatic in Elixir for protocol-level matching; client state
+    machine pattern-matches on `{:notification, "session/update",
+    %{"kind" => "text"} = p}` without struct boilerplate.
+  * Extracted `RpcError` to its own top-level module rather than
+    nested inside `Message`. The nested form hit a forward-
+    reference compile error (defstruct of nested module not yet
+    compiled when outer `new_error_response/3` was being expanded).
+    Top-level extraction is also cleaner — error shape is the
+    same across the client and any future server we'd implement.
+  * Closed numeric ID space — `id` must be a non-negative integer.
+    No string IDs anywhere in glorbo's outbound messages, so the
+    state-machine can pattern-match on integers without normalisation.
+  * Did NOT implement a stateful framing GenServer. `parse_stream/2`
+    is a pure function over (remainder, chunk) → (messages,
+    remainder) — caller carries the remainder. Simpler than a
+    Process and matches the way glorbo ports already buffer.
+  * Drop-nil for missing params keeps wire bytes compact: a request
+    without params emits `{"jsonrpc":"2.0","id":1,"method":"shutdown"}`
+    rather than `{"jsonrpc":"2.0","id":1,"method":"shutdown","params":null}`.
+    Stado's encoder follows the same convention.
+
+**Tests.** 20/20 framing tests green. Format clean. Credo 0 issues.
+
+**Skipped / not done.**
+
+  * Client state machine (sub-slice 1b.3 + 1b.4): the actual
+    ACP conversation driver — initialize → session/new → session/prompt
+    → drain session/update text chunks → assemble reply text → shutdown.
+  * Mock ACP peer fixture for testing the client without bwrap.
+  * Sandbox `Bwrap.start_acp/2` (sub-slice 1b.5): open a port
+    without the prompt-tempfile shell-redirect.
+  * Dispatcher integration (sub-slice 1b.6): replace the Phase 1a
+    stub with a real call into the client state machine.
+
+---
+
+## Commit(s) — wave 5 (shipped)
+
+  1. `f7eaf6b feat(gep-45): Phase 1a — stado provider registry entry +
+     acp prompt_mode`
+  2. `21b994d feat(gep-45): Phase 1b foundation — ACP framing + message
+     types`
+
+Both pushed; CI not blocking per maintainer instruction. todo.md
+ticket split: Phase 1a + 1b foundation marked done; remaining
+sub-slices listed as separate P1 items so the next session has
+clear targets.

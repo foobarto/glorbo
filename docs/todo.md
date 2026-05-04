@@ -61,18 +61,31 @@ it's been in CHANGELOG for a cycle.
   v0.0.3's single-digit task counts, but watch it past 1000 tasks.
   If it becomes hot, cache mtime like Search.scan_tasks already
   does.
-- [ ] **GEP-45 Phase 1 — stado provider via ACP transport.**
-  Drafted 2026-05-04 from htb-writeups dogfood feedback. Phase 1 =
-  `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client (initialize → session/new
-  → session/prompt → drain session/update chunks → write reply file →
-  shutdown), provider loader accepts `prompt_mode = "acp"` (extends
-  the `[stdin]` allowlist), `priv/providers/stado.toml` ships with
-  `args = ["acp", "--tools"]` + auth_binds for `~/.config/stado` (ro)
-  and `~/.local/share/stado` (rw). Sandbox composition + reply-file
-  contract reused from existing stdin-prompt path. Phase 2 = bench
-  validation with a stado-driven agent. Earlier draft framed the
-  integration as MCP-injection-into-claude-code; rewritten in place
-  to the correct shape after maintainer correction.
+- [x] **GEP-45 Phase 1a — stado provider registry entry + ACP prompt_mode.**
+  Shipped 2026-05-04 in `f7eaf6b`. `Provider.@prompt_modes` gains `:acp`,
+  Loader accepts `"acp"`, `priv/providers/stado.toml` declares stado as
+  built-in. Dispatcher short-circuits `prompt_mode: :acp` with a
+  structured `:unimplemented_prompt_mode` error pointing at Phase 1b.
+- [x] **GEP-45 Phase 1b foundation — ACP framing + message types.**
+  Shipped 2026-05-04 in `21b994d`. `Glorbo.CLI.Dispatcher.Acp.{Framing,
+  Message, RpcError}` ship the wire-format half: tagged-tuple message
+  shapes, line-delimited JSON encode/decode, partial-line buffer
+  handling. 20 unit tests. Pure code; no I/O.
+- [ ] **GEP-45 Phase 1b client — JSON-RPC client state machine + mock
+  peer.** Sub-slice 1b.3 + 1b.4. Pure module that drives an ACP
+  conversation via injected read/write streams: initialize → session/new
+  → session/prompt → drain session/update text chunks → assemble reply
+  text → shutdown. Errors map to glorbo's existing dispatch error
+  categories (`:provider_protocol_error`, `:provider_returned_error`).
+  No sandbox / Port wiring — those land in 1b.5 next, on top of this
+  client.
+- [ ] **GEP-45 Phase 1b sandbox + dispatcher — bwrap port without
+  prompt-tempfile + Dispatcher.invoke integration.** Sub-slice 1b.5 +
+  1b.6. New `Glorbo.Sandbox.Bwrap.start_acp/2` (or analogous entry)
+  that opens a port without the prompt-tempfile shell-redirect, plus
+  the Dispatcher branch that replaces the Phase 1a stub with a real
+  call into the client state machine. End-to-end: stado-driven agent
+  dispatches in `bench-htb`.
 - [x] **GEP-34 Phase 2 — `tasks_approval_state` rebuild from
   audit JSONL.** Shipped 2026-04-26. `Reindex.run/1` folds
   `approval.{requested,granted,denied}` lines chronologically per
