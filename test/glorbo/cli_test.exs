@@ -190,9 +190,10 @@ defmodule Glorbo.CLITest do
     assert verb == :doctor
     decoded = Jason.decode!(output)
     assert decoded["version"] == to_string(Application.spec(:glorbo, :vsn))
-    # GEP-31 adds `pasta` as a Linux-only Phase-3 check:
-    # 5 Phase-1 + 4 Phase-2 + 3 Phase-3 = 12 checks.
-    assert length(decoded["checks"]) == 12
+    # GEP-31 adds `pasta` as a Linux-only Phase-3 check;
+    # v0.18 adds `migrations_pending` as a runtime-state check:
+    # 5 Phase-1 + 4 Phase-2 + 3 Phase-3 + 1 runtime = 13 checks.
+    assert length(decoded["checks"]) == 13
     assert Map.has_key?(decoded, "exit_code")
     assert Map.has_key?(decoded, "all_passed")
     # Additive severity field on every check (D-44).

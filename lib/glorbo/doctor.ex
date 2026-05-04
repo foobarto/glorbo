@@ -77,7 +77,8 @@ defmodule Glorbo.Doctor do
       run(:tar_zstd, :warning, fn -> check_tar_zstd(deps) end),
       linux_only.(:bwrap, :blocker, fn -> check_bwrap(deps) end),
       linux_only.(:pasta, :warning, fn -> check_pasta(deps) end),
-      linux_only.(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end)
+      linux_only.(:user_namespaces, :warning, fn -> check_user_namespaces(deps) end),
+      run(:migrations_pending, :warning, fn -> check_migrations_pending(deps) end)
     ]
   end
 
@@ -495,4 +496,126 @@ defmodule Glorbo.Doctor do
   # running on a 3-arity function (or fall back to ignoring opts on 2-arity).
   defp invoke_cmd(fun, cmd, args, opts) when is_function(fun, 3), do: fun.(cmd, args, opts)
   defp invoke_cmd(fun, cmd, args, _opts) when is_function(fun, 2), do: fun.(cmd, args)
+
+  # Compares migration files in `priv/repo/migrations/` against rows in
+  # the SQLite `schema_migrations` table — surfaces the upgrade-from-
+  # older-version state where the binary was rebuilt past the DB. Read-
+  # only: opens the file in `:readonly` mode and never writes.
+  #
+  # `:ok` cases:
+  #   * No DB yet (fresh install before `glorbo init`) — nothing to migrate.
+  #   * All migration timestamps applied — DB matches binary.
+  # `:fail` case:
+  #   * DB has fewer applied migrations than files on disk → recommend
+  #     `glorbo migrate`.
+  @spec check_migrations_pending(keyword()) :: {:ok | :fail, String.t(), String.t()}
+  defp check_migrations_pending(deps) do
+    db_path = Keyword.get(deps, :db_path_fun, &resolve_db_path/0).()
+    migrations_dir = Keyword.get(deps, :migrations_dir_fun, &resolve_migrations_dir/0).()
+
+    cond do
+      migrations_dir == :error ->
+        # priv_dir lookup failed — the binary is structurally broken,
+        # not a doctor-fixable state. Pass with detail so the user
+        # isn't forced to run `glorbo migrate` against a missing dir.
+        {:ok, "skipped (priv/repo/migrations dir not located)", required_phrase()}
+
+      not File.exists?(db_path) ->
+        {:ok, "no DB yet at #{db_path} (run `glorbo init`)", required_phrase()}
+
+      true ->
+        compare_migrations(db_path, migrations_dir)
+    end
+  end
+
+  defp resolve_db_path do
+    System.get_env("GLORBO_DB_PATH") ||
+      System.get_env("DATABASE_PATH") ||
+      Path.expand("~/.glorbo/glorbo.db")
+  end
+
+  defp resolve_migrations_dir do
+    case :code.priv_dir(:glorbo) do
+      {:error, _} ->
+        :error
+
+      dir when is_list(dir) ->
+        path = Path.join(to_string(dir), "repo/migrations")
+        if File.dir?(path), do: path, else: :error
+    end
+  end
+
+  defp compare_migrations(db_path, migrations_dir) do
+    file_versions = list_migration_versions(migrations_dir)
+
+    case applied_versions(db_path) do
+      {:ok, applied} ->
+        pending = MapSet.difference(MapSet.new(file_versions), MapSet.new(applied))
+
+        if MapSet.size(pending) == 0 do
+          {:ok, "#{length(file_versions)} migration(s) applied", required_phrase()}
+        else
+          n = MapSet.size(pending)
+          first = pending |> MapSet.to_list() |> Enum.sort() |> hd()
+
+          {:fail, "#{n} pending migration(s) (oldest: #{first}). Run `glorbo migrate`.",
+           required_phrase()}
+        end
+
+      {:error, reason} ->
+        # DB exists but we can't read schema_migrations — shape error or
+        # corrupted file. Surface but don't claim "pending"; the actual
+        # remediation may be `glorbo reindex`.
+        {:fail, "schema_migrations unreadable: #{inspect(reason)}", required_phrase()}
+    end
+  end
+
+  defp list_migration_versions(dir) do
+    dir
+    |> File.ls!()
+    |> Enum.filter(&String.ends_with?(&1, ".exs"))
+    |> Enum.map(&migration_version/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp migration_version(filename) do
+    case String.split(filename, "_", parts: 2) do
+      [v, _rest] -> if String.match?(v, ~r/^\d+$/), do: String.to_integer(v), else: nil
+      _ -> nil
+    end
+  end
+
+  defp applied_versions(db_path) do
+    case Exqlite.Sqlite3.open(db_path, mode: :readonly) do
+      {:ok, conn} ->
+        try do
+          fetch_versions(conn)
+        after
+          _ = Exqlite.Sqlite3.close(conn)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fetch_versions(conn) do
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "SELECT version FROM schema_migrations"),
+         versions <- drain_rows(conn, stmt, []),
+         :ok <- Exqlite.Sqlite3.release(conn, stmt) do
+      {:ok, versions}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp drain_rows(conn, stmt, acc) do
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, [v]} when is_integer(v) -> drain_rows(conn, stmt, [v | acc])
+      :done -> Enum.reverse(acc)
+      {:error, _} -> Enum.reverse(acc)
+    end
+  end
+
+  defp required_phrase, do: "schema_migrations matches priv/repo/migrations/"
 end

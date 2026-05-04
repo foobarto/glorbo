@@ -18,7 +18,7 @@ defmodule Glorbo.DoctorPhase3Test do
   end
 
   describe "D1: run_checks count (post-GEP-5 D6 pruning)" do
-    test "GEP-31 adds pasta; count is 12 with private_files" do
+    test "GEP-31 adds pasta; v0.18 adds migrations_pending; count is 13" do
       checks = Doctor.run_checks(phase3_deps())
       names = Enum.map(checks, & &1.name) |> MapSet.new()
 
@@ -26,7 +26,8 @@ defmodule Glorbo.DoctorPhase3Test do
       assert "pasta" in names
       assert "user_namespaces" in names
       assert "private_files" in names
-      assert length(checks) == 12
+      assert "migrations_pending" in names
+      assert length(checks) == 13
     end
   end
 
@@ -131,6 +132,114 @@ defmodule Glorbo.DoctorPhase3Test do
       assert "bwrap" in names
       assert "pasta" in names
       assert "user_namespaces" in names
+
+      # v0.18 runtime-state additions
+      assert "migrations_pending" in names
     end
+  end
+
+  describe "D6: migrations_pending check (v0.18 runtime-state)" do
+    # The check is read-only and dependency-injected (`db_path_fun`,
+    # `migrations_dir_fun`). These tests use temp-dir fakes to avoid
+    # touching `~/.glorbo/glorbo.db` and to keep results deterministic.
+
+    setup do
+      tmp = Path.join(System.tmp_dir!(), "doctor_mig_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(Path.join(tmp, "migrations"))
+      on_exit(fn -> File.rm_rf(tmp) end)
+      {:ok, tmp: tmp}
+    end
+
+    defp mig_deps(tmp, db_filename, files) do
+      Enum.each(files, fn name ->
+        File.write!(Path.join([tmp, "migrations", name]), "# fake\n")
+      end)
+
+      [
+        db_path_fun: fn -> Path.join(tmp, db_filename) end,
+        migrations_dir_fun: fn -> Path.join(tmp, "migrations") end
+      ]
+      |> Keyword.merge(phase3_deps())
+    end
+
+    test "DB absent → :ok with `glorbo init` hint", %{tmp: tmp} do
+      deps = mig_deps(tmp, "missing.db", ["20260101000001_create_companies.exs"])
+
+      checks = Doctor.run_checks(deps)
+      mig = Enum.find(checks, &(&1.name == "migrations_pending"))
+
+      assert mig.pass
+      assert mig.detail =~ "no DB yet"
+      assert mig.detail =~ "glorbo init"
+      assert mig.severity == :warning
+    end
+
+    test "DB has all migrations applied → :ok", %{tmp: tmp} do
+      db_path = Path.join(tmp, "all_applied.db")
+      seed_schema_migrations!(db_path, [20_260_101_000_001, 20_260_102_000_001])
+
+      deps =
+        mig_deps(tmp, "all_applied.db", [
+          "20260101000001_create_companies.exs",
+          "20260102000001_create_agents.exs"
+        ])
+
+      checks = Doctor.run_checks(deps)
+      mig = Enum.find(checks, &(&1.name == "migrations_pending"))
+
+      assert mig.pass
+      assert mig.detail =~ "2 migration"
+    end
+
+    test "DB has fewer applied than files on disk → :fail with `glorbo migrate` hint",
+         %{tmp: tmp} do
+      db_path = Path.join(tmp, "pending.db")
+      seed_schema_migrations!(db_path, [20_260_101_000_001])
+
+      deps =
+        mig_deps(tmp, "pending.db", [
+          "20260101000001_create_companies.exs",
+          "20260102000001_create_agents.exs",
+          "20260103000001_create_audit_events.exs"
+        ])
+
+      checks = Doctor.run_checks(deps)
+      mig = Enum.find(checks, &(&1.name == "migrations_pending"))
+
+      refute mig.pass
+      assert mig.detail =~ "2 pending"
+      assert mig.detail =~ "20260102000001"
+      assert mig.detail =~ "glorbo migrate"
+      assert mig.severity == :warning
+      # Warning, not blocker — exit code 2 (or 0 if no other failures).
+      refute Doctor.exit_code(checks) == 1
+    end
+  end
+
+  defp seed_schema_migrations!(db_path, versions) do
+    {:ok, conn} = Exqlite.Sqlite3.open(db_path)
+
+    {:ok, stmt} =
+      Exqlite.Sqlite3.prepare(
+        conn,
+        "CREATE TABLE schema_migrations (version BIGINT PRIMARY KEY, inserted_at DATETIME)"
+      )
+
+    :done = Exqlite.Sqlite3.step(conn, stmt)
+    :ok = Exqlite.Sqlite3.release(conn, stmt)
+
+    Enum.each(versions, fn v ->
+      {:ok, ins} =
+        Exqlite.Sqlite3.prepare(
+          conn,
+          "INSERT INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))"
+        )
+
+      :ok = Exqlite.Sqlite3.bind(ins, [v])
+      :done = Exqlite.Sqlite3.step(conn, ins)
+      :ok = Exqlite.Sqlite3.release(conn, ins)
+    end)
+
+    :ok = Exqlite.Sqlite3.close(conn)
   end
 end

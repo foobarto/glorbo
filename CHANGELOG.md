@@ -33,6 +33,24 @@ Regression tests cover both paths (serve config contract +
 PHX_SERVER export to the daemon child env via the `fake_daemon_binary!`
 fixture). Operators no longer need to know about `PHX_SERVER`.
 
+### Added — `glorbo doctor` flags pending schema migrations
+
+`migrations_pending` is a new warning-severity check that compares
+files in `priv/repo/migrations/` against rows in the SQLite
+`schema_migrations` table. When the binary has been rebuilt past
+the user's `~/.glorbo/glorbo.db` (the symptom that surfaced as a
+`PendingMigrationError` 503 in the dashboard during the v0.11→v0.18
+upgrade probe), doctor now points at the verb that fixes it:
+
+    ✗ migrations_pending  [warn]  N pending migration(s) (oldest: T). Run `glorbo migrate`.
+
+The check is read-only (`Exqlite.Sqlite3.open(:readonly)`) and
+DI-friendly via `db_path_fun` / `migrations_dir_fun` deps so tests
+don't touch `~/.glorbo/`. Severity is `:warning`, so a missing
+migration surfaces as exit code 2 (warning-only) rather than 1
+(blocker) — operators can still run the binary, but the failing
+migration is loud.
+
 ### Fixed — flaky `Process.sleep` waits for Tx auto-flush
 
 Two debounce-based test assertions ("retire roundtrip captures
