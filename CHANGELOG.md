@@ -10,6 +10,57 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 Phase 3 stado_acp usage parser (closes Phase 3)
+
+`Glorbo.CLI.Parsers.StadoAcp` shells out to `stado stats --session
+<sessionId> --json` after each ACP dispatch and maps stado's commit-
+trailer-derived totals to glorbo's canonical `Parsers.usage()` shape:
+prompt/completion tokens, dominant model, per-tool calls. Adds two
+extras above the canonical contract — `cost_usd` and `duration_ms`
+— so the budget ledger can attribute spend per dispatch.
+
+Stado tracks usage in commit-trailer form on its per-session git
+refs (offline + airgap-friendly — source is the git audit log, not
+an OTel pipeline). Glorbo doesn't parse the trailers directly; it
+uses stado's supported `stats --json` interface so the contract
+survives stado's internal schema changes.
+
+The dispatcher's ACP branch wires the parser when
+`provider.usage_parser == "stado_acp"`. Tests inject
+`:command_fun` to bypass the real subprocess. `priv/providers/stado.toml`
+now declares `usage_parser = "stado_acp"` so out-of-the-box stado
+dispatches collect token/cost telemetry automatically.
+
+Requires stado >= 0.27.x for the `stats --json` flag. Older stadoes
+fall back to the human table; the parser flags this as
+`{:invalid_json, _}` and the dispatcher records `usage: nil` /
+`usage_error` set without failing the dispatch.
+
+11 new parser tests + 2 dispatcher tests covering the success,
+non-zero-exit, malformed-JSON, missing-session-id, and
+missing-host-binary paths.
+
+This closes the last open GEP-45 Phase 3 deliverable. The full
+Phase 3 stack (audit-log capture, GEP-32 catalog wiring,
+usage-parser) is shipped.
+
+### Added — Scheduler rescan O(projects × tasks) → O(changed)
+
+`Glorbo.Company.TaskScheduler` rescans the company task tree every
+60 seconds as a safety net against missed inotify events. Previous
+implementation re-read every task file + re-parsed YAML frontmatter
++ re-parsed the cron expression on every tick (1000 reads + 1000
+YAML parses + 1000 cron parses every minute at 1000 tasks).
+
+`scan_one/2` now lstats first and consults a per-task mtime cache:
+if the file's mtime matches the cached entry AND its armed timer
+is still live (`Process.read_timer/1` > 0), the entire read + parse
++ arm pass is skipped. Mirrors the `Glorbo.Search.scan_tasks` mtime
+cache pattern. Adds a `read_timer_fun` injection seam so tests
+exercise both cache-hit and cache-miss paths deterministically.
+
+3 new perf tests on top of the existing 15.
+
 ## [0.19.0] — 2026-05-04
 
 Headline: stado lands as glorbo's first ACP-driven provider, plus a

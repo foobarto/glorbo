@@ -15,7 +15,8 @@ defmodule Glorbo.CLI.Parsers do
     "claude_jsonl" => Glorbo.CLI.Parsers.ClaudeJsonl,
     "gemini_stdout" => Glorbo.CLI.Parsers.GeminiStdout,
     "codex_jsonl" => Glorbo.CLI.Parsers.CodexJsonl,
-    "native-v1" => Glorbo.CLI.Parsers.NativeV1
+    "native-v1" => Glorbo.CLI.Parsers.NativeV1,
+    "stado_acp" => Glorbo.CLI.Parsers.StadoAcp
   }
 
   @type usage :: %{
@@ -31,6 +32,7 @@ defmodule Glorbo.CLI.Parsers do
           {:jsonl_file, String.t()}
           | {:json_file, String.t()}
           | {:stdout, binary()}
+          | {:stado_session, map()}
 
   @doc "True if `name` is a registered parser."
   @spec known?(String.t()) :: boolean()

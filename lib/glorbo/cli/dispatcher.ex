@@ -114,13 +114,15 @@ defmodule Glorbo.CLI.Dispatcher do
         ignored_updates: Map.get(acp_result, :ignored_updates, 0)
       }
 
+      {usage, usage_error} = parse_acp_usage(provider, acp_meta, ctx, opts)
+
       {:ok,
        %{
          exit_status: 0,
          reply: strip_ansi(reply_text),
          reply_path: reply_path,
-         usage: nil,
-         usage_error: nil,
+         usage: usage,
+         usage_error: usage_error,
          invocation_id: invocation_id,
          acp: acp_meta
        }}
@@ -322,6 +324,49 @@ defmodule Glorbo.CLI.Dispatcher do
       {:error, _} = err ->
         err
     end
+  end
+
+  # ACP usage parsing — runs after the dispatch returns, OUTSIDE the
+  # bwrap sandbox. Currently only the `stado_acp` parser is supported;
+  # it shells out to the host's stado binary (`stado stats --session
+  # <sid> --json`) to extract token + cost. Tests inject `:command_fun`
+  # to bypass the real subprocess.
+  defp parse_acp_usage(%Provider{usage_parser: name}, acp_meta, ctx, opts)
+       when name in [nil, "", "none"] do
+    _ = {acp_meta, ctx, opts}
+    {nil, nil}
+  end
+
+  defp parse_acp_usage(%Provider{usage_parser: "stado_acp"} = provider, acp_meta, ctx, opts) do
+    module = Parsers.module_for("stado_acp")
+
+    source = {
+      :stado_session,
+      %{
+        session_id: Map.get(acp_meta, :session_id) || "",
+        host_binary: stado_host_binary(provider, ctx),
+        command_fun: Keyword.get(opts, :command_fun, &System.cmd/3)
+      }
+    }
+
+    case module.parse(source) do
+      {:ok, usage} -> {usage, nil}
+      {:error, reason} -> {nil, reason}
+    end
+  end
+
+  defp parse_acp_usage(%Provider{}, _acp_meta, _ctx, _opts) do
+    {nil, {:unsupported_acp_usage_parser, "non-stado_acp parsers don't apply to ACP dispatches"}}
+  end
+
+  # Where to find the stado binary on the host (NOT the sandbox path).
+  # `host_cli_binary` from ctx wins; falls back to the provider's
+  # resolved path; finally to `stado` on PATH.
+  defp stado_host_binary(provider, ctx) do
+    Map.get(ctx, :host_cli_binary) ||
+      provider.resolved_path ||
+      provider.binary ||
+      "stado"
   end
 
   # Bind the per-frame audit emission to `Glorbo.CLI.Audit.emit/3` with

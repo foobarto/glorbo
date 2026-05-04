@@ -594,6 +594,95 @@ defmodule Glorbo.CLI.DispatcherTest do
              }
     end
 
+    test "invoke/3 wires the stado_acp usage parser with session_id + host_binary" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok, %{reply: "ok", session_id: "acp-bench-7", chunks: 2, ignored_updates: 0}}
+      end
+
+      stats_json = """
+      {
+        "window_days": 7,
+        "session_id": "acp-bench-7",
+        "total": {"calls": 1, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001},
+        "total_duration_ms": 250,
+        "by_model": {"claude-sonnet-4-5": {"calls": 1, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001}},
+        "by_tool": {}
+      }
+      """
+
+      capture = :counters.new(1, [])
+      test_pid = self()
+
+      command_fun = fn bin, args, opts ->
+        :counters.add(capture, 1, 1)
+        send(test_pid, {:cmd, bin, args, opts})
+        {stats_json, 0}
+      end
+
+      p =
+        base_provider(
+          name: "stado",
+          binary: "/host/stado",
+          resolved_path: "/host/stado",
+          prompt_mode: :acp,
+          usage_parser: "stado_acp"
+        )
+
+      ws = tmp_workspace()
+
+      ctx =
+        ws
+        |> base_ctx()
+        |> Map.put(:host_cli_binary, "/host/stado")
+
+      assert {:ok, result} =
+               Dispatcher.invoke(p, ctx,
+                 acp_run_fun: acp_run_fun,
+                 command_fun: command_fun
+               )
+
+      # Parser ran and produced a usage map.
+      assert :counters.get(capture, 1) == 1
+      assert_received {:cmd, "/host/stado", ["stats", "--session", "acp-bench-7", "--json"], _}
+
+      assert result.usage.prompt_tokens == 100
+      assert result.usage.completion_tokens == 50
+      assert result.usage.cost_usd == 0.001
+      assert result.usage.model == "claude-sonnet-4-5"
+      assert result.usage_error == nil
+    end
+
+    test "invoke/3 records usage_error when stado stats fails (preserves dispatch result)" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok, %{reply: "ok", session_id: "acp-bench-9", chunks: 1, ignored_updates: 0}}
+      end
+
+      command_fun = fn _bin, _args, _opts -> {"session not found", 2} end
+
+      p =
+        base_provider(
+          name: "stado",
+          binary: "/host/stado",
+          resolved_path: "/host/stado",
+          prompt_mode: :acp,
+          usage_parser: "stado_acp"
+        )
+
+      ws = tmp_workspace()
+      ctx = ws |> base_ctx() |> Map.put(:host_cli_binary, "/host/stado")
+
+      assert {:ok, result} =
+               Dispatcher.invoke(p, ctx,
+                 acp_run_fun: acp_run_fun,
+                 command_fun: command_fun
+               )
+
+      # Dispatch still succeeds — the reply landed; only usage parsing failed.
+      assert result.reply == "ok"
+      assert result.usage == nil
+      assert {:stado_exit, 2, _tail} = result.usage_error
+    end
+
     test "invoke/3 forwards :audit_fun to the ACP run loop opts" do
       # Capture the opts the run-fun was called with so we can inspect
       # whether :audit_fun made it through the dispatcher seam.

@@ -40,6 +40,20 @@ version_flag        = "--version"
 version_regex       = '(\d+\.\d+\.\d+)'
 allow_version_probe = true
 
+# Usage parser (GEP-45 Phase 3). After each ACP dispatch the
+# Dispatcher invokes `<host_binary> stats --session <sessionId> --json`
+# on the host (NOT inside the bwrap sandbox — stado writes its
+# session JSONL trace under `~/.local/share/stado/sessions/`, and the
+# stats walker reads commit trailers from those refs). The parser
+# maps the JSON to glorbo's canonical `Parsers.usage()` shape,
+# extending it with `cost_usd` + `duration_ms` so the budget ledger
+# can attribute spend per dispatch.
+#
+# Requires stado >= 0.27.x for the `stado stats --json` flag. Older
+# stadothats fall back to the human table — the parser flags this
+# as `{:invalid_json, _}` and the dispatcher records `usage: nil`.
+usage_parser = "stado_acp"
+
 # Stado's per-user state — its config file (provider/model selection,
 # inference presets, custom tools) and its audit/session storage.
 # Config is read-only; state dir is rw because stado writes session
