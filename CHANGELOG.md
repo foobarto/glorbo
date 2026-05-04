@@ -33,6 +33,19 @@ Regression tests cover both paths (serve config contract +
 PHX_SERVER export to the daemon child env via the `fake_daemon_binary!`
 fixture). Operators no longer need to know about `PHX_SERVER`.
 
+### Fixed — flaky `Process.sleep` waits for Tx auto-flush
+
+Two debounce-based test assertions ("retire roundtrip captures
+deletions" in `Glorbo.Actions.AgentsTest`, "with_tx happy path"
+in `Glorbo.HomeHistory.TxTest`) waited for an auto-flushed git
+commit via `Process.sleep` and read the log immediately after. The
+window had been bumped twice (b48c5aa → 6390127, 150ms → 1000ms)
+without fully closing the aarch64 GHA flake. Replaced with a 25ms-
+poll-with-deadline (`wait_for_new_commit!/3`) that returns the
+moment the commit lands and only waits the full 5s on a genuinely
+stuck Tx. Fixes the recurring aarch64 CI failure on `agents_test`
+without slowing fast runners.
+
 ### Added — AppRoot idle-mode discovery footer
 
 The shell now renders a one-line footer beneath every view's

@@ -330,15 +330,14 @@ defmodule Glorbo.Actions.AgentsTest do
       assert event[:action] == "agent.retire"
       assert event[:target] == "agents/ceo"
 
-      # Wait for the Tx debounce to fire the auto-commit. 1s gives
-      # plenty of margin over the 200ms hard_cap on slow CI runners
-      # (Agents.retire's Tx.with_tx finishes ≤ 100ms locally but can
-      # take longer under aarch64 GHA load).
-      Process.sleep(1000)
+      # Poll for the Tx debounce to fire the auto-commit. The previous
+      # `Process.sleep(1000)` flaked on aarch64 GHA runners (b48c5aa,
+      # 6390127 bumped it twice with diminishing returns). Polling halts
+      # the moment the new commit lands and only waits the full 5s on a
+      # genuinely stuck Tx — deterministic on fast runners, robust on
+      # slow ones.
+      head = wait_for_new_commit!(base, initial_sha, 5_000)
 
-      {:ok, log} = HomeHistory.log(base: base, limit: 5)
-      [head | _] = log
-      refute head.sha == initial_sha
       assert head.subject =~ "agent.retire: companies/acme/agents/ceo"
       assert head.author_name == "Director"
 
@@ -385,6 +384,35 @@ defmodule Glorbo.Actions.AgentsTest do
 
       {:ok, [head]} = HomeHistory.log(base: base, limit: 5)
       assert head.sha == initial_sha
+    end
+
+    # Poll-with-deadline replacement for `Process.sleep(N)` + log-read.
+    # Returns the new head commit (sha != `initial_sha`) the moment it
+    # lands; raises with a diagnostic if `timeout_ms` elapses without a
+    # new commit. Used by the positive-path retire roundtrip that
+    # previously flaked on aarch64 GHA at 1s sleeps.
+    defp wait_for_new_commit!(base, initial_sha, timeout_ms) do
+      deadline = System.monotonic_time(:millisecond) + timeout_ms
+      poll_for_new_commit(base, initial_sha, deadline)
+    end
+
+    defp poll_for_new_commit(base, initial_sha, deadline) do
+      case HomeHistory.log(base: base, limit: 1) do
+        {:ok, [%{sha: sha} = head | _]} when sha != initial_sha ->
+          head
+
+        other ->
+          if System.monotonic_time(:millisecond) >= deadline do
+            flunk(
+              "Tx auto-commit never fired within deadline. " <>
+                "initial_sha=#{inspect(initial_sha)} " <>
+                "log_result=#{inspect(other)}"
+            )
+          else
+            Process.sleep(25)
+            poll_for_new_commit(base, initial_sha, deadline)
+          end
+      end
     end
   end
 end

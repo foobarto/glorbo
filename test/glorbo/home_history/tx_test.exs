@@ -303,7 +303,7 @@ defmodule Glorbo.HomeHistory.TxTest do
 
   describe "with_tx/3" do
     test "happy path — fun returns {:ok, x}, debounce auto-flushes", %{base: base} do
-      {:ok, _} = init_repo(base)
+      {:ok, %{initial_commit: initial_sha}} = init_repo(base)
       tx = start_server(base)
 
       path = Path.join(base, "companies/acme/company.md")
@@ -321,10 +321,12 @@ defmodule Glorbo.HomeHistory.TxTest do
 
       assert tx_id =~ ~r/^history-/
 
-      # Auto-flush should land it within the debounce window.
-      Process.sleep(@debounce_ms * 4)
-
-      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      # Poll for the auto-flush. The previous fixed sleep (`@debounce_ms * 4`
+      # = 200ms) flaked under heavy parallel test load (max_cases: 48) where
+      # the OS hadn't scheduled the GenServer's debounce timer in time. The
+      # poll halts immediately on commit and only waits the full 5s if Tx
+      # is genuinely stuck — same pattern as agents_test.exs `wait_for_new_commit!`.
+      head = wait_for_new_commit!(base, initial_sha, 5_000)
       assert head.subject == "with_tx.test: x"
     end
 
@@ -392,6 +394,34 @@ defmodule Glorbo.HomeHistory.TxTest do
                  end,
                  server: tx
                )
+    end
+  end
+
+  # Poll-with-deadline replacement for `Process.sleep(N)` + log-read.
+  # Returns the new head commit (sha != `initial_sha`) the moment it
+  # lands; flunks with a diagnostic if `timeout_ms` elapses without a
+  # new commit.
+  defp wait_for_new_commit!(base, initial_sha, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    poll_for_new_commit(base, initial_sha, deadline)
+  end
+
+  defp poll_for_new_commit(base, initial_sha, deadline) do
+    case HomeHistory.log(base: base, limit: 1) do
+      {:ok, [%{sha: sha} = head | _]} when sha != initial_sha ->
+        head
+
+      other ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk(
+            "Tx auto-commit never fired within deadline. " <>
+              "initial_sha=#{inspect(initial_sha)} " <>
+              "log_result=#{inspect(other)}"
+          )
+        else
+          Process.sleep(25)
+          poll_for_new_commit(base, initial_sha, deadline)
+        end
     end
   end
 end
