@@ -10,6 +10,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-05-04
+
+Headline: stado lands as glorbo's first ACP-driven provider, plus a
+sharp set of doctor / migrate / dashboard fixes that make
+`./glorbo serve` and `./glorbo doctor --fix` actually work the way
+the docs say they do.
+
 ### Added — GEP-45 Phase 3 (in progress): per-frame ACP audit-log capture
 
 `Glorbo.CLI.Dispatcher.Acp.Client.run/3` now accepts an `:audit_fun`
