@@ -106,6 +106,13 @@ defmodule Glorbo.Company.TaskScheduler do
       tasks: %{},
       clock_fun: Keyword.get(opts, :clock_fun, &DateTime.utc_now/0),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after/3),
+      # `Process.read_timer/1` underpins the rescan mtime cache: if a
+      # task file's mtime hasn't changed AND the armed timer is still
+      # live, scan_one/2 skips the read+parse pass. Tests that inject
+      # `send_after_fun` get fake refs that read_timer/1 doesn't
+      # recognise; they pass a stub here to drive the cache path
+      # deterministically.
+      read_timer_fun: Keyword.get(opts, :read_timer_fun, &Process.read_timer/1),
       audit_fun: Keyword.get(opts, :audit_fun, &audit_via_registry/2),
       write_inbox_fun: Keyword.get(opts, :write_inbox_fun, &default_write_inbox/4),
       rescan_ms: Keyword.get(opts, :rescan_ms, @rescan_interval_ms),
@@ -219,17 +226,72 @@ defmodule Glorbo.Company.TaskScheduler do
   end
 
   defp scan_one(path, state) do
+    task_id = task_id_from_path(path)
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular, mtime: mtime}} ->
+        if entry_fresh?(state, task_id, mtime) do
+          # File unchanged AND its timer is still armed — skip the
+          # read + frontmatter + cron-parse pass entirely. This is the
+          # O(projects × tasks) → O(changed-tasks) optimisation: at
+          # 1000 tasks, a 60s rescan that previously cost 1000 reads
+          # + 1000 YAML parses now costs 1000 lstats + 0 reads when
+          # nothing has changed.
+          state
+        else
+          parse_and_arm(path, mtime, state)
+        end
+
+      _ ->
+        # Path vanished between File.ls and lstat (or it's a symlink
+        # / fifo). Drop any stale state entry.
+        drop_task(state, task_id)
+    end
+  end
+
+  # An entry is fresh when (a) its cached mtime matches the file's
+  # current mtime AND (b) its armed timer hasn't fired yet. The timer
+  # check guards a narrow race: if `:rescan` arrives while a `{:fire,
+  # task_id}` message is sitting in the mailbox unread, the timer ref
+  # has expired but the entry hasn't been re-armed yet. Without this
+  # check we'd skip the parse on a task that's about to fire and miss
+  # re-arming for the next occurrence.
+  defp entry_fresh?(state, task_id, mtime) do
+    case Map.get(state.tasks, task_id) do
+      %{mtime: ^mtime, timer_ref: ref} when is_reference(ref) ->
+        case state.read_timer_fun.(ref) do
+          n when is_integer(n) and n > 0 -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp drop_task(state, task_id) do
+    case Map.fetch(state.tasks, task_id) do
+      {:ok, %{timer_ref: ref}} when is_reference(ref) ->
+        Process.cancel_timer(ref)
+        %{state | tasks: Map.delete(state.tasks, task_id)}
+
+      _ ->
+        state
+    end
+  end
+
+  defp parse_and_arm(path, mtime, state) do
     # Threatmodel wave 25: agent-RW task md, lstat + 1 MiB cap.
     with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
          {:ok, fm, body} <- Frontmatter.parse(content),
          schedule when is_binary(schedule) and schedule != "" <- Map.get(fm, "schedule") do
-      handle_scheduled(state, path, fm, schedule, body)
+      handle_scheduled(state, path, fm, schedule, body, mtime)
     else
       _ -> state
     end
   end
 
-  defp handle_scheduled(state, path, fm, schedule, body) do
+  defp handle_scheduled(state, path, fm, schedule, body, mtime) do
     task_id = task_id_from_path(path)
     rel = relative_path(state, path)
 
@@ -243,7 +305,8 @@ defmodule Glorbo.Company.TaskScheduler do
           schedule: schedule,
           expr: expr,
           assigned_to: Map.get(fm, "assigned_to") || "",
-          body: body
+          body: body,
+          mtime: mtime
         }
 
         arm(state, task_id, entry, now)

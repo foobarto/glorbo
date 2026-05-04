@@ -219,6 +219,126 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     refute_receive {:audit, %{action: "task.scheduled_dispatch"}}, 50
   end
 
+  # Performance: on rescan, files whose mtime hasn't changed AND whose
+  # armed timer is still live MUST NOT be re-parsed or re-armed. This
+  # is the O(projects × tasks) → O(changed-tasks) optimisation. Without
+  # it, 1000 tasks → 1000 reads + 1000 YAML parses every 60 seconds.
+
+  defp start_sched_with_live_timer(base, company, opts \\ []) do
+    test_pid = self()
+    company_str = company
+
+    audit_fun = fn ^company_str, entry ->
+      send(test_pid, {:audit, entry})
+      :ok
+    end
+
+    send_after_fun = fn pid, msg, delay ->
+      send(test_pid, {:armed, msg, delay})
+      ref = make_ref()
+      send(pid, :noop)
+      ref
+    end
+
+    write_inbox_fun = fn ^base, ^company_str, assignee, {filename, body} ->
+      send(test_pid, {:inbox_write, assignee, filename, body})
+      :ok
+    end
+
+    # `read_timer_fun: fn _ -> 60_000 end` simulates "the BEAM timer is
+    # still armed, expires in 60s" so the mtime-cache path triggers
+    # for every entry whose mtime matches.
+    clock = Keyword.get(opts, :clock, ~U[2026-04-21 10:00:00Z])
+    name = Glorbo.Test.UniqueName.gen("test_sched")
+
+    start_supervised!(
+      {TaskScheduler,
+       name: name,
+       company: company,
+       base: base,
+       subscribe?: false,
+       auto_rescan?: false,
+       clock_fun: fn -> clock end,
+       send_after_fun: send_after_fun,
+       read_timer_fun: fn _ref -> 60_000 end,
+       audit_fun: audit_fun,
+       write_inbox_fun: write_inbox_fun}
+    )
+  end
+
+  test "rescan with unchanged mtime + live timer skips re-arm (mtime cache)",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "perf-1", schedule: "0 * * * *")
+    sched = start_sched_with_live_timer(base, company)
+
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "perf-1"}, _}
+
+    # Second scan with no file changes — the entry is fresh in the
+    # cache, so no second {:armed, ...} message should land.
+    :ok = TaskScheduler.scan(sched)
+    refute_receive {:armed, {:fire, "perf-1"}, _}, 50
+  end
+
+  test "rescan re-parses + re-arms when mtime advances",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    path = Path.join(tasks_dir, "perf-2.md")
+    write_task(tasks_dir, "perf-2", schedule: "0 * * * *")
+    sched = start_sched_with_live_timer(base, company)
+
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "perf-2"}, _}
+
+    # Bump the file's mtime forward by 5s so the cache miss triggers.
+    {{y, mo, d}, {h, mi, s}} = :calendar.universal_time()
+    next = {{y, mo, d}, {h, mi, s + 5}}
+    :ok = File.touch!(path, next)
+
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "perf-2"}, _}, 200
+  end
+
+  test "rescan re-parses when armed timer has expired (defensive miss)",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "perf-3", schedule: "0 * * * *")
+
+    # `read_timer_fun: fn _ -> false end` simulates "the timer fired
+    # but the {:fire, _} message hasn't been handled yet" — the cache
+    # check must reject the entry as stale and re-parse.
+    test_pid = self()
+
+    send_after_fun = fn pid, msg, delay ->
+      send(test_pid, {:armed, msg, delay})
+      send(pid, :noop)
+      make_ref()
+    end
+
+    name = Glorbo.Test.UniqueName.gen("test_sched")
+
+    sched =
+      start_supervised!(
+        {TaskScheduler,
+         name: name,
+         company: company,
+         base: base,
+         subscribe?: false,
+         auto_rescan?: false,
+         clock_fun: fn -> ~U[2026-04-21 10:00:00Z] end,
+         send_after_fun: send_after_fun,
+         read_timer_fun: fn _ref -> false end,
+         audit_fun: fn ^company, _entry -> :ok end,
+         write_inbox_fun: fn _, _, _, _ -> :ok end}
+      )
+
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "perf-3"}, _}
+
+    # Same file, no mtime change — but read_timer_fun says the timer
+    # is dead. The scheduler MUST re-arm rather than trust the cache.
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "perf-3"}, _}, 200
+  end
+
   test "stale entries removed on rescan when file deleted",
        %{base: base, company: company, tasks_dir: tasks_dir} do
     write_task(tasks_dir, "foo-8", schedule: "0 * * * *")

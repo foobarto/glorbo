@@ -57,10 +57,14 @@ it's been in CHANGELOG for a cycle.
 - [x] **Modal ESC close consistency.** Fixed this cycle — every
   `.gl-modal` now wires `phx-window-keydown=<cancel> phx-key=Escape`;
   the ApprovalQueueLive deny modal was the only holdout.
-- [ ] **Scheduler rescan is O(projects × tasks) every 60s.** Fine for
-  v0.0.3's single-digit task counts, but watch it past 1000 tasks.
-  If it becomes hot, cache mtime like Search.scan_tasks already
-  does.
+- [x] **Scheduler rescan is O(projects × tasks) every 60s.** Shipped
+  2026-05-04. `TaskScheduler.scan_one/2` now lstats first; if the
+  file's mtime matches the cached entry AND its armed timer is still
+  live (`Process.read_timer/1` > 0), the read + frontmatter + cron
+  parse are skipped entirely. Mirrors the `Search.scan_tasks` mtime
+  cache pattern. `read_timer_fun` injection seam added so tests
+  exercise both the cache-hit and cache-miss paths deterministically.
+  3 new perf tests on top of the existing 15.
 - [x] **GEP-45 Phase 1a — stado provider registry entry + ACP prompt_mode.**
   Shipped 2026-05-04 in `f7eaf6b`. `Provider.@prompt_modes` gains `:acp`,
   Loader accepts `"acp"`, `priv/providers/stado.toml` declares stado as
