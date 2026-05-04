@@ -71,7 +71,12 @@ defmodule Glorbo.CLI.Dispatcher.Acp.FramingTest do
     end
 
     test "round-trips a notification" do
-      original = Message.new_notification("session/update", %{"sessionId" => "s-1", "kind" => "text", "text" => "hello"})
+      original =
+        Message.new_notification("session/update", %{
+          "sessionId" => "s-1",
+          "kind" => "text",
+          "text" => "hello"
+        })
 
       assert {:ok, decoded} =
                original |> Framing.encode() |> IO.iodata_to_binary() |> Framing.decode_message()
@@ -137,7 +142,12 @@ defmodule Glorbo.CLI.Dispatcher.Acp.FramingTest do
   describe "parse_stream/2" do
     test "splits multiple complete lines into separate messages" do
       m1 = Message.new_request(1, "initialize") |> Framing.encode() |> IO.iodata_to_binary()
-      m2 = Message.new_notification("session/update", %{"k" => "v"}) |> Framing.encode() |> IO.iodata_to_binary()
+
+      m2 =
+        Message.new_notification("session/update", %{"k" => "v"})
+        |> Framing.encode()
+        |> IO.iodata_to_binary()
+
       m3 = Message.new_response(1, %{}) |> Framing.encode() |> IO.iodata_to_binary()
 
       chunk = m1 <> m2 <> m3
@@ -182,7 +192,10 @@ defmodule Glorbo.CLI.Dispatcher.Acp.FramingTest do
     end
 
     test "remainder accumulates across multiple partial reads" do
-      raw = Message.new_request(42, "session/prompt", %{"sessionId" => "s"}) |> Framing.encode() |> IO.iodata_to_binary()
+      raw =
+        Message.new_request(42, "session/prompt", %{"sessionId" => "s"})
+        |> Framing.encode()
+        |> IO.iodata_to_binary()
 
       # Split into 3 chunks
       {a, rest1} = String.split_at(raw, 5)

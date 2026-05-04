@@ -483,41 +483,97 @@ defmodule Glorbo.CLI.DispatcherTest do
     end
   end
 
-  # GEP-45 Phase 1a: ACP transport accepted by the registry but the
-  # dispatcher branch (`Glorbo.CLI.Dispatcher.Acp` JSON-RPC client)
-  # ships in Phase 1b. Until then `invoke/3` short-circuits with a
-  # structured unimplemented error rather than silently mis-driving
-  # an ACP server with the stdin tempfile path.
-  describe "GEP-45 ACP transport stub" do
-    test "invoke/3 fast-fails on prompt_mode :acp with a clear pointer to the GEP" do
-      p = base_provider(name: "stado", prompt_mode: :acp)
-      ws = tmp_workspace()
-
-      assert {:error, {:unimplemented_prompt_mode, detail}} =
-               Dispatcher.invoke(p, base_ctx(ws))
-
-      assert detail.provider == "stado"
-      assert detail.prompt_mode == :acp
-      assert detail.gep =~ "GEP-45"
-      assert is_binary(detail.message)
-    end
-
-    test "invoke/3 does NOT call run_fun for ACP providers" do
+  # GEP-45 Phase 1b: the `prompt_mode = :acp` branch drives the
+  # sandboxed binary via the JSON-RPC client state machine instead of
+  # a stdin-tempfile redirect. Tests inject `:acp_run_fun` to swap the
+  # whole ACP run loop with a stub — production wiring spawns a real
+  # `bwrap` Port via `Bwrap.start_acp/2`, which is exercised in the
+  # bench-htb integration in Phase 2.
+  describe "GEP-45 ACP dispatch path" do
+    test "invoke/3 routes ACP providers through :acp_run_fun and writes the reply file" do
       called = :counters.new(1, [])
 
-      run_fun = fn _args, _env, _bwrap_opts, _run_opts ->
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
         :counters.add(called, 1, 1)
-        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+        {:ok, %{reply: "hello from acp", session_id: "s-test", chunks: 2, ignored_updates: 0}}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
       ws = tmp_workspace()
 
-      assert {:error, {:unimplemented_prompt_mode, _}} =
-               Dispatcher.invoke(p, base_ctx(ws), run_fun: run_fun)
+      assert {:ok, result} =
+               Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
 
-      assert :counters.get(called, 1) == 0,
-             "ACP stub must not invoke run_fun (no half-working bwrap dispatch)"
+      assert :counters.get(called, 1) == 1
+      assert result.reply == "hello from acp"
+      assert result.exit_status == 0
+      assert result.usage == nil
+      assert is_binary(result.reply_path)
+      assert File.read!(result.reply_path) == "hello from acp"
+    end
+
+    test "invoke/3 does NOT invoke the stdin run_fun for ACP providers" do
+      stdin_called = :counters.new(1, [])
+
+      stdin_run_fun = fn _args, _env, _bwrap_opts, _run_opts_map ->
+        :counters.add(stdin_called, 1, 1)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok, %{reply: "x", session_id: nil, chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:ok, _} =
+               Dispatcher.invoke(p, base_ctx(ws),
+                 run_fun: stdin_run_fun,
+                 acp_run_fun: acp_run_fun
+               )
+
+      assert :counters.get(stdin_called, 1) == 0,
+             "ACP branch must not call the stdin-mode run_fun"
+    end
+
+    test "invoke/3 surfaces ACP protocol errors as :provider_protocol_error" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:error, {:provider_protocol_error, "unexpected response id during prompt"}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:error, {:provider_protocol_error, msg}} =
+               Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
+
+      assert msg =~ "unexpected response id"
+    end
+
+    test "invoke/3 surfaces ACP peer JSON-RPC errors as :provider_returned_error" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        err = %Glorbo.CLI.Dispatcher.Acp.RpcError{code: -32_603, message: "model unavailable"}
+        {:error, {:provider_returned_error, err}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:error, {:provider_returned_error, %{code: -32_603, message: "model unavailable"}}} =
+               Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
+    end
+
+    test "invoke/3 surfaces ACP timeouts" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:error, {:provider_timeout, :session_prompt}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ws = tmp_workspace()
+
+      assert {:error, {:provider_timeout, :session_prompt}} =
+               Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
     end
   end
 end

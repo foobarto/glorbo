@@ -529,6 +529,74 @@ defmodule Glorbo.Sandbox.Bwrap do
           | {:error, term()}
 
   @doc """
+  Spawn a sandboxed ACP-mode CLI as a long-running Port.
+
+  Differs from `start/2` in two ways (GEP-45 Phase 1b sub-slice 1b.5):
+
+    * No prompt tempfile, no `< $prompt_file` redirect — ACP carries the
+      prompt as a JSON-RPC `session/prompt` request over the child's
+      stdin, so stdin must remain open and writable.
+    * Returns the live `Port` instead of waiting on exit. The caller
+      (the ACP client state machine, wrapped via
+      `Glorbo.CLI.Dispatcher.Acp.PortIO.wrap/1`) drives the conversation
+      via `Port.command/2` + receive, then closes the port when done.
+
+  stderr is currently routed to `/dev/null` inside the launcher so it
+  cannot corrupt the JSON-RPC stream on stdout. Open question 1 in
+  GEP-45 covers a future polish: drain stderr concurrently into the
+  agent's stdout-tail file.
+
+  Required `run_opts`:
+
+    * `:cli_binary` — absolute path to the ACP-capable binary (e.g.
+      `/tmp/glorbo-cli-stado-stado` after the auth-bind hop).
+    * `:cli_args` — argv after the binary; for stado typically
+      `["acp", "--tools"]`.
+    * `:bwrap_binary` (optional) — overrides PATH lookup, used by
+      tests injecting a fake bwrap.
+  """
+  @spec start_acp(invocation_opts(), run_opts()) :: {:ok, port()} | {:error, term()}
+  def start_acp(%{} = opts, run_opts) when is_list(run_opts) do
+    with {:ok, normalized_opts} <- normalize_proxy_opts(opts) do
+      bwrap_bin = Keyword.get(run_opts, :bwrap_binary, default_binary())
+      cli_bin = Keyword.fetch!(run_opts, :cli_binary)
+      cli_args = Keyword.get(run_opts, :cli_args, [])
+
+      argv = build_argv(normalized_opts) ++ ["--", cli_bin] ++ cli_args
+
+      open_acp_port(bwrap_bin, argv, normalized_opts)
+    end
+  end
+
+  defp open_acp_port(bwrap_bin, argv, opts) do
+    sh_path = System.find_executable("sh") || "/bin/sh"
+
+    # Symmetric to `do_run_via_port/7`'s shell wrapper but without the
+    # stdin redirect: bwrap inherits the port's stdin (so JSON-RPC
+    # frames written via Port.command/2 reach the ACP server), stdout
+    # is piped back through the port, stderr is dropped to /dev/null so
+    # the JSON-RPC stream cannot be corrupted by status lines.
+    sh_script = ~s|b="$1"; shift; exec "$b" "$@" 2>/dev/null|
+    sh_args = ["-c", sh_script, "glorbo-bwrap-acp", bwrap_bin | argv]
+
+    with {:ok, launcher_bin, launcher_args} <- launcher_spec(opts, sh_path, sh_args) do
+      port_opts = [
+        :binary,
+        :exit_status,
+        :hide,
+        # Default for `Port.open/2` is to attach stdin/stdout to the
+        # spawned process via the BEAM's socket pair — exactly what we
+        # want for ACP. Do NOT set `:stderr_to_stdout`; the launcher
+        # already redirects stderr to /dev/null.
+        {:args, launcher_args}
+      ]
+
+      port = Port.open({:spawn_executable, launcher_bin}, port_opts)
+      {:ok, port}
+    end
+  end
+
+  @doc """
   Launch the sandboxed CLI invocation via `Port.open/2` + `/bin/sh` wrapper.
 
   Blocks until the CLI exits or the timeout elapses. Returns

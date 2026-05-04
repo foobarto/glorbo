@@ -337,4 +337,115 @@ defmodule Glorbo.Sandbox.BwrapTest do
              "expected no new glorbo_bwrap_prompt_* tempfiles after Bwrap.start/2"
     end
   end
+
+  # GEP-45 Phase 1b sub-slice 1b.5: `start_acp/2` opens the bwrap'd CLI
+  # as a long-running Port without the stdin-tempfile redirect. The
+  # tests below drive a tiny `/bin/sh` script standing in for an ACP
+  # server: it reads JSON-RPC frames from stdin and emits canned ones
+  # back. Confirms the wiring (Port.command + receive) works end-to-end
+  # before stado lands on the host.
+  describe "start_acp/2 — long-running Port without stdin redirect (GEP-45)" do
+    @describetag :bwrap
+
+    setup do
+      if Glorbo.Test.BwrapHelpers.bwrap_available?() do
+        base = Glorbo.Test.TmpGlorboHome.setup()
+        co_root = Path.join([base, "companies", "acme"])
+
+        for sub <- ~w(agents/engineer/workspace agents/engineer/inbox agents/engineer/outbox) do
+          File.mkdir_p!(Path.join(co_root, sub))
+        end
+
+        {:ok,
+         ctx: %{
+           base: base,
+           company_path: co_root,
+           workspace: Path.join(co_root, "agents/engineer/workspace"),
+           inbox: Path.join(co_root, "agents/engineer/inbox"),
+           outbox: Path.join(co_root, "agents/engineer/outbox")
+         }}
+      else
+        {:skip, "bwrap not available on host"}
+      end
+    end
+
+    defp acp_run_opts_for(ctx, overrides \\ %{}) do
+      Map.merge(
+        %{
+          agent_workspace: ctx.workspace,
+          inbox_path: ctx.inbox,
+          outbox_path: ctx.outbox,
+          company_path: ctx.company_path,
+          permissions: [],
+          network_policy: :loopback,
+          cli_auth_binds: [],
+          cli_env: %{},
+          proxy_url: nil,
+          timeout_seconds: 10
+        },
+        overrides
+      )
+    end
+
+    test "returns a live Port that echoes stdin via Port.command + receive", %{ctx: ctx} do
+      opts = acp_run_opts_for(ctx)
+
+      assert {:ok, port} =
+               Bwrap.start_acp(opts,
+                 cli_binary: "/bin/sh",
+                 # `cat` reads stdin and writes to stdout. Anything we push
+                 # via Port.command/2 should round-trip back as a port
+                 # message.
+                 cli_args: ["-c", "cat"]
+               )
+
+      assert is_port(port)
+
+      try do
+        assert true = Port.command(port, "ping-acp\n")
+
+        # Drain at least one chunk containing our marker.
+        assert_receive {^port, {:data, chunk}}, 2_000
+        assert is_binary(chunk)
+        assert String.contains?(chunk, "ping-acp")
+      after
+        Port.close(port)
+      end
+    end
+
+    test "drives a fake ACP server end-to-end through PortIO + Client", %{ctx: ctx} do
+      # The shell script reads framed JSON one line at a time and emits
+      # the matching response sequence. Crude but enough to confirm the
+      # full Port → PortIO → Client → Bwrap loop is wired correctly.
+      script = """
+      #!/bin/sh
+      # Initialize
+      read line
+      printf '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{},"agentInfo":{"name":"fake","version":"0"}}}\\n'
+      # session/new
+      read line
+      printf '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s-fake"}}\\n'
+      # session/prompt → emit one chunk + terminal response
+      read line
+      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-fake","update":{"kind":"agent_message_chunk","text":"hi-from-fake"}}}\\n'
+      printf '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}\\n'
+      # shutdown
+      read line
+      printf '{"jsonrpc":"2.0","id":4,"result":{}}\\n'
+      """
+
+      opts = acp_run_opts_for(ctx)
+
+      assert {:ok, port} =
+               Bwrap.start_acp(opts,
+                 cli_binary: "/bin/sh",
+                 cli_args: ["-c", script]
+               )
+
+      io = Glorbo.CLI.Dispatcher.Acp.PortIO.wrap(port)
+
+      assert {:ok, %{reply: "hi-from-fake", session_id: "s-fake", chunks: 1}} =
+               Glorbo.CLI.Dispatcher.Acp.Client.run(io, "say hi", phase_timeout_ms: 2_000)
+    end
+  end
 end

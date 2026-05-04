@@ -40,10 +40,14 @@ defmodule Glorbo.CLI.Dispatcher do
 
   require Logger
 
+  alias Glorbo.CLI.Dispatcher.Acp.Client
+  alias Glorbo.CLI.Dispatcher.Acp.PortIO
+  alias Glorbo.CLI.Dispatcher.Acp.RpcError
   alias Glorbo.CLI.Lifecycle.Daemon
   alias Glorbo.CLI.Parsers
   alias Glorbo.CLI.PathTransforms
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Sandbox.Bwrap
 
   @type ctx :: %{
           required(:model) => String.t(),
@@ -81,22 +85,38 @@ defmodule Glorbo.CLI.Dispatcher do
   @spec invoke(Provider.t(), ctx(), keyword()) :: result()
   def invoke(provider, ctx, opts \\ [])
 
-  def invoke(%Provider{prompt_mode: :acp} = provider, %{} = _ctx, _opts) do
-    # GEP-45 Phase 1a: the registry accepts `prompt_mode = "acp"` so
-    # `priv/providers/stado.toml` validates and surfaces in
-    # `glorbo doctor` / the LiveView providers panel. Phase 1b adds
-    # the actual `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client. Until
-    # then dispatching an ACP provider returns this fast-fail with a
-    # concrete pointer to the GEP — no half-working stdin fallback,
-    # no hung port handshake.
-    {:error,
-     {:unimplemented_prompt_mode,
-      %{
-        provider: provider.name,
-        prompt_mode: :acp,
-        gep: "GEP-45 Phase 1b",
-        message: "ACP transport accepted by registry; dispatcher branch ships in GEP-45 Phase 1b"
-      }}}
+  def invoke(%Provider{prompt_mode: :acp} = provider, %{} = ctx, opts) do
+    # GEP-45 Phase 1b sub-slice 1b.6: drive an ACP conversation through
+    # the sandboxed binary. Reuses the same template-expansion + reply-
+    # file scaffolding as the stdin path; only the run-loop differs.
+    fs = fs_fun(opts)
+    now = Keyword.get(opts, :now_fun, &DateTime.utc_now/0).()
+    invocation_id = Map.get(ctx, :invocation_id) || gen_invocation_id(opts)
+    timestamp = Map.get(ctx, :timestamp) || format_timestamp(now)
+
+    substitutions =
+      build_substitutions(provider, ctx, invocation_id, timestamp)
+
+    reply_dir = expand(provider.reply_dir, substitutions)
+    reply_filename = expand(provider.reply_filename_template, substitutions)
+    reply_path = Path.join(reply_dir, reply_filename)
+    substitutions = Map.put(substitutions, "reply_path", reply_path)
+
+    with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
+         args <- Enum.map(provider.args, &expand(&1, substitutions)),
+         {:ok, %{reply: reply_text}} <- run_acp(provider, args, ctx, opts) do
+      :ok = write_reply_file!(reply_path, reply_text, provider.reply_max_bytes, fs)
+
+      {:ok,
+       %{
+         exit_status: 0,
+         reply: strip_ansi(reply_text),
+         reply_path: reply_path,
+         usage: nil,
+         usage_error: nil,
+         invocation_id: invocation_id
+       }}
+    end
   end
 
   def invoke(%Provider{} = provider, %{} = ctx, opts) do
@@ -229,6 +249,118 @@ defmodule Glorbo.CLI.Dispatcher do
     end
 
     :ok
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-45 Phase 1b — ACP run loop
+  # ---------------------------------------------------------------------------
+
+  # Run the ACP conversation. Defaults to spawning a sandboxed Port via
+  # `Glorbo.Sandbox.Bwrap.start_acp/2` and wrapping it in a
+  # `Glorbo.CLI.Dispatcher.Acp.Client.IO`. Tests inject `:acp_run_fun`
+  # to replace the entire run loop with a stub.
+  defp run_acp(provider, args, ctx, opts) do
+    acp_run_fun = Keyword.get(opts, :acp_run_fun, &default_acp_run_fun/3)
+
+    cli_binary = Map.get(ctx, :cli_binary) || provider.resolved_path || provider.binary
+    bwrap_opts = Map.get(ctx, :bwrap_opts, %{})
+
+    run_opts_map = %{
+      cli_binary: cli_binary,
+      cli_args: args,
+      prompt: Map.get(ctx, :prompt, "")
+    }
+
+    case acp_run_fun.(bwrap_opts, run_opts_map, opts) do
+      {:ok, %{reply: _} = result} ->
+        {:ok, result}
+
+      {:error, {:provider_returned_error, %RpcError{} = err}} ->
+        {:error, {:provider_returned_error, %{code: err.code, message: err.message}}}
+
+      {:error, {:provider_protocol_error, _} = err} ->
+        {:error, err}
+
+      {:error, {:provider_timeout, _phase} = err} ->
+        {:error, err}
+
+      {:error, _} = err ->
+        err
+
+      other ->
+        {:error, {:acp_run_fun_bad_return, other}}
+    end
+  end
+
+  defp default_acp_run_fun(bwrap_opts, run_opts_map, opts) do
+    case Bwrap.start_acp(bwrap_opts, Map.to_list(run_opts_map)) do
+      {:ok, port} ->
+        io = PortIO.wrap(port)
+        prompt = Map.get(run_opts_map, :prompt, "")
+        client_opts = Keyword.take(opts, [:phase_timeout_ms, :protocol_version, :client_info])
+
+        try do
+          Client.run(io, prompt, client_opts)
+        after
+          # Best-effort: drain the lingering exit-status message so
+          # the BEAM mailbox doesn't keep dispatch-stale ports.
+          _ = PortIO.drain(port, 100)
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # Reuse the existing reply-file safety regime (lstat, refuse symlinks,
+  # cap size). The ACP path bypasses `read_reply/3` because the bytes
+  # came from the JSON-RPC stream rather than a CLI-written file, but
+  # we still write atomically to the reply path so downstream readers
+  # (audit, dashboard) see the same contract.
+  defp write_reply_file!(reply_path, reply_text, max_bytes, fs)
+       when is_binary(reply_text) do
+    if byte_size(reply_text) > max_bytes do
+      # Truncating silently would lie to the agent; surface the cap
+      # breach inline so dispatcher result shape stays consistent.
+      raise "ACP reply exceeds reply_max_bytes (#{byte_size(reply_text)} > #{max_bytes})"
+    end
+
+    parent = Path.dirname(reply_path)
+    fs.mkdir_p!.(parent)
+
+    case File.lstat(reply_path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        File.write!(reply_path, reply_text)
+        :ok
+
+      {:ok, %File.Stat{type: type}} ->
+        raise "ACP reply path is not a regular file (#{inspect(type)}): #{reply_path}"
+
+      {:error, :enoent} ->
+        File.write!(reply_path, reply_text)
+        :ok
+
+      {:error, reason} ->
+        raise "ACP reply lstat failed: #{inspect(reason)}"
+    end
+  end
+
+  # Assemble the template-expansion substitution map used by both the
+  # stdin and ACP branches. Extracted so the two branches stay in sync.
+  defp build_substitutions(provider, ctx, invocation_id, timestamp) do
+    base = %{
+      "model" => Map.get(ctx, :model, ""),
+      "workspace" => Map.get(ctx, :workspace, ""),
+      "prompt_path" => Map.get(ctx, :prompt_path, ""),
+      "provider" => provider.name,
+      "agent_slug" => Map.get(ctx, :agent_slug, ""),
+      "company" => Map.get(ctx, :company, ""),
+      "task_id" => Map.get(ctx, :task_id, ""),
+      "timestamp" => timestamp,
+      "invocation_id" => invocation_id
+    }
+
+    add_transform_substitutions(base, provider.path_transforms)
   end
 
   # ---------------------------------------------------------------------------
