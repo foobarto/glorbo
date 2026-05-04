@@ -26,18 +26,43 @@ defmodule Glorbo.Doctor.Fixer do
   alias Glorbo.Doctor
   alias Glorbo.CLI.Audit
 
-  @fixers %{
+  # Fixer registry keyed by check name. The host-package fixers are
+  # registered as `:explain` by default; `--install-deps` swaps in the
+  # `install_X` variants which actually run `sudo <pkgmgr> install`.
+  @explain_fixers %{
     "glorbo_dir" => &__MODULE__.fix_glorbo_dir/1,
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
     "private_files" => &__MODULE__.fix_private_files/1,
+    "uidmap" => &__MODULE__.explain_uidmap/1,
     "bwrap" => &__MODULE__.explain_bwrap/1,
     "pasta" => &__MODULE__.explain_pasta/1
   }
 
-  @doc "Public accessor for the fixer registry (tests introspect this)."
+  @install_fixers %{
+    "glorbo_dir" => &__MODULE__.fix_glorbo_dir/1,
+    "audit_dir" => &__MODULE__.fix_audit_dir/1,
+    "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
+    "private_files" => &__MODULE__.fix_private_files/1,
+    "uidmap" => &__MODULE__.install_uidmap/1,
+    "bwrap" => &__MODULE__.install_bwrap/1,
+    "pasta" => &__MODULE__.install_pasta/1
+  }
+
+  @doc "Public accessor for the default fixer registry (tests introspect this)."
   @spec fixers() :: %{String.t() => (map() -> term())}
-  def fixers, do: @fixers
+  def fixers, do: @explain_fixers
+
+  @doc """
+  Resolve the active fixer registry for an option set. When
+  `install_deps: true`, host-package checks (`bwrap`, `pasta`,
+  `uidmap`) route to `install_*` variants that run `sudo <pkgmgr>`;
+  otherwise they print install instructions via the `explain_*` path.
+  """
+  @spec fixers_for(keyword()) :: %{String.t() => (map() -> term())}
+  def fixers_for(opts) do
+    if Keyword.get(opts, :install_deps, false), do: @install_fixers, else: @explain_fixers
+  end
 
   @spec run(keyword()) :: Glorbo.CLI.result()
   def run(opts \\ []) do
@@ -47,6 +72,8 @@ defmodule Glorbo.Doctor.Fixer do
     if failing == [] do
       {:doctor, 0, "✓ all checks pass — nothing to repair.\n"}
     else
+      registry = fixers_for(opts)
+
       acc = %{
         attempted: 0,
         repaired: 0,
@@ -58,7 +85,7 @@ defmodule Glorbo.Doctor.Fixer do
 
       summary =
         Enum.reduce(failing, acc, fn check, acc ->
-          handle_check(check, dry_run?, acc)
+          handle_check(check, dry_run?, registry, acc)
         end)
 
       exit_code = resolve_exit_code(summary, dry_run?)
@@ -80,8 +107,8 @@ defmodule Glorbo.Doctor.Fixer do
     Doctor.exit_code(Doctor.run_checks())
   end
 
-  defp handle_check(check, true = _dry_run, acc) do
-    case Map.fetch(@fixers, check.name) do
+  defp handle_check(check, true = _dry_run, registry, acc) do
+    case Map.fetch(registry, check.name) do
       {:ok, _fixer} ->
         line = "would repair: #{check.name}"
         %{acc | attempted: acc.attempted + 1, lines: [line | acc.lines]}
@@ -92,8 +119,8 @@ defmodule Glorbo.Doctor.Fixer do
     end
   end
 
-  defp handle_check(check, false = _dry_run, acc) do
-    case Map.fetch(@fixers, check.name) do
+  defp handle_check(check, false = _dry_run, registry, acc) do
+    case Map.fetch(registry, check.name) do
       {:ok, fixer} ->
         run_fixer(fixer, check, acc)
 
@@ -322,4 +349,180 @@ defmodule Glorbo.Doctor.Fixer do
      Then re-run `glorbo doctor`.
      """}
   end
+
+  @doc false
+  def explain_uidmap(_check) do
+    {:explain,
+     """
+     newuidmap/newgidmap are required for rootless user-namespace mapping.
+     Install via your package manager:
+
+       fedora:  sudo dnf install shadow-utils
+       debian:  sudo apt install uidmap
+       arch:    sudo pacman -S shadow
+
+     Then re-run `glorbo doctor`.
+     """}
+  end
+
+  # ---------- Package installer (--install-deps path) ----------
+  #
+  # Each install_X fixer detects the host distro from /etc/os-release,
+  # picks the right (pkgmgr, package_name) pair, and runs
+  # `sudo <pkgmgr> install -y <pkg>`. Returns:
+  #
+  #   * `{:ok, "installed <pkg> via <pkgmgr>"}`  on exit 0
+  #   * `{:error, {:install_failed, code, output}}`  on non-zero exit
+  #   * `{:explain, …}`  when the distro isn't known to us — falls back
+  #     to the same printed instructions the default --fix path emits,
+  #     so a user on an unsupported distro still gets the runbook.
+  #
+  # `sudo` itself prompts for a password unless cached; the prompt
+  # appears on the controlling TTY and the install proceeds normally
+  # afterwards. There's no machine-readable signal for "missing
+  # sudoers entry" so failures collapse into `:install_failed` with
+  # the exit code + last output bytes.
+
+  @doc false
+  def install_bwrap(check), do: install_pkg(check, :bwrap)
+
+  @doc false
+  def install_pasta(check), do: install_pkg(check, :pasta)
+
+  @doc false
+  def install_uidmap(check), do: install_pkg(check, :uidmap)
+
+  defp install_pkg(_check, kind) do
+    case detect_distro() do
+      {:ok, family} ->
+        case package_command(family, kind) do
+          {:ok, {pkgmgr, pkg, args}} ->
+            run_install(pkgmgr, pkg, args)
+
+          :unsupported ->
+            explainer_for(kind).(%{})
+        end
+
+      :error ->
+        explainer_for(kind).(%{})
+    end
+  end
+
+  defp run_install(pkgmgr, pkg, args) do
+    full_args = ["-n", pkgmgr | args] ++ [pkg]
+    # `sudo -n` causes sudo to fail (rather than block forever) when no
+    # cached credentials AND no controlling TTY are available; if the
+    # user IS at a TTY, sudo will still prompt them via the parent
+    # process. Stderr captured for the error path so the operator sees
+    # the actual reason on failure.
+    case System.cmd("sudo", full_args, stderr_to_stdout: true) do
+      {_output, 0} ->
+        {:ok, "installed #{pkg} via #{pkgmgr}"}
+
+      {output, code} ->
+        trimmed =
+          output
+          |> String.trim()
+          |> tail_lines(8)
+
+        {:error, {:install_failed, code, trimmed}}
+    end
+  rescue
+    e -> {:error, {:install_exception, Exception.message(e)}}
+  end
+
+  defp tail_lines(str, n) do
+    str
+    |> String.split("\n")
+    |> Enum.take(-n)
+    |> Enum.join("\n")
+  end
+
+  defp explainer_for(:bwrap), do: &__MODULE__.explain_bwrap/1
+  defp explainer_for(:pasta), do: &__MODULE__.explain_pasta/1
+  defp explainer_for(:uidmap), do: &__MODULE__.explain_uidmap/1
+
+  # Map (distro family, check kind) → (package manager, package name,
+  # extra-args). Returns `:unsupported` when we don't know the distro;
+  # caller falls back to the printed runbook.
+  @spec package_command(:fedora | :debian | :arch, :bwrap | :pasta | :uidmap) ::
+          {:ok, {String.t(), String.t(), [String.t()]}} | :unsupported
+  defp package_command(:fedora, :bwrap), do: {:ok, {"dnf", "bubblewrap", ["install", "-y"]}}
+  defp package_command(:fedora, :pasta), do: {:ok, {"dnf", "passt", ["install", "-y"]}}
+  defp package_command(:fedora, :uidmap), do: {:ok, {"dnf", "shadow-utils", ["install", "-y"]}}
+
+  defp package_command(:debian, :bwrap), do: {:ok, {"apt", "bubblewrap", ["install", "-y"]}}
+  defp package_command(:debian, :pasta), do: {:ok, {"apt", "passt", ["install", "-y"]}}
+  defp package_command(:debian, :uidmap), do: {:ok, {"apt", "uidmap", ["install", "-y"]}}
+
+  defp package_command(:arch, :bwrap), do: {:ok, {"pacman", "bubblewrap", ["-S", "--noconfirm"]}}
+  defp package_command(:arch, :pasta), do: {:ok, {"pacman", "passt", ["-S", "--noconfirm"]}}
+  defp package_command(:arch, :uidmap), do: {:ok, {"pacman", "shadow", ["-S", "--noconfirm"]}}
+
+  defp package_command(_family, _kind), do: :unsupported
+
+  # Read /etc/os-release and classify into a distro family. Honours
+  # `ID` first (canonical), then `ID_LIKE` (derivative distros — pop,
+  # mint, manjaro, etc.). Test seam: GLORBO_DOCTOR_DISTRO_OVERRIDE
+  # short-circuits so unit tests can pin a family without rewriting
+  # /etc.
+  @spec detect_distro() :: {:ok, :fedora | :debian | :arch} | :error
+  def detect_distro do
+    case System.get_env("GLORBO_DOCTOR_DISTRO_OVERRIDE") do
+      nil -> read_os_release()
+      "fedora" -> {:ok, :fedora}
+      "debian" -> {:ok, :debian}
+      "arch" -> {:ok, :arch}
+      _ -> :error
+    end
+  end
+
+  defp read_os_release do
+    case File.read("/etc/os-release") do
+      {:ok, body} -> classify_os_release(body)
+      {:error, _} -> :error
+    end
+  end
+
+  defp classify_os_release(body) do
+    fields = parse_os_release(body)
+    id = Map.get(fields, "ID", "") |> String.downcase()
+    like = Map.get(fields, "ID_LIKE", "") |> String.downcase()
+
+    cond do
+      family_match?(id, like, ~w(fedora rhel centos rocky almalinux)) -> {:ok, :fedora}
+      family_match?(id, like, ~w(debian ubuntu pop mint kali raspbian)) -> {:ok, :debian}
+      family_match?(id, like, ~w(arch endeavouros manjaro)) -> {:ok, :arch}
+      true -> :error
+    end
+  end
+
+  defp family_match?(id, like, names) do
+    id in names or
+      Enum.any?(names, fn n ->
+        String.contains?(like, n)
+      end)
+  end
+
+  defp parse_os_release(body) do
+    body
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, "=", parts: 2) do
+        [key, value] ->
+          Map.put(acc, String.trim(key), strip_quotes(String.trim(value)))
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp strip_quotes(<<?", rest::binary>>),
+    do: String.trim_trailing(rest, "\"")
+
+  defp strip_quotes(<<?', rest::binary>>),
+    do: String.trim_trailing(rest, "'")
+
+  defp strip_quotes(other), do: other
 end

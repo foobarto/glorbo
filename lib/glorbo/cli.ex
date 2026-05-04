@@ -64,8 +64,16 @@ defmodule Glorbo.CLI do
   @init_switches [force: :boolean, example: :boolean]
 
   # `--fix` routes to `Glorbo.CLI.DoctorFix.run/1` which dispatches to
-  # a registry of per-check fixers.
-  @doctor_switches [json: :boolean, fix: :boolean, dry_run: :boolean]
+  # a registry of per-check fixers. `--install-deps` is an opt-in
+  # extension that lets fixers actually run `sudo <pkgmgr> install`
+  # for missing host packages (bwrap, pasta, uidmap) instead of just
+  # printing the install command.
+  @doctor_switches [
+    json: :boolean,
+    fix: :boolean,
+    dry_run: :boolean,
+    install_deps: :boolean
+  ]
 
   @spec dispatch([String.t()]) :: result()
   def dispatch([]), do: {:help, 0, help_text()}
@@ -656,12 +664,19 @@ defmodule Glorbo.CLI do
     glorbo doctor — verify host prerequisites.
 
     USAGE
-      glorbo doctor [--json] [--fix] [--dry-run]
+      glorbo doctor [--json] [--fix] [--dry-run] [--install-deps]
 
     FLAGS
-      --json      Emit machine-readable JSON instead of the table.
-      --fix       Attempt to repair failed checks (see --dry-run).
-      --dry-run   With --fix: print repairs without running them.
+      --json           Emit machine-readable JSON instead of the table.
+      --fix            Attempt to repair failed checks (see --dry-run).
+      --dry-run        With --fix: print repairs without running them.
+      --install-deps   With --fix: actually run `sudo <pkgmgr> install`
+                       for missing host packages (bwrap, pasta, uidmap).
+                       Without this flag, --fix only prints the install
+                       command for these checks. Detects fedora / debian
+                       / ubuntu / arch from /etc/os-release; skips
+                       cleanly on unknown distros. Will prompt for sudo
+                       password unless cached.
     """
   end
 

@@ -10,6 +10,38 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — `glorbo doctor --fix --install-deps` actually installs missing host packages
+
+Previously `--fix` for `bwrap` / `pasta` / `uidmap` only printed the
+matching `dnf install` / `apt install` / `pacman -S` command via the
+`:explain` path — leaving the operator to copy-paste it themselves.
+The new `--install-deps` flag (opt-in; default `--fix` behavior is
+unchanged) extends the fixer to actually run
+`sudo <pkgmgr> install -y <pkg>` after detecting the host distro from
+`/etc/os-release`:
+
+  * **fedora-family** (fedora / rhel / centos / rocky / almalinux)
+    → `dnf install -y bubblewrap | passt | shadow-utils`
+  * **debian-family** (debian / ubuntu / pop / mint / kali / raspbian)
+    → `apt install -y bubblewrap | passt | uidmap`
+  * **arch-family** (arch / endeavouros / manjaro)
+    → `pacman -S --noconfirm bubblewrap | passt | shadow`
+
+Unknown distros fall back to the existing `:explain` runbook. `sudo`
+runs with `-n` to fail-fast when no cached credentials and no
+controlling TTY are available; under an interactive shell it prompts
+for the password normally. New `explain_uidmap` fixer covers the
+`uidmap` check (previously missing from the fixer registry — now
+explicit on the default path too).
+
+`GLORBO_DOCTOR_DISTRO_OVERRIDE=fedora|debian|arch|<other>` short-
+circuits `/etc/os-release` parsing for unit tests that pin the family
+without rewriting `/etc/`.
+
+Dogfood-note item from the htb-writeups workflow integration:
+"Worth a `--fix` heuristic that calls `dnf install shadow-utils
+passt` on Fedora."
+
 ### Fixed — `glorbo serve` / `glorbo up` now actually bind port 4000
 
 Phoenix endpoints default to `server: false` outside `mix phx.server`;

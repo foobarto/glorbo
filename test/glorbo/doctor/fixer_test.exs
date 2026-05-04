@@ -16,7 +16,7 @@ defmodule Glorbo.Doctor.FixerTest do
       registered = Fixer.fixers() |> Map.keys() |> Enum.sort()
 
       expected =
-        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap pasta)
+        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap pasta uidmap)
         |> Enum.sort()
 
       assert registered == expected
@@ -45,6 +45,12 @@ defmodule Glorbo.Doctor.FixerTest do
       assert {:explain, guidance} = Fixer.explain_pasta(%{name: "pasta"})
       assert guidance =~ "passt"
       assert guidance =~ "fedora"
+    end
+
+    test "explain_uidmap returns an :explain tuple with install guidance" do
+      assert {:explain, guidance} = Fixer.explain_uidmap(%{name: "uidmap"})
+      assert guidance =~ "shadow-utils"
+      assert guidance =~ "uidmap"
     end
 
     test "fix_glorbo_dir creates ~/.glorbo (idempotent if already present)" do
@@ -81,6 +87,96 @@ defmodule Glorbo.Doctor.FixerTest do
       assert detail =~ "openai.toml"
       assert Bitwise.band(File.stat!(creds_path).mode, 0o777) == 0o600
     end
+  end
+
+  describe "fixers_for/1 + --install-deps registry switch" do
+    test "fixers_for([]) returns the explainer registry by default" do
+      reg = Fixer.fixers_for([])
+      assert is_function(reg["bwrap"], 1)
+      # Identity match: default registry is the same as Fixer.fixers/0.
+      assert reg == Fixer.fixers()
+    end
+
+    test "fixers_for(install_deps: true) swaps in install_* for host packages" do
+      reg = Fixer.fixers_for(install_deps: true)
+
+      # Filesystem fixers stay the same — only host-package checks swap.
+      assert reg["glorbo_dir"] == Fixer.fixers()["glorbo_dir"]
+      assert reg["audit_dir"] == Fixer.fixers()["audit_dir"]
+
+      # bwrap / pasta / uidmap should now be the install_* variants —
+      # different function references than the explain_* defaults.
+      refute reg["bwrap"] == Fixer.fixers()["bwrap"]
+      refute reg["pasta"] == Fixer.fixers()["pasta"]
+      refute reg["uidmap"] == Fixer.fixers()["uidmap"]
+    end
+  end
+
+  describe "detect_distro/0 (--install-deps prerequisite)" do
+    test "GLORBO_DOCTOR_DISTRO_OVERRIDE pins the family for tests" do
+      # Save + restore so we don't bleed into other tests in this file.
+      prev = System.get_env("GLORBO_DOCTOR_DISTRO_OVERRIDE")
+
+      try do
+        System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "fedora")
+        assert Fixer.detect_distro() == {:ok, :fedora}
+
+        System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "debian")
+        assert Fixer.detect_distro() == {:ok, :debian}
+
+        System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "arch")
+        assert Fixer.detect_distro() == {:ok, :arch}
+
+        System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "windows-95")
+        assert Fixer.detect_distro() == :error
+      after
+        if prev do
+          System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", prev)
+        else
+          System.delete_env("GLORBO_DOCTOR_DISTRO_OVERRIDE")
+        end
+      end
+    end
+  end
+
+  describe "install_* fixers (--install-deps path)" do
+    setup do
+      prev = System.get_env("GLORBO_DOCTOR_DISTRO_OVERRIDE")
+
+      on_exit(fn ->
+        if prev do
+          System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", prev)
+        else
+          System.delete_env("GLORBO_DOCTOR_DISTRO_OVERRIDE")
+        end
+      end)
+
+      :ok
+    end
+
+    test "install_bwrap on unsupported distro falls back to explain" do
+      System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "windows-95")
+      assert {:explain, guidance} = Fixer.install_bwrap(%{name: "bwrap"})
+      assert guidance =~ "bubblewrap"
+    end
+
+    test "install_pasta on unsupported distro falls back to explain" do
+      System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "windows-95")
+      assert {:explain, guidance} = Fixer.install_pasta(%{name: "pasta"})
+      assert guidance =~ "passt"
+    end
+
+    test "install_uidmap on unsupported distro falls back to explain" do
+      System.put_env("GLORBO_DOCTOR_DISTRO_OVERRIDE", "windows-95")
+      assert {:explain, guidance} = Fixer.install_uidmap(%{name: "uidmap"})
+      assert guidance =~ "shadow-utils"
+    end
+
+    # NOTE: positive-path testing (sudo dnf install actually succeeds)
+    # would mutate the test machine's package state — we don't run it.
+    # The install path is exercised end-to-end by operators on real
+    # Fedora/Debian/Arch hosts; the unit-test surface here is the
+    # registry switch + explain fallback.
   end
 
   describe "run/1" do
