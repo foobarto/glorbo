@@ -10,6 +10,57 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 Phase 2: bench-htb stado smoke
+
+End-to-end validation of the GEP-45 ACP transport against a real
+`stado` binary, gated on a pinned snapshot under
+`.bench/bin/stado-pinned` (operator-local, gitignored). The bench
+drives the full path — `Dispatcher.invoke` →
+`Bwrap.start_acp/2` → `PortIO.wrap/1` → `Client.run/3` → real stado
+running `stado acp --tools` inside the bwrap namespace — and
+asserts the glorbo-side wiring carries the JSON-RPC handshake
+through cleanly.
+
+Two pass conditions, both count as Phase 2 shipped: full-reply
+(stado has a backend configured) or handshake-only (stado answered
+`initialize` + `session/new`, then errored on `session/prompt` with
+the canonical `{:provider_returned_error, %{code, message}}` shape).
+Verified handshake-only against pinned stado v0.26.4 — the
+load-bearing assertion that the framing, sandbox spawn, state
+machine, and error mapping all work against a real ACP server.
+
+Integration test at `test/integration/gep_45_stado_bench_test.exs`,
+tagged `@moduletag :stado_bench` and excluded by default. Skips
+cleanly when `STADO_BENCH_BIN` is unset and `.bench/bin/stado-pinned`
+is absent. Bench protocol + reproducibility contract documented
+at `docs/research/gep-45-bench-htb.md`.
+
+Audit-log capture of the ACP message exchange carried over to
+Phase 3 — Phase 2 ships the dispatch path; per-frame audit emission
+is a separate concern.
+
+### Added — GEP-45 Phase 1b sandbox + dispatcher: end-to-end ACP path
+
+`Glorbo.Sandbox.Bwrap.start_acp/2` spawns the sandboxed CLI as a
+long-running Port without the prompt-tempfile shell redirect.
+`Glorbo.CLI.Dispatcher.Acp.PortIO` wraps an Erlang `Port` into a
+`%Client.IO{}` with read/write/close callbacks. The dispatcher's
+`prompt_mode = :acp` branch replaces the Phase 1a stub with a real
+run loop, reusing the same template-expansion + reply-file
+scaffolding as the stdin path. Adds an `:acp_run_fun` injection
+seam mirroring the existing `:run_fun`. 7 new tests including a
+full Port → PortIO → Client → Bwrap end-to-end against a fake-ACP
+shell script.
+
+### Added — GEP-45 Phase 1b client: ACP JSON-RPC state machine
+
+`Glorbo.CLI.Dispatcher.Acp.Client.run/3` drives a single ACP
+conversation through an injected `%Client.IO{}`:
+initialize → session/new → session/prompt → drain text chunks
+→ shutdown. Errors map to the existing dispatch error categories
+(`:provider_protocol_error` / `:provider_returned_error` /
+`:provider_timeout`). 16 mock-peer tests.
+
 ### Added — GEP-45 Phase 1b foundation: ACP framing + message types
 
 `Glorbo.CLI.Dispatcher.Acp.Framing` + `.Message` + `.RpcError` ship

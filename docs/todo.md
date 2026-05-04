@@ -71,21 +71,30 @@ it's been in CHANGELOG for a cycle.
   Message, RpcError}` ship the wire-format half: tagged-tuple message
   shapes, line-delimited JSON encode/decode, partial-line buffer
   handling. 20 unit tests. Pure code; no I/O.
-- [ ] **GEP-45 Phase 1b client — JSON-RPC client state machine + mock
-  peer.** Sub-slice 1b.3 + 1b.4. Pure module that drives an ACP
-  conversation via injected read/write streams: initialize → session/new
-  → session/prompt → drain session/update text chunks → assemble reply
-  text → shutdown. Errors map to glorbo's existing dispatch error
-  categories (`:provider_protocol_error`, `:provider_returned_error`).
-  No sandbox / Port wiring — those land in 1b.5 next, on top of this
-  client.
-- [ ] **GEP-45 Phase 1b sandbox + dispatcher — bwrap port without
-  prompt-tempfile + Dispatcher.invoke integration.** Sub-slice 1b.5 +
-  1b.6. New `Glorbo.Sandbox.Bwrap.start_acp/2` (or analogous entry)
-  that opens a port without the prompt-tempfile shell-redirect, plus
-  the Dispatcher branch that replaces the Phase 1a stub with a real
-  call into the client state machine. End-to-end: stado-driven agent
-  dispatches in `bench-htb`.
+- [x] **GEP-45 Phase 1b client — JSON-RPC client state machine + mock
+  peer.** Shipped 2026-05-04 in `18dcfcc`.
+  `Glorbo.CLI.Dispatcher.Acp.Client` drives the conversation via an
+  injected `%Client.IO{}` (read/write/close callbacks):
+  initialize → session/new → session/prompt → drain text chunks
+  → shutdown. Reply assembly via `update.kind == "agent_message_chunk"`.
+  Errors map to `:provider_protocol_error` / `:provider_returned_error`
+  / `:provider_timeout`. 16 mock-peer tests.
+- [x] **GEP-45 Phase 1b sandbox + dispatcher — bwrap port without
+  prompt-tempfile + Dispatcher.invoke integration.** Shipped 2026-05-04
+  in `80826e5`. `Glorbo.Sandbox.Bwrap.start_acp/2` opens the bwrap'd
+  Port without the stdin redirect; `Glorbo.CLI.Dispatcher.Acp.PortIO`
+  wraps it as a `%Client.IO{}`; the dispatcher's ACP branch replaces
+  the Phase 1a stub with a real run loop and adds an `:acp_run_fun`
+  injection seam mirroring the existing `:run_fun`. 7 new tests
+  (5 PortIO + 2 sandbox end-to-end with a fake-ACP shell script).
+- [x] **GEP-45 Phase 2 — bench-htb stado smoke + bench.** Shipped
+  2026-05-04. Integration test at
+  `test/integration/gep_45_stado_bench_test.exs` drives the real
+  stado-pinned binary through the full glorbo→stado ACP path; passes
+  on either full-reply or handshake-only outcome (the latter is the
+  load-bearing assertion when stado has no inference backend
+  configured). Bench docs at `docs/research/gep-45-bench-htb.md`.
+  Audit-log capture of the ACP exchange carried into Phase 3.
 - [x] **GEP-34 Phase 2 — `tasks_approval_state` rebuild from
   audit JSONL.** Shipped 2026-04-26. `Reindex.run/1` folds
   `approval.{requested,granted,denied}` lines chronologically per

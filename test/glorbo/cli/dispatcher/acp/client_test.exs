@@ -56,7 +56,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
   defp drive_script(%{script: [responder | rest]} = st, bytes) do
     {:ok, msg} = Framing.decode_message(bytes)
     frames = responder.(msg)
-    out_bytes = frames |> Enum.map(&IO.iodata_to_binary/1) |> Enum.join("")
+    out_bytes = Enum.map_join(frames, "", &IO.iodata_to_binary/1)
     %{st | script: rest, outbound: st.outbound <> out_bytes}
   end
 

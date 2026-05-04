@@ -113,3 +113,8 @@ graphify-out/
 .codex
 .reviews/
 .playwright-mcp/
+
+# GEP-45 Phase 2: stado bench scratch dir + pinned upstream binary.
+# Reproducibility lives in `docs/research/bench-htb.md`, not vendored
+# binaries (the pinned copy is operator-local).
+.bench/

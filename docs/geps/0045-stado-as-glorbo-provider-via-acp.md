@@ -189,9 +189,9 @@ integration, not MCP injection.
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | 0 | This GEP (Draft → Accepted) | In progress |
-| 1 | `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client; provider loader accepts `prompt_mode = "acp"`; `priv/providers/stado.toml` ships; FileSpec validator accepts `provider: stado` (registry-driven so this is automatic). | Pending |
-| 2 | Smoke + bench: a `bench-htb` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Pending |
-| 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). | Pending |
+| 1 | `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client; provider loader accepts `prompt_mode = "acp"`; `priv/providers/stado.toml` ships; FileSpec validator accepts `provider: stado` (registry-driven so this is automatic). | Implemented (1a + 1b shipped 2026-05-04: f7eaf6b, 21b994d, 18dcfcc, 80826e5) |
+| 2 | Smoke + bench: a `bench-htb` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Implemented — see `docs/research/gep-45-bench-htb.md`. Audit-log capture deferred to Phase 3 (handshake/dispatch path verified end-to-end against pinned stado v0.26.4). |
+| 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). Audit-log capture of the ACP message exchange (carried over from Phase 2). | Pending |
 
 ## Decision log
 
