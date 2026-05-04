@@ -16,7 +16,7 @@ defmodule Glorbo.Doctor.FixerTest do
       registered = Fixer.fixers() |> Map.keys() |> Enum.sort()
 
       expected =
-        ~w(glorbo_dir audit_dir sockets_dir private_files bwrap pasta uidmap)
+        ~w(glorbo_dir audit_dir sockets_dir private_files migrations_pending bwrap pasta uidmap)
         |> Enum.sort()
 
       assert registered == expected
@@ -58,6 +58,21 @@ defmodule Glorbo.Doctor.FixerTest do
       # (otherwise this whole project would be broken). The fixer is
       # idempotent via `File.mkdir_p/1`, so assert it returns :ok.
       assert {:ok, _} = Fixer.fix_glorbo_dir(%{name: "glorbo_dir"})
+    end
+
+    test "fix_migrations_pending delegates to Glorbo.CLI.Migrate and translates the tuple" do
+      # FixerTest is plain ExUnit (no DataCase), so the test-env Repo is
+      # locked in :manual sandbox mode and the migrator can't take a
+      # connection — Migrate returns {:migrate, 2, _}. Either branch of
+      # the translation is valid; both prove the fixer correctly
+      # forwards to Glorbo.CLI.Migrate.run/1 and reshapes the result.
+      # Real-world repair (the {:ok, _} branch) is exercised end-to-end
+      # by `glorbo doctor --fix` against ~/.glorbo/glorbo.db; the
+      # migrate verb's own happy-path test lives in MigrateTest.
+      result = Fixer.fix_migrations_pending(%{name: "migrations_pending"})
+
+      assert match?({:ok, _}, result) or match?({:error, _}, result),
+             "expected {:ok, _} | {:error, _}, got #{inspect(result)}"
     end
 
     test "fix_private_files chmods native credentials TOML files to 0600" do

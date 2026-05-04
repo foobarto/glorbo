@@ -34,6 +34,7 @@ defmodule Glorbo.Doctor.Fixer do
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
     "private_files" => &__MODULE__.fix_private_files/1,
+    "migrations_pending" => &__MODULE__.fix_migrations_pending/1,
     "uidmap" => &__MODULE__.explain_uidmap/1,
     "bwrap" => &__MODULE__.explain_bwrap/1,
     "pasta" => &__MODULE__.explain_pasta/1
@@ -44,6 +45,7 @@ defmodule Glorbo.Doctor.Fixer do
     "audit_dir" => &__MODULE__.fix_audit_dir/1,
     "sockets_dir" => &__MODULE__.fix_sockets_dir/1,
     "private_files" => &__MODULE__.fix_private_files/1,
+    "migrations_pending" => &__MODULE__.fix_migrations_pending/1,
     "uidmap" => &__MODULE__.install_uidmap/1,
     "bwrap" => &__MODULE__.install_bwrap/1,
     "pasta" => &__MODULE__.install_pasta/1
@@ -319,6 +321,17 @@ defmodule Glorbo.Doctor.Fixer do
 
       _ ->
         []
+    end
+  end
+
+  @doc false
+  def fix_migrations_pending(_check) do
+    case Glorbo.CLI.Migrate.run([]) do
+      {:migrate, 0, out} ->
+        {:ok, String.trim_trailing(out)}
+
+      {:migrate, _code, out} ->
+        {:error, String.trim_trailing(out)}
     end
   end
 
