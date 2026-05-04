@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-45 (Draft): agent-level MCP-server consumer config injection
+
+Captures the design for agents declaring an `mcp_servers:` list in
+their AGENT.md and glorbo automatically composing the right sandbox
+binds + per-CLI MCP-config injection so the agent's outer LLM (claude-
+code, codex, etc.) can talk to external MCP servers like
+`stado mcp-server`. First validation target is stado, picking up the
+htb-writeups dogfood note that flagged the missing integration.
+
+Phase 0 (this commit) = the GEP itself. Phase 1 = registry loader +
+FileSpec field + first kit shipping `priv/mcp_servers/stado.toml`.
+Phase 2 = dispatch composition. Phase 3 = codex / gemini / opencode.
+Phase 4 (deferred) = HTTP-SSE transport + loopback network bridge.
+
+Bidirectional links added on GEP-9 (direction record) and GEP-29
+(inbound MCP server) — the new GEP is the symmetric outbound side.
+
 ### Added — `make` Makefile wraps `mix glorbo.build_local` + common verbs
 
 Convenience target file at the project root. `make` (default) builds

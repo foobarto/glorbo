@@ -19,7 +19,7 @@ history:
       header validation; (f) end-to-end smoke (scripts/mcp-smoke.sh)
       + client setup doc (docs/mcp-client-setup.md).
 requires: [2, 6, 9, 19, 28]
-see-also: [4, 10]
+see-also: [4, 10, 45]
 ---
 
 # GEP-29: Glorbo as MCP Server (Localhost HTTP-SSE, R/W)

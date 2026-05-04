@@ -377,15 +377,82 @@ isn't slowed by an extra copy.
 
 ---
 
-## Commit(s) — wave 2
+## Commit(s) — wave 2 (shipped)
 
-Two atomic commits coming next:
+  1. `e994aab feat(doctor): --install-deps actually runs sudo <pkgmgr> install`
+  2. `6d3888f feat(build): Makefile wraps mix glorbo.build_local + common verbs`
 
-  1. `feat(doctor): --install-deps actually runs sudo <pkgmgr> install` —
-     fixer registry switch + 3 install_X fixers + distro detection
-     + 7 new tests + CHANGELOG entry + cli.ex flag wiring.
-  2. `feat(build): Makefile wraps mix glorbo.build_local + common verbs` —
-     project-root Makefile + CHANGELOG entry.
+CI run 25318924289 monitoring in background.
 
-Then rebuild burrito (already kicked off in background) so `./glorbo`
-is on the new code, push origin main, monitor CI.
+---
+
+## Task — GEP-45 draft (Phase 0 of stado integration)
+
+**Task picked.** Continuation scope "go for stado integration". Per memory
+`user_stado_integration_preference.md` (saved earlier today): the
+preferred shape is "expose stado as MCP and have glorbo agents talk
+to it via MCP", NOT a stado-as-CLI-provider adapter parallel to
+codex/gemini. Surveyed existing scaffolding:
+
+  * GEP-9 (Accepted, Informational) — protocol-integration direction.
+  * GEP-29 (Implemented) — Glorbo *as* MCP server; inbound side.
+  * GEP-8 (Implemented) — CLI provider registry pattern.
+  * No existing `mcp_servers:` field on AGENT.md or related schema.
+  * Agent dispatch (`Glorbo.Agent.Dispatch.build_invocation/3`)
+    composes binds in a fixed order; current architecture binds
+    `~/.claude` ro into the sandbox so claude-code reads its config
+    there. User adding `stado mcp-server` to host claude config IS
+    visible inside the sandbox — but the spawn fails because no
+    `stado` binary in sandbox PATH and stado's own config dir
+    isn't bound.
+
+**What shipped.**
+
+  * `docs/geps/0045-agent-mcp-client-config.md` — full GEP draft.
+    Covers: schema (`mcp_servers:` AGENT.md field), registry shape
+    (`priv/mcp_servers/<name>.toml` mirroring `priv/providers/*.toml`),
+    sandbox bind composition extension, per-CLI config injection
+    strategies (overlay vs `--mcp-config` flag — leaning flag),
+    lifecycle (stdio transport for Phase 1; HTTP-SSE deferred to
+    Phase 4), 6-entry decision log, 4 open questions, 4-phase plan.
+  * Bidirectional links: GEP-9 `extended-by:` gains 45; GEP-29
+    `see-also:` gains 45.
+  * `docs/geps/README.md` table updated.
+  * `docs/todo.md` P1 gains the Phase-1 ticket pointing at this GEP.
+  * CHANGELOG `[Unreleased]` block.
+
+**Design calls I made without you.**
+
+  * GEP-45 draft (not implemented). Phase 1 (registry loader +
+    FileSpec field + stado.toml) is the next session's seam. Per
+    `feedback_compact_after_task.md`, this is a natural compaction
+    point — wave 2 closed, GEP drafted, fresh context for Phase 1.
+  * Validation target: stado specifically. User's tool, dogfood
+    integration already specified, both sides have skin in the
+    game. First-party case is more honest than picking some
+    third-party MCP server.
+  * Scope: agent-level OUTBOUND consumer of external MCP servers.
+    Did NOT touch GEP-29 (inbound) or GEP-9 (direction). Three
+    distinct GEPs cover three concerns.
+
+**Skipped / not done.**
+
+  * No FileSpec, registry loader, or `priv/mcp_servers/stado.toml`
+    yet — those are Phase 1, fresh-session work.
+  * No `glorbo` binary changes; no rebuild needed for this commit.
+
+**Gates.** No code changes — docs-only. Format / credo / test gates
+not run (no impact). `mix glorbo.docs.file_formats --check` would
+also be a no-op since AGENT.md FileSpec is unchanged this round.
+
+---
+
+## Commit(s) — wave 3
+
+One atomic commit:
+
+  1. `docs(gep-45): draft agent-level MCP-server consumer config
+     injection (stado validation target)` — the GEP file +
+     bidirectional links + index + CHANGELOG + todo.md tracker.
+
+Then push.

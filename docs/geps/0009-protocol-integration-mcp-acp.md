@@ -7,7 +7,7 @@ type: Informational
 created: 2026-04-17
 requires: [2, 4, 5]
 see-also: [8]
-extended-by: [29]
+extended-by: [29, 45]
 history:
   - date: 2026-04-17
     status: Draft

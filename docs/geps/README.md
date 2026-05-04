@@ -68,6 +68,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0042 | [Reviewer auto-dispatcher — close the GEP-41 peer-review loop](./0042-reviewer-auto-dispatcher.md) | Standards     | Implemented |
 | 0043 | [ETS-first derived state with on-disk snapshots for cold boot](./0043-ets-derived-state-with-snapshots.md) | Standards     | Placeholder |
 | 0044 | [Visual regression baselines for the LiveView dashboard](./0044-visual-regression-baselines.md) | Process       | Implemented |
+| 0045 | [Agent-level MCP-server consumer config injection (Stado as validation target)](./0045-agent-mcp-client-config.md) | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
