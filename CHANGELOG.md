@@ -10,6 +10,12 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-05-04
+
+Headline: GEP-45 Phase 3 closes — full ACP transport stack
+(audit-log replay + model catalog + token/cost telemetry) plus a
+2-3× scheduler rescan win.
+
 ### Added — GEP-45 Phase 3 stado_acp usage parser (closes Phase 3)
 
 `Glorbo.CLI.Parsers.StadoAcp` shells out to `stado stats --session
