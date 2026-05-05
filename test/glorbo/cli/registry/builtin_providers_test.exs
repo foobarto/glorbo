@@ -25,13 +25,17 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   end
 
   test "all built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 9
+    assert map_size(p) == 12
 
-    for name <- ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter stado) do
+    for name <-
+          ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter stado
+             gemini-cli-acp claude-code-acp codex-acp) do
       assert Map.has_key?(p, name), "missing built-in provider: #{name}"
     end
 
-    for name <- ~w(claude-code codex gemini-cli hermes opencode pi stado) do
+    for name <-
+          ~w(claude-code codex gemini-cli hermes opencode pi stado
+             gemini-cli-acp claude-code-acp codex-acp) do
       assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
     end
 
@@ -49,6 +53,38 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     # Both auth_binds present: config (ro) + state (rw).
     modes = Enum.map(stado.auth_binds, & &1.mode) |> Enum.sort()
     assert modes == [:ro, :rw]
+  end
+
+  test "ACP variants of the dogfood CLIs declare prompt_mode :acp", %{providers: p} do
+    # gemini-cli-acp uses the native `gemini --acp` server.
+    g = p["gemini-cli-acp"]
+    assert g.binary == "gemini"
+    assert g.prompt_mode == :acp
+    assert g.args == ["--acp", "-m", "{model}"]
+    assert [%{host: "~/.gemini", mode: :ro}] = g.auth_binds
+    assert g.usage_parser == "none"
+
+    # claude-code-acp routes through @zed-industries/claude-code-acp.
+    c = p["claude-code-acp"]
+    assert c.binary == "claude-code-acp"
+    assert c.prompt_mode == :acp
+    assert c.args == []
+
+    assert [
+             %{host: "~/.claude", sandbox: "/workspace/.claude", mode: :ro},
+             %{host: "~/.claude.json", sandbox: "/workspace/.claude.json", mode: :ro}
+           ] = c.auth_binds
+
+    assert c.usage_parser == "none"
+
+    # codex-acp uses the upstream `codex acp-server` subcommand.
+    cx = p["codex-acp"]
+    assert cx.binary == "codex"
+    assert cx.prompt_mode == :acp
+    assert cx.args == ["acp-server"]
+    assert [%{host: "~/.codex", mode: :ro}] = cx.auth_binds
+    assert cx.env == %{"CODEX_HOME" => "{workspace}/.glorbo-codex"}
+    assert cx.usage_parser == "none"
   end
 
   test "untracked providers bind to parsers.none", %{providers: p} do
@@ -129,7 +165,9 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
              "built-in #{prov.name} reply cap must match default"
     end
 
-    for name <- ~w(claude-code codex gemini-cli hermes opencode pi) do
+    for name <-
+          ~w(claude-code codex gemini-cli hermes opencode pi
+             gemini-cli-acp claude-code-acp codex-acp) do
       prov = p[name]
       assert prov.allow_version_probe == true, "built-in #{prov.name} must allow probes"
       assert prov.version_flag == "--version"

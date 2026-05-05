@@ -118,3 +118,4 @@ graphify-out/
 # Reproducibility lives in `docs/research/bench-htb.md`, not vendored
 # binaries (the pinned copy is operator-local).
 .bench/
+NOTES-*.md

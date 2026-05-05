@@ -124,11 +124,16 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
       WatcherBridge.observe("acme", "company.md", server: bridge)
       WatcherBridge.observe("acme", "agents/ceo/AGENT.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 20)
+      subjects =
+        wait_for_subjects!(
+          base,
+          [
+            "external.edit: companies/acme/company.md",
+            "external.edit: companies/acme/agents/ceo/AGENT.md"
+          ],
+          5_000
+        )
 
-      {:ok, log} = HomeHistory.log(base: base, limit: 10)
-
-      subjects = Enum.map(log, & &1.subject)
       assert "external.edit: companies/acme/company.md" in subjects
       assert "external.edit: companies/acme/agents/ceo/AGENT.md" in subjects
     end
@@ -159,6 +164,31 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
       assert Process.alive?(bridge)
 
       File.rm_rf!(base)
+    end
+  end
+
+  defp wait_for_subjects!(base, expected, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_wait_for_subjects!(base, expected, deadline)
+  end
+
+  defp do_wait_for_subjects!(base, expected, deadline) do
+    {:ok, log} = HomeHistory.log(base: base, limit: 10)
+    subjects = Enum.map(log, & &1.subject)
+
+    cond do
+      Enum.all?(expected, &(&1 in subjects)) ->
+        subjects
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk(
+          "WatcherBridge commits did not land within deadline. " <>
+            "expected=#{inspect(expected)} subjects=#{inspect(subjects)}"
+        )
+
+      true ->
+        Process.sleep(25)
+        do_wait_for_subjects!(base, expected, deadline)
     end
   end
 end

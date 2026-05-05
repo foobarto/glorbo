@@ -271,9 +271,9 @@ held.
 
 ## Task — verify glorbo dogfood items 5/6 + ship #5
 
-Scope requested which dogfood items are doc gaps vs code gaps. Glorbo
-side: **0/7 are doc gaps** — most are forward-looking feature work,
-plus item #6 was a false positive against current code.
+Scope: classify the dogfood items as documentation gaps vs code gaps.
+Glorbo side: **0/7 are doc gaps** — most are forward-looking feature
+work, plus item #6 was a false positive against current code.
 
 ### Item #6 — inotify-tools warning fires on `--help`
 
@@ -350,8 +350,8 @@ addressing.
 
 ### Task — Makefile at project root
 
-Scope requested for a Makefile that "compile glorbo binary and drop it
-to root project folder". Existing `mix glorbo.build_local` already
+Scope: add a root-level Makefile for building the local Glorbo binary
+into the project root. Existing `mix glorbo.build_local` already
 materialises `./glorbo` as a symlink — Makefile wraps it.
 
 **What shipped.**
@@ -388,11 +388,10 @@ CI run 25318924289 monitoring in background.
 
 ## Task — GEP-45 draft (Phase 0 of stado integration)
 
-**Task picked.** Continuation scope "go for stado integration". Per memory
-`user_stado_integration_preference.md` (saved earlier today): the
-preferred shape is "expose stado as MCP and have glorbo agents talk
-to it via MCP", NOT a stado-as-CLI-provider adapter parallel to
-codex/gemini. Surveyed existing scaffolding:
+**Scope.** Start the stado integration. The saved integration
+preference at the time was "expose stado as MCP and have glorbo
+agents talk to it via MCP", not a stado-as-CLI-provider adapter
+parallel to codex/gemini. Surveyed existing scaffolding:
 
   * GEP-9 (Accepted, Informational) — protocol-integration direction.
   * GEP-29 (Implemented) — Glorbo *as* MCP server; inbound side.
@@ -457,17 +456,16 @@ also be a no-op since AGENT.md FileSpec is unchanged this round.
 
 ## Task — GEP-45 corrected after maintainer feedback
 
-**Maintainer correction.** Right after wave-3 pushed, maintainer flagged
-the wrong-shape framing: *"why would user need to add stado to
-claude's settings? stado is standalone completely, can work without
-claude"*.
+**Maintainer correction.** The wave-3 draft framed stado as a tool
+source injected into a Claude Code settings file. Feedback clarified
+the intended model: stado is a standalone agent runtime and should be
+treated as a provider.
 
-The first draft had glorbo agents using claude-code as outer LLM
-with stado-mcp-server as a tool source ("case B" in the user-
-preference memory). User corrected: stado IS the agent — calls its
-own model with its own tools. Glorbo should treat stado as a
-provider parallel to claude-code/codex/gemini ("case A"), with the
-"MCP/ACP > stdio prompt" preference referring to the TRANSPORT used
+The first draft had glorbo agents using claude-code as outer LLM with
+stado-mcp-server as a tool source. The corrected shape is that stado
+is the agent — it calls its own model with its own tools. Glorbo
+should treat stado as a provider parallel to claude-code/codex/gemini,
+with the MCP/ACP preference referring to the transport used
 to drive stado, not the integration model.
 
 Confirmed `stado acp` exists (cmd/stado/acp.go) — JSON-RPC 2.0 over
@@ -539,11 +537,11 @@ CI 25319803526 green on `ef40743`.
 
 ## Task — GEP-45 Phase 1a
 
-**Task picked.** Continuation scope "carry on with next items on the list".
-Per `feedback_finish_partials_first.md` the GEP-45 thread is a
+**Scope.** Continue with the next GEP-45 item. Per
+`feedback_finish_partials_first.md` the GEP-45 thread is a
 half-shipped feature; Phase 1a is its first concrete code slice.
-Scoped narrowly: registry support + provider TOML + dispatcher
-stub. Phase 1b (the actual ACP client) is its own body of work.
+Scoped narrowly: registry support + provider TOML + dispatcher stub.
+Phase 1b (the actual ACP client) is its own body of work.
 
 **What shipped.**
 

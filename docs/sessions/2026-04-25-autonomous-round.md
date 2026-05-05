@@ -323,9 +323,9 @@ its own thing).
 
 ## Continuation attempt — 2026-04-25 04:30 UTC
 
-Continuation scope "continue L4" after the handoff above. Re-walked the
-punch list and stopped per protocol's
-"no bounded task available" criterion:
+Scope: continue at L4 after the handoff above. The punch list was
+re-walked and then stopped per protocol's "no bounded task
+available" criterion:
 
 * **Review asks 1–3 from earlier in this journal** — all three
   turned out to be already-shipped before today (commits
@@ -367,14 +367,12 @@ checkpoint to weigh in on the larger pieces.
 
 ## Task 4 — GEP-33 Phase 2a-1: synchronous `commit_marked/3` primitive
 
-**Task picked.** Continuation scope "continue autonomously L4" again
-after the prior continuation-attempt stop. That's an explicit
-override of my "no bounded task" call. Re-scoped GEP-33 Phase 2
-to the smallest standalone shippable cut: the synchronous
+**Scope.** Continue at L4 after the prior continuation-attempt stop.
+This overrode the earlier "no bounded task" call. GEP-33 Phase 2 was
+re-scoped to the smallest standalone shippable cut: the synchronous
 commit primitive that Phase 2b will eventually buffer into a
-GenServer. Delivers visible foundation progress without
-touching any caller — pure new code, no behaviour change to
-the running app.
+GenServer. Delivers visible foundation progress without touching any
+caller — pure new code, no behaviour change to the running app.
 
 **What shipped.** `lib/glorbo/home_history.ex` gains:
 
@@ -524,11 +522,10 @@ review if four is one too many. Hard 5-commit stop respected.
 
 ## Task 5 — GEP-33 Phase 2b: Tx GenServer with debounce coalescer
 
-**Task picked.** Continuation scope "continue until I tell you to
-stop" after the 4-commit handoff — explicit override of both
-the 3-commit soft checkpoint and the 5-commit hard stop. The
-protocol notes those are overridable when the user asks for
-a long loop, so this is a sanctioned shift in cadence.
+**Scope.** Continue after the 4-commit handoff, overriding both the
+3-commit soft checkpoint and the 5-commit hard stop. The protocol
+allows those to be overridden for a long loop, so this is a sanctioned
+shift in cadence.
 
 Phase 2b is the natural follow-up to Phase 2a-1: wrap the
 synchronous `commit_marked/3` primitive in a GenServer that
@@ -672,8 +669,7 @@ per protocol's "log the override in the journal."
 
 ## Task 6 — GEP-33 Phase 2c-0 + 2c-1: with_tx + first writer wired
 
-**Task picked.** Continuation scope "continue until I tell you to
-stop" after the 5-commit Phase 2b ship. Continuing the
+**Scope.** Continue after the 5-commit Phase 2b ship. Continuing the
 GEP-33 arc by:
 
   1. Adding the `Tx.with_tx/3` convenience helper (Phase 2c-0)
@@ -1577,7 +1573,7 @@ from git log.
 ## Final handoff — 2026-04-25 06:11 UTC
 
 **Shipped this round (cumulative — autonomous L4 across
-17 commits + 1 earlier in this journal):**
+17 commits + 1 earlier commit):**
 
   * `4d40eed` — Browser UAT distrobox path documented.
   * `bbfd3f8` — handoff block addendum.
@@ -1774,9 +1770,9 @@ staging refactor + Agents.retire wiring.
 
 ## Task 19 — End-to-end UAT (autonomous L3) + Phase 4 CLI bug fix
 
-**Task picked.** Scope requested for the UAT pass at L3 (push
-authority not requested; final gate review at the end).
-Goal: validate the GEP-33 layer end-to-end against the live
+**Scope.** UAT pass at L3, without push authority and with a final
+gate review at the end. Goal: validate the GEP-33 layer end-to-end
+against the live
 dev workspace at `~/.glorbo/`, exercising Director flows
 through Playwright and the watcher-fallback bridge through
 direct file edits.
@@ -2065,10 +2061,10 @@ task; protocol's no-force-a-pick rule applies.
 
 ## Task 21 — Multi-agent orchestration comparison (paperclip vs Glorbo)
 
-**Task picked.** Scope requested for a head-to-head comparison against
-paperclip's multi-agent loop against a real-world creative-craft
-deliverable, with focus on agent-to-agent interaction quality + task
-delivery. Scope: 2-hour window, anonymized writeup, reuse existing
+**Scope.** Head-to-head comparison against paperclip's multi-agent
+loop on a real-world creative-craft deliverable, focused on
+agent-to-agent interaction quality and task delivery. The window was
+2 hours, with an anonymized writeup and reuse of existing
 prep work (`.reports/uat/glorbo-vs-paperclip.md` predates today's
 GEP-33 work but covers the heartbeat-vs-one-shot delta).
 
@@ -2166,8 +2162,8 @@ equivalent for pruning the IP-laden commits.
 
 ## Task 23 — v0.10.0 release cut
 
-**Task picked.** Scope requested to cut a release with today's
-GEP-33 work + the `--yes` fix.
+**Scope.** Cut a release with the day's GEP-33 work and the `--yes`
+fix.
 
 **What shipped.**
 
@@ -2191,9 +2187,8 @@ GEP-33 work + the `--yes` fix.
 
 ## Task 24 — GEP-44 + visual-regression baseline sprint v1
 
-**Task picked.** Scope requested for the VR baseline sprint after the
-release cut. Tier-1 scope: eight load-bearing LVs Director hits
-daily.
+**Scope.** Visual-regression baseline sprint after the release cut.
+Tier-1 scope: eight load-bearing LVs Director hits daily.
 
 **What shipped.**
 

@@ -1011,16 +1011,16 @@ warrants a fresh round with clear head.
 
 **Queued for next round (in rough priority order):**
 
-1. **GEP-35 Draft promotion.** User answered: per-kind
-   genserver process model, testability preference
+1. **GEP-35 Draft promotion.** Decision captured: per-kind
+   GenServer process model, testability preference
    functional/e2e over unit. Shared-state shape and
    concrete write-seam design are my call. Expected
    deliverable: GEP-35 frontmatter flip + Draft-level
    decision log.
 2. **GEP-36 / GEP-38 merge** into atomic `Glorbo.Actions`
-   cleanup. Scope requested "pure module/functions vs GenServer?"
-   — my recommendation (pure module, state is filesystem):
-   expand with pros/cons in the Draft and flip status.
+   cleanup. The pending design call is pure module/functions vs
+   GenServer; recommendation is pure module, with filesystem state.
+   Expand with pros/cons in the Draft and flip status.
    GEP-38 likely gets superseded-by GEP-36.
 3. **Cairn adoption delta** (3 new workflow files in Glorbo,
    CLAUDE.md slim-down). Small dedicated commit.

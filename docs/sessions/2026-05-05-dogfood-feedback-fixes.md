@@ -200,8 +200,6 @@ prevent the auto-start that triggers it.
 
 **Commit(s).** Not yet — proposing diff for review.
 
----
-
 ## Things I'd like your review
 
   * **Watcher `:ignore` degradation.** The user gets a single

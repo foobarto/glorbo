@@ -1,0 +1,53 @@
+# Gemini CLI — ACP variant (GEP-45 cross-provider rollout).
+#
+# `gemini --acp` is Gemini CLI's native Agent Client Protocol mode
+# (JSON-RPC 2.0 over stdio per Zed's spec) — the same wire shape stado
+# already implements. This sibling provider opts gemini into the
+# `Glorbo.CLI.Dispatcher.Acp` branch instead of the stdin/JSON path
+# that `gemini-cli.toml` uses.
+#
+# Operators select this variant by writing `provider: gemini-cli-acp`
+# in AGENT.md. Because this variant has no usage parser yet, that
+# agent must also set `allow_untracked_budget: true`. Existing
+# `gemini-cli` agents are unaffected.
+
+name   = "gemini-cli-acp"
+binary = "gemini"
+
+# `--acp` boots the ACP server. `-m` still works in ACP mode; model
+# selection flows through `{model}` template expansion exactly like
+# the stdin variant.
+args = [
+  "--acp",
+  "-m", "{model}",
+]
+prompt_mode = "acp"
+
+# Reply contract (GEP-8 §7.4) — ACP dispatcher assembles streamed
+# `session/update` chunks and writes once at the end; downstream code
+# (audit log, reply rendering, agent state machine) sees no difference
+# from a stdin-prompt provider.
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# No usage parser yet. Gemini's ACP server does not emit token totals
+# in `session/update` chunks, and `gemini` has no `stats --json`-style
+# subcommand. Defaulting to "none" yields `usage: nil` per dispatch;
+# agents opting into this provider must set
+# `allow_untracked_budget: true`. A `gemini_acp` parser is worth a
+# follow-up if Google adds a stats endpoint upstream.
+
+[env]
+
+# Auth bind (GEP-8). Gemini insists on $HOME/.gemini for OAuth and
+# session state regardless of mode; the sandbox HOME is /workspace,
+# so we mirror the host ~/.gemini there read-only.
+[[auth_binds]]
+host    = "~/.gemini"
+sandbox = "/workspace/.gemini"
+mode    = "ro"

@@ -79,9 +79,24 @@ if config_env() == :prod do
     |> Base.url_encode64(padding: false)
     |> binary_part(0, 12)
 
+  # Accept WebSocket upgrades from both loopback aliases plus whatever
+  # host the operator configured. Phoenix's default `check_origin: true`
+  # validates the upgrade against `url[:host]` only, so a release whose
+  # config says `127.0.0.1` rejects browsers navigating to
+  # `http://localhost:4000` (and vice-versa). The dashboard binds to
+  # 127.0.0.1 by design (loopback only — no remote access without a
+  # reverse proxy), so allowing both aliases is safe.
+  check_origin =
+    Enum.uniq([
+      "//#{host}",
+      "//127.0.0.1",
+      "//localhost"
+    ])
+
   config :glorbo, GlorboWeb.Endpoint,
     url: [host: host, port: port, scheme: "http"],
     http: [ip: {127, 0, 0, 1}, port: port],
+    check_origin: check_origin,
     secret_key_base: secret_key_base,
     live_view: [signing_salt: signing_salt]
 end

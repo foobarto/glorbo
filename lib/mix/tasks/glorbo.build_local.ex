@@ -59,14 +59,19 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     end
 
     purge_dev_only_artifacts!()
+    purge_stale_release!()
 
     prev_env = Mix.env()
 
     try do
       Mix.env(:prod)
+      # BURRITO_TARGET limits the build to the host arch so we don't
+      # also cross-compile macos/aarch64 binaries just to test locally.
+      System.put_env("BURRITO_TARGET", "linux_x86_64")
       Mix.Task.run("loadconfig")
       Mix.Task.run("release", ["glorbo", "--overwrite"])
     after
+      System.delete_env("BURRITO_TARGET")
       Mix.env(prev_env)
     end
 
@@ -83,6 +88,19 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     else
       Mix.shell().error("Expected #{@target_rel} after release build, but it's missing.")
       exit({:shutdown, 1})
+    end
+  end
+
+  # Wipe the rel dir so `mix release --overwrite` starts with a single
+  # erts-* directory. Without this, successive releases accumulate erts
+  # dirs; Burrito's clean_work_dir then races between them and can
+  # delete the freshly-built one, leaving CopyERTS with nothing to find.
+  defp purge_stale_release! do
+    rel_dir = Path.expand("_build/prod/rel/glorbo")
+
+    if File.dir?(rel_dir) do
+      File.rm_rf!(rel_dir)
+      Mix.shell().info("cleared stale release at #{rel_dir}")
     end
   end
 

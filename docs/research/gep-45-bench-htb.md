@@ -49,7 +49,7 @@ the result is reproducible across stado rebuilds:
 
 ```bash
 mkdir -p .bench/bin
-cp -f $(which stado || echo /path/to/stado/stado) .bench/bin/stado-pinned
+cp -f $(which stado || echo /path/to/stado) .bench/bin/stado-pinned
 chmod +x .bench/bin/stado-pinned
 ```
 

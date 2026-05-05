@@ -129,7 +129,7 @@ in place**; do not fork. Prototype → Phoenix component mapping:
 | `Spark` (sparklines)        | `spark.ex`                               | Keep API; restyle to solid green-dim fill, no gradient. |
 | `BudgetRing`                | `budget_ring.ex`                         | Prototypes use a horizontal bar instead — either is acceptable; prefer the horizontal bar for the roster (KPI cards can keep the ring if you prefer). |
 | `AuditEntry`                | `audit_entry.ex`                         | Already uses sentence-rendering (per v0.0.3 release notes); tune colors to the semantic roles. |
-| `ChannelMessage`            | `channel_message.ex`                     | Used in chat view. |
+| `ChannelMessage`            | `channel_message.ex`                     | Used in the chat view. |
 | `StdoutTail`                | `stdout_tail.ex`                         | Used on AgentLive. |
 | `TabBar`                    | `tab_bar.ex`                             | Used on Inbox (`Mine/Recent/All/Archive`) and the roster. |
 | `HealthDot`                 | `health_dot.ex`                          | Keep; ensure glyph prefix is also rendered (not color-only). |

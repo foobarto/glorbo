@@ -287,7 +287,8 @@ real `glorbo reindex` correctness gap: the AuditLog writer puts
 orchestrator events at `<base>/audit/_system/<YYYY-MM>.jsonl`
 (subdirectory) but Phase 1's `rebuild_audit_events/1` was
 listing `*.jsonl` files directly under `<base>/audit/`, so
-production system events never replayed. Continuation scope "continue."
+production system events never replayed. Follow-up scope was to
+continue with that fix.
 
 **What shipped.** `lib/glorbo/filesystem/reindex.ex`:
 
@@ -354,9 +355,8 @@ all reference `audit/_system/`. Reindex was the only outlier.
 
 **Task picked.** With every gap-table from GEP-34 now derived
 from disk, this was the natural moment to roll the work onto a
-release surface. Continuation scope "continue to autonomously L4," so I
-walked `docs/workflow/release-gate.md` end-to-end as a single
-bounded task.
+release surface. The L4 continuation scope was to walk
+`docs/workflow/release-gate.md` end-to-end as a single bounded task.
 
 **What shipped (Step 1 — doc-drift pass).**
 

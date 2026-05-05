@@ -34,7 +34,7 @@ an agent-authored `HEARTBEAT.md` file that tells the CLI what to
 check, what to proactively report, and when to trigger downstream
 actions. Think "cron job but agent-authored in natural language."
 
-Concrete flow the scope requested for:
+Concrete requested flow:
 
 1. Agent `ceo` has `heartbeat: "*/30 * * * *"` in `agent.md`.
 2. Every 30 minutes, the scheduler fires a wake event.

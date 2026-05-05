@@ -1,0 +1,48 @@
+# Codex CLI — ACP variant (GEP-45 cross-provider rollout).
+#
+# Codex's own `codex` binary now ships an `acp-server` subcommand
+# (Agent Client Protocol — JSON-RPC 2.0 over stdio per Zed's spec).
+# No npm wrapper needed; this provider points directly at the
+# upstream binary.
+#
+# Operators select this variant by writing `provider: codex-acp` in
+# AGENT.md. Because this variant has no usage parser yet, that agent
+# must also set `allow_untracked_budget: true`. Existing `codex`
+# agents are unaffected.
+
+name   = "codex-acp"
+binary = "codex"
+
+# `acp-server` boots the ACP server on stdin/stdout. Model selection
+# flows through codex's normal config (`~/.codex/config.toml`) or the
+# `-c model="..."` override; the `{model}` template substitution is
+# unused here for parity with the claude-code-acp variant. Future
+# revisions may wire `-c model="{model}"` once we confirm the codex
+# acp-server respects that override.
+args = ["acp-server"]
+prompt_mode = "acp"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# No usage parser yet. The acp-server doesn't surface codex's
+# `token_count` events through `session/update`, and the rollout
+# JSONL files the stdin variant tails live under a per-session
+# directory the acp-server doesn't currently write to. Agents opting
+# into this provider must set `allow_untracked_budget: true`.
+# Tracking lands once upstream surfaces the data through ACP.
+
+[env]
+# CODEX_HOME mirrors the stdin variant so both providers land in the
+# same per-workspace credential layout when sandboxed.
+CODEX_HOME = "{workspace}/.glorbo-codex"
+
+[[auth_binds]]
+host    = "~/.codex"
+sandbox = "/workspace/.glorbo-codex"
+mode    = "ro"

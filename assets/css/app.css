@@ -323,8 +323,30 @@ button { font-family: inherit; font-size: inherit; }
   cursor: pointer;
   padding: 0;
   appearance: none;
+  /* Drives the native popup's hover/selected highlight color in
+   * Chromium and Firefox; without this the browser picks an OS-
+   * default blue that washes out against the panel's dark surface. */
+  accent-color: var(--gl-accent);
+  /* Native popups read the select's own colors when rendering the
+   * listbox. `color-scheme: dark` makes Chrome/Firefox open a
+   * dark-themed popup with light text and a readable selected row
+   * instead of the default white-on-blue. */
+  color-scheme: dark;
 }
 .gl-topbar__picker-select:focus { outline: none; }
+/* The native listbox inherits these on the popup options. Setting a
+ * solid background prevents the transparent topbar from showing
+ * through, and explicit text/option-bg colors keep contrast readable
+ * on hover and selection across Chromium / Firefox / WebKit. */
+.gl-topbar__picker-select option {
+  background: var(--gl-surface);
+  color: var(--gl-fg);
+}
+.gl-topbar__picker-select option:checked,
+.gl-topbar__picker-select option:hover {
+  background: var(--gl-surface-raised);
+  color: var(--gl-fg);
+}
 .gl-topbar__version { color: var(--gl-fg-subtle); }
 .gl-topbar__spacer { flex: 1; }
 .gl-topbar__kbd {

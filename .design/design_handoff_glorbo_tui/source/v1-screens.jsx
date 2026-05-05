@@ -487,11 +487,11 @@ function V1Skills() {
 /* --- PROVIDERS --- */
 function V1Providers() {
   const providers = [
-    { name: "claude-code", src: "builtin", tag: "ROUTABLE", color: "active", bin: "claude", path: "/home/user/.local/bin/claude", ver: "2.1.114", parser: "claude_jsonl" },
-    { name: "codex", src: "builtin", tag: "ROUTABLE", color: "active", bin: "codex", path: "/home/user/.linuxbrew/bin/codex", ver: "0.121.0", parser: "codex_jsonl" },
-    { name: "gemini-cli", src: "builtin", tag: "ROUTABLE", color: "active", bin: "gemini", path: "/home/user/.nvm/…/gemini", ver: "0.38.0", parser: "gemini_stdout" },
-    { name: "hermes", src: "builtin", tag: "UNTRACKED", color: "amber", bin: "hermes", path: "/home/user/.local/bin/hermes", ver: "0.9.0", parser: "none" },
-    { name: "opencode", src: "builtin", tag: "UNTRACKED", color: "amber", bin: "opencode", path: "/home/user/.opencode/…", ver: "1.4.11", parser: "none" },
+    { name: "claude-code", src: "builtin", tag: "ROUTABLE", color: "active", bin: "claude", path: "/usr/local/bin/claude", ver: "2.1.114", parser: "claude_jsonl" },
+    { name: "codex", src: "builtin", tag: "ROUTABLE", color: "active", bin: "codex", path: "/usr/local/bin/codex", ver: "0.121.0", parser: "codex_jsonl" },
+    { name: "gemini-cli", src: "builtin", tag: "ROUTABLE", color: "active", bin: "gemini", path: "/usr/local/bin/gemini", ver: "0.38.0", parser: "gemini_stdout" },
+    { name: "hermes", src: "builtin", tag: "UNTRACKED", color: "amber", bin: "hermes", path: "/usr/local/bin/hermes", ver: "0.9.0", parser: "none" },
+    { name: "opencode", src: "builtin", tag: "UNTRACKED", color: "amber", bin: "opencode", path: "/opt/opencode/bin/opencode", ver: "1.4.11", parser: "none" },
     { name: "pi", src: "builtin", tag: "NOT INSTALLED", color: "red", bin: "pi", path: "—", ver: "—", parser: "—" },
   ];
   return (

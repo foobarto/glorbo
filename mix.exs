@@ -157,6 +157,7 @@ defmodule Glorbo.MixProject do
         "compile --warnings-as-errors",
         "deps.unlock --unused",
         "format",
+        "glorbo.privacy_check",
         "credo --strict",
         "glorbo.docs.file_formats --check",
         "test"

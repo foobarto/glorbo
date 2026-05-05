@@ -1,0 +1,60 @@
+# Claude Code — ACP variant via the @zed-industries/claude-code-acp
+# wrapper (GEP-45 cross-provider rollout).
+#
+# Claude Code's own `claude` binary does not speak ACP directly. The
+# Zed-maintained npm package `@zed-industries/claude-code-acp` runs
+# the Claude Agent SDK behind a JSON-RPC 2.0 / stdio ACP frontend.
+# Install with:
+#
+#     npm install -g @zed-industries/claude-code-acp
+#
+# After install, the `claude-code-acp` binary is on PATH. The wrapper
+# reads credentials from the same `~/.claude/.credentials.json` and
+# `~/.claude.json` that the underlying CLI uses, so glorbo's existing
+# auth_binds carry over verbatim.
+#
+# Operators select this variant by writing `provider: claude-code-acp`
+# in AGENT.md. Because this variant has no usage parser yet, that
+# agent must also set `allow_untracked_budget: true`. Existing
+# `claude-code` agents are unaffected.
+
+name   = "claude-code-acp"
+binary = "claude-code-acp"
+
+# The wrapper takes no required args — it boots the ACP server on
+# stdin/stdout immediately. Model selection flows through the SDK's
+# normal config path (`~/.claude.json` → settings) rather than CLI
+# flags; the `{model}` template substitution is unused here. Future
+# revisions may add a `--model {model}` once the wrapper exposes it.
+args        = []
+prompt_mode = "acp"
+
+reply_dir               = "{workspace}/.glorbo/outbox"
+reply_filename_template = "{timestamp}-{invocation_id}.md"
+reply_max_bytes         = 1_048_576
+
+version_flag        = "--version"
+version_regex       = '(\d+\.\d+\.\d+)'
+allow_version_probe = true
+
+# No usage parser yet. The wrapper does not surface SDK token totals
+# through `session/update`, and there is no out-of-band stats
+# subcommand. Agents opting into this provider must set
+# `allow_untracked_budget: true`. Tracking lands when upstream exposes
+# a stats surface.
+
+[env]
+
+# Auth binds (GEP-8). Same layout as the stdin `claude-code` provider:
+# both `$HOME/.claude/` (OAuth refresh + session history) and
+# `$HOME/.claude.json` (config at home root) bind into the sandbox
+# HOME (/workspace) as siblings.
+[[auth_binds]]
+host    = "~/.claude"
+sandbox = "/workspace/.claude"
+mode    = "ro"
+
+[[auth_binds]]
+host    = "~/.claude.json"
+sandbox = "/workspace/.claude.json"
+mode    = "ro"

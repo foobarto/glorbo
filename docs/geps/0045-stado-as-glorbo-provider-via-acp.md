@@ -192,6 +192,7 @@ integration, not MCP injection.
 | 1 | `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client; provider loader accepts `prompt_mode = "acp"`; `priv/providers/stado.toml` ships; FileSpec validator accepts `provider: stado` (registry-driven so this is automatic). | Implemented (1a + 1b shipped 2026-05-04: f7eaf6b, 21b994d, 18dcfcc, 80826e5) |
 | 2 | Smoke + bench: a `bench-htb` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Implemented — see `docs/research/gep-45-bench-htb.md`. Audit-log capture deferred to Phase 3 (handshake/dispatch path verified end-to-end against pinned stado v0.26.4). |
 | 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). Audit-log capture of the ACP message exchange (carried over from Phase 2). | Implemented 2026-05-04. (a) Per-frame `cli.acp.<role>.<kind>` audit emission via injected `audit_fun` in `Acp.Client`; dispatcher result carries `acp: %{session_id, chunks, ignored_updates}`. (b) GEP-32 catalog wiring via new `model_list.shape = "static"` — stado advertises 13 model aliases that surface in the LV combobox without an HTTP probe. (c) `stado_acp` usage parser shells out to `stado stats --session <sid> --json` after each dispatch and surfaces tokens / cost / duration / dominant model / per-tool breakdown via the existing `Parsers.usage()` shape. |
+| 4 | Cross-provider rollout: ACP variants of the dogfood CLIs (`gemini-cli-acp`, `claude-code-acp`, `codex-acp`) shipped as sibling provider TOMLs. `gemini-cli-acp` rides Gemini's native `gemini --acp` server; `codex-acp` uses the upstream `codex acp-server` subcommand; `claude-code-acp` routes through the `@zed-industries/claude-code-acp` npm wrapper since the `claude` binary itself doesn't speak ACP. All three share the existing dispatcher branch + auth_binds. Usage parsers default to `"none"` — no per-token attribution for these variants until upstream surfaces stats endpoints (see Open Q5 below), so agents must opt in with `allow_untracked_budget: true`. | Implemented 2026-05-05. |
 
 ## Decision log
 
@@ -306,6 +307,20 @@ a future first-party glorbo agent runtime) can be added as a
    shape. Phase 3 adds a `stado_acp` usage parser kind; until
    then, Phase 1 logs stado's session ID and the operator
    correlates manually via `stado stats`.
+
+5. **Per-token attribution for the cross-provider ACP variants.**
+   Phase 4 ships `gemini-cli-acp`, `claude-code-acp`, and
+   `codex-acp` with `usage_parser = "none"`. Gemini's ACP server
+   doesn't surface token totals through `session/update`, the
+   Zed Claude wrapper doesn't either, and none of the three exposes a
+   stado-style stats subcommand the dispatcher could shell out to.
+   Until upstream adds an out-of-band stats endpoint (or surfaces
+   totals through a session-end ACP notification), the budget
+   ledger records these dispatches with `usage: nil`. Operators
+   must set `allow_untracked_budget: true` on agents that use these
+   providers. Operators who need attribution today should stay on the
+   stdin variants (`claude-code`, `codex`, `gemini-cli`) which retain
+   their existing parsers.
 
 ## Bidirectional links
 
