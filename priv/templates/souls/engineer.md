@@ -1,6 +1,5 @@
 ---
 kind: agent-soul/v1
-role: "Software Engineer"
 ---
 
 # SOUL — {{ name }}

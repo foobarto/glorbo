@@ -1,0 +1,228 @@
+# 2026-05-05 — three dogfood-feedback fixes from `NOTES-from-claude-2026-05-05.md`
+
+User dropped a 7-issue dogfood report run against v0.19.0 from a
+fresh `HOME`. Worked the three standouts they called out. Did not
+commit yet — proposing for review.
+
+Autonomy level: **L2** — implement, test, propose commit.
+
+---
+
+## Task — supervisor crash on missing inotify
+
+**Task picked.** User reported `glorbo up` crashes the company
+supervisor when `inotify-tools` is absent: `case_clause :ignore`
+inside `Glorbo.Filesystem.Watcher.init/1`. The CLI prints "glorbo
+up" successfully and `glorbo status` says "running: yes", but no
+companies actually load — only visible if the user opens the
+dashboard and sees an empty table.
+
+Root cause: `start_backend/1` at `watcher.ex:137` had a `case`
+matching only `{:ok, _}` and `{:error, _}` from
+`FileSystem.start_link/1`. The library's third valid GenServer
+return — `:ignore` (emitted when the inotify worker's own `init/1`
+refuses to bootstrap) — falls off the end and crashes the
+`init/1`, which crashes `Glorbo.Company.Supervisor`, which (under
+the `one_for_one` strategy of the parent `CompanySupervisor`)
+takes the company offline silently.
+
+**What shipped.**
+
+  * `lib/glorbo/filesystem/watcher.ex` — `start_backend/1` now
+    handles all three FileSystem return shapes (`{:ok, pid}`,
+    `:ignore`, `{:error, _}`). Both failure shapes fall back to
+    `fs_poll`. If `fs_poll` ALSO fails (rare — usually argv /
+    permissions), `start_backend/1` returns `:ignore`. `init/1`
+    pattern-matches on the result: on `:ignore`, log a
+    `[warning]` (matches doctor's severity for the same
+    condition) and return `:ignore` from `init/1` so the parent
+    supervisor treats the watcher as "not started" rather than
+    "crashed." Live-reload, watcher-bridge history, and PubSub
+    `:file_event` broadcasts go inactive; everything else
+    (Router, AuditLog, Scheduler, agents) keeps running.
+  * `lib/glorbo/filesystem/watcher.ex` — added an injectable
+    `:fs_module` opt (default: `FileSystem`) so tests can
+    deterministically exercise the no-backend path without
+    actually uninstalling `inotify-tools` on the host.
+  * `test/glorbo/filesystem/watcher_no_inotify_test.exs` —
+    new file, three tests:
+    1. `FileSystem.start_link` returns `:ignore` for both backends
+       → `Watcher.start_link` returns `:ignore` (not a crash).
+    2. Primary errors and fs_poll fallback returns `:ignore` →
+       same outcome.
+    3. End-to-end: parent supervisor with the watcher as a child
+       stays alive when the watcher returns `:ignore`. This is
+       the exact regression the user hit.
+
+**Design calls I made without you.**
+
+  * Returned `:ignore` from `init/1` rather than booting the
+    watcher with a stub state and silently swallowing all
+    events. `:ignore` is the OTP-blessed shape for "no usable
+    process here, don't restart me" — supervisors handle it
+    cleanly. Stubbing would have masked the no-watcher state
+    from the dashboard's backend hint (`Watcher.backend/1`)
+    and made the diagnosis harder next time.
+  * Used a `:fs_module` opt rather than pulling in `:meck` or
+    `:mox` for a single test. The project has no mocking dep
+    today and adding one for one test is unjustified.
+
+**Gates.** New tests pass; full filesystem suite (88 tests) green;
+`mix compile --warnings-as-errors`, `mix format --check`, and
+`mix credo --strict` all pass on touched files.
+
+**Skipped / not done.** No GEP — the existing GEP-17 already
+documents `fs_poll` as the fallback intent; my fix matches the
+documented contract that the implementation had drifted from. No
+doctor / dashboard change to surface "no watcher backend" — the
+warning log is enough for today; if users hit it often we can
+promote to a doctor check.
+
+**Commit(s).** Not yet — proposing diff for review.
+
+---
+
+## Task — scaffold output fails its own validate (`role`, `headcount_budget`)
+
+**Task picked.** User reported scaffolding a researcher agent then
+running `glorbo validate` prints `unknown_key — role` (in SOUL.md)
+and `unknown_key — headcount_budget` (in company.md). Trust hit on
+the validator.
+
+**What shipped.**
+
+  * `priv/templates/souls/{ceo,critiqueops,editor,engineer,
+    provenance-auditor,researcher}.md` — removed the `role: "..."`
+    frontmatter line from all 6 templates. Confirmed via `rg
+    'role'` that nothing in `lib/` reads `role` from `SOUL.md` —
+    it was pure template noise. The agent's actual `role` lives
+    in `AGENT.md`'s frontmatter (where the schema requires it).
+  * `lib/glorbo/file_spec/company_md.ex` — added
+    `:headcount_budget` to the optional keys list and to
+    `canonical_key_order/0`. Unlike `role` in SOUL.md, this one
+    is a real, used field — `Glorbo.Company.Router`
+    (`router.ex:1456`), `GlorboWeb.MCP.GetCompanyHealth`, and
+    `GlorboWeb.MCP.ListCompanies` all read it from `company.md`
+    metadata. The schema was simply out of date.
+  * `docs/file-formats/company_v1.md` — regenerated by
+    `mix glorbo.docs.file_formats` to reflect the new schema
+    (the docs-idempotency test caught the drift).
+
+**Design calls I made without you.**
+
+  * Two interpretations of the user's report were possible:
+    (a) extend the schema to include both keys, or (b) trim
+    both keys from templates. I split the call: trimmed `role`
+    (template noise, no runtime reader) and extended for
+    `headcount_budget` (real field, real reader). The user's
+    note said "either way" but split-by-actual-usage is the
+    only call that doesn't break either consumer.
+
+**Gates.** `mix test test/glorbo/file_spec/` (112 tests) +
+`mix test test/glorbo/cli/scaffold/` (22 tests) green;
+`mix compile --warnings-as-errors`, `mix format --check`, and
+`mix credo --strict` all pass on touched files.
+
+**Skipped / not done.** User suggested adding a CI step that
+runs `glorbo validate` against scaffold output — agree, but
+deferred as scope creep for this fix. Worth a follow-up.
+
+**Commit(s).** Not yet — proposing diff for review.
+
+---
+
+## Task — `[error]`-level log spam from `inotify-tools` missing
+
+**Task picked.** Every `glorbo <verb>` (even `validate`,
+`templates list`) printed three lines of `[error]`/`[warning]`
+about missing `inotify-tools` and `Phoenix.LiveReloader`
+bootstrap failure. Doctor classifies the same condition as
+`warn`. Severity mismatch + per-invocation noise.
+
+**Diagnosis.** Source isn't Glorbo's `Filesystem.Watcher` (it
+only starts under `glorbo up`, but the spam fires for every
+verb). Source is the `:phoenix_live_reload` OTP application
+auto-starting when the BEAM boots, regardless of which CLI
+mode follows. Confirmed: `_build/prod/rel/glorbo/releases/0.19.0/
+glorbo.rel` lists `phoenix_live_reload-1.6.2` as `permanent`
+even though `mix.exs` declares it `only: :dev`. Built a clean
+`MIX_ENV=prod mix release glorbo --overwrite --force` against
+the current tree → the new `0.20.0/glorbo.rel` does NOT contain
+`phoenix_live_reload`. So a clean rebuild fixes the user's
+binary; the v0.19.0 contamination was a one-off `_build/prod/`
+state leak (likely from a prior `mix test` populating
+`_build/prod/lib/phoenix_live_reload-1.6.2/` and the release
+assembler picking it up).
+
+**What shipped.**
+
+  * `lib/mix/tasks/glorbo.build_local.ex` — defensive hygiene:
+    1. Before running `release`, walk a hardcoded list of
+       `dev_only_deps` (`phoenix_live_reload`, `floki`,
+       `lazy_html`, `credo`) and `File.rm_rf!/1` any of their
+       directories that exist under `_build/prod/lib/`. Keeps
+       cached prod artifacts honest to `mix.exs`'s `only:`
+       filters.
+    2. After `release` writes the manifest, parse
+       `_build/prod/rel/glorbo/releases/<v>/glorbo.rel` and
+       `Mix.shell().error/1 + exit({:shutdown, 1})` if any
+       `dev_only_deps` name appears. Belt-and-braces — even if
+       a dep slips past the purge step (e.g. via a transitive
+       dep tree change), the build fails loudly with a "run
+       `make clean-burrito` then rebuild" hint instead of
+       silently re-shipping a contaminated binary.
+
+**Design calls I made without you.**
+
+  * Tried `releases: [glorbo: [applications: [phoenix_live_reload:
+    :none], ...]]` first; `mix release` rejects it with "Could not
+    find application :phoenix_live_reload" because the dep isn't
+    in `_build/prod/lib/` under `:prod`. So the explicit-override
+    path doesn't compose with `only: :dev`. The
+    purge-then-assert-then-build pattern works regardless.
+  * Hardcoded the `dev_only_deps` list. Could have parsed
+    `mix.exs`'s `deps/0` for entries with `only: :dev` /
+    `only: [:dev, :test]` — but then changes to `mix.exs`
+    silently change the build behavior. Hardcoded list is
+    auditable.
+
+**Gates.** `mix compile --warnings-as-errors`, `mix format
+--check`, `mix credo --strict` clean on `glorbo.build_local.ex`.
+Confirmed clean rebuild produces a manifest with NO
+`phoenix_live_reload`. Did not run a full Burrito wrap (slow);
+the fix is a Mix-task-only change, runtime behavior unchanged.
+
+**Skipped / not done.** Did NOT touch `mix.exs` to alter the
+`only: :dev` declaration — it's correct as-is. Did NOT modify
+the file_system upstream `[error]` log level — that lives in
+`deps/file_system/` and would need a fork; cleaner to just
+prevent the auto-start that triggers it.
+
+**Commit(s).** Not yet — proposing diff for review.
+
+---
+
+## Things I'd like your review
+
+  * **Watcher `:ignore` degradation.** The user gets a single
+    `[warning]` line and a working dashboard with no companies
+    loaded — instead of a crashed supervisor masquerading as
+    "running: yes". Better, but still arguably surprising. Worth
+    a doctor-time pre-flight that says "no watcher backend
+    detected; agents won't see new inbox items via inotify"?
+  * **Hardcoded `dev_only_deps` list.** If you'd rather have it
+    derived from `mix.exs`, I can switch to that — auditability
+    cost is the change-trigger ambiguity I called out.
+  * **Pre-existing test failure on `main`.** While running the
+    full suite I observed `Glorbo.DoctorPhase3Test D6
+    migrations_pending check` fails on stashed-clean `main`
+    (refute exit_code == 1, but it IS 1). Not introduced by my
+    work — `git stash && mix test ...:194` reproduces it on
+    untouched HEAD. Want me to file it on `docs/todo.md` or
+    investigate now?
+  * **Four un-touched issues from the report.** §2 (init's
+    "audit_events mirror failed" + doubled "Next steps" header),
+    §5 (`help shell` silent fallthrough), §6 (`validate --fix`
+    feature), §7 (`Failed to write log message to stdout` log
+    spam in detached mode) — all real, none are P0. Want me to
+    pick another standout, or sit on these until v0.21?

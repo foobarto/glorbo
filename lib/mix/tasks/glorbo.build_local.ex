@@ -26,6 +26,21 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
   @symlink_name "glorbo"
   @target_rel "burrito_out/glorbo_linux_x86_64"
 
+  # Deps with `only: :dev` / `only: :test` in `mix.exs`. If any of these
+  # leak into `_build/prod/lib/` (most often because a prior `mix test`
+  # or `mix iex -S` run under `:dev` populated them and Mix's release
+  # assembler then re-uses the cached artifacts), they end up in the
+  # release `.rel` manifest as `permanent` and auto-start at every CLI
+  # invocation. `phoenix_live_reload` is the most visible offender: its
+  # Application start callback calls `FileSystem.start_link/1` which
+  # emits three lines of `[error]`/`[warning]` on hosts without
+  # `inotify-tools` — for every `glorbo` verb, including ones that
+  # don't need a watcher (`glorbo validate`, `glorbo templates list`).
+  # Wiping these dirs before `mix release` runs guarantees the prod
+  # release reflects `mix.exs`'s `only:` filters, not `_build/prod/`'s
+  # contamination history.
+  @dev_only_deps ~w(phoenix_live_reload floki lazy_html credo)
+
   @impl Mix.Task
   def run(_argv) do
     # Burrito keeps the extracted release under
@@ -43,6 +58,8 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
       Mix.shell().info("cleared burrito cache at #{burrito_cache}")
     end
 
+    purge_dev_only_artifacts!()
+
     prev_env = Mix.env()
 
     try do
@@ -56,6 +73,8 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     root = File.cwd!()
     target = Path.join(root, @target_rel)
 
+    assert_no_dev_only_in_manifest!(root)
+
     if File.exists?(target) do
       link_path = Path.join(root, @symlink_name)
       _ = File.rm(link_path)
@@ -64,6 +83,52 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     else
       Mix.shell().error("Expected #{@target_rel} after release build, but it's missing.")
       exit({:shutdown, 1})
+    end
+  end
+
+  defp purge_dev_only_artifacts! do
+    prod_lib = Path.expand("_build/prod/lib")
+
+    Enum.each(@dev_only_deps, fn dep ->
+      path = Path.join(prod_lib, dep)
+
+      if File.dir?(path) do
+        File.rm_rf!(path)
+        Mix.shell().info("purged dev-only #{dep} from #{prod_lib}/")
+      end
+    end)
+  end
+
+  # Belt-and-braces: even after `purge_dev_only_artifacts!/0` runs, an
+  # earlier release may have written a `.rel` manifest that still lists
+  # a dev-only app as `permanent`. Read the manifest matching the
+  # current `mix.exs` version and fail loudly if any forbidden name
+  # appears, so we never re-ship a contaminated binary.
+  defp assert_no_dev_only_in_manifest!(root) do
+    version = Mix.Project.config()[:version]
+
+    rel_path =
+      Path.join([root, "_build", "prod", "rel", "glorbo", "releases", version, "glorbo.rel"])
+
+    case File.read(rel_path) do
+      {:ok, body} ->
+        offenders = Enum.filter(@dev_only_deps, &String.contains?(body, "{#{&1},"))
+
+        unless offenders == [] do
+          Mix.shell().error(
+            "release manifest at #{rel_path} contains dev-only apps: " <>
+              Enum.join(offenders, ", ") <>
+              ". Run `make clean-burrito` then rebuild."
+          )
+
+          exit({:shutdown, 1})
+        end
+
+      {:error, _} ->
+        # Manifest missing — `release` will already have errored and
+        # the next File.exists? check at @target_rel will surface a
+        # clearer message.
+        :ok
     end
   end
 end

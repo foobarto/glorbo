@@ -29,6 +29,12 @@ defmodule Glorbo.FileSpec.CompanyMd do
         :goals,
         :icon,
         :budget,
+        # `Glorbo.Company.Router.read_headcount_budget/1` reads this to
+        # gate `proposal/v1 hire` auto-approvals (router.ex §1456).
+        # MCP `get_company_health` and `list_companies` also surface
+        # the value. Default cap is read from disk; absence means "no
+        # auto-approve under cap" (Director must approve every hire).
+        :headcount_budget,
         :template,
         :template_version,
         :provider_pin,
@@ -55,6 +61,7 @@ defmodule Glorbo.FileSpec.CompanyMd do
       :mission,
       :icon,
       :budget,
+      :headcount_budget,
       :template,
       :template_version,
       :provider_pin,

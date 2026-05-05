@@ -102,52 +102,89 @@ defmodule Glorbo.Filesystem.Watcher do
     company_dir = Path.join([base, "companies", company])
     File.mkdir_p!(company_dir)
 
-    {pid, backend} = start_backend(company_dir)
-    FileSystem.subscribe(pid)
-    # WR-15: monitor the inotify subprocess so we stop (not silently idle)
-    # when it dies — e.g. when fs.inotify.max_user_watches is exceeded.
-    fs_ref = Process.monitor(pid)
+    fs_module = Keyword.get(opts, :fs_module, FileSystem)
 
-    if backend == :fs_poll do
-      Logger.warning(
-        "[watcher/#{company}] inotifywait not found — falling back to polling (~2s). " <>
-          "Performance hit on large trees; install inotify-tools for realtime updates."
-      )
+    case start_backend(company_dir, fs_module) do
+      :ignore ->
+        # Both the platform default (inotify on Linux) and the FSPoll
+        # fallback refused to start — typically `inotify-tools` missing
+        # AND fs_poll itself failing to bootstrap. Doctor classifies the
+        # missing dep as a `warn`, not a blocker, so degrade gracefully:
+        # return `:ignore` so the company supervisor still boots without
+        # filesystem watching. Live-reload, watcher-bridge history, and
+        # PubSub `:file_event` broadcasts are inactive until the user
+        # installs the platform watcher dep, but every other company
+        # subsystem (Router, AuditLog, Scheduler, agents) keeps running.
+        Logger.warning(
+          "[watcher/#{company}] no usable filesystem backend; live-reload disabled. " <>
+            "Install inotify-tools (Linux) or equivalent to re-enable filesystem events."
+        )
+
+        :ignore
+
+      {pid, backend} ->
+        fs_module.subscribe(pid)
+        # WR-15: monitor the inotify subprocess so we stop (not silently idle)
+        # when it dies — e.g. when fs.inotify.max_user_watches is exceeded.
+        fs_ref = Process.monitor(pid)
+
+        if backend == :fs_poll do
+          Logger.warning(
+            "[watcher/#{company}] inotifywait not found — falling back to polling (~2s). " <>
+              "Performance hit on large trees; install inotify-tools for realtime updates."
+          )
+        end
+
+        {:ok,
+         %{
+           company: company,
+           base: base,
+           dir: company_dir,
+           fs_pid: pid,
+           fs_ref: fs_ref,
+           backend: backend,
+           pending: %{},
+           pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
+           reindex_fun: Keyword.get(opts, :reindex_fun, &Reindex.mark_dirty/2)
+         }}
     end
-
-    {:ok,
-     %{
-       company: company,
-       base: base,
-       dir: company_dir,
-       fs_pid: pid,
-       fs_ref: fs_ref,
-       backend: backend,
-       pending: %{},
-       pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub),
-       reindex_fun: Keyword.get(opts, :reindex_fun, &Reindex.mark_dirty/2)
-     }}
   end
 
   # Try the platform default (inotify on Linux). If that fails (no
   # inotifywait on PATH, or non-Linux dev with no supported backend),
   # fall back to the always-available FSPoll. Users on broken kernels
   # or minimal containers get a slower, noisier but functional path.
-  defp start_backend(company_dir) do
-    case FileSystem.start_link(dirs: [company_dir], recursive: true) do
+  #
+  # FileSystem.start_link/1 can return three shapes: {:ok, pid},
+  # {:error, _}, or `:ignore` (the third when the worker's own init
+  # returns `:ignore` — e.g. fs_inotify failing to bootstrap on a host
+  # without inotify-tools). Treat `:ignore` and `{:error, _}` as the
+  # same "primary unavailable" signal and try fs_poll. If fs_poll
+  # ALSO refuses (rare — usually a permissions or argv problem), return
+  # `:ignore` so the caller can decide how to degrade.
+  defp start_backend(company_dir, fs_module) do
+    case fs_module.start_link(dirs: [company_dir], recursive: true) do
       {:ok, pid} ->
         {pid, default_backend()}
 
-      {:error, _reason} ->
-        {:ok, pid} =
-          FileSystem.start_link(
-            dirs: [company_dir],
-            recursive: true,
-            backend: :fs_poll,
-            backend_opts: [interval: 2_000]
-          )
+      :ignore ->
+        start_poll_backend(company_dir, fs_module)
 
-        {pid, :fs_poll}
+      {:error, _reason} ->
+        start_poll_backend(company_dir, fs_module)
+    end
+  end
+
+  defp start_poll_backend(company_dir, fs_module) do
+    case fs_module.start_link(
+           dirs: [company_dir],
+           recursive: true,
+           backend: :fs_poll,
+           backend_opts: [interval: 2_000]
+         ) do
+      {:ok, pid} -> {pid, :fs_poll}
+      :ignore -> :ignore
+      {:error, _reason} -> :ignore
     end
   end
 
