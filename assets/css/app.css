@@ -288,65 +288,8 @@ button { font-family: inherit; font-size: inherit; }
 .gl-topbar__brand-glyph { color: var(--gl-accent); }
 .gl-topbar__sep { color: var(--gl-fg-ghost); }
 .gl-topbar__path { color: var(--gl-fg-muted); }
-/* Company picker — renders inline with the `~/.glorbo/companies/`
- * breadcrumb (design mock 20) so the company slug reads like the
- * next path segment. No box, no raised background; the ▾ chevron
- * is the only affordance. Hover reveals a subtle bg/underline. */
-.gl-topbar__picker {
-  color: var(--gl-fg);
-  padding: 2px 4px;
-  border: 0;
-  background: transparent;
-  font-family: inherit;
-  font-size: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 2px;
-  margin-left: -4px;
-}
-.gl-topbar__picker:hover,
-.gl-topbar__picker:focus-within {
-  background: var(--gl-surface-raised);
-}
-.gl-topbar__picker::after {
-  content: "▾";
-  color: var(--gl-fg-subtle);
-  font-size: 10px;
-}
-.gl-topbar__picker-select {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  padding: 0;
-  appearance: none;
-  /* Drives the native popup's hover/selected highlight color in
-   * Chromium and Firefox; without this the browser picks an OS-
-   * default blue that washes out against the panel's dark surface. */
-  accent-color: var(--gl-accent);
-  /* Native popups read the select's own colors when rendering the
-   * listbox. `color-scheme: dark` makes Chrome/Firefox open a
-   * dark-themed popup with light text and a readable selected row
-   * instead of the default white-on-blue. */
-  color-scheme: dark;
-}
-.gl-topbar__picker-select:focus { outline: none; }
-/* The native listbox inherits these on the popup options. Setting a
- * solid background prevents the transparent topbar from showing
- * through, and explicit text/option-bg colors keep contrast readable
- * on hover and selection across Chromium / Firefox / WebKit. */
-.gl-topbar__picker-select option {
-  background: var(--gl-surface);
-  color: var(--gl-fg);
-}
-.gl-topbar__picker-select option:checked,
-.gl-topbar__picker-select option:hover {
-  background: var(--gl-surface-raised);
-  color: var(--gl-fg);
-}
+.gl-topbar__path:hover { color: var(--gl-fg); }
+.gl-topbar__path-company { color: var(--gl-fg); }
 .gl-topbar__version { color: var(--gl-fg-subtle); }
 .gl-topbar__spacer { flex: 1; }
 .gl-topbar__kbd {
@@ -2855,6 +2798,31 @@ button { font-family: inherit; font-size: inherit; }
   background: var(--gl-accent-bg);
   padding: 0 3px;
   border-radius: 2px;
+}
+.gl-mention-menu {
+  position: fixed;
+  z-index: var(--glorbo-z-overlay);
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: var(--gl-surface-raised);
+  border: 1px solid var(--gl-border-strong);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  font-family: var(--gl-ff-mono);
+  font-size: 12px;
+  color: var(--gl-fg);
+}
+.gl-mention-menu[hidden] { display: none; }
+.gl-mention-menu__row {
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--gl-accent);
+  white-space: nowrap;
+}
+.gl-mention-menu__row--active,
+.gl-mention-menu__row:hover {
+  background: var(--gl-accent-bg);
+  color: var(--gl-fg);
 }
 .gl-compose {
   display: flex;

@@ -165,6 +165,40 @@ defmodule GlorboWeb.ActionsTest do
       refute "agent.wake" in actions
     end
 
+    test "director DM wakes the counterparty without requiring an explicit @mention",
+         %{base: base, audit: audit} do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      File.write!(
+        Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"]),
+        "# DM\n"
+      )
+
+      assert :ok =
+               Actions.post_message(
+                 "acme",
+                 "dm-director--ceo",
+                 "Can you check this?",
+                 base: base,
+                 audit: audit
+               )
+
+      mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+      assert File.dir?(mentions_dir)
+
+      [file] = File.ls!(mentions_dir)
+      assert String.ends_with?(file, "-dm-director--ceo.md")
+
+      content = File.read!(Path.join(mentions_dir, file))
+      assert content =~ ~s(channel: "dm-director--ceo")
+      assert content =~ ~s(from: "director")
+      assert content =~ "Can you check this?"
+
+      actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
+      assert "chat.post" in actions
+      assert "agent.wake" in actions
+    end
+
     # T6 — MCP-originated @mention must stamp the actual actor (`mcp:<client>`)
     # in the mention file frontmatter, not a hardcoded "director". A
     # remote MCP client previously could make inbox mentions claim

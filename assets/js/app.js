@@ -100,8 +100,8 @@ const NAV_MAP = {
 function currentCompanySlug() {
   const urlMatch = window.location.pathname.match(/^\/companies\/([a-z][a-z0-9_-]{0,63})/)
   if (urlMatch) return urlMatch[1]
-  const picker = document.querySelector(".gl-topbar__picker-select")
-  return picker ? picker.value : null
+  const topbarCompany = document.querySelector(".gl-topbar")?.dataset.currentCompany
+  return topbarCompany || null
 }
 let gPrefixActive = false
 let gPrefixTimer = null
@@ -743,17 +743,216 @@ const ChatDrawer = {
   },
 }
 
+function collectMentionAgents() {
+  const co = currentCompanySlug()
+  if (!co) return []
+
+  const agents = []
+  const agentPrefix = `/companies/${co}/agents/`
+  const dmPrefix = `/companies/${co}/dms/`
+
+  document.querySelectorAll(`a[href^="${agentPrefix}"]`).forEach((a) => {
+    const href = a.getAttribute("href") || ""
+    const slug = href.slice(agentPrefix.length).split(/[/?#]/)[0]
+    if (slug) agents.push(slug)
+  })
+
+  document.querySelectorAll(`a[href^="${dmPrefix}"]`).forEach((a) => {
+    const href = a.getAttribute("href") || ""
+    const slug = href.slice(dmPrefix.length).split(/[/?#]/)[0]
+    if (slug) agents.push(slug)
+  })
+
+  const dmMatch = window.location.pathname.match(/\/channels\/dm-director--([a-z0-9-]+)/)
+  if (dmMatch) agents.push(dmMatch[1])
+
+  return Array.from(new Set(agents)).sort()
+}
+
+function mentionToken(el) {
+  if (typeof el.selectionStart !== "number") return null
+  const pos = el.selectionStart
+  if (pos !== el.selectionEnd) return null
+
+  const before = el.value.slice(0, pos)
+  const match = before.match(/(^|[^a-zA-Z0-9_-])@([a-z0-9-]{0,64})$/)
+  if (!match) return null
+
+  return {
+    start: pos - match[2].length - 1,
+    end: pos,
+    query: match[2],
+  }
+}
+
+function attachMentionAutocomplete(el) {
+  const menu = document.createElement("ul")
+  menu.className = "gl-mention-menu"
+  menu.setAttribute("role", "listbox")
+  menu.hidden = true
+  document.body.appendChild(menu)
+
+  let items = []
+  let cursor = 0
+  let activeToken = null
+
+  const hide = () => {
+    menu.hidden = true
+    menu.innerHTML = ""
+    activeToken = null
+    items = []
+    cursor = 0
+  }
+
+  const position = () => {
+    if (menu.hidden) return
+
+    const rect = el.getBoundingClientRect()
+    const width = Math.max(160, Math.min(rect.width, 260))
+    menu.style.minWidth = `${width}px`
+    menu.style.left = `${Math.max(8, rect.left)}px`
+    menu.style.top = `${rect.bottom + 4}px`
+
+    const menuRect = menu.getBoundingClientRect()
+    if (menuRect.bottom > window.innerHeight - 8) {
+      menu.style.top = `${Math.max(8, rect.top - menuRect.height - 4)}px`
+    }
+  }
+
+  const render = () => {
+    const token = mentionToken(el)
+    if (!token) {
+      hide()
+      return
+    }
+
+    const query = token.query.toLowerCase()
+    const matches = collectMentionAgents()
+      .filter((slug) => slug.startsWith(query))
+      .slice(0, 8)
+
+    if (matches.length === 0) {
+      hide()
+      return
+    }
+
+    activeToken = token
+    items = matches
+    cursor = Math.min(cursor, items.length - 1)
+    menu.innerHTML = items
+      .map(
+        (slug, i) => `
+        <li
+          class="gl-mention-menu__row ${i === cursor ? "gl-mention-menu__row--active" : ""}"
+          data-idx="${i}"
+          role="option"
+          aria-selected="${i === cursor ? "true" : "false"}"
+        >
+          @${escapeHtml(slug)}
+        </li>`
+      )
+      .join("")
+    menu.hidden = false
+    position()
+  }
+
+  const commit = (slug) => {
+    if (!activeToken || !slug) return
+
+    const before = el.value.slice(0, activeToken.start)
+    const after = el.value.slice(activeToken.end)
+    const needsSpace = after === "" || !/^\s/.test(after)
+    const insert = `@${slug}${needsSpace ? " " : ""}`
+    const nextPos = before.length + insert.length
+
+    el.value = before + insert + after
+    el.focus()
+    el.setSelectionRange(nextPos, nextPos)
+    el.dispatchEvent(new Event("input", {bubbles: true}))
+    hide()
+  }
+
+  const move = (delta) => {
+    if (items.length === 0) return
+    cursor = (cursor + delta + items.length) % items.length
+    render()
+  }
+
+  const onInput = () => render()
+  const onClick = () => render()
+  const onKeydown = (e) => {
+    if (menu.hidden) return
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      move(1)
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      move(-1)
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault()
+      commit(items[cursor])
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      hide()
+    }
+  }
+  const onMenuMouseDown = (e) => {
+    const row = e.target.closest(".gl-mention-menu__row")
+    if (!row) return
+    e.preventDefault()
+    commit(items[parseInt(row.dataset.idx, 10)])
+  }
+  const onDocumentClick = (e) => {
+    if (e.target === el || menu.contains(e.target)) return
+    hide()
+  }
+
+  el.addEventListener("input", onInput)
+  el.addEventListener("click", onClick)
+  el.addEventListener("keyup", onInput)
+  el.addEventListener("keydown", onKeydown)
+  menu.addEventListener("mousedown", onMenuMouseDown)
+  document.addEventListener("click", onDocumentClick)
+  window.addEventListener("resize", position)
+  window.addEventListener("scroll", position, true)
+
+  return () => {
+    el.removeEventListener("input", onInput)
+    el.removeEventListener("click", onClick)
+    el.removeEventListener("keyup", onInput)
+    el.removeEventListener("keydown", onKeydown)
+    menu.removeEventListener("mousedown", onMenuMouseDown)
+    document.removeEventListener("click", onDocumentClick)
+    window.removeEventListener("resize", position)
+    window.removeEventListener("scroll", position, true)
+    menu.remove()
+  }
+}
+
+const MentionAutocomplete = {
+  mounted() {
+    this._mentionCleanup = attachMentionAutocomplete(this.el)
+  },
+  destroyed() {
+    if (this._mentionCleanup) this._mentionCleanup()
+  },
+}
+
 // Submit on Enter, newline on Shift+Enter. Autogrow height with content,
 // capped by CSS max-height. Used on the channel compose textarea so the
 // chat-app idiom works without chasing the send button.
 const SubmitOnEnter = {
   mounted() {
+    this._mentionCleanup = attachMentionAutocomplete(this.el)
+
     const autogrow = () => {
       this.el.style.height = "auto"
       this.el.style.height = this.el.scrollHeight + "px"
     }
     this.el.addEventListener("input", autogrow)
     this.el.addEventListener("keydown", (e) => {
+      if (e.defaultPrevented) return
       if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         if (this.el.value.trim() !== "") {
@@ -766,6 +965,9 @@ const SubmitOnEnter = {
   updated() {
     this.el.style.height = "auto"
     this.el.style.height = this.el.scrollHeight + "px"
+  },
+  destroyed() {
+    if (this._mentionCleanup) this._mentionCleanup()
   },
 }
 
@@ -873,7 +1075,7 @@ const ClockTick = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, SubmitOnEnter, SubmitOnCtrlEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, MentionAutocomplete, SubmitOnEnter, SubmitOnCtrlEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

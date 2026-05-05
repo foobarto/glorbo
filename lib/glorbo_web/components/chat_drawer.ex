@@ -120,6 +120,7 @@ defmodule GlorboWeb.Components.ChatDrawer do
             type="text"
             name="body"
             id="gl-chat-drawer-input"
+            phx-hook="MentionAutocomplete"
             maxlength="10240"
             class="gl-chat-drawer__input"
             placeholder=""

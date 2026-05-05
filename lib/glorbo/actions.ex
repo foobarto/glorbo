@@ -99,7 +99,9 @@ defmodule Glorbo.Actions do
           # already durably on disk + audited.
           _ = maybe_rotate_channel(company, path, channel, audit)
 
-          # Mentions wake the named agent(s). Mirrors the
+          # Mentions wake the named agent(s). Director DMs also wake
+          # the DM counterparty even when the body does not include an
+          # explicit @slug. Mirrors the
           # Glorbo.Company.Router mention-write shape so the downstream
           # Agent.Server treats it identically (same inbox/mentions/
           # path + `agent.wake` audit with `trigger: "mention"`).
@@ -107,7 +109,7 @@ defmodule Glorbo.Actions do
           # frontmatter so MCP-originated posts don't end up claiming
           # `from: "director"`.
           _ =
-            route_mentions(
+            route_chat_triggers(
               base,
               company,
               channel,
@@ -242,14 +244,34 @@ defmodule Glorbo.Actions do
   @mention_regex ~r/@([a-z][a-z0-9_-]{0,63})/
 
   defp route_mentions(base, company, channel, body, ts, audit, actor) do
-    @mention_regex
-    |> Regex.scan(body, capture: :all_but_first)
-    |> List.flatten()
-    |> Enum.uniq()
+    body
+    |> mention_targets()
     |> Enum.each(fn mentioned ->
       write_mention(base, company, channel, mentioned, body, ts, audit, actor)
     end)
   end
+
+  defp route_chat_triggers(base, company, channel, body, ts, audit, actor) do
+    body
+    |> mention_targets()
+    |> maybe_add_dm_counterparty(channel)
+    |> Enum.each(fn mentioned ->
+      write_mention(base, company, channel, mentioned, body, ts, audit, actor)
+    end)
+  end
+
+  defp mention_targets(body) do
+    @mention_regex
+    |> Regex.scan(body, capture: :all_but_first)
+    |> List.flatten()
+    |> Enum.uniq()
+  end
+
+  defp maybe_add_dm_counterparty(targets, "dm-director--" <> agent) do
+    if Glorbo.Slug.valid?(agent), do: Enum.uniq([agent | targets]), else: targets
+  end
+
+  defp maybe_add_dm_counterparty(targets, _channel), do: targets
 
   defp write_mention(base, company, channel, mentioned, body, ts, audit, actor) do
     agent_dir = Path.join([base, "companies", company, "agents", mentioned])

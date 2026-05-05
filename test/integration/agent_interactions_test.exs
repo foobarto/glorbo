@@ -517,6 +517,34 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       # just inotify — so it's reliable in tests even without watcher.
       assert_receive {:dispatched, :mention, _path}, 2_000
     end
+
+    test "posting a Director DM wakes the counterparty without @mention", ctx do
+      test_pid = self()
+
+      dispatch_fun = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, task.trigger, task.task_path})
+        {:ok, %{exit_status: 0, reply: "pong", duration_ms: 0, usage: %{model: "m"}}}
+      end
+
+      _pid = boot_agent(ctx.company, "ceo", dispatch_fun, base: ctx.base)
+
+      channels_dir = Path.join([ctx.co_root, "channels"])
+      File.mkdir_p!(channels_dir)
+      File.write!(Path.join(channels_dir, "dm-director--ceo.md"), "# DM\n")
+      File.mkdir_p!(Path.join([ctx.co_root, "agents", "ceo", "inbox", "mentions"]))
+
+      audit_pid = spawn_link(fn -> noop_audit_loop() end)
+
+      :ok =
+        GlorboWeb.Actions.post_message(ctx.company, "dm-director--ceo", "ping",
+          base: ctx.base,
+          audit: audit_pid
+        )
+
+      assert_receive {:dispatched, :mention, path}, 2_000
+      assert path =~ "mentions/"
+      assert path =~ "dm-director--ceo"
+    end
   end
 
   # =====================================================================

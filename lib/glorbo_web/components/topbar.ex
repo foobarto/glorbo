@@ -2,15 +2,14 @@ defmodule GlorboWeb.Components.Topbar do
   @moduledoc """
   Persistent top bar (M1 mockup alignment — see abc.zip shell.jsx:11-29).
 
-  Renders the brand, the path breadcrumb to the currently-focused
-  company directory, a company picker (HTML `<select>` that navigates
-  on change), version info (app/bwrap/kernel), the keyboard-shortcut
-  hint line, and the TWEAKS toggle button.
+  Renders the brand, the path breadcrumb for the currently-focused
+  company directory, version info (app/bwrap/kernel), the keyboard-
+  shortcut hint line, and the TWEAKS toggle button.
 
   ## Attrs
 
     * `:current_company` — slug string or nil. Drives the path
-      breadcrumb and the picker's selected option.
+      breadcrumb.
     * `:tweaks_open?` — whether the tweaks drawer is open (toggles
       the button's visual state). Defaults to false.
 
@@ -32,7 +31,6 @@ defmodule GlorboWeb.Components.Topbar do
   def topbar(assigns) do
     assigns =
       assigns
-      |> assign(:companies, list_company_slugs())
       |> assign(:app_version, app_version())
       |> assign(:bwrap_version, bwrap_version())
       |> assign(:otp_version, otp_version())
@@ -40,7 +38,7 @@ defmodule GlorboWeb.Components.Topbar do
       |> assign(:emergency_stopped?, emergency_stopped?(assigns[:current_company]))
 
     ~H"""
-    <header class="gl-topbar" role="banner">
+    <header class="gl-topbar" role="banner" data-current-company={@current_company}>
       <button
         type="button"
         id="gl-sidebar-toggle"
@@ -61,21 +59,8 @@ defmodule GlorboWeb.Components.Topbar do
         title={"All companies · base=#{GlorboWeb.LiveHelpers.display_base()}"}
       >
         {GlorboWeb.LiveHelpers.display_base()}/companies/
+        <span :if={@current_company} class="gl-topbar__path-company">{@current_company}</span>
       </.link>
-      <label :if={@companies != []} class="gl-topbar__picker">
-        <select
-          class="gl-topbar__picker-select"
-          aria-label="Switch company"
-          onchange="window.location = '/companies/' + this.value"
-        >
-          <option :for={slug <- @companies} value={slug} selected={slug == @current_company}>
-            {slug}
-          </option>
-        </select>
-      </label>
-      <span :if={@companies == []} class="gl-topbar__picker" aria-disabled="true">
-        (no companies)
-      </span>
 
       <span class="gl-topbar__sep" aria-hidden="true">│</span>
       <span class="gl-topbar__version">
@@ -152,25 +137,6 @@ defmodule GlorboWeb.Components.Topbar do
       </p>
     </div>
     """
-  end
-
-  # ---------------------------------------------------------------------------
-  # Data sources
-  # ---------------------------------------------------------------------------
-
-  defp list_company_slugs do
-    base = Glorbo.Filesystem.Hierarchy.default_root()
-    dir = Path.join(base, "companies")
-
-    case File.ls(dir) do
-      {:ok, slugs} ->
-        slugs
-        |> Enum.sort()
-        |> Enum.filter(&File.dir?(Path.join(dir, &1)))
-
-      _ ->
-        []
-    end
   end
 
   defp app_version do

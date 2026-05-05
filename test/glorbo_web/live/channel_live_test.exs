@@ -143,6 +143,23 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert html =~ "Message ceo as Director"
   end
 
+  test "posting in a DM wakes the agent without requiring @mention", %{conn: conn, base: base} do
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"]),
+      "# DM\n"
+    )
+
+    {:ok, view, _html} = live(conn, "/companies/acme/channels/dm-director--ceo")
+    render_submit(view, "post", %{"body" => "Please take a look"})
+
+    mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+    assert File.dir?(mentions_dir)
+
+    [file] = File.ls!(mentions_dir)
+    assert String.ends_with?(file, "-dm-director--ceo.md")
+    assert File.read!(Path.join(mentions_dir, file)) =~ "Please take a look"
+  end
+
   test "message body with markdown sub-header stays intact", %{conn: conn, base: base} do
     # Regression: earlier regex treated ANY `## ` as a new message boundary,
     # so a multi-step plan with `## Step 1:` got split mid-body.

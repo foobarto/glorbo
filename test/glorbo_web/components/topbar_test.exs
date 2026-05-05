@@ -1,7 +1,7 @@
 defmodule GlorboWeb.Components.TopbarTest do
   @moduledoc """
-  Topbar renders the brand, company picker, version strip, kbd hints,
-  and a disabled TWEAKS button. M1 mockup alignment (abc.zip shell.jsx).
+  Topbar renders the brand/all-companies link, version strip, kbd hints,
+  and a TWEAKS button. M1 mockup alignment (abc.zip shell.jsx).
   """
   use ExUnit.Case, async: true
 
@@ -62,6 +62,19 @@ defmodule GlorboWeb.Components.TopbarTest do
 
       expected = GlorboWeb.LiveHelpers.display_base() <> "/companies/"
       assert html =~ expected
+    end
+
+    test "does not render the old company picker dropdown" do
+      html = render_topbar(current_company: "acme")
+      refute html =~ ~s(aria-label="Switch company")
+      refute html =~ "gl-topbar__picker-select"
+    end
+
+    test "current company is shown in the all-companies breadcrumb" do
+      html = render_topbar(current_company: "acme")
+      assert html =~ ~s(data-current-company="acme")
+      assert html =~ ~s(class="gl-topbar__path-company">acme</span>)
+      assert html =~ ~s(href="/companies")
     end
 
     test "version strip includes the app version" do
