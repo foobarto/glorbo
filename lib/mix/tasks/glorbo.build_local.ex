@@ -43,6 +43,21 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
 
   @impl Mix.Task
   def run(_argv) do
+    # Two `mix release` invocations on the same checkout race on
+    # `.zig-cache/` and Burrito's `payload.foilz.xz`. The loser fails
+    # late with "FileNotFound: payload.foilz.xz" and may leave the
+    # winner's `burrito_out/` half-overwritten. Refuse to start when
+    # another build is already in flight; the other run will produce
+    # the same binary anyway.
+    refuse_if_concurrent_build!()
+
+    # Burrito unpacks the bundled ERTS to `/tmp/unpacked_erts_<hex>/`
+    # on every build (~128 MB each) and never cleans them up. Across
+    # weeks of builds this fills `/tmp` and breaks unrelated tools
+    # that share the tmpfs. Sweep entries older than one day before
+    # the new build runs.
+    purge_stale_unpacked_erts!()
+
     # Burrito keeps the extracted release under
     # `~/.local/share/.burrito/glorbo_erts-<vsn>_<app-vsn>/`. It only
     # re-extracts when the embedded payload HASH changes; the extracted
@@ -88,6 +103,58 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     else
       Mix.shell().error("Expected #{@target_rel} after release build, but it's missing.")
       exit({:shutdown, 1})
+    end
+  end
+
+  defp refuse_if_concurrent_build! do
+    my_pid = "#{System.pid()}"
+
+    case System.cmd("pgrep", ["-af", "mix release"], stderr_to_stdout: true) do
+      {output, 0} ->
+        others =
+          output
+          |> String.split("\n", trim: true)
+          |> Enum.reject(&String.contains?(&1, my_pid))
+
+        unless others == [] do
+          Mix.shell().error(
+            "refusing concurrent build — another mix release is running:\n  " <>
+              Enum.join(others, "\n  ") <>
+              "\n(Burrito's payload.foilz.xz race; wait for it to finish or kill it)"
+          )
+
+          exit({:shutdown, 1})
+        end
+
+      # pgrep exits 1 when nothing matches → no concurrent build → fine.
+      _ ->
+        :ok
+    end
+  end
+
+  defp purge_stale_unpacked_erts! do
+    case System.cmd(
+           "find",
+           [
+             "/tmp",
+             "-maxdepth",
+             "1",
+             "-name",
+             "unpacked_erts_*",
+             "-type",
+             "d",
+             "-mtime",
+             "+1",
+             "-exec",
+             "rm",
+             "-rf",
+             "{}",
+             "+"
+           ],
+           stderr_to_stdout: true
+         ) do
+      {_, 0} -> :ok
+      _ -> :ok
     end
   end
 

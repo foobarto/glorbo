@@ -10,6 +10,55 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — HTB-engagement TODO bugs B1–B6
+
+- **B1 (`acp/client.ex`)** — `absorb_update/2` now accepts both
+  `{"kind":"text","text":"…"}` and `{"kind":"agent_message_chunk",…}`
+  shapes for `session/update` events. stado emits the former; before
+  this fix every stado streaming chunk was silently dropped, leaving
+  the agent with a 0-byte reply file.
+- **B2 (`acp/client.ex`)** — default `:phase_timeout_ms` raised
+  from `30_000` to `600_000` so multi-turn ACP tool-calling sessions
+  (recon → foothold can take 5–10 min) no longer hit a phase deadline
+  mid-conversation. `@doc` updated to match the new default.
+- **B3 (`sandbox/bwrap.ex`, `agent/dispatch.ex`)** —
+  `cli_auth_bind_flags/1` honours the `mode` field declared in
+  provider TOML `auth_binds`. `:rw` emits `--bind`, `:ro` (and the
+  legacy 2-tuple) emits `--ro-bind`. Unblocks providers that need to
+  write through an auth bind (e.g. stado session-sidecar git refs,
+  claude-code `session-env/` creation).
+- **B4 (`cli/dispatcher.ex`)** — `invoke/3`'s `:acp` branch now
+  calls `build_env` and merges the result into
+  `ctx.bwrap_opts.cli_env` (with host-workspace → `/workspace`
+  rewriting), matching what the stdin path already does. Provider
+  TOML `[env]` entries now reach the sandboxed ACP CLI; previously
+  they were silently dropped, requiring wrapper-script workarounds
+  to inject API keys.
+- **B5 (`agent/dispatch.ex`, `sandbox/bwrap.ex`)** —
+  `cli_auth_bind_flags/1` accepts a 4-tuple
+  `{host, sandbox, mode, type}` and emits `--dir <sandbox>` before
+  the bind when `type == :dir`, so non-standard sandbox paths like
+  `/project` exist on the tmpfs root before bwrap tries to overlay
+  them. Legacy 2/3-tuple shapes still work.
+- **B6 (`file_spec/agent_md.ex`)** — `:allow_untracked_budget`
+  added to the `optional` list of `frontmatter_schema/0`. The runtime
+  parser, dispatch gate, and MCP tool already handled the key; only
+  the validator was warning `unknown_key`. `docs/file-formats/agent_v1.md`
+  regenerated to match.
+
+### Changed — `mix glorbo.build_local` hardening
+
+- Refuses to start if another `mix release` is running on the same
+  checkout. Prevents Burrito's `.zig-cache/` + `payload.foilz.xz`
+  race that produces a `FileNotFound` error and a half-overwritten
+  `burrito_out/`.
+- Sweeps `/tmp/unpacked_erts_*` directories older than 1 day before
+  building. Each unpack is ~128 MB and Burrito never cleans them up;
+  cumulative builds were filling the tmpfs and breaking unrelated
+  tooling.
+- `CLAUDE.md` updated to recommend `mix glorbo.build_local` over
+  plain `mix release` for local builds.
+
 ## [0.20.0] — 2026-05-04
 
 Headline: GEP-45 Phase 3 closes — full ACP transport stack
