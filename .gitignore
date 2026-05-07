@@ -119,3 +119,7 @@ graphify-out/
 # binaries (the pinned copy is operator-local).
 .bench/
 NOTES-*.md
+
+# Per-session worklog: TODO.md is operator-local, used as a running
+# punch list during dogfood sessions. Not shared history.
+TODO.md
