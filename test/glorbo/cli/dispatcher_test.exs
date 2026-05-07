@@ -633,6 +633,70 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert cli_env["GLORBO_WORKSPACE"] == "/workspace"
     end
 
+    # F6: ACP session-id persistence + resume across dispatches.
+    test "invoke/3 persists ACP session_id and threads :resume_session_id on the next call" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      first_run = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, :first, opts})
+        {:ok, %{reply: "phase 1", session_id: "uuid-stado-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      second_run = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, :second, opts})
+        {:ok, %{reply: "phase 2", session_id: "uuid-stado-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ctx = base_ctx(ws, task_id: "engagement-01")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: first_run)
+
+      assert_received {:opts_seen, :first, first_opts}
+
+      refute Keyword.has_key?(first_opts, :resume_session_id),
+             "first dispatch should have no resume id"
+
+      session_file =
+        Path.join([ws, ".glorbo", "sessions", "stado__engagement-01.txt"])
+
+      assert File.read!(session_file) == "uuid-stado-1",
+             "session file should hold the returned session_id"
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: second_run)
+
+      assert_received {:opts_seen, :second, second_opts}
+
+      assert Keyword.get(second_opts, :resume_session_id) == "uuid-stado-1",
+             "second dispatch should carry the prior session_id as resume_session_id"
+    end
+
+    test "invoke/3 skips session persistence when task_id is empty" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+        {:ok, %{reply: "ok", session_id: "would-be-persisted", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      # Empty task_id → no key → skip persistence.
+      ctx = base_ctx(ws, task_id: "")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      assert_received {:opts_seen, opts}
+
+      refute Keyword.has_key?(opts, :resume_session_id)
+
+      sessions_dir = Path.join([ws, ".glorbo", "sessions"])
+
+      refute File.dir?(sessions_dir),
+             "sessions dir should not be created when there's no stable key"
+    end
+
     test "invoke/3 wires the stado_acp usage parser with session_id + host_binary" do
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
         {:ok, %{reply: "ok", session_id: "acp-bench-7", chunks: 2, ignored_updates: 0}}

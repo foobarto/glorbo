@@ -135,6 +135,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
       chunks: 0,
       ignored_updates: 0,
       tool_summary: nil,
+      resume_session_id: Keyword.get(opts, :resume_session_id),
       audit_fun: audit_fun
     }
 
@@ -222,7 +223,21 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
 
   defp phase_session_new(state) do
     {id, state} = take_id(state)
-    request = Message.new_request(id, "session/new", %{})
+
+    # F6: stado v0.46.0 supports session resume via
+    # `session/new {"resumeSession": "<UUID>"}`. When the caller passed
+    # a prior session id (typically read from the per-task session
+    # file by the dispatcher), thread it through so the agent picks
+    # up the prior worktree + reasoning context. Without resume the
+    # agent rebuilds context from scratch on every phase.
+    params =
+      case state.resume_session_id do
+        nil -> %{}
+        "" -> %{}
+        sid when is_binary(sid) -> %{"resumeSession" => sid}
+      end
+
+    request = Message.new_request(id, "session/new", params)
 
     with :ok <- send_message(state, request),
          {:ok, msg, state} <- await_response(state, id, :session_new) do
@@ -259,6 +274,25 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
 
   defp drain_session_prompt(state, prompt_id) do
     case next_message(state, :session_prompt) do
+      # F7: stado v0.46.0 emits session/update kind=approval and blocks
+      # the turn until session/approval_response arrives. In headless
+      # dispatch we always auto-deny (allow=false, cancelled=false).
+      # Both wrapped and unwrapped wire shapes occur; intercept before
+      # absorb_update so the approval doesn't get silently counted as
+      # an ignored update.
+      {:ok, {:notification, "session/update", %{"kind" => "approval", "requestId" => req_id}},
+       state} ->
+        with {:ok, state} <- send_approval_response(state, req_id) do
+          drain_session_prompt(state, prompt_id)
+        end
+
+      {:ok,
+       {:notification, "session/update",
+        %{"update" => %{"kind" => "approval", "requestId" => req_id}}}, state} ->
+        with {:ok, state} <- send_approval_response(state, req_id) do
+          drain_session_prompt(state, prompt_id)
+        end
+
       {:ok, {:notification, "session/update", params}, state} ->
         state = absorb_update(state, params)
         drain_session_prompt(state, prompt_id)
@@ -364,6 +398,24 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     last_tool = Map.get(summary, "lastTool", "?")
     status = if Map.get(summary, "lastError", false), do: "error", else: "ok"
     "[#{count} tool call(s); last=#{last_tool}; #{status}]"
+  end
+
+  # F7: auto-deny ACP approval requests in headless dispatch. Sent as
+  # a JSON-RPC notification (no id, no expected response) per the
+  # stado v0.46.0 wire contract.
+  defp send_approval_response(state, request_id) do
+    notification =
+      Message.new_notification("session/approval_response", %{
+        "sessionId" => state.session_id,
+        "requestId" => request_id,
+        "allow" => false,
+        "cancelled" => false
+      })
+
+    case send_message(state, notification) do
+      :ok -> {:ok, state}
+      {:error, _} = err -> err
+    end
   end
 
   # ---------- transport plumbing ----------

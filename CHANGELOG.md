@@ -10,6 +10,43 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — F6: ACP `sessionId` persistence + resume across dispatches
+
+stado v0.46.0 supports `session/new {"resumeSession": "<UUID>"}` so
+the agent attaches to its prior worktree (with all reasoning and
+tool-call history) instead of rebuilding context from scratch on
+every dispatch. Glorbo previously discarded the returned `sessionId`
+after each call.
+
+`Glorbo.CLI.Dispatcher.Acp.Client.run/3` now accepts an optional
+`:resume_session_id` opt and threads it into the `session/new`
+params. `Glorbo.CLI.Dispatcher.invoke/3`'s ACP path persists the
+returned `session_id` to `<workspace>/.glorbo/sessions/<provider>__
+<task_id>.txt` after a successful dispatch, then reads it on the
+next call so the resume happens automatically — no operator
+configuration. Keyed by `(provider, task_id)` so two providers
+exercising the same task each get their own session, and persistence
+silently skips when `task_id` is empty (no sound key, no fake one
+invented).
+
+### Fixed — F7: auto-deny `kind=approval` ACP updates instead of hanging
+
+stado v0.46.0 ships `stado_ui_approve`; any wasm plugin calling it
+emits `session/update {kind: "approval", requestId: <uuid>, ...}`
+and waits for `session/approval_response`. Glorbo previously
+ignored the update — the turn hung until `phase_timeout_ms` fired
+(10 minutes), silently stalling every engagement that hit a
+plugin with an approval gate.
+
+`Glorbo.CLI.Dispatcher.Acp.Client` now intercepts `kind=approval`
+updates (both wrapped `{"update": {...}}` and unwrapped top-level
+shapes, camelCase keys) before `absorb_update` and immediately
+sends `session/approval_response {sessionId, requestId, allow:
+false, cancelled: false}`, then continues draining. This is the
+correct behaviour for headless agent dispatch — interactive
+approval (a real `allow: true` path) needs design work and lands
+under a follow-up GEP if needed.
+
 ### Fixed — F9: synthesize reply from `kind=tool_summary` on tool-only ACP turns
 
 stado v0.46.0 emits `session/update {kind: "tool_summary",

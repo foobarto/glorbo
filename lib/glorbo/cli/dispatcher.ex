@@ -103,12 +103,25 @@ defmodule Glorbo.CLI.Dispatcher do
     reply_path = Path.join(reply_dir, reply_filename)
     substitutions = Map.put(substitutions, "reply_path", reply_path)
 
+    # F6: ACP session resume. Read prior sessionId (if any) for this
+    # task+provider combination so stado/Codex/Claude-Code attach to
+    # the existing worktree instead of rebuilding context. Persist the
+    # returned id after the dispatch succeeds.
+    session_file = acp_session_file(ctx, reply_dir, provider)
+    prior_session_id = read_acp_session_id(session_file)
+
+    opts =
+      if is_binary(prior_session_id) and prior_session_id != "",
+        do: Keyword.put(opts, :resume_session_id, prior_session_id),
+        else: opts
+
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
          env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),
          enriched_ctx <- inject_env_into_bwrap_opts(ctx, env),
          {:ok, %{reply: reply_text} = acp_result} <- run_acp(provider, args, enriched_ctx, opts) do
       :ok = write_reply_file!(reply_path, reply_text, provider.reply_max_bytes, fs)
+      :ok = write_acp_session_id(session_file, Map.get(acp_result, :session_id))
 
       acp_meta = %{
         session_id: Map.get(acp_result, :session_id),
@@ -312,7 +325,12 @@ defmodule Glorbo.CLI.Dispatcher do
 
         client_opts =
           opts
-          |> Keyword.take([:phase_timeout_ms, :protocol_version, :client_info])
+          |> Keyword.take([
+            :phase_timeout_ms,
+            :protocol_version,
+            :client_info,
+            :resume_session_id
+          ])
           |> Keyword.put(:audit_fun, audit_fun_for_acp(opts))
 
         try do
@@ -810,5 +828,58 @@ defmodule Glorbo.CLI.Dispatcher do
     |> DateTime.to_iso8601(:basic)
     |> String.replace(["-", ":", "T", "Z"], "")
     |> binary_part(0, 14)
+  end
+
+  # ---------- F6: ACP session-id persistence ----------
+  #
+  # Sessions live next to the reply outbox at `<workspace>/.glorbo/
+  # sessions/<provider>__<task_id>.txt`. Keyed by (provider, task_id)
+  # so the same task across multiple dispatches reuses one stado /
+  # Codex / Claude-Code session, but two different providers running
+  # the same task each get their own. When `task_id` is missing from
+  # ctx, we skip persistence entirely — there's no sound key to use,
+  # and silently inventing one (e.g. invocation_id) defeats the
+  # purpose of resume.
+
+  defp acp_session_file(ctx, reply_dir, provider) do
+    task_id = Map.get(ctx, :task_id, "")
+    provider_name = provider.name || ""
+
+    cond do
+      not is_binary(task_id) or task_id == "" ->
+        nil
+
+      not is_binary(provider_name) or provider_name == "" ->
+        nil
+
+      true ->
+        sessions_dir = Path.expand(Path.join(reply_dir, "../sessions"))
+        Path.join(sessions_dir, "#{provider_name}__#{task_id}.txt")
+    end
+  end
+
+  defp read_acp_session_id(nil), do: nil
+
+  defp read_acp_session_id(path) do
+    case File.read(path) do
+      {:ok, content} ->
+        case String.trim(content) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp write_acp_session_id(nil, _), do: :ok
+  defp write_acp_session_id(_, nil), do: :ok
+  defp write_acp_session_id(_, ""), do: :ok
+
+  defp write_acp_session_id(path, session_id) when is_binary(session_id) do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, session_id)
+    :ok
   end
 end

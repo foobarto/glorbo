@@ -311,6 +311,139 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
 
       assert {:ok, %{reply: "real reply", chunks: 1}} = Client.run(peer_io(agent), "x")
     end
+
+    # F7: stado v0.46.0 emits kind=approval and waits for session/
+    # approval_response. In headless dispatch we always auto-deny.
+    test "auto-denies wrapped kind=approval and continues draining" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, _id, "session/prompt", %{"sessionId" => sid}} ->
+            approval =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "update" => %{
+                    "kind" => "approval",
+                    "requestId" => "req-uuid-1",
+                    "title" => "Allow shell.bash?",
+                    "body" => "rm -rf /tmp"
+                  }
+                })
+              )
+
+            [approval]
+          end,
+          fn {:notification, "session/approval_response", _params} ->
+            chunk =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => "s-mock-1",
+                  "update" => %{
+                    "kind" => "agent_message_chunk",
+                    "text" => "approved-and-continued"
+                  }
+                })
+              )
+
+            # session/prompt was request id 3 (init=1, session/new=2, prompt=3).
+            done = Framing.encode(Message.new_response(3, %{}))
+            [chunk, done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: "approved-and-continued"}} = Client.run(peer_io(agent), "x")
+
+      assert Enum.any?(peer_inbound(agent), fn
+               {:notification, "session/approval_response",
+                %{
+                  "sessionId" => "s-mock-1",
+                  "requestId" => "req-uuid-1",
+                  "allow" => false,
+                  "cancelled" => false
+                }} ->
+                 true
+
+               _ ->
+                 false
+             end),
+             "glorbo did not send session/approval_response"
+    end
+
+    # F6: stado v0.46.0 supports session resume via resumeSession.
+    test "passes resumeSession in session/new params when :resume_session_id opt set" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          fn {:request, id, "session/new", params} ->
+            assert params == %{"resumeSession" => "prior-uuid-abc"},
+                   "session/new params should carry resumeSession"
+
+            [Framing.encode(Message.new_response(id, %{"sessionId" => "prior-uuid-abc"}))]
+          end,
+          prompt_with_chunks_then_done(["resumed"]),
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: "resumed", session_id: "prior-uuid-abc"}} =
+               Client.run(peer_io(agent), "x", resume_session_id: "prior-uuid-abc")
+    end
+
+    test "session/new params is empty map when :resume_session_id is nil/absent" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          fn {:request, id, "session/new", params} ->
+            assert params == %{}, "session/new params should be empty when no resume"
+            [Framing.encode(Message.new_response(id, %{"sessionId" => "fresh-1"}))]
+          end,
+          prompt_with_chunks_then_done(["fresh"]),
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{session_id: "fresh-1"}} = Client.run(peer_io(agent), "x")
+    end
+
+    test "auto-denies unwrapped kind=approval (top-of-params shape)" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, _id, "session/prompt", %{"sessionId" => sid}} ->
+            # Unwrapped: kind/requestId at the top of params.
+            approval =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "kind" => "approval",
+                  "requestId" => "req-uuid-2",
+                  "title" => "Allow file write?",
+                  "body" => "/etc/passwd"
+                })
+              )
+
+            [approval]
+          end,
+          fn {:notification, "session/approval_response", _params} ->
+            done = Framing.encode(Message.new_response(3, %{}))
+            [done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: ""}} = Client.run(peer_io(agent), "x")
+
+      assert Enum.any?(peer_inbound(agent), fn
+               {:notification, "session/approval_response",
+                %{"requestId" => "req-uuid-2", "allow" => false, "cancelled" => false}} ->
+                 true
+
+               _ ->
+                 false
+             end)
+    end
   end
 
   # ----- error paths -----
