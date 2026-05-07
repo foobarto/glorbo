@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — `/activity` cross-company live activity feed
+
+Localforge bridge #3. New top-level LiveView at `/activity`
+subscribes to a single fan-in PubSub topic (`audit:all`) and
+renders the most-recent N audit appends from every company in one
+live stream. Each row carries a company tag that links back to the
+per-company audit page; filters cover company (dropdown), actor,
+action, and free-text against actor + action + target + detail.
+
+`Glorbo.Company.AuditLog.broadcast_append/2` now mirrors every
+per-company `{:audit_append, record}` to the new global topic with
+the company slug attached: `{:audit_append, company, record}`.
+The existing per-company `company:<co>:audit` topic is unchanged so
+`AuditLive` keeps working without modification.
+
+Sidebar nav picks up an "Activity" entry under the global section
+alongside Providers / Benchmarks / Costs.
+
 ### Fixed — F5: auto-cancel `kind=choice` ACP updates instead of hanging
 
 Same shape as F7 — stado v0.46.0 emits `session/update {kind:

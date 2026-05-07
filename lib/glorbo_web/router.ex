@@ -96,6 +96,10 @@ defmodule GlorboWeb.Router do
     live "/companies/:company/braindump", BrainDumpLive
     # #259 — CSV export of the current month's audit log.
     get "/companies/:company/audit.csv", AuditExportController, :export
+    # Localforge bridge #3: unified live activity feed. Subscribes to
+    # the global `audit:all` topic; one row per audit append across
+    # every company.
+    live "/activity", ActivityLive
     live "/health", HealthLive
     # GEP-8 — provider registry dashboard.
     live "/providers", ProvidersLive

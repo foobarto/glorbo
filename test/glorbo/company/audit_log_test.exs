@@ -221,6 +221,7 @@ defmodule Glorbo.Company.AuditLogTest do
     # Test 9 — _system audit does not broadcast (avoid noisy global topic).
     test "Test 9: :_system audit does not broadcast", %{name: name} do
       Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:_system:audit")
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "audit:all")
 
       :ok =
         AuditLog.append(name, %{
@@ -230,6 +231,27 @@ defmodule Glorbo.Company.AuditLogTest do
         })
 
       refute_receive {:audit_append, _}, 200
+      refute_receive {:audit_append, _, _}, 200
+    end
+
+    # Bridge #3 (localforge): every per-company append also fans out
+    # to a single `audit:all` topic carrying `{:audit_append, company,
+    # record}` so `GlorboWeb.ActivityLive` can subscribe once and see
+    # every company's events.
+    test "appends mirror to the global `audit:all` topic with the company tag",
+         %{name: name} do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "audit:all")
+
+      :ok =
+        AuditLog.append(name, %{
+          company: "acme",
+          actor: "director",
+          action: "task.create",
+          target: "projects/website/tasks/website-07.md"
+        })
+
+      assert_receive {:audit_append, "acme", record}, 500
+      assert record.action == "task.create"
     end
   end
 

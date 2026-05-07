@@ -25,7 +25,7 @@ defmodule GlorboWeb.Components.Sidebar do
     * `:current_company` — slug string or nil.
     * `:active` — one of `:overview | :kanban | :chat |
       :inbox | :audit | :goals | :skills | :braindump | :proposals |
-      :providers | :benchmarks | :costs | nil`; drives the active-row highlight.
+      :providers | :benchmarks | :costs | :activity | nil`; drives the active-row highlight.
   """
   use Phoenix.Component
   use GlorboWeb, :verified_routes
@@ -48,7 +48,8 @@ defmodule GlorboWeb.Components.Sidebar do
     {:braindump, "✎", "Brain dump", :company},
     {:providers, "⎔", "Providers", :global},
     {:benchmarks, "⚖", "Benchmarks", :global},
-    {:costs, "$", "Costs", :global}
+    {:costs, "$", "Costs", :global},
+    {:activity, "⌁", "Activity", :global}
   ]
 
   def sidebar(assigns) do
@@ -227,6 +228,7 @@ defmodule GlorboWeb.Components.Sidebar do
   defp nav_href(:providers, _), do: ~p"/providers"
   defp nav_href(:benchmarks, _), do: ~p"/benchmarks"
   defp nav_href(:costs, _), do: ~p"/costs"
+  defp nav_href(:activity, _), do: ~p"/activity"
   defp nav_href(:overview, nil), do: ~p"/companies"
   defp nav_href(:overview, slug), do: ~p"/companies/#{slug}"
   defp nav_href(_, nil), do: "#"

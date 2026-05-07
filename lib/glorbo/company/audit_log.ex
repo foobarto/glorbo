@@ -168,6 +168,18 @@ defmodule Glorbo.Company.AuditLog do
     _ =
       Phoenix.PubSub.broadcast(Glorbo.PubSub, "company:#{company}:audit", {:audit_append, record})
 
+    # Mirror to the global "audit:all" topic carrying the company
+    # slug alongside the record. `GlorboWeb.ActivityLive` subscribes
+    # to this single fan-in topic so it doesn't have to maintain N
+    # per-company subscriptions and re-subscribe when companies are
+    # added/removed.
+    _ =
+      Phoenix.PubSub.broadcast(
+        Glorbo.PubSub,
+        "audit:all",
+        {:audit_append, company, record}
+      )
+
     :ok
   rescue
     _ -> :ok
