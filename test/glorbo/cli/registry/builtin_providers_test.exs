@@ -50,9 +50,20 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     assert stado.prompt_mode == :acp
     assert stado.binary == "stado"
     assert stado.args == ["acp", "--tools"]
-    # Both auth_binds present: config (ro) + state (rw).
+    # Three auth_binds present: config (ro) + share (rw) + state (rw).
+    # share/state split is XDG-correct — stado writes session JSONL
+    # under XDG_DATA_HOME/stado and per-session worktrees under
+    # XDG_STATE_HOME/stado (TODO D3).
     modes = Enum.map(stado.auth_binds, & &1.mode) |> Enum.sort()
-    assert modes == [:ro, :rw]
+    assert modes == [:ro, :rw, :rw]
+
+    sandboxes = Enum.map(stado.auth_binds, & &1.sandbox) |> Enum.sort()
+
+    assert sandboxes == [
+             "/workspace/.config/stado",
+             "/workspace/.local/share/stado",
+             "/workspace/.local/state/stado"
+           ]
   end
 
   test "ACP variants of the dogfood CLIs declare prompt_mode :acp", %{providers: p} do

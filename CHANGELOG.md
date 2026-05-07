@@ -10,6 +10,30 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — D3: stado provider mounts XDG_STATE_HOME for worktree creation
+
+The default stado provider config bound `~/.config/stado` (ro) and
+`~/.local/share/stado` (rw) but **not** `~/.local/state/stado`.
+Stado follows the XDG spec and writes per-session git worktrees
+under `XDG_STATE_HOME/stado/...`, which defaults to
+`~/.local/state/stado`. With that path unmounted, stado's
+`OpenSession` / `CreateSession` calls in `MkdirAllUnderUserConfig`
+silently fail and the dispatched agent ends up with no executor
+and no tools — a confusing "stado runs but nothing happens"
+symptom in field testing.
+
+`priv/providers/stado.toml` now declares the third auth_bind
+(`~/.local/state/stado` rw, sandboxed at `/workspace/.local/state/
+stado`) so all three XDG dirs are present inside the bwrap mount
+namespace. The `builtin_providers_test` assertion was tightened
+to pin the canonical share + state + config triple.
+
+If you've been using a `~/.glorbo/providers/stado.toml` override,
+the new default is additive — your override still wins per the
+GEP-8 override pattern, but you'll want to add the same
+`~/.local/state/stado` entry to your override so worktree creation
+works.
+
 ### Fixed — D6: stdout fallback no longer triggers a misleading `reply_exists?=false` warning
 
 When a CLI provider writes its reply to stdout instead of the

@@ -56,8 +56,19 @@ usage_parser = "stado_acp"
 
 # Stado's per-user state — its config file (provider/model selection,
 # inference presets, custom tools) and its audit/session storage.
-# Config is read-only; state dir is rw because stado writes session
-# JSONL traces there during the dispatch (see GEP-45 D4).
+# Config is read-only; data + state dirs are rw because stado writes
+# session JSONL traces there during the dispatch (see GEP-45 D4).
+#
+# XDG layout (stado follows the spec):
+#   ~/.config/stado          — config.toml + tool overrides (XDG_CONFIG_HOME)
+#   ~/.local/share/stado     — session JSONL audit refs (XDG_DATA_HOME)
+#   ~/.local/state/stado     — per-session git worktrees (XDG_STATE_HOME)
+#
+# All three are mounted so stado's session resume (F6) and worktree
+# creation work end-to-end. Without the state dir, `OpenSession` /
+# `CreateSession` calls in `MkdirAllUnderUserConfig` fail silently
+# (no executor, no tools) on hosts whose `~/.local/state/stado/`
+# was never created — see TODO D3 for the original report.
 [[auth_binds]]
 host    = "~/.config/stado"
 sandbox = "/workspace/.config/stado"
@@ -66,6 +77,11 @@ mode    = "ro"
 [[auth_binds]]
 host    = "~/.local/share/stado"
 sandbox = "/workspace/.local/share/stado"
+mode    = "rw"
+
+[[auth_binds]]
+host    = "~/.local/state/stado"
+sandbox = "/workspace/.local/state/stado"
 mode    = "rw"
 
 # Broker-style providers like stado don't expose an HTTP /models
