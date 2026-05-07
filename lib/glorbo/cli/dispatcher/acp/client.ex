@@ -293,6 +293,25 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
           drain_session_prompt(state, prompt_id)
         end
 
+      # F5: kind=choice events follow the same blocking-on-response
+      # pattern as approval. Headless dispatch always cancels — no
+      # operator to surface choices to. Surfacing choices to a real
+      # UI is a future GEP. We intentionally don't include a choice
+      # index in the response: cancelled=true is the unambiguous
+      # signal that no option was selected.
+      {:ok, {:notification, "session/update", %{"kind" => "choice", "requestId" => req_id}},
+       state} ->
+        with {:ok, state} <- send_choice_response(state, req_id) do
+          drain_session_prompt(state, prompt_id)
+        end
+
+      {:ok,
+       {:notification, "session/update",
+        %{"update" => %{"kind" => "choice", "requestId" => req_id}}}, state} ->
+        with {:ok, state} <- send_choice_response(state, req_id) do
+          drain_session_prompt(state, prompt_id)
+        end
+
       {:ok, {:notification, "session/update", params}, state} ->
         state = absorb_update(state, params)
         drain_session_prompt(state, prompt_id)
@@ -410,6 +429,24 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         "requestId" => request_id,
         "allow" => false,
         "cancelled" => false
+      })
+
+    case send_message(state, notification) do
+      :ok -> {:ok, state}
+      {:error, _} = err -> err
+    end
+  end
+
+  # F5: auto-cancel ACP choice prompts in headless dispatch. Sent as
+  # a notification (no id). No choice index is included; cancelled=
+  # true is the unambiguous signal that the agent should treat the
+  # choice as withdrawn.
+  defp send_choice_response(state, request_id) do
+    notification =
+      Message.new_notification("session/choice_response", %{
+        "sessionId" => state.session_id,
+        "requestId" => request_id,
+        "cancelled" => true
       })
 
     case send_message(state, notification) do

@@ -197,7 +197,7 @@ Expose a `max_turns:` field in provider TOML / task frontmatter that forwards
 to `session/new {"maxTurns": N}` for providers without a CLI flag. stado already
 uses `--no-turn-limit` CLI flag; this is for non-stado ACP providers.
 
-### F5: Handle kind=choice session/update events
+### F5: Handle kind=choice session/update events ~~FIXED 2026-05-07 (headless auto-cancel; surfacing to UI is future GEP)~~
 `session/update {kind="choice"}` events are currently ignored (→ cancelled).
 Glorbo needs a `drain_session_prompt` branch to surface choices and send
 `session/choice_response`. For headless dispatches: send `cancelled=true`.

@@ -444,6 +444,89 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
                  false
              end)
     end
+
+    # F5: kind=choice handling — same pattern as F7, headless cancels.
+    test "auto-cancels wrapped kind=choice and continues draining" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, _id, "session/prompt", %{"sessionId" => sid}} ->
+            choice =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "update" => %{
+                    "kind" => "choice",
+                    "requestId" => "choice-uuid-1",
+                    "title" => "Pick a target",
+                    "options" => ["10.0.0.1", "10.0.0.2"]
+                  }
+                })
+              )
+
+            [choice]
+          end,
+          fn {:notification, "session/choice_response", _params} ->
+            done = Framing.encode(Message.new_response(3, %{}))
+            [done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: ""}} = Client.run(peer_io(agent), "x")
+
+      assert Enum.any?(peer_inbound(agent), fn
+               {:notification, "session/choice_response",
+                %{
+                  "sessionId" => "s-mock-1",
+                  "requestId" => "choice-uuid-1",
+                  "cancelled" => true
+                }} ->
+                 true
+
+               _ ->
+                 false
+             end),
+             "glorbo did not send session/choice_response"
+    end
+
+    test "auto-cancels unwrapped kind=choice (top-of-params shape)" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, _id, "session/prompt", %{"sessionId" => sid}} ->
+            choice =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "kind" => "choice",
+                  "requestId" => "choice-uuid-2",
+                  "options" => ["a", "b"]
+                })
+              )
+
+            [choice]
+          end,
+          fn {:notification, "session/choice_response", _params} ->
+            done = Framing.encode(Message.new_response(3, %{}))
+            [done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, _} = Client.run(peer_io(agent), "x")
+
+      assert Enum.any?(peer_inbound(agent), fn
+               {:notification, "session/choice_response",
+                %{"requestId" => "choice-uuid-2", "cancelled" => true}} ->
+                 true
+
+               _ ->
+                 false
+             end)
+    end
   end
 
   # ----- error paths -----

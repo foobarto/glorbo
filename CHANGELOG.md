@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — F5: auto-cancel `kind=choice` ACP updates instead of hanging
+
+Same shape as F7 — stado v0.46.0 emits `session/update {kind:
+"choice", requestId: <uuid>, options: [...]}` and waits for
+`session/choice_response`. Glorbo previously fell through to the
+generic `absorb_update` (counted as ignored, no response sent) and
+the agent hung until `phase_timeout_ms`. Now the client intercepts
+both wrapped and unwrapped choice updates and sends `session/
+choice_response {sessionId, requestId, cancelled: true}`. No
+choice index is included; `cancelled: true` is the unambiguous
+signal that no option was selected. Headless dispatch always
+cancels — surfacing choices to a real operator UI is a future GEP.
+
 ### Added — F6: ACP `sessionId` persistence + resume across dispatches
 
 stado v0.46.0 supports `session/new {"resumeSession": "<UUID>"}` so
