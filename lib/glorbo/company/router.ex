@@ -822,6 +822,7 @@ defmodule Glorbo.Company.Router do
           emit_task_route_audit(sender, project, task_id, state)
           :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(state.base, state.company))
           maybe_request_approval(meta, dest_path, project, task_id, sender, state)
+          maybe_auto_dispatch(meta, project, task_id, sender, state)
           {:ok, :routed}
         end
       end)
@@ -833,6 +834,122 @@ defmodule Glorbo.Company.Router do
       {:error, reason} ->
         Logger.debug(
           "[router/#{state.company}] outbox task skipped sender=#{sender} project=#{project} task=#{task_id} reason=#{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  # F10: agent-spawned sub-tasks via outbox — auto-dispatch flag.
+  #
+  # When an agent files a task via `outbox/tasks/<project>/<id>.md`
+  # (the existing routing handled by `handle_outbox_task` above) and
+  # the task frontmatter carries `auto_dispatch: true`, write a
+  # synthetic inbox event for `assigned_to` so the assignee wakes
+  # immediately. Without this, the new task sits at its authored
+  # status and waits for the operator (or a `schedule:` tick) to
+  # dispatch it — which defeats the agent's intent of "spawn this,
+  # have it run now."
+  #
+  # Skipped when:
+  #   - `auto_dispatch` is not literally `true` (parser keeps booleans
+  #     strict; "true" string falls through).
+  #   - The task wants director approval (we honour the gate; the
+  #     operator decides when to dispatch after granting).
+  #   - `assigned_to` is empty or invalid — there's nothing to wake.
+  #
+  # Safety: re-uses `handle_outbox_task`'s already-passed permission
+  # check (the spawning agent already had `tasks:create:<project>`
+  # to file the task in the first place) — auto_dispatch is a
+  # convenience flag, not a permission escalation.
+  defp maybe_auto_dispatch(meta, project, task_id, sender, state) do
+    cond do
+      Map.get(meta, "auto_dispatch") != true ->
+        :ok
+
+      requires_director_approval?(meta) ->
+        :ok
+
+      true ->
+        assignee = Map.get(meta, "assigned_to") || ""
+
+        if Glorbo.Slug.valid?(assignee) do
+          write_auto_dispatch_inbox(state, sender, assignee, project, task_id)
+        else
+          :ok
+        end
+    end
+  end
+
+  defp requires_director_approval?(meta) do
+    case Map.get(meta, "requires_approval") do
+      "director" ->
+        true
+
+      :director ->
+        true
+
+      _ ->
+        case Map.get(meta, "status") do
+          "pending_approval" -> true
+          "pending-approval" -> true
+          _ -> false
+        end
+    end
+  end
+
+  defp write_auto_dispatch_inbox(state, sender, assignee, project, task_id) do
+    inbox_dir =
+      Path.join([state.base, "companies", state.company, "agents", assignee, "inbox"])
+
+    task_rel = "projects/#{project}/tasks/#{task_id}.md"
+    ts = DateTime.utc_now() |> DateTime.to_iso8601()
+    filename = "auto-#{System.unique_integer([:positive])}-#{task_id}.md"
+
+    msg_body = """
+    ---
+    kind: inbox-message/v1
+    from: #{sender}
+    task_path: #{task_rel}
+    scheduled_at: "#{ts}"
+    auto_dispatch: true
+    ---
+
+    Auto-dispatched on agent task creation by #{sender}.
+    """
+
+    case File.mkdir_p(inbox_dir) do
+      :ok ->
+        write_path = Path.join(inbox_dir, filename)
+
+        case File.write(write_path, msg_body) do
+          :ok ->
+            emit_audit(state, %{
+              action: "task.auto_dispatched",
+              actor: "agent:" <> sender,
+              company: state.company,
+              target: task_rel,
+              detail: %{
+                task_id: task_id,
+                project: project,
+                assigned_to: assignee,
+                inbox_message: filename
+              }
+            })
+
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "[router/#{state.company}] auto_dispatch inbox write failed task=#{task_id} reason=#{inspect(reason)}"
+            )
+
+            :ok
+        end
+
+      {:error, reason} ->
+        Logger.warning(
+          "[router/#{state.company}] auto_dispatch mkdir_p failed assignee=#{assignee} reason=#{inspect(reason)}"
         )
 
         :ok

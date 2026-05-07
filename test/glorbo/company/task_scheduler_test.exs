@@ -231,12 +231,15 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     write_task_with_deps(tasks_dir, "foo-7", "0 * * * *", ["foo-prereq"])
     sched = start_sched(base, company)
     :ok = TaskScheduler.scan(sched)
-    assert_receive {:armed, {:fire, "foo-7"}, _}
+    assert_receive {:armed, {:fire, "foo-7"}, _}, 1_000
 
     send(sched, {:fire, "foo-7"})
 
-    assert_receive {:inbox_write, "ceo", _filename, _body}
-    assert_receive {:audit, %{action: "task.scheduled_dispatch", target: target}}
+    # Bumped from default 100ms — these tests do an extra full-tree
+    # snapshot scan per fire, which can run slow under heavy parallel-
+    # test load (the precommit run on CI hits this).
+    assert_receive {:inbox_write, "ceo", _filename, _body}, 1_000
+    assert_receive {:audit, %{action: "task.scheduled_dispatch", target: target}}, 1_000
     assert target =~ "foo-7"
   end
 
@@ -246,13 +249,14 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     write_task_with_deps(tasks_dir, "foo-8", "0 * * * *", ["foo-prereq"])
     sched = start_sched(base, company)
     :ok = TaskScheduler.scan(sched)
-    assert_receive {:armed, {:fire, "foo-8"}, _}
+    assert_receive {:armed, {:fire, "foo-8"}, _}, 1_000
 
     send(sched, {:fire, "foo-8"})
 
-    assert_receive {:audit, %{action: "task.blocked_on_deps", detail: %{unmet: ["foo-prereq"]}}}
+    assert_receive {:audit, %{action: "task.blocked_on_deps", detail: %{unmet: ["foo-prereq"]}}},
+                   1_000
 
-    refute_receive {:inbox_write, _, _, _}, 50
+    refute_receive {:inbox_write, _, _, _}, 100
   end
 
   test "GEP-47: depends_on with denied dep → emits blocked_on_failed_dep",
@@ -261,14 +265,14 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     write_task_with_deps(tasks_dir, "foo-9", "0 * * * *", ["foo-prereq"])
     sched = start_sched(base, company)
     :ok = TaskScheduler.scan(sched)
-    assert_receive {:armed, {:fire, "foo-9"}, _}
+    assert_receive {:armed, {:fire, "foo-9"}, _}, 1_000
 
     send(sched, {:fire, "foo-9"})
 
-    assert_receive {:audit, %{action: "task.blocked_on_failed_dep", detail: detail}}
+    assert_receive {:audit, %{action: "task.blocked_on_failed_dep", detail: detail}}, 1_000
 
     assert detail.failed_dep == "foo-prereq"
-    refute_receive {:inbox_write, _, _, _}, 50
+    refute_receive {:inbox_write, _, _, _}, 100
   end
 
   test "fire without assignee emits scheduler.missing_assignee",

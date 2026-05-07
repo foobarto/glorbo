@@ -153,6 +153,28 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert reply =~ "hello from stdout"
     end
 
+    # D6: when the stdout fallback materialises the reply, the
+    # diagnostic warning ("cli ... exit=0 reply_exists?=false ...")
+    # should NOT fire — the dispatch succeeded, just via the
+    # secondary path. Captured directly from the Logger output;
+    # before D6 the warning fired before maybe_stdout_to_reply ran
+    # so reply_exists? was always false even on successful fallback.
+    test "D6: stdout fallback success does not emit `reply_exists?=false` warning" do
+      ws = tmp_workspace()
+
+      chatty = fn _a, _env, _b, _r ->
+        {:ok, %{exit_status: 0, stdout: "stdout reply body", usage_dir: nil}}
+      end
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, %{reply: _}} =
+                   Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: chatty)
+        end)
+
+      refute log =~ "reply_exists?=false"
+    end
+
     test "stdout-as-reply skipped when exit != 0" do
       ws = tmp_workspace()
 

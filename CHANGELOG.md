@@ -10,6 +10,63 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — D6: stdout fallback no longer triggers a misleading `reply_exists?=false` warning
+
+When a CLI provider writes its reply to stdout instead of the
+canonical `$GLORBO_REPLY_PATH` file, `Dispatcher.invoke/3`'s
+`maybe_stdout_to_reply/4` materialises the reply file from the
+captured stdout and the dispatch succeeds — but the diagnostic
+log emitted just before fallback was reading
+`reply_exists?` from the pre-fallback filesystem state, so every
+stdout-fallback success surfaced as a "cli foo exit=0
+reply_exists?=false stdout=…" warning that looked like a
+failure.
+
+Reordered the dispatch with-chain so `maybe_stdout_to_reply/4`
+runs before `maybe_log_run_output/4`. The log now reads the
+post-fallback `reply_exists?` value, so it only fires when there
+is actually no reply (no file, no stdout) or the CLI exited
+non-zero. New test `D6: stdout fallback success does not emit
+reply_exists?=false warning` captures the Logger output and
+asserts the warning is suppressed on the fallback success path.
+
+### Added — F10: `auto_dispatch:` flag on agent-spawned tasks
+
+Builds on the existing `outbox/tasks/<project>/<id>.md` mechanism
+(agents file new tasks via the path-based outbox convention,
+permission-checked + audited via `Glorbo.Company.Router`). When the
+spawning agent sets `auto_dispatch: true` in the task frontmatter
+and a valid `assigned_to:` is present, the Router writes a
+synthetic inbox event for the assignee right after the task lands,
+so spawned work picks up immediately instead of waiting for an
+operator wake or a `schedule:` tick.
+
+Use case: scanner agent finds an ambiguous SUID binary, spawns a
+"second-opinion" task targeted at a reviewer agent — without
+auto_dispatch the new task sat in `projects/<p>/tasks/` until the
+operator noticed.
+
+Skipped when:
+- `auto_dispatch` is not literally `true` (booleans only — string
+  `"true"` falls through, matching the strict-typing convention
+  of `peer_review_required`).
+- The task wants director approval (`requires_approval: director`
+  or `status: pending-approval` / `pending_approval`). The
+  approval gate fires first; auto-dispatch is the operator's call
+  after granting.
+- `assigned_to` is empty or not a valid slug.
+
+Audit: emits `task.auto_dispatched` with the actor set to
+`agent:<sender>` and detail naming the assignee + inbox message
+filename.
+
+This intentionally piggybacks on the existing path-based routing
+rather than introducing a parallel flat-outbox + frontmatter
+discriminator (`glorbo_request: create_task`) — the path-based
+mechanism already handles the permission check, transactional
+move, and audit emission, so threading auto_dispatch through it
+adds the missing piece without doubling the security surface.
+
 ### Fixed — D5: auto-complete tasks on clean dispatch exit
 
 Tasks under `companies/<co>/projects/` are mounted ro inside the

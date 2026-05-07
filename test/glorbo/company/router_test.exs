@@ -579,6 +579,134 @@ defmodule Glorbo.Company.RouterTest do
     refute File.exists?(dest)
   end
 
+  # F10: auto_dispatch — when the agent files a task with
+  # `auto_dispatch: true` AND a valid assignee, the Router writes a
+  # synthetic inbox event for the assignee so the work picks up
+  # immediately. Without auto_dispatch the new task waits for the
+  # operator (or a `schedule:` tick).
+  test "F10: auto_dispatch=true writes inbox event for assignee + emits audit" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-100.md"), """
+    ---
+    kind: task/v1
+    title: spawn-and-run
+    status: todo
+    assigned_to: researcher
+    auto_dispatch: true
+    ---
+    Run me right now.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-100.md", [:created]})
+    _ = :sys.get_state(name)
+
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    assert File.exists?(inbox_dir)
+    files = File.ls!(inbox_dir) |> Enum.filter(&String.ends_with?(&1, ".md"))
+    assert Enum.any?(files, &String.starts_with?(&1, "auto-"))
+
+    auto_path = Path.join(inbox_dir, Enum.find(files, &String.starts_with?(&1, "auto-")))
+    body = File.read!(auto_path)
+    assert body =~ "kind: inbox-message/v1"
+    assert body =~ "from: ceo"
+    assert body =~ "task_path: projects/blog/tasks/blog-100.md"
+    assert body =~ "auto_dispatch: true"
+
+    assert_receive {:audit, %{action: "task.auto_dispatched", target: target, detail: detail}}
+    assert target == "projects/blog/tasks/blog-100.md"
+    assert detail.assigned_to == "researcher"
+  end
+
+  test "F10: auto_dispatch skipped when requires_approval: director" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-101.md"), """
+    ---
+    kind: task/v1
+    title: needs-director
+    status: todo
+    assigned_to: researcher
+    auto_dispatch: true
+    requires_approval: director
+    ---
+    Director: please approve before this runs.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-101.md", [:created]})
+    _ = :sys.get_state(name)
+
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    files =
+      case File.ls(inbox_dir) do
+        {:ok, list} -> Enum.filter(list, &String.starts_with?(&1, "auto-"))
+        _ -> []
+      end
+
+    assert files == []
+    refute_received {:audit, %{action: "task.auto_dispatched"}}
+  end
+
+  test "F10: auto_dispatch=false (or missing) does not write an inbox event" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-102.md"), """
+    ---
+    kind: task/v1
+    title: queued-not-dispatched
+    status: todo
+    assigned_to: researcher
+    ---
+    Wait for the operator.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-102.md", [:created]})
+    _ = :sys.get_state(name)
+
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    files =
+      case File.ls(inbox_dir) do
+        {:ok, list} -> Enum.filter(list, &String.starts_with?(&1, "auto-"))
+        _ -> []
+      end
+
+    assert files == []
+    refute_received {:audit, %{action: "task.auto_dispatched"}}
+  end
+
   # threatmodel M03 write-side. An agent that can write into a shared
   # `projects/<p>/tasks/` tree (via `projects:write:*`) could pre-plant
   # a symlink at `<task-id>.md` before filing another task. Without an

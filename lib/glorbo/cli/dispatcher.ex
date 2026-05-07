@@ -180,8 +180,15 @@ defmodule Glorbo.CLI.Dispatcher do
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
          env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),
          {:ok, run_result} <- run(provider, args, env, ctx, opts),
-         :ok <- maybe_log_run_output(provider, run_result, reply_path, fs),
+         # D6: run the stdout fallback BEFORE the diagnostic log.
+         # When a CLI writes its reply to stdout instead of the
+         # GLORBO_REPLY_PATH file, the fallback materialises the
+         # reply file — running the log AFTER means
+         # `reply_exists?` reflects the post-fallback state and
+         # we don't emit a misleading "reply_exists?=false"
+         # warning for what's actually a successful dispatch.
          :ok <- maybe_stdout_to_reply(run_result, reply_path, provider.reply_max_bytes, fs),
+         :ok <- maybe_log_run_output(provider, run_result, reply_path, fs),
          {:ok, reply} <- read_reply(reply_path, provider.reply_max_bytes, fs) do
       {usage, usage_error} =
         parse_usage(provider, run_result, ctx, substitutions)
