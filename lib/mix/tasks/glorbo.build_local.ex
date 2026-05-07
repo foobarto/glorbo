@@ -58,6 +58,20 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     # the new build runs.
     purge_stale_unpacked_erts!()
 
+    # Burrito 1.5.0's `clean_build` step cleans `zig-cache` (no dot)
+    # but the actual directory is `.zig-cache` (with dot — modern
+    # zig convention). The mismatch leaves the zig cache untouched
+    # forever, which by itself is fine — incremental builds reuse
+    # it cleanly. BUT when a prior build crashed mid-way (e.g. the
+    # concurrent-build race we now refuse, or a transient zig OOM),
+    # it leaves residual `payload.foilz.xz` / `musl-runtime.so` in
+    # `deps/burrito/src/` AND a `.zig-cache` whose manifests still
+    # reference those files. The next build deletes them as part of
+    # its own setup, then zig fails with `FileNotFound` because the
+    # cache thinks they should be there. Detect the dirty state and
+    # wipe `.zig-cache` (cost: one full re-compile, ~5 min).
+    purge_zig_cache_if_dirty!()
+
     # Burrito keeps the extracted release under
     # `~/.local/share/.burrito/glorbo_erts-<vsn>_<app-vsn>/`. It only
     # re-extracts when the embedded payload HASH changes; the extracted
@@ -129,6 +143,33 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
       # pgrep exits 1 when nothing matches → no concurrent build → fine.
       _ ->
         :ok
+    end
+  end
+
+  defp purge_zig_cache_if_dirty! do
+    # Files that should NOT exist between builds — Burrito's
+    # `clean_build` removes them after every build. Their presence
+    # means the previous build crashed or was killed mid-flight.
+    burrito = "deps/burrito"
+
+    residuals = [
+      Path.join([burrito, "src", "payload.foilz.xz"]),
+      Path.join([burrito, "src", "musl-runtime.so"]),
+      Path.join([burrito, "src", "_metadata.json"]),
+      Path.join(burrito, "payload.foilz"),
+      Path.join(burrito, "zig-out")
+    ]
+
+    dirty? = Enum.any?(residuals, &File.exists?/1)
+    cache = Path.join(burrito, ".zig-cache")
+
+    if dirty? and File.dir?(cache) do
+      Mix.shell().info(
+        "burrito cache appears dirty (residual build artifacts); wiping #{cache}"
+      )
+
+      File.rm_rf!(cache)
+      Enum.each(residuals, fn p -> _ = File.rm_rf(p) end)
     end
   end
 

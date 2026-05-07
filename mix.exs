@@ -12,9 +12,18 @@ defmodule Glorbo.MixProject do
       deps: deps(),
       releases: releases(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      # `Phoenix.CodeReloader` ships in `phoenix_live_reload`, which is
+      # `only: :dev`. Listing it as a listener in all envs causes mix
+      # release to flag phoenix_live_reload as a runtime dep and embed
+      # it in the OTP release manifest as `permanent`, contaminating
+      # `_build/prod/rel/glorbo/lib/` even after `purge_dev_only_artifacts!`
+      # wipes it. Gate the listener on `:dev` so prod releases stay clean.
+      listeners: listeners(Mix.env())
     ]
   end
+
+  defp listeners(:dev), do: [Phoenix.CodeReloader]
+  defp listeners(_), do: []
 
   # Configuration for the OTP application.
   #

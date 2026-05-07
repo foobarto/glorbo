@@ -70,6 +70,35 @@ the same concurrent-build refusal as `glorbo.build_local`. Direct
 callers (`mix release`, `mix release glorbo`, CI scripts) now get
 the same guards as the recommended `mix glorbo.build_local` path.
 
+### Fixed — release manifest contained dev-only `phoenix_live_reload`
+
+`mix.exs` had `listeners: [Phoenix.CodeReloader]` set for ALL envs.
+`Phoenix.CodeReloader` ships in `phoenix_live_reload` (which is
+`only: :dev`), so listing it as a project listener caused mix release
+to flag the dep as a runtime requirement and embed it in
+`_build/prod/rel/glorbo/lib/phoenix_live_reload-*` and the
+release manifest as `permanent`. Even after
+`Mix.Tasks.Glorbo.BuildLocal.purge_dev_only_artifacts!/0` wiped
+`_build/prod/lib/phoenix_live_reload`, mix release re-pulled it
+during assemble. Gated the listener on `Mix.env() == :dev` so prod
+releases stay clean.
+
+### Fixed — Burrito `.zig-cache` poisoning across failed builds
+
+Burrito 1.5.0's `clean_build` step targets `zig-cache` (no leading
+dot) but the actual zig cache directory uses the modern
+`.zig-cache` convention. The cleanup is a no-op, which by itself
+is harmless (incremental builds reuse it), but when a prior build
+crashed mid-way (concurrent-build race, transient zig OOM) it left
+residual `payload.foilz.xz`/`musl-runtime.so` in
+`deps/burrito/src/` AND `.zig-cache` manifests still referencing
+those files. The next build deleted them as part of its own setup,
+then zig failed with `FileNotFound` on `@embedFile`. Added
+`purge_zig_cache_if_dirty!/0` to `mix glorbo.build_local`: detects
+the residual files and wipes `deps/burrito/.zig-cache` plus the
+residuals before invoking mix release. Cost is one full re-compile
+(~5 min) only when a prior build was unclean.
+
 ### Fixed — TODO D2: OTP release missing `glorbo run` verb
 
 `_build/prod/rel/glorbo/bin/glorbo` is the standard OTP launcher
