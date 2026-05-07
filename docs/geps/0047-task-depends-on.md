@@ -2,13 +2,19 @@
 gep: 0047
 title: "`depends_on:` for tasks — explicit blocking dependencies"
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-05-07
 history:
   - date: 2026-05-07
     status: Draft
     note: Initial draft. Decisions D1-D9 settled in Phase 1+2 Q&A; remaining design choices deferred to operator per Phase-2 hand-off.
+  - date: 2026-05-07
+    status: Accepted
+    note: Operator approved the design; ready to ship.
+  - date: 2026-05-07
+    status: Implemented
+    note: v1 ships D1, D2, D3, D5 (TaskScheduler integration), D7 partial (`task.blocked_on_deps`, `task.cycle_detected`, `task.blocked_on_failed_dep` as v1 stand-in for `task.failure_propagated`), D8. v2 work — D4 propagation walker, D6 Router enforcement, D9 SQLite index — listed under §Implementation status.
 requires: [2, 13, 24]
 see-also: [7, 16, 19, 40, 41, 43, 46]
 ---
@@ -359,6 +365,36 @@ Property:
   on SQLite for now. When GEP-43 ships, `task_dependencies` is one
   of the simplest tables to migrate (PK is composite, no FK,
   no joins).
+
+## Implementation status
+
+GEP-47 lands in two waves. v1 (this commit) covers the load-bearing
+behaviour change — **the scheduler respects `depends_on`** — plus
+cycle detection. v2 covers the surrounding niceties (file-rewrite
+propagation, Router enforcement, SQLite index).
+
+### Shipped in v1 (2026-05-07)
+
+| Decision | Where |
+|---|---|
+| **D1** — bare `task_id` references | `Glorbo.FileSpec.TaskMd` schema; `Glorbo.TaskDefinition` parser; `coerce_depends_on/1` |
+| **D2** — `cancelled` enum value, `cancelled_reason:` optional field | `Glorbo.FileSpec.TaskMd` |
+| **D3** — terminal-state classification (done-terminal / failure-terminal / non-terminal) | `Glorbo.Task.DependencyGate.classify_dep/2` |
+| **D5** — shared `DependencyGate` helper | new module `Glorbo.Task.DependencyGate`; called from `Glorbo.Company.TaskScheduler.maybe_fire/4` |
+| **D7 partial** — three of the four audit events (`task.blocked_on_deps`, `task.cycle_detected`, `task.blocked_on_failed_dep`) | `Glorbo.Company.TaskScheduler` |
+| **D8** — cycle detection via three-colour DFS; deduped per-rescan | `Glorbo.Task.DependencyGate.cycle_detect/1`; called from the 60s rescan |
+
+### Queued for v2 (follow-up commit, same GEP)
+
+| Decision | Why deferred |
+|---|---|
+| **D4** — failure-propagation walker that rewrites `status: cancelled` into dependent task files | Needs a dedicated `Glorbo.Task.StatusRewriter` for safe in-place YAML edits (atomic write, frontmatter-only-region edit). v1 substitute: `task.blocked_on_failed_dep` audit makes the situation visible so operators can intervene. |
+| **D6** — Router append-only enforcement of `depends_on` (mirroring `handoff_chain` per GEP-40 D2) | Wants a Router surface tour to find the right interception point and the test hooks already used for `handoff_chain` rewinds. Risk-free to ship as v2 — without it, a rogue write that *removes* a dep is not auto-rejected, but it would surface in the audit log via the FilesystemWatcher append-trace. |
+| **D7 remaining** — `task.failure_propagated` (depends on D4) and `task.unblocked` (depends on cross-rescan diff state) | Coupled with D4; the data plumbing for "this dep just settled" needs a state-diff between consecutive rescans, which v1's per-fire snapshot doesn't carry. |
+| **D9** — `task_dependencies` SQLite edge table + reindex hook | The on-demand snapshot in `TaskScheduler.build_task_snapshot/1` works for typical task counts; a dedicated index is a perf optimisation, not a correctness gap. Lands when reindex is next touched. |
+| **Director-wake path** integration | Only `TaskScheduler.fire` is gated today. The Director-wake path (operator clicks "Wake" in the dashboard) bypasses the gate. v2 wires it through the same `DependencyGate.ready?/2` helper. |
+
+The gate is the load-bearing piece; v2 items are durability, ergonomics, and perf around the established correctness contract.
 
 ## Decision log
 

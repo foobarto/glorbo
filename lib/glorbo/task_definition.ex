@@ -117,6 +117,8 @@ defmodule Glorbo.TaskDefinition do
             reviewer: nil,
             done_when: nil,
             handoff_chain: [],
+            depends_on: [],
+            cancelled_reason: nil,
             project: nil,
             goal: nil,
             model: nil,
@@ -198,6 +200,8 @@ defmodule Glorbo.TaskDefinition do
          reviewer: as_string(meta["reviewer"]),
          done_when: as_string(meta["done_when"]),
          handoff_chain: coerce_handoff_chain(meta["handoff_chain"]),
+         depends_on: coerce_depends_on(meta["depends_on"]),
+         cancelled_reason: as_string(meta["cancelled_reason"]),
          goal: as_string(meta["goal"]),
          model: as_string(meta["model"]),
          provider: as_string(meta["provider"]),
@@ -262,6 +266,23 @@ defmodule Glorbo.TaskDefinition do
   end
 
   defp coerce_handoff_chain(_), do: []
+
+  # GEP-47: explicit blocking task dependencies. List of bare
+  # task_id strings (`<project-slug>-NN`); GEP-13 D1 makes those
+  # unique within a company so no path prefix is needed.
+  # Non-string entries are dropped silently — the validator surfaces
+  # them in a separate pass; we don't want a single bad dep to
+  # crash parsing.
+  defp coerce_depends_on(list) when is_list(list) do
+    list
+    |> Enum.flat_map(fn
+      s when is_binary(s) and s != "" -> [s]
+      _ -> []
+    end)
+    |> Enum.uniq()
+  end
+
+  defp coerce_depends_on(_), do: []
 
   defp coerce_priority("high"), do: :high
   defp coerce_priority("medium"), do: :medium

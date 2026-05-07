@@ -116,7 +116,12 @@ defmodule Glorbo.Company.TaskScheduler do
       audit_fun: Keyword.get(opts, :audit_fun, &audit_via_registry/2),
       write_inbox_fun: Keyword.get(opts, :write_inbox_fun, &default_write_inbox/4),
       rescan_ms: Keyword.get(opts, :rescan_ms, @rescan_interval_ms),
-      auto_rescan?: Keyword.get(opts, :auto_rescan?, true)
+      auto_rescan?: Keyword.get(opts, :auto_rescan?, true),
+      # GEP-47: dedup state for `task.cycle_detected` audit so the
+      # 60s rescan doesn't emit a duplicate event for every cycle on
+      # every tick. Tracks the canonical (sorted) shape of each
+      # detected cycle.
+      last_cycles: MapSet.new()
     }
 
     # First scan on boot. Schedule a background rescan at 60s intervals
@@ -148,7 +153,7 @@ defmodule Glorbo.Company.TaskScheduler do
       Process.send_after(self(), :rescan, state.rescan_ms)
     end
 
-    {:noreply, do_scan(state)}
+    {:noreply, state |> do_scan() |> run_cycle_check()}
   end
 
   def handle_info({:file_event, rel_path, _events}, state) when is_binary(rel_path) do
@@ -360,6 +365,7 @@ defmodule Glorbo.Company.TaskScheduler do
   defp maybe_fire(state, task_id, entry, fm, body) do
     schedule = Map.get(fm, "schedule") || ""
     assignee = Map.get(fm, "assigned_to") || ""
+    depends_on = coerce_depends_on(Map.get(fm, "depends_on"))
 
     cond do
       schedule == "" ->
@@ -387,54 +393,191 @@ defmodule Glorbo.Company.TaskScheduler do
 
         re_arm(state, task_id, entry)
 
-      true ->
-        ts = state.clock_fun.() |> DateTime.to_iso8601()
-        filename = "sched-#{System.unique_integer([:positive])}-#{task_id}.md"
+      depends_on != [] ->
+        # GEP-47: gate the dispatch on dependency readiness before
+        # writing the inbox event. The snapshot is built on-demand
+        # from disk per-fire — fine for the typical 10s-of-tasks
+        # company; large rosters get the SQLite-backed task index
+        # under GEP-47's D9 (queued v2 follow-up).
+        snapshot = build_task_snapshot(state)
 
-        msg_body =
-          """
-          ---
-          kind: inbox-message/v1
-          from: scheduler
-          task_path: #{entry.rel_path}
-          scheduled_at: "#{ts}"
-          cron: #{inspect(schedule)}
-          ---
-
-          #{String.trim(body)}
-          """
-
-        case state.write_inbox_fun.(state.base, state.company, assignee, {filename, msg_body}) do
+        case Glorbo.Task.DependencyGate.ready?(depends_on, snapshot) do
           :ok ->
+            do_fire(state, task_id, entry, fm, body, schedule, assignee)
+
+          {:blocked, unmet} ->
             emit_audit(state, %{
-              action: "task.scheduled_dispatch",
+              action: "task.blocked_on_deps",
               actor: "scheduler",
               company: state.company,
               target: entry.rel_path,
-              detail: %{
-                task_path: entry.rel_path,
-                assigned_to: assignee,
-                cron: schedule,
-                fired_at: ts
-              }
+              detail: %{task_id: task_id, unmet: unmet}
             })
 
-          {:error, reason} ->
+            re_arm(state, task_id, entry)
+
+          {:propagate_failure, dep_id, reason} ->
+            # GEP-47 D4 (failure propagation by file rewrite) is
+            # queued as a v2 follow-up; v1 surfaces the situation
+            # as an audit event so the operator sees "task X stuck
+            # behind failed dep Y" and can intervene manually.
             emit_audit(state, %{
-              action: "scheduler.dispatch_failed",
-              actor: "system",
+              action: "task.blocked_on_failed_dep",
+              actor: "scheduler",
               company: state.company,
               target: entry.rel_path,
-              reason: inspect(reason)
+              detail: %{task_id: task_id, failed_dep: dep_id, reason: reason}
             })
+
+            re_arm(state, task_id, entry)
         end
 
-        re_arm(
-          %{state | tasks: Map.update!(state.tasks, task_id, &Map.put(&1, :body, body))},
-          task_id,
-          entry
-        )
+      true ->
+        do_fire(state, task_id, entry, fm, body, schedule, assignee)
     end
+  end
+
+  defp do_fire(state, task_id, entry, _fm, body, schedule, assignee) do
+    ts = state.clock_fun.() |> DateTime.to_iso8601()
+    filename = "sched-#{System.unique_integer([:positive])}-#{task_id}.md"
+
+    msg_body =
+      """
+      ---
+      kind: inbox-message/v1
+      from: scheduler
+      task_path: #{entry.rel_path}
+      scheduled_at: "#{ts}"
+      cron: #{inspect(schedule)}
+      ---
+
+      #{String.trim(body)}
+      """
+
+    case state.write_inbox_fun.(state.base, state.company, assignee, {filename, msg_body}) do
+      :ok ->
+        emit_audit(state, %{
+          action: "task.scheduled_dispatch",
+          actor: "scheduler",
+          company: state.company,
+          target: entry.rel_path,
+          detail: %{
+            task_path: entry.rel_path,
+            assigned_to: assignee,
+            cron: schedule,
+            fired_at: ts
+          }
+        })
+
+      {:error, reason} ->
+        emit_audit(state, %{
+          action: "scheduler.dispatch_failed",
+          actor: "system",
+          company: state.company,
+          target: entry.rel_path,
+          reason: inspect(reason)
+        })
+    end
+
+    re_arm(
+      %{state | tasks: Map.update!(state.tasks, task_id, &Map.put(&1, :body, body))},
+      task_id,
+      entry
+    )
+  end
+
+  # GEP-47: build a snapshot of every task in the company so
+  # `DependencyGate.ready?/2` can classify dep targets. On-disk-
+  # truth path; SQLite-derived index lands in v2 (D9). For typical
+  # task counts (<100) this is fast enough; large rosters need the
+  # index.
+  defp build_task_snapshot(state) do
+    projects_dir = Path.join([state.base, "companies", state.company, "projects"])
+
+    case File.ls(projects_dir) do
+      {:ok, projects} ->
+        projects
+        |> Enum.flat_map(&project_task_paths(projects_dir, &1))
+        |> Enum.flat_map(&snapshot_entry_for/1)
+        |> Map.new()
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp project_task_paths(projects_dir, project) do
+    tasks_dir = Path.join([projects_dir, project, "tasks"])
+
+    case File.ls(tasks_dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".md"))
+        |> Enum.map(&Path.join([projects_dir, project, "tasks", &1]))
+
+      _ ->
+        []
+    end
+  end
+
+  defp snapshot_entry_for(path) do
+    with {:ok, content} <-
+           Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
+         {:ok, fm, _body} <- Frontmatter.parse(content) do
+      task_id = task_id_from_path(path)
+
+      info = %{
+        status: Map.get(fm, "status") || "",
+        peer_review_required: Map.get(fm, "peer_review_required") == true,
+        peer_review_verdict: Map.get(fm, "peer_review_verdict"),
+        depends_on: coerce_depends_on(Map.get(fm, "depends_on"))
+      }
+
+      [{task_id, info}]
+    else
+      _ -> []
+    end
+  end
+
+  # Coerce depends_on in the same shape as TaskDefinition does (drop
+  # non-string entries, dedupe). Lives here so we don't pull in the
+  # full TaskDefinition parser just for this field.
+  defp coerce_depends_on(list) when is_list(list) do
+    list
+    |> Enum.flat_map(fn
+      s when is_binary(s) and s != "" -> [s]
+      _ -> []
+    end)
+    |> Enum.uniq()
+  end
+
+  defp coerce_depends_on(_), do: []
+
+  # GEP-47 D8: cycle detection runs on the periodic 60s rescan
+  # (not on every file_event — cycles are eventually consistent
+  # with up-to-60s lag, which is fine; the alternative is a snapshot
+  # rebuild per file event which dominates large-roster cost).
+  # Deduped via `state.last_cycles` so a stable cyclic graph doesn't
+  # flood the audit log; only NEW cycles produce events.
+  defp run_cycle_check(state) do
+    snapshot = build_task_snapshot(state)
+    cycles = Glorbo.Task.DependencyGate.cycle_detect(snapshot)
+    sorted_cycles = MapSet.new(Enum.map(cycles, &Enum.sort/1))
+    new_cycles = MapSet.difference(sorted_cycles, state.last_cycles)
+
+    Enum.each(new_cycles, fn sorted_cycle ->
+      cycle_list = MapSet.to_list(MapSet.new(sorted_cycle))
+
+      emit_audit(state, %{
+        action: "task.cycle_detected",
+        actor: "scheduler",
+        company: state.company,
+        target: List.first(cycle_list) || "",
+        detail: %{cycle: cycle_list}
+      })
+    end)
+
+    %{state | last_cycles: sorted_cycles}
   end
 
   defp re_arm(state, task_id, entry) do

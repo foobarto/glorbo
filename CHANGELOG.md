@@ -10,6 +10,59 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-47 v1: `depends_on` for tasks
+
+Explicit blocking dependencies between tasks within a company, plus
+DFS cycle detection. Localforge bridge #1 (the depends_on half of
+the kanban+priority bridge — numeric priority queue is GEP-49 next).
+
+`task/v1` schema gains:
+
+- `depends_on: [<task_id>, ...]` — optional. When non-empty, the
+  scheduler does not dispatch the task until every listed dep
+  reaches a *done-terminal* state (status `done` and, if
+  `peer_review_required`, peer-review verdict `approve`). Bare
+  `task_id` strings; GEP-13 D1 makes those unique within a company
+  so no path prefix needed.
+- `cancelled` status enum value + `cancelled_reason:` optional
+  field — distinct from `denied` (which has GEP-19 director-
+  approval semantics). Reserved for failure-propagation when v2
+  lands the file-rewrite walker.
+
+New module `Glorbo.Task.DependencyGate` is the single classifier:
+`ready?/2` returns `:ok | {:blocked, [unmet]} | {:propagate_failure,
+dep_id, reason}` for any `(depends_on, snapshot)` pair, plus
+`cycle_detect/1` for DFS three-colour cycle finding. Pure module —
+no IO — so every cell of the D3 terminal-state matrix and every
+cycle topology is unit-testable without a fixture filesystem (23
+new tests).
+
+`Glorbo.Company.TaskScheduler.maybe_fire/4` consults
+`DependencyGate.ready?/2` before writing the inbox event:
+
+- **deps all done** → existing dispatch path runs
+- **deps non-terminal** → emit `task.blocked_on_deps` audit, skip
+  inbox write, re-arm the timer
+- **deps failure-terminal** → emit `task.blocked_on_failed_dep`
+  audit (v1 stand-in for the v2 propagation walker), skip, re-arm
+
+The 60s rescan also runs `cycle_detect/1` over the full company
+task graph; new cycles emit `task.cycle_detected`. Deduped via
+state so a stable cyclic graph doesn't flood the audit log.
+
+**v1 boundaries** (queued for the v2 follow-up commit):
+
+- Failure-propagation walker that rewrites `status: cancelled` into
+  dependent files (D4) — v1 surfaces the situation as audit instead.
+- Router append-only enforcement of `depends_on` (D6).
+- Full audit vocabulary (`task.failure_propagated`, `task.unblocked`).
+- SQLite `task_dependencies` index (D9) — on-demand snapshot
+  works for typical task counts.
+- Director-wake path gate — only `TaskScheduler.fire` is gated.
+
+Full spec + decision log: `docs/geps/0047-task-depends-on.md`. See
+§Implementation status for the v1/v2 split.
+
 ### Added — `/activity` cross-company live activity feed
 
 Localforge bridge #3. New top-level LiveView at `/activity`

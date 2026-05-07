@@ -192,6 +192,85 @@ defmodule Glorbo.Company.TaskSchedulerTest do
                     %{action: "task.scheduled_dispatch", target: "projects/foo/tasks/foo-5.md"}}
   end
 
+  # GEP-47: depends_on gating.
+  defp write_task_with_deps(tasks_dir, id, schedule, deps, opts \\ []) do
+    assigned = Keyword.get(opts, :assigned_to, "ceo")
+    body = Keyword.get(opts, :body, "do thing")
+
+    deps_yaml =
+      "depends_on:\n" <>
+        Enum.map_join(deps, "\n", &"  - #{&1}")
+
+    File.write!(Path.join(tasks_dir, "#{id}.md"), """
+    ---
+    title: #{id}
+    assigned_to: #{assigned}
+    status: todo
+    schedule: #{inspect(schedule)}
+    #{deps_yaml}
+    ---
+
+    #{body}
+    """)
+  end
+
+  defp write_dep_task(tasks_dir, id, status) do
+    File.write!(Path.join(tasks_dir, "#{id}.md"), """
+    ---
+    title: #{id}
+    status: #{status}
+    ---
+
+    body
+    """)
+  end
+
+  test "GEP-47: depends_on with all deps done → fires normally",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_dep_task(tasks_dir, "foo-prereq", "done")
+    write_task_with_deps(tasks_dir, "foo-7", "0 * * * *", ["foo-prereq"])
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-7"}, _}
+
+    send(sched, {:fire, "foo-7"})
+
+    assert_receive {:inbox_write, "ceo", _filename, _body}
+    assert_receive {:audit, %{action: "task.scheduled_dispatch", target: target}}
+    assert target =~ "foo-7"
+  end
+
+  test "GEP-47: depends_on with non-terminal dep → emits blocked_on_deps + skips inbox",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_dep_task(tasks_dir, "foo-prereq", "in-progress")
+    write_task_with_deps(tasks_dir, "foo-8", "0 * * * *", ["foo-prereq"])
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-8"}, _}
+
+    send(sched, {:fire, "foo-8"})
+
+    assert_receive {:audit, %{action: "task.blocked_on_deps", detail: %{unmet: ["foo-prereq"]}}}
+
+    refute_receive {:inbox_write, _, _, _}, 50
+  end
+
+  test "GEP-47: depends_on with denied dep → emits blocked_on_failed_dep",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_dep_task(tasks_dir, "foo-prereq", "denied")
+    write_task_with_deps(tasks_dir, "foo-9", "0 * * * *", ["foo-prereq"])
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-9"}, _}
+
+    send(sched, {:fire, "foo-9"})
+
+    assert_receive {:audit, %{action: "task.blocked_on_failed_dep", detail: detail}}
+
+    assert detail.failed_dep == "foo-prereq"
+    refute_receive {:inbox_write, _, _, _}, 50
+  end
+
   test "fire without assignee emits scheduler.missing_assignee",
        %{base: base, company: company, tasks_dir: tasks_dir} do
     write_task(tasks_dir, "foo-6", schedule: "0 * * * *", assigned_to: "")

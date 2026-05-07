@@ -14,7 +14,7 @@ and per-task provider/model override.
 
 **Required:** `kind`, `id`, `title`, `status`
 
-**Optional:** `assigned_to`, `requested_by`, `priority`, `severity`, `goal`, `schedule`, `requires_approval`, `peer_review_required`, `peer_review_verdict`, `peer_review_verdict_at`, `peer_review_verdict_by`, `peer_review_verdict_note`, `reviewer`, `done_when`, `handoff_chain`, `created_at`, `created_by`, `denial_reason`, `budget_usd_cents`, `provider`, `model`
+**Optional:** `assigned_to`, `requested_by`, `priority`, `severity`, `goal`, `schedule`, `requires_approval`, `peer_review_required`, `peer_review_verdict`, `peer_review_verdict_at`, `peer_review_verdict_by`, `peer_review_verdict_note`, `reviewer`, `done_when`, `handoff_chain`, `depends_on`, `cancelled_reason`, `created_at`, `created_by`, `denial_reason`, `budget_usd_cents`, `provider`, `model`
 
 ### Enums
 
@@ -25,14 +25,14 @@ and per-task provider/model override.
 | `priority` | `low`, `medium`, `high`, `critical` |
 | `requires_approval` | `director` |
 | `severity` | `info`, `minor`, `major`, `critical` |
-| `status` | `todo`, `in-progress`, `pending`, `pending-approval`, `approved`, `denied`, `done` |
+| `status` | `todo`, `in-progress`, `pending`, `pending-approval`, `approved`, `denied`, `cancelled`, `done` |
 
 
 ## Canonical key order
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `id`, `title`, `status`, `assigned_to`, `requested_by`, `priority`, `severity`, `goal`, `schedule`, `requires_approval`, `peer_review_required`, `peer_review_verdict`, `peer_review_verdict_by`, `peer_review_verdict_at`, `peer_review_verdict_note`, `reviewer`, `provider`, `model`, `budget_usd_cents`, `created_at`, `created_by`, `denial_reason`, `done_when`, `handoff_chain`
+`kind`, `id`, `title`, `status`, `assigned_to`, `requested_by`, `priority`, `severity`, `goal`, `schedule`, `requires_approval`, `peer_review_required`, `peer_review_verdict`, `peer_review_verdict_by`, `peer_review_verdict_at`, `peer_review_verdict_note`, `reviewer`, `provider`, `model`, `budget_usd_cents`, `depends_on`, `cancelled_reason`, `created_at`, `created_by`, `denial_reason`, `done_when`, `handoff_chain`
 
 Unknown keys fall after the known block, sorted alphabetically.
 
