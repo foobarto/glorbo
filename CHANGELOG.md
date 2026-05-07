@@ -80,8 +80,32 @@ to flag the dep as a runtime requirement and embed it in
 release manifest as `permanent`. Even after
 `Mix.Tasks.Glorbo.BuildLocal.purge_dev_only_artifacts!/0` wiped
 `_build/prod/lib/phoenix_live_reload`, mix release re-pulled it
-during assemble. Gated the listener on `Mix.env() == :dev` so prod
-releases stay clean.
+during assemble. Two-part fix:
+
+- Gated the listener on `Mix.env() == :dev` in `mix.exs`.
+- `mix glorbo.build_local` now re-execs itself with `MIX_ENV=prod` if
+  invoked without it. `Mix.Project.config()` is evaluated once at
+  startup and cached, so bumping `Mix.env(:prod)` later in the task
+  has no effect on `listeners(Mix.env())` — the re-exec ensures the
+  project config is loaded with the right env from the very start.
+
+### Changed — `mix release` aliased to `mix glorbo.release_guard`
+
+`:aliases` in `mix.exs` now routes `mix release` through
+`Mix.Tasks.Glorbo.ReleaseGuard`, a string-form alias so Mix loads
+the task lazily (function aliases need the module already compiled,
+which fails on a clean prod build). `ReleaseGuard`:
+
+- Acquires a per-checkout lock at `_build/.release.lock` (atomic
+  exclusive create + PID liveness check via `/proc/<pid>`). Stale
+  locks from crashed prior builds are detected and reclaimed.
+- Replaces the earlier `pgrep` heuristic which false-positived on
+  the shell wrapper whose eval string contained the literal
+  "mix release" we were searching for.
+- Always appends `--overwrite` (idempotent) so direct `mix release`
+  callers don't pause on the interactive overwrite prompt.
+- Calls `Mix.Tasks.Release.run/1` directly to avoid recursing
+  through its own alias.
 
 ### Fixed — Burrito `.zig-cache` poisoning across failed builds
 

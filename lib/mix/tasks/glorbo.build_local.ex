@@ -42,14 +42,33 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
   @dev_only_deps ~w(phoenix_live_reload floki lazy_html credo)
 
   @impl Mix.Task
-  def run(_argv) do
-    # Two `mix release` invocations on the same checkout race on
-    # `.zig-cache/` and Burrito's `payload.foilz.xz`. The loser fails
-    # late with "FileNotFound: payload.foilz.xz" and may leave the
-    # winner's `burrito_out/` half-overwritten. Refuse to start when
-    # another build is already in flight; the other run will produce
-    # the same binary anyway.
-    refuse_if_concurrent_build!()
+  def run(argv) do
+    # `Mix.Project.config()` is evaluated once per Mix.Project module
+    # load and cached. By the time this task runs, `mix.exs`'s
+    # `listeners: listeners(Mix.env())` has already been resolved with
+    # whatever `Mix.env()` was at startup — bumping `Mix.env(:prod)`
+    # later in this function does NOT re-evaluate it. So if mix was
+    # started without `MIX_ENV=prod`, `Phoenix.CodeReloader` (from
+    # `phoenix_live_reload`, `only: :dev`) is locked in as a project
+    # listener and mix release ends up embedding the dev-only dep into
+    # the prod release manifest. Re-exec ourselves with `MIX_ENV=prod`.
+    if Mix.env() != :prod do
+      Mix.shell().info("re-executing under MIX_ENV=prod (was #{Mix.env()})")
+
+      {_out, status} =
+        System.cmd("mix", ["glorbo.build_local" | argv],
+          env: [{"MIX_ENV", "prod"}],
+          into: IO.stream(:stdio, :line),
+          stderr_to_stdout: true
+        )
+
+      exit({:shutdown, status})
+    end
+
+    # Concurrent-build refusal is handled by `Mix.Tasks.Glorbo.ReleaseGuard`
+    # which the `:release` alias in `mix.exs` routes through. We don't
+    # duplicate the check here; the lockfile is acquired one frame
+    # deeper when we call `Mix.Task.run("release", ...)`.
 
     # Burrito unpacks the bundled ERTS to `/tmp/unpacked_erts_<hex>/`
     # on every build (~128 MB each) and never cleans them up. Across
@@ -120,44 +139,26 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     end
   end
 
-  defp refuse_if_concurrent_build! do
-    my_pid = "#{System.pid()}"
-
-    case System.cmd("pgrep", ["-af", "mix release"], stderr_to_stdout: true) do
-      {output, 0} ->
-        others =
-          output
-          |> String.split("\n", trim: true)
-          |> Enum.reject(&String.contains?(&1, my_pid))
-
-        unless others == [] do
-          Mix.shell().error(
-            "refusing concurrent build — another mix release is running:\n  " <>
-              Enum.join(others, "\n  ") <>
-              "\n(Burrito's payload.foilz.xz race; wait for it to finish or kill it)"
-          )
-
-          exit({:shutdown, 1})
-        end
-
-      # pgrep exits 1 when nothing matches → no concurrent build → fine.
-      _ ->
-        :ok
-    end
-  end
-
   defp purge_zig_cache_if_dirty! do
-    # Files that should NOT exist between builds — Burrito's
-    # `clean_build` removes them after every build. Their presence
-    # means the previous build crashed or was killed mid-flight.
+    # Files that Burrito's `clean_build` step removes via `File.rm/1`
+    # at the end of every successful build — their presence at the
+    # start of a build means the previous one crashed mid-flight and
+    # the `.zig-cache` manifests are still pointing at files that
+    # this fresh build is about to overwrite or that no longer exist.
+    #
+    # Note: we deliberately do NOT check for `deps/burrito/zig-out`.
+    # Burrito's `clean_build` calls `File.rmdir/1` on it, which only
+    # removes EMPTY directories — so `zig-out` happily survives every
+    # successful build. Treating its existence as "dirty" would wipe
+    # `.zig-cache` on every single build and defeat the whole point
+    # of incremental compilation (~5 min cost per rebuild).
     burrito = "deps/burrito"
 
     residuals = [
       Path.join([burrito, "src", "payload.foilz.xz"]),
       Path.join([burrito, "src", "musl-runtime.so"]),
       Path.join([burrito, "src", "_metadata.json"]),
-      Path.join(burrito, "payload.foilz"),
-      Path.join(burrito, "zig-out")
+      Path.join(burrito, "payload.foilz")
     ]
 
     dirty? = Enum.any?(residuals, &File.exists?/1)

@@ -173,13 +173,16 @@ defmodule Glorbo.MixProject do
       ],
       # TODO D1: bare `mix release glorbo` pauses on
       # "Release glorbo-X.Y.Z already exists. Overwrite? [Yn]"
-      # which blocks non-interactive CI/scripts and contributes
-      # nothing for an interactive user (the answer is always yes
-      # — there's no other place to put a glorbo release). Always
-      # add --overwrite. `mix glorbo.build_local` is still the
-      # recommended local-build path because it also wipes the
-      # burrito cache + dev-only deps + does the symlink dance.
-      release: &Mix.Tasks.Glorbo.ReleaseGuard.run/1
+      # which blocks non-interactive CI/scripts. Route `mix release`
+      # through `glorbo.release_guard` (string-aliased so Mix loads
+      # the task lazily — function aliases need the module already
+      # compiled, which fails on a clean prod build). The guard
+      # appends --overwrite when missing and refuses concurrent
+      # invocations. `mix glorbo.build_local` remains the canonical
+      # local-build path because it also wipes the burrito cache,
+      # dev-only deps, the poisoned `.zig-cache`, and symlinks
+      # `./glorbo`.
+      release: ["glorbo.release_guard"]
     ]
   end
 end
