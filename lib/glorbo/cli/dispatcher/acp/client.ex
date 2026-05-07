@@ -107,7 +107,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
       and a mismatch becomes `:provider_protocol_error`.
     * `:client_info` (map, default `%{name: "glorbo", version: "1"}`)
       — passed through in initialize params.
-    * `:phase_timeout_ms` (integer, default 30_000) — read deadline
+    * `:phase_timeout_ms` (integer, default 600_000) — read deadline
       for each phase. Streaming phase resets the deadline on every
       chunk.
     * `:audit_fun` (`(role, kind, detail -> :ok)`, default no-op) —
