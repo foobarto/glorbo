@@ -168,6 +168,39 @@ alongside the share bind (worktrees go to state, not share).
 
 ## Bugs
 
+### B8: `glorbo shell` doesn't react to keyboard input
+
+**Priority: LOW** (per user). Repro needed before fixing.
+
+**Hypothesis (unverified):** Burrito's self-extracting binary launches
+the BEAM via the OTP release launcher in `eval` mode (see
+`rel/overlays/bin/glorbo-cli`: `bin/glorbo eval 'Glorbo.CLI.dispatch(argv)'`).
+`eval` mode connects stdin as a regular pipe, **not** as a TTY. TermUI's
+`:auto` backend probes raw mode → falls back to tty mode, but neither
+captures interactive keystrokes when the underlying fd is a pipe — the
+runtime sits waiting for input that never arrives.
+
+**Current `Glorbo.Shell.run/1` TTY guard** (`interactive_tty?/0`) only
+checks `IO.ANSI.enabled?()`, which probes **stdout** capability. It
+returns `true` even when stdin is piped — so the placeholder banner is
+skipped and TermUI silently hangs.
+
+**Investigation steps:**
+
+1. Confirm repro path. Is the user running `./glorbo shell <co>` (Burrito
+   binary), `mix glorbo.shell ...`, or `iex -S mix`? Each path has a
+   different stdin attach story.
+2. If Burrito-binary repro: check whether `bin/glorbo` has a `start_iex`
+   / `console` mode that preserves TTY semantics. If so, use that for
+   shell verb instead of `eval`.
+3. Tighten `interactive_tty?/0` to probe stdin via
+   `:io.getopts(:standard_io)` (look for `:expand_fun` presence or
+   `:terminal` key — varies by OTP version) so the shell at least
+   refuses cleanly with the existing non-TTY banner instead of hanging.
+
+**See:** GEP-37 (Glorbo Shell), `lib/glorbo/shell.ex`,
+`lib/glorbo/shell/launcher.ex`, `rel/overlays/bin/glorbo-cli`.
+
 ### B1: ACP `session/update` kind mismatch ~~FIXED~~
 ### B2: ACP phase_timeout_ms too short (30s default) ~~FIXED~~
 ### B3: cli_auth_bind_flags ignores mode field — always --ro-bind ~~FIXED~~
