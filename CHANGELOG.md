@@ -10,6 +10,38 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — D8: F6 persistence rejects non-UUID `sessionId`
+
+The F6 session-resume implementation persisted whatever the peer
+returned in `acp_result.session_id` to
+`<workspace>/.glorbo/sessions/<provider>__<task_id>.txt`, then sent
+the same value back as `resumeSession` on the next dispatch. Stado
+v0.46.x's ACP server validates `resumeSession` strictly: the param
+must be a canonical UUID; named-session lookup is operator-only via
+the `--resume` CLI flag. When stado returned a description / project
+slug instead of a UUID (or when older Glorbo persisted such a value),
+every subsequent dispatch for that task wedged with `code: -32602,
+"resumeSession: invalid session id (must be a canonical UUID)"`.
+Operators had to manually `rm` the bad session file to recover.
+
+Both sides of the persistence round-trip now validate UUID shape via
+a regex (8-4-4-4-12 hex):
+
+- **Write** (`write_acp_session_id/2`): refuses non-UUID values, logs
+  a warning, leaves the file untouched.
+- **Read** (`read_acp_session_id/1`): treats non-UUID content as
+  "no prior session", and best-effort `rm`s the file so the next
+  dispatch starts clean and the operator's directory listing
+  reflects what's actually usable.
+
+Two new dispatcher tests cover both paths: peer returns non-UUID →
+file not created; pre-existing non-UUID file (from older Glorbo) →
+read returns nil + file dropped + fresh UUID from current dispatch
+replaces it. Existing F6 tests had their fake `"uuid-stado-1"` /
+`"acp-bench-7"` / `"s-1"` / `"s-test"` placeholders rewritten to
+canonical UUID shape so the new validator's warning doesn't clutter
+CI logs.
+
 ### Fixed — D3: stado provider mounts XDG_STATE_HOME for worktree creation
 
 The default stado provider config bound `~/.config/stado` (ro) and

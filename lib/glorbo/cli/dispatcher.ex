@@ -875,11 +875,30 @@ defmodule Glorbo.CLI.Dispatcher do
   defp read_acp_session_id(nil), do: nil
 
   defp read_acp_session_id(path) do
+    # D8: validate the on-disk content as a canonical UUID before
+    # handing it back to the caller. Files written by older Glorbo
+    # versions, or by a peer that returned a non-UUID `sessionId`
+    # (e.g. a description / project slug — stado-htb's `--resume`
+    # CLI flag accepts those, but the `resumeSession` ACP param
+    # rejects with `code: -32602, "invalid UUID length: N"` and
+    # wedges the dispatch). Treat any non-UUID content as "no
+    # prior session" and let the dispatch proceed fresh.
     case File.read(path) do
       {:ok, content} ->
         case String.trim(content) do
-          "" -> nil
-          trimmed -> trimmed
+          "" ->
+            nil
+
+          trimmed ->
+            if uuid_shape?(trimmed) do
+              trimmed
+            else
+              # Best-effort cleanup: drop the bad file so the next
+              # dispatch starts clean and the operator's directory
+              # listing reflects what's actually usable.
+              _ = File.rm(path)
+              nil
+            end
         end
 
       _ ->
@@ -892,8 +911,29 @@ defmodule Glorbo.CLI.Dispatcher do
   defp write_acp_session_id(_, ""), do: :ok
 
   defp write_acp_session_id(path, session_id) when is_binary(session_id) do
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, session_id)
-    :ok
+    if uuid_shape?(session_id) do
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, session_id)
+      :ok
+    else
+      # D8: refuse to persist a non-UUID sessionId. A future
+      # dispatch trying to `resumeSession` against it would be
+      # rejected by stado / any other ACP peer that validates
+      # input strictly. Better to start fresh next call than to
+      # wedge the agent on a bad token.
+      Logger.warning(
+        "[dispatcher] dropping non-UUID ACP sessionId from persistence: #{inspect(session_id)} — next dispatch will start a fresh session"
+      )
+
+      :ok
+    end
   end
+
+  # Canonical UUID regex (8-4-4-4-12 hex, case-insensitive). Used as
+  # a defensive shape check on both sides of the F6 session-resume
+  # round-trip — see D8 in TODO for the wedge mode this prevents.
+  @uuid_regex ~r/\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\z/
+
+  defp uuid_shape?(s) when is_binary(s), do: Regex.match?(@uuid_regex, s)
+  defp uuid_shape?(_), do: false
 end

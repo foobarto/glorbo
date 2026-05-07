@@ -517,7 +517,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
         :counters.add(called, 1, 1)
-        {:ok, %{reply: "hello from acp", session_id: "s-test", chunks: 2, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "hello from acp",
+           session_id: "00000000-0000-4000-8000-000000000001",
+           chunks: 2,
+           ignored_updates: 0
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
@@ -600,7 +607,13 @@ defmodule Glorbo.CLI.DispatcherTest do
 
     test "invoke/3 surfaces ACP metadata (session_id + chunks + ignored_updates) on success" do
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
-        {:ok, %{reply: "ok", session_id: "acp-session-42", chunks: 3, ignored_updates: 1}}
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "42420000-0000-4000-8000-000000000042",
+           chunks: 3,
+           ignored_updates: 1
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
@@ -610,7 +623,7 @@ defmodule Glorbo.CLI.DispatcherTest do
                Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
 
       assert result.acp == %{
-               session_id: "acp-session-42",
+               session_id: "42420000-0000-4000-8000-000000000042",
                chunks: 3,
                ignored_updates: 1
              }
@@ -621,7 +634,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn bwrap_opts, _run_opts_map, _opts ->
         send(test_pid, {:bwrap_opts_seen, bwrap_opts})
-        {:ok, %{reply: "ok", session_id: "s", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "00000000-0000-4000-8000-000000000003",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       ws = tmp_workspace()
@@ -662,12 +682,26 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       first_run = fn _bwrap_opts, _run_opts_map, opts ->
         send(test_pid, {:opts_seen, :first, opts})
-        {:ok, %{reply: "phase 1", session_id: "uuid-stado-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "phase 1",
+           session_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       second_run = fn _bwrap_opts, _run_opts_map, opts ->
         send(test_pid, {:opts_seen, :second, opts})
-        {:ok, %{reply: "phase 2", session_id: "uuid-stado-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "phase 2",
+           session_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
@@ -683,15 +717,78 @@ defmodule Glorbo.CLI.DispatcherTest do
       session_file =
         Path.join([ws, ".glorbo", "sessions", "stado__task-resume-fixture.txt"])
 
-      assert File.read!(session_file) == "uuid-stado-1",
+      assert File.read!(session_file) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
              "session file should hold the returned session_id"
 
       assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: second_run)
 
       assert_received {:opts_seen, :second, second_opts}
 
-      assert Keyword.get(second_opts, :resume_session_id) == "uuid-stado-1",
+      assert Keyword.get(second_opts, :resume_session_id) ==
+               "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
              "second dispatch should carry the prior session_id as resume_session_id"
+    end
+
+    # D8: F6 wedge mode — a non-UUID session_id from the peer (e.g. a
+    # description / project slug) gets persisted, then the NEXT
+    # dispatch sends it back as `resumeSession` and the peer rejects
+    # with `code: -32602, "invalid UUID length"`. Both write and read
+    # paths now validate UUID shape; non-UUIDs are dropped (not
+    # persisted) on write and cleaned up + returned as nil on read.
+    test "D8: invoke/3 refuses to persist a non-UUID sessionId returned by the peer" do
+      ws = tmp_workspace()
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok, %{reply: "ok", session_id: "trick", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ctx = base_ctx(ws, task_id: "trick-01")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      session_file =
+        Path.join([ws, ".glorbo", "sessions", "stado__trick-01.txt"])
+
+      refute File.exists?(session_file),
+             "non-UUID session_id must not be persisted (would wedge next dispatch)"
+    end
+
+    test "D8: a pre-existing non-UUID session file is dropped + read returns nil" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      # Plant the bad file the way an older Glorbo version would have.
+      sessions_dir = Path.join([ws, ".glorbo", "sessions"])
+      File.mkdir_p!(sessions_dir)
+      session_file = Path.join(sessions_dir, "stado__trick-01.txt")
+      File.write!(session_file, "trick")
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "abcdef00-0000-4000-8000-000000000abc",
+           chunks: 1,
+           ignored_updates: 0
+         }}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ctx = base_ctx(ws, task_id: "trick-01")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      assert_received {:opts_seen, opts}
+
+      refute Keyword.has_key?(opts, :resume_session_id),
+             "non-UUID on disk must NOT be threaded as :resume_session_id"
+
+      # Fresh UUID from this dispatch is now persisted (replacing the
+      # bad value).
+      assert File.read!(session_file) == "abcdef00-0000-4000-8000-000000000abc"
     end
 
     test "invoke/3 skips session persistence when task_id is empty" do
@@ -721,13 +818,19 @@ defmodule Glorbo.CLI.DispatcherTest do
 
     test "invoke/3 wires the stado_acp usage parser with session_id + host_binary" do
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
-        {:ok, %{reply: "ok", session_id: "acp-bench-7", chunks: 2, ignored_updates: 0}}
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "b0000000-0000-4000-8000-000000000007",
+           chunks: 2,
+           ignored_updates: 0
+         }}
       end
 
       stats_json = """
       {
         "window_days": 7,
-        "session_id": "acp-bench-7",
+        "session_id": "b0000000-0000-4000-8000-000000000007",
         "total": {"calls": 1, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001},
         "total_duration_ms": 250,
         "by_model": {"claude-sonnet-4-5": {"calls": 1, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001}},
@@ -768,7 +871,10 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       # Parser ran and produced a usage map.
       assert :counters.get(capture, 1) == 1
-      assert_received {:cmd, "/host/stado", ["stats", "--session", "acp-bench-7", "--json"], _}
+
+      assert_received {:cmd, "/host/stado",
+                       ["stats", "--session", "b0000000-0000-4000-8000-000000000007", "--json"],
+                       _}
 
       assert result.usage.prompt_tokens == 100
       assert result.usage.completion_tokens == 50
@@ -815,7 +921,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
         :persistent_term.put({__MODULE__, :captured}, opts)
-        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "00000000-0000-4000-8000-000000000002",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       audit_fun = fn _role, _kind, _detail -> :ok end
@@ -840,7 +953,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
         send(test_pid, {:opts_seen, opts})
-        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "00000000-0000-4000-8000-000000000002",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp, phase_timeout_ms: 30_000)
@@ -857,7 +977,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
         send(test_pid, {:opts_seen, opts})
-        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "00000000-0000-4000-8000-000000000002",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp, phase_timeout_ms: 30_000)
@@ -879,7 +1006,14 @@ defmodule Glorbo.CLI.DispatcherTest do
 
       acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
         send(test_pid, {:opts_seen, opts})
-        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "00000000-0000-4000-8000-000000000002",
+           chunks: 1,
+           ignored_updates: 0
+         }}
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
