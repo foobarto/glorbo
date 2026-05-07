@@ -35,6 +35,7 @@ defmodule Glorbo.FileSpec.AgentMd do
         :permissions,
         :network_allow,
         :autonomy,
+        :allow_untracked_budget,
         # Set by `glorbo import paperclip` so Directors can grep
         # for imported agents later. Free-form; the validator
         # doesn't enforce a value.

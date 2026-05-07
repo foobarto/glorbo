@@ -377,10 +377,16 @@ defmodule Glorbo.Sandbox.Bwrap do
   # ---------------------------------------------------------------------------
 
   defp cli_auth_bind_flags(binds) when is_list(binds) do
-    Enum.flat_map(binds, fn {host_path, sandbox_path} ->
-      ["--ro-bind", host_path, sandbox_path]
+    Enum.flat_map(binds, fn
+      {host, sandbox, mode, :dir} -> ["--dir", sandbox] ++ bind_flag(host, sandbox, mode)
+      {host, sandbox, mode, _type} -> bind_flag(host, sandbox, mode)
+      {host, sandbox, mode} -> bind_flag(host, sandbox, mode)
+      {host, sandbox} -> bind_flag(host, sandbox, :ro)
     end)
   end
+
+  defp bind_flag(host, sandbox, :rw), do: ["--bind", host, sandbox]
+  defp bind_flag(host, sandbox, _), do: ["--ro-bind", host, sandbox]
 
   # ---------------------------------------------------------------------------
   # GEP-27: approved external path mounts

@@ -734,7 +734,7 @@ defmodule Glorbo.Agent.Dispatch do
     if File.exists?(candidate), do: candidate, else: nil
   end
 
-  # GEP-8 auth_binds → bwrap's `{host, sandbox}` tuple list.
+  # GEP-8 auth_binds → bwrap 4-tuples `{host, sandbox, mode, type}`.
   #
   # - Expands `~` / `$HOME` in host paths so the TOML can use
   #   `~/.claude`.
@@ -743,16 +743,20 @@ defmodule Glorbo.Agent.Dispatch do
   #   without claude-code installed shouldn't have `claude` dispatches
   #   fail for a missing `~/.claude/`; the CLI itself will fail the
   #   invocation anyway with a clearer error.
-  # - Drops the `:mode` — bwrap takes rw vs ro as separate flags; our
-  #   current sandbox helper only supports ro. An `:rw` entry in the
-  #   TOML is reserved for future use and is silently treated as ro
-  #   today (auth dirs should never be rw-mounted).
+  # - `mode` is `:rw` or `:ro` (default). bwrap.ex emits `--bind` for
+  #   `:rw` and `--ro-bind` otherwise.
+  # - `type` is `:dir` or `:file`. For `:dir`, bwrap.ex emits a
+  #   `--dir <sandbox>` before the bind so non-standard sandbox paths
+  #   like `/project` (TODO B5) are created on the tmpfs root before
+  #   the bind tries to overlay them.
   defp resolve_auth_binds(%{auth_binds: binds}) when is_list(binds) do
     binds
-    |> Enum.map(fn %{host: host, sandbox: sandbox} ->
-      {Path.expand(host), sandbox}
+    |> Enum.map(fn %{host: host, sandbox: sandbox} = bind ->
+      expanded = Path.expand(host)
+      type = if File.dir?(expanded), do: :dir, else: :file
+      {expanded, sandbox, Map.get(bind, :mode, :ro), type}
     end)
-    |> Enum.filter(fn {host, _sandbox} -> File.exists?(host) end)
+    |> Enum.filter(fn {host, _s, _m, _t} -> File.exists?(host) end)
   end
 
   defp resolve_auth_binds(_), do: []

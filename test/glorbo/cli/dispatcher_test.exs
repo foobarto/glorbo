@@ -594,6 +594,45 @@ defmodule Glorbo.CLI.DispatcherTest do
              }
     end
 
+    test "TODO B4: ACP path merges provider [env] into bwrap_opts.cli_env (host workspace rewritten to /workspace)" do
+      test_pid = self()
+
+      acp_run_fun = fn bwrap_opts, _run_opts_map, _opts ->
+        send(test_pid, {:bwrap_opts_seen, bwrap_opts})
+        {:ok, %{reply: "ok", session_id: "s", chunks: 1, ignored_updates: 0}}
+      end
+
+      ws = tmp_workspace()
+
+      p =
+        base_provider(
+          name: "stado",
+          prompt_mode: :acp,
+          env: %{
+            "STADO_API_KEY" => "secret-token",
+            "STADO_DATA_DIR" => "{workspace}/.local/share/stado"
+          }
+        )
+
+      ctx =
+        base_ctx(ws,
+          bwrap_opts: %{
+            agent_workspace: ws,
+            cli_env: %{"PRE_EXISTING" => "keep"}
+          }
+        )
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      assert_received {:bwrap_opts_seen, bwrap_opts}
+      cli_env = Map.fetch!(bwrap_opts, :cli_env)
+
+      assert cli_env["STADO_API_KEY"] == "secret-token"
+      assert cli_env["STADO_DATA_DIR"] == "/workspace/.local/share/stado"
+      assert cli_env["PRE_EXISTING"] == "keep"
+      assert cli_env["GLORBO_WORKSPACE"] == "/workspace"
+    end
+
     test "invoke/3 wires the stado_acp usage parser with session_id + host_binary" do
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
         {:ok, %{reply: "ok", session_id: "acp-bench-7", chunks: 2, ignored_updates: 0}}

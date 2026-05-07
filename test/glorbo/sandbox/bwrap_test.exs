@@ -43,6 +43,19 @@ defmodule Glorbo.Sandbox.BwrapTest do
              "argv=#{inspect(argv)}"
   end
 
+  defp refute_subsequence(argv, slice) do
+    refute Enum.empty?(slice), "empty slice is meaningless"
+
+    found? =
+      argv
+      |> Enum.chunk_every(length(slice), 1, :discard)
+      |> Enum.any?(&(&1 == slice))
+
+    refute found?,
+           "expected argv to NOT contain in-order slice #{inspect(slice)}\n" <>
+             "argv=#{inspect(argv)}"
+  end
+
   describe "build_argv/1 — baseline flags (B1, D-08)" do
     test "B1: minimal invocation emits every D-08 baseline flag + root FS + agent-owned + env" do
       argv = Bwrap.build_argv(base_opts())
@@ -164,6 +177,37 @@ defmodule Glorbo.Sandbox.BwrapTest do
         )
 
       assert_subsequence(argv, ["--ro-bind", "/home/user/.claude", "/host-claude"])
+    end
+
+    test "B5b: 3-tuple cli_auth_binds with :rw mode emit --bind not --ro-bind" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            cli_auth_binds: [
+              {"/h/rw", "/sb/rw", :rw},
+              {"/h/ro", "/sb/ro", :ro}
+            ]
+          })
+        )
+
+      assert_subsequence(argv, ["--bind", "/h/rw", "/sb/rw"])
+      assert_subsequence(argv, ["--ro-bind", "/h/ro", "/sb/ro"])
+    end
+
+    test "B5c: 4-tuple cli_auth_binds with :dir type emit --dir before the bind" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            cli_auth_binds: [
+              {"/h/datadir", "/project", :rw, :dir},
+              {"/h/cli", "/tmp/cli-bin", :ro, :file}
+            ]
+          })
+        )
+
+      assert_subsequence(argv, ["--dir", "/project", "--bind", "/h/datadir", "/project"])
+      assert_subsequence(argv, ["--ro-bind", "/h/cli", "/tmp/cli-bin"])
+      refute_subsequence(argv, ["--dir", "/tmp/cli-bin"])
     end
 
     test "B6: cli_env entries emit --setenv flags" do

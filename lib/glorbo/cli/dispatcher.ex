@@ -105,7 +105,9 @@ defmodule Glorbo.CLI.Dispatcher do
 
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
-         {:ok, %{reply: reply_text} = acp_result} <- run_acp(provider, args, ctx, opts) do
+         env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),
+         enriched_ctx <- inject_env_into_bwrap_opts(ctx, env),
+         {:ok, %{reply: reply_text} = acp_result} <- run_acp(provider, args, enriched_ctx, opts) do
       :ok = write_reply_file!(reply_path, reply_text, provider.reply_max_bytes, fs)
 
       acp_meta = %{
@@ -324,6 +326,37 @@ defmodule Glorbo.CLI.Dispatcher do
       {:error, _} = err ->
         err
     end
+  end
+
+  # The stdin run path passes provider [env] vars as a separate arg
+  # to its run_fun, which `Glorbo.Agent.Dispatch.default_run_fun/4`
+  # merges into bwrap_opts.cli_env (with host-workspace → /workspace
+  # rewriting). The ACP run path doesn't have that seam — start_acp/2
+  # only reads cli_env from bwrap_opts. Without this merge, every
+  # `[env]` entry in a provider TOML is silently dropped on ACP
+  # dispatches, which broke stado-htb until a wrapper script worked
+  # around it (TODO B4).
+  defp inject_env_into_bwrap_opts(ctx, env) when is_map(env) do
+    bwrap_opts = Map.get(ctx, :bwrap_opts, %{})
+
+    host_workspace =
+      Map.get(bwrap_opts, :agent_workspace) ||
+        Map.get(ctx, :workspace) || ""
+
+    sandbox_env = rewrite_env_for_sandbox(env, host_workspace)
+    base_cli_env = Map.get(bwrap_opts, :cli_env, %{})
+    merged = Map.merge(base_cli_env, sandbox_env)
+
+    Map.put(ctx, :bwrap_opts, Map.put(bwrap_opts, :cli_env, merged))
+  end
+
+  defp rewrite_env_for_sandbox(env, "") when is_map(env), do: env
+
+  defp rewrite_env_for_sandbox(env, host) when is_map(env) and is_binary(host) do
+    Map.new(env, fn
+      {k, v} when is_binary(v) -> {k, String.replace(v, host, "/workspace")}
+      kv -> kv
+    end)
   end
 
   # ACP usage parsing — runs after the dispatch returns, OUTSIDE the
