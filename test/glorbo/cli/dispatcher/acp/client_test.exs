@@ -217,6 +217,100 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
       assert {:ok, %{reply: "ok"}} =
                Client.run(peer_io(agent), "x", phase_timeout_ms: 100)
     end
+
+    # F9: stado v0.46.0 emits kind=tool_summary on tool-only turns.
+    test "synthesizes reply from wrapped kind=tool_summary when no text chunks arrived" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, id, "session/prompt", %{"sessionId" => sid}} ->
+            summary =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "update" => %{
+                    "kind" => "tool_summary",
+                    "toolCount" => 5,
+                    "lastTool" => "shell__bash",
+                    "lastError" => false
+                  }
+                })
+              )
+
+            done = Framing.encode(Message.new_response(id, %{"stopReason" => "end_turn"}))
+            [summary, done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, result} = Client.run(peer_io(agent), "x")
+      assert result.reply == "[5 tool call(s); last=shell__bash; ok]"
+      assert result.chunks == 0
+    end
+
+    test "synthesizes reply from unwrapped kind=tool_summary with lastError=true" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, id, "session/prompt", %{"sessionId" => sid}} ->
+            summary =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "kind" => "tool_summary",
+                  "toolCount" => 1,
+                  "lastTool" => "shell__bash",
+                  "lastError" => true
+                })
+              )
+
+            done = Framing.encode(Message.new_response(id, %{}))
+            [summary, done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: "[1 tool call(s); last=shell__bash; error]"}} =
+               Client.run(peer_io(agent), "x")
+    end
+
+    test "text chunks win over tool_summary when both arrive" do
+      agent =
+        start_peer([
+          &init_response_to/1,
+          &session_new_response_to/1,
+          fn {:request, id, "session/prompt", %{"sessionId" => sid}} ->
+            summary =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "update" => %{
+                    "kind" => "tool_summary",
+                    "toolCount" => 2,
+                    "lastTool" => "shell__bash",
+                    "lastError" => false
+                  }
+                })
+              )
+
+            chunk =
+              Framing.encode(
+                Message.new_notification("session/update", %{
+                  "sessionId" => sid,
+                  "update" => %{"kind" => "agent_message_chunk", "text" => "real reply"}
+                })
+              )
+
+            done = Framing.encode(Message.new_response(id, %{}))
+            [summary, chunk, done]
+          end,
+          &shutdown_response_to/1
+        ])
+
+      assert {:ok, %{reply: "real reply", chunks: 1}} = Client.run(peer_io(agent), "x")
+    end
   end
 
   # ----- error paths -----

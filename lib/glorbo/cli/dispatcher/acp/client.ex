@@ -134,6 +134,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
       reply: [],
       chunks: 0,
       ignored_updates: 0,
+      tool_summary: nil,
       audit_fun: audit_fun
     }
 
@@ -144,8 +145,17 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
            {:ok, state} <- phase_session_new(state),
            {:ok, state} <- phase_session_prompt(state, prompt),
            {:ok, state} <- phase_shutdown(state) do
+        reply_text = state.reply |> Enum.reverse() |> Elixir.IO.iodata_to_binary()
+
+        reply_text =
+          if reply_text == "" and not is_nil(state.tool_summary) do
+            synthesize_tool_summary_reply(state.tool_summary)
+          else
+            reply_text
+          end
+
         ok = %{
-          reply: state.reply |> Enum.reverse() |> Elixir.IO.iodata_to_binary(),
+          reply: reply_text,
           session_id: state.session_id,
           chunks: state.chunks,
           ignored_updates: state.ignored_updates
@@ -331,8 +341,29 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     %{state | reply: [text | state.reply], chunks: state.chunks + 1}
   end
 
+  # F9: stado v0.46.0 emits kind=tool_summary on any turn with ≥1 tool
+  # call but 0 text deltas. Capture the latest one so result-assembly
+  # can synthesize a non-empty reply when no text chunks arrived. Wire
+  # format (camelCase): {kind: "tool_summary", toolCount: N,
+  # lastTool: "shell__bash", lastError: bool}. Both wrapped and
+  # unwrapped shapes appear on the wire.
+  defp absorb_update(state, %{"update" => %{"kind" => "tool_summary"} = summary}) do
+    %{state | tool_summary: summary}
+  end
+
+  defp absorb_update(state, %{"kind" => "tool_summary"} = summary) do
+    %{state | tool_summary: summary}
+  end
+
   defp absorb_update(state, _other_params) do
     %{state | ignored_updates: state.ignored_updates + 1}
+  end
+
+  defp synthesize_tool_summary_reply(summary) when is_map(summary) do
+    count = Map.get(summary, "toolCount", 0)
+    last_tool = Map.get(summary, "lastTool", "?")
+    status = if Map.get(summary, "lastError", false), do: "error", else: "ok"
+    "[#{count} tool call(s); last=#{last_tool}; #{status}]"
   end
 
   # ---------- transport plumbing ----------

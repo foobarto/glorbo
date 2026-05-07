@@ -10,6 +10,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — F9: synthesize reply from `kind=tool_summary` on tool-only ACP turns
+
+stado v0.46.0 emits `session/update {kind: "tool_summary",
+toolCount: N, lastTool: "...", lastError: bool}` at the end of any
+turn that ran ≥1 tool call but produced 0 text deltas. Previously
+the ACP client (`Glorbo.CLI.Dispatcher.Acp.Client`) ignored that
+update kind, so the assembled reply was empty and downstream
+consumers reported a 0-byte response on tool-only turns. Now the
+client captures the latest `tool_summary` (both wrapped
+`{"update": {...}}` and unwrapped top-level shapes, camelCase keys)
+and synthesises `"[N tool call(s); last=<lastTool>; <ok|error>]"`
+when no text chunks arrived. Text chunks still take precedence when
+both arrive.
+
+This supersedes F8 (file fallback) as the primary fix; F8 remains
+as belt-and-suspenders for the rare case where the model wrote to
+`$GLORBO_REPLY_PATH` but neither emitted text chunks nor a tool
+summary.
+
 ### Added — GEP-46: parallelisation of company agents
 
 Three independent concurrency knobs land together:
