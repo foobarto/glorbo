@@ -811,5 +811,61 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert Keyword.get(forwarded, :audit_fun) == audit_fun
       _ = captured_opts
     end
+
+    test "invoke/3 threads provider.phase_timeout_ms into ACP opts (B9)" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp, phase_timeout_ms: 30_000)
+
+      assert {:ok, _} = Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
+
+      assert_received {:opts_seen, opts}
+      assert Keyword.get(opts, :phase_timeout_ms) == 30_000
+    end
+
+    test "invoke/3 does not override caller-supplied :phase_timeout_ms (B9)" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp, phase_timeout_ms: 30_000)
+
+      assert {:ok, _} =
+               Dispatcher.invoke(p, base_ctx(ws),
+                 acp_run_fun: acp_run_fun,
+                 phase_timeout_ms: 99_999
+               )
+
+      assert_received {:opts_seen, opts}
+      # caller-supplied value wins over provider value
+      assert Keyword.get(opts, :phase_timeout_ms) == 99_999
+    end
+
+    test "invoke/3 skips phase_timeout_ms injection when provider has nil (B9)" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+        {:ok, %{reply: "ok", session_id: "s-1", chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+
+      assert {:ok, _} = Dispatcher.invoke(p, base_ctx(ws), acp_run_fun: acp_run_fun)
+
+      assert_received {:opts_seen, opts}
+      refute Keyword.has_key?(opts, :phase_timeout_ms)
+    end
   end
 end

@@ -517,6 +517,33 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                Loader.load_all(builtin_dir: dir, user_file: nil)
     end
 
+    test "parses phase_timeout_ms when present", %{builtin_dir: dir} do
+      write!(dir, "b.toml", """
+      #{minimal_toml("with-timeout")}
+      phase_timeout_ms = 30_000
+      """)
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+      assert p.phase_timeout_ms == 30_000
+    end
+
+    test "phase_timeout_ms defaults to nil when absent", %{builtin_dir: dir} do
+      write!(dir, "b.toml", minimal_toml("no-timeout"))
+
+      assert {:ok, [p]} = Loader.load_all(builtin_dir: dir, user_file: nil)
+      assert p.phase_timeout_ms == nil
+    end
+
+    test "phase_timeout_ms must be a positive integer", %{builtin_dir: dir} do
+      write!(dir, "b.toml", """
+      #{minimal_toml("bad-timeout")}
+      phase_timeout_ms = -1
+      """)
+
+      assert {:error, {:invalid_phase_timeout_ms, _, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
     test "malformed toml", %{builtin_dir: dir} do
       write!(dir, "b.toml", "this = is [ not valid\n")
 

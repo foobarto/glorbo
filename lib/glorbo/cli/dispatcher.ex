@@ -115,6 +115,13 @@ defmodule Glorbo.CLI.Dispatcher do
         do: Keyword.put(opts, :resume_session_id, prior_session_id),
         else: opts
 
+    # B9: provider-configured timeout wins unless the caller already set one.
+    opts =
+      case provider.phase_timeout_ms do
+        nil -> opts
+        ms -> Keyword.put_new(opts, :phase_timeout_ms, ms)
+      end
+
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
          env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),

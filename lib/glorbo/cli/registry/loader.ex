@@ -175,7 +175,8 @@ defmodule Glorbo.CLI.Registry.Loader do
          {:ok, usage_path} <- parse_usage_path(raw, path),
          {:ok, path_transforms} <- parse_path_transforms(raw, path),
          {:ok, auth_binds} <- parse_auth_binds(raw, path),
-         {:ok, fallback_paths} <- parse_fallback_paths(raw, path) do
+         {:ok, fallback_paths} <- parse_fallback_paths(raw, path),
+         {:ok, phase_timeout_ms} <- parse_phase_timeout_ms(raw, path) do
       provider = %Provider{
         name: raw["name"],
         kind: kind,
@@ -186,6 +187,7 @@ defmodule Glorbo.CLI.Registry.Loader do
         reply_dir: reply_dir,
         reply_filename_template: reply_filename_template,
         reply_max_bytes: reply_max_bytes,
+        phase_timeout_ms: phase_timeout_ms,
         endpoint: endpoint,
         auth: auth,
         model_list: model_list,
@@ -338,6 +340,17 @@ defmodule Glorbo.CLI.Registry.Loader do
   end
 
   defp parse_reply_max_bytes(_raw, _path), do: {:ok, 1_048_576}
+
+  defp parse_phase_timeout_ms(%{"phase_timeout_ms" => n}, _path)
+       when is_integer(n) and n > 0 do
+    {:ok, n}
+  end
+
+  defp parse_phase_timeout_ms(%{"phase_timeout_ms" => _}, path) do
+    {:error, {:invalid_phase_timeout_ms, path, "must be a positive integer"}}
+  end
+
+  defp parse_phase_timeout_ms(_raw, _path), do: {:ok, nil}
 
   defp parse_endpoint(%{"endpoint" => value}, _path, _kind) when is_binary(value),
     do: {:ok, value}
@@ -670,6 +683,9 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   def format_error({:invalid_reply_max_bytes, path, detail}),
     do: "providers config error: #{path} reply_max_bytes #{detail}"
+
+  def format_error({:invalid_phase_timeout_ms, path, detail}),
+    do: "providers config error: #{path} phase_timeout_ms #{detail}"
 
   def format_error({:invalid_endpoint, path, detail}),
     do: "providers config error: #{path} endpoint #{detail}"
