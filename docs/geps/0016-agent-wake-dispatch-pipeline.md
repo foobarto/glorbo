@@ -8,7 +8,7 @@ created: 2026-04-18
 implemented-in: v0.0.3
 requires: [5, 8]
 extends: [5, 8]
-extended-by: [21]
+extended-by: [21, 46]
 see-also: [4, 14]
 history:
   - date: 2026-04-18
