@@ -210,6 +210,33 @@ defmodule Glorbo.Sandbox.BwrapTest do
       refute_subsequence(argv, ["--dir", "/tmp/cli-bin"])
     end
 
+    # B8: auth_bind `mode = "rw"` whose sandbox path is a sub-path of
+    # `/workspace` (the agent_workspace mount) must still emit
+    # `--bind`, not `--ro-bind`. bwrap applies binds in argv order so
+    # the rw sub-path correctly overlays the rw `/workspace` parent.
+    # Verifies cli_auth_bind_flags doesn't accidentally demote :rw to
+    # :ro for sub-paths (the reported field-time symptom).
+    test "B8: cli_auth_binds with :rw + /workspace sub-path emit --bind, not --ro-bind" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{
+            cli_auth_binds: [
+              {"/host/writable", "/workspace/project", :rw, :dir}
+            ]
+          })
+        )
+
+      assert_subsequence(argv, [
+        "--dir",
+        "/workspace/project",
+        "--bind",
+        "/host/writable",
+        "/workspace/project"
+      ])
+
+      refute_subsequence(argv, ["--ro-bind", "/host/writable", "/workspace/project"])
+    end
+
     test "B6: cli_env entries emit --setenv flags" do
       argv =
         Bwrap.build_argv(
