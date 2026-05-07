@@ -59,6 +59,30 @@ change between minor versions. Pin exact versions in downstream usage.
 - `CLAUDE.md` updated to recommend `mix glorbo.build_local` over
   plain `mix release` for local builds.
 
+### Fixed — TODO D1: `mix release glorbo` interactive overwrite prompt
+
+`mix release glorbo` (without `--overwrite`) pauses on
+`Release glorbo-X.Y.Z already exists. Overwrite? [Yn]`, which blocks
+non-interactive CI/scripts. New `Mix.Tasks.Glorbo.ReleaseGuard`
+module wraps `mix release` via an `:aliases` entry — it always
+appends `--overwrite` (idempotent if already passed) and reuses
+the same concurrent-build refusal as `glorbo.build_local`. Direct
+callers (`mix release`, `mix release glorbo`, CI scripts) now get
+the same guards as the recommended `mix glorbo.build_local` path.
+
+### Fixed — TODO D2: OTP release missing `glorbo run` verb
+
+`_build/prod/rel/glorbo/bin/glorbo` is the standard OTP launcher
+that only knows OTP commands (`start`, `daemon`, `eval`, `rpc`),
+so `bin/glorbo run acme/operator task.md` errors with
+`ERROR: Unknown command run`. Added `rel/overlays/bin/glorbo-cli`
+shell wrapper that converts `bin/glorbo-cli VERB ARGS...` into
+`bin/glorbo eval 'Glorbo.CLI.dispatch(argv)'`, passing argv via a
+NUL-delimited tempfile so paths with quotes / dollar-signs /
+newlines round-trip safely. Lets an OTP release stand in for the
+Burrito binary on hosts where Burrito hasn't been published yet
+(e.g. Kali deployments without zig).
+
 ## [0.20.0] — 2026-05-04
 
 Headline: GEP-45 Phase 3 closes — full ACP transport stack

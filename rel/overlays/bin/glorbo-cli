@@ -1,0 +1,37 @@
+#!/bin/sh
+# glorbo-cli — bridge for the OTP release launcher.
+#
+# `bin/glorbo` only knows OTP verbs (start, daemon, eval, rpc, ...).
+# Glorbo's CLI verbs (run, doctor, init, serve, status, ...) live
+# inside the application module `Glorbo.CLI.dispatch/1` and are only
+# reachable via the Burrito self-extracting binary or `mix run`.
+#
+# This wrapper turns `bin/glorbo-cli VERB ARGS...` into
+# `bin/glorbo eval 'Glorbo.CLI.dispatch(argv)'` so an OTP release
+# can stand in for the Burrito binary on hosts where Burrito hasn't
+# been published (e.g. Kali deployments where zig isn't installed).
+#
+# Argv is passed via a NUL-delimited tempfile to avoid eval-string
+# quoting hazards: paths with `"`, `$`, backticks, newlines, etc.
+# all round-trip safely.
+#
+# TODO D2 (HTB engagement TODO).
+
+set -eu
+
+self="$(cd -P -- "$(dirname -- "$0")" && pwd)"
+release_root="$(dirname "$self")"
+
+argv_file="$(mktemp 2>/dev/null || mktemp -t glorbo-cli)"
+trap 'rm -f "$argv_file"' EXIT INT TERM
+
+for arg in "$@"; do
+  printf '%s\0' "$arg" >> "$argv_file"
+done
+
+exec "$release_root/bin/glorbo" eval "
+argv = File.read!(\"$argv_file\") |> String.split(<<0>>, trim: true)
+{_verb, code, output} = Glorbo.CLI.dispatch(argv)
+if is_binary(output) and output != \"\", do: IO.puts(output)
+System.halt(code)
+"

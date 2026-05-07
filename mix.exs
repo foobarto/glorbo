@@ -161,7 +161,16 @@ defmodule Glorbo.MixProject do
         "credo --strict",
         "glorbo.docs.file_formats --check",
         "test"
-      ]
+      ],
+      # TODO D1: bare `mix release glorbo` pauses on
+      # "Release glorbo-X.Y.Z already exists. Overwrite? [Yn]"
+      # which blocks non-interactive CI/scripts and contributes
+      # nothing for an interactive user (the answer is always yes
+      # — there's no other place to put a glorbo release). Always
+      # add --overwrite. `mix glorbo.build_local` is still the
+      # recommended local-build path because it also wipes the
+      # burrito cache + dev-only deps + does the symlink dance.
+      release: &Mix.Tasks.Glorbo.ReleaseGuard.run/1
     ]
   end
 end
