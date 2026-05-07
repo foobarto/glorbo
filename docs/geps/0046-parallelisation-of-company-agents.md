@@ -2,15 +2,20 @@
 gep: 0046
 title: Parallelisation of company agents — per-agent and per-company concurrency caps
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-05-07
 history:
   - date: 2026-05-07
     status: Draft
     note: Initial draft.
-requires: [2]
-extends: [16]
+  - date: 2026-05-07
+    status: Accepted
+    note: Design Q&A converged; D1–D8 settled. Ready to ship.
+  - date: 2026-05-07
+    status: Implemented
+    note: Code shipped in 17af5c5; CI green on 9a27fc0 (x86_64 flake fix). Frontmatter `extends:` collapsed into `requires:` so the GEP-16 ↔ GEP-46 link is bidirectional per GEP-1.
+requires: [2, 16]
 see-also: [12, 14, 25]
 ---
 
