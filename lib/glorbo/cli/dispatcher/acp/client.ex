@@ -77,7 +77,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     def noop_close, do: :ok
   end
 
-  @default_phase_timeout_ms 30_000
+  @default_phase_timeout_ms 600_000
   @default_protocol_version 1
 
   @doc false
@@ -316,6 +316,17 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   # rather than nested under "update". Accept both shapes; other update
   # kinds (tool calls, status changes) are counted but not extracted.
   defp absorb_update(state, %{"kind" => "agent_message_chunk", "text" => text})
+       when is_binary(text) do
+    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+  end
+
+  # stado uses kind="text" for text delta events (stado internal/acp/server.go:200).
+  defp absorb_update(state, %{"kind" => "text", "text" => text})
+       when is_binary(text) do
+    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+  end
+
+  defp absorb_update(state, %{"update" => %{"kind" => "text", "text" => text}})
        when is_binary(text) do
     %{state | reply: [text | state.reply], chunks: state.chunks + 1}
   end
