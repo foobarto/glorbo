@@ -16,6 +16,7 @@ history:
       KanbanLive.next_task_id/3 now emits `<project>-NN`, accepts both
       shapes on read, TaskDefinition.canonicalize_ref/2 ships,
       `mix glorbo.migrate_tasks[ --dry-run]` lands for opt-in cleanup.
+extended-by: [47]
 ---
 
 # GEP-13: Project-prefixed task IDs

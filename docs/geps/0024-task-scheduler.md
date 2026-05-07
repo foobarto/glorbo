@@ -13,6 +13,7 @@ history:
     status: Implemented
     note: Shipped in v0.0.3-dev as commit `053fc84` with 8 unit tests green.
 requires: [2, 3]
+extended-by: [47]
 see-also: [14, 16]
 implemented-in: v0.0.3-dev
 ---

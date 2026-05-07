@@ -70,6 +70,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0044 | [Visual regression baselines for the LiveView dashboard](./0044-visual-regression-baselines.md) | Process       | Implemented |
 | 0045 | [Stado as glorbo provider via ACP transport](./0045-stado-as-glorbo-provider-via-acp.md) | Standards     | Draft       |
 | 0046 | [Parallelisation of company agents](./0046-parallelisation-of-company-agents.md)         | Standards     | Implemented |
+| 0047 | [`depends_on:` for tasks — explicit blocking dependencies](./0047-task-depends-on.md)     | Standards     | Draft       |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 
