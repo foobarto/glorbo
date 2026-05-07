@@ -649,7 +649,7 @@ defmodule Glorbo.CLI.DispatcherTest do
       end
 
       p = base_provider(name: "stado", prompt_mode: :acp)
-      ctx = base_ctx(ws, task_id: "engagement-01")
+      ctx = base_ctx(ws, task_id: "task-resume-fixture")
 
       assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: first_run)
 
@@ -659,7 +659,7 @@ defmodule Glorbo.CLI.DispatcherTest do
              "first dispatch should have no resume id"
 
       session_file =
-        Path.join([ws, ".glorbo", "sessions", "stado__engagement-01.txt"])
+        Path.join([ws, ".glorbo", "sessions", "stado__task-resume-fixture.txt"])
 
       assert File.read!(session_file) == "uuid-stado-1",
              "session file should hold the returned session_id"

@@ -66,8 +66,8 @@ stado v0.46.0 ships `stado_ui_approve`; any wasm plugin calling it
 emits `session/update {kind: "approval", requestId: <uuid>, ...}`
 and waits for `session/approval_response`. Glorbo previously
 ignored the update — the turn hung until `phase_timeout_ms` fired
-(10 minutes), silently stalling every engagement that hit a
-plugin with an approval gate.
+(10 minutes), silently stalling any dispatch that hit a plugin
+with an approval gate.
 
 `Glorbo.CLI.Dispatcher.Acp.Client` now intercepts `kind=approval`
 updates (both wrapped `{"update": {...}}` and unwrapped top-level
