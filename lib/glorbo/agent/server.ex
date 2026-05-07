@@ -50,12 +50,23 @@ defmodule Glorbo.Agent.Server do
   @valid_triggers ~w(inbox heartbeat mention director_approval director_request)a
 
   @type trigger :: :inbox | :heartbeat | :mention | :director_approval | :director_request
+  @type invocation :: %{
+          task_id: String.t(),
+          task_path: String.t() | nil,
+          trigger: trigger() | nil,
+          pid: pid(),
+          ref: reference(),
+          invocation_id: String.t() | nil,
+          started_at: DateTime.t()
+        }
   @type status :: %{
           state: :idle | :busy,
           current_task: String.t() | nil,
           current_task_path: String.t() | nil,
           current_task_trigger: trigger() | nil,
           current_task_pid: pid() | nil,
+          in_flight: [invocation()],
+          at_cap?: boolean(),
           pending_wake: {trigger(), DateTime.t()} | nil,
           last_exit_status: term() | nil
         }
@@ -170,12 +181,13 @@ defmodule Glorbo.Agent.Server do
       dispatch_fun: Keyword.get(opts, :dispatch_fun, &default_dispatch_fun/3),
       inbox_scan_fun: Keyword.get(opts, :inbox_scan_fun, &default_inbox_scan/3),
       dispatch_opts: Keyword.get(opts, :dispatch_opts, []),
-      status: :idle,
-      current_task: nil,
-      current_task_path: nil,
-      current_task_trigger: nil,
-      current_task_ref: nil,
-      current_task_pid: nil,
+      # GEP-46 — in_flight: map of `Task.async_nolink` ref → invocation
+      # struct. `map_size(in_flight) == 0` is :idle; 1..max-1 is :busy;
+      # == max is :full. Replaces the historic flat `current_task_*`
+      # fields (still surfaced via `:status` for backward compat with
+      # callers that assumed single-instance).
+      in_flight: %{},
+      max_concurrency: Map.get(spec, :max_concurrency, 1) || 1,
       pending_wake: nil,
       last_exit_status: nil,
       base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
@@ -191,63 +203,50 @@ defmodule Glorbo.Agent.Server do
   end
 
   def handle_call({:wake, trigger, task}, _from, state) do
-    if state.status == :idle do
-      handle_wake_idle(state, trigger, task)
+    if has_free_slot?(state) do
+      handle_wake_with_slot(state, trigger, task)
     else
-      # Busy: queue (or replace) pending wake with most-recent-wins
-      # semantics (D-26). At most ONE slot.
+      # At cap: coalesce to the single most-recent-wins pending slot.
+      # Drain-on-free in finish/2 will scan the inbox once a slot
+      # opens (GEP-46 D3).
       {:reply, :ok, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
     end
   end
 
   def handle_call(:status, _from, state) do
-    {:reply,
-     %{
-       state: state.status,
-       current_task: state.current_task,
-       current_task_path: state.current_task_path,
-       current_task_trigger: state.current_task_trigger,
-       current_task_pid: state.current_task_pid,
-       pending_wake: state.pending_wake,
-       last_exit_status: state.last_exit_status
-     }, state}
+    {:reply, derive_status(state), state}
   end
 
-  def handle_call(:stop_inflight, _from, %{current_task: nil} = state) do
-    {:reply, :idle, state}
+  def handle_call(:stop_inflight, _from, state) do
+    case map_size(state.in_flight) do
+      0 ->
+        {:reply, :idle, state}
+
+      _ ->
+        # Kill every in-flight dispatch Task. `Process.exit(:kill)`
+        # converts the monitor's {:DOWN, ...} to :normal, so we clean
+        # state here directly rather than relying on handle_info.
+        Enum.each(state.in_flight, fn {_ref, %{pid: pid}} ->
+          if is_pid(pid) and Process.alive?(pid), do: Process.exit(pid, :kill)
+        end)
+
+        new_state = %{
+          state
+          | in_flight: %{},
+            last_exit_status: "stopped_by_director"
+        }
+
+        broadcast_status(new_state)
+        # No pending drain — operator wanted everything stopped.
+        {:reply, :ok, %{new_state | pending_wake: nil}}
+    end
   end
 
-  def handle_call(:stop_inflight, _from, %{current_task_pid: pid} = state) when is_pid(pid) do
-    # Kill the dispatch Task unilaterally. The {:DOWN, ref, ...} message
-    # that the monitor would have delivered is converted to :normal by
-    # Process.exit(:kill), so we clean state here rather than rely on
-    # the handle_info crash path.
-    Process.exit(pid, :kill)
-
-    new_state = %{
-      state
-      | status: :idle,
-        current_task: nil,
-        current_task_path: nil,
-        current_task_trigger: nil,
-        current_task_ref: nil,
-        current_task_pid: nil,
-        last_exit_status: "stopped_by_director"
-    }
-
-    # pop_pending/1 returns `{:noreply, state}` — pattern-match to extract
-    # the state and form a proper {:reply, :ok, state} tuple for handle_call.
-    {:noreply, state_after_pop} = pop_pending(new_state)
-    {:reply, :ok, state_after_pop}
-  end
-
-  def handle_call(:stop_inflight, _from, state), do: {:reply, :idle, state}
-
-  defp handle_wake_idle(state, trigger, task) do
+  defp handle_wake_with_slot(state, trigger, task) do
     case resolve_task(state, trigger, task) do
       nil ->
-        # Trigger with no resolvable task — stay idle. Not an error;
-        # inbox scan may legitimately find nothing.
+        # Trigger with no resolvable task — stay where we are. Not an
+        # error; inbox scan may legitimately find nothing.
         {:reply, :ok, state}
 
       resolved ->
@@ -255,19 +254,59 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
-  # Dispatch Task completed normally — demonitor + update state + pop pending
-  @impl true
-  def handle_info({ref, result}, %{current_task_ref: ref} = state) when is_reference(ref) do
-    Process.demonitor(ref, [:flush])
-    finish(state, {:result, result})
+  # GEP-46 D2 helpers — derive the public-facing status fields from
+  # the in_flight map. Surface the OLDEST in-flight invocation as the
+  # legacy `current_task_*` fields so backward-compat callers (LV
+  # dashboards, MCP tools, tests assuming N=1) keep working.
+  defp has_free_slot?(state),
+    do: map_size(state.in_flight) < state.max_concurrency
+
+  defp derive_status(state) do
+    sorted_in_flight =
+      state.in_flight
+      |> Map.values()
+      |> Enum.sort_by(& &1.started_at, DateTime)
+
+    {state_atom, oldest} =
+      case sorted_in_flight do
+        [] -> {:idle, nil}
+        [head | _] -> {:busy, head}
+      end
+
+    %{
+      state: state_atom,
+      current_task: oldest && oldest.task_id,
+      current_task_path: oldest && oldest.task_path,
+      current_task_trigger: oldest && oldest.trigger,
+      current_task_pid: oldest && oldest.pid,
+      in_flight: sorted_in_flight,
+      at_cap?: not has_free_slot?(state),
+      pending_wake: state.pending_wake,
+      last_exit_status: state.last_exit_status
+    }
   end
 
-  # Dispatch Task crashed — convert to exit-status + update state + pop pending
-  def handle_info(
-        {:DOWN, ref, :process, _pid, reason},
-        %{current_task_ref: ref} = state
-      ) do
-    finish(state, {:crashed, reason})
+  # Dispatch Task completed normally — demonitor + finish that ref.
+  @impl true
+  def handle_info({ref, result}, state) when is_reference(ref) do
+    case Map.get(state.in_flight, ref) do
+      nil ->
+        # Stale message (the ref isn't ours; could be a noisy
+        # neighbour or a Task we've already cleaned up). Ignore.
+        {:noreply, state}
+
+      _invocation ->
+        Process.demonitor(ref, [:flush])
+        finish(state, ref, {:result, result})
+    end
+  end
+
+  # Dispatch Task crashed — record + free slot.
+  def handle_info({:DOWN, ref, :process, _pid, reason}, state) do
+    case Map.get(state.in_flight, ref) do
+      nil -> {:noreply, state}
+      _invocation -> finish(state, ref, {:crashed, reason})
+    end
   end
 
   # GAP-3: PubSub inbox event → :inbox wake for THIS agent.
@@ -344,19 +383,22 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
-  defp handle_director_wake(%{status: :idle} = state) do
-    # Director wakes without a task — same as an inbox wake, we scan the
-    # inbox for the oldest unread item (if any) and dispatch. If nothing's
-    # in the inbox, we still dispatch with a synthetic "director_request"
-    # task whose prompt comes from wake-request.md's body.
-    case call_inbox_scan(state) do
-      nil -> {:noreply, start_dispatch(state, director_wake_task(state))}
-      %{} = task -> {:noreply, start_dispatch(state, task)}
-    end
-  end
+  defp handle_director_wake(state) do
+    if has_free_slot?(state) do
+      # Director wakes without a task — same as an inbox wake, scan
+      # the inbox for the oldest unread item (if any) and dispatch.
+      # If nothing's in the inbox, dispatch a synthetic task whose
+      # prompt comes from wake-request.md's body.
+      task =
+        case call_inbox_scan(state) do
+          nil -> director_wake_task(state)
+          %{} = found -> found
+        end
 
-  defp handle_director_wake(%{status: :busy} = state) do
-    {:noreply, %{state | pending_wake: {:director_request, DateTime.utc_now()}}}
+      {:noreply, start_dispatch(state, task)}
+    else
+      {:noreply, %{state | pending_wake: {:director_request, DateTime.utc_now()}}}
+    end
   end
 
   # Build a minimal task for a director wake when the inbox is empty.
@@ -387,16 +429,17 @@ defmodule Glorbo.Agent.Server do
     }
   end
 
-  defp handle_inbox_wake(%{status: :idle} = state, trigger) do
-    case call_inbox_scan(state, trigger) do
-      nil -> {:noreply, state}
-      %{} = task -> {:noreply, start_dispatch(state, task)}
+  defp handle_inbox_wake(state, trigger) do
+    if has_free_slot?(state) do
+      case call_inbox_scan(state, trigger) do
+        nil -> {:noreply, state}
+        %{} = task -> {:noreply, start_dispatch(state, task)}
+      end
+    else
+      # At cap: coalesce most-recent-wins. drain_on_free/1 fires
+      # when a slot opens.
+      {:noreply, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
     end
-  end
-
-  defp handle_inbox_wake(%{status: :busy} = state, trigger) do
-    # Busy: queue a pending wake (most-recent-wins; at most one slot).
-    {:noreply, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
   end
 
   # ---------------------------------------------------------------------------
@@ -410,56 +453,107 @@ defmodule Glorbo.Agent.Server do
 
     %Task{ref: ref, pid: pid} = Task.Supervisor.async_nolink(state.task_supervisor, task_fn)
 
+    invocation = %{
+      task_id: task.task_id,
+      task_path: Map.get(task, :task_path),
+      trigger: Map.get(task, :trigger),
+      pid: pid,
+      ref: ref,
+      invocation_id: Map.get(task, :invocation_id),
+      started_at: DateTime.utc_now()
+    }
+
     new_state = %{
       state
-      | status: :busy,
-        current_task: task.task_id,
-        current_task_path: Map.get(task, :task_path),
-        current_task_trigger: Map.get(task, :trigger),
-        current_task_ref: ref,
-        current_task_pid: pid,
+      | in_flight: Map.put(state.in_flight, ref, invocation),
+        # Clear pending_wake — we've consumed it (or it was already nil).
+        # If wakes arrive while this dispatch runs, the next coalesce
+        # slot fills.
         pending_wake: nil
     }
 
     broadcast_status(new_state)
-    new_state
+    # GEP-46 D3 fast-path: if the inbox still has unread messages and
+    # we have remaining slots, dispatch the next one immediately.
+    drain_on_free(new_state)
   end
 
-  defp finish(state, {:result, result}) do
+  defp finish(state, ref, {:result, result}) do
+    invocation = Map.fetch!(state.in_flight, ref)
     exit_status = dispatch_result_to_exit_status(result)
-    maybe_route_reply(state, result, exit_status)
-    maybe_drain_inbox(state, exit_status)
+
+    maybe_route_reply(state, result, exit_status, invocation.trigger, invocation.task_path)
+    maybe_drain_inbox(state, exit_status, invocation.trigger, invocation.task_path)
 
     new_state = %{
       state
-      | status: :idle,
-        current_task: nil,
-        current_task_path: nil,
-        current_task_trigger: nil,
-        current_task_ref: nil,
-        current_task_pid: nil,
+      | in_flight: Map.delete(state.in_flight, ref),
         last_exit_status: exit_status
     }
 
     broadcast_status(new_state)
-    pop_pending(new_state)
+    {:noreply, drain_on_free(new_state, invocation.trigger)}
   end
 
-  defp finish(state, {:crashed, reason}) do
+  defp finish(state, ref, {:crashed, reason}) do
+    invocation = Map.get(state.in_flight, ref, %{trigger: nil})
+
     new_state = %{
       state
-      | status: :idle,
-        current_task: nil,
-        current_task_path: nil,
-        current_task_trigger: nil,
-        current_task_ref: nil,
-        current_task_pid: nil,
+      | in_flight: Map.delete(state.in_flight, ref),
         last_exit_status: {:crashed, reason}
     }
 
     broadcast_status(new_state)
-    pop_pending(new_state)
+    {:noreply, drain_on_free(new_state, invocation.trigger)}
   end
+
+  # GEP-46 D3 — on every slot-freeing event, look for more work and
+  # fill remaining slots. Process the pending_wake (if any). Auto-drain
+  # the inbox ONLY when the just-completed dispatch was itself
+  # inbox-driven (`:inbox` or `:mention`) — heartbeats and director
+  # wakes complete without taking ownership of inbox traffic, so we
+  # must not auto-pull inbox messages on their completion.
+  #
+  # `completed_trigger` is `nil` from the start_dispatch tail call
+  # (no completion yet, just a fresh dispatch starting); in that case
+  # we always check the pending_wake but do not auto-drain inbox.
+  defp drain_on_free(state, completed_trigger \\ nil) do
+    cond do
+      not has_free_slot?(state) ->
+        state
+
+      state.pending_wake != nil ->
+        {trigger, _ts} = state.pending_wake
+        cleared = %{state | pending_wake: nil}
+
+        case resolve_task(cleared, trigger, nil) do
+          nil -> maybe_auto_drain_inbox(cleared, completed_trigger)
+          resolved -> start_dispatch(cleared, resolved)
+        end
+
+      true ->
+        maybe_auto_drain_inbox(state, completed_trigger)
+    end
+  end
+
+  # Inbox auto-drain only fires after an inbox-flavoured completion.
+  # Burst case (N=3, 5 inbox messages arriving simultaneously) still
+  # works: each msg's completion triggers another drain pass, picking
+  # up the next unread.
+  defp maybe_auto_drain_inbox(state, completed_trigger)
+       when completed_trigger in [:inbox, :mention] do
+    if has_free_slot?(state) do
+      case call_inbox_scan(state, :inbox) do
+        nil -> state
+        %{} = task -> start_dispatch(state, task)
+      end
+    else
+      state
+    end
+  end
+
+  defp maybe_auto_drain_inbox(state, _completed_trigger), do: state
 
   # Broadcast a status change to subscribers of `company:<co>:agents:status`.
   # Subscribers (sidebar-hosting LVs) re-assign + re-render so pill dots
@@ -470,12 +564,13 @@ defmodule Glorbo.Agent.Server do
   # roster + AgentLive's dashboard can render a "working on: X" line
   # without subscribing to the full dispatch stream (PLAN P1-2).
   defp broadcast_status(state) do
-    %{pubsub: pubsub, company: co, spec: spec, status: status} = state
+    %{pubsub: pubsub, company: co, spec: spec} = state
+    %{state: status, current_task_path: path} = derive_status(state)
 
     message =
       case status do
-        :busy -> {:agent_status, spec.slug, :busy, state.current_task_path}
-        other -> {:agent_status, spec.slug, other, nil}
+        :idle -> {:agent_status, spec.slug, :idle, nil}
+        other -> {:agent_status, spec.slug, other, path}
       end
 
     Phoenix.PubSub.broadcast(pubsub, "company:#{co}:agents:status", message)
@@ -500,10 +595,7 @@ defmodule Glorbo.Agent.Server do
   # frontmatter missing `from:`/`channel:`, filesystem error — we log
   # and move on rather than losing the reply entirely (the file still
   # exists at the GEP-8 reply path).
-  defp maybe_route_reply(state, result, exit_status) do
-    trigger = Map.get(state, :current_task_trigger)
-    rel_path = Map.get(state, :current_task_path)
-
+  defp maybe_route_reply(state, result, exit_status, trigger, rel_path) do
     cond do
       exit_status != 0 -> :ok
       trigger not in [:inbox, :mention] -> :ok
@@ -902,10 +994,7 @@ defmodule Glorbo.Agent.Server do
   #     or point to a file that must stay in place)
   #   - task_path must be relative to companies/<co>/ (the shape
   #     default_inbox_scan returns); absolute paths or nil → no-op
-  defp maybe_drain_inbox(state, exit_status) do
-    trigger = Map.get(state, :current_task_trigger)
-    rel_path = Map.get(state, :current_task_path)
-
+  defp maybe_drain_inbox(state, exit_status, trigger, rel_path) do
     cond do
       exit_status != 0 ->
         :ok
@@ -963,17 +1052,10 @@ defmodule Glorbo.Agent.Server do
     :ok
   end
 
-  defp pop_pending(%{pending_wake: nil} = state), do: {:noreply, state}
-
-  defp pop_pending(%{pending_wake: {trigger, _ts}} = state) do
-    case resolve_task(state, trigger, nil) do
-      nil ->
-        {:noreply, %{state | pending_wake: nil}}
-
-      resolved ->
-        {:noreply, start_dispatch(%{state | pending_wake: nil}, resolved)}
-    end
-  end
+  # GEP-46: `pop_pending/1` was the single-slot completion path.
+  # Replaced by `drain_on_free/1` which is called from every
+  # slot-freeing event AND start_dispatch's tail (so a burst of
+  # inbox messages fills all slots in one wake).
 
   defp resolve_task(_state, _trigger, %{} = explicit_task), do: explicit_task
 
@@ -1026,6 +1108,10 @@ defmodule Glorbo.Agent.Server do
 
   defp dispatch_result_to_exit_status({:ok, %{exit_status: s}}), do: s
   defp dispatch_result_to_exit_status({:stopped, :budget_hard_stop}), do: "budget_hard_stop"
+
+  defp dispatch_result_to_exit_status({:throttled, :company_dispatch_cap}),
+    do: "throttled_company_dispatch_cap"
+
   defp dispatch_result_to_exit_status({:error, reason}), do: {:error, reason}
   defp dispatch_result_to_exit_status(other), do: {:unexpected, other}
 

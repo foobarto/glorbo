@@ -62,6 +62,7 @@ defmodule Glorbo.Company.Supervisor do
           | :scheduler
           | :task_scheduler
           | :budget_tracker
+          | :dispatch_semaphore
           | :agent_sup
           | :agent_fleet
           | :network_proxy
@@ -104,6 +105,15 @@ defmodule Glorbo.Company.Supervisor do
        [name: via(company, :task_scheduler), company: company, base: base]},
       {Glorbo.Company.BudgetTracker,
        [name: via(company, :budget_tracker), company: company, base: base]},
+      # GEP-46: per-company concurrency cap. Reads
+      # `max_concurrent_dispatches` from `company.md` at supervisor
+      # boot; absence means `:unbounded` (today's behaviour).
+      {Glorbo.Company.DispatchSemaphore,
+       [
+         name: via(company, :dispatch_semaphore),
+         company: company,
+         cap: read_dispatch_cap(company, base)
+       ]},
       # AgentSupervisor + AgentBoot share a `:rest_for_one` sub-tree so
       # that if AgentSupervisor crashes, AgentBoot reruns and repopulates
       # the fleet. A bare `:one_for_one` at the company level + a
@@ -430,5 +440,23 @@ defmodule Glorbo.Company.Supervisor do
       type: :supervisor,
       restart: :permanent
     }
+  end
+
+  # GEP-46: read the `max_concurrent_dispatches` field from
+  # `company.md` frontmatter. Absence (or any parse failure) yields
+  # `:unbounded` so the semaphore stays out of the way for companies
+  # that don't opt in.
+  defp read_dispatch_cap(company, base) do
+    path = Path.join([base, "companies", company, "company.md"])
+
+    with {:ok, content} <- File.read(path),
+         {:ok, meta, _body} <- Glorbo.Filesystem.Frontmatter.parse(content),
+         n when is_integer(n) and n >= 1 <- Map.get(meta, "max_concurrent_dispatches") do
+      min(n, 256)
+    else
+      _ -> :unbounded
+    end
+  rescue
+    _ -> :unbounded
   end
 end

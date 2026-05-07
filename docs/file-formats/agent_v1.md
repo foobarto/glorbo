@@ -13,7 +13,7 @@ bwrap), skills, and optional per-agent allowlist extensions
 
 **Required:** `kind`, `slug`, `role`, `provider`, `network`
 
-**Optional:** `name`, `reports_to`, `model`, `heartbeat`, `heartbeat_file`, `budget`, `skills`, `permissions`, `network_allow`, `autonomy`, `allow_untracked_budget`, `imported_from`, `imported_company`
+**Optional:** `name`, `reports_to`, `model`, `heartbeat`, `heartbeat_file`, `budget`, `skills`, `permissions`, `network_allow`, `autonomy`, `allow_untracked_budget`, `max_concurrency`, `imported_from`, `imported_company`
 
 ### Enums
 
@@ -33,7 +33,7 @@ bwrap), skills, and optional per-agent allowlist extensions
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `slug`, `name`, `role`, `reports_to`, `provider`, `model`, `network`, `network_allow`, `heartbeat`, `heartbeat_file`, `budget`, `autonomy`, `skills`, `permissions`
+`kind`, `slug`, `name`, `role`, `reports_to`, `provider`, `model`, `network`, `network_allow`, `heartbeat`, `heartbeat_file`, `budget`, `autonomy`, `max_concurrency`, `skills`, `permissions`
 
 Unknown keys fall after the known block, sorted alphabetically.
 

@@ -35,6 +35,9 @@ defmodule Glorbo.FileSpec.CompanyMd do
         # the value. Default cap is read from disk; absence means "no
         # auto-approve under cap" (Director must approve every hire).
         :headcount_budget,
+        # GEP-46: per-company throttle on simultaneous dispatches across
+        # the entire roster. Positive integer; absence = unbounded.
+        :max_concurrent_dispatches,
         :template,
         :template_version,
         :provider_pin,
@@ -62,6 +65,7 @@ defmodule Glorbo.FileSpec.CompanyMd do
       :icon,
       :budget,
       :headcount_budget,
+      :max_concurrent_dispatches,
       :template,
       :template_version,
       :provider_pin,

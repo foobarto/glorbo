@@ -165,9 +165,7 @@ defmodule Mix.Tasks.Glorbo.BuildLocal do
     cache = Path.join(burrito, ".zig-cache")
 
     if dirty? and File.dir?(cache) do
-      Mix.shell().info(
-        "burrito cache appears dirty (residual build artifacts); wiping #{cache}"
-      )
+      Mix.shell().info("burrito cache appears dirty (residual build artifacts); wiping #{cache}")
 
       File.rm_rf!(cache)
       Enum.each(residuals, fn p -> _ = File.rm_rf(p) end)

@@ -154,6 +154,7 @@ defmodule Glorbo.Agent.Parser do
            validate_max_tool_calls_per_turn(meta["max_tool_calls_per_turn"]),
          {:ok, autonomy} <- validate_autonomy(meta["autonomy"]),
          {:ok, max_retries} <- validate_max_retries(meta["max_retries"]),
+         {:ok, max_concurrency} <- validate_max_concurrency(meta["max_concurrency"]),
          {:ok, egress} <- validate_egress(meta["egress"]) do
       {:ok,
        %Spec{
@@ -175,6 +176,7 @@ defmodule Glorbo.Agent.Parser do
          max_tool_calls_per_turn: max_tool_calls_per_turn,
          allow_untracked_budget: parse_untracked(meta["allow_untracked_budget"]),
          autonomy: autonomy,
+         max_concurrency: max_concurrency,
          max_retries: max_retries,
          reports_to: parse_reports_to(meta["reports_to"]),
          icon: parse_icon(meta["icon"]),
@@ -647,4 +649,11 @@ defmodule Glorbo.Agent.Parser do
   defp validate_max_retries(nil), do: {:ok, 2}
   defp validate_max_retries(n) when is_integer(n) and n >= 0, do: {:ok, min(n, 5)}
   defp validate_max_retries(_), do: {:ok, 2}
+
+  # GEP-46 — max_concurrency: positive integer. Default 1 preserves the
+  # historic single-instance behaviour. Capped at 32 so a typo
+  # (`max_concurrency: 1000`) doesn't open the floodgates.
+  defp validate_max_concurrency(nil), do: {:ok, 1}
+  defp validate_max_concurrency(n) when is_integer(n) and n >= 1, do: {:ok, min(n, 32)}
+  defp validate_max_concurrency(_), do: {:ok, 1}
 end

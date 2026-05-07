@@ -60,6 +60,7 @@ defmodule Glorbo.Agent.Dispatch do
   @type dispatch_result ::
           {:ok, %{exit_status: integer(), usage: map(), duration_ms: integer()}}
           | {:stopped, :budget_hard_stop}
+          | {:throttled, :company_dispatch_cap}
           | {:error, term()}
 
   @doc """
@@ -178,8 +179,22 @@ defmodule Glorbo.Agent.Dispatch do
         _ -> nil
       end
 
+    # GEP-46: claim a per-company dispatch slot. `:throttled` propagates
+    # back to the caller so `Agent.Server` can fall back into its
+    # pending_wake slot and retry on the next slot-free signal. The
+    # token is released in the bottom of this function regardless of
+    # success or failure.
+    semaphore_result = acquire_dispatch_slot(spec, invocation_id, opts)
+
+    semaphore_token =
+      case semaphore_result do
+        {:ok, token} -> token
+        _ -> nil
+      end
+
     result =
-      with :ok <- check_emergency_stop(spec, opts),
+      with {:ok, _slot_token} <- semaphore_result,
+           :ok <- check_emergency_stop(spec, opts),
            :ok <- check_prompt_size(task.prompt),
            :ok <- check_budget(spec, opts),
            :ok <- check_company_budget(spec, opts),
@@ -227,6 +242,9 @@ defmodule Glorbo.Agent.Dispatch do
            reply_path: dispatcher_result.reply_path
          }}
       else
+        :throttled ->
+          {:throttled, :company_dispatch_cap}
+
         {:stop, _used, _cap} ->
           {:stopped, :budget_hard_stop}
 
@@ -262,6 +280,11 @@ defmodule Glorbo.Agent.Dispatch do
     # dispatches, not cumulative ones.
     if proxy_token, do: _ = Glorbo.Network.ProxyTokens.revoke(proxy_token)
 
+    # GEP-46: release the per-company dispatch slot. Semaphore monitors
+    # the holder pid as a safety net, but immediate release keeps the
+    # in_flight map size proportional to live dispatches, not cumulative.
+    release_dispatch_slot(spec, semaphore_token, opts)
+
     result
   end
 
@@ -271,6 +294,56 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp check_prompt_size(prompt) when is_binary(prompt) do
     if byte_size(prompt) > @prompt_max_bytes, do: {:error, :prompt_too_large}, else: :ok
+  end
+
+  # GEP-46: acquire a per-company dispatch slot via
+  # `Glorbo.Company.DispatchSemaphore`. `:throttled` propagates up so
+  # the caller can queue and retry. Tests inject `:dispatch_semaphore_fun`
+  # to bypass the real GenServer (a 0-arity function returning
+  # `{:ok, token}` keeps the contract simple).
+  defp acquire_dispatch_slot(spec, invocation_id, opts) do
+    fun =
+      Keyword.get(opts, :dispatch_semaphore_fun, fn ->
+        server = Glorbo.Company.Supervisor.via(spec.company, :dispatch_semaphore)
+
+        try do
+          Glorbo.Company.DispatchSemaphore.acquire(server, %{
+            agent: spec.slug,
+            invocation_id: invocation_id
+          })
+        catch
+          # Semaphore not running (test harnesses without a Company.Supervisor,
+          # or boot-order edge case): fall through to allow the dispatch.
+          # The cap is observability/throttling, not a security boundary
+          # (GEP-46 D7).
+          :exit, _ -> {:ok, :unsupervised}
+        end
+      end)
+
+    case fun.() do
+      {:ok, token} -> {:ok, token}
+      :throttled -> :throttled
+      _ -> {:ok, :unsupervised}
+    end
+  end
+
+  defp release_dispatch_slot(_spec, nil, _opts), do: :ok
+  defp release_dispatch_slot(_spec, :unsupervised, _opts), do: :ok
+
+  defp release_dispatch_slot(spec, token, opts) do
+    fun =
+      Keyword.get(opts, :dispatch_semaphore_release_fun, fn ->
+        server = Glorbo.Company.Supervisor.via(spec.company, :dispatch_semaphore)
+
+        try do
+          Glorbo.Company.DispatchSemaphore.release(server, token)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+    fun.()
+    :ok
   end
 
   # T2-C — refuse dispatch when the company's emergency-stop sentinel
@@ -790,11 +863,21 @@ defmodule Glorbo.Agent.Dispatch do
       |> Map.put(:cli_env, merge_cli_env(bwrap_opts, sandbox_env))
       |> Map.put_new(:approved_paths, [])
 
-    # Tee stdout into agents/<slug>/stdout.log so the dashboard's
-    # STDOUT tab + `glorbo logs` CLI see real output. agent_workspace
-    # is `.../agents/<slug>/workspace`; its parent is the agent dir.
+    # GEP-46 D5 — per-invocation stdout log so concurrent invocations
+    # don't interleave. `GLORBO_INVOCATION_ID` was injected into env
+    # by `Glorbo.CLI.Dispatcher.build_env/6`. Falls back to the legacy
+    # shared `stdout.log` path when the env var is missing (e.g.
+    # tests that hand-roll bwrap_opts without going through the
+    # full dispatcher pipeline).
     agent_root = Path.dirname(host_workspace)
-    stdout_log_path = Path.join(agent_root, "stdout.log")
+    invocation_id = Map.get(env || %{}, "GLORBO_INVOCATION_ID")
+
+    stdout_log_path =
+      if is_binary(invocation_id) and invocation_id != "" do
+        Path.join(agent_root, "stdout-#{invocation_id}.log")
+      else
+        Path.join(agent_root, "stdout.log")
+      end
 
     run_opts = [
       cli_binary: Map.fetch!(run_opts_map, :cli_binary),

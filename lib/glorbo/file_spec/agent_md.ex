@@ -36,6 +36,9 @@ defmodule Glorbo.FileSpec.AgentMd do
         :network_allow,
         :autonomy,
         :allow_untracked_budget,
+        # GEP-46: per-agent concurrency cap. Positive integer; default 1
+        # preserves the historic single-instance state machine.
+        :max_concurrency,
         # Set by `glorbo import paperclip` so Directors can grep
         # for imported agents later. Free-form; the validator
         # doesn't enforce a value.
@@ -69,6 +72,7 @@ defmodule Glorbo.FileSpec.AgentMd do
       :heartbeat_file,
       :budget,
       :autonomy,
+      :max_concurrency,
       :skills,
       :permissions
     ]

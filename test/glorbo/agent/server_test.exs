@@ -1003,4 +1003,103 @@ defmodule Glorbo.Agent.ServerTest do
       assert content =~ ~r/^status: "?todo"?$/m
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # GEP-46 — per-agent max_concurrency
+  # ---------------------------------------------------------------------------
+
+  describe "GEP-46 max_concurrency > 1" do
+    test "fills slots concurrently up to max_concurrency", ctx do
+      spec = %{ctx.spec | max_concurrency: 3}
+      # Inbox-scan stub: returns successive tasks so drain_on_free has
+      # something to dispatch when slots free up. Most realistic
+      # production analogue (inbox-on-disk feeding the agent).
+      counter = :counters.new(1, [])
+
+      inbox_scan_fun = fn _spec, _base, _trigger ->
+        n = :counters.add(counter, 1, 1) && :counters.get(counter, 1)
+        if n <= 5, do: %{task_id: "scan-#{n}", task_path: nil, prompt: "x", trigger: :inbox}
+      end
+
+      pid =
+        start_server(%{ctx | spec: spec},
+          dispatch_fun: blocking_dispatch(ctx.test_pid),
+          inbox_scan_fun: inbox_scan_fun
+        )
+
+      :ok = AgentServer.wake(pid, :inbox, sample_task("t1"))
+      :ok = AgentServer.wake(pid, :inbox, sample_task("t2"))
+      :ok = AgentServer.wake(pid, :inbox, sample_task("t3"))
+
+      assert_receive {:dispatch_started, "t1", p1}, 1_000
+      assert_receive {:dispatch_started, "t2", p2}, 1_000
+      assert_receive {:dispatch_started, "t3", p3}, 1_000
+
+      status = AgentServer.status(pid)
+      assert status.state == :busy
+      assert status.at_cap? == true
+      assert length(status.in_flight) == 3
+
+      ids = status.in_flight |> Enum.map(& &1.task_id) |> Enum.sort()
+      assert ids == ["t1", "t2", "t3"]
+
+      # Free up t1 — finish/2 fires drain_on_free → maybe_auto_drain_inbox
+      # (because the completed trigger was :inbox) → inbox_scan returns
+      # the next stub task, which dispatches.
+      send(p1, {:finish, {:ok, %{exit_status: 0, reply: ""}}})
+
+      assert_receive {:dispatch_started, "scan-1", _p4}, 1_000
+
+      _ = {p2, p3}
+    end
+
+    test "max_concurrency=1 reproduces today's exact single-instance behaviour", ctx do
+      spec = %{ctx.spec | max_concurrency: 1}
+      # Same as today: explicit task on first wake; coalesced wakes on
+      # busy fall back to inbox_scan resolution. We stub the scan
+      # to return a deterministic next task so the post-completion
+      # drain has something to pick up.
+      inbox_scan_fun = fn _spec, _base, _trigger ->
+        %{task_id: "from-inbox", task_path: nil, prompt: "x", trigger: :inbox}
+      end
+
+      pid =
+        start_server(%{ctx | spec: spec},
+          dispatch_fun: blocking_dispatch(ctx.test_pid),
+          inbox_scan_fun: inbox_scan_fun
+        )
+
+      :ok = AgentServer.wake(pid, :inbox, sample_task("a"))
+      assert_receive {:dispatch_started, "a", pa}, 1_000
+
+      status = AgentServer.status(pid)
+      assert status.state == :busy
+      assert status.at_cap? == true
+
+      # Second wake while busy → coalesce. The explicit-task arg is
+      # discarded by the busy path (matches today's contract); the
+      # next dispatch comes from inbox_scan.
+      :ok = AgentServer.wake(pid, :inbox, sample_task("b"))
+      refute_received {:dispatch_started, "from-inbox", _}
+
+      send(pa, {:finish, {:ok, %{exit_status: 0, reply: ""}}})
+      assert_receive {:dispatch_started, "from-inbox", _next}, 1_000
+    end
+
+    test "in_flight is sorted by started_at (oldest first)", ctx do
+      spec = %{ctx.spec | max_concurrency: 2}
+      pid = start_server(%{ctx | spec: spec}, dispatch_fun: blocking_dispatch(ctx.test_pid))
+
+      :ok = AgentServer.wake(pid, :inbox, sample_task("first"))
+      assert_receive {:dispatch_started, "first", _p1}, 1_000
+
+      :ok = AgentServer.wake(pid, :inbox, sample_task("second"))
+      assert_receive {:dispatch_started, "second", _p2}, 1_000
+
+      status = AgentServer.status(pid)
+      assert [%{task_id: "first"}, %{task_id: "second"}] = status.in_flight
+      # Legacy `current_task` reflects the OLDEST in-flight invocation.
+      assert status.current_task == "first"
+    end
+  end
 end

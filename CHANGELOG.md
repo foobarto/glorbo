@@ -10,6 +10,58 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — GEP-46: parallelisation of company agents
+
+Three independent concurrency knobs land together:
+
+- **Per-agent `max_concurrency: N`** in `AGENT.md` (default `1`,
+  capped at 32). Allows N>1 invocations of the same agent in flight
+  when the inbox is busy. `Glorbo.Agent.Server` now tracks
+  `in_flight: %{ref => invocation}` instead of single
+  `current_task_*` fields; legacy fields are surfaced via the
+  `:status` reply for backward compat.
+- **Per-company `max_concurrent_dispatches: N`** in `company.md`
+  (default unset / unbounded, capped at 256). Throttles the entire
+  roster without per-AGENT.md edits.
+- **Verified cross-company concurrency** is still free via
+  `Glorbo.CompanySupervisor`'s per-company supervision trees.
+
+New module `Glorbo.Company.DispatchSemaphore` (registered via the
+per-company `:dispatch_semaphore` role). Acquire is a synchronous
+`call/2` so the cap check is atomic. Release is `cast/2`. Holders
+are monitored — a crashed `Agent.Server` automatically frees its
+slot. `Glorbo.Agent.Dispatch.execute/3` acquires/releases at the
+top of its with-pipeline; `:throttled` propagates back as
+`{:throttled, :company_dispatch_cap}` so the agent can re-queue.
+
+Wake-queue behaviour: `pending_wake` stays a single most-recent-
+wins coalesce slot. On dispatch completion, `Agent.Server` drains
+the inbox to fill remaining slots — but only when the COMPLETED
+trigger was inbox-flavoured (`:inbox` / `:mention`); heartbeats
+and director wakes don't cascade. This preserves today's exact
+trigger semantics while unlocking burst-handling under N>1.
+
+Per-invocation `agents/<slug>/stdout-<invocation_id>.log` (was a
+shared `stdout.log`) so concurrent CLI invocations don't
+interleave operator-visible output.
+
+Schema additions go through GEP-25 machinery: `FileSpec.AgentMd`
+gains `:max_concurrency` in `optional`/`canonical_key_order`,
+`FileSpec.CompanyMd` gains `:max_concurrent_dispatches`,
+`docs/file-formats/agent_v1.md` and `company_v1.md` regenerated.
+
+Tests: 7 new `Glorbo.Company.DispatchSemaphoreTest` cases (cap
+modes, release, crash recovery, multi-token holders); 3 new
+`Glorbo.Agent.ServerTest` cases for `max_concurrency > 1` plus a
+regression-guard for `N=1` reproducing today's behaviour;
+supervisor child-count tests updated for the new
+`Company.DispatchSemaphore` sibling.
+
+Soft budget cap is documented (overshoot bound `≤ N ×
+max_per_dispatch_cost`) per GEP-46 D6. Caps are application-layer
+only per GEP-46 D7 — the kernel sandbox does not enforce
+concurrency.
+
 ### Added — `glorbo version` / `--version` / `-V`
 
 Three new CLI verbs that print the binary's `:vsn` from

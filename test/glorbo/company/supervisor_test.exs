@@ -48,14 +48,15 @@ defmodule Glorbo.Company.SupervisorTest do
     {sup_pid, company, base}
   end
 
-  describe "S1: 10-child base tree (AgentSupervisor + AgentBoot now share a :rest_for_one sub-tree)" do
-    test "CompanySupervisor starts 10 direct children by default (no proxy agents)" do
+  describe "S1: 11-child base tree (AgentSupervisor + AgentBoot now share a :rest_for_one sub-tree)" do
+    test "CompanySupervisor starts 11 direct children by default (no proxy agents)" do
       {sup_pid, co, _base} = start_company()
       children = Supervisor.which_children(sup_pid)
       # AuditLog, Watcher, Router, Scheduler, TaskScheduler, BudgetTracker,
-      # agent_fleet sub-supervisor, Approvals.Gate, PathRequestGate,
-      # ProposalsSink. AgentSupervisor + AgentBoot live under agent_fleet.
-      assert length(children) == 10
+      # DispatchSemaphore (GEP-46), agent_fleet sub-supervisor,
+      # Approvals.Gate, PathRequestGate, ProposalsSink.
+      # AgentSupervisor + AgentBoot live under agent_fleet.
+      assert length(children) == 11
 
       ids = Enum.map(children, fn {id, _pid, _type, _mods} -> id end) |> MapSet.new()
 
@@ -65,6 +66,7 @@ defmodule Glorbo.Company.SupervisorTest do
       assert MapSet.member?(ids, Glorbo.Company.Scheduler)
       assert MapSet.member?(ids, Glorbo.Company.TaskScheduler)
       assert MapSet.member?(ids, Glorbo.Company.BudgetTracker)
+      assert MapSet.member?(ids, Glorbo.Company.DispatchSemaphore)
       assert MapSet.member?(ids, Glorbo.Approvals.Gate)
       assert MapSet.member?(ids, Glorbo.PathRequestGate)
       assert MapSet.member?(ids, Glorbo.Company.ProposalsSink)
@@ -74,11 +76,11 @@ defmodule Glorbo.Company.SupervisorTest do
     end
   end
 
-  describe "S1b: 11-child tree when a proxy agent is declared (GAP-4)" do
-    test "CompanySupervisor starts 11 direct children when proxy?: true" do
+  describe "S1b: 12-child tree when a proxy agent is declared (GAP-4)" do
+    test "CompanySupervisor starts 12 direct children when proxy?: true" do
       {sup_pid, _co, _base} = start_company(proxy?: true)
       children = Supervisor.which_children(sup_pid)
-      assert length(children) == 11
+      assert length(children) == 12
 
       modules =
         children

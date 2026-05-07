@@ -4,9 +4,9 @@ defmodule Glorbo.ApplicationTest do
   @moduledoc """
   Asserts the OTP supervision tree shape DESIGN.md §4.1 requires —
   every branch is reachable by name, and the per-company supervisor
-  brings up the full 10-child fleet (AuditLog, Watcher, Router,
-  Scheduler, TaskScheduler, BudgetTracker, Approvals.Gate,
-  PathRequestGate, ProposalsSink, AgentFleet).
+  brings up the full 11-child fleet (AuditLog, Watcher, Router,
+  Scheduler, TaskScheduler, BudgetTracker, DispatchSemaphore,
+  Approvals.Gate, PathRequestGate, ProposalsSink, AgentFleet).
 
   Original Plan 01 wording said "Phase 1 stubs" — every module is
   real now (Phases 2-5 filled them in). The shape assertion remains
@@ -44,11 +44,11 @@ defmodule Glorbo.ApplicationTest do
   @tag :inotify
   test "a company supervisor can be started under Glorbo.CompanySupervisor" do
     # Current child shape: AuditLog, Watcher, Router, Scheduler,
-    # TaskScheduler, BudgetTracker, {:agent_fleet, <co>} (wraps
-    # AgentSupervisor + AgentBoot with :rest_for_one), Approvals.Gate,
-    # PathRequestGate, ProposalsSink = 10 direct children.
-    # Network.Proxy only joins when an proxy agent is on disk
-    # (GAP-4); smoke_test has none → 10, not 11.
+    # TaskScheduler, BudgetTracker, DispatchSemaphore (GEP-46),
+    # {:agent_fleet, <co>} (wraps AgentSupervisor + AgentBoot with
+    # :rest_for_one), Approvals.Gate, PathRequestGate,
+    # ProposalsSink = 11 direct children. Network.Proxy only joins
+    # when a proxy agent is on disk (GAP-4); smoke_test has none.
     base = Path.join(System.tmp_dir!(), "glorbo_app_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join([base, "companies", "smoke_test"]))
     on_exit(fn -> File.rm_rf!(base) end)
@@ -60,7 +60,7 @@ defmodule Glorbo.ApplicationTest do
     assert {:ok, pid} = DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec)
 
     children = Supervisor.which_children(pid)
-    assert length(children) == 10
+    assert length(children) == 11
 
     ids =
       children
@@ -74,6 +74,7 @@ defmodule Glorbo.ApplicationTest do
           Glorbo.Company.Scheduler,
           Glorbo.Company.TaskScheduler,
           Glorbo.Company.BudgetTracker,
+          Glorbo.Company.DispatchSemaphore,
           Glorbo.Approvals.Gate,
           Glorbo.PathRequestGate,
           Glorbo.Company.ProposalsSink,

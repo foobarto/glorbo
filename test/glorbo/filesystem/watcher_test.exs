@@ -286,9 +286,10 @@ defmodule Glorbo.Filesystem.WatcherTest do
 
       children = Supervisor.which_children(sup_pid)
       # AuditLog, Watcher, Router, Scheduler, TaskScheduler,
-      # BudgetTracker, {:agent_fleet, <co>} (wraps AgentSupervisor +
-      # AgentBoot), Approvals.Gate, PathRequestGate, ProposalsSink = 10.
-      assert length(children) == 10
+      # BudgetTracker, DispatchSemaphore (GEP-46),
+      # {:agent_fleet, <co>} (wraps AgentSupervisor + AgentBoot),
+      # Approvals.Gate, PathRequestGate, ProposalsSink = 11.
+      assert length(children) == 11
 
       ids = Enum.map(children, fn {id, _, _, _} -> id end) |> MapSet.new()
 
