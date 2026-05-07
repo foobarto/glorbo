@@ -231,6 +231,7 @@ defmodule Glorbo.Agent.Dispatch do
            merged_result <- Map.put(dispatcher_result, :usage, usage),
            :ok <-
              emit_complete_audit(spec, task, merged_result, duration_ms, invocation_id, opts),
+           :ok <- maybe_auto_mark_task_done(task, dispatcher_result),
            :ok <- maybe_check_loop(spec, opts),
            :ok <- maybe_check_task_budget(spec, task, usage, opts) do
         {:ok,
@@ -822,6 +823,70 @@ defmodule Glorbo.Agent.Dispatch do
   #   `--dir <sandbox>` before the bind so non-standard sandbox paths
   #   like `/project` (TODO B5) are created on the tmpfs root before
   #   the bind tries to overlay them.
+  # D5: auto-mark a task `done` after a clean dispatch.
+  #
+  # Tasks under `companies/<co>/projects/` are mounted ro inside the
+  # bwrap sandbox (GEP-5 / GEP-2) so an agent that completes its work
+  # cannot rewrite its own task file. Without intervention, every
+  # task stays at its authored status (typically `pending` for
+  # operator-handed tasks) even on exit 0, and the operator has to
+  # `sed` it manually after every dispatch.
+  #
+  # Auto-transition rules:
+  #
+  #   - Skip when the task has a `schedule:` field. Recurring tasks
+  #     are expected to stay non-terminal so the scheduler re-fires
+  #     them on the next tick.
+  #   - Skip when `exit_status` is non-zero — the dispatch failed,
+  #     `done` is not the right outcome.
+  #   - Skip when status is already terminal (`done`, `denied`,
+  #     `cancelled`) or director-gated (`pending-approval`). The
+  #     director-gated case in particular must NOT be silently
+  #     promoted past the approval workflow.
+  #   - Otherwise (`todo` / `in-progress` / `pending` / `approved`)
+  #     rewrite to `done` via `FrontmatterWriter.update_keys/3` —
+  #     atomic, preserves comments and unknown keys.
+  #
+  # Best-effort: a write failure is logged via the FrontmatterWriter
+  # error path but never breaks the dispatch result. The
+  # FilesystemWatcher picks up the new mtime + content and emits the
+  # usual file_event so the dashboard re-renders.
+  defp maybe_auto_mark_task_done(task, %{exit_status: 0}) do
+    # Pull fields with Map.get so the function tolerates both
+    # `Glorbo.TaskDefinition` structs (production) and the lighter
+    # task maps used in unit tests.
+    schedule = task |> Map.get(:schedule) |> to_string() |> String.trim()
+    status = Map.get(task, :status, "")
+    file_path = Map.get(task, :file_path)
+    task_path = Map.get(task, :task_path, "?")
+
+    cond do
+      schedule != "" ->
+        :ok
+
+      status not in ["todo", "in-progress", "pending", "approved"] ->
+        :ok
+
+      not is_binary(file_path) ->
+        :ok
+
+      true ->
+        case Glorbo.Filesystem.FrontmatterWriter.update_keys(file_path, %{status: "done"}) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "[dispatch] D5 auto-complete failed for #{task_path}: #{inspect(reason)}"
+            )
+
+            :ok
+        end
+    end
+  end
+
+  defp maybe_auto_mark_task_done(_, _), do: :ok
+
   defp resolve_auth_binds(%{auth_binds: binds}) when is_list(binds) do
     binds
     |> Enum.map(fn %{host: host, sandbox: sandbox} = bind ->

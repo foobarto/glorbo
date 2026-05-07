@@ -1072,6 +1072,155 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   # ---------------------------------------------------------------------------
+  # D5 — auto-mark task `done` on clean dispatch (TODO D5)
+  # ---------------------------------------------------------------------------
+
+  describe "D5: auto-complete task on clean exit" do
+    defp seed_task_file(base, status, opts \\ []) do
+      project_dir = Path.join([base, "companies", "acme", "projects", "foo", "tasks"])
+      File.mkdir_p!(project_dir)
+      file_path = Path.join(project_dir, "auto-1.md")
+
+      schedule_line =
+        case Keyword.get(opts, :schedule) do
+          nil -> ""
+          s -> "\nschedule: #{s}"
+        end
+
+      File.write!(file_path, """
+      ---
+      kind: task/v1
+      id: auto-1
+      title: Auto-complete fixture
+      status: #{status}#{schedule_line}
+      ---
+
+      do the thing
+      """)
+
+      file_path
+    end
+
+    test "flips status: pending → done on clean exit (no schedule)", ctx do
+      file_path = seed_task_file(ctx.base, "pending")
+
+      task =
+        Map.merge(ctx.task, %{
+          status: "pending",
+          file_path: file_path,
+          schedule: nil
+        })
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(),
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert File.read!(file_path) =~ "status: done"
+      refute File.read!(file_path) =~ "status: pending"
+    end
+
+    test "flips todo / in-progress / approved → done identically", ctx do
+      for from <- ["todo", "in-progress", "approved"] do
+        file_path = seed_task_file(ctx.base, from)
+
+        task =
+          Map.merge(ctx.task, %{
+            status: from,
+            file_path: file_path,
+            schedule: nil
+          })
+
+        assert {:ok, _} =
+                 Dispatch.execute(ctx.spec, task,
+                   base: ctx.base,
+                   run_fun: writer(),
+                   provider_fun: fn _ -> stub_provider() end,
+                   audit_fun: ctx.audit_fun
+                 )
+
+        assert File.read!(file_path) =~ "status: done", "expected #{from} → done"
+      end
+    end
+
+    test "leaves the task alone when schedule is set (recurring task)", ctx do
+      file_path = seed_task_file(ctx.base, "pending", schedule: "0 * * * *")
+
+      task =
+        Map.merge(ctx.task, %{
+          status: "pending",
+          file_path: file_path,
+          schedule: "0 * * * *"
+        })
+
+      assert {:ok, _} =
+               Dispatch.execute(ctx.spec, task,
+                 base: ctx.base,
+                 run_fun: writer(),
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      content = File.read!(file_path)
+      assert content =~ "status: pending"
+      refute content =~ "status: done"
+    end
+
+    test "leaves director-gated / terminal statuses alone", ctx do
+      for terminal <- ["pending-approval", "denied", "cancelled", "done"] do
+        file_path = seed_task_file(ctx.base, terminal)
+
+        task =
+          Map.merge(ctx.task, %{
+            status: terminal,
+            file_path: file_path,
+            schedule: nil
+          })
+
+        _ =
+          Dispatch.execute(ctx.spec, task,
+            base: ctx.base,
+            run_fun: writer(),
+            provider_fun: fn _ -> stub_provider() end,
+            audit_fun: ctx.audit_fun
+          )
+
+        assert File.read!(file_path) =~ "status: #{terminal}",
+               "#{terminal} unexpectedly rewritten"
+      end
+    end
+
+    test "does not touch the file when exit_status is non-zero", ctx do
+      file_path = seed_task_file(ctx.base, "pending")
+
+      task =
+        Map.merge(ctx.task, %{
+          status: "pending",
+          file_path: file_path,
+          schedule: nil
+        })
+
+      failing = fn _a, env, _b, _r ->
+        File.write!(env["GLORBO_REPLY_PATH"], "partial")
+        {:ok, %{exit_status: 2, stdout: "", usage_dir: nil}}
+      end
+
+      _ =
+        Dispatch.execute(ctx.spec, task,
+          base: ctx.base,
+          run_fun: failing,
+          provider_fun: fn _ -> stub_provider() end,
+          audit_fun: ctx.audit_fun
+        )
+
+      assert File.read!(file_path) =~ "status: pending"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
 

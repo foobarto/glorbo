@@ -10,6 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — D5: auto-complete tasks on clean dispatch exit
+
+Tasks under `companies/<co>/projects/` are mounted ro inside the
+bwrap sandbox (GEP-5 / GEP-2) so an agent that finishes its work
+cannot rewrite its own task file. Without intervention every task
+stayed at its authored status (typically `pending`) on exit 0 and
+operators had to `sed` the status field after every dispatch.
+
+`Glorbo.Agent.Dispatch.execute/3` now runs `maybe_auto_mark_task_
+done/2` after the success path's audit emission. On `exit_status:
+0` and a non-recurring task, status `todo` / `in-progress` /
+`pending` / `approved` are rewritten to `done` via
+`FrontmatterWriter.update_keys/3` (atomic; preserves comments and
+unknown keys). Recurring tasks (`schedule:` set), director-gated
+states (`pending-approval`), terminal states (`done` / `denied` /
+`cancelled`), and non-zero exits all skip the rewrite. Best-
+effort: a write failure logs a warning but never breaks the
+dispatch result.
+
+5 new dispatch tests cover the transition matrix.
+
 ### Added — GEP-47 v1: `depends_on` for tasks
 
 Explicit blocking dependencies between tasks within a company, plus
