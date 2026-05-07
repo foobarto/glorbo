@@ -178,9 +178,10 @@ defmodule Glorbo.Task.DependencyGate do
 
         {colors, cycles} =
           Enum.reduce(deps, {colors, cycles}, fn dep, {c, cy} ->
-            cond do
-              not Map.has_key?(all_tasks, dep) -> {c, cy}
-              true -> dfs(dep, all_tasks, c, [task_id | path], cy)
+            if Map.has_key?(all_tasks, dep) do
+              dfs(dep, all_tasks, c, [task_id | path], cy)
+            else
+              {c, cy}
             end
           end)
 

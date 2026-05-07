@@ -369,8 +369,17 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     assert_receive {:armed, {:fire, "perf-2"}, _}
 
     # Bump the file's mtime forward by 5s so the cache miss triggers.
-    {{y, mo, d}, {h, mi, s}} = :calendar.universal_time()
-    next = {{y, mo, d}, {h, mi, s + 5}}
+    # Use gregorian-second arithmetic so a `seconds + 5` past 59
+    # rolls cleanly into the next minute / hour / day instead of
+    # producing an invalid {{y,mo,d},{h,mi,60+}} tuple File.touch!
+    # rejects with `:einval`. (Surfaced as a CI flake on a run that
+    # happened to start the test in the last 5 seconds of a minute.)
+    next =
+      :calendar.universal_time()
+      |> :calendar.datetime_to_gregorian_seconds()
+      |> Kernel.+(5)
+      |> :calendar.gregorian_seconds_to_datetime()
+
     :ok = File.touch!(path, next)
 
     :ok = TaskScheduler.scan(sched)

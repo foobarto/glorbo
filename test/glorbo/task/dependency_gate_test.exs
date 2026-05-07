@@ -177,7 +177,7 @@ defmodule Glorbo.Task.DependencyGateTest do
       }
 
       cycles = DependencyGate.cycle_detect(snap)
-      assert length(cycles) >= 1
+      assert cycles != []
       # Cycle path includes both nodes.
       [first | _] = cycles
       assert "a" in first and "b" in first
@@ -192,7 +192,7 @@ defmodule Glorbo.Task.DependencyGateTest do
       }
 
       cycles = DependencyGate.cycle_detect(snap)
-      assert length(cycles) >= 1
+      assert cycles != []
       [first | _] = cycles
       for n <- ["a", "b", "c", "d"], do: assert(n in first)
     end
