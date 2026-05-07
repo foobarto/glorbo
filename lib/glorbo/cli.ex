@@ -30,6 +30,7 @@ defmodule Glorbo.CLI do
   @type verb ::
           :doctor
           | :help
+          | :version
           | :unknown
           | :init
           | :up
@@ -80,6 +81,9 @@ defmodule Glorbo.CLI do
   def dispatch(["-h" | _]), do: {:help, 0, help_text()}
   def dispatch(["--help" | _]), do: {:help, 0, help_text()}
   def dispatch(["help"]), do: {:help, 0, help_text()}
+  def dispatch(["version" | _]), do: {:version, 0, version_text()}
+  def dispatch(["--version" | _]), do: {:version, 0, version_text()}
+  def dispatch(["-V" | _]), do: {:version, 0, version_text()}
 
   # `glorbo help <verb>` — verb-specific usage text (D-05, like `git help`).
   # Empty verb falls back to global help so `glorbo help ""` doesn't
@@ -540,6 +544,14 @@ defmodule Glorbo.CLI do
     end
   end
 
+  @spec version_text() :: String.t()
+  def version_text do
+    case :application.get_key(:glorbo, :vsn) do
+      {:ok, vsn} -> "glorbo " <> List.to_string(vsn)
+      _ -> "glorbo unknown"
+    end
+  end
+
   @spec help_text() :: String.t()
   def help_text do
     # Read the version from the loaded application spec rather than
@@ -597,6 +609,7 @@ defmodule Glorbo.CLI do
       uninstall                Disable + remove the user systemd service
       console                  Open iex --remsh into the running release
       help [<verb>]            Print help (verb-specific when given)
+      version                  Print the binary's version (also: --version, -V)
 
     See DESIGN.md §10 for the full CLI surface and exit-code semantics.
     """

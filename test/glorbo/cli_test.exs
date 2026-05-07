@@ -160,6 +160,21 @@ defmodule Glorbo.CLITest do
     {:help, 0, _output} = CLI.dispatch(["help"])
   end
 
+  test "dispatch([\"version\"]) returns :version with the mix.exs version" do
+    {:version, 0, output} = CLI.dispatch(["version"])
+    assert output =~ ~r/^glorbo \d+\.\d+\.\d+/
+  end
+
+  test "dispatch([\"--version\"]) returns :version" do
+    {:version, 0, output} = CLI.dispatch(["--version"])
+    assert output =~ ~r/^glorbo \d+\.\d+\.\d+/
+  end
+
+  test "dispatch([\"-V\"]) returns :version" do
+    {:version, 0, output} = CLI.dispatch(["-V"])
+    assert output =~ ~r/^glorbo \d+\.\d+\.\d+/
+  end
+
   test "dispatch([\"doctor\"]) runs checks and returns :doctor with table output" do
     {verb, code, output} = CLI.dispatch(["doctor"])
     assert verb == :doctor

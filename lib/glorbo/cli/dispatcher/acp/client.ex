@@ -415,7 +415,19 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   defp next_message(%{pending: []} = state, phase) do
     case state.io.read.(state.phase_timeout_ms) do
       {:ok, ""} ->
-        {:error, {:provider_protocol_error, {:eof_in_phase, phase}}}
+        # Port closed (peer hung up). Before reporting EOF, do a
+        # non-blocking drain of any final bytes the peer wrote
+        # immediately before closing — for stado in particular, a
+        # `MaxTurns`-exhaustion error response and the port close
+        # arrive back-to-back, and depending on receive ordering the
+        # error frame may still be in our buffer / mailbox at this
+        # point. Surface that frame instead of the generic eof so
+        # the caller sees `:provider_returned_error` rather than
+        # `:eof_in_phase` (TODO B7).
+        case final_drain(state, phase) do
+          {:ok, state} -> next_message(state, phase)
+          :exhausted -> {:error, {:provider_protocol_error, {:eof_in_phase, phase}}}
+        end
 
       {:ok, chunk} when is_binary(chunk) ->
         {parsed, remainder} = Framing.parse_stream(state.buffer, chunk)
@@ -423,10 +435,35 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         next_message(state, phase)
 
       {:error, :timeout} ->
-        {:error, {:provider_timeout, phase}}
+        # Same defensive drain on timeout — covers the rare case where
+        # the peer's final write arrived between the receive's after
+        # firing and us reporting the timeout (TODO B7).
+        case final_drain(state, phase) do
+          {:ok, state} -> next_message(state, phase)
+          :exhausted -> {:error, {:provider_timeout, phase}}
+        end
 
       {:error, reason} ->
         {:error, {:provider_protocol_error, {:read_failed, reason}}}
+    end
+  end
+
+  # Non-blocking drain after EOF/timeout. Polls the IO seam once with
+  # zero timeout to grab any final bytes still in the kernel pipe /
+  # BEAM mailbox, parses them into the pending queue, and returns
+  # `{:ok, state}` if anything was harvested. Returns `:exhausted`
+  # when truly nothing more is available.
+  defp final_drain(state, _phase) do
+    case state.io.read.(0) do
+      {:ok, ""} ->
+        :exhausted
+
+      {:ok, chunk} when is_binary(chunk) and byte_size(chunk) > 0 ->
+        {parsed, remainder} = Framing.parse_stream(state.buffer, chunk)
+        {:ok, %{state | buffer: remainder, pending: parsed}}
+
+      _ ->
+        :exhausted
     end
   end
 

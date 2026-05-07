@@ -10,6 +10,28 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added — `glorbo version` / `--version` / `-V`
+
+Three new CLI verbs that print the binary's `:vsn` from
+`Application.get_key(:glorbo, :vsn)` (so the output stays in sync
+with `mix.exs` automatically). Listed in the `glorbo help` output.
+
+### Fixed — TODO B7: ACP port-close masks `MaxTurns` error response
+
+When a peer (e.g. stado) writes a JSON-RPC error response (like
+`"runtime: exceeded N turns"`) and immediately closes the port,
+glorbo's ACP client could see the EOF / read-timeout before the
+error frame was parsed and report
+`{:provider_protocol_error, {:eof_in_phase, :session_prompt}}` or
+`{:provider_timeout, :session_prompt}` instead of
+`{:provider_returned_error, %{message: "runtime: exceeded N turns"}}`.
+Added a non-blocking `final_drain/2` to `next_message/2`: on EOF
+or read-timeout, polls the IO seam once with timeout 0 to harvest
+any final bytes, parses them into the pending queue, and retries.
+The error response is now surfaced correctly and the dispatcher
+attributes the failure to the peer instead of swallowing it as
+infrastructure flake.
+
 ### Fixed — HTB-engagement TODO bugs B1–B6
 
 - **B1 (`acp/client.ex`)** — `absorb_update/2` now accepts both
