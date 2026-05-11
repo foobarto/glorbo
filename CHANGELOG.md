@@ -10,6 +10,12 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security
+
+- Bind epmd to `127.0.0.1` only — previously listened on all interfaces (`0.0.0.0:4369`).
+- Dashboard and MCP auth token is now mandatory — auto-generated on first boot (or on upgrade from `dashboard_token: null`), written to `config.md` at mode 0600. `DashboardToken` plug no longer passes through unauthenticated requests.
+- `glorbo serve`, `glorbo up`, and `glorbo status` now print the full token URL (`http://127.0.0.1:4000/?token=<token>`) for browser and MCP client configuration.
+
 ### Fixed — D8: F6 persistence rejects non-UUID `sessionId`
 
 The F6 session-resume implementation persisted whatever the peer

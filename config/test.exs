@@ -54,6 +54,10 @@ config :glorbo, GlorboWeb.Endpoint,
 
 config :glorbo, :serve_starts_endpoint, false
 
+# DashboardToken plug always-enforces a token; tests use a fixed sentinel so
+# ConnCase/LiveCase can inject it into every conn without reading config files.
+config :glorbo, :dashboard_token, "test-token"
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

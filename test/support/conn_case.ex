@@ -33,6 +33,14 @@ defmodule GlorboWeb.ConnCase do
 
   setup tags do
     Glorbo.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    # DashboardToken plug requires a bearer token on every request.
+    # Inject the test sentinel so ConnCase tests pass through the gate.
+    token = Application.get_env(:glorbo, :dashboard_token, "test-token")
+
+    conn =
+      Phoenix.ConnTest.build_conn()
+      |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+
+    {:ok, conn: conn}
   end
 end

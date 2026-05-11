@@ -182,19 +182,21 @@ defmodule Glorbo.Config do
   end
 
   defp patch_dashboard_token(path, token) do
-    with {:ok, content} <- File.read(path) do
-      new_content =
-        if Regex.match?(~r/^dashboard_token:/m, content) do
-          String.replace(content, ~r/^dashboard_token:.*$/m, "dashboard_token: #{token}")
-        else
-          # Key entirely absent — inject after the opening fence.
-          String.replace(content, "---\n", "---\ndashboard_token: #{token}\n", global: false)
-        end
+    case File.read(path) do
+      {:ok, content} ->
+        new_content =
+          if Regex.match?(~r/^dashboard_token:/m, content) do
+            String.replace(content, ~r/^dashboard_token:.*$/m, "dashboard_token: #{token}")
+          else
+            # Key entirely absent — inject after the opening fence.
+            String.replace(content, "---\n", "---\ndashboard_token: #{token}\n", global: false)
+          end
 
-      atomic_write_secret!(path, new_content)
-      :ok
-    else
-      {:error, reason} -> {:error, reason}
+        atomic_write_secret!(path, new_content)
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
   rescue
     e -> {:error, Exception.message(e)}

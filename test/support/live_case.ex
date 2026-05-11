@@ -89,6 +89,14 @@ defmodule GlorboWeb.LiveCase do
 
     _ = audit_pid
 
-    {:ok, conn: Phoenix.ConnTest.build_conn(), base: seeded.base, company: seeded.company}
+    # DashboardToken plug requires a bearer token on every request.
+    # Inject the test sentinel so LiveCase tests pass through the gate.
+    token = Application.get_env(:glorbo, :dashboard_token, "test-token")
+
+    conn =
+      Phoenix.ConnTest.build_conn()
+      |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+
+    {:ok, conn: conn, base: seeded.base, company: seeded.company}
   end
 end
