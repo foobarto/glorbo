@@ -28,6 +28,15 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
   the CLI can print a useful "another glorbo is already running —
   use `./glorbo status` or `./glorbo down`" message instead of the
   opaque BEAM error.
+
+  ## epmd bind
+
+  epmd is spawned with `-address 127.0.0.1` so its listen socket is
+  loopback-only. Edge case: if another Erlang application already started
+  epmd on all interfaces before glorbo, our `-daemon` invocation exits
+  silently (epmd is idempotent). We log a warning but do not abort —
+  `Node.start/2` still succeeds. The risk is the pre-existing epmd's
+  wider bind, not ours.
   """
 
   @canonical_node :"glorbo@127.0.0.1"
@@ -77,7 +86,7 @@ defmodule Glorbo.CLI.Lifecycle.Distribution do
       )
 
     if File.exists?(epmd) do
-      _ = System.cmd(epmd, ["-daemon"], stderr_to_stdout: true)
+      _ = System.cmd(epmd, ["-address", "127.0.0.1", "-daemon"], stderr_to_stdout: true)
       :ok
     else
       # No bundled epmd. `Node.start/2` will surface the real error
