@@ -1,22 +1,17 @@
 defmodule GlorboWeb.Plugs.DashboardToken do
   @moduledoc """
-  Optional bearer-token gate (D-06).
+  Always-enforced bearer-token gate (D-06).
 
   Behaviour matrix on `Application.get_env(:glorbo, :dashboard_token)`:
 
-    * `nil` (default) — plug is a no-op. Trust relies on loopback bind
-      + host-user ownership of `~/.glorbo/`. This is v0.0.1's default
-      deployment posture.
-    * `""` — treated the same as `nil` (empty string means "not set").
-    * binary string — request MUST carry a matching token. Two
-      mechanisms are accepted:
-        1. `?token=<value>` query param — used by the browser dashboard.
-        2. `Authorization: Bearer <value>` header — used by MCP clients
-           (threatmodel T11) and other non-browser callers.
-      Match is via `Plug.Crypto.secure_compare/2` (constant-time,
-      defeats T-04-14 timing attack). Mismatch or missing token
-      → `401 unauthorized` + `halt/1`. The response body deliberately
-      omits the expected secret (T-04-05 / never leak).
+    * binary string — request MUST carry a matching token:
+        1. `?token=<value>` query param — browser dashboard.
+        2. `Authorization: Bearer <value>` header — MCP clients and CLIs.
+      Match via `Plug.Crypto.secure_compare/2` (constant-time, defeats T-04-14).
+      Mismatch or missing → `401 unauthorized` + `halt/1`.
+    * `nil` or `""` — server misconfiguration (Config.load should always
+      generate a token). Returns `500 server misconfiguration` and halts.
+      This path should never be reached in a correctly booted instance.
 
   ## Usage
 
@@ -34,9 +29,20 @@ defmodule GlorboWeb.Plugs.DashboardToken do
   @impl Plug
   def call(conn, _opts) do
     case Application.get_env(:glorbo, :dashboard_token) do
-      nil -> conn
-      "" -> conn
-      expected when is_binary(expected) -> check_token(conn, expected)
+      token when is_binary(token) and token != "" ->
+        check_token(conn, token)
+
+      other ->
+        require Logger
+
+        Logger.error(
+          "dashboard_token not configured (got #{inspect(other)}); " <>
+            "refusing all requests — fix ~/.glorbo/config.md"
+        )
+
+        conn
+        |> send_resp(500, "server misconfiguration")
+        |> halt()
     end
   end
 

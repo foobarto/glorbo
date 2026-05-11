@@ -1,10 +1,9 @@
 defmodule GlorboWeb.Plugs.DashboardTokenTest do
   @moduledoc """
-  DashboardToken plug (D-06) — optional bearer-token gate for LAN
-  exposure. Default disposition is pass-through when the `:glorbo,
-  :dashboard_token` app env is unset; when set, request MUST carry
-  a `?token=<value>` matching via `Plug.Crypto.secure_compare/2`
-  (T-04-14 timing-attack defense).
+  DashboardToken plug (D-06) — always-enforced bearer-token gate.
+  A missing or empty `:dashboard_token` config is a server
+  misconfiguration (Config.load should always generate one); the plug
+  returns 500 rather than silently allowing access.
   """
   use ExUnit.Case, async: false
   import Plug.Test
@@ -15,18 +14,21 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
     :ok
   end
 
-  test "passes through when token is nil (default)" do
+  test "halts with 500 when dashboard_token is nil (server misconfiguration)" do
     Application.put_env(:glorbo, :dashboard_token, nil)
     conn = conn(:get, "/companies")
     result = GlorboWeb.Plugs.DashboardToken.call(conn, [])
-    refute result.halted
+    assert result.status == 500
+    assert result.halted
+    assert result.resp_body == "server misconfiguration"
   end
 
-  test "passes through when token is empty string" do
+  test "halts with 500 when dashboard_token is empty string" do
     Application.put_env(:glorbo, :dashboard_token, "")
     conn = conn(:get, "/companies")
     result = GlorboWeb.Plugs.DashboardToken.call(conn, [])
-    refute result.halted
+    assert result.status == 500
+    assert result.halted
   end
 
   test "passes when query-param token matches" do
