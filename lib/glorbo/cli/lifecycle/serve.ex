@@ -42,6 +42,7 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
       is_integer(opts[:exit_after]) ->
         Audit.emit("serve", "start", %{exit_after_ms: opts[:exit_after]})
         :ok = ensure_tree_started()
+        IO.puts("Glorbo serving on #{build_url()}  (Ctrl-C to stop)")
         Process.sleep(opts[:exit_after])
         Audit.emit("serve", "complete", %{exit_after_ms: opts[:exit_after]})
 
@@ -50,7 +51,7 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
       true ->
         Audit.emit("serve", "start", %{})
         :ok = ensure_tree_started()
-        IO.puts("Glorbo serving on http://127.0.0.1:4000 (Ctrl-C to stop)")
+        IO.puts("Glorbo serving on #{build_url()}  (Ctrl-C to stop)")
         Process.sleep(:infinity)
     end
   end
@@ -103,6 +104,18 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
     end
 
     :ok
+  end
+
+  # Build the dashboard URL, appending the token when one has been loaded
+  # into app env by runtime.exs (production) or explicitly set in tests.
+  defp build_url do
+    case Application.get_env(:glorbo, :dashboard_token) do
+      token when is_binary(token) and token != "" ->
+        "http://127.0.0.1:4000/?token=#{token}"
+
+      _ ->
+        "http://127.0.0.1:4000"
+    end
   end
 
   @spec help_text() :: String.t()

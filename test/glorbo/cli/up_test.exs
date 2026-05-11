@@ -52,7 +52,7 @@ defmodule Glorbo.CLI.UpTest do
       assert {:up, 0, out} = Up.run([])
       assert out =~ "glorbo up"
       assert out =~ "pid="
-      assert out =~ "http://127.0.0.1:4000"
+      assert out =~ "http://127.0.0.1:4000/?token="
 
       pidfile_path = Path.join([home, "run", "glorbo.pid"])
       assert File.exists?(pidfile_path)

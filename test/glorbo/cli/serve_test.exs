@@ -36,6 +36,20 @@ defmodule Glorbo.CLI.ServeTest do
       assert elapsed < 10_000, "serve took #{elapsed}ms — tree start blocked too long?"
     end
 
+    @tag :integration
+    test "banner includes token URL", %{glorbo_home: _home} do
+      prev = Application.get_env(:glorbo, :dashboard_token)
+      Application.put_env(:glorbo, :dashboard_token, "test-token-abc123")
+      on_exit(fn -> Application.put_env(:glorbo, :dashboard_token, prev) end)
+
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          Serve.run(["--exit-after", "50"])
+        end)
+
+      assert output =~ "http://127.0.0.1:4000/?token=test-token-abc123"
+    end
+
     test "enable_endpoint_serving flips :server to true when flag is on" do
       # Regression: in a Burrito release, runtime.exs only sets `server: true`
       # when PHX_SERVER is set; without this auto-enable, `glorbo serve`
