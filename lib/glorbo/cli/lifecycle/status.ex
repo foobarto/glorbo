@@ -15,12 +15,13 @@ defmodule Glorbo.CLI.Lifecycle.Status do
 
     * default (human): 4-row table (running / pid / port / dashboard_url).
     * `--json`: `Jason.encode!` of `%{running: bool, pid: int|nil,
-      port_listening: bool, dashboard_url: "..."}` with pretty-print.
+      port_listening: bool, dashboard_url: "http://.../?token=<token>"}` with
+      pretty-print. The token is read from `config.md` via `Glorbo.Config.load/1`;
+      if unavailable a descriptive placeholder is used instead.
   """
 
   alias Glorbo.CLI.Lifecycle.Pidfile
 
-  @dashboard_url "http://127.0.0.1:4000"
   @port 4000
   @tcp_timeout_ms 500
   @switches [help: :boolean, json: :boolean]
@@ -64,11 +65,22 @@ defmodule Glorbo.CLI.Lifecycle.Status do
 
     port_check = Keyword.get(run_opts, :port_check_fun, &port_listening?/0)
 
+    # Read token from config.md so the URL is immediately usable — the Status
+    # command runs out-of-process from the daemon and has no other source.
+    dashboard_url =
+      case Glorbo.Config.load(base) do
+        {:ok, %{dashboard_token: t}} when is_binary(t) and t != "" ->
+          "http://127.0.0.1:#{@port}/?token=#{t}"
+
+        _ ->
+          "http://127.0.0.1:#{@port}  (token unavailable — check config.md)"
+      end
+
     %{
       running: running?,
       pid: pid,
       port_listening: port_check.(),
-      dashboard_url: @dashboard_url
+      dashboard_url: dashboard_url
     }
   end
 

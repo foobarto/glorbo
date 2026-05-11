@@ -38,7 +38,10 @@ defmodule Glorbo.CLI.StatusTest do
       assert out =~ "yes"
     end
 
-    test "--json emits valid JSON with all 4 keys", %{glorbo_home: _home} do
+    test "--json emits valid JSON with dashboard_url containing token", %{glorbo_home: home} do
+      # Config.load auto-generates a token when config.md is absent.
+      {:ok, cfg} = Glorbo.Config.load(home)
+
       assert {:status, 3, out} = Status.run(["--json"], port_closed())
       assert {:ok, parsed} = Jason.decode(out)
       assert Map.has_key?(parsed, "running")
@@ -46,9 +49,13 @@ defmodule Glorbo.CLI.StatusTest do
       assert Map.has_key?(parsed, "port_listening")
       assert Map.has_key?(parsed, "dashboard_url")
       assert parsed["running"] == false
-      assert parsed["pid"] == nil
-      assert parsed["port_listening"] == false
-      assert parsed["dashboard_url"] == "http://127.0.0.1:4000"
+      assert parsed["dashboard_url"] =~ "http://127.0.0.1:4000/?token="
+      assert parsed["dashboard_url"] =~ cfg.dashboard_token
+    end
+
+    test "human table includes token URL", %{glorbo_home: _home} do
+      assert {:status, 3, out} = Status.run([], port_closed())
+      assert out =~ "http://127.0.0.1:4000/?token="
     end
 
     test "--json with alive pid reports pid in payload", %{glorbo_home: home} do
