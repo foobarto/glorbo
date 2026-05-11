@@ -5,16 +5,19 @@
      regen after changing the spec module. -->
 
 Workspace-level config generated on first boot. Holds secrets
-(secret_key_base, erl_cookie) and network bind (host, port).
-Edit `host: "0.0.0.0"` to accept LAN connections; set
-`dashboard_token:` to gate the dashboard with `?token=<...>`.
-Keep this file readable only by the director.
+(secret_key_base, dashboard_token, erl_cookie) and network bind
+(host, port). The dashboard_token is auto-generated on first
+boot and required to access the dashboard and MCP endpoint —
+browsers pass it via `?token=<...>`, MCP clients via
+`Authorization: Bearer <token>` (GEP-48). Edit
+`host: "0.0.0.0"` to accept LAN connections. Keep this file
+readable only by the director.
 
 ## Frontmatter schema
 
-**Required:** `kind`, `secret_key_base`, `erl_cookie`, `host`, `port`
+**Required:** `kind`, `secret_key_base`, `dashboard_token`, `erl_cookie`, `host`, `port`
 
-**Optional:** `dashboard_token`, `created_at`
+**Optional:** `created_at`
 
 
 ## Canonical key order
@@ -31,7 +34,7 @@ Unknown keys fall after the known block, sorted alphabetically.
 ---
 kind: config/v1
 secret_key_base: <base64 64 bytes>
-dashboard_token: null
+dashboard_token: <url-safe base64, 32 bytes>
 erl_cookie: <24 bytes>
 host: "127.0.0.1"
 port: 4000
