@@ -23,7 +23,8 @@ defmodule Glorbo.ConfigTest do
       assert byte_size(cfg.secret_key_base) >= 64
       assert cfg.host == "127.0.0.1"
       assert cfg.port == 4000
-      assert cfg.dashboard_token == nil
+      assert is_binary(cfg.dashboard_token)
+      assert byte_size(cfg.dashboard_token) >= 16
 
       path = Path.join(base, "config.md")
       assert File.exists?(path)
@@ -44,6 +45,22 @@ defmodule Glorbo.ConfigTest do
       assert cfg1.secret_key_base == cfg2.secret_key_base
       assert cfg1.host == cfg2.host
       assert cfg1.port == cfg2.port
+    end
+
+    test "write_default! generates a non-nil dashboard_token" do
+      base = TmpGlorboHome.setup()
+      assert {:ok, cfg} = Config.load(base)
+      assert is_binary(cfg.dashboard_token)
+      assert byte_size(cfg.dashboard_token) >= 16
+    end
+
+    test "config.md written on first boot contains dashboard_token value (not null)" do
+      base = TmpGlorboHome.setup()
+      {:ok, _} = Config.load(base)
+      content = File.read!(Path.join(base, "config.md"))
+      # Must not be `dashboard_token: null`
+      refute content =~ "dashboard_token: null"
+      assert content =~ "dashboard_token: "
     end
   end
 
@@ -69,7 +86,7 @@ defmodule Glorbo.ConfigTest do
       assert cfg.port == 8080
     end
 
-    test "null dashboard_token becomes nil" do
+    test "null dashboard_token in existing file is auto-generated" do
       base = TmpGlorboHome.setup()
 
       File.write!(Path.join(base, "config.md"), """
@@ -84,7 +101,8 @@ defmodule Glorbo.ConfigTest do
       """)
 
       assert {:ok, cfg} = Config.load(base)
-      assert cfg.dashboard_token == nil
+      assert is_binary(cfg.dashboard_token)
+      assert byte_size(cfg.dashboard_token) >= 16
     end
   end
 
@@ -113,6 +131,103 @@ defmodule Glorbo.ConfigTest do
       """)
 
       assert {:error, :config_parse} = Config.load(base)
+    end
+  end
+
+  describe "token auto-generation" do
+    test "null token in existing config.md is replaced with a generated token" do
+      base = TmpGlorboHome.setup()
+
+      File.mkdir_p!(base)
+
+      File.write!(Path.join(base, "config.md"), """
+      ---
+      secret_key_base: abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ01234==
+      dashboard_token: null
+      host: "127.0.0.1"
+      port: 4000
+      ---
+
+      # notes
+      """)
+
+      assert {:ok, cfg} = Config.load(base)
+      assert is_binary(cfg.dashboard_token)
+      assert byte_size(cfg.dashboard_token) >= 16
+
+      # Also patched on disk
+      content = File.read!(Path.join(base, "config.md"))
+      refute content =~ "dashboard_token: null"
+      assert content =~ "dashboard_token: " <> cfg.dashboard_token
+    end
+
+    test "empty-string token is also replaced" do
+      base = TmpGlorboHome.setup()
+
+      File.mkdir_p!(base)
+
+      File.write!(Path.join(base, "config.md"), """
+      ---
+      secret_key_base: abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ01234==
+      dashboard_token: ""
+      host: "127.0.0.1"
+      port: 4000
+      ---
+
+      # notes
+      """)
+
+      assert {:ok, cfg} = Config.load(base)
+      assert is_binary(cfg.dashboard_token)
+      assert byte_size(cfg.dashboard_token) >= 16
+    end
+
+    test "existing non-empty token is preserved and not rewritten" do
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+
+      File.mkdir_p!(base)
+
+      File.write!(path, """
+      ---
+      secret_key_base: abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ01234==
+      dashboard_token: my-existing-token-abc123
+      host: "127.0.0.1"
+      port: 4000
+      ---
+
+      # notes
+      """)
+
+      File.chmod!(path, 0o600)
+
+      {:ok, %File.Stat{mtime: before}} = File.stat(path)
+      :timer.sleep(1_100)
+
+      assert {:ok, cfg} = Config.load(base)
+      assert cfg.dashboard_token == "my-existing-token-abc123"
+
+      {:ok, %File.Stat{mtime: after_}} = File.stat(path)
+      assert before == after_
+    end
+
+    test "config.md stays mode 0600 after token patch" do
+      base = TmpGlorboHome.setup()
+
+      File.mkdir_p!(base)
+
+      File.write!(Path.join(base, "config.md"), """
+      ---
+      secret_key_base: abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ01234==
+      dashboard_token: null
+      host: "127.0.0.1"
+      port: 4000
+      ---
+      """)
+
+      {:ok, _} = Config.load(base)
+      {:ok, %File.Stat{mode: mode}} = File.stat(Path.join(base, "config.md"))
+      assert Bitwise.band(mode, 0o777) == 0o600
     end
   end
 
