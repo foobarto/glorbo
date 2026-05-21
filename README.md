@@ -236,17 +236,24 @@ glorbo uninstall       # disable + remove the unit (keeps ~/.glorbo intact)
 ```
 glorbo init [--force] [--no-example]    Bootstrap ~/.glorbo/ and verify deps
 glorbo up | down | status | serve       Daemon lifecycle
+glorbo run <co>/<agent> <task>          One-shot agent dispatch (no dashboard)
 glorbo install [--force] [--no-start]   Install user-systemd service (Linux)
 glorbo uninstall                        Remove user-systemd service
 glorbo new company|agent|project|skill  Scaffold
-glorbo doctor [--fix]                   Verify host prerequisites
+glorbo templates list|show              List/print agent + skill templates (GEP-10)
+glorbo import paperclip <src> [--as]    Import a paperclip.ai agentcompanies tree
+glorbo doctor [--json] [--fix]          Verify host prerequisites
 glorbo detect-providers [--json]        Probe localhost for native providers
 glorbo validate [PATH]                  Check files against FileSpec (GEP-25)
 glorbo fmt [PATH] [--write]             Normalise frontmatter (GEP-25)
+glorbo migrate                          Run Ecto migrations against glorbo.db
 glorbo reindex                          Rebuild SQLite index from filesystem
 glorbo backup | restore                 tar.gz roundtrip
 glorbo logs <co> [agent] [--follow]     Tail audit or stdout
+glorbo history <sub>                    Opt-in git history for ~/.glorbo/ (GEP-33)
+glorbo shell                            [alpha] Interactive Director terminal (GEP-37)
 glorbo console                          iex --remsh into the running daemon
+glorbo version | --version | -V         Print the binary's version
 glorbo help [<verb>]
 ```
 

@@ -70,9 +70,13 @@ stale 7MB `lib/graphify-out/`.
 
 - Did not delete `agent-templates/` (accurate self-labeled drafts) or
   `knowledge-graph/notes.md` (living, spot-checked accurate).
-- README CLI Reference omits ~8 advertised verbs (`run`, `shell`,
-  `history`, `templates`, `import`, `bench`, `migrate`, `version`) —
-  cosmetic completeness gap, left for a follow-up.
+
+## Follow-up (done)
+
+- Completed the README CLI Reference — added the missing advertised
+  verbs (`run`, `templates`, `import paperclip`, `migrate`, `history`,
+  `shell`, `version`), mirroring `cli.ex` `help_text/0`. `bench` stays
+  omitted (internal, not in `help_text`, like `harness`).
 
 ## Commit(s)
 
