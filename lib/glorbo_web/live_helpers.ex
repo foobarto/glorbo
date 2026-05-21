@@ -18,6 +18,43 @@ defmodule GlorboWeb.LiveHelpers do
   @spec base_dir() :: Path.t()
   def base_dir, do: Hierarchy.default_root()
 
+  @coalesce_reload_ms 250
+
+  @doc """
+  Coalesce a burst of high-frequency re-render triggers (inotify
+  `:file_event`s) into a single deferred reload.
+
+  An active agent writes many files per second; without coalescing each
+  `:file_event` drove a full `load_*` reload + whole-page re-render,
+  which thrashed layout (the document height oscillated several times a
+  second) and clobbered open modals / in-flight form inputs — the page
+  was unusable while any agent worked.
+
+  Call this from the high-frequency `handle_info({:file_event, …})`
+  clause and perform the real reload in the `reload_msg` handler,
+  clearing the latch there with `clear_reload_pending/1`. Repeated calls
+  while a reload is already pending are no-ops, so a burst collapses to
+  one reload per window.
+  """
+  @spec schedule_coalesced_reload(Phoenix.LiveView.Socket.t(), term(), pos_integer()) ::
+          Phoenix.LiveView.Socket.t()
+  def schedule_coalesced_reload(
+        socket,
+        reload_msg \\ :coalesced_reload,
+        delay_ms \\ @coalesce_reload_ms
+      ) do
+    if socket.assigns[:reload_pending?] do
+      socket
+    else
+      Process.send_after(self(), reload_msg, delay_ms)
+      Phoenix.Component.assign(socket, :reload_pending?, true)
+    end
+  end
+
+  @doc "Clear the coalesced-reload latch set by `schedule_coalesced_reload/3`."
+  @spec clear_reload_pending(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def clear_reload_pending(socket), do: Phoenix.Component.assign(socket, :reload_pending?, false)
+
   @doc """
   Pretty-print the base dir for UI labels. When the base is the
   default `~/.glorbo/` under the director's home, render that

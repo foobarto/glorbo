@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — `network: proxy` dispatch hard-failed with `:invalid_proxy_url`
+
+`Glorbo.Sandbox.Bwrap`'s proxy-URL parser rejected any URL carrying
+`userinfo`, but GEP-23 Phase 5 embeds the per-dispatch auth token there
+(`http://<token>@127.0.0.1:<port>`) so the sandboxed CLI's CONNECT can
+send `Proxy-Authorization`. Every `network: proxy` dispatch therefore
+failed at sandbox start with `{:invalid_proxy_url, …}`. The parser now
+accepts userinfo and **preserves the token** in the canonical
+`HTTPS_PROXY` value (host normalised to `127.0.0.1`; only the bare port
+feeds the network-namespace egress rule). Found via full e2e UAT.
+
+### Fixed — dashboard unusable while an agent works (re-render thrash)
+
+An agent actively working writes many files per second; `CompanyLive`
+ran a full `load_company_data` reload + whole-page re-render on **every**
+inotify `:file_event`, so the document height oscillated several times a
+second (overview + agent pages) and the constant DOM patching wiped the
+new-project modal's slug input and ate its create / cancel / × clicks —
+the modal was unusable. File-event-driven reloads now coalesce through
+`GlorboWeb.LiveHelpers.schedule_coalesced_reload/3` (one reload per
+~250 ms window), and a reload is deferred while a modal/editor is open so
+in-flight form inputs aren't clobbered. Verified end-to-end under
+file-event churn: the new-project modal opens, the slug sticks, create
+succeeds + closes, and × / cancel close — all reliably. (A misconfigured
+agent that flips status several times a second can still occasionally
+drop a click; tracked as a follow-up — see `docs/todo.md`.)
+
 ### Changed — dashboard token is read once, then rides a session cookie
 
 The `DashboardToken` plug now persists a valid `?token=` to the (signed)

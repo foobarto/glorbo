@@ -135,12 +135,29 @@ defmodule GlorboWeb.CompanyLive do
 
   @impl true
   def handle_info({:file_event, rel_path, _events}, socket) do
+    # Coalesce the burst — an active agent emits many file_events/sec and
+    # a full load_company_data per event re-renders the whole page,
+    # thrashing layout and clobbering open modals (overview-thrash +
+    # new-project modal bugs, 2026-05-21). The drawer refresh is cheap
+    # and targeted, so it stays per-event.
     socket = ChatDrawer.State.maybe_refresh_drawer(socket, rel_path)
-    base = base_dir()
-    slug = socket.assigns.company_slug
-    co_path = Path.join([base, "companies", slug])
-    data = load_company_data(base, slug, co_path)
-    {:noreply, assign(socket, :company, data)}
+    {:noreply, GlorboWeb.LiveHelpers.schedule_coalesced_reload(socket)}
+  end
+
+  def handle_info(:coalesced_reload, socket) do
+    # Don't reassign company data while a modal/editor is open — a reload
+    # mid-interaction wipes the (uncontrolled) form inputs. Re-arm so the
+    # page refreshes once the modal closes.
+    if modal_open?(socket) do
+      Process.send_after(self(), :coalesced_reload, 250)
+      {:noreply, socket}
+    else
+      base = base_dir()
+      slug = socket.assigns.company_slug
+      co_path = Path.join([base, "companies", slug])
+      data = load_company_data(base, slug, co_path)
+      {:noreply, socket |> assign(:company, data) |> GlorboWeb.LiveHelpers.clear_reload_pending()}
+    end
   end
 
   def handle_info({:agent_status, slug, status, working_on}, socket) do
@@ -179,6 +196,11 @@ defmodule GlorboWeb.CompanyLive do
 
   defp maybe_stamp_working_on(agent_row, slug, _status, _) do
     if agent_row.slug == slug, do: Map.put(agent_row, :working_on, nil), else: agent_row
+  end
+
+  defp modal_open?(socket) do
+    socket.assigns[:new_project_open?] || socket.assigns[:new_agent_open?] ||
+      not is_nil(socket.assigns[:edit_company_md])
   end
 
   @impl true

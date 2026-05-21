@@ -20,6 +20,21 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
+- [ ] **Agent-detail page re-render thrash while working.** AgentLive's
+  height oscillates while an agent works — separate mechanism from the
+  CompanyLive file_event storm (now coalesced): stdout `stream_insert`
+  appends + per-event `agent_status` detail reloads + audit-history
+  prepends. Fix wants fixed-height scroll regions for the stdout/history
+  panels (so appends don't grow document height) and/or coalescing the
+  detail reloads. Surfaced in the 2026-05-21 e2e UAT.
+- [ ] **Modal click-drop under rapid `agent_status` churn.** When an
+  agent flips status several times/sec (e.g. a misconfigured agent
+  looping on heartbeat dispatch), CompanyLive's per-flip `load_agents`
+  re-render can still occasionally replace a toolbar/modal node mid-click
+  and drop it. The realistic working-agent case (file_event storm) is
+  fixed via coalescing; this needs either coalescing `agent_status` with
+  a *light* reload (a naive full-coalesce regressed modal-open — needs
+  care) or stable DOM ids / re-render scoping on the toolbar+modal.
 - [x] **GEP-32 phase 3 — native model discovery + cache surface.**
   Shipped `Glorbo.Providers.ModelCatalog` + `NativeConfig` +
   `ProviderModel` schema + migration. Wires `cache/providers/*.json`
