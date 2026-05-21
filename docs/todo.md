@@ -20,13 +20,20 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **Agent-detail page re-render thrash while working.** AgentLive's
-  height oscillates while an agent works — separate mechanism from the
-  CompanyLive file_event storm (now coalesced): stdout `stream_insert`
-  appends + per-event `agent_status` detail reloads + audit-history
-  prepends. Fix wants fixed-height scroll regions for the stdout/history
-  panels (so appends don't grow document height) and/or coalescing the
-  detail reloads. Surfaced in the 2026-05-21 e2e UAT.
+- [ ] **Agent-detail page re-render thrash while working — NOT
+  REPRODUCED (needs operator repro detail).** Reported 2026-05-21. On
+  investigation the layout looks correct: root is `gl-view--tall`,
+  `.gl-stdout-tail` is `flex:1; min-height:0; overflow-y:auto`, and
+  `.gl-main:has(.gl-view--tall)` bounds the main area — so stdout streams
+  scroll *internally*. Measured `document.scrollHeight` over 4 s on
+  `/companies/acme/agents/ceo` with an active (looping) ceo AND under
+  ~20 stdout-lines/sec: **stable at 900 px, 0 changes**. Could not
+  reproduce document-height oscillation. If it persists for the operator,
+  need: which tab (stdout / history / runtime), viewport width, and
+  whether a steadily-streaming (vs looping) agent triggers it. Possible
+  remaining suspects not yet excluded: the right-column history panel
+  (audit `prepend`) lacking its own fixed-height scroll, or a narrow
+  viewport reflow.
 - [ ] **Modal click-drop under rapid `agent_status` churn.** When an
   agent flips status several times/sec (e.g. a misconfigured agent
   looping on heartbeat dispatch), CompanyLive's per-flip `load_agents`
