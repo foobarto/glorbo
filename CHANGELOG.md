@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — GEP-47 v2: `auto_dispatch` honours the dependency gate
+
+The F10 `auto_dispatch` path bypassed the `depends_on` gate that
+`TaskScheduler.fire` enforces: an agent filing a task with
+`auto_dispatch: true` + a valid `assigned_to` + an unmet `depends_on`
+got dispatched immediately, ignoring its dependencies.
+`Glorbo.Company.Router.maybe_auto_dispatch/5` now consults
+`Glorbo.Task.DependencyGate.ready?/2` and emits `task.blocked_on_deps`
+/ `task.blocked_on_failed_dep` (same classification + audit actions as
+the scheduler) instead of writing the inbox event when deps are unmet.
+
+The on-disk snapshot builder was extracted from
+`TaskScheduler.build_task_snapshot/1` into `Glorbo.Task.Snapshot.build/2`
+so the scheduler and the Router share one snapshot shape;
+`DependencyGate` stays a pure rule module. See GEP-47 §Implementation
+status (the Kanban "assigned_to changed" notification path remains
+ungated pending the dispatch-chokepoint design decision).
+
 ### Security
 
 - Bind epmd to `127.0.0.1` only — previously listened on all interfaces (`0.0.0.0:4369`).

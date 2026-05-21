@@ -365,7 +365,7 @@ defmodule Glorbo.Company.TaskScheduler do
   defp maybe_fire(state, task_id, entry, fm, body) do
     schedule = Map.get(fm, "schedule") || ""
     assignee = Map.get(fm, "assigned_to") || ""
-    depends_on = coerce_depends_on(Map.get(fm, "depends_on"))
+    depends_on = Glorbo.Task.Snapshot.coerce_depends_on(Map.get(fm, "depends_on"))
 
     cond do
       schedule == "" ->
@@ -487,71 +487,12 @@ defmodule Glorbo.Company.TaskScheduler do
   end
 
   # GEP-47: build a snapshot of every task in the company so
-  # `DependencyGate.ready?/2` can classify dep targets. On-disk-
-  # truth path; SQLite-derived index lands in v2 (D9). For typical
-  # task counts (<100) this is fast enough; large rosters need the
-  # index.
+  # `DependencyGate.ready?/2` can classify dep targets. Shared with
+  # `Glorbo.Company.Router`'s auto_dispatch gate via
+  # `Glorbo.Task.Snapshot` (on-disk-truth; SQLite index is v2 D9).
   defp build_task_snapshot(state) do
-    projects_dir = Path.join([state.base, "companies", state.company, "projects"])
-
-    case File.ls(projects_dir) do
-      {:ok, projects} ->
-        projects
-        |> Enum.flat_map(&project_task_paths(projects_dir, &1))
-        |> Enum.flat_map(&snapshot_entry_for/1)
-        |> Map.new()
-
-      _ ->
-        %{}
-    end
+    Glorbo.Task.Snapshot.build(state.base, state.company)
   end
-
-  defp project_task_paths(projects_dir, project) do
-    tasks_dir = Path.join([projects_dir, project, "tasks"])
-
-    case File.ls(tasks_dir) do
-      {:ok, files} ->
-        files
-        |> Enum.filter(&String.ends_with?(&1, ".md"))
-        |> Enum.map(&Path.join([projects_dir, project, "tasks", &1]))
-
-      _ ->
-        []
-    end
-  end
-
-  defp snapshot_entry_for(path) do
-    with {:ok, content} <-
-           Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
-         {:ok, fm, _body} <- Frontmatter.parse(content) do
-      task_id = task_id_from_path(path)
-
-      info = %{
-        status: Map.get(fm, "status") || "",
-        peer_review_required: Map.get(fm, "peer_review_required") == true,
-        peer_review_verdict: Map.get(fm, "peer_review_verdict"),
-        depends_on: coerce_depends_on(Map.get(fm, "depends_on"))
-      }
-
-      [{task_id, info}]
-    else
-      _ -> []
-    end
-  end
-
-  # Coerce depends_on in the same shape as TaskDefinition does (drop
-  # non-string entries, dedupe). Lives here so we don't pull in the
-  # full TaskDefinition parser just for this field.
-  defp coerce_depends_on(list) when is_list(list) do
-    list
-    |> Enum.flat_map(fn
-      s when is_binary(s) and s != "" -> [s]
-      _ -> []
-    end)
-    |> Enum.uniq()
-  end
-
-  defp coerce_depends_on(_), do: []
 
   # GEP-47 D8: cycle detection runs on the periodic 60s rescan
   # (not on every file_event — cycles are eventually consistent

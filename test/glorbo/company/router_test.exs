@@ -669,6 +669,115 @@ defmodule Glorbo.Company.RouterTest do
     refute_received {:audit, %{action: "task.auto_dispatched"}}
   end
 
+  # GEP-47 v2: auto_dispatch must consult DependencyGate. A task with
+  # an unmet `depends_on` must NOT be auto-dispatched even when
+  # auto_dispatch:true + a valid assignee — otherwise the F10 path is a
+  # silent bypass of the dependency gate that the scheduler enforces.
+  test "GEP-47: auto_dispatch skipped when depends_on is unmet (+ blocked audit)" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    # Dependency task exists but is not done-terminal (status: todo).
+    tasks_dir = Path.join([base, "companies", @company, "projects", "blog", "tasks"])
+
+    File.write!(Path.join(tasks_dir, "blog-1.md"), """
+    ---
+    kind: task/v1
+    title: upstream
+    status: todo
+    ---
+    Not done yet.
+    """)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-200.md"), """
+    ---
+    kind: task/v1
+    title: depends-on-upstream
+    status: todo
+    assigned_to: researcher
+    auto_dispatch: true
+    depends_on:
+      - blog-1
+    ---
+    Should wait for blog-1.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-200.md", [:created]})
+    _ = :sys.get_state(name)
+
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    files =
+      case File.ls(inbox_dir) do
+        {:ok, list} -> Enum.filter(list, &String.starts_with?(&1, "auto-"))
+        _ -> []
+      end
+
+    assert files == [], "blocked task must not be auto-dispatched"
+    refute_received {:audit, %{action: "task.auto_dispatched"}}
+    assert_receive {:audit, %{action: "task.blocked_on_deps", detail: detail}}
+    assert detail.task_id == "blog-200"
+    assert "blog-1" in detail.unmet
+  end
+
+  # GEP-47 v2: a met dependency (done-terminal upstream) lets the
+  # auto_dispatch path proceed exactly as before.
+  test "GEP-47: auto_dispatch proceeds when depends_on is satisfied" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    tasks_dir = Path.join([base, "companies", @company, "projects", "blog", "tasks"])
+
+    File.write!(Path.join(tasks_dir, "blog-1.md"), """
+    ---
+    kind: task/v1
+    title: upstream
+    status: done
+    ---
+    Done.
+    """)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-201.md"), """
+    ---
+    kind: task/v1
+    title: depends-on-done
+    status: todo
+    assigned_to: researcher
+    auto_dispatch: true
+    depends_on:
+      - blog-1
+    ---
+    blog-1 is done, run me.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-201.md", [:created]})
+    _ = :sys.get_state(name)
+
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    files = File.ls!(inbox_dir) |> Enum.filter(&String.starts_with?(&1, "auto-"))
+    assert Enum.any?(files, &String.starts_with?(&1, "auto-"))
+    assert_receive {:audit, %{action: "task.auto_dispatched"}}
+  end
+
   test "F10: auto_dispatch=false (or missing) does not write an inbox event" do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo", "researcher"])

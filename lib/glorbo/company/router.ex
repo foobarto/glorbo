@@ -874,9 +874,53 @@ defmodule Glorbo.Company.Router do
         assignee = Map.get(meta, "assigned_to") || ""
 
         if Glorbo.Slug.valid?(assignee) do
-          write_auto_dispatch_inbox(state, sender, assignee, project, task_id)
+          auto_dispatch_if_ready(meta, project, task_id, sender, assignee, state)
         else
           :ok
+        end
+    end
+  end
+
+  # GEP-47 v2: the F10 auto_dispatch path must honour the same
+  # dependency gate the scheduler enforces. Without this, an agent that
+  # files a task with `auto_dispatch: true` + a valid assignee + an
+  # unmet `depends_on` would dispatch it immediately — a silent bypass
+  # of the gate `TaskScheduler.fire` applies. Mirrors the scheduler's
+  # classification + audit actions for consistency.
+  defp auto_dispatch_if_ready(meta, project, task_id, sender, assignee, state) do
+    case Glorbo.Task.Snapshot.coerce_depends_on(Map.get(meta, "depends_on")) do
+      [] ->
+        write_auto_dispatch_inbox(state, sender, assignee, project, task_id)
+
+      deps ->
+        task_rel = "projects/#{project}/tasks/#{task_id}.md"
+        snapshot = Glorbo.Task.Snapshot.build(state.base, state.company)
+
+        case Glorbo.Task.DependencyGate.ready?(deps, snapshot) do
+          :ok ->
+            write_auto_dispatch_inbox(state, sender, assignee, project, task_id)
+
+          {:blocked, unmet} ->
+            emit_audit(state, %{
+              action: "task.blocked_on_deps",
+              actor: "agent:" <> sender,
+              company: state.company,
+              target: task_rel,
+              detail: %{task_id: task_id, unmet: unmet}
+            })
+
+            :ok
+
+          {:propagate_failure, dep_id, reason} ->
+            emit_audit(state, %{
+              action: "task.blocked_on_failed_dep",
+              actor: "agent:" <> sender,
+              company: state.company,
+              target: task_rel,
+              detail: %{task_id: task_id, failed_dep: dep_id, reason: reason}
+            })
+
+            :ok
         end
     end
   end

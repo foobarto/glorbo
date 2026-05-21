@@ -384,17 +384,35 @@ propagation, Router enforcement, SQLite index).
 | **D7 partial** — three of the four audit events (`task.blocked_on_deps`, `task.cycle_detected`, `task.blocked_on_failed_dep`) | `Glorbo.Company.TaskScheduler` |
 | **D8** — cycle detection via three-colour DFS; deduped per-rescan | `Glorbo.Task.DependencyGate.cycle_detect/1`; called from the 60s rescan |
 
+### Shipped in v2 (2026-05-21)
+
+- **F10 `auto_dispatch` path now gated.** Tracing the dispatch surface
+  for the "non-scheduler paths bypass the gate" item found that the
+  most reachable bypass was not the Director-wake path but the F10
+  `auto_dispatch` flow: an agent filing a task with `auto_dispatch: true`
+  + a valid `assigned_to` + an unmet `depends_on` was dispatched
+  immediately, ignoring the gate the scheduler enforces.
+  `Glorbo.Company.Router.maybe_auto_dispatch/5` now consults
+  `DependencyGate.ready?/2` and emits `task.blocked_on_deps` /
+  `task.blocked_on_failed_dep` instead of writing the inbox event when
+  the deps are unmet — same classification + audit actions as the
+  scheduler.
+- **Shared `Glorbo.Task.Snapshot`.** The on-disk snapshot builder was
+  extracted from `TaskScheduler.build_task_snapshot/1` into
+  `Glorbo.Task.Snapshot.build/2` so the scheduler and the Router share
+  one snapshot shape (`DependencyGate` stays a pure rule module).
+
 ### Queued for v2 (follow-up commit, same GEP)
 
 | Decision | Why deferred |
 |---|---|
 | **D4** — failure-propagation walker that rewrites `status: cancelled` into dependent task files | Needs a dedicated `Glorbo.Task.StatusRewriter` for safe in-place YAML edits (atomic write, frontmatter-only-region edit). v1 substitute: `task.blocked_on_failed_dep` audit makes the situation visible so operators can intervene. |
-| **D6** — Router append-only enforcement of `depends_on` (mirroring `handoff_chain` per GEP-40 D2) | Wants a Router surface tour to find the right interception point and the test hooks already used for `handoff_chain` rewinds. Risk-free to ship as v2 — without it, a rogue write that *removes* a dep is not auto-rejected, but it would surface in the audit log via the FilesystemWatcher append-trace. |
+| **D6** — Router append-only enforcement of `depends_on` (mirroring `handoff_chain` per GEP-40 D2) | **Largely moot in practice:** agents cannot rewrite an existing task file at all — `handle_outbox_task`'s `refuse_if_exists` rejects the write and `projects/` is ro-mounted in the sandbox. The only `depends_on` writers are Director-side Actions (trusted). Keep as defence-in-depth for the Director write path if/when a remove-deps edit becomes possible; not a current correctness gap. |
 | **D7 remaining** — `task.failure_propagated` (depends on D4) and `task.unblocked` (depends on cross-rescan diff state) | Coupled with D4; the data plumbing for "this dep just settled" needs a state-diff between consecutive rescans, which v1's per-fire snapshot doesn't carry. |
-| **D9** — `task_dependencies` SQLite edge table + reindex hook | The on-demand snapshot in `TaskScheduler.build_task_snapshot/1` works for typical task counts; a dedicated index is a perf optimisation, not a correctness gap. Lands when reindex is next touched. |
-| **Director-wake path** integration | Only `TaskScheduler.fire` is gated today. The Director-wake path (operator clicks "Wake" in the dashboard) bypasses the gate. v2 wires it through the same `DependencyGate.ready?/2` helper. |
+| **D9** — `task_dependencies` SQLite edge table + reindex hook | The on-demand snapshot in `Glorbo.Task.Snapshot.build/2` works for typical task counts; a dedicated index is a perf optimisation, not a correctness gap. Lands when reindex is next touched. |
+| **Remaining ungated dispatch path** — the Kanban "assigned_to changed" notification (`KanbanLive.maybe_notify_assignee`) writes an inbox event for the assignee without consulting the gate. Centralising every dispatch-initiation behind one `DependencyGate` chokepoint is the **open design fork** (GEP-16/GEP-24: the scheduler bypasses the Router, so there is no single chokepoint today). Resolve where the shared gate lives before wiring the last path. |
 
-The gate is the load-bearing piece; v2 items are durability, ergonomics, and perf around the established correctness contract.
+The gate is the load-bearing piece; remaining v2 items are durability, ergonomics, perf, and the dispatch-chokepoint design decision around the established correctness contract.
 
 ## Decision log
 
