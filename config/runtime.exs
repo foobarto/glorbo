@@ -100,3 +100,17 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     live_view: [signing_salt: signing_salt]
 end
+
+# GEP-48 dev parity: the `DashboardToken` plug reads
+# `Application.get_env(:glorbo, :dashboard_token)` and rejects `nil` with
+# a 500. The prod block above loads the token from `config.md`, but
+# `mix phx.server` (dev) skips that block — so without this the dev
+# dashboard 500s on every request (and the browser UAT path, which uses
+# `mix phx.server`, is unusable). `:test` hardcodes its own token in
+# `config/test.exs`, so this load is dev-only.
+if config_env() == :dev do
+  case Glorbo.Config.load() do
+    {:ok, cfg} -> config :glorbo, :dashboard_token, cfg.dashboard_token
+    {:error, _reason} -> :ok
+  end
+end

@@ -10,6 +10,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — GEP-48 broke the dashboard under `mix phx.server` (dev)
+
+The mandatory-`dashboard_token` work wired the token into application
+env only inside `config/runtime.exs`'s `if config_env() == :prod` block.
+Releases (`glorbo serve` / the burrito binary) run that block and work,
+but `mix phx.server` (dev — and the documented browser-UAT command)
+skips it, leaving `Application.get_env(:glorbo, :dashboard_token)` at
+`nil`. The `DashboardToken` plug then refused **every** request with a
+500, including requests carrying the correct token from `config.md` —
+the dev dashboard and the entire UAT path were unusable.
+
+`config/runtime.exs` now also loads the token from `config.md` for
+`config_env() == :dev` (`:test` keeps its hardcoded `"test-token"`).
+Surfaced by full e2e UAT against a fresh `mix phx.server`; unit tests
+missed it because they set `:dashboard_token` directly in app env.
+
 ### Fixed — GEP-47 v2: `auto_dispatch` honours the dependency gate
 
 The F10 `auto_dispatch` path bypassed the `depends_on` gate that
