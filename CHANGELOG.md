@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-05-21
+
 ### Fixed — `network: proxy` dispatch hard-failed with `:invalid_proxy_url`
 
 `Glorbo.Sandbox.Bwrap`'s proxy-URL parser rejected any URL carrying
