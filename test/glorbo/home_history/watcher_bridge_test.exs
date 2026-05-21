@@ -29,6 +29,13 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
     {:ok, pid} =
       WatcherBridge.start_link(name: nil, base: base, debounce_ms: @debounce_ms)
 
+    # inotifywait attaches its kernel watches asynchronously after
+    # start_link returns; without a settling pause a fast subsequent
+    # File.write! can fire before the watch is live and the event is
+    # silently dropped (see docs/todo.md P3 — same race root-caused in
+    # InotifyToBwrapHappyPathTest).
+    Process.sleep(250)
+
     pid
   end
 
