@@ -76,10 +76,10 @@ defmodule Glorbo.Integration.Gep45StadoBenchTest do
 
     paths = %{
       base: base,
-      company: Path.join(base, "companies/bench-htb"),
-      workspace: Path.join(base, "companies/bench-htb/agents/stado-engineer/workspace"),
-      inbox: Path.join(base, "companies/bench-htb/agents/stado-engineer/inbox"),
-      outbox: Path.join(base, "companies/bench-htb/agents/stado-engineer/outbox")
+      company: Path.join(base, "companies/bench-acp"),
+      workspace: Path.join(base, "companies/bench-acp/agents/stado-engineer/workspace"),
+      inbox: Path.join(base, "companies/bench-acp/agents/stado-engineer/inbox"),
+      outbox: Path.join(base, "companies/bench-acp/agents/stado-engineer/outbox")
     }
 
     File.mkdir_p!(paths.workspace)
@@ -145,7 +145,7 @@ defmodule Glorbo.Integration.Gep45StadoBenchTest do
       invocation_id: "bench-#{System.unique_integer([:positive])}",
       timestamp: "20260504T000000",
       agent_slug: "stado-engineer",
-      company: "bench-htb",
+      company: "bench-acp",
       cli_binary: sandbox_binary_path,
       host_cli_binary: stado_host_path,
       bwrap_opts: %{

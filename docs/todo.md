@@ -91,13 +91,13 @@ it's been in CHANGELOG for a cycle.
   the Phase 1a stub with a real run loop and adds an `:acp_run_fun`
   injection seam mirroring the existing `:run_fun`. 7 new tests
   (5 PortIO + 2 sandbox end-to-end with a fake-ACP shell script).
-- [x] **GEP-45 Phase 2 — bench-htb stado smoke + bench.** Shipped
+- [x] **GEP-45 Phase 2 — bench-acp stado smoke + bench.** Shipped
   2026-05-04. Integration test at
   `test/integration/gep_45_stado_bench_test.exs` drives the real
   stado-pinned binary through the full glorbo→stado ACP path; passes
   on either full-reply or handshake-only outcome (the latter is the
   load-bearing assertion when stado has no inference backend
-  configured). Bench docs at `docs/research/gep-45-bench-htb.md`.
+  configured). Bench docs at `docs/research/gep-45-bench-acp.md`.
   Audit-log capture of the ACP exchange carried into Phase 3.
 - [x] **GEP-45 Phase 3 — operational polish.** Shipped 2026-05-04
   across three slices: audit-log capture (`Acp.Client` accepts an

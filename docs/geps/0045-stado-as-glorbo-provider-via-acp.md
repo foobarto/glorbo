@@ -54,7 +54,7 @@ Two reasons stado doesn't drop into the existing provider pattern:
    transport.** Stado already exposes `stado acp` — JSON-RPC 2.0
    over stdio, the canonical Agent Client Protocol shape used by
    editors (notably Zed). Per the dogfood note from the
-   htb-writeups workflow integration:
+   field-testing workflow integration:
 
    > "tbh best way to use stado is with MCP or ACP rather than via
    > stdio prompt"
@@ -190,7 +190,7 @@ integration, not MCP injection.
 |-------|-------------|--------|
 | 0 | This GEP (Draft → Accepted) | In progress |
 | 1 | `Glorbo.CLI.Dispatcher.Acp` JSON-RPC client; provider loader accepts `prompt_mode = "acp"`; `priv/providers/stado.toml` ships; FileSpec validator accepts `provider: stado` (registry-driven so this is automatic). | Implemented (1a + 1b shipped 2026-05-04: f7eaf6b, 21b994d, 18dcfcc, 80826e5) |
-| 2 | Smoke + bench: a `bench-htb` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Implemented — see `docs/research/gep-45-bench-htb.md`. Audit-log capture deferred to Phase 3 (handshake/dispatch path verified end-to-end against pinned stado v0.26.4). |
+| 2 | Smoke + bench: a `bench-acp` company with a stado-driven agent dispatches end-to-end against a real stado on the host, audit log captures the ACP message exchange. | Implemented — see `docs/research/gep-45-bench-acp.md`. Audit-log capture deferred to Phase 3 (handshake/dispatch path verified end-to-end against pinned stado v0.26.4). |
 | 3 | Operational polish: surface stado's own model/budget metrics through glorbo's usage parser, document network-policy interactions, integrate with the model catalog (GEP-32). Audit-log capture of the ACP message exchange (carried over from Phase 2). | Implemented 2026-05-04. (a) Per-frame `cli.acp.<role>.<kind>` audit emission via injected `audit_fun` in `Acp.Client`; dispatcher result carries `acp: %{session_id, chunks, ignored_updates}`. (b) GEP-32 catalog wiring via new `model_list.shape = "static"` — stado advertises 13 model aliases that surface in the LV combobox without an HTTP probe. (c) `stado_acp` usage parser shells out to `stado stats --session <sid> --json` after each dispatch and surfaces tokens / cost / duration / dominant model / per-tool breakdown via the existing `Parsers.usage()` shape. |
 | 4 | Cross-provider rollout: ACP variants of the dogfood CLIs (`gemini-cli-acp`, `claude-code-acp`, `codex-acp`) shipped as sibling provider TOMLs. `gemini-cli-acp` rides Gemini's native `gemini --acp` server; `codex-acp` uses the upstream `codex acp-server` subcommand; `claude-code-acp` routes through the `@zed-industries/claude-code-acp` npm wrapper since the `claude` binary itself doesn't speak ACP. All three share the existing dispatcher branch + auth_binds. Usage parsers default to `"none"` — no per-token attribution for these variants until upstream surfaces stats endpoints (see Open Q5 below), so agents must opt in with `allow_untracked_budget: true`. | Implemented 2026-05-05. |
 

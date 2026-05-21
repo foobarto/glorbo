@@ -366,7 +366,7 @@ defmodule Glorbo.CLI.Dispatcher do
   # rewriting). The ACP run path doesn't have that seam — start_acp/2
   # only reads cli_env from bwrap_opts. Without this merge, every
   # `[env]` entry in a provider TOML is silently dropped on ACP
-  # dispatches, which broke stado-htb until a wrapper script worked
+  # dispatches, which broke stado until a wrapper script worked
   # around it (TODO B4).
   defp inject_env_into_bwrap_opts(ctx, env) when is_map(env) do
     bwrap_opts = Map.get(ctx, :bwrap_opts, %{})
@@ -878,7 +878,7 @@ defmodule Glorbo.CLI.Dispatcher do
     # D8: validate the on-disk content as a canonical UUID before
     # handing it back to the caller. Files written by older Glorbo
     # versions, or by a peer that returned a non-UUID `sessionId`
-    # (e.g. a description / project slug — stado-htb's `--resume`
+    # (e.g. a description / project slug — stado's `--resume`
     # CLI flag accepts those, but the `resumeSession` ACP param
     # rejects with `code: -32602, "invalid UUID length: N"` and
     # wedges the dispatch). Treat any non-UUID content as "no

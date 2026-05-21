@@ -510,7 +510,7 @@ defmodule Glorbo.CLI.DispatcherTest do
   # a stdin-tempfile redirect. Tests inject `:acp_run_fun` to swap the
   # whole ACP run loop with a stub — production wiring spawns a real
   # `bwrap` Port via `Bwrap.start_acp/2`, which is exercised in the
-  # bench-htb integration in Phase 2.
+  # bench-acp integration in Phase 2.
   describe "GEP-45 ACP dispatch path" do
     test "invoke/3 routes ACP providers through :acp_run_fun and writes the reply file" do
       called = :counters.new(1, [])

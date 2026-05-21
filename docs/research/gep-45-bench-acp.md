@@ -1,4 +1,4 @@
-# GEP-45 Phase 2 — bench-htb stado smoke
+# GEP-45 Phase 2 — bench-acp stado smoke
 
 End-to-end validation of the GEP-45 ACP transport against a real
 `stado` binary. This is the "Phase 2 ships when this passes" gate.
@@ -113,7 +113,7 @@ result to "FULL".
 
 GEP-45 Phase 2 acceptance criteria from the GEP:
 
-> Smoke + bench: a `bench-htb` company with a stado-driven agent
+> Smoke + bench: a `bench-acp` company with a stado-driven agent
 > dispatches end-to-end against a real stado on the host, audit log
 > captures the ACP message exchange.
 
@@ -125,9 +125,9 @@ of the contract). Open follow-ups for Phase 3:
   emission. Phase 3 task: emit `cli.acp.{request,response,update}`
   audit lines so the operator can replay an ACP session from
   `~/.glorbo/audit/`.
-- **Real `bench-htb` company on disk.** This bench scaffolds a tmp
+- **Real `bench-acp` company on disk.** This bench scaffolds a tmp
   workspace per run; for a sustained dogfood we'd want a checked-in
-  fixture company under `test/fixtures/companies/bench-htb/` with a
+  fixture company under `test/fixtures/companies/bench-acp/` with a
   pre-baked AGENT.md (`provider: stado`).
 - **Stado backend wiring.** Operator concern, not glorbo's: tracking
   whether stado has anthropic/ollama configured is what stado's own

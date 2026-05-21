@@ -15,7 +15,7 @@
 # quoting hazards: paths with `"`, `$`, backticks, newlines, etc.
 # all round-trip safely.
 #
-# TODO D2 (HTB engagement TODO).
+# TODO D2 (field-testing follow-up).
 
 set -eu
 

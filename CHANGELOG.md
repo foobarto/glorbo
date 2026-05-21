@@ -364,7 +364,7 @@ The error response is now surfaced correctly and the dispatcher
 attributes the failure to the peer instead of swallowing it as
 infrastructure flake.
 
-### Fixed — HTB-engagement TODO bugs B1–B6
+### Fixed — field-testing TODO bugs B1–B6
 
 - **B1 (`acp/client.ex`)** — `absorb_update/2` now accepts both
   `{"kind":"text","text":"…"}` and `{"kind":"agent_message_chunk",…}`
@@ -373,8 +373,9 @@ infrastructure flake.
   the agent with a 0-byte reply file.
 - **B2 (`acp/client.ex`)** — default `:phase_timeout_ms` raised
   from `30_000` to `600_000` so multi-turn ACP tool-calling sessions
-  (recon → foothold can take 5–10 min) no longer hit a phase deadline
-  mid-conversation. `@doc` updated to match the new default.
+  (multi-step tool-calling turns can take 5–10 min) no longer hit a
+  phase deadline mid-conversation. `@doc` updated to match the new
+  default.
 - **B3 (`sandbox/bwrap.ex`, `agent/dispatch.ex`)** —
   `cli_auth_bind_flags/1` honours the `mode` field declared in
   provider TOML `auth_binds`. `:rw` emits `--bind`, `:ro` (and the
@@ -488,7 +489,7 @@ shell wrapper that converts `bin/glorbo-cli VERB ARGS...` into
 NUL-delimited tempfile so paths with quotes / dollar-signs /
 newlines round-trip safely. Lets an OTP release stand in for the
 Burrito binary on hosts where Burrito hasn't been published yet
-(e.g. Kali deployments without zig).
+(e.g. host deployments without zig).
 
 ## [0.20.0] — 2026-05-04
 
@@ -582,7 +583,7 @@ Open Phase 3 work: stado usage-parser (token + cost ingestion via
 the per-session JSONL trace) and GEP-32 model-catalog integration.
 Tracked in `docs/geps/0045-stado-as-glorbo-provider-via-acp.md`.
 
-### Added — GEP-45 Phase 2: bench-htb stado smoke
+### Added — GEP-45 Phase 2: bench-acp stado smoke
 
 End-to-end validation of the GEP-45 ACP transport against a real
 `stado` binary, gated on a pinned snapshot under
@@ -605,7 +606,7 @@ Integration test at `test/integration/gep_45_stado_bench_test.exs`,
 tagged `@moduletag :stado_bench` and excluded by default. Skips
 cleanly when `STADO_BENCH_BIN` is unset and `.bench/bin/stado-pinned`
 is absent. Bench protocol + reproducibility contract documented
-at `docs/research/gep-45-bench-htb.md`.
+at `docs/research/gep-45-bench-acp.md`.
 
 Audit-log capture of the ACP message exchange carried over to
 Phase 3 — Phase 2 ships the dispatch path; per-frame audit emission
@@ -751,7 +752,7 @@ explicit on the default path too).
 circuits `/etc/os-release` parsing for unit tests that pin the family
 without rewriting `/etc/`.
 
-Dogfood-note item from the htb-writeups workflow integration:
+Dogfood-note item from field-testing workflow integration:
 "Worth a `--fix` heuristic that calls `dnf install shadow-utils
 passt` on Fedora."
 

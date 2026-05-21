@@ -115,7 +115,7 @@ graphify-out/
 .playwright-mcp/
 
 # GEP-45 Phase 2: stado bench scratch dir + pinned upstream binary.
-# Reproducibility lives in `docs/research/bench-htb.md`, not vendored
+# Reproducibility lives in `docs/research/bench-acp.md`, not vendored
 # binaries (the pinned copy is operator-local).
 .bench/
 NOTES-*.md
@@ -123,3 +123,4 @@ NOTES-*.md
 # Per-session worklog: TODO.md is operator-local, used as a running
 # punch list during dogfood sessions. Not shared history.
 TODO.md
+.serena/
