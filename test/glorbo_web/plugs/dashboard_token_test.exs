@@ -118,4 +118,86 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
       refute result.halted
     end
   end
+
+  # The browser dashboard pipes through `:browser` (which fetches the
+  # session), so a valid `?token=` is read once and persisted to the
+  # session cookie. Subsequent requests carrying the cookie pass without
+  # the token in the URL — the operator opens the token URL once and
+  # then browses normally. MCP (`:api` pipeline, no session) stays
+  # stateless and must send the bearer header every time.
+  describe "session cookie (browser)" do
+    test "valid query token persists auth to the session" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute result.halted
+      assert Plug.Conn.get_session(result) != %{}, "expected an auth marker in the session"
+    end
+
+    test "a request with the established session cookie passes without a token" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      authed =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      # Carry the exact session the first request established.
+      result =
+        conn(:get, "/companies")
+        |> Plug.Test.init_test_session(Plug.Conn.get_session(authed))
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute result.halted
+    end
+
+    test "rotated token invalidates an old session cookie" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      authed =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      old_session = Plug.Conn.get_session(authed)
+      # Operator rotates the token; the old cookie must no longer pass.
+      Application.put_env(:glorbo, :dashboard_token, "rotated")
+
+      result =
+        conn(:get, "/companies")
+        |> Plug.Test.init_test_session(old_session)
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      assert result.status == 401
+      assert result.halted
+    end
+
+    test "raw token is not stored verbatim in the session" do
+      Application.put_env(:glorbo, :dashboard_token, "super-secret-42")
+
+      authed =
+        conn(:get, "/companies?token=super-secret-42")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute authed |> Plug.Conn.get_session() |> inspect() =~ "super-secret-42"
+    end
+
+    test "no session (MCP api path) still works statelessly via bearer" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      # No init_test_session — mirrors the :api pipeline that never
+      # fetches a session. Bearer must still pass and not crash.
+      result =
+        conn(:post, "/mcp", "{}")
+        |> Plug.Conn.put_req_header("authorization", "Bearer secret")
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute result.halted
+    end
+  end
 end

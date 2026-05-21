@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed — dashboard token is read once, then rides a session cookie
+
+The `DashboardToken` plug now persists a valid `?token=` to the (signed)
+session as a `sha256` fingerprint, and accepts that session cookie on
+subsequent requests. Operators open the printed `…/?token=<token>` URL
+once and then navigate, refresh, and deep-link normally — the token no
+longer has to appear on every request. This also fixes the advertised
+entry URL: `GET /?token=…` redirects to `/companies`, and previously the
+redirect dropped the token and 401'd; the cookie set on the redirect now
+carries the auth through. Rotating `dashboard_token:` invalidates every
+outstanding cookie (the fingerprint stops matching), and the raw token
+is never stored in the cookie. MCP (`:api` pipeline, no session) stays
+stateless — the `Authorization: Bearer` header accompanies each request.
+
 ### Fixed — GEP-48 broke the dashboard under `mix phx.server` (dev)
 
 The mandatory-`dashboard_token` work wired the token into application

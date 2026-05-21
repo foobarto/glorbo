@@ -81,6 +81,26 @@ A missing token at runtime (startup bug) returns `500 server
 misconfiguration` and halts, making the failure loud rather than silently
 open.
 
+### Session cookie (post-ship refinement, 2026-05-21)
+
+The browser dashboard pipes through `:browser`, which fetches the
+session. The plug records a `sha256` fingerprint of the token in the
+signed session on the first valid `?token=`, and accepts that cookie on
+subsequent requests — so the operator opens the printed token URL once
+and then browses normally, without `?token=` on every request. This
+also repairs the advertised entry URL: `GET /?token=…` redirects to
+`/companies`, and the redirect previously dropped the token and 401'd;
+the cookie set on the redirect response now carries the auth through.
+Rotating `dashboard_token:` invalidates every outstanding cookie (the
+fingerprint stops matching) and the raw token is never stored in the
+cookie. MCP (`:api` pipeline, no session) stays stateless — the bearer
+header accompanies each request.
+
+Two follow-up fixes from full e2e UAT (2026-05-21): (1) `mix phx.server`
+(dev) only loaded the token into app env via runtime.exs's prod block,
+so the dev dashboard 500'd on every request — `config_env() == :dev` now
+loads it too; (2) the session-cookie behaviour above.
+
 ### Token URL display
 
 - `glorbo serve` — prints `http://127.0.0.1:4000/?token=<token>` to stdout.
