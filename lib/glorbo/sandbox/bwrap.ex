@@ -856,9 +856,6 @@ defmodule Glorbo.Sandbox.Bwrap do
       not is_integer(uri.port) or uri.port <= 0 ->
         {:error, {:invalid_proxy_url, url}}
 
-      uri.userinfo not in [nil, ""] ->
-        {:error, {:invalid_proxy_url, url}}
-
       uri.query not in [nil, ""] ->
         {:error, {:invalid_proxy_url, url}}
 
@@ -869,9 +866,20 @@ defmodule Glorbo.Sandbox.Bwrap do
         {:error, {:invalid_proxy_url, url}}
 
       true ->
-        {:ok, "http://127.0.0.1:#{uri.port}", uri.port}
+        # GEP-23 Phase 5 embeds a per-dispatch auth token in the proxy
+        # URL's userinfo (`http://<token>@127.0.0.1:<port>`); the
+        # sandboxed CLI must carry it through to `HTTPS_PROXY` so its
+        # CONNECT sends `Proxy-Authorization`. Preserve the userinfo
+        # (host normalised to 127.0.0.1); only the bare `:proxy_port`
+        # is used for the network-namespace egress rule.
+        {:ok, canonical_proxy_url(uri), uri.port}
     end
   end
+
+  defp canonical_proxy_url(%URI{userinfo: info, port: port}) when is_binary(info) and info != "",
+    do: "http://#{info}@127.0.0.1:#{port}"
+
+  defp canonical_proxy_url(%URI{port: port}), do: "http://127.0.0.1:#{port}"
 
   # Open an append-mode file handle for the agent's stdout.log. nil
   # stdout_log → nil IO (drain_port skips writes). Directory

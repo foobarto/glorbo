@@ -153,6 +153,32 @@ defmodule Glorbo.Sandbox.BwrapTest do
                  cli_binary: "/bin/true"
                )
     end
+
+    # GEP-23 Phase 5: the per-dispatch proxy URL carries the auth token in
+    # its userinfo (`http://<token>@127.0.0.1:<port>`). Validation must
+    # accept it — rejecting userinfo (the old behaviour) hard-failed every
+    # `network: proxy` dispatch with `:invalid_proxy_url`.
+    test "start/2 accepts a loopback proxy URL carrying an auth token" do
+      result =
+        Bwrap.start(
+          base_opts(%{network_policy: :proxy, proxy_url: "http://tok-abc123@127.0.0.1:9999"}),
+          cli_binary: "/bin/true",
+          bwrap_binary: "/nonexistent/bwrap-stub"
+        )
+
+      refute match?({:error, {:invalid_proxy_url, _}}, result)
+    end
+
+    # The token must survive normalisation into HTTPS_PROXY so the CLI's
+    # CONNECT can send Proxy-Authorization; host is normalised to 127.0.0.1.
+    test "build_argv preserves the proxy auth token in HTTPS_PROXY" do
+      argv =
+        Bwrap.build_argv(
+          base_opts(%{network_policy: :proxy, proxy_url: "http://tok-abc123@127.0.0.1:9999"})
+        )
+
+      assert_subsequence(argv, ["--setenv", "HTTPS_PROXY", "http://tok-abc123@127.0.0.1:9999"])
+    end
   end
 
   describe "build_argv/1 — permissions + auth binds + env (B4, B5, B6)" do
