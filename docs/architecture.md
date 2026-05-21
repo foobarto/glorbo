@@ -112,7 +112,7 @@ tab renders the same sentinel data with approve/deny buttons.)
 **Entry points:** `GlorboWeb.MCP.Plug` (HTTP transport),
 `GlorboWeb.MCP.Server` (JSON-RPC dispatcher + tool registry).
 
-Streamable HTTP endpoint at `/mcp` exposing 19 tools that map 1:1
+Streamable HTTP endpoint at `/mcp` exposing 23 tools that map 1:1
 to dashboard capabilities. Actor for every mutation is
 `mcp:<client>` (GEP-29 D4). All writes go through the same
 `GlorboWeb.Actions` layer LiveView calls; proposals specifically

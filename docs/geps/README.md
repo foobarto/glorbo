@@ -68,7 +68,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0042 | [Reviewer auto-dispatcher — close the GEP-41 peer-review loop](./0042-reviewer-auto-dispatcher.md) | Standards     | Implemented |
 | 0043 | [ETS-first derived state with on-disk snapshots for cold boot](./0043-ets-derived-state-with-snapshots.md) | Standards     | Placeholder |
 | 0044 | [Visual regression baselines for the LiveView dashboard](./0044-visual-regression-baselines.md) | Process       | Implemented |
-| 0045 | [Stado as glorbo provider via ACP transport](./0045-stado-as-glorbo-provider-via-acp.md) | Standards     | Draft       |
+| 0045 | [Stado as glorbo provider via ACP transport](./0045-stado-as-glorbo-provider-via-acp.md) | Standards     | Implemented |
 | 0046 | [Parallelisation of company agents](./0046-parallelisation-of-company-agents.md)         | Standards     | Implemented |
 | 0047 | [`depends_on:` for tasks — explicit blocking dependencies](./0047-task-depends-on.md)     | Standards     | Implemented |
 | 0048 | [Local auth hardening — epmd loopback + mandatory dashboard token](./0048-local-auth-hardening.md) | Standards | Implemented |

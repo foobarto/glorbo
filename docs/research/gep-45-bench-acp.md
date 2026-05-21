@@ -118,13 +118,14 @@ GEP-45 Phase 2 acceptance criteria from the GEP:
 > captures the ACP message exchange.
 
 Met for the dispatch path (the Dispatcher.invoke → ACP run loop end
-of the contract). Open follow-ups for Phase 3:
+of the contract).
 
-- **Audit log capture of the ACP exchange.** Phase 1b's client
-  surfaces `chunks` + `ignored_updates` counts but no per-frame audit
-  emission. Phase 3 task: emit `cli.acp.{request,response,update}`
-  audit lines so the operator can replay an ACP session from
-  `~/.glorbo/audit/`.
+**Phase 3 follow-ups — all shipped 2026-05-04** (GEP-45 is now
+Implemented): per-frame `cli.acp.<role>.<kind>` audit emission via the
+`Acp.Client` injected `audit_fun`; `stado_acp` usage parser; GEP-32
+static model-catalog wiring. The remaining items below stay open as
+nice-to-haves, not blockers:
+
 - **Real `bench-acp` company on disk.** This bench scaffolds a tmp
   workspace per run; for a sustained dogfood we'd want a checked-in
   fixture company under `test/fixtures/companies/bench-acp/` with a

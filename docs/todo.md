@@ -214,6 +214,16 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
+- [ ] **Peer-review `:reroute` verdict (or deep-revision-as-subtask).**
+  From the multi-agent orchestration benchmark
+  (`docs/research/2026-04-25-multi-agent-orchestration-comparison.md`):
+  GEP-41 D6 enforces a single final verdict per review, which is
+  awkward for 6+ round tasks. Add a non-final `:reroute` verdict or
+  formalize deep-revision-as-subtask. Belongs in a GEP-41 follow-up.
+- [ ] **Structured `handoff.note:` field on `Tasks.reassign/4`.** Same
+  source. Glorbo's `reason:` is one line; paperclip carries ~20 lines
+  of critique prose per handoff. Add a richer structured note field so
+  reassignment can carry full critique context.
 - [x] **VR harness fixture-seed bug.** Shipped 2026-04-25 — harness
   now uses `./glorbo init` + `./glorbo new company acme` against
   a fresh tmp `GLORBO_HOME`, with a `mix glorbo.build_local`

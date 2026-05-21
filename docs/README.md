@@ -27,12 +27,8 @@ docs/
 │   ├── testplan.md                   — end-user manual acceptance plan
 │   └── uat.md                        — browser UAT checklist
 │
-├── sessions/                      ← autonomous-session logs
-│   └── 2026-04-21-autonomous-round.md
-│
-└── archived/                      ← historical artifacts (read-only)
-    ├── plan-2026-04-21.md
-    └── review-v0.0.3.md
+└── sessions/                      ← autonomous-session logs
+    └── <YYYY-MM-DD-slug>.md
 ```
 
 ## What's in each area
@@ -80,13 +76,9 @@ Updated every time a UI surface ships.
 When Claude runs autonomously (via `/loop` or similar), session-level
 design decisions that weren't appropriate for a full GEP live
 here. One file per major session, named
-`YYYY-MM-DD-<slug>.md`. Read-only once the session closes.
-
-### `archived/` — past artifacts kept for history
-
-Files that captured a plan or review at a point in time and were
-then superseded by shipping work. Kept so the reasoning is
-discoverable without digging through git. Read-only.
+`YYYY-MM-DD-<slug>.md`. Read-only once the session closes. Old logs
+whose durable essence has been lifted into `knowledge-graph/notes.md`
+or the relevant GEP are pruned (recoverable via git history).
 
 ### `todo.md` — rolling punch list
 

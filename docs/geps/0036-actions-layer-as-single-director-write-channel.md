@@ -77,8 +77,8 @@ history:
       routing, put_detail, default_base) into
       Glorbo.Actions.Support. The GEP-36 Credo ratchet
       allowlist is now empty — every write in lib/glorbo_web/
-      live/ routes through Actions. Session log:
-      docs/sessions/2026-04-24-autonomous-round.md.
+      live/ routes through Actions. (Detail was in the
+      2026-04-24 session log, since pruned — see git history.)
 supersedes: [38]
 see-also: [6, 29, 37, 40, 41]
 ---

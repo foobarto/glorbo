@@ -270,17 +270,20 @@ Glorbo.Application
 ├── Glorbo.Agent.Registry                # :via registry for per-agent pids
 ├── Glorbo.CLI.Registry                  # Provider snapshot (GEP-8)
 ├── Glorbo.CompanySupervisor             # DynamicSupervisor
-│   └── Glorbo.Company.Supervisor (acme) # Per-company supervisor
-│       ├── Glorbo.Company.FileWatcher   # inotify on company dir
-│       ├── Glorbo.Company.Router        # Routes outbox → inbox/channels
-│       ├── Glorbo.Company.Scheduler     # Per-agent heartbeats (AGENT.md `heartbeat:` cron)
-│       ├── Glorbo.Company.TaskScheduler # Per-task `schedule:` dispatch firing
-│       ├── Glorbo.Company.BudgetTracker # Token/cost accounting
-│       ├── Glorbo.Approvals.Gate        # Approval-queue gate
-│       ├── Glorbo.Network.Proxy         # Hostname-allowlist HTTPS proxy
-│       │                                # (only if any agent has network: proxy)
-│       ├── Task.Supervisor              # Per-agent dispatch tasks
-│       └── Glorbo.Agent.Server (ceo)    # One per agent; idle between wakes;
+│   └── Glorbo.Company.Supervisor (acme)    # Per-company supervisor
+│       ├── Glorbo.Company.AuditLog          # Append-only audit JSONL + PubSub
+│       ├── Glorbo.Filesystem.Watcher        # inotify on company dir
+│       ├── Glorbo.Company.Router            # Routes outbox → inbox/channels
+│       ├── Glorbo.Company.Scheduler         # Per-agent heartbeats (AGENT.md `heartbeat:` cron)
+│       ├── Glorbo.Company.TaskScheduler     # Per-task `schedule:` dispatch firing
+│       ├── Glorbo.Company.BudgetTracker     # Token/cost accounting
+│       ├── Glorbo.Company.DispatchSemaphore # Per-company concurrency cap (GEP-46)
+│       ├── Glorbo.Approvals.Gate            # Approval-queue gate
+│       ├── Glorbo.PathRequestGate           # Agent sandbox path requests (GEP-27)
+│       ├── Glorbo.Network.Proxy             # Hostname-allowlist HTTPS proxy
+│       │                                    # (only if any agent has network: proxy)
+│       ├── Task.Supervisor                  # Per-agent dispatch tasks
+│       └── Glorbo.Agent.Server (ceo)        # One per agent; idle between wakes;
 │                                        # wakes → bwrap+CLI invocation via
 │                                        # Glorbo.CLI.Dispatcher
 ├── GlorboWeb.StdoutStreamer.Supervisor  # LV stdout tail streamers
@@ -639,7 +642,7 @@ The primary communication channel.  Every message between agents or between the
 Director and an agent follows the same pattern:
 
 1. Sender writes a markdown file to their own `outbox/`.
-2. Elixir's `FileWatcher` detects the new file.
+2. Elixir's `Glorbo.Filesystem.Watcher` detects the new file.
 3. Elixir's `Router` reads the file, checks sender permissions.
 4. If permitted, Elixir copies the file to the recipient's `inbox/` (or appends
    to a channel file).
@@ -689,9 +692,11 @@ renders them as chat UIs.  But they're always just files underneath.
 ### 6.3  Stdout Streaming
 
 Each agent's sandboxed CLI stdout (`bwrap <…> claude …`, `bwrap <…>
-gemini …`, etc.) is written to `agents/<name>/stdout.log`. Elixir's
-`FileWatcher` tails this file and pushes lines to the LiveView
-dashboard via PubSub. The Director can watch any agent's live output.
+gemini …`, etc.) is written to `agents/<name>/stdout-<invocation_id>.log`
+(per-invocation since GEP-46; falls back to a shared `stdout.log` when
+no invocation id is set). `GlorboWeb.StdoutStreamer` tails the file and
+pushes lines to the LiveView dashboard via PubSub. The Director can
+watch any agent's live output.
 
 This is **read-only observation** — the Director cannot write to the agent's
 stdin.  Interaction happens through the inbox/chat mechanism, not through

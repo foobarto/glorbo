@@ -8,7 +8,9 @@ feeds: "Draft GEP for per-task / per-agent advanced-params support"
 
 # Per-provider advanced model params
 
-Research done to inform a future GEP-27-style feature: let directors
+Research done to inform a future advanced-model-params GEP (claim a
+fresh number when drafting — GEP-27 is taken by Agent Sandbox Path
+Requests): let directors
 set `temperature`, `reasoning_effort`, `max_tokens`, `thinking` budget,
 etc. per-task or per-agent, and have Glorbo plumb them through to
 whichever provider the agent is pinned to.
@@ -246,8 +248,8 @@ fragments or which overlay files to render.
 1. Probe each installed provider's CLI to confirm the live
    capability matches the docs (fast — one `--help` + one
    real-world invocation per provider).
-2. Draft GEP-27 "Per-task / per-agent advanced model params"
-   with this doc as reference material.
+2. Draft the "Per-task / per-agent advanced model params" GEP (next
+   free number) with this doc as reference material.
 3. Land a provider-agnostic `Glorbo.Agent.Dispatch.ParamResolver`
    that merges task/agent/provider-default layers and emits the
    substitution map the TOML renderer consumes.

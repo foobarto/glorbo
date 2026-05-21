@@ -719,6 +719,86 @@ matters before reaching for `Enum.sort/1`.
 
 ---
 
+## 2026-05-21 — Gotchas lifted from session logs (pre-deletion spring-clean)
+
+Distilled from the `docs/sessions/` autonomous-round logs before those
+logs were deleted (recoverable via git). Each is a multi-module gotcha
+with no GEP home.
+
+### TaskScheduler bypasses the Router ACL pipeline (from 2026-04-21)
+`Glorbo.Company.TaskScheduler` writes synthetic inbox messages
+(`sched-<uniq>-<task_id>.md`) directly into the assignee's inbox rather
+than routing through `Router.route/2` — same bypass as `wake_agent/4`.
+Consequence: scheduled dispatch is **not ACL-gated**. No state file —
+schedule arming lives in GenServer memory only, re-armed from task
+frontmatter on BEAM restart (consistent with filesystem-is-truth).
+
+### GEP-33 HomeHistory commit semantics (from 2026-04-25)
+- **No-op commit convention:** `commit_marked/3` returns
+  `{:ok, %{sha: "", committed: 0}}` for "nothing to commit" — callers
+  treat empty-string SHA as success, not an error variant. Detected via
+  `git diff --cached --quiet`; never `--allow-empty` (keeps
+  semantically-empty commits out of `git log`).
+- **Audit-jsonl exists-filter + UTC month boundary:** Phase 2c writers
+  `mark_path` the current-month `audit/YYYY-MM.jsonl` optimistically
+  before `AuditLog.append`'s async write lands.
+  `partition_tracked_paths/2` drops not-yet-existing paths into
+  `:skipped` rather than failing the whole `git add`. `audit_jsonl_path/2`
+  uses UTC, so a write crossing the month boundary mid-`with_tx` can
+  mark the "wrong" path — the exists-filter catches it.
+- **Tx best-effort silence:** missing audit jsonl, crashed Tx server,
+  and non-tracked paths all degrade to silent no-op/`:skipped` — NOT a
+  warning, deliberately, to avoid routine spam.
+- Hard-cap timer anchored at `begin` (not first `mark_path`); `flush`
+  cancels timers before committing; `cancel` is idempotent. Kernel
+  committer identity via `kernel_committer_args/0`
+  (`-c user.email=kernel@glorbo.local`).
+
+### `glorbo serve`/`up` port-bind trap (from 2026-05-04)
+`config/runtime.exs` only flips `GlorboWeb.Endpoint`'s `:server` to
+`true` when `PHX_SERVER` is set. In a release binary neither `serve` nor
+`up` set it, so the banner printed but nothing listened. Fix: the
+`:serve_starts_endpoint` app-env flag (default true, `false` in test) —
+`serve` flips `:server` at CLI dispatch; `up` injects
+`{"PHX_SERVER","1"}` into the detached child's env. Classic "release
+binary differs from `mix phx.server`" trap.
+
+### Tx-debounce tests: poll-with-deadline, not `Process.sleep` (from 2026-05-04)
+For HomeHistory Tx-layer tests, replace `Process.sleep(debounce*N)` +
+immediate read with a poll-with-deadline helper (~25ms poll / 5s
+deadline). Fixed an aarch64 CI flake. Polling for *absence* (no-commit
+assertions) doesn't help — only adds latency. Same race class as the
+WatcherBridge inotify-attach fix (250ms settle in
+`watcher_bridge_test.exs`).
+
+### Watcher must handle `:ignore` from `FileSystem.start_link` (from 2026-05-05)
+`start_backend/1` originally matched only `{:ok,_}`/`{:error,_}`. The
+library's third valid GenServer return — `:ignore` (inotify worker
+refuses to bootstrap, e.g. a host without inotify-tools) — crashed
+`init/1` → crashed `Company.Supervisor` → company silently offline while
+`glorbo status` still said "running: yes". Fix returns `:ignore` from
+`init/1` so the supervisor stays up with the watcher inactive.
+Injectable `:fs_module` opt added for the no-backend test path. (Code:
+`lib/glorbo/filesystem/watcher.ex` ~line 108.)
+
+### `role:` in SOUL.md was dead; `headcount_budget` is live (from 2026-05-05)
+Nothing in `lib/` reads `role:` from SOUL.md — agent role lives in
+AGENT.md frontmatter. By contrast `headcount_budget` is a real
+company.md field read by `Company.Router`, `MCP.GetCompanyHealth`,
+`MCP.ListCompanies`. Rule: when a scaffold fails its own validate, split
+by actual runtime usage — trim dead fields, add schema entries for live
+ones.
+
+### `phoenix_live_reload` can leak into the prod release manifest (from 2026-05-05)
+Declared `only: :dev`, but a stale `_build/prod/lib/` artifact from a
+prior `mix test` can leave it in the prod `.rel` manifest, causing
+per-invocation `[error]` log spam. `mix glorbo.build_local` now purges a
+`dev_only_deps` list from `_build/prod/lib/` before release and asserts
+the manifest is clean afterward — fails loudly rather than shipping a
+contaminated binary.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

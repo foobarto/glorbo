@@ -2,12 +2,23 @@
 gep: 0045
 title: Stado as glorbo provider via ACP (Agent Client Protocol) transport
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-05-04
 requires: [4, 5, 8]
 see-also: [9, 23]
 history:
+  - date: 2026-05-05
+    status: Implemented
+    note: |
+      All four phases shipped (see the phase table below): ACP
+      JSON-RPC client + `prompt_mode = "acp"` provider loader
+      (Phase 1, 2026-05-04), the stado smoke bench (Phase 2), per-frame
+      `cli.acp.<role>.<kind>` audit emission + GEP-32 static catalog
+      wiring + `stado_acp` usage parser (Phase 3, 2026-05-04), and the
+      `gemini-cli-acp` / `codex-acp` / `claude-code-acp` sibling
+      provider TOMLs (Phase 4, 2026-05-05). Status was left at Draft by
+      oversight; flipped to Implemented during the 2026-05-21 docs pass.
   - date: 2026-05-04
     status: Draft
     note: |
