@@ -94,6 +94,12 @@ defmodule GlorboWeb.MCP.Tools.QueryAudit do
     months_between(lo, hi)
   end
 
+  # Hard cap on the number of month buckets a single query may walk.
+  # 100 years of months — far beyond any real audit history, but a
+  # finite ceiling so a malformed range can never materialize an
+  # unbounded stream (C-079 defense-in-depth on top of month validation).
+  @max_months 1200
+
   defp months_between(lo, hi) do
     # Bounded walker — generate YYYY-MM strings month by month.
     {ly, lm} = parse_ym(lo)
@@ -101,6 +107,7 @@ defmodule GlorboWeb.MCP.Tools.QueryAudit do
 
     Stream.iterate({ly, lm}, &next_month/1)
     |> Stream.take_while(fn {y, m} -> y < hy or (y == hy and m <= hm) end)
+    |> Stream.take(@max_months)
     |> Enum.map(fn {y, m} -> format_ym(y, m) end)
   end
 
@@ -208,8 +215,21 @@ defmodule GlorboWeb.MCP.Tools.QueryAudit do
 
   defp to_year_month(nil), do: nil
 
-  defp to_year_month(<<y::binary-size(4), "-", m::binary-size(2), _rest::binary>>),
-    do: "#{y}-#{m}"
+  # C-079: validate the parsed month is 01..12 (and the year is numeric)
+  # before trusting it as a bucket boundary. An out-of-range month
+  # (e.g. "2026-99") previously made `months_between/2` walk forever
+  # because `next_month/1` only rolls the year at month exactly 12.
+  # Reject the malformed value → caller falls back to the current month.
+  defp to_year_month(<<y::binary-size(4), "-", m::binary-size(2), _rest::binary>>) do
+    with {yi, ""} <- Integer.parse(y),
+         {mi, ""} <- Integer.parse(m),
+         true <- yi >= 0,
+         true <- mi >= 1 and mi <= 12 do
+      "#{y}-#{m}"
+    else
+      _ -> nil
+    end
+  end
 
   defp to_year_month(_), do: nil
 

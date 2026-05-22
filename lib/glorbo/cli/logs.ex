@@ -24,7 +24,7 @@ defmodule Glorbo.CLI.Logs do
   file; emits a stderr warning.
   """
 
-  @switches [lines: :integer, follow: :boolean, help: :boolean]
+  @switches [lines: :integer, follow: :boolean, raw: :boolean, help: :boolean]
   @default_lines 50
   @poll_interval_ms 1000
 
@@ -84,15 +84,18 @@ defmodule Glorbo.CLI.Logs do
     if File.exists?(path) do
       lines = opts[:lines] || @default_lines
 
+      raw? = opts[:raw] == true
+
       output =
         path
         |> read_last_lines(lines)
         |> Enum.join("")
+        |> render_stdout(raw?)
 
       if opts[:follow] do
         # --follow: emit backfill now, then stream further events live.
         IO.write(output)
-        follow(path, :stdout)
+        follow(path, {:stdout, raw?})
       else
         {:logs, 0, output}
       end
@@ -164,12 +167,7 @@ defmodule Glorbo.CLI.Logs do
       {:ok, %File.Stat{size: new_size}} ->
         if new_size > last_size do
           new_bytes = read_incremental(path, last_size)
-
-          if kind == :audit do
-            IO.write(format_audit_chunk(new_bytes))
-          else
-            IO.write(new_bytes)
-          end
+          IO.write(render_chunk(kind, new_bytes))
         end
 
         case File.stat(path) do
@@ -216,12 +214,7 @@ defmodule Glorbo.CLI.Logs do
     case File.stat(path) do
       {:ok, %File.Stat{size: size}} when size > last_size ->
         new_bytes = read_incremental(path, last_size)
-
-        if kind == :audit do
-          IO.write(format_audit_chunk(new_bytes))
-        else
-          IO.write(new_bytes)
-        end
+        IO.write(render_chunk(kind, new_bytes))
 
         follow_poll_loop(path, kind, size)
 
@@ -260,7 +253,25 @@ defmodule Glorbo.CLI.Logs do
     Path.join(dir, "#{month}.jsonl")
   end
 
-  defp resolve_audit_path_for_follow(path, :stdout), do: path
+  defp resolve_audit_path_for_follow(path, {:stdout, _raw?}), do: path
+
+  # ---------------------------------------------------------------------
+  # Rendering — audit is structured; stdout is attacker-controlled.
+  # ---------------------------------------------------------------------
+
+  # C-117: agent stdout.log is the provider/agent CLI's combined
+  # stdout+stderr — an untrusted output channel under the threat model.
+  # A compromised provider can embed terminal control / ANSI / OSC escape
+  # sequences that, when written verbatim to the operator's terminal via
+  # `glorbo logs`, spoof output, rewrite displayed lines, or manipulate
+  # window title / hyperlink / clipboard (OSC 8/52). Strip them by default
+  # on the CLI path (the LiveView streamer already strips before
+  # broadcasting); `--raw` opts back in for trusted local debugging.
+  defp render_chunk(:audit, bytes), do: format_audit_chunk(bytes)
+  defp render_chunk({:stdout, raw?}, bytes), do: render_stdout(bytes, raw?)
+
+  defp render_stdout(bytes, true), do: bytes
+  defp render_stdout(bytes, false), do: Glorbo.Terminal.Sanitizer.strip(bytes)
 
   defp read_last_lines(path, n) do
     path |> File.stream!() |> Enum.take(-n)
@@ -319,11 +330,16 @@ defmodule Glorbo.CLI.Logs do
     FLAGS
       --lines N    Initial backfill (default #{@default_lines})
       --follow     Tail forever (inotify + 1s poll fallback).
+      --raw        Emit agent stdout verbatim (no escape stripping).
+                   Only for trusted local debugging — agent stdout is
+                   untrusted and may contain terminal escapes.
 
     BEHAVIOR
       Audit lines are JSON-decoded and pretty-printed:
         <ts>  <actor>  <action>  <target>  <detail-json>
-      Stdout lines are emitted verbatim (ANSI preserved).
+      Agent stdout is sanitized by default: terminal control / ANSI /
+      OSC escape sequences are stripped so a compromised agent cannot
+      inject escapes into the operator's terminal. Use --raw to opt out.
 
       Under --follow, month rollover (audit only) auto-resumes on the
       new <YYYY-MM>.jsonl file with a stderr warning.

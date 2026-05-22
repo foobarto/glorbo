@@ -446,7 +446,87 @@ defmodule Glorbo.Agent.Server do
   # Dispatch lifecycle
   # ---------------------------------------------------------------------------
 
+  # C-076: an inbox message with a msg_id containing uppercase letters,
+  # spaces, or colons passes Router validation but yields a derived
+  # `task_id` (the inbox filename basename) that `Dispatch.validate_task_id!`
+  # rejects by RAISING — before the dispatch try/after, so it's an uncaught
+  # crash. Because the crash path doesn't drain the inbox file, the poison
+  # message stays oldest-unread and re-crashes the agent on every wake
+  # (persistent agent-level DoS). Reject undispatchable task_ids HERE,
+  # before spawning the Task: quarantine the inbox file (if drainable) so it
+  # stops re-waking us, log it, and skip the dispatch entirely.
   defp start_dispatch(state, task) do
+    if safe_task_id?(Map.get(task, :task_id)) do
+      do_start_dispatch(state, task)
+    else
+      quarantine_poison_task(state, task)
+    end
+  end
+
+  # Mirror of the canonical guard in `Glorbo.Agent.Dispatch.validate_task_id!/1`
+  # (`~r/\A[a-z0-9][a-z0-9._-]*\z/`, no slash / `..` / NUL). Kept in sync
+  # deliberately: dispatch raises on a bad id; here we pre-check so we never
+  # spawn a Task that would crash. If the canonical regex changes, update both.
+  @task_id_re ~r/\A[a-z0-9][a-z0-9._-]*\z/
+  defp safe_task_id?(id) when is_binary(id) do
+    id != ".." and not String.contains?(id, "/") and
+      not String.contains?(id, <<0>>) and Regex.match?(@task_id_re, id)
+  end
+
+  defp safe_task_id?(_), do: false
+
+  # Move the poison inbox file out of the inbox into history/rejections/ so
+  # it no longer wakes the agent, then leave state untouched (no dispatch).
+  # Only inbox/mention triggers own a drainable inbox file; other triggers
+  # with a bad id are simply skipped (should not happen — synthetic task_ids
+  # are always safe — but defensive).
+  defp quarantine_poison_task(state, task) do
+    require Logger
+
+    Logger.warning(
+      "[agent/#{state.spec.slug}@#{state.company}] skipping inbox message with " <>
+        "undispatchable task_id #{inspect(Map.get(task, :task_id))} — quarantining"
+    )
+
+    rel_path = Map.get(task, :task_path)
+    trigger = Map.get(task, :trigger)
+
+    if trigger in [:inbox, :mention] and is_binary(rel_path) and
+         String.starts_with?(rel_path, "agents/#{state.spec.slug}/inbox/") do
+      quarantine_inbox_file(state, rel_path)
+    end
+
+    state
+  end
+
+  defp quarantine_inbox_file(state, rel_path) do
+    company_root = Path.join([state.base, "companies", state.spec.company])
+    src = Path.join(company_root, rel_path)
+    ts = System.system_time(:millisecond)
+
+    dst =
+      Path.join([
+        company_root,
+        "agents",
+        state.spec.slug,
+        "history",
+        "rejections",
+        "#{ts}-#{Path.basename(rel_path)}"
+      ])
+
+    try do
+      File.mkdir_p!(Path.dirname(dst))
+      File.rename!(src, dst)
+    rescue
+      e ->
+        require Logger
+        Logger.warning("inbox quarantine failed for #{rel_path}: #{Exception.message(e)}")
+    end
+
+    :ok
+  end
+
+  defp do_start_dispatch(state, task) do
     task_fn = fn ->
       state.dispatch_fun.(state.spec, task, state.dispatch_opts)
     end
@@ -478,6 +558,31 @@ defmodule Glorbo.Agent.Server do
     drain_on_free(new_state)
   end
 
+  # C-129: a dispatch that was throttled by the per-company semaphore must
+  # NOT immediately re-drain the same inbox file — that spins in a tight
+  # retry loop (rescan → re-dispatch → throttle → repeat) until the cap
+  # frees, burning exactly the CPU the cap was meant to shed. Instead,
+  # re-queue the trigger into `pending_wake` so it retries only when a real
+  # slot opens (via the next slot-free signal), and do not auto-drain now.
+  defp finish(state, ref, {:result, {:throttled, _reason} = result}) do
+    invocation = Map.fetch!(state.in_flight, ref)
+    exit_status = dispatch_result_to_exit_status(result)
+
+    # Throttle is non-zero → the inbox file is intentionally NOT drained
+    # (it must stay for the retry). Don't route a reply for a throttle.
+    new_state = %{
+      state
+      | in_flight: Map.delete(state.in_flight, ref),
+        last_exit_status: exit_status,
+        # Coalesce: re-arm the original trigger so drain_on_free picks it
+        # up on the next slot-free event instead of looping right now.
+        pending_wake: requeue_wake(state.pending_wake, invocation.trigger)
+    }
+
+    broadcast_status(new_state)
+    {:noreply, new_state}
+  end
+
   defp finish(state, ref, {:result, result}) do
     invocation = Map.fetch!(state.in_flight, ref)
     exit_status = dispatch_result_to_exit_status(result)
@@ -507,6 +612,16 @@ defmodule Glorbo.Agent.Server do
     broadcast_status(new_state)
     {:noreply, drain_on_free(new_state, invocation.trigger)}
   end
+
+  # C-129: re-arm a throttled inbox/mention trigger. Keep any newer
+  # pending_wake already coalesced (most-recent-wins), otherwise re-queue
+  # this trigger so the work isn't lost. Non-inbox triggers don't own inbox
+  # traffic, so there's nothing to re-queue.
+  defp requeue_wake(existing, trigger) when trigger in [:inbox, :mention] do
+    existing || {trigger, DateTime.utc_now()}
+  end
+
+  defp requeue_wake(existing, _trigger), do: existing
 
   # GEP-46 D3 — on every slot-freeing event, look for more work and
   # fill remaining slots. Process the pending_wake (if any). Auto-drain

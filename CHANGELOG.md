@@ -10,6 +10,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — CLI/runtime hardening: terminal-escape, MCP DoS, poison inbox, retry spin, dep-gate (codex C-117/C-079/C-076/C-129/C-130)
+
+- **C-117:** `glorbo logs` printed agent `stdout.log` verbatim, allowing terminal-escape
+  injection into the operator's terminal. Output now passes through a new linear
+  `Glorbo.Terminal.Sanitizer` (strips C0/C1 + CSI/OSC; non-backtracking to avoid the
+  C-091 ReDoS cliff); `--raw` opts back in for trusted debugging.
+- **C-079:** the MCP `query_audit` tool didn't bound `month`/`year`; an out-of-range
+  month materialized an unbounded month stream (unauthenticated DoS). Now validated +
+  capped.
+- **C-076:** a poison inbox message whose derived `task_id` failed validation made the
+  agent crash-loop (raise before drain). The Agent.Server now pre-validates and
+  quarantines the undispatchable message to `history/rejections/` instead of looping.
+- **C-129:** a throttled inbox dispatch no longer re-dispatches the identical file in a
+  tight spin; it re-arms the wake for the next free slot.
+- **C-130:** the scheduler captures `depends_on` authoritatively at arm time and gates on
+  the union of on-disk + registered deps, so blanking/coercing `depends_on` on a mutable
+  task file can no longer fail-open past the dependency gate (emits a tamper audit).
+
 ### Security — path-approval subset check, task-edit audit, token URL strip (codex B-014/C-094/C-120)
 
 - **B-014:** the dashboard path-approval handler passed the client-supplied `paths`

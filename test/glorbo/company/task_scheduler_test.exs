@@ -275,6 +275,81 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     refute_receive {:inbox_write, _, _, _}, 100
   end
 
+  # C-130: depends_on lives in an agent-RW task file. An agent with
+  # tasks:update could blank/remove depends_on before the scheduled fire
+  # to make the dependency gate fail open. The scheduler must NOT trust a
+  # shrink of the dependency set below what was registered at arm time.
+  test "C-130: removing depends_on before fire does not fail open",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_dep_task(tasks_dir, "foo-prereq", "in-progress")
+    write_task_with_deps(tasks_dir, "foo-tamper", "0 * * * *", ["foo-prereq"])
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-tamper"}, _}, 1_000
+
+    # Agent tampers: rewrite the task file dropping depends_on entirely.
+    File.write!(Path.join(tasks_dir, "foo-tamper.md"), """
+    ---
+    title: foo-tamper
+    assigned_to: ceo
+    status: todo
+    schedule: "0 * * * *"
+    ---
+
+    do thing
+    """)
+
+    send(sched, {:fire, "foo-tamper"})
+
+    # The tamper is detected and audited, AND the gate still blocks
+    # (registered dep foo-prereq is in-progress) — no dispatch.
+    assert_receive {:audit, %{action: "scheduler.depends_on_tampered", detail: detail}}, 1_000
+    assert detail.dropped == ["foo-prereq"]
+
+    assert_receive {:audit, %{action: "task.blocked_on_deps", target: target}}, 1_000
+    assert target =~ "foo-tamper"
+    refute_receive {:inbox_write, _, _, _}, 100
+  end
+
+  test "C-130: blanking depends_on to empty list does not fail open",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_dep_task(tasks_dir, "foo-prereq", "in-progress")
+    write_task_with_deps(tasks_dir, "foo-blank", "0 * * * *", ["foo-prereq"])
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-blank"}, _}, 1_000
+
+    # Coerce depends_on to a list of empties (coerce_depends_on → []).
+    File.write!(Path.join(tasks_dir, "foo-blank.md"), """
+    ---
+    title: foo-blank
+    assigned_to: ceo
+    status: todo
+    schedule: "0 * * * *"
+    depends_on:
+      - ""
+    ---
+
+    do thing
+    """)
+
+    send(sched, {:fire, "foo-blank"})
+
+    refute_receive {:inbox_write, _, _, _}, 200
+  end
+
+  # Legitimate case: a task that never had deps still fires (no false block).
+  test "C-130: a task registered with no deps still fires normally",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-nodeps", schedule: "0 * * * *")
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-nodeps"}, _}, 1_000
+
+    send(sched, {:fire, "foo-nodeps"})
+    assert_receive {:inbox_write, "ceo", _filename, _body}, 1_000
+  end
+
   test "fire without assignee emits scheduler.missing_assignee",
        %{base: base, company: company, tasks_dir: tasks_dir} do
     write_task(tasks_dir, "foo-6", schedule: "0 * * * *", assigned_to: "")

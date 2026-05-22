@@ -366,6 +366,90 @@ defmodule Glorbo.Agent.ServerTest do
   end
 
   # ---------------------------------------------------------------------------
+  # A11b — C-076: poison inbox message (invalid derived task_id) must not
+  # crash-loop the agent. A msg_id with uppercase/spaces yields a task_id
+  # that Dispatch.validate_task_id! rejects by RAISING. The server must
+  # quarantine + drain the poison file instead of dispatching it.
+  # ---------------------------------------------------------------------------
+
+  describe "A11b — poison inbox task_id (C-076)" do
+    test "invalid task_id is quarantined, not dispatched, and agent stays idle", ctx do
+      {base, rel_path, src} = setup_inbox_file(ctx, "1770000000000-BAD.md")
+
+      # If a dispatch were ever started for the poison task it would crash;
+      # this fun would mark that we got that far.
+      test_pid = ctx.test_pid
+      dispatch_fun = fn _spec, task, _opts ->
+        send(test_pid, {:should_not_dispatch, task.task_id})
+        {:ok, %{exit_status: 0}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{
+        task_id: "1770000000000-BAD",
+        task_path: rel_path,
+        prompt: "hi",
+        trigger: :inbox
+      }
+
+      :ok = AgentServer.wake(pid, :inbox, task)
+      await_state(pid, :idle)
+
+      refute_received {:should_not_dispatch, _}
+      assert Process.alive?(pid)
+      assert %{state: :idle} = AgentServer.status(pid)
+
+      # Poison file moved out of the inbox so the next wake advances.
+      refute File.exists?(src), "poison file must be quarantined out of the inbox"
+
+      rejections =
+        Path.join([base, "companies/acme/agents/engineer/history/rejections"])
+
+      assert {:ok, [moved]} = File.ls(rejections)
+      assert String.ends_with?(moved, "-1770000000000-BAD.md")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # A11c — C-129: a throttled inbox dispatch must not spin in a retry loop.
+  # The throttle result must re-queue into pending_wake (retry on next
+  # slot-free) instead of immediately re-draining the same inbox file.
+  # ---------------------------------------------------------------------------
+
+  describe "A11c — throttled inbox dispatch (C-129)" do
+    test "throttle does not immediately re-dispatch the same file", ctx do
+      {base, rel_path, _src} = setup_inbox_file(ctx, "throttled.md")
+
+      counter = :counters.new(1, [:atomics])
+      test_pid = ctx.test_pid
+
+      dispatch_fun = fn _spec, task, _opts ->
+        :counters.add(counter, 1, 1)
+        send(test_pid, {:dispatched, task.task_id, :counters.get(counter, 1)})
+        {:throttled, :company_dispatch_cap}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "throttled", task_path: rel_path, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+
+      assert_receive {:dispatched, "throttled", 1}, 1_000
+      # No tight re-dispatch loop: the same file must NOT be re-dispatched
+      # immediately while the cap is still saturated.
+      refute_receive {:dispatched, "throttled", _}, 300
+
+      assert Process.alive?(pid)
+      # The file stays in the inbox (throttle is not a successful drain).
+      assert File.exists?(Path.join([base, "companies", "acme", rel_path]))
+
+      # And the work is re-queued for the next slot-free signal.
+      assert %{pending_wake: {:inbox, _}} = :sys.get_state(pid)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # A12 — reply routing after successful dispatch (task #124)
   #
   # On :inbox or :mention trigger with exit_status 0 and a reply, the server

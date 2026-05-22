@@ -517,6 +517,46 @@ defmodule GlorboWeb.MCP.ToolsWaveB2Test do
       assert [%{"action" => "new"}] = entries
     end
 
+    # C-079: an out-of-range month (e.g. since="2026-99...") used to make
+    # months_between materialize an unbounded stream → unauthenticated DoS.
+    test "out-of-range month in since does not hang (C-079)" do
+      base = TmpGlorboHome.setup()
+      _ = seed_company(base, "acme")
+
+      task =
+        Task.async(fn ->
+          call_tool(
+            "glorbo.query_audit",
+            %{
+              "company" => "acme",
+              "since" => "2026-99T00:00:00Z",
+              "until" => "2027-01T00:00:00Z"
+            },
+            base
+          )
+        end)
+
+      assert {:reply, %{"structuredContent" => %{"entries" => _}}} =
+               Task.await(task, 3_000)
+    end
+
+    test "out-of-range month 00 is rejected and does not hang (C-079)" do
+      base = TmpGlorboHome.setup()
+      _ = seed_company(base, "acme")
+
+      task =
+        Task.async(fn ->
+          call_tool(
+            "glorbo.query_audit",
+            %{"company" => "acme", "since" => "2026-00T00:00:00Z"},
+            base
+          )
+        end)
+
+      assert {:reply, %{"structuredContent" => %{"entries" => _}}} =
+               Task.await(task, 3_000)
+    end
+
     test "limit caps result size" do
       base = TmpGlorboHome.setup()
       co_path = seed_company(base, "acme")

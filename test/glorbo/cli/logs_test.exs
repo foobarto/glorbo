@@ -104,6 +104,48 @@ defmodule Glorbo.CLI.LogsTest do
       assert msg =~ "No stdout log found"
       assert msg =~ "nonexistent-agent"
     end
+
+    # C-117: agent stdout is attacker-controlled; terminal control / ANSI /
+    # OSC escape sequences must be stripped before they reach the operator's
+    # terminal.
+    test "strips ANSI/OSC/control escapes from stdout backfill by default",
+         %{home: home, company: co, agent: ag} do
+      path = Path.join([home, "companies", co, "agents", ag, "stdout.log"])
+
+      File.write!(path, [
+        # SGR colour (CSI), then visible text
+        "\e[31mred-text\e[0m\n",
+        # OSC 0 window-title set (BEL-terminated)
+        "\e]0;pwned-title\a after-osc\n",
+        # OSC 8 hyperlink (ST-terminated)
+        "\e]8;;http://evil\e\\link\e]8;;\e\\ tail\n",
+        # bare control bytes + backspace overwrite trick
+        "vis\bible\x1b[2Kafter-clear\n"
+      ])
+
+      assert {:logs, 0, out} = Logs.run([co, ag])
+
+      # No raw ESC, BEL, or backspace bytes survive.
+      refute String.contains?(out, "\e")
+      refute String.contains?(out, "\a")
+      refute String.contains?(out, "\b")
+      # The OSC title payload must not leak through as an active escape.
+      refute String.contains?(out, "\e]0;")
+      # Visible text is preserved.
+      assert out =~ "red-text"
+      assert out =~ "after-osc"
+      assert out =~ "link"
+      assert out =~ "after-clear"
+    end
+
+    test "--raw preserves stdout verbatim for trusted debugging",
+         %{home: home, company: co, agent: ag} do
+      path = Path.join([home, "companies", co, "agents", ag, "stdout.log"])
+      File.write!(path, "\e[31mred\e[0m\n")
+
+      assert {:logs, 0, out} = Logs.run([co, ag, "--raw"])
+      assert String.contains?(out, "\e[31m")
+    end
   end
 
   describe "argv / help" do

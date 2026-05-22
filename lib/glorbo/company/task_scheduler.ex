@@ -311,7 +311,14 @@ defmodule Glorbo.Company.TaskScheduler do
           expr: expr,
           assigned_to: Map.get(fm, "assigned_to") || "",
           body: body,
-          mtime: mtime
+          mtime: mtime,
+          # C-130: capture the dependency set authoritatively at arm time.
+          # `depends_on` lives in an agent-RW task file; an agent with
+          # tasks:update could drop it before the scheduled fire to make the
+          # gate fail open. We treat a *shrink* of this set as suspicious
+          # (re-validate against the registered deps + emit a tamper audit)
+          # rather than trusting the mutable on-disk value at fire time.
+          registered_depends_on: Glorbo.Task.Snapshot.coerce_depends_on(Map.get(fm, "depends_on"))
         }
 
         arm(state, task_id, entry, now)
@@ -365,7 +372,28 @@ defmodule Glorbo.Company.TaskScheduler do
   defp maybe_fire(state, task_id, entry, fm, body) do
     schedule = Map.get(fm, "schedule") || ""
     assignee = Map.get(fm, "assigned_to") || ""
-    depends_on = Glorbo.Task.Snapshot.coerce_depends_on(Map.get(fm, "depends_on"))
+
+    # C-130: do not trust the mutable on-disk depends_on alone. Re-validate
+    # against the set captured at arm time and use the UNION — a shrink of
+    # the on-disk set (deps removed/blanked by a tasks:update agent) can
+    # never drop a dependency the scheduler armed with. Emit a tamper audit
+    # when the on-disk value lost a registered dependency.
+    on_disk_deps = Glorbo.Task.Snapshot.coerce_depends_on(Map.get(fm, "depends_on"))
+    registered_deps = Map.get(entry, :registered_depends_on, [])
+
+    dropped = registered_deps -- on_disk_deps
+
+    if dropped != [] do
+      emit_audit(state, %{
+        action: "scheduler.depends_on_tampered",
+        actor: "system",
+        company: state.company,
+        target: entry.rel_path,
+        detail: %{task_id: task_id, dropped: dropped, on_disk: on_disk_deps}
+      })
+    end
+
+    depends_on = Enum.uniq(on_disk_deps ++ registered_deps)
 
     cond do
       schedule == "" ->
