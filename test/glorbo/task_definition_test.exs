@@ -265,6 +265,32 @@ defmodule Glorbo.TaskDefinitionTest do
              TaskDefinition.parse_file(other_path, base: ctx.base, company: ctx.company)
   end
 
+  # codex D-186/E-201/C-119: a path with `..` segments that lexically
+  # starts with the company prefix but resolves into a SIBLING company
+  # must be rejected. The old lexical starts_with? check let this through.
+  test "T12b: ../ traversal escaping the company tree is rejected", ctx do
+    content = """
+    ---
+    kind: task/v1
+    title: traversal
+    ---
+    body
+    """
+
+    # Plant the real file in a sibling company.
+    other = Path.join([ctx.base, "companies", "other", "projects", "x", "tasks"])
+    File.mkdir_p!(other)
+    File.write!(Path.join(other, "evil.md"), content)
+
+    # Address it via a path that lexically begins with acme's prefix but
+    # uses ../ to climb into the sibling company.
+    traversal =
+      Path.join([ctx.base, "companies", ctx.company, "..", "other", "projects", "x", "tasks", "evil.md"])
+
+    assert {:error, {:path_outside_company, ^traversal}} =
+             TaskDefinition.parse_file(traversal, base: ctx.base, company: ctx.company)
+  end
+
   # T13 — denial_reason round-trips
   test "T13: denial_reason round-trips into the struct", ctx do
     content = """

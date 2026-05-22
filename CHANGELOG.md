@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — task company-boundary check now collapses `../` traversal (codex D-186/E-201)
+
+`TaskDefinition.parse_file/2`'s company-containment check was a lexical
+`String.starts_with?` on the raw path, so a path like
+`<base>/companies/<co>/projects/../../other/...` still started with the company
+prefix yet resolved into a sibling company (or anywhere on the host). The check
+now `Path.expand`s the path first, collapsing `.`/`..` before testing
+containment, so traversal segments can no longer escape the company tree.
+(Symlinked path components were already refused by `AgentWritableFile.read/1`.)
+
 ### Security — reserve `dm-director--` channel writes to the DM owner (codex B-020, write vector)
 
 Director DMs are stored as regular channels (`channels/dm-director--<agent>.md`),

@@ -804,11 +804,21 @@ defmodule Glorbo.TaskDefinition do
   # Internals
   # ---------------------------------------------------------------------------
 
+  # Security (codex D-186 / E-201 / C-119): the company-boundary check
+  # was a lexical `String.starts_with?` on the raw path, so a path like
+  # `<base>/companies/<co>/projects/../../other/agents/x.md` still starts
+  # with the company prefix yet resolves into a SIBLING company (or
+  # anywhere on the host). Collapse `.`/`..` with `Path.expand/1` BEFORE
+  # the containment test so traversal segments can't escape the company
+  # tree. (Symlinked path components are refused separately by
+  # `AgentWritableFile.read/1` in `read_file/1` below.)
   defp relative_task_path(file_path, base, company) do
-    prefix = Path.join([base, "companies", company]) <> "/"
+    company_root = Path.expand(Path.join([base, "companies", company]))
+    expanded = Path.expand(file_path)
+    prefix = company_root <> "/"
 
-    if String.starts_with?(file_path, prefix) do
-      {:ok, String.replace_prefix(file_path, prefix, "")}
+    if String.starts_with?(expanded, prefix) do
+      {:ok, String.replace_prefix(expanded, prefix, "")}
     else
       {:error, {:path_outside_company, file_path}}
     end
