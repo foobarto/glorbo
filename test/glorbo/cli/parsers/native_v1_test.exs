@@ -90,6 +90,39 @@ defmodule Glorbo.CLI.Parsers.NativeV1Test do
     assert {:error, :jsonl_not_supported} = NativeV1.parse({:jsonl_file, "/tmp/x.jsonl"})
   end
 
+  # C-032: usage.json is written by the sandboxed CLI and is
+  # attacker-controlled. A planted multi-MB file must be refused by
+  # the size cap before it is slurped into the dispatcher heap, not
+  # decoded.
+  test "refuses an oversized usage.json instead of reading it into memory" do
+    # > 1 MiB cap; valid JSON so the only thing that can reject it is
+    # the byte cap, not a decode error.
+    padding = String.duplicate(" ", 1_048_576 + 1024)
+    path = tmp_json!(~s({"tracked":true,"prompt_tokens":1,"completion_tokens":2}#{padding}))
+
+    assert {:error, {:file_too_large, size, 1_048_576}} =
+             NativeV1.parse({:json_file, path})
+
+    assert size > 1_048_576
+  end
+
+  # C-032: a usage.json symlink (e.g. pointing at a host file or
+  # /dev/zero) must be refused — the bounded reader lstat-gates.
+  test "refuses a symlinked usage.json" do
+    target = tmp_json!(~s({"tracked":true,"prompt_tokens":1,"completion_tokens":2}))
+
+    link =
+      Path.join(
+        System.tmp_dir!(),
+        "native-v1-link-#{System.unique_integer([:positive, :monotonic])}.json"
+      )
+
+    File.ln_s!(target, link)
+    on_exit(fn -> File.rm(link) end)
+
+    assert {:error, {:not_regular_file, :symlink}} = NativeV1.parse({:json_file, link})
+  end
+
   defp tmp_json!(body) do
     path =
       Path.join(

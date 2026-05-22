@@ -39,8 +39,22 @@ defmodule GlorboWeb.CompanyLive do
   alias Glorbo.Budget.Ledger
   alias Glorbo.CLI.Registry, as: CLIRegistry
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Filesystem.AgentWritableFile
   alias Glorbo.Filesystem.Frontmatter
   alias GlorboWeb.Components.ChatDrawer
+
+  # Agent-controlled task .md files (writable via tasks:update /
+  # projects:write binds): cap the per-file read so a planted huge
+  # file can't OOM the overview loader (C-113).
+  @max_task_bytes 1_048_576
+
+  # Audit files grow with agent activity (agent.complete etc.). Cap
+  # the whole-file read so a high-volume / planted audit.jsonl can't
+  # OOM the LiveView when a Director opens or refreshes the overview
+  # (C-102). 16 MiB ≈ tens of thousands of audit lines — far past any
+  # legitimate monthly volume; oversized files yield no sparkline
+  # rather than crashing the dashboard.
+  @max_audit_bytes 16 * 1_048_576
   alias GlorboWeb.Components.{Spark, StatBreakdown, StatCard, StatusPill}
 
   # Coalescing window for :agent_status churn. Matches the :file_event
@@ -1372,7 +1386,9 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   defp fold_task(path, acc) do
-    with {:ok, content} <- File.read(path),
+    # Same agent-controlled task .md vector as parse_task/1 (C-113):
+    # lstat-refuse non-regular + size-cap before reading.
+    with {:ok, content} <- AgentWritableFile.read_bounded(path, @max_task_bytes),
          {:ok, fm, _body} <- Frontmatter.parse(content),
          goal when is_binary(goal) and goal != "" <- fm["goal"] do
       status = to_string(fm["status"] || "todo")
@@ -1655,7 +1671,7 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   defp read_audit_lines(path) do
-    case File.read(path) do
+    case AgentWritableFile.read_bounded(path, @max_audit_bytes) do
       {:ok, content} ->
         content
         |> String.split("\n", trim: true)
@@ -1751,7 +1767,14 @@ defmodule GlorboWeb.CompanyLive do
   end
 
   defp parse_task(path) do
-    case File.read(path) do
+    # `tasks:update:<project>` / `projects:write` bind task dirs rw
+    # into the agent sandbox, so task .md files are agent-controlled.
+    # A bare `File.read/1` would slurp a planted multi-GB task.md into
+    # the dashboard BEAM heap (Frontmatter's 10 MiB cap only fires
+    # *after* the full read) or follow a symlink-to-device. Route
+    # through the lstat + size-capped reader. 1 MiB is well above any
+    # real task file.
+    case AgentWritableFile.read_bounded(path, @max_task_bytes) do
       {:ok, content} ->
         case Frontmatter.parse(content) do
           {:ok, meta, _} -> [%{status: to_string(meta["status"] || "")}]

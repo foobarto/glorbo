@@ -539,16 +539,29 @@ defmodule GlorboWeb.Components.Sidebar do
     end
   end
 
-  # Skim project.md for an `icon:` field if present. Cheap — one File.read
+  # Skim project.md for an `icon:` field if present. Cheap — one read
   # per project, frontmatter regex. Same allowlist as agent icons.
+  #
+  # `projects:write:<name>` binds the whole project dir rw into the
+  # agent sandbox, so `project.md` is agent-controlled: a bare
+  # `File.read/1` would follow a `project.md -> /dev/zero` symlink
+  # (never terminates) or slurp a planted multi-GB file when a
+  # Director opens any dashboard page. Route through the lstat +
+  # size-capped reader. 64 KiB is generous — real project.md
+  # frontmatter is a few hundred bytes.
   defp project_icon(projects_dir, slug) do
     path = Path.join([projects_dir, slug, "project.md"])
 
-    case File.read(path) do
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 65_536) do
       {:ok, content} -> scan_icon(content)
       _ -> nil
     end
   end
+
+  @doc false
+  # Test seam for the C-107 size/symlink gate on project.md reads.
+  @spec project_icon_for_test(Path.t(), String.t()) :: String.t() | nil
+  def project_icon_for_test(projects_dir, slug), do: project_icon(projects_dir, slug)
 
   defp compute_health do
     checks = Glorbo.Doctor.run_checks()

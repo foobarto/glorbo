@@ -108,4 +108,46 @@ defmodule GlorboWeb.Components.SidebarTest do
       assert 0 == Sidebar.count_memory_files_for_test(agents_dir, "lonely")
     end
   end
+
+  # C-107: `projects:write` binds the project dir rw into the agent
+  # sandbox, so project.md is agent-controlled. The sidebar icon read
+  # must lstat-refuse non-regular files and size-cap before reading.
+  describe "project_icon DoS gate (C-107)" do
+    setup %{base: base} do
+      projects_dir = Path.join([base, "companies", "acme", "projects"])
+      File.mkdir_p!(Path.join(projects_dir, "good"))
+      {:ok, projects_dir: projects_dir}
+    end
+
+    test "reads a normal project.md icon", %{projects_dir: projects_dir} do
+      File.write!(
+        Path.join([projects_dir, "good", "project.md"]),
+        "---\nicon: rocket\n---\n\nbody\n"
+      )
+
+      assert "fa-rocket" == Sidebar.project_icon_for_test(projects_dir, "good")
+    end
+
+    test "refuses an oversized project.md instead of reading it", %{projects_dir: projects_dir} do
+      File.mkdir_p!(Path.join(projects_dir, "big"))
+      # > 64 KiB cap.
+      File.write!(
+        Path.join([projects_dir, "big", "project.md"]),
+        "---\nicon: rocket\n---\n" <> String.duplicate("x", 70_000)
+      )
+
+      assert nil == Sidebar.project_icon_for_test(projects_dir, "big")
+    end
+
+    test "refuses a symlinked project.md without following it", %{projects_dir: projects_dir} do
+      secret = Path.join(System.tmp_dir!(), "proj-secret-#{System.unique_integer([:positive])}")
+      File.write!(secret, "---\nicon: leaked\n---\n")
+      on_exit(fn -> File.rm(secret) end)
+
+      File.mkdir_p!(Path.join(projects_dir, "evil"))
+      File.ln_s!(secret, Path.join([projects_dir, "evil", "project.md"]))
+
+      assert nil == Sidebar.project_icon_for_test(projects_dir, "evil")
+    end
+  end
 end

@@ -4,12 +4,23 @@ defmodule Glorbo.CLI.Harness.HTTP do
   @http_profile :glorbo_harness
   @base_retry_delay_ms 200
 
+  # Hard ceiling on a buffered response body. `:httpc` with
+  # `body_format: :binary` fully buffers the body before returning,
+  # so the downstream `capped_binary/2` in Tools only ran *after* an
+  # arbitrarily large payload was already in the heap (C-034). We now
+  # stream the response and abort once this many bytes have arrived,
+  # so a malicious / injected `web_fetch` target serving a huge or
+  # endless body can't exhaust the harness heap. Callers may override
+  # via `:max_response_bytes`; this is the default + absolute cap.
+  @default_max_response_bytes 1_048_576
+
   @type request :: %{
           required(:method) => :get | :post,
           required(:url) => String.t(),
           optional(:headers) => [{String.t(), String.t()}],
           optional(:body) => map() | binary() | nil,
-          optional(:timeout_ms) => pos_integer()
+          optional(:timeout_ms) => pos_integer(),
+          optional(:max_response_bytes) => pos_integer()
         }
 
   @type response :: %{
@@ -166,20 +177,9 @@ defmodule Glorbo.CLI.Harness.HTTP do
   defp do_request(%{method: :get, url: url} = request) do
     headers = request_headers(request)
     http_options = http_options(url, request.timeout_ms)
+    req = {String.to_charlist(url), headers}
 
-    case :httpc.request(
-           :get,
-           {String.to_charlist(url), headers},
-           http_options,
-           [body_format: :binary],
-           @http_profile
-         ) do
-      {:ok, {{_version, status, _reason}, response_headers, body}} ->
-        {:ok, %{status: status, headers: normalize_headers(response_headers), body: body}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    stream_request(:get, req, http_options, max_response_bytes(request), request.timeout_ms)
   end
 
   defp do_request(%{method: :post, url: url} = request) do
@@ -187,24 +187,108 @@ defmodule Glorbo.CLI.Harness.HTTP do
     body = request_body(request)
     content_type = request_content_type(request)
     http_options = http_options(url, request.timeout_ms)
+    req = {String.to_charlist(url), headers, String.to_charlist(content_type), body}
 
-    case :httpc.request(
-           :post,
-           {String.to_charlist(url), headers, String.to_charlist(content_type), body},
-           http_options,
-           [body_format: :binary],
-           @http_profile
-         ) do
-      {:ok, {{_version, status, _reason}, response_headers, response_body}} ->
-        {:ok,
-         %{status: status, headers: normalize_headers(response_headers), body: response_body}}
+    stream_request(:post, req, http_options, max_response_bytes(request), request.timeout_ms)
+  end
+
+  defp do_request(%{method: other}), do: {:error, {:unsupported_http_method, other}}
+
+  defp max_response_bytes(request) do
+    case Map.get(request, :max_response_bytes) do
+      n when is_integer(n) and n > 0 -> min(n, @default_max_response_bytes)
+      _ -> @default_max_response_bytes
+    end
+  end
+
+  # Stream the response into the calling process and abort the moment
+  # the accumulated body exceeds `max_bytes`, so a large / endless
+  # body can never be fully buffered (C-034). `sync: false` +
+  # `stream: :self` makes :httpc deliver `{:http, {ref, ...}}`
+  # messages we can stop reading at will.
+  #
+  # OTP only *streams* 200/206 responses (`?IS_STREAMED` in
+  # httpc_handler) — for those, `:stream_start` carries the header
+  # list but NOT the status line, so a streamed body is reported as
+  # status 200. Every other status code is delivered as a single
+  # inline result message `{:http, {ref, {{_v, status, _}, hdrs,
+  # body}}}` carrying its real status, handled below. web_fetch
+  # never sends a Range header, so a 206 (also reported as 200) does
+  # not arise in practice; both are 2xx success regardless.
+  defp stream_request(method, req, http_options, max_bytes, timeout_ms) do
+    options = [sync: false, stream: :self, body_format: :binary, receiver: self()]
+
+    case :httpc.request(method, req, http_options, options, @http_profile) do
+      {:ok, ref} ->
+        collect_stream(ref, max_bytes, receive_timeout(timeout_ms))
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp do_request(%{method: other}), do: {:error, {:unsupported_http_method, other}}
+  defp collect_stream(ref, max_bytes, timeout) do
+    collect_stream(ref, max_bytes, timeout, :unstarted, [], 0)
+  end
+
+  # Each receive uses the request timeout as an upper bound so a
+  # stalled connection can't hang the harness indefinitely.
+  defp collect_stream(ref, max_bytes, timeout, state, acc, size) do
+    receive do
+      {:http, {^ref, :stream_start, headers}} ->
+        collect_stream(ref, max_bytes, timeout, {:streaming, headers}, acc, size)
+
+      {:http, {^ref, :stream_start, headers, _pid}} ->
+        collect_stream(ref, max_bytes, timeout, {:streaming, headers}, acc, size)
+
+      {:http, {^ref, :stream, chunk}} ->
+        new_size = size + byte_size(chunk)
+
+        if new_size > max_bytes do
+          _ = :httpc.cancel_request(ref, @http_profile)
+          finish_stream(state, [chunk | acc], max_bytes)
+        else
+          collect_stream(ref, max_bytes, timeout, state, [chunk | acc], new_size)
+        end
+
+      {:http, {^ref, :stream_end, _trailers}} ->
+        finish_stream(state, acc, max_bytes)
+
+      # Non-streamed status codes (anything but 200/206) arrive as a
+      # single inline result that carries the real status. Cap the
+      # body defensively — these are not streamed so they were already
+      # fully received, but the cap keeps the surfaced body bounded.
+      {:http, {^ref, {{_version, status, _reason}, headers, body}}} ->
+        bin = if is_binary(body), do: body, else: IO.iodata_to_binary(body)
+        capped = binary_part(bin, 0, min(byte_size(bin), max_bytes))
+        {:ok, %{status: status, headers: normalize_headers(headers), body: capped}}
+
+      {:http, {^ref, {:error, reason}}} ->
+        {:error, reason}
+    after
+      timeout ->
+        _ = :httpc.cancel_request(ref, @http_profile)
+        {:error, :timeout}
+    end
+  end
+
+  defp finish_stream(:unstarted, _acc, _max_bytes), do: {:error, :no_response}
+
+  defp finish_stream({:streaming, headers}, acc, max_bytes) do
+    body =
+      acc
+      |> Enum.reverse()
+      |> IO.iodata_to_binary()
+
+    capped = binary_part(body, 0, min(byte_size(body), max_bytes))
+    # Streamed responses are only ever 200/206 (see stream_request).
+    {:ok, %{status: 200, headers: normalize_headers(headers), body: capped}}
+  end
+
+  defp receive_timeout(timeout_ms) when is_integer(timeout_ms) and timeout_ms > 0,
+    do: timeout_ms
+
+  defp receive_timeout(_), do: 30_000
 
   defp request_headers(request) do
     request

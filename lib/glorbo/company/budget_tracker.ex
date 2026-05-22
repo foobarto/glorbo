@@ -109,7 +109,16 @@ defmodule Glorbo.Company.BudgetTracker do
     alert_threshold_pct = Keyword.get(opts, :alert_threshold_pct, @default_alert_threshold_pct)
     repo = Keyword.get(opts, :repo, Glorbo.Repo)
     budgets_fun = Keyword.get(opts, :budgets_fun, &default_budgets_fun(company, base, &1))
-    audit_fun = Keyword.get(opts, :audit_fun, &AuditLog.append/2)
+    # D-187: `emit_audit/2` calls `audit_fun.(state.company, entry)` —
+    # the first arg is the company SLUG string, not a GenServer name.
+    # The old default `&AuditLog.append/2` treats its first arg as a
+    # `GenServer.server()`, so every budget.usage / budget.alert /
+    # budget.hard_stop event raised → was rescued+logged → never landed
+    # in the append-only audit log (the supervisor injects no override).
+    # `append_for/2` is exactly the company-slug-resolving seam: it maps
+    # the slug to the per-company via-tuple in production, or the shared
+    # bare module in tests.
+    audit_fun = Keyword.get(opts, :audit_fun, &AuditLog.append_for/2)
 
     fs_fun =
       Keyword.get(opts, :fs_fun, %{

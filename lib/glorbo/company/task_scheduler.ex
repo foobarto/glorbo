@@ -200,7 +200,12 @@ defmodule Glorbo.Company.TaskScheduler do
             case File.ls(tasks_dir) do
               {:ok, files} ->
                 files
-                |> Enum.filter(&String.ends_with?(&1, ".md"))
+                # C-078: only canonical task files. `*.comments.md`
+                # (kind: task-comments/v1) lives in the same dir and
+                # must never be armed — exclude it from the scan. The
+                # `kind: task/v1` gate in parse_and_arm/3 is the
+                # authoritative check; this is the cheap pre-filter.
+                |> Enum.filter(&schedulable_task_file?/1)
                 |> Enum.map(&Path.join([projects_dir, project, "tasks", &1]))
 
               _ ->
@@ -289,12 +294,30 @@ defmodule Glorbo.Company.TaskScheduler do
     # Threatmodel wave 25: agent-RW task md, lstat + 1 MiB cap.
     with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576),
          {:ok, fm, body} <- Frontmatter.parse(content),
+         # C-078: only arm canonical task/v1 files. A `task-comments/v1`
+         # (or any other kind) carrying a `schedule:` would otherwise
+         # become a hidden scheduled task that bypasses the task/v1
+         # schema + approval-gate visibility. The validator treats the
+         # extra `schedule` key as a warning, not an error, so the gate
+         # has to live here.
+         true <- task_kind?(fm),
          schedule when is_binary(schedule) and schedule != "" <- Map.get(fm, "schedule") do
       handle_scheduled(state, path, fm, schedule, body, mtime)
     else
       _ -> state
     end
   end
+
+  # C-078: a schedulable task file is a `.md` that is not a
+  # `*.comments.md` task-comment thread.
+  defp schedulable_task_file?(filename) do
+    String.ends_with?(filename, ".md") and not String.ends_with?(filename, ".comments.md")
+  end
+
+  # C-078: the frontmatter `kind` must be exactly `task/v1`. Missing
+  # `kind` is rejected — task/v1 schema makes `kind` required, and a
+  # missing kind is exactly the ambiguity an attacker would exploit.
+  defp task_kind?(fm), do: Map.get(fm, "kind") == "task/v1"
 
   defp handle_scheduled(state, path, fm, schedule, body, mtime) do
     task_id = task_id_from_path(path)
@@ -395,9 +418,27 @@ defmodule Glorbo.Company.TaskScheduler do
 
     depends_on = Enum.uniq(on_disk_deps ++ registered_deps)
 
+    # C-046 / C-047: never trust the cron expr cached at arm time. The
+    # mtime cache (entry_fresh?/3) can preserve a stale parsed expr if an
+    # agent edits the schedule while restoring the file's mtime. Re-parse
+    # the CURRENT on-disk schedule here and re-arm from the fresh expr.
+    # `entry.expr` is now only a fallback that we deliberately replace.
+    entry =
+      case parse_cron(schedule) do
+        {:ok, expr} -> Map.merge(entry, %{expr: expr, schedule: schedule})
+        _ -> entry
+      end
+
     cond do
       schedule == "" ->
         %{state | tasks: Map.delete(state.tasks, task_id)}
+
+      # C-046 / C-047: a non-empty schedule that no longer parses must
+      # not keep firing on the stale armed cron. Audit it and cancel the
+      # timer rather than re-arm with `entry.expr`.
+      match?({:error, _}, parse_cron(schedule)) ->
+        rel = relative_path(state, entry.path)
+        maybe_emit_invalid(state, task_id, rel, schedule, :unparseable_at_fire)
 
       assignee == "" ->
         emit_audit(state, %{

@@ -50,6 +50,16 @@ defmodule Glorbo.Agent.Dispatch do
 
   @prompt_max_bytes 5 * 1024 * 1024
 
+  # C-033: `usage.json` is sandbox-visible and attacker-controlled — a
+  # compromised provider CLI can emit an arbitrarily long `audit_events`
+  # array (or oversized target/detail strings) so the dispatcher performs
+  # thousands of fsync'd audit writes, flooding the append-only audit log
+  # and exhausting disk/IO. Cap both the event COUNT per dispatch and the
+  # per-string byte size before any audit write.
+  @max_tool_audit_events 50
+  @max_tool_audit_target_bytes 1_024
+  @max_tool_audit_detail_bytes 4_096
+
   @type task :: %{
           required(:task_id) => String.t(),
           required(:task_path) => String.t(),
@@ -87,11 +97,40 @@ defmodule Glorbo.Agent.Dispatch do
     max = Map.get(spec, :max_retries, 2)
 
     if retryable?(result) and attempt < max do
-      emit_retry_audit(spec, task, result, attempt + 1, opts)
-      retry_task = build_retry_task(task, result, attempt + 1)
-      attempt_with_retries(spec, retry_task, opts, attempt + 1)
+      # C-087: a malicious provider can do expensive work and then time
+      # out / omit the reply file so the failed attempt's cost is never
+      # recorded. Re-run the budget gate BEFORE burning another attempt
+      # so retries are capped against budget — an agent that has already
+      # crossed its (per-agent or per-company) cap is stopped here
+      # instead of getting `max_retries` more free invocations. This
+      # turns the unbounded "retry regardless of spend" loop into one
+      # bounded by both `max_retries` AND the budget ledger.
+      case retry_budget_gate(spec, opts) do
+        {:stop, _used, _cap} ->
+          {:stopped, :budget_hard_stop}
+
+        :ok ->
+          emit_retry_audit(spec, task, result, attempt + 1, opts)
+          retry_task = build_retry_task(task, result, attempt + 1)
+          attempt_with_retries(spec, retry_task, opts, attempt + 1)
+      end
     else
       result
+    end
+  end
+
+  # C-087: pre-retry budget gate. Mirrors the in-pipeline `check_budget`
+  # / `check_company_budget` steps but runs in `attempt_with_retries`
+  # *between* attempts so the decision to retry sees the budget. Treats
+  # `:alert` as "may proceed" (same contract as the pipeline) and any
+  # `:stop` (agent- or company-level) as a hard stop.
+  defp retry_budget_gate(spec, opts) do
+    with :ok <- check_budget(spec, opts),
+         :ok <- check_company_budget(spec, opts) do
+      :ok
+    else
+      {:stop, used, cap} -> {:stop, used, cap}
+      _other -> :ok
     end
   end
 
@@ -1306,7 +1345,15 @@ defmodule Glorbo.Agent.Dispatch do
        when is_list(events) do
     audit = audit_fun(opts)
 
-    Enum.each(events, fn event ->
+    # C-033: hard-cap the event count per dispatch so an attacker-
+    # controlled `audit_events` list can't drive unbounded fsync'd audit
+    # writes. When the list overflows the cap, drop the overflow and emit
+    # a single `agent.tool_audit_truncated` marker so the truncation is
+    # itself auditable.
+    total = length(events)
+    capped = Enum.take(events, @max_tool_audit_events)
+
+    Enum.each(capped, fn event ->
       entry =
         %{
           actor: spec.slug,
@@ -1315,11 +1362,26 @@ defmodule Glorbo.Agent.Dispatch do
           task_path: task.task_path,
           invocation_id: invocation_id
         }
-        |> maybe_put_target(Map.get(event, :target))
-        |> maybe_put_detail(Map.get(event, :detail))
+        |> maybe_put_target(bound_target(Map.get(event, :target)))
+        |> maybe_put_detail(bound_detail(Map.get(event, :detail)))
 
       audit.(spec.company, entry)
     end)
+
+    if total > @max_tool_audit_events do
+      Logger.warning(
+        "dispatch: agent #{spec.slug} emitted #{total} tool audit events; capped at #{@max_tool_audit_events}"
+      )
+
+      audit.(spec.company, %{
+        actor: spec.slug,
+        action: "agent.tool_audit_truncated",
+        agent: spec.slug,
+        task_path: task.task_path,
+        invocation_id: invocation_id,
+        detail: %{emitted: total, cap: @max_tool_audit_events}
+      })
+    end
 
     :ok
   rescue
@@ -1343,6 +1405,38 @@ defmodule Glorbo.Agent.Dispatch do
   defp maybe_put_detail(entry, detail) when detail == %{}, do: entry
   defp maybe_put_detail(entry, detail) when is_map(detail), do: Map.put(entry, :detail, detail)
   defp maybe_put_detail(entry, _detail), do: entry
+
+  # C-033: bound the per-event target string so a single oversized value
+  # can't bloat the audit JSONL. Non-binary targets are left untouched
+  # (maybe_put_target drops them).
+  defp bound_target(target) when is_binary(target) do
+    if byte_size(target) > @max_tool_audit_target_bytes do
+      binary_part(target, 0, @max_tool_audit_target_bytes)
+    else
+      target
+    end
+  end
+
+  defp bound_target(target), do: target
+
+  # C-033: bound the serialized size of the detail map. Detail is an
+  # arbitrary attacker-supplied map; cap its JSON byte size and replace
+  # it with a small truncation marker when it overflows rather than
+  # writing megabytes per audit line.
+  defp bound_detail(detail) when is_map(detail) and detail != %{} do
+    case Jason.encode(detail) do
+      {:ok, json} when byte_size(json) <= @max_tool_audit_detail_bytes ->
+        detail
+
+      {:ok, json} ->
+        %{truncated: true, bytes: byte_size(json), cap: @max_tool_audit_detail_bytes}
+
+      _ ->
+        %{truncated: true, cap: @max_tool_audit_detail_bytes}
+    end
+  end
+
+  defp bound_detail(detail), do: detail
 
   # Post-dispatch loop check — reads this month's audit jsonl for
   # consecutive failures on the same task_path and, on threshold,

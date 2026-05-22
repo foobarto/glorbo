@@ -29,9 +29,9 @@ defmodule Glorbo.Company.TaskSchedulerTest do
 
     front =
       if schedule == "" do
-        "title: #{id}\nassigned_to: #{assigned}\nstatus: todo\n"
+        "kind: task/v1\ntitle: #{id}\nassigned_to: #{assigned}\nstatus: todo\n"
       else
-        "title: #{id}\nassigned_to: #{assigned}\nstatus: todo\nschedule: #{inspect(schedule)}\n"
+        "kind: task/v1\ntitle: #{id}\nassigned_to: #{assigned}\nstatus: todo\nschedule: #{inspect(schedule)}\n"
       end
 
     File.write!(Path.join(tasks_dir, "#{id}.md"), """
@@ -203,6 +203,7 @@ defmodule Glorbo.Company.TaskSchedulerTest do
 
     File.write!(Path.join(tasks_dir, "#{id}.md"), """
     ---
+    kind: task/v1
     title: #{id}
     assigned_to: #{assigned}
     status: todo
@@ -217,6 +218,7 @@ defmodule Glorbo.Company.TaskSchedulerTest do
   defp write_dep_task(tasks_dir, id, status) do
     File.write!(Path.join(tasks_dir, "#{id}.md"), """
     ---
+    kind: task/v1
     title: #{id}
     status: #{status}
     ---
@@ -290,6 +292,7 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     # Agent tampers: rewrite the task file dropping depends_on entirely.
     File.write!(Path.join(tasks_dir, "foo-tamper.md"), """
     ---
+    kind: task/v1
     title: foo-tamper
     assigned_to: ceo
     status: todo
@@ -322,6 +325,7 @@ defmodule Glorbo.Company.TaskSchedulerTest do
     # Coerce depends_on to a list of empties (coerce_depends_on → []).
     File.write!(Path.join(tasks_dir, "foo-blank.md"), """
     ---
+    kind: task/v1
     title: foo-blank
     assigned_to: ceo
     status: todo
@@ -536,6 +540,87 @@ defmodule Glorbo.Company.TaskSchedulerTest do
        %{base: base, company: company} do
     sched = start_sched(base, company)
     assert nil == TaskScheduler.next_fire_at(sched, "never-heard-of-it")
+  end
+
+  # C-078: a `*.comments.md` task-comment file carrying a non-empty
+  # `schedule:` must NOT be armed as a scheduled task.
+  test "C-078: a .comments.md file with a schedule is not armed",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    File.write!(Path.join(tasks_dir, "foo-1.comments.md"), """
+    ---
+    kind: task-comments/v1
+    task_id: foo-1
+    schedule: "0 * * * *"
+    assigned_to: ceo
+    ---
+
+    sneaky comment posing as a scheduled task
+    """)
+
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+
+    refute_receive {:armed, {:fire, _}, _}, 50
+    refute_receive {:inbox_write, _, _, _}, 50
+  end
+
+  # C-078: any task `*.md` whose `kind` is not `task/v1` must be skipped
+  # even with a non-empty schedule (a comments file not named .comments.md).
+  test "C-078: a non-task/v1 kind with a schedule is not armed",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    File.write!(Path.join(tasks_dir, "foo-disguised.md"), """
+    ---
+    kind: task-comments/v1
+    task_id: foo-1
+    schedule: "0 * * * *"
+    assigned_to: ceo
+    ---
+
+    body
+    """)
+
+    sched = start_sched(base, company)
+    :ok = TaskScheduler.scan(sched)
+
+    refute_receive {:armed, {:fire, "foo-disguised"}, _}, 50
+    refute_receive {:inbox_write, _, _, _}, 50
+  end
+
+  # C-046 / C-047: the mtime cache can preserve a stale parsed cron. When
+  # the (stale) timer fires, the fire path must re-parse the CURRENT
+  # schedule and re-arm from it — never re-use the cron parsed at arm time.
+  test "C-046/C-047: fire re-parses the current schedule, not the armed expr",
+       %{base: base, company: company, tasks_dir: tasks_dir} do
+    write_task(tasks_dir, "foo-stale", schedule: "* * * * *")
+    sched = start_sched(base, company, clock: ~U[2026-04-21 10:00:30Z])
+    :ok = TaskScheduler.scan(sched)
+    assert_receive {:armed, {:fire, "foo-stale"}, delay_armed}
+    assert delay_armed <= 31_000
+
+    # Drain any further every-minute arms from boot/explicit scans so the
+    # only {:armed} left after the fire is the re-arm under test.
+    flush_armed = fn flush ->
+      receive do
+        {:armed, {:fire, "foo-stale"}, _} -> flush.(flush)
+      after
+        50 -> :ok
+      end
+    end
+
+    flush_armed.(flush_armed)
+
+    # Agent edits the schedule to once-a-year while the stale timer is
+    # still armed. A correct re-parse re-arms from the NEW far-future cron.
+    write_task(tasks_dir, "foo-stale", schedule: "0 0 1 1 *")
+
+    send(sched, {:fire, "foo-stale"})
+
+    assert_receive {:inbox_write, "ceo", _filename, _body}
+    assert_receive {:armed, {:fire, "foo-stale"}, delay_rearm}
+
+    # New "0 0 1 1 *" from 2026-04-21 → next Jan 1 is far out. A stale
+    # every-minute re-arm would be <= 61s.
+    assert delay_rearm > 61_000
   end
 
   test "next_fire_at/2 tolerates a stopped server",

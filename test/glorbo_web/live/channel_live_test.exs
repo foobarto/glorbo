@@ -306,4 +306,62 @@ defmodule GlorboWeb.ChannelLiveTest do
       refute html =~ "archived segment"
     end
   end
+
+  # C-089: channel + archive .md files are agent-influenced and can
+  # grow without bound. Opening/viewing a channel must do bounded
+  # work — tail-read the message file, cap rendered messages, and cap
+  # the number of listed archive segments.
+  describe "DoS bounds (C-089)" do
+    test "tail-reads a huge channel file rather than rendering all of it",
+         %{conn: conn, base: base} do
+      path = Path.join([base, "companies", "acme", "channels", "general.md"])
+
+      # ~2 MiB of old messages followed by a recent one. Only the
+      # tail (256 KiB) should be parsed/rendered, so the very first
+      # message must NOT appear.
+      old =
+        for i <- 1..20_000 do
+          "## 2026-01-01T00:00:00Z | director\nOLDMSG-#{i} #{String.duplicate("x", 80)}\n"
+        end
+        |> Enum.join("\n")
+
+      File.write!(path, old <> "\n## 2026-04-16T10:00:00Z | director\nFRESH-TAIL-MSG\n")
+
+      {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+      assert html =~ "FRESH-TAIL-MSG"
+      refute html =~ "OLDMSG-1 "
+    end
+
+    test "caps the number of listed archive segments", %{conn: conn, base: base} do
+      archive_dir = Path.join([base, "companies/acme/channels/archive/general"])
+      File.mkdir_p!(archive_dir)
+
+      # 60 segments; only the newest 50 should render rows.
+      for i <- 1..60 do
+        name = "2026-04-#{String.pad_leading(Integer.to_string(i), 2, "0")}-10-00-00Z.md"
+        File.write!(Path.join(archive_dir, name), "# seg #{i}\n")
+      end
+
+      {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+      rows = html |> String.split("phx-value-name=") |> length() |> Kernel.-(1)
+      assert rows <= 50
+    end
+
+    test "refuses a channel.md symlink without following it", %{conn: conn, base: base} do
+      secret =
+        Path.join(System.tmp_dir!(), "channel-secret-#{System.unique_integer([:positive])}")
+
+      File.write!(secret, "TOPSECRET-CHANNEL-LEAK")
+      on_exit(fn -> File.rm(secret) end)
+
+      path = Path.join([base, "companies", "acme", "channels", "random.md"])
+      File.rm_rf!(path)
+      File.ln_s!(secret, path)
+
+      {:ok, _view, html} = live(conn, "/companies/acme/channels/random")
+      refute html =~ "TOPSECRET-CHANNEL-LEAK"
+    end
+  end
 end

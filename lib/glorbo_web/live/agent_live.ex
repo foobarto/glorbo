@@ -1844,11 +1844,13 @@ defmodule GlorboWeb.AgentLive do
     # symlink that points at a host file (e.g. `~/.glorbo/config.md`)
     # and wait for a Director to open the agent detail page, at which
     # point File.read follows the link and surfaces host content in
-    # the preview. Reject non-regular files at the outer seam.
-    with {:ok, %{type: :regular}} <- File.lstat(path),
-         {:ok, content} <- File.read(path) do
-      do_io_card(content, path)
-    else
+    # the preview. `read_bounded/2` rejects any non-regular shape
+    # (symlink/device/dir) AND size-caps before reading — closing the
+    # B-021 unbounded-read prong (a planted multi-GB *regular* .md
+    # file would otherwise OOM the dashboard BEAM heap). 1 MiB matches
+    # the task/project dashboard readers; previews never need more.
+    case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 1_048_576) do
+      {:ok, content} -> do_io_card(content, path)
       _ -> false
     end
   end

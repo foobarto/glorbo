@@ -834,6 +834,73 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert row.completion_tokens == 0
       assert row.cost_usd_cents == 0
     end
+
+    # C-053: the production writer (Company.AuditLog.append/2) nests
+    # token/cost under `detail`, NOT at the JSON top level. The replay
+    # must read from `detail` or it sums zeros and the wipe-then-replay
+    # rebuild silently resets current-month spend → budget hard-stops
+    # undercounted after reindex/restore.
+    test "C-053: sums token/cost from the production nested `detail` shape" do
+      base = TmpGlorboHome.setup()
+      seed_acme_budget(base)
+
+      # Exact on-disk shape AuditLog.append/2 produces: core fields at
+      # top level, everything else under `detail`.
+      jsonl =
+        ~s|{"kind":"audit-event/v1","ts":"2026-04-15T10:00:00Z","actor":"ceo","action":"budget.usage","target":null,"detail":{"company":"acme","agent":"ceo","prompt_tokens":120,"completion_tokens":40,"cost_usd_cents":7,"model":"qwen3:8b"}}\n| <>
+          ~s|{"kind":"audit-event/v1","ts":"2026-04-20T10:00:00Z","actor":"ceo","action":"budget.usage","target":null,"detail":{"company":"acme","agent":"ceo","prompt_tokens":80,"completion_tokens":10,"cost_usd_cents":3}}\n|
+
+      _ = write!(base, "companies/acme/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Budget)
+      assert row.agent_slug == "ceo"
+      assert row.prompt_tokens == 200
+      assert row.completion_tokens == 50
+      # The bug zeroed this; with the detail-aware read it must sum.
+      assert row.cost_usd_cents == 10
+    end
+
+    # C-054: agent/company slugs legitimately allow underscores
+    # (`[a-z][a-z0-9_-]{0,63}`). The reindex replay previously used the
+    # hyphen-only Actions slug rule and silently dropped underscore
+    # slugs from the rebuild, vanishing their spend after reindex.
+    test "C-054: underscore agent + company slugs survive the replay" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme_inc/company.md", "---\nname: acme_inc\n---\n")
+
+      jsonl =
+        ~s|{"kind":"audit-event/v1","ts":"2026-04-15T10:00:00Z","actor":"data_bot","action":"budget.usage","target":null,"detail":{"company":"acme_inc","agent":"data_bot","prompt_tokens":150,"completion_tokens":50,"cost_usd_cents":9}}\n|
+
+      _ = write!(base, "companies/acme_inc/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{budgets: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Budget)
+      assert row.company_slug == "acme_inc"
+      assert row.agent_slug == "data_bot"
+      assert row.cost_usd_cents == 9
+    end
+
+    # C-053 + C-054 together on the approval replay: underscore agent,
+    # production nested `detail`, resolves to an approval row.
+    test "C-053/C-054: approval replay reads nested detail for underscore agent" do
+      base = TmpGlorboHome.setup()
+      _ = write!(base, "companies/acme_inc/company.md", "---\nname: acme_inc\n---\n")
+
+      jsonl =
+        ~s|{"kind":"audit-event/v1","ts":"2026-04-26T10:00:00Z","actor":"data_bot","action":"approval.requested","target":"projects/x/tasks/x-01.md","detail":{"company":"acme_inc","agent":"data_bot","task_id":"x-01"}}\n|
+
+      _ = write!(base, "companies/acme_inc/audit/2026-04.jsonl", jsonl)
+
+      assert {:ok, %{tasks_approval_state: 1}} = Reindex.run(base: base)
+
+      [row] = Repo.all(Glorbo.TasksApprovalState)
+      assert row.company_slug == "acme_inc"
+      assert row.agent_slug == "data_bot"
+      assert row.status == "awaiting"
+    end
   end
 
   describe "mark_dirty/2 + process_path/2 (Plan 04 B4)" do

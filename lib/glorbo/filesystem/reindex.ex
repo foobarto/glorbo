@@ -53,7 +53,6 @@ defmodule Glorbo.Filesystem.Reindex do
   import Ecto.Query
 
   alias Glorbo.{Agent, AuditEvent, Budget, Company, Repo, TasksApprovalState}
-  alias Glorbo.Actions.Support, as: ActionsSupport
   alias Glorbo.Budget.Ledger
   alias Glorbo.Filesystem.{AgentWritableFile, Frontmatter, ReindexState}
   alias Glorbo.Providers.ModelCatalog
@@ -455,10 +454,24 @@ defmodule Glorbo.Filesystem.Reindex do
   # canonical. Returns the dirname if valid-slug-shaped, else nil so
   # the caller skips the row.
   defp dirname_company_slug(dirname) do
-    if is_binary(dirname) and ActionsSupport.valid_slug?(dirname),
+    if is_binary(dirname) and valid_replay_slug?(dirname),
       do: dirname,
       else: nil
   end
+
+  # C-054: the slug rule used by the reindex replay paths must match the
+  # slug rule the agent/company file specs ENFORCE on disk
+  # (`Glorbo.Agent.Parser.@slug_regex` / `Company.Md.@slug_regex` ==
+  # `[a-z][a-z0-9_-]{0,63}`). The Actions carve-out's
+  # `ActionsSupport.valid_slug?/1` rejects underscores, so a legitimately
+  # creatable agent/company such as `data_bot` / `acme_inc` was silently
+  # dropped from the wipe-and-replay rebuild — zeroing its current-month
+  # spend (budget undercount) and losing its approval state. Validate
+  # against the canonical on-disk shape instead so every slug the system
+  # will accept on disk survives the replay.
+  @replay_slug_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
+  defp valid_replay_slug?(s) when is_binary(s), do: Regex.match?(@replay_slug_re, s)
+  defp valid_replay_slug?(_), do: false
 
   # Wave 33 (post-v0.12.3): for Phase 1 (`audit_events`) the dirname
   # is also canonical, with `"_system"` allowed (system audit lives at
@@ -469,7 +482,7 @@ defmodule Glorbo.Filesystem.Reindex do
   defp audit_company_slug(dirname) do
     cond do
       dirname == "_system" -> dirname
-      is_binary(dirname) and ActionsSupport.valid_slug?(dirname) -> dirname
+      is_binary(dirname) and valid_replay_slug?(dirname) -> dirname
       true -> nil
     end
   end
@@ -479,7 +492,11 @@ defmodule Glorbo.Filesystem.Reindex do
   # nil for any non-slug input so callers can skip the row instead of
   # writing garbage.
   defp safe_agent_slug(value) do
-    if is_binary(value) and ActionsSupport.valid_slug?(value), do: value
+    # C-054: validate against the canonical on-disk slug shape (which
+    # permits underscores) rather than the Actions carve-out's
+    # hyphen-only `valid_slug?/1`, so underscore agents like `data_bot`
+    # are not dropped from the budget / approval replay.
+    if is_binary(value) and valid_replay_slug?(value), do: value
   end
 
   # Shared GEP-34 walker: list `companies/`, filter to dirs, fold each
@@ -709,8 +726,9 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp apply_approval_event("approval.requested", entry, company, acc) do
+    detail = approval_detail(entry)
     task_path = entry["target"]
-    agent = safe_agent_slug(entry["agent"] || entry["actor"])
+    agent = safe_agent_slug(entry["agent"] || detail["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
     co = dirname_company_slug(company)
 
@@ -730,11 +748,26 @@ defmodule Glorbo.Filesystem.Reindex do
   end
 
   defp apply_approval_event("approval.granted", entry, company, acc) do
-    update_resolution(entry, company, acc, "approved", entry["approved_at"], nil)
+    detail = approval_detail(entry)
+    approved_at = entry["approved_at"] || detail["approved_at"]
+    update_resolution(entry, company, acc, "approved", approved_at, nil)
   end
 
   defp apply_approval_event("approval.denied", entry, company, acc) do
-    update_resolution(entry, company, acc, "denied", entry["denied_at"], entry["denial_reason"])
+    detail = approval_detail(entry)
+    denied_at = entry["denied_at"] || detail["denied_at"]
+    reason = entry["denial_reason"] || detail["denial_reason"]
+    update_resolution(entry, company, acc, "denied", denied_at, reason)
+  end
+
+  # C-053: the production audit writer nests non-core payload keys
+  # (`agent`, `approved_at`, `denied_at`, `denial_reason`) under
+  # `detail`. Resolve them detail-first with a top-level fallback so the
+  # approval-state replay reads the real on-disk shape, not just legacy
+  # flat lines. (`target` / `actor` stay top-level — the writer promotes
+  # those.)
+  defp approval_detail(entry) do
+    if is_map(entry["detail"]), do: entry["detail"], else: %{}
   end
 
   # Fold a resolution event over the existing fold-state. If we never saw the
@@ -752,7 +785,8 @@ defmodule Glorbo.Filesystem.Reindex do
 
       case Map.get(acc, {co, task_path}) do
         nil ->
-          agent = safe_agent_slug(entry["agent"])
+          detail = approval_detail(entry)
+          agent = safe_agent_slug(entry["agent"] || detail["agent"])
 
           if agent != nil do
             Map.put(acc, {co, task_path}, %{
@@ -862,11 +896,23 @@ defmodule Glorbo.Filesystem.Reindex do
     # company's audit dir create spoofed budget rows in another
     # company's projection.
     co = dirname_company_slug(fallback_company)
-    agent = safe_agent_slug(entry["agent"] || entry["actor"])
+
+    # C-053: the production writer (`Company.AuditLog.append/2`) keeps
+    # only the core fields (kind/ts/actor/action/target) at the JSON top
+    # level and nests every other payload key — including the budget
+    # token/cost fields emitted by `BudgetTracker` — under `detail`.
+    # Reading `entry["prompt_tokens"]` etc. at the top level therefore
+    # saw `nil` (coerced to 0), so the wipe-then-replay rebuild zeroed
+    # current-month spend → budget hard-stops undercounted after
+    # reindex/restore. Read from `detail` with a top-level fallback for
+    # any legacy/flat lines. `agent` / `actor` stay top-level (the writer
+    # promotes them), so resolve those before falling into `detail`.
+    detail = if is_map(entry["detail"]), do: entry["detail"], else: %{}
+    agent = safe_agent_slug(entry["agent"] || detail["agent"] || entry["actor"])
     ts = parse_audit_ts(entry["ts"])
-    prompt = non_neg_int(entry["prompt_tokens"])
-    completion = non_neg_int(entry["completion_tokens"])
-    cost = non_neg_int(entry["cost_usd_cents"])
+    prompt = non_neg_int(detail["prompt_tokens"] || entry["prompt_tokens"])
+    completion = non_neg_int(detail["completion_tokens"] || entry["completion_tokens"])
+    cost = non_neg_int(detail["cost_usd_cents"] || entry["cost_usd_cents"])
 
     if co != nil and agent != nil and ts != nil do
       year_month = Ledger.month_bucket(ts)
