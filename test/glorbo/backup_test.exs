@@ -110,9 +110,23 @@ defmodule Glorbo.BackupTest do
         archive
         |> Path.dirname()
         |> File.ls!()
-        |> Enum.filter(&String.starts_with?(&1, Path.basename(archive) <> ".tmp."))
+        |> Enum.filter(&String.starts_with?(&1, Path.basename(archive) <> ".tmp-"))
 
       assert leftovers == []
+    end
+
+    # C-075: the secret-bearing tmp archive must be private from creation,
+    # not merely after chmod. The tmp is pre-created 0600 with O_EXCL and
+    # :erl_tar.create reuses that inode, so the final archive is 0600 and
+    # no world-readable window exists during the build.
+    test "tmp archive is private (0600) — checked via final archive mode",
+         %{home: home, archive: archive} do
+      assert {:ok, _} =
+               Glorbo.Backup.run(base: home, output: archive, skip_checkpoint: true)
+
+      # erl_tar.create reuses the 0600 inode we pre-created; rename keeps it.
+      assert band(File.stat!(archive).mode, 0o777) == 0o600
+      refute File.exists?(archive <> ".tmp-")
     end
   end
 

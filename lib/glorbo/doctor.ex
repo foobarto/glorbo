@@ -352,7 +352,11 @@ defmodule Glorbo.Doctor do
       {:ok, %File.Stat{type: :regular, mode: mode}} ->
         perms = Bitwise.band(mode, 0o777)
 
-        if perms > 0o600 do
+        # Any group/other bit set means the file is accessible beyond the
+        # owner. A numeric `perms > 0o600` test misses low-but-readable
+        # modes like 0o044 / 0o004 / 0o444 (group/other read with no owner
+        # write), so check the group+other mask directly. (C-074.)
+        if Bitwise.band(perms, 0o077) != 0 do
           ["#{label}=0#{Integer.to_string(perms, 8)}"]
         else
           []

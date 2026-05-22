@@ -436,6 +436,78 @@ defmodule Glorbo.DoctorTest do
       assert check.detail =~ "logs/glorbo.log=0664"
       assert check.detail =~ "credentials/openai.toml=0644"
     end
+
+    # C-074: modes numerically < 0o600 but still group/other-readable
+    # (0o044, 0o004, 0o444) previously slipped past the `perms > 0o600`
+    # test, so doctor passed and --fix never ran. The check must flag any
+    # group/other bit set.
+    test "private_files warns on low-but-readable modes (< 0o600 numeric)" do
+      tmp =
+        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      base = Path.join(tmp, ".glorbo")
+      File.mkdir_p!(Path.join(base, "logs"))
+      File.write!(Path.join(base, "config.md"), "")
+      File.write!(Path.join(base, "logs/glorbo.log"), "")
+      # 0o044: group+other read, no owner bits — numerically 36 < 384.
+      File.chmod!(Path.join(base, "config.md"), 0o044)
+      # 0o004: other read only — numerically 4.
+      File.chmod!(Path.join(base, "logs/glorbo.log"), 0o004)
+
+      deps =
+        TestHelpers.deps(
+          home_fun: fn -> tmp end,
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "private_files"))
+
+      refute check.pass, "0o044/0o004 are group/other-readable and must fail"
+      assert check.detail =~ "config.md=044"
+      assert check.detail =~ "logs/glorbo.log=04"
+    end
+
+    # C-074 regression guard: a genuinely owner-only mode (0o600, 0o400)
+    # must still pass — the new mask test must not over-report.
+    test "private_files passes for owner-only modes (0o600, 0o400)" do
+      tmp =
+        Path.join(System.tmp_dir!(), "glorbo-doctor-test-#{System.unique_integer([:positive])}")
+
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      base = Path.join(tmp, ".glorbo")
+      File.mkdir_p!(Path.join(base, "logs"))
+      File.write!(Path.join(base, "config.md"), "")
+      File.write!(Path.join(base, "logs/glorbo.log"), "")
+      File.chmod!(Path.join(base, "config.md"), 0o600)
+      File.chmod!(Path.join(base, "logs/glorbo.log"), 0o400)
+
+      deps =
+        TestHelpers.deps(
+          home_fun: fn -> tmp end,
+          cmd_fun: fn cmd, _args ->
+            case cmd do
+              "uname" -> {"6.17.0\n", 0}
+              "df" -> {"Avail\n2147483648\n", 0}
+              _ -> {"", 1}
+            end
+          end,
+          which_fun: fn _ -> "/bin/true" end,
+          otp_release_fun: fn -> "28" end
+        )
+
+      check = Doctor.run_checks(deps) |> Enum.find(&(&1.name == "private_files"))
+
+      assert check.pass
+    end
   end
 
   describe "Phase 2: check_tar_zstd" do

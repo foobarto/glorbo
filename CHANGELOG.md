@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — secret-file permission hardening (codex B-013/C-074/C-075)
+
+Three places could expose secret-bearing files (`config.md` carries
+`secret_key_base`/`dashboard_token`/`erl_cookie`; backups archive them):
+- `glorbo fmt --write` rewrote `config.md` through the generic FileSpec formatter,
+  which created its temp with umask perms (0644) and renamed over the 0600 file —
+  relaxing the secrets file to world-readable. The formatter now preserves the
+  original file's mode.
+- The backup archive temp was created 0644 and only chmodded after secret-bearing
+  content was written; it is now pre-created 0600 with `O_EXCL` (also defeating a
+  pre-planted-symlink swap).
+- `glorbo doctor`'s private-file check used `perms > 0o600`, missing group/other-
+  readable low modes (e.g. 0o044); it now flags any file with group/other bits set.
+
 ### Security — Homebrew-tap publish workflow no longer shell-injectable via tag name (codex B-009/C-035)
 
 The `publish-homebrew-tap` CI job interpolated `${{ steps.version.outputs.version }}`

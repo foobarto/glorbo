@@ -182,25 +182,64 @@ defmodule Glorbo.Backup do
     # (e.g. backup destined to /tmp on a shared box) could pre-plant
     # a symlink at the next-integer name and have :erl_tar.create
     # follow it. 8-byte cryto-random suffix makes the path
-    # unguessable; chmod 0o600 is set before rename so the final file
-    # is private from the moment it appears at `output`.
+    # unguessable.
+    #
+    # C-075: pre-create the tmp 0600 with O_EXCL *before* :erl_tar.create
+    # writes the (secret-bearing) archive into it. open(2) only applies a
+    # mode on creation, so :erl_tar.create reuses the existing 0600 inode
+    # rather than creating a fresh umask-default (0644) file — closing the
+    # world-readable window that previously existed for the whole archive
+    # build. O_EXCL also makes the create the symlink/pre-plant guard.
     rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     tmp = "#{output}.tmp-#{rand}"
 
-    case :erl_tar.create(String.to_charlist(tmp), files, [:compressed, :write]) do
-      :ok ->
-        with :ok <- File.chmod(tmp, 0o600),
-             :ok <- File.rename(tmp, output) do
-          :ok
-        else
-          {:error, reason} ->
-            _ = File.rm(tmp)
-            {:error, {:archive_finalize_failed, reason}}
-        end
+    with :ok <- precreate_private(tmp),
+         :ok <- create_archive(tmp, files),
+         :ok <- File.chmod(tmp, 0o600),
+         :ok <- File.rename(tmp, output) do
+      :ok
+    else
+      {:error, {:tar_failed, _}} = err ->
+        _ = File.rm(tmp)
+        err
+
+      {:error, {:precreate_failed, _}} = err ->
+        err
 
       {:error, reason} ->
         _ = File.rm(tmp)
-        {:error, {:tar_failed, reason}}
+        {:error, {:archive_finalize_failed, reason}}
+    end
+  end
+
+  defp precreate_private(tmp) do
+    case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        :file.close(fd)
+
+        case File.chmod(tmp, 0o600) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            # We created the tmp, so we own it and must clean it up; a
+            # bare open (no O_EXCL collision) means this is not a planted
+            # symlink.
+            _ = File.rm(tmp)
+            {:error, {:precreate_failed, reason}}
+        end
+
+      {:error, reason} ->
+        # O_EXCL collision (or other open failure): do NOT rm — the path
+        # may be an attacker-planted symlink we must not follow.
+        {:error, {:precreate_failed, reason}}
+    end
+  end
+
+  defp create_archive(tmp, files) do
+    case :erl_tar.create(String.to_charlist(tmp), files, [:compressed, :write]) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:tar_failed, reason}}
     end
   end
 

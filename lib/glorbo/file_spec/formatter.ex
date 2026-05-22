@@ -415,6 +415,20 @@ defmodule Glorbo.FileSpec.Formatter do
     rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     tmp = "#{path}.tmp-#{rand}"
 
+    # B-013: `fmt --write` reformats every classified markdown under the
+    # workspace, including the root `config.md` that carries
+    # `secret_key_base` / `dashboard_token` / `erl_cookie` at mode 0600.
+    # The fresh exclusive temp is created at the process umask (typically
+    # 0644); renaming it over a 0600 file silently relaxes the secrets
+    # file to world-readable. Preserve the original file's mode (chmod the
+    # temp to match before rename); default to 0600 for new files so a
+    # secret-bearing file is never created world-readable.
+    mode =
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o777)
+        _ -> 0o600
+      end
+
     case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
       {:ok, fd} ->
         result = :file.write(fd, content)
@@ -422,10 +436,10 @@ defmodule Glorbo.FileSpec.Formatter do
 
         case result do
           :ok ->
-            case File.rename(tmp, path) do
-              :ok ->
-                :ok
-
+            with :ok <- File.chmod(tmp, mode),
+                 :ok <- File.rename(tmp, path) do
+              :ok
+            else
               {:error, _} = err ->
                 _ = File.rm(tmp)
                 err

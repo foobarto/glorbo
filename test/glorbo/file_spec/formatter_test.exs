@@ -469,6 +469,50 @@ defmodule Glorbo.FileSpec.FormatterTest do
       assert tmps == []
     end
 
+    # B-013: `fmt --write` must not relax a 0600 secrets file (config.md
+    # carries secret_key_base / dashboard_token / erl_cookie). The atomic
+    # writer must preserve the original file mode rather than create the
+    # replacement at the process umask (0644).
+    test "write_path preserves a 0600 file's mode", %{base: base} do
+      # Keys out of canonical order so the formatter reports :changed and
+      # actually rewrites the file (exercising atomic_write).
+      path =
+        seed(base, "config.md", """
+        ---
+        secret_key_base: deadbeef
+        kind: config/v1
+        ---
+        """)
+
+      File.chmod!(path, 0o600)
+
+      %{changed: changed} = Formatter.write_path(base)
+      assert path in changed, "fixture must be reformatted to exercise the writer"
+
+      perms = Bitwise.band(File.lstat!(path).mode, 0o777)
+      assert perms == 0o600, "expected 0600 after fmt, got 0#{Integer.to_string(perms, 8)}"
+    end
+
+    test "write_path preserves a non-secret file's existing 0644 mode", %{base: base} do
+      path =
+        seed(base, "companies/acme/company.md", """
+        ---
+        name: Acme
+        slug: acme
+        kind: company/v1
+        ---
+        Body.
+        """)
+
+      File.chmod!(path, 0o644)
+
+      %{changed: changed} = Formatter.write_path(base)
+      assert path in changed
+
+      perms = Bitwise.band(File.lstat!(path).mode, 0o777)
+      assert perms == 0o644
+    end
+
     test "round-trip: check → write → check is a no-op second time", %{base: base} do
       seed(base, "companies/acme/company.md", """
       ---
