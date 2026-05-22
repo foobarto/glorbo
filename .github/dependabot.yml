@@ -21,6 +21,8 @@ updates:
       # MAJOR bumps are intentionally NOT grouped — they land as
       # individual PRs so each gets scrutiny (breaking-change risk).
       hex-minor-patch:
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
