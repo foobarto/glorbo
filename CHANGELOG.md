@@ -10,6 +10,15 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — Homebrew-tap publish workflow no longer shell-injectable via tag name (codex B-009/C-035)
+
+The `publish-homebrew-tap` CI job interpolated `${{ steps.version.outputs.version }}`
+(derived from the pushed git tag `GITHUB_REF_NAME`) raw and unquoted into `run:`
+shell, so a tag like `v1.2.3||id` (which matches the `v*.*.*` trigger) executed
+attacker commands on the runner holding `HOMEBREW_TAP_TOKEN`. The job now validates
+the version against a strict semver regex (failing the build otherwise) and passes it
+through a quoted `env:` var instead of template-interpolating it into the shell.
+
 ### Security — task company-boundary check now collapses `../` traversal (codex D-186/E-201)
 
 `TaskDefinition.parse_file/2`'s company-containment check was a lexical

@@ -396,18 +396,30 @@ jobs:
         run: |
           git clone "https://x-access-token:${GH_TOKEN}@github.com/foobarto/homebrew-tap.git" ../homebrew-tap
 
-      - name: Resolve version from tag
+      - name: Resolve and validate version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Strict semver gate: any tag carrying shell metacharacters fails
+          # the regex and aborts the job before the version reaches a shell.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.]+)?$'; then
+            echo "Refusing non-semver tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Regenerate formula against the just-published release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mix glorbo.release_formula --write \
             --tap-path ../homebrew-tap \
-            --version ${{ steps.version.outputs.version }}
+            --version "$VERSION"
 
       - name: Commit + push tap if the formula changed
         working-directory: ../homebrew-tap
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "glorbo release-bot"
           git config user.email "releases@glorbo.foobarto"
@@ -418,5 +430,5 @@ jobs:
           fi
 
           git add Formula/glorbo.rb
-          git commit -m "glorbo v${{ steps.version.outputs.version }}"
+          git commit -m "glorbo v${VERSION}"
           git push origin HEAD:main
