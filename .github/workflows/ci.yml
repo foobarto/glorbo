@@ -104,8 +104,25 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
+      - name: Sobelow (SAST)
+        # Reads .sobelow-conf (exit: true + documented ignore list).
+        # Fails the build on any non-ignored finding. See .sobelow-conf
+        # for the per-check false-positive rationale.
+        run: mix sobelow --exit
+
       - name: Hex audit (dependency retirements)
         run: mix hex.audit
+
+      - name: Dependency audit (mix_audit / advisories)
+        # GHSA-rhv4-8758-jx7v (decimal unbounded-exponent DoS) is ignored:
+        # it is first patched in decimal 3.0.0, but our dependency tree
+        # (ecto family) constrains decimal to `~> 2.0`, so 3.0.0 is not
+        # installable until those upstreams widen their constraint. The
+        # advisory is MODERATE and requires parsing attacker-controlled
+        # decimal strings with huge exponents — Glorbo does not parse
+        # untrusted decimals (budgets are integer cents). Re-evaluate when
+        # the ecto family allows decimal 3.x.
+        run: mix deps.audit --ignore-advisory-ids "GHSA-rhv4-8758-jx7v"
 
       - name: Install Zig 0.15.2
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
@@ -309,8 +326,9 @@ jobs:
     needs: [build-and-test, build-macos-cross]
     runs-on: ubuntu-24.04
     permissions:
-      contents: write   # create the GitHub Release
-      id-token: write   # Sigstore OIDC token for keyless signing
+      contents: write      # create the GitHub Release
+      id-token: write      # Sigstore OIDC token for keyless signing
+      attestations: write  # SLSA build provenance (attest-build-provenance)
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -344,6 +362,23 @@ jobs:
           cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
           cosign sign-blob --yes --bundle glorbo-darwin-x86_64.sig glorbo-darwin-x86_64
           cosign sign-blob --yes --bundle glorbo-darwin-arm64.sig glorbo-darwin-arm64
+
+      # SLSA build provenance — generates a signed attestation binding
+      # each released artifact to this workflow run (the builder). The
+      # `subject-path` glob covers the four binaries + SHA256SUMS; the
+      # signature bundles (.sig) are covered by Cosign above and do not
+      # need their own provenance. Complements Cosign sign-blob: Cosign
+      # attests "these bytes were signed by this identity", provenance
+      # attests "these bytes were built by this workflow from this source".
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            artifacts/glorbo-linux-x86_64
+            artifacts/glorbo-linux-aarch64
+            artifacts/glorbo-darwin-x86_64
+            artifacts/glorbo-darwin-arm64
+            artifacts/SHA256SUMS
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2

@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — dependency CVE bumps + supply-chain hardening (OpenSSF)
+
+- Bumped vulnerable deps within existing constraints: **Phoenix 1.8.5→1.8.7**
+  (NDJSON long-poll memory DoS, GHSA-628h-q48j-jr6q), **Bandit 1.10.4→1.11.1**
+  (chunked-encoding DoS, WebSocket OOM, request smuggling — 7 advisories),
+  **Plug 1.19.1→1.19.2** (multipart header DoS, GHSA-468c-vq7p-gh64),
+  **decimal 2.3.0→2.4.1**. The remaining decimal advisory (GHSA-rhv4-8758-jx7v,
+  MODERATE) is first patched in 3.0.0, which the ecto-family constraint
+  (`~> 2.0`) blocks; it is ignored in CI with rationale (not reachable —
+  Glorbo parses no untrusted decimals).
+- Added CI security gates: **sobelow** (Phoenix SAST, `.sobelow-conf` with a
+  documented architecture-aware ignore list), **mix_audit** (hex advisory scan).
+- Added **OpenSSF Scorecard** workflow + README badge, **`.github/dependabot.yml`**
+  (weekly `mix` + `github-actions` updates), and **SLSA build-provenance
+  attestation** (`actions/attest-build-provenance`) on released binaries +
+  `SHA256SUMS`.
+
 ### Security — revise-feedback path, severity auto-flip, MCP actor provenance (codex B-008/C-062/C-077)
 
 - **B-008:** `Reviews.write_revise_feedback/5` joined the task's `assigned_to` value

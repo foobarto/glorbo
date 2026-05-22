@@ -74,6 +74,11 @@ defmodule Glorbo.MixProject do
       {:telemetry_poller, "~> 1.1"},
       {:burrito, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      # OpenSSF / supply-chain hardening — static security analysis (SAST)
+      # and dependency-advisory auditing. Dev/test only, never in the
+      # Burrito release (runtime: false keeps them out of the OTP manifest).
+      {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:file_system, "~> 1.0"},
       {:yaml_front_matter, "~> 1.0"},
       {:yaml_elixir, "~> 2.9"},

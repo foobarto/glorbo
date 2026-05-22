@@ -8,6 +8,10 @@
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
   <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.18.4-6E4A7E?logo=elixir&logoColor=white"></a>
   <a href="SECURITY.md"><img alt="Security Policy" src="https://img.shields.io/badge/security-policy-informational"></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/foobarto/glorbo"><img alt="OpenSSF Scorecard" src="https://api.securityscorecards.dev/projects/github.com/foobarto/glorbo/badge"></a>
+  <!-- OpenSSF Best Practices: placeholder until the project is registered at
+       https://www.bestpractices.dev/ — replace PROJECT_ID with the assigned id. -->
+  <a href="https://www.bestpractices.dev/projects/PROJECT_ID"><img alt="OpenSSF Best Practices" src="https://img.shields.io/badge/OpenSSF_Best_Practices-pending-lightgrey"></a>
 </p>
 
 # Glorbo
