@@ -157,6 +157,7 @@ defmodule Glorbo.Company.Router do
          {:ok, to} <- parse_to(msg.to),
          :ok <- reject_broadcast(to),
          :ok <- reject_agent_create(to, state),
+         :ok <- reject_unauthorized_dm(to, msg),
          required <- required_permission_for(to),
          :ok <- ACLMapper.check_action(msg.sender_permissions, required),
          :ok <- perform_routing(to, msg, state) do
@@ -240,6 +241,29 @@ defmodule Glorbo.Company.Router do
   end
 
   defp reject_agent_create(_, _), do: :ok
+
+  # Security (codex B-020, write vector): director DMs are stored as
+  # regular channels named `dm-director--<agent>.md`. Because
+  # `required_permission_for/1` maps a chat write to
+  # `{"chat", "write", <channel>}`, a broad `chat:write:*` grant would
+  # otherwise let any agent append to ANOTHER agent's director DM (and,
+  # via `maybe_add_dm_counterparty`, notify/wake that victim). Reserve the
+  # `dm-director--` prefix: an agent may only write its OWN DM thread
+  # (`dm-director--<sender>`); writes to any other agent's DM are refused
+  # regardless of the wildcard. The director writes DMs through the
+  # dashboard (not this Router path), so it is unaffected.
+  #
+  # NOTE: this closes the WRITE/spoof half of B-020. The READ half — a
+  # `chat:read:*` agent gets the whole `channels/` dir RO-mounted into its
+  # sandbox and can `cat` every DM — is a kernel-mount layout issue whose
+  # clean fix moves DMs to a per-agent tree (GEP / on-disk-layout change);
+  # left for operator review.
+  defp reject_unauthorized_dm({:chat, "dm-director--" <> owner}, %{sender: sender})
+       when owner != sender do
+    {:error, {:invalid_message, :reserved_dm_channel}}
+  end
+
+  defp reject_unauthorized_dm(_, _), do: :ok
 
   defp required_permission_for({:chat, channel}), do: {"chat", "write", channel}
   defp required_permission_for({:agent, slug}), do: {"agents", "message", slug}

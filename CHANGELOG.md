@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — reserve `dm-director--` channel writes to the DM owner (codex B-020, write vector)
+
+Director DMs are stored as regular channels (`channels/dm-director--<agent>.md`),
+and a chat write maps to the permission `{"chat","write",<channel>}`, so a broad
+`chat:write:*` grant let any agent append to **another** agent's director DM —
+and, via the mention router, notify/wake that victim. The Router now reserves the
+`dm-director--` prefix: an agent may only write its own `dm-director--<sender>`
+thread; writes to any other agent's DM are refused (`:reserved_dm_channel`)
+regardless of the wildcard. (The read vector — `chat:read:*` RO-mounts the whole
+`channels/` dir, exposing all DMs in-sandbox — is a channel-layout issue tracked
+separately for a GEP.)
+
 ### Security — budget enforcement wired into auto-booted agents (codex C-108)
 
 Auto-booted agents (the heartbeat- and inbox-driven production wake path)

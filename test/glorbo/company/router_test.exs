@@ -102,6 +102,44 @@ defmodule Glorbo.Company.RouterTest do
     assert_receive {:audit, %{action: "message.route"}}, 500
   end
 
+  # codex B-020 (write vector): director DMs are regular channels named
+  # dm-director--<agent>.md. A broad chat:write:* must NOT let an agent
+  # write ANOTHER agent's director DM — only its own dm-director--<self>.
+  test "B-020: chat:write:* cannot write another agent's director DM" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["engineer", "ceo"])
+    {name, _pid} = start_router!(base)
+
+    # engineer holds the broad wildcard but targets ceo's director DM.
+    msg =
+      build_msg(base, "engineer", "dm1", "chat:dm-director--ceo", [
+        {"chat", "write", "*"}
+      ])
+
+    assert {:error, {:invalid_message, :reserved_dm_channel}} = Router.route(name, msg)
+
+    refute File.exists?(
+             Path.join([base, "companies", @company, "channels", "dm-director--ceo.md"])
+           )
+  end
+
+  test "B-020: an agent may still write its OWN director DM" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["engineer", "ceo"])
+    {name, _pid} = start_router!(base)
+
+    msg =
+      build_msg(base, "engineer", "dm2", "chat:dm-director--engineer", [
+        {"chat", "write", "*"}
+      ])
+
+    assert :ok = Router.route(name, msg)
+
+    assert File.exists?(
+             Path.join([base, "companies", @company, "channels", "dm-director--engineer.md"])
+           )
+  end
+
   # ---------------------------------------------------------------------------
   # R2 — permission denied
   # ---------------------------------------------------------------------------
