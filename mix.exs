@@ -14,9 +14,11 @@ defmodule Glorbo.MixProject do
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       # Dialyzer (success-typing static analysis). PLTs live under
       # priv/plts/ (gitignored, cached in CI keyed on mix.lock + OTP/Elixir
-      # version). `:mix`/`:ex_unit` added so analysis covers Mix tasks +
-      # test support. Pre-existing/3rd-party noise is suppressed via
-      # .dialyzer_ignore.exs so CI fails only on NEW typing errors.
+      # version). `:mix`/`:ex_unit` are added to the PLT so analysis knows
+      # those modules' types (CI runs dialyzer in :dev, so test/support is
+      # not itself analyzed). CI is kept green NOT by `.dialyzer_ignore.exs`
+      # (intentionally empty) but by the COUNT-regression gate in the CI
+      # workflow — see docs/testing/dialyzer-baseline.md.
       dialyzer: [
         plt_local_path: "priv/plts",
         plt_core_path: "priv/plts",

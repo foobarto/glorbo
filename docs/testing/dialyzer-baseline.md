@@ -1,13 +1,14 @@
 # Dialyzer baseline + burn-down
 
-Glorbo adopted dialyxir at v0.22.x. The first analysis surfaced **163**
+Glorbo adopted dialyxir in Glorbo v0.22.x. The first analysis surfaced **163**
 success-typing warnings — none introduced by a single change, all
 pre-existing. Fixing all 163 at once is out of scope, so CI uses a
 **count-regression gate**: `mix dialyzer` runs in CI and the build fails
 only if the warning count **exceeds the baseline below**. This catches
-net-new type errors without a per-warning ignore file (dialyxir's `.exs`
-tuple matcher keys on dialyzer's absolute file path, which isn't portable
-across CI vs local checkouts).
+net-new type errors without maintaining per-warning ignore entries
+(dialyxir's `.exs` tuple matcher keys on dialyzer's absolute file path,
+which isn't portable across CI vs local checkouts; `.dialyzer_ignore.exs`
+is kept intentionally empty).
 
 ```
 DIALYZER_BASELINE = 163
