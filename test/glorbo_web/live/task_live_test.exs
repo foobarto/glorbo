@@ -141,6 +141,39 @@ defmodule GlorboWeb.TaskLiveTest do
     assert content =~ "priority: low"
   end
 
+  # C-094 — a task frontmatter edit is a state-changing dashboard
+  # mutation; it must leave an append-only audit record (crown jewel)
+  # so the editor can't be used as a silent mutation path.
+  test "save_task emits a task.edit audit entry",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    render_submit(view, "save_task", %{
+      "title" => "audited rename",
+      "status" => "in-progress",
+      "assigned_to" => "ceo",
+      "priority" => "low",
+      "severity" => ""
+    })
+
+    audit_dir = Path.join([base, "companies/acme/audit"])
+    month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{month}.jsonl")
+
+    entries =
+      audit_path
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.map(&Jason.decode!/1)
+
+    edit = Enum.find(entries, &(&1["action"] == "task.edit"))
+    assert edit, "expected a task.edit audit entry, got: #{inspect(entries)}"
+    assert edit["target"] == "projects/foo/tasks/foo-1.md"
+    assert edit["actor"] in ["director", "ceo"]
+    assert "status" in edit["detail"]["changed"]
+    assert "title" in edit["detail"]["changed"]
+  end
+
   # GEP-40 — `done_when:` is the agent-facing definition of done.
   # Before this surface, the field could be set on disk but never
   # reached/edited via the dashboard. Round-trip: render it in the

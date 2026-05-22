@@ -114,4 +114,69 @@ defmodule Glorbo.PathRequestGateTest do
                ])
     end
   end
+
+  describe "validate_subset/2 — B-014 confused-deputy path approval" do
+    # The sentinel stores requested paths as JSON-decoded string-keyed
+    # maps; the director-approved list is atom-keyed with atom modes.
+    test "granting exactly the requested paths is allowed" do
+      requested = [%{"path" => "/srv/data", "mode" => "write"}]
+      granted = [%{path: "/srv/data", mode: :write}]
+      assert :ok == PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "granting a subset of the requested paths is allowed" do
+      requested = [
+        %{"path" => "/srv/data", "mode" => "read"},
+        %{"path" => "/srv/logs", "mode" => "write"}
+      ]
+
+      granted = [%{path: "/srv/logs", mode: :write}]
+      assert :ok == PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "downgrading a requested :write to :read is allowed" do
+      requested = [%{"path" => "/srv/data", "mode" => "write"}]
+      granted = [%{path: "/srv/data", mode: :read}]
+      assert :ok == PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "a tampered path NOT in the request is rejected" do
+      requested = [%{"path" => "/srv/data", "mode" => "read"}]
+      granted = [%{path: "/home/operator/.ssh/id_ed25519", mode: :read}]
+
+      assert {:error, :granted_not_subset_of_request} ==
+               PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "smuggling an extra tampered path alongside a real one is rejected" do
+      requested = [%{"path" => "/srv/data", "mode" => "write"}]
+
+      granted = [
+        %{path: "/srv/data", mode: :write},
+        %{path: "/home/operator/.ssh", mode: :write}
+      ]
+
+      assert {:error, :granted_not_subset_of_request} ==
+               PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "escalating a requested :read to :write is rejected" do
+      requested = [%{"path" => "/srv/data", "mode" => "read"}]
+      granted = [%{path: "/srv/data", mode: :write}]
+
+      assert {:error, :granted_not_subset_of_request} ==
+               PathRequestGate.validate_subset(granted, requested)
+    end
+
+    test "empty or malformed requested list rejects any grant" do
+      assert {:error, :granted_not_subset_of_request} ==
+               PathRequestGate.validate_subset([%{path: "/srv/data", mode: :read}], [])
+
+      assert {:error, :granted_not_subset_of_request} ==
+               PathRequestGate.validate_subset(
+                 [%{path: "/srv/data", mode: :read}],
+                 [%{"junk" => true}]
+               )
+    end
+  end
 end

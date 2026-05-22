@@ -348,6 +348,38 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute content =~ "Ship it."
   end
 
+  # C-094 — editing a task through the Kanban shelf must leave an
+  # append-only audit record (crown jewel), same as TaskLive.
+  test "save_task emits a task.edit audit entry", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+
+    render_submit(view, "save_task", %{
+      "title" => "Audited kanban edit",
+      "status" => "in-progress",
+      "assigned_to" => "ceo",
+      "priority" => "high",
+      "requires_approval" => "director",
+      "body" => "x"
+    })
+
+    audit_dir = Path.join([base, "companies", "acme", "audit"])
+    month = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{month}.jsonl")
+
+    entries =
+      audit_path
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.map(&Jason.decode!/1)
+
+    edit = Enum.find(entries, &(&1["action"] == "task.edit"))
+    assert edit, "expected a task.edit audit entry, got: #{inspect(entries)}"
+    assert edit["target"] == "projects/website/tasks/t-01.md"
+    assert "requires_approval" in edit["detail"]["changed"]
+    assert "status" in edit["detail"]["changed"]
+  end
+
   test "close_task clears the detail panel", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 

@@ -181,8 +181,10 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp do_approve(agent_slug, task_id, granted_paths, state) do
-    with {:ok, _sentinel} <- find_pending_sentinel(agent_slug, task_id, state),
+    with {:ok, _sentinel, requested_paths} <-
+           find_pending_sentinel(agent_slug, task_id, state),
          :ok <- validate_granted_paths(granted_paths),
+         :ok <- validate_subset(granted_paths, requested_paths),
          :ok <- validate_no_symlink_segments(granted_paths),
          :ok <- write_grant(agent_slug, task_id, granted_paths, state),
          :ok <- archive_request(agent_slug, task_id, state) do
@@ -199,7 +201,7 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp do_deny(agent_slug, task_id, state) do
-    with {:ok, _sentinel} <- find_pending_sentinel(agent_slug, task_id, state),
+    with {:ok, _sentinel, _requested} <- find_pending_sentinel(agent_slug, task_id, state),
          :ok <- archive_request(agent_slug, task_id, state),
          :ok <- notify_agent_denied(agent_slug, task_id, state) do
       emit_audit(state, "path_access.denied", "director", %{
@@ -281,6 +283,51 @@ defmodule Glorbo.PathRequestGate do
   end
 
   defp valid_granted_path?(_), do: false
+
+  # B-014 (confused deputy): the approve handler receives the granted
+  # path list from a client-supplied LiveView event payload. Without
+  # this gate a tampered `phx-value-paths` could substitute arbitrary
+  # host paths (e.g. `/home/operator/.ssh`) that the operator never saw
+  # on the approval card and that the agent never requested. The server
+  # is authoritative: every granted entry MUST correspond to a path the
+  # agent actually requested in the pending sentinel, and the mode may
+  # only stay the same or DOWNGRADE write→read — never escalate read→write
+  # and never introduce a new path.
+  #
+  # `requested` is the JSON-decoded `paths` list from the pending
+  # sentinel (string-keyed maps: `%{"path" => ..., "mode" => ...}`).
+  # `granted` is the director-approved list (atom-keyed, atom mode).
+  @doc false
+  @spec validate_subset([%{path: String.t(), mode: :read | :write}], [map()]) ::
+          :ok | {:error, :granted_not_subset_of_request}
+  def validate_subset(granted, requested) when is_list(granted) and is_list(requested) do
+    req_index =
+      requested
+      |> Enum.flat_map(fn
+        %{"path" => p, "mode" => m} when is_binary(p) and is_binary(m) -> [{p, m}]
+        _ -> []
+      end)
+      |> Map.new()
+
+    if Enum.all?(granted, fn %{path: p, mode: m} -> granted_within_request?(req_index, p, m) end) do
+      :ok
+    else
+      {:error, :granted_not_subset_of_request}
+    end
+  end
+
+  def validate_subset(_granted, _requested), do: {:error, :granted_not_subset_of_request}
+
+  defp granted_within_request?(req_index, path, mode) do
+    case Map.fetch(req_index, path) do
+      # Requested write may be granted as-is or downgraded to read.
+      {:ok, "write"} -> mode in [:read, :write]
+      # Requested read may only be granted as read (no escalation).
+      {:ok, "read"} -> mode == :read
+      # Path was never requested — reject.
+      :error -> false
+    end
+  end
 
   # GEP-27 §Approval validation §2: an approved path must not reach
   # the bwrap bind layer through a symlink segment. The lexical
@@ -412,8 +459,11 @@ defmodule Glorbo.PathRequestGate do
           path = Path.join(state_dir, entry)
 
           case read_sentinel_meta(path) do
-            %{task_id: ^task_id, agent: ^agent_slug} -> {:ok, path}
-            _ -> nil
+            %{task_id: ^task_id, agent: ^agent_slug, paths: requested} ->
+              {:ok, path, requested}
+
+            _ ->
+              nil
           end
         end)
         |> case do

@@ -134,7 +134,12 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
         |> Plug.Test.init_test_session(%{})
         |> GlorboWeb.Plugs.DashboardToken.call([])
 
-      refute result.halted
+      # C-120: the first browser hit redirects (302) to strip the
+      # token from the URL, but the auth marker is persisted on that
+      # redirect response so the follow-up request authenticates by
+      # cookie.
+      assert result.status == 302
+      assert result.halted
       assert Plug.Conn.get_session(result) != %{}, "expected an auth marker in the session"
     end
 
@@ -194,6 +199,91 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
       # fetches a session. Bearer must still pass and not crash.
       result =
         conn(:post, "/mcp", "{}")
+        |> Plug.Conn.put_req_header("authorization", "Bearer secret")
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute result.halted
+    end
+  end
+
+  # C-120: once the session cookie carries auth, the raw ?token= must
+  # not linger in the URL (browser history / bookmarks / Referer leak
+  # window). The first authenticated browser hit 302-redirects to the
+  # token-less URL.
+  describe "C-120 strip ?token= from URL after cookie set" do
+    test "redirects to the token-less path on the first browser hit" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      assert result.status == 302
+      assert result.halted
+      location = Plug.Conn.get_resp_header(result, "location") |> List.first()
+      assert location == "/companies"
+      refute location =~ "token"
+    end
+
+    test "redirect location preserves other query params, drops only token" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/companies?token=secret&project=web&tab=open")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      assert result.status == 302
+      location = Plug.Conn.get_resp_header(result, "location") |> List.first()
+      refute location =~ "token"
+      assert location =~ "project=web"
+      assert location =~ "tab=open"
+      assert String.starts_with?(location, "/companies?")
+    end
+
+    test "sets Referrer-Policy: no-referrer on the redirect" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      assert Plug.Conn.get_resp_header(result, "referrer-policy") == ["no-referrer"]
+    end
+
+    test "redirect response does not echo the raw token" do
+      Application.put_env(:glorbo, :dashboard_token, "super-secret-42")
+
+      result =
+        conn(:get, "/companies?token=super-secret-42")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      location = Plug.Conn.get_resp_header(result, "location") |> List.first()
+      refute location =~ "super-secret-42"
+      refute result.resp_body =~ "super-secret-42"
+    end
+
+    test "does NOT redirect a POST carrying ?token= (would drop body)" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:post, "/companies?token=secret", "{}")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      # Still authenticates, just no cosmetic strip on a non-idempotent
+      # method.
+      refute result.halted
+    end
+
+    test "does NOT redirect the stateless bearer-header (api) path" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/mcp")
         |> Plug.Conn.put_req_header("authorization", "Bearer secret")
         |> GlorboWeb.Plugs.DashboardToken.call([])
 

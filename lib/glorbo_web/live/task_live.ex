@@ -273,8 +273,17 @@ defmodule GlorboWeb.TaskLive do
       end
 
     case Glorbo.TaskDefinition.write_frontmatter(abs, updates) do
-      :ok -> {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not save task.")}
+      :ok ->
+        # C-094: a frontmatter edit is a state-changing mutation on a
+        # dashboard route. The append-only audit log must record it
+        # (crown jewel) so the forensic trail can't be bypassed via the
+        # task editor. Emit AFTER the write so we only audit edits that
+        # actually landed; capture actor + the keys that changed.
+        emit_task_edit_audit(socket, updates)
+        {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not save task.")}
     end
   end
 
@@ -302,6 +311,22 @@ defmodule GlorboWeb.TaskLive do
   defp format_error(:empty_body), do: "Comment is empty."
   defp format_error(:body_too_large), do: "Comment exceeds 10 KB."
   defp format_error(reason), do: "Could not post comment: #{inspect(reason)}"
+
+  # C-094: append a `task.edit` entry to the company's append-only
+  # audit log for a frontmatter edit. `changed` is the sorted list of
+  # frontmatter keys this save touched, so a reviewer can see what the
+  # actor altered (status / assigned_to / requires_approval are all
+  # security-relevant — they gate the approval flow).
+  defp emit_task_edit_audit(socket, updates) do
+    actor = to_string(socket.assigns[:current_user] || "director")
+
+    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
+      actor: actor,
+      action: "task.edit",
+      target: socket.assigns.rel_path,
+      changed: updates |> Map.keys() |> Enum.sort()
+    })
+  end
 
   # ---------------------------------------------------------------------------
   # Helpers

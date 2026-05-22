@@ -76,7 +76,9 @@ defmodule GlorboWeb.Plugs.DashboardToken do
       # 2. Valid token supplied — pass, and (if a session is available)
       #    persist the fingerprint so later requests need no `?token=`.
       valid_token_supplied?(conn, expected) ->
-        persist_session(conn, expected)
+        conn
+        |> persist_session(expected)
+        |> maybe_strip_query_token()
 
       true ->
         conn
@@ -106,6 +108,41 @@ defmodule GlorboWeb.Plugs.DashboardToken do
       put_session(conn, @session_key, fingerprint(expected))
     else
       # MCP / :api path — no session to write; bearer is stateless.
+      conn
+    end
+  end
+
+  # C-120: once the session cookie carries the auth fingerprint, the
+  # raw `?token=` no longer needs to sit in the address bar. If it
+  # authenticated via the query param AND we persisted a session
+  # cookie (browser path), 302-redirect to the same path with `token`
+  # stripped from the query string. This keeps the secret out of
+  # browser history, bookmarks, and the `Referer` header beyond the
+  # single redirect hop. Header-auth (MCP / `:api`) never has a
+  # session and never sets `?token=`, so it is untouched.
+  #
+  # Only redirects on safe (idempotent, body-less) methods — a POST
+  # carrying `?token=` must not be turned into a GET redirect that
+  # silently drops its body. Such requests still authenticate; they
+  # just don't get the cosmetic strip.
+  defp maybe_strip_query_token(conn) do
+    if session_fetched?(conn) and conn.method in ["GET", "HEAD"] and
+         is_binary(query_token(conn)) do
+      conn = fetch_query_params(conn)
+      stripped = Map.delete(conn.query_params, "token")
+
+      location =
+        case stripped do
+          empty when map_size(empty) == 0 -> conn.request_path
+          params -> conn.request_path <> "?" <> URI.encode_query(params)
+        end
+
+      conn
+      |> put_resp_header("location", location)
+      |> put_resp_header("referrer-policy", "no-referrer")
+      |> send_resp(302, "")
+      |> halt()
+    else
       conn
     end
   end

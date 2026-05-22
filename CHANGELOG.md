@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — path-approval subset check, task-edit audit, token URL strip (codex B-014/C-094/C-120)
+
+- **B-014:** the dashboard path-approval handler passed the client-supplied `paths`
+  straight to `PathRequestGate.approve` without comparing them to the sentinel's
+  *original* requested paths — a tampered LiveView payload could approve arbitrary
+  host paths (confused deputy). The gate now re-reads the pending sentinel and
+  enforces that granted paths are a subset (write→read downgrade only) of what was
+  requested; new paths / read→write escalation are refused.
+- **C-094:** dashboard task **edits** (TaskLive + KanbanLive `save_task`) wrote
+  frontmatter with no audit entry (only deletes were audited), bypassing the
+  append-only audit log. Edits now emit a `task.edit` audit event (actor + changed
+  keys).
+- **C-120:** after the session cookie is set, the `DashboardToken` plug now
+  302-redirects to strip the `?token=` from the URL and sets `Referrer-Policy:
+  no-referrer`, narrowing the token's exposure in history/Referer. (Full one-time
+  rotation is GEP-0049.)
+
 ### Security — stado provider state relocated into the per-agent sandbox (codex A-001/B-006/B-023/B-026/B-024)
 
 The bundled stado provider mounted the host's XDG data/state dirs

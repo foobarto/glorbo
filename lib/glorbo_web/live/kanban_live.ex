@@ -442,6 +442,13 @@ defmodule GlorboWeb.KanbanLive do
 
         with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
              :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
+          # C-094: record the frontmatter+body edit in the company's
+          # append-only audit log. Without this the task editor was a
+          # silent state-changing mutation path (status / assigned_to /
+          # requires_approval all gate the approval flow) that bypassed
+          # the forensic trail. Emit AFTER both writes land.
+          emit_task_edit_audit(socket, task, fm)
+
           # Task #126 — when assigned_to changed to a real agent (or was
           # set for the first time), drop a notification into that
           # agent's inbox so the wake pipeline picks it up. Skips when
@@ -1233,6 +1240,19 @@ defmodule GlorboWeb.KanbanLive do
   #   - assignee unchanged (avoids duplicate wakes on re-save)
   #   - new assignee is empty or "director" (Director isn't an agent)
   #   - agent dir doesn't exist
+  # C-094: append a `task.edit` entry to the company's append-only
+  # audit log for an edit made through the Kanban task shelf. `changed`
+  # is the sorted list of frontmatter keys the save touched. Mirrors
+  # TaskLive's emitter so both edit surfaces leave the same trail.
+  defp emit_task_edit_audit(socket, task, fm) do
+    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
+      actor: "director",
+      action: "task.edit",
+      target: task.task_path,
+      changed: fm |> Map.keys() |> Enum.sort()
+    })
+  end
+
   defp maybe_notify_assignee(prev, new, _co, _id, _title, _body)
        when new == prev or new == "" or new == "director" do
     :ok
