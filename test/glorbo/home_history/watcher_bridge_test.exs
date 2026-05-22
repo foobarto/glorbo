@@ -48,7 +48,10 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
 
       WatcherBridge.observe("acme", "company.md", server: bridge)
 
-      Process.sleep(@debounce_ms * 20)
+      # Poll for the commit rather than a fixed sleep — under full-suite
+      # CPU contention the inotify-settle + debounce + git-commit chain
+      # can exceed a fixed window, which made this test flaky.
+      wait_for_subjects!(base, ["external.edit: companies/acme/company.md"], 5_000)
 
       {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
       assert head.subject == "external.edit: companies/acme/company.md"
@@ -107,7 +110,9 @@ defmodule Glorbo.HomeHistory.WatcherBridgeTest do
         Process.sleep(div(@debounce_ms, 5))
       end)
 
-      Process.sleep(@debounce_ms * 20)
+      # Poll for the (single, coalesced) commit instead of a fixed sleep —
+      # avoids the under-load flake where the commit hadn't landed yet.
+      wait_for_subjects!(base, ["external.edit: companies/acme/company.md"], 5_000)
 
       {:ok, log} = HomeHistory.log(base: base, limit: 10)
 
