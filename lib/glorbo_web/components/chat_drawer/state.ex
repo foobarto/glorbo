@@ -25,6 +25,8 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias Glorbo.Filesystem.AgentWritableFile
+
   # `channels/general.md` is agent-influenced (any agent with chat
   # write to #general appends to it) and grows without bound. The
   # drawer renders only the last ~200 messages, so reading the whole
@@ -105,38 +107,12 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
   defp load_messages(base, co) when is_binary(co) do
     path = Path.join([base, "companies", co, "channels", "general.md"])
 
-    case read_tail(path, @tail_bytes) do
+    # tail-read drops a leading partial message on truncation; the
+    # @message_re anchor only matches from a `## <YYYY-MM-DD ts> | author`
+    # header, so the partial is discarded by parse_messages.
+    case AgentWritableFile.read_tail(path, @tail_bytes) do
       {:ok, content} -> parse_messages(content, co)
       _ -> []
-    end
-  end
-
-  # lstat-refuse non-regular (no symlink follow), then read only the
-  # last `max_bytes` of a regular file. The leading partial message
-  # (if we truncated mid-block) is dropped by the @message_re anchor,
-  # which only matches from a `## <YYYY-MM-DD ts> | author` header.
-  defp read_tail(path, max_bytes) do
-    with {:ok, %File.Stat{type: :regular, size: size}} <- File.stat(path, time: :posix),
-         {:ok, %File.Stat{type: :regular}} <- File.lstat(path) do
-      offset = max(size - max_bytes, 0)
-
-      case :file.open(path, [:read, :binary]) do
-        {:ok, io} ->
-          result =
-            case :file.pread(io, offset, max_bytes) do
-              {:ok, data} -> {:ok, data}
-              :eof -> {:ok, ""}
-              other -> other
-            end
-
-          _ = :file.close(io)
-          result
-
-        {:error, _} = err ->
-          err
-      end
-    else
-      _ -> :error
     end
   end
 

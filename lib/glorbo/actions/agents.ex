@@ -31,6 +31,8 @@ defmodule Glorbo.Actions.Agents do
       `agent.file_trash` / `agent.retire` audit entries.
   """
 
+  require Logger
+
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
   alias Glorbo.HomeHistory
@@ -206,17 +208,31 @@ defmodule Glorbo.Actions.Agents do
     stop_fun = Keyword.get(opts, :stop_agent_fun, &default_stop_agent/2)
     unregister_fun = Keyword.get(opts, :unregister_fun, &default_unregister/2)
 
-    _ = safe_decommission_step(fn -> stop_fun.(company, slug) end)
-    _ = safe_decommission_step(fn -> unregister_fun.(company, slug) end)
+    _ = safe_decommission_step("stop_agent", company, slug, fn -> stop_fun.(company, slug) end)
+
+    _ =
+      safe_decommission_step("unregister_heartbeat", company, slug, fn ->
+        unregister_fun.(company, slug)
+      end)
+
     :ok
   end
 
-  defp safe_decommission_step(fun) do
+  # Best-effort, but no longer silent: an idle/absent agent (`:noproc`,
+  # `:not_found`) is the expected no-op, while any OTHER rescued exception
+  # or exit is logged (debug) with company+slug+step so a genuinely-failed
+  # decommission is diagnosable rather than invisible (C-099 review).
+  defp safe_decommission_step(step, company, slug, fun) do
     fun.()
   rescue
-    _ -> :error
+    e ->
+      Logger.debug("retire #{company}/#{slug}: #{step} failed (rescued): #{Exception.message(e)}")
+
+      :error
   catch
-    :exit, _ -> :error
+    :exit, reason ->
+      Logger.debug("retire #{company}/#{slug}: #{step} exited: #{inspect(reason)}")
+      :error
   end
 
   defp default_stop_agent(company, slug) do

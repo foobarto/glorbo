@@ -10,9 +10,13 @@ defmodule Glorbo.CLI.Harness.HTTP do
   # arbitrarily large payload was already in the heap (C-034). We now
   # stream the response and abort once this many bytes have arrived,
   # so a malicious / injected `web_fetch` target serving a huge or
-  # endless body can't exhaust the harness heap. Callers may override
-  # via `:max_response_bytes`; this is the default + absolute cap.
-  @default_max_response_bytes 1_048_576
+  # endless body can't exhaust the harness heap. Each caller sets its own
+  # `:max_response_bytes` (web_fetch caps hard at 1 MiB — untrusted target);
+  # this generous module default applies only to callers that DON'T set it
+  # (e.g. chat completions, whose own model-endpoint response can legitimately
+  # be large with tool-call payloads — capping those at 1 MiB truncated valid
+  # 200s into JSON decode failures). It still bounds a truly runaway response.
+  @default_max_response_bytes 67_108_864
 
   @type request :: %{
           required(:method) => :get | :post,
@@ -196,7 +200,11 @@ defmodule Glorbo.CLI.Harness.HTTP do
 
   defp max_response_bytes(request) do
     case Map.get(request, :max_response_bytes) do
-      n when is_integer(n) and n > 0 -> min(n, @default_max_response_bytes)
+      # Honour the caller's cap as-is — do NOT clamp down to the module
+      # default (that's what truncated chat completions). web_fetch passes
+      # its own 1 MiB cap; chat completions omit it and get the generous
+      # default below.
+      n when is_integer(n) and n > 0 -> n
       _ -> @default_max_response_bytes
     end
   end
@@ -246,6 +254,7 @@ defmodule Glorbo.CLI.Harness.HTTP do
 
         if new_size > max_bytes do
           _ = :httpc.cancel_request(ref, @http_profile)
+          drain_ref(ref)
           finish_stream(state, [chunk | acc], max_bytes)
         else
           collect_stream(ref, max_bytes, timeout, state, [chunk | acc], new_size)
@@ -268,7 +277,22 @@ defmodule Glorbo.CLI.Harness.HTTP do
     after
       timeout ->
         _ = :httpc.cancel_request(ref, @http_profile)
+        drain_ref(ref)
         {:error, :timeout}
+    end
+  end
+
+  # After cancelling a streamed request, :httpc may already have queued
+  # `{:http, {ref, ...}}` chunk/terminal messages in our mailbox. In a
+  # long-lived process that issues many requests these stale messages
+  # accumulate and slow every future `receive`. Drain them now (bounded,
+  # non-blocking) so the mailbox stays clean.
+  defp drain_ref(ref) do
+    receive do
+      {:http, {^ref, _}} -> drain_ref(ref)
+      {:http, {^ref, _, _}} -> drain_ref(ref)
+    after
+      0 -> :ok
     end
   end
 

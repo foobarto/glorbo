@@ -158,6 +158,42 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
   end
 
   @doc """
+  Read at most the LAST `max_bytes` of a regular file.
+
+  Gates on `File.lstat` (rejects symlinks — TOCTOU defense) before
+  `:file.pread`-ing the tail window, so an agent-writable log/transcript
+  can be tailed for the UI without slurping an attacker-grown body into
+  RAM. Returns `{:ok, binary}` (possibly `""`), `:error` for a missing /
+  non-regular / symlinked path, or the underlying `{:error, reason}`.
+  """
+  @spec read_tail(Path.t(), pos_integer()) :: {:ok, binary()} | :error | {:error, term()}
+  def read_tail(path, max_bytes)
+      when is_binary(path) and is_integer(max_bytes) and max_bytes > 0 do
+    with {:ok, %File.Stat{type: :regular, size: size}} <- File.stat(path, time: :posix),
+         {:ok, %File.Stat{type: :regular}} <- File.lstat(path) do
+      offset = max(size - max_bytes, 0)
+
+      case :file.open(path, [:read, :binary]) do
+        {:ok, io} ->
+          result =
+            case :file.pread(io, offset, max_bytes) do
+              {:ok, data} -> {:ok, data}
+              :eof -> {:ok, ""}
+              other -> other
+            end
+
+          _ = :file.close(io)
+          result
+
+        {:error, _} = err ->
+          err
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  @doc """
   Return `true` if ANY ancestor segment of `path` (including `path`
   itself) is a symlink. Use to decide whether a path the filesystem
   walker discovered actually lives inside its expected tree or was

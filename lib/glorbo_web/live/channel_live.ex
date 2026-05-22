@@ -22,6 +22,7 @@ defmodule GlorboWeb.ChannelLive do
   use GlorboWeb, :live_view
   require Logger
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+  alias Glorbo.Filesystem.AgentWritableFile
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.ChannelMessage
 
@@ -553,38 +554,12 @@ defmodule GlorboWeb.ChannelLive do
   defp compose_placeholder(ch), do: "Message ##{ch} as Director…"
 
   defp load_messages(path, company) do
-    case read_tail(path, @channel_tail_bytes) do
+    # A leading partial message left by tail truncation is dropped by
+    # @message_re, which only matches from a `## <YYYY-MM-DD ts> | author`
+    # header.
+    case AgentWritableFile.read_tail(path, @channel_tail_bytes) do
       {:ok, content} -> parse_messages(content, company)
       _ -> []
-    end
-  end
-
-  # lstat-refuse non-regular (no symlink follow), then read only the
-  # last `max_bytes` of a regular channel/archive file. A leading
-  # partial message left by truncation is dropped by @message_re,
-  # which only matches from a `## <YYYY-MM-DD ts> | author` header.
-  defp read_tail(path, max_bytes) do
-    with {:ok, %File.Stat{type: :regular, size: size}} <- File.stat(path, time: :posix),
-         {:ok, %File.Stat{type: :regular}} <- File.lstat(path) do
-      offset = max(size - max_bytes, 0)
-
-      case :file.open(path, [:read, :binary]) do
-        {:ok, io} ->
-          result =
-            case :file.pread(io, offset, max_bytes) do
-              {:ok, data} -> {:ok, data}
-              :eof -> {:ok, ""}
-              other -> other
-            end
-
-          _ = :file.close(io)
-          result
-
-        {:error, _} = err ->
-          err
-      end
-    else
-      _ -> :error
     end
   end
 

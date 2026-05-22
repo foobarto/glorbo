@@ -30,14 +30,21 @@ defmodule Glorbo.CLI.Harness.HTTPTest do
     %{port: port}
   end
 
-  test "caps a body larger than the default cap instead of buffering it all", %{port: port} do
-    # 5 MiB body, well over the 1 MiB default cap.
-    register_response(port, 200, "OK", String.duplicate("A", 5 * 1_048_576))
+  test "returns a multi-MiB body in full under the generous default cap", %{port: port} do
+    # A caller that sets no :max_response_bytes (e.g. a chat completion,
+    # whose model-endpoint 200 can legitimately carry MiBs of tool-call
+    # payload) gets the generous 64 MiB module default — NOT the small
+    # untrusted-fetch cap. A 5 MiB body must come back whole rather than
+    # truncated into a JSON decode failure (codex P2 follow-up). The
+    # streaming-abort ceiling itself is exercised by the explicit-cap
+    # test below; the mechanism is identical regardless of the limit.
+    body_bytes = 5 * 1_048_576
+    register_response(port, 200, "OK", String.duplicate("A", body_bytes))
 
     assert {:ok, %{status: 200, body: body}} =
              HTTP.request(%{method: :get, url: url(port, "/big"), timeout_ms: 5_000})
 
-    assert byte_size(body) == 1_048_576
+    assert byte_size(body) == body_bytes
   end
 
   test "honours a per-request max_response_bytes below the default", %{port: port} do

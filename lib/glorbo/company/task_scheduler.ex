@@ -423,8 +423,12 @@ defmodule Glorbo.Company.TaskScheduler do
     # agent edits the schedule while restoring the file's mtime. Re-parse
     # the CURRENT on-disk schedule here and re-arm from the fresh expr.
     # `entry.expr` is now only a fallback that we deliberately replace.
+    # Parse the current on-disk schedule ONCE; reuse for both the entry
+    # refresh and the invalid-cron guard below.
+    cron_result = parse_cron(schedule)
+
     entry =
-      case parse_cron(schedule) do
+      case cron_result do
         {:ok, expr} -> Map.merge(entry, %{expr: expr, schedule: schedule})
         _ -> entry
       end
@@ -436,7 +440,7 @@ defmodule Glorbo.Company.TaskScheduler do
       # C-046 / C-047: a non-empty schedule that no longer parses must
       # not keep firing on the stale armed cron. Audit it and cancel the
       # timer rather than re-arm with `entry.expr`.
-      match?({:error, _}, parse_cron(schedule)) ->
+      match?({:error, _}, cron_result) ->
         rel = relative_path(state, entry.path)
         maybe_emit_invalid(state, task_id, rel, schedule, :unparseable_at_fire)
 
