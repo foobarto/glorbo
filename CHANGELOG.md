@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — refuse agent-planted symlinks across host-side filesystem walks (codex B-007/C-041/B-016/B-019/B-010/C-037/C-098/C-070/D-146/C-040/C-058)
+
+Several host-side (unsandboxed) code paths walked or read agent-writable trees
+without refusing symlinked path components or validating slug/path inputs, so a
+sandboxed agent could plant a symlink (or a traversal value) to leak/clobber files
+in another company or on the host:
+- Shell Tasks view, brain-dump→task conversion, the opt-in task migrator, paperclip
+  import, and the agent-retire walk now refuse symlinked ancestors (via
+  `AgentWritableFile.any_symlink_in_path?` / `:file.read_link_info`), and the retire
+  walk gained a recursion-depth cap.
+- Benchmark fetch/score validate the `run_id` (no traversal) and route reads through
+  the lstat- + size-bounded `AgentWritableFile.read`.
+- Kanban's assignee→provider lookup validates the `assigned_to` slug before joining it
+  into an `AGENT.md` path (was a cross-company existence/provider probe).
+
 ### Security — bound ACP streams + stdout tee against provider-driven DoS (codex C-044/C-048/C-049/C-103)
 
 An untrusted/looping provider could exhaust host resources through the dispatch

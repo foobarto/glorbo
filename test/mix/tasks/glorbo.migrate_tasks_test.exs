@@ -123,4 +123,53 @@ defmodule Mix.Tasks.Glorbo.MigrateTasksTest do
     assert File.exists?(readme)
     assert File.exists?(already)
   end
+
+  # B-019: an agent plants `projects/<proj>/tasks -> ../../<other-co>/.../tasks`.
+  # The migrator must refuse the symlinked tasks dir, not rename the
+  # victim company's `t-NN.md` files.
+  test "refuses a symlinked tasks/ dir (no cross-company rename)", %{base: base} do
+    # Victim company with a legacy task.
+    _victim = seed_task(base, "victim", "private", "t-09.md")
+
+    # Attacker company; plant attacker/projects/evil/tasks -> victim tasks dir.
+    evil_project = Path.join([base, "companies", "attacker", "projects", "evil"])
+    File.mkdir_p!(evil_project)
+    victim_tasks = Path.join([base, "companies", "victim", "projects", "private", "tasks"])
+    File.ln_s!(victim_tasks, Path.join(evil_project, "tasks"))
+
+    output = capture_io(fn -> MigrateTask.run(["--base", base]) end)
+
+    # The attacker's symlinked tasks dir must NOT cause a rename into
+    # the victim tree under the attacker's project name. (The victim
+    # company is itself migrated normally — t-09.md -> private-09.md —
+    # which is correct; the security property is that the ATTACKER
+    # project name never reaches the victim tree.)
+    refute File.exists?(Path.join(victim_tasks, "evil-09.md"))
+    refute File.exists?(Path.join(victim_tasks, "evil-9.md"))
+    assert output =~ "skip"
+    # The symlink itself is left in place, not dereferenced-and-renamed.
+    assert {:ok, %File.Stat{type: :symlink}} =
+             File.lstat(Path.join(evil_project, "tasks"))
+  end
+
+  test "refuses a symlinked project dir (no cross-company rename)", %{base: base} do
+    _victim = seed_task(base, "victim", "private", "t-11.md")
+
+    projects_dir = Path.join([base, "companies", "attacker", "projects"])
+    File.mkdir_p!(projects_dir)
+    victim_project = Path.join([base, "companies", "victim", "projects", "private"])
+    File.ln_s!(victim_project, Path.join(projects_dir, "evil"))
+
+    output = capture_io(fn -> MigrateTask.run(["--base", base]) end)
+
+    victim_tasks = Path.join([base, "companies", "victim", "projects", "private", "tasks"])
+
+    # Attacker's project name never reaches the victim tree.
+    refute File.exists?(Path.join(victim_tasks, "evil-11.md"))
+    refute File.exists?(Path.join(victim_tasks, "evil-1.md"))
+    assert output =~ "skip"
+    # The planted project-dir symlink is left in place, not followed.
+    assert {:ok, %File.Stat{type: :symlink}} =
+             File.lstat(Path.join(projects_dir, "evil"))
+  end
 end

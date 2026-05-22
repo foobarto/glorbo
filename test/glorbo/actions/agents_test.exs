@@ -161,6 +161,29 @@ defmodule Glorbo.Actions.AgentsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # C-055: the atomic write must not loosen an existing 0600 workspace
+    # file to the process-umask default (0644). It preserves the original
+    # inode's mode.
+    test "preserves an existing 0600 file's mode on overwrite",
+         %{base: base, audit: audit, ag_dir: ag_dir} do
+      path = Path.join(ag_dir, "workspace/doc.md")
+      File.chmod!(path, 0o600)
+
+      assert {:ok, _} =
+               Agents.write_workspace_file(
+                 "acme",
+                 "ceo",
+                 "workspace/doc.md",
+                 "new body\n",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      perms = Bitwise.band(File.lstat!(path).mode, 0o777)
+      assert perms == 0o600, "expected 0600 preserved, got 0#{Integer.to_string(perms, 8)}"
+    end
   end
 
   describe "trash_workspace_file/4" do
@@ -264,6 +287,34 @@ defmodule Glorbo.Actions.AgentsTest do
                )
 
       assert FakeAudit.calls(audit) == []
+    end
+
+    # C-040 / C-058: an agent can plant `workspace/loop -> .` (cycle)
+    # or `workspace/root -> /` (huge tree) in its RW workspace before
+    # retire. The pre-rename file-snapshot walk must NOT follow those
+    # symlinks — otherwise it recurses unboundedly / walks the host.
+    # Retire must still complete in bounded time without following them.
+    test "does not follow a symlink loop planted in workspace",
+         %{base: base, audit: audit, ag_dir: ag_dir} do
+      ws = Path.join(ag_dir, "workspace")
+      File.mkdir_p!(ws)
+      # Self-referential cycle: workspace/loop -> workspace
+      File.ln_s!(ws, Path.join(ws, "loop"))
+      # And a symlink to the filesystem root.
+      File.ln_s!("/", Path.join(ws, "root"))
+
+      # A genuine tracked-scope file so the walk has real work to do.
+      File.write!(Path.join(ag_dir, "AGENT.md"), "---\nkind: agent/v1\n---\n")
+
+      task =
+        Task.async(fn ->
+          Agents.retire("acme", "ceo", actor: "director", base: base, audit: audit)
+        end)
+
+      # If the walk followed `loop`/`root`, this would hang / OOM. The
+      # lstat guard makes it return promptly.
+      assert {:ok, %{archive_rel_path: _}} = Task.await(task, 5_000)
+      refute File.dir?(ag_dir)
     end
   end
 

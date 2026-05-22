@@ -21,9 +21,11 @@ defmodule Glorbo.Benchmarks do
   or use whatever ad-hoc orchestration they have.
   """
 
+  alias Glorbo.Filesystem.AgentWritableFile
   alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.Filesystem.FrontmatterWriter
   alias Glorbo.Filesystem.Hierarchy
+  alias Glorbo.Slug
 
   @type run_summary :: %{
           required(:run_id) => String.t(),
@@ -66,6 +68,20 @@ defmodule Glorbo.Benchmarks do
   @spec fetch(String.t(), keyword()) :: {:ok, run()} | {:error, term()}
   def fetch(run_id, opts \\ []) when is_binary(run_id) do
     base = Keyword.get(opts, :base, Hierarchy.default_root())
+
+    # B-010 / C-037: `run_id` comes from the `/benchmarks/:run_id` URL
+    # route. Reject any traversal shape (`..`, `/`, leading dot) before
+    # it reaches `Path.join`. Run-ids carry uppercase `T`/`Z` from the
+    # `%Y-%m-%dT%H%MZ` generator, so the strict lowercase `Slug` shape
+    # is too narrow — use the dedicated `valid_run_id?/1` instead.
+    if valid_run_id?(run_id) do
+      do_fetch(base, run_id)
+    else
+      {:error, :invalid_run_id}
+    end
+  end
+
+  defp do_fetch(base, run_id) do
     dir = Path.join([base, "benchmarks", "runs", run_id])
 
     case read_summary(dir) do
@@ -74,7 +90,7 @@ defmodule Glorbo.Benchmarks do
 
       summary ->
         task_body =
-          case File.read(Path.join(dir, "task.md")) do
+          case safe_read(Path.join(dir, "task.md")) do
             {:ok, content} ->
               case Frontmatter.parse(content) do
                 {:ok, _meta, body} -> body
@@ -86,7 +102,7 @@ defmodule Glorbo.Benchmarks do
           end
 
         outputs = read_outputs(dir, summary.providers)
-        scores_body = File.read(Path.join(dir, "scores.md")) |> unwrap_body()
+        scores_body = safe_read(Path.join(dir, "scores.md")) |> unwrap_body()
 
         {:ok,
          %{
@@ -110,6 +126,16 @@ defmodule Glorbo.Benchmarks do
     base = Keyword.get(opts, :base, Hierarchy.default_root())
     actor = Keyword.get(opts, :actor, "director")
     rationale = Keyword.get(opts, :rationale, "")
+
+    # B-010 / C-037: validate run_id before joining it into a path.
+    if valid_run_id?(run_id) do
+      do_score(base, run_id, ranking, actor, rationale)
+    else
+      {:error, :invalid_run_id}
+    end
+  end
+
+  defp do_score(base, run_id, ranking, actor, rationale) do
     dir = Path.join([base, "benchmarks", "runs", run_id])
 
     with {:ok, summary} <- fetch_summary(dir),
@@ -118,7 +144,7 @@ defmodule Glorbo.Benchmarks do
       new_section = render_score_section(actor, ranking, rationale)
 
       existing =
-        case File.read(scores_path) do
+        case safe_read(scores_path) do
           {:ok, body} -> body
           {:error, :enoent} -> scores_header(summary)
           {:error, reason} -> {:error, reason}
@@ -148,8 +174,9 @@ defmodule Glorbo.Benchmarks do
   defp read_summary(dir) do
     manifest_path = Path.join(dir, "manifest.md")
 
-    with true <- File.regular?(manifest_path),
-         {:ok, content} <- File.read(manifest_path),
+    # B-010 / C-037: lstat-refuse symlinked manifests (and bound size)
+    # instead of `File.regular?` (which follows symlinks).
+    with {:ok, content} <- safe_read(manifest_path),
          {:ok, meta, _body} <- Frontmatter.parse(content) do
       %{
         run_id: Path.basename(dir),
@@ -187,11 +214,14 @@ defmodule Glorbo.Benchmarks do
 
   defp read_outputs(dir, providers) do
     providers
+    # B-010 / C-037: provider names come from manifest frontmatter and
+    # are joined into a path; reject non-slug names (`..`, `/`).
+    |> Enum.filter(&Slug.valid?/1)
     |> Enum.map(fn provider ->
       path = Path.join([dir, "providers", provider, "output.md"])
 
       body =
-        case File.read(path) do
+        case safe_read(path) do
           {:ok, content} ->
             case Frontmatter.parse(content) do
               {:ok, _meta, payload} -> payload
@@ -280,4 +310,23 @@ defmodule Glorbo.Benchmarks do
 
   defp unwrap_body({:ok, content}), do: content
   defp unwrap_body(_), do: ""
+
+  # B-010 / C-037 (defense-in-depth): benchmark run dirs are
+  # hand-assembled / external-tool produced and treated as untrusted
+  # filesystem input. Route every read through the lstat + size-cap
+  # seam so a symlinked artifact (e.g. `scores.md -> ~/.glorbo/config.md`)
+  # can't be followed and rendered, and a 1 GB body can't OOM the BEAM.
+  defp safe_read(path), do: AgentWritableFile.read(path)
+
+  # B-010 / C-037: traversal-safe run_id shape. Run-ids are generated
+  # as `%Y-%m-%dT%H%MZ-bench-<hex>` (uppercase T/Z), so we can't reuse
+  # the strict lowercase `Slug` shape. Allow `[A-Za-z0-9._-]` but
+  # reject anything that could escape the runs/ dir: `..`, path
+  # separators, leading dot, empty.
+  @run_id_re ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
+  defp valid_run_id?(run_id) when is_binary(run_id) do
+    Regex.match?(@run_id_re, run_id) and not String.contains?(run_id, "..")
+  end
+
+  defp valid_run_id?(_), do: false
 end

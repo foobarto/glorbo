@@ -140,5 +140,44 @@ defmodule Glorbo.BrainDumpTest do
 
       assert BrainDump.list(base, co) == []
     end
+
+    # B-016: a projects:write:* agent can replace the `inbox` project
+    # *parent* with a symlink (`projects/inbox -> ../../<other>/evil`).
+    # The leaf-only lstat followed it; the full ancestor-chain guard
+    # must refuse it before mkdir_p / write.
+    test "refuses when projects/inbox is a symlinked parent",
+         %{base: base, company: co} do
+      {:ok, entry} =
+        BrainDump.capture(base, co, "escape me", now: ~U[2026-04-21 09:00:00Z])
+
+      # Attacker-controlled target outside the inbox project.
+      evil = Path.join([base, "companies", co, "projects", "evil-target"])
+      File.mkdir_p!(evil)
+
+      projects_dir = Path.join([base, "companies", co, "projects"])
+      File.mkdir_p!(projects_dir)
+      File.ln_s!(evil, Path.join(projects_dir, "inbox"))
+
+      assert {:error, :symlink_in_path} = BrainDump.convert_to_task(base, co, entry)
+      # Nothing was written into the symlink target.
+      assert File.ls!(evil) |> Enum.reject(&String.ends_with?(&1, ".md")) == File.ls!(evil)
+      refute Enum.any?(File.ls!(evil), &String.match?(&1, ~r/\.md\z/))
+    end
+
+    test "refuses when projects/inbox/tasks itself is a symlink",
+         %{base: base, company: co} do
+      {:ok, entry} =
+        BrainDump.capture(base, co, "leaf symlink", now: ~U[2026-04-21 09:00:00Z])
+
+      evil = Path.join([base, "companies", co, "projects", "evil-tasks"])
+      File.mkdir_p!(evil)
+
+      inbox = Path.join([base, "companies", co, "projects", "inbox"])
+      File.mkdir_p!(inbox)
+      File.ln_s!(evil, Path.join(inbox, "tasks"))
+
+      assert {:error, :symlink_in_path} = BrainDump.convert_to_task(base, co, entry)
+      refute Enum.any?(File.ls!(evil), &String.match?(&1, ~r/\.md\z/))
+    end
   end
 end

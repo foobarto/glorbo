@@ -200,12 +200,42 @@ defmodule Glorbo.CLI.ImportPaperclip do
         entries
         |> Enum.map(&Path.join(src, &1))
         |> Enum.filter(fn path ->
-          File.dir?(path) and File.exists?(Path.join(path, "AGENTS.md"))
+          # C-098: a paperclip source tree is operator-supplied but may
+          # be attacker-authored (supply chain). `File.dir?`/
+          # `File.exists?`/`File.read!` all follow symlinks, so a
+          # symlinked agent dir or `AGENTS.md -> ~/.glorbo/config.md`
+          # would be copied verbatim into company data. Refuse any
+          # symlinked source entry: require the dir AND its AGENTS.md to
+          # be real (lstat-checked) regular dir / file.
+          real_dir?(path) and real_file?(Path.join(path, "AGENTS.md"))
         end)
         |> Enum.sort()
 
       _ ->
         []
+    end
+  end
+
+  # C-098: lstat-based type checks that do NOT follow symlinks.
+  defp real_dir?(path) do
+    match?({:ok, %File.Stat{type: :directory}}, File.lstat(path))
+  end
+
+  defp real_file?(path) do
+    match?({:ok, %File.Stat{type: :regular}}, File.lstat(path))
+  end
+
+  # C-098: read a source file only after confirming it's a real
+  # regular file (no symlink follow). Raises with a clear reason
+  # otherwise so the operator sees the refusal.
+  defp read_source_file!(path) do
+    if real_file?(path) do
+      File.read!(path)
+    else
+      raise File.Error,
+        reason: :eloop,
+        action: "read file (refusing to follow symlink / non-regular source)",
+        path: path
     end
   end
 
@@ -222,7 +252,10 @@ defmodule Glorbo.CLI.ImportPaperclip do
     Enum.each(~w(inbox outbox workspace history state), &File.mkdir_p!(Path.join(dest, &1)))
     File.mkdir_p!(dest)
 
-    body = File.read!(Path.join(src_agent_dir, "AGENTS.md"))
+    # C-098: only read source files that lstat as real regular files —
+    # never follow a symlinked `AGENTS.md` / companion into a host
+    # secret (`~/.glorbo/config.md`, provider creds, SSH keys).
+    body = read_source_file!(Path.join(src_agent_dir, "AGENTS.md"))
     hints = detect_hints(body)
 
     File.write!(Path.join(dest, "AGENT.md"), wrap_agent_md(agent_slug, co_slug, body))
@@ -230,7 +263,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
     for fname <- ~w(HEARTBEAT.md SOUL.md TOOLS.md) do
       src_file = Path.join(src_agent_dir, fname)
 
-      if File.exists?(src_file) do
+      if real_file?(src_file) do
         content = File.read!(src_file)
         _ = detect_hints(content)
         File.write!(Path.join(dest, fname), wrap_companion_md(fname, content))

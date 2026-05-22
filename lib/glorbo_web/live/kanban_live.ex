@@ -1357,7 +1357,21 @@ defmodule GlorboWeb.KanbanLive do
     :exit, _ -> []
   end
 
+  # C-070 / D-146: `slug` originates from the client-controlled
+  # `assigned_to` form field. Gate on `Slug.valid?/1` before joining
+  # it into a path so a crafted `../../other-company/agents/target`
+  # cannot probe a sibling company's AGENT.md (cross-company isolation).
+  defp lookup_agent_provider(_base, _company, slug) when not is_binary(slug), do: nil
+
   defp lookup_agent_provider(base, company, slug) do
+    if Glorbo.Slug.valid?(slug) do
+      do_lookup_agent_provider(base, company, slug)
+    else
+      nil
+    end
+  end
+
+  defp do_lookup_agent_provider(base, company, slug) do
     ag_dir = Path.join([base, "companies", company, "agents", slug])
     agent_md = Glorbo.Agent.FileLayout.agent_md(ag_dir)
 

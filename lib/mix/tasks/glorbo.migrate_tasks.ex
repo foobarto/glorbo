@@ -62,8 +62,23 @@ defmodule Mix.Tasks.Glorbo.MigrateTasks do
     case File.ls(projects_dir) do
       {:ok, projects} ->
         Enum.each(projects, fn proj ->
-          if File.dir?(Path.join(projects_dir, proj)) do
-            migrate_project(base, company, proj, dry_run?)
+          project_dir = Path.join(projects_dir, proj)
+
+          # B-019: an agent with `projects:write:*` can plant a
+          # symlinked project dir (or symlinked `tasks/`) pointing at a
+          # sibling company / arbitrary host dir. `File.dir?`/`File.ls`/
+          # `File.rename` all follow symlinks, so the migrator would
+          # enumerate and rename files outside the company tree. Refuse
+          # any symlinked ancestor before descending.
+          cond do
+            symlinked_dir?(project_dir) ->
+              warn_skip_symlink(company, "projects/#{proj}")
+
+            File.dir?(project_dir) ->
+              migrate_project(base, company, proj, dry_run?)
+
+            true ->
+              :ok
           end
         end)
 
@@ -76,6 +91,30 @@ defmodule Mix.Tasks.Glorbo.MigrateTasks do
     tasks_dir = Path.join([base, "companies", company, "projects", project, "tasks"])
     legacy_re = ~r/\At-(\d+)\.md\z/
 
+    if symlinked_dir?(tasks_dir) do
+      warn_skip_symlink(company, "projects/#{project}/tasks")
+    else
+      enumerate_and_rename(tasks_dir, base, company, project, legacy_re, dry_run?)
+    end
+  end
+
+  # B-019: true if any segment of `path` (incl. the leaf) is a symlink.
+  defp symlinked_dir?(path) do
+    Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path)
+  end
+
+  defp warn_skip_symlink(company, rel) do
+    Mix.shell().info([
+      :red,
+      "  skip  ",
+      :reset,
+      "#{company}/",
+      rel,
+      " (symlinked path — refusing to follow)"
+    ])
+  end
+
+  defp enumerate_and_rename(tasks_dir, base, company, project, legacy_re, dry_run?) do
     case File.ls(tasks_dir) do
       {:ok, files} ->
         files

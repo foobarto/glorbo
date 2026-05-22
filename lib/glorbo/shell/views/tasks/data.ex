@@ -19,6 +19,7 @@ defmodule Glorbo.Shell.Views.Tasks.Data do
       grouping (`group_by_column/1`).
   """
 
+  alias Glorbo.Filesystem.AgentWritableFile
   alias Glorbo.TaskDefinition
 
   @typedoc "Slim per-task row for the TUI Tasks view."
@@ -86,8 +87,25 @@ defmodule Glorbo.Shell.Views.Tasks.Data do
   end
 
   defp load_project(projects_dir, project, base, company) do
-    tasks_dir = Path.join([projects_dir, project, "tasks"])
+    project_dir = Path.join(projects_dir, project)
+    tasks_dir = Path.join(project_dir, "tasks")
 
+    # B-007 / C-041: the Tasks view runs in the unsandboxed host
+    # (Director) process. An agent with `projects:write:*` can plant
+    # `projects/<p>/tasks -> ../../<other-co>/projects/private/tasks`
+    # (or a symlinked project dir). `File.ls` follows symlinked
+    # ancestors, leaking foreign task metadata into the active-company
+    # view. Refuse any project/tasks dir whose path contains a symlink
+    # before walking it (mirrors the Kanban LV guard).
+    if AgentWritableFile.any_symlink_in_path?(project_dir) or
+         AgentWritableFile.any_symlink_in_path?(tasks_dir) do
+      []
+    else
+      walk_tasks_dir(tasks_dir, project, base, company)
+    end
+  end
+
+  defp walk_tasks_dir(tasks_dir, project, base, company) do
     case File.ls(tasks_dir) do
       {:ok, files} ->
         files

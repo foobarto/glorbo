@@ -146,7 +146,8 @@ defmodule Glorbo.BrainDump do
     project_dir = Path.join([co_dir, "projects", project])
     tasks_dir = Path.join(project_dir, "tasks")
 
-    with :ok <- ensure_safe_dir(tasks_dir),
+    with :ok <- ensure_safe_dir(project_dir),
+         :ok <- ensure_safe_dir(tasks_dir),
          :ok <- File.mkdir_p(tasks_dir) do
       do_convert_to_task(tasks_dir, project, entry, base, company)
     end
@@ -432,14 +433,25 @@ defmodule Glorbo.BrainDump do
     end
   end
 
-  # Refuse to operate inside a braindump/tasks directory that was
-  # swapped for a symlink to somewhere else on disk.
+  # B-016: Refuse to operate inside a braindump/tasks directory that
+  # was swapped for a symlink to somewhere else on disk. The old
+  # leaf-only `File.lstat` caught `projects/inbox/tasks` itself being a
+  # symlink, but a `projects:write:*` agent can plant a symlinked
+  # *parent* (`projects/inbox -> ../../<other-co>/projects/evil`) which
+  # the leaf lstat follows. Walk every ancestor segment via the
+  # canonical `any_symlink_in_path?/1` seam (used by Router + Actions.Tasks).
   defp ensure_safe_dir(path) do
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :directory}} -> :ok
-      {:ok, %File.Stat{}} -> {:error, :not_a_directory}
-      {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, reason}
+    cond do
+      Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path) ->
+        {:error, :symlink_in_path}
+
+      true ->
+        case File.lstat(path) do
+          {:ok, %File.Stat{type: :directory}} -> :ok
+          {:ok, %File.Stat{}} -> {:error, :not_a_directory}
+          {:error, :enoent} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 end

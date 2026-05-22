@@ -130,6 +130,41 @@ defmodule Glorbo.BenchmarksTest do
       base = tmp_base(ctx)
       assert {:error, :not_found} = Benchmarks.fetch("ghost", base: base)
     end
+
+    # B-010 / C-037: run_id is a URL param joined into a path.
+    test "rejects traversal run_ids", ctx do
+      base = tmp_base(ctx)
+      assert {:error, :invalid_run_id} = Benchmarks.fetch("../../../etc", base: base)
+      assert {:error, :invalid_run_id} = Benchmarks.fetch("..", base: base)
+      assert {:error, :invalid_run_id} = Benchmarks.fetch("a/b", base: base)
+      assert {:error, :invalid_run_id} = Benchmarks.fetch(".hidden", base: base)
+    end
+
+    test "accepts the real %Y-%m-%dTHMZ-bench-<hex> run_id shape", ctx do
+      base = tmp_base(ctx)
+      run_id = "2026-04-23T1800Z-bench-ab12cd"
+      seed_run!(base, run_id, ["codex"])
+      assert {:ok, run} = Benchmarks.fetch(run_id, base: base)
+      assert run.summary.run_id == run_id
+    end
+
+    # B-010 / C-037: a hand-assembled / external run dir is untrusted;
+    # a symlinked artifact must NOT be followed and rendered.
+    test "does not follow a symlinked task.md into a host file", ctx do
+      base = tmp_base(ctx)
+      seed_run!(base, "run-sym", ["codex"])
+
+      # Plant a host "secret" and redirect task.md at it.
+      secret = Path.join(base, "host-secret.txt")
+      File.write!(secret, "TOP SECRET HOST CONTENT")
+
+      task_md = Path.join([base, "benchmarks", "runs", "run-sym", "task.md"])
+      File.rm!(task_md)
+      File.ln_s!(secret, task_md)
+
+      {:ok, run} = Benchmarks.fetch("run-sym", base: base)
+      refute run.task_body =~ "TOP SECRET"
+    end
   end
 
   describe "score/3" do
@@ -163,6 +198,12 @@ defmodule Glorbo.BenchmarksTest do
 
       assert {:error, {:ranking_mismatch, _, _}} =
                Benchmarks.score("run-3", ["codex", "claude-code"], base: base)
+    end
+
+    test "rejects traversal run_ids before any path join", ctx do
+      base = tmp_base(ctx)
+      assert {:error, :invalid_run_id} =
+               Benchmarks.score("../../evil", ["codex"], base: base)
     end
 
     test "second scoring append preserves prior sections", ctx do

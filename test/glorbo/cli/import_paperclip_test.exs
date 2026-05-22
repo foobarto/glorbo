@@ -150,4 +150,63 @@ defmodule Glorbo.CLI.ImportPaperclipTest do
       refute File.exists?(Path.join([home, "companies", "Invalid Slug"]))
     end
   end
+
+  describe "symlink hardening (C-098)" do
+    # A symlinked AGENTS.md -> host secret must NOT be discovered as an
+    # agent (lstat refuses the non-regular file), so its contents never
+    # land in company data.
+    test "does not import an agent whose AGENTS.md is a symlink", %{src: src, home: home} do
+      secret = Path.join(home, "secret.txt")
+      File.write!(secret, "SSH PRIVATE KEY MATERIAL\n")
+
+      dir = Path.join(src, "evil")
+      File.mkdir_p!(dir)
+      File.ln_s!(secret, Path.join(dir, "AGENTS.md"))
+
+      assert {:import_paperclip, code, out} = ImportPaperclip.run([src, "--as", "victim"])
+
+      # Either no agents were found (run may report 0) — the secret must
+      # never reach the imported AGENT.md.
+      agent_md = Path.join([home, "companies", "victim", "agents", "evil", "AGENT.md"])
+      refute File.exists?(agent_md)
+      assert code in [0, 1]
+      refute out =~ "SSH PRIVATE KEY"
+    end
+
+    # A symlinked agent directory is refused by the real_dir? lstat
+    # guard (it reports :symlink, not :directory).
+    test "does not follow a symlinked agent directory", %{src: src, home: home} do
+      # Real foreign agent tree elsewhere.
+      foreign = Path.join(home, "foreign-agent")
+      File.mkdir_p!(foreign)
+      File.write!(Path.join(foreign, "AGENTS.md"), "FOREIGN SECRET BODY\n")
+
+      File.ln_s!(foreign, Path.join(src, "linked"))
+
+      assert {:import_paperclip, _code, _out} = ImportPaperclip.run([src, "--as", "victim2"])
+
+      refute File.exists?(
+               Path.join([home, "companies", "victim2", "agents", "linked", "AGENT.md"])
+             )
+    end
+
+    # A real AGENTS.md imports fine, but a symlinked companion
+    # (SOUL.md -> secret) is skipped, not copied.
+    test "skips a symlinked companion file", %{src: src, home: home} do
+      secret = Path.join(home, "companion-secret.txt")
+      File.write!(secret, "COMPANION SECRET\n")
+
+      dir = Path.join(src, "ceo")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "AGENTS.md"), "legit body\n")
+      File.ln_s!(secret, Path.join(dir, "SOUL.md"))
+
+      assert {:import_paperclip, 0, _out} = ImportPaperclip.run([src, "--as", "acme5"])
+
+      agent_dir = Path.join([home, "companies", "acme5", "agents", "ceo"])
+      assert File.exists?(Path.join(agent_dir, "AGENT.md"))
+      # The symlinked SOUL.md was NOT copied.
+      refute File.exists?(Path.join(agent_dir, "SOUL.md"))
+    end
+  end
 end

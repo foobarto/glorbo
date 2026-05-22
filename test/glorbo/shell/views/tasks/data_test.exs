@@ -123,6 +123,39 @@ defmodule Glorbo.Shell.Views.Tasks.DataTest do
       [row] = Data.load_tasks(base, "acme")
       assert row.task_id == "real"
     end
+
+    # B-007 / C-041: an agent with projects:write:* can plant a
+    # symlinked `tasks/` (or project dir) pointing at a sibling
+    # company's tasks. The unsandboxed Tasks view must NOT follow it.
+    test "symlinked tasks/ dir is skipped (no cross-company leak)" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_company(base, "victim")
+      # A real foreign task in the victim company.
+      seed_task(base, "victim", "private", "secret-01", title: "Foreign secret")
+
+      # Plant acme/projects/demo/tasks -> victim/private/tasks
+      demo_dir = Path.join([base, "companies/acme/projects/demo"])
+      File.mkdir_p!(demo_dir)
+      victim_tasks = Path.join([base, "companies/victim/projects/private/tasks"])
+      File.ln_s!(victim_tasks, Path.join(demo_dir, "tasks"))
+
+      assert Data.load_tasks(base, "acme") == []
+    end
+
+    test "symlinked project dir is skipped (no cross-company leak)" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_company(base, "victim")
+      seed_task(base, "victim", "private", "secret-02", title: "Foreign secret")
+
+      projects_dir = Path.join([base, "companies/acme/projects"])
+      File.mkdir_p!(projects_dir)
+      victim_project = Path.join([base, "companies/victim/projects/private"])
+      File.ln_s!(victim_project, Path.join(projects_dir, "demo"))
+
+      assert Data.load_tasks(base, "acme") == []
+    end
   end
 
   describe "group_by_lane/1" do

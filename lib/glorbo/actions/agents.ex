@@ -226,21 +226,45 @@ defmodule Glorbo.Actions.Agents do
     end
   end
 
-  defp walk_files(path) do
+  # C-040 / C-058: the agent's `workspace/` is bind-mounted `rw` into
+  # the sandbox, so an agent can plant `workspace/loop -> .` or
+  # `workspace/root -> /` before an operator retires it. `File.dir?`/
+  # `File.regular?` follow symlinks, so the pre-rename snapshot walk
+  # would recurse a symlink loop unboundedly or traverse a massive
+  # host tree (`/proc`), exhausting CPU/memory and delaying the Tx
+  # past its hard-cap. Use `:file.read_link_info` (lstat) so symlinks
+  # are neither descended nor recorded, and cap recursion depth as a
+  # belt-and-braces guard against any residual cycle.
+  @max_walk_depth 32
+
+  defp walk_files(path), do: walk_files(path, 0)
+
+  defp walk_files(_path, depth) when depth > @max_walk_depth, do: []
+
+  defp walk_files(path, depth) do
     case File.ls(path) do
       {:ok, entries} ->
         Enum.flat_map(entries, fn entry ->
           full = Path.join(path, entry)
 
-          cond do
-            File.dir?(full) -> walk_files(full)
-            File.regular?(full) -> [full]
-            true -> []
+          case lstat_type(full) do
+            :directory -> walk_files(full, depth + 1)
+            :regular -> [full]
+            _ -> []
           end
         end)
 
       _ ->
         []
+    end
+  end
+
+  # lstat (no symlink follow). Returns the entry's own type — a
+  # symlink reports `:symlink`, never the target's type.
+  defp lstat_type(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: type}} -> type
+      _ -> :error
     end
   end
 
@@ -303,9 +327,22 @@ defmodule Glorbo.Actions.Agents do
   # Wave 27: random-suffix exclusive temp + atomic rename — replaces
   # the old `File.write/2` flow that left a TOCTOU window between
   # `ensure_no_symlink_on_path/2` and the actual write.
+  #
+  # C-055: the fresh exclusive temp is created at the process umask
+  # (typically 0644). The in-place `File.write/2` it replaced preserved
+  # the original inode's mode, so a 0600 workspace file was being
+  # silently loosened to 0644 on rename. Capture the original mode
+  # (when the file already exists) and chmod the temp to match before
+  # the rename, defaulting to 0600 for new files.
   defp atomic_write(path, content) do
     rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     tmp = "#{path}.tmp-#{rand}"
+
+    mode =
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o777)
+        _ -> 0o600
+      end
 
     case :file.open(tmp, [:write, :raw, :exclusive, :binary]) do
       {:ok, fd} ->
@@ -314,10 +351,10 @@ defmodule Glorbo.Actions.Agents do
 
         case write_result do
           :ok ->
-            case File.rename(tmp, path) do
-              :ok ->
-                :ok
-
+            with :ok <- File.chmod(tmp, mode),
+                 :ok <- File.rename(tmp, path) do
+              :ok
+            else
               {:error, _} = err ->
                 _ = File.rm(tmp)
                 err
