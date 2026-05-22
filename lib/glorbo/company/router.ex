@@ -822,7 +822,7 @@ defmodule Glorbo.Company.Router do
           emit_task_route_audit(sender, project, task_id, state)
           :ok = Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(state.base, state.company))
           maybe_request_approval(meta, dest_path, project, task_id, sender, state)
-          maybe_auto_dispatch(meta, project, task_id, sender, state)
+          maybe_auto_dispatch(meta, project, task_id, sender, perms, state)
           {:ok, :routed}
         end
       end)
@@ -858,11 +858,19 @@ defmodule Glorbo.Company.Router do
   #     operator decides when to dispatch after granting).
   #   - `assigned_to` is empty or invalid — there's nothing to wake.
   #
-  # Safety: re-uses `handle_outbox_task`'s already-passed permission
-  # check (the spawning agent already had `tasks:create:<project>`
-  # to file the task in the first place) — auto_dispatch is a
-  # convenience flag, not a permission escalation.
-  defp maybe_auto_dispatch(meta, project, task_id, sender, state) do
+  # Security (codex B-025): auto_dispatch writes directly into
+  # `agents/<assignee>/inbox`, which is exactly what a direct
+  # `to: agent:<assignee>` message does — and that path requires
+  # `agents:message:<assignee>` (see `required_permission_for/1` +
+  # the SEC-01 check at the top of `route/2`). The `tasks:create`
+  # permission used to file the task is NOT sufficient: the assignee
+  # is taken verbatim from attacker-controllable `assigned_to`
+  # frontmatter, so without this gate a `tasks:create:<project>`-only
+  # agent could wake ANY agent and make it process attacker-authored
+  # task content (consuming its budget + acting with its privileges).
+  # auto_dispatch must obey the same authorization as the message it
+  # effectively sends.
+  defp maybe_auto_dispatch(meta, project, task_id, sender, perms, state) do
     cond do
       Map.get(meta, "auto_dispatch") != true ->
         :ok
@@ -873,10 +881,24 @@ defmodule Glorbo.Company.Router do
       true ->
         assignee = Map.get(meta, "assigned_to") || ""
 
-        if Glorbo.Slug.valid?(assignee) do
+        with true <- Glorbo.Slug.valid?(assignee),
+             :ok <- ACLMapper.check_action(perms, {"agents", "message", assignee}) do
           auto_dispatch_if_ready(meta, project, task_id, sender, assignee, state)
         else
-          :ok
+          {:error, {:permission_denied, missing}} ->
+            emit_audit(state, %{
+              action: "task.auto_dispatch_denied",
+              actor: "agent:" <> sender,
+              company: state.company,
+              target: "projects/#{project}/tasks/#{task_id}.md",
+              detail: %{assignee: assignee, missing: missing}
+            })
+
+            :ok
+
+          # Invalid/empty assignee — nothing to wake.
+          false ->
+            :ok
         end
     end
   end

@@ -588,7 +588,13 @@ defmodule Glorbo.Company.RouterTest do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo", "researcher"])
     seed_project!(base, "blog")
-    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    # auto_dispatch wakes the assignee, so (codex B-025) it requires the
+    # same agents:message permission a direct message does — grant it here
+    # alongside projects:write.
+    perms_fun = fn _sender, _state ->
+      {:ok, [{"projects", "write", "*"}, {"agents", "message", "*"}]}
+    end
+
     {name, _pid} = start_router_with_perms!(base, perms_fun)
 
     src_dir =
@@ -627,6 +633,57 @@ defmodule Glorbo.Company.RouterTest do
     assert_receive {:audit, %{action: "task.auto_dispatched", target: target, detail: detail}}
     assert target == "projects/blog/tasks/blog-100.md"
     assert detail.assigned_to == "researcher"
+  end
+
+  # codex B-025: auto_dispatch writes the assignee's inbox, which is a
+  # privileged cross-agent message. A sender holding only
+  # tasks:create/projects:write (NOT agents:message) must NOT be able to
+  # wake an arbitrary agent via `auto_dispatch: true` — the inbox write
+  # is denied and a `task.auto_dispatch_denied` audit is emitted.
+  test "B-025: auto_dispatch denied without agents:message permission (+ audit)" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["ceo", "researcher"])
+    seed_project!(base, "blog")
+    # Only project-write — no agents:message. Enough to FILE the task,
+    # not to wake the assignee.
+    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    {name, _pid} = start_router_with_perms!(base, perms_fun)
+
+    src_dir =
+      Path.join([base, "companies", @company, "agents", "ceo", "outbox", "tasks", "blog"])
+
+    File.mkdir_p!(src_dir)
+
+    File.write!(Path.join(src_dir, "blog-110.md"), """
+    ---
+    kind: task/v1
+    title: sneaky-wake
+    status: todo
+    assigned_to: researcher
+    auto_dispatch: true
+    ---
+    Wake the researcher without permission to message it.
+    """)
+
+    send(name, {:file_event, "agents/ceo/outbox/tasks/blog/blog-110.md", [:created]})
+    _ = :sys.get_state(name)
+
+    # The task itself routes (filing was authorized), but the assignee's
+    # inbox must NOT receive an auto-dispatch event.
+    inbox_dir =
+      Path.join([base, "companies", @company, "agents", "researcher", "inbox"])
+
+    auto_files =
+      case File.ls(inbox_dir) do
+        {:ok, list} -> Enum.filter(list, &String.starts_with?(&1, "auto-"))
+        _ -> []
+      end
+
+    assert auto_files == []
+    refute_received {:audit, %{action: "task.auto_dispatched"}}
+    assert_receive {:audit, %{action: "task.auto_dispatch_denied", detail: detail}}
+    assert detail.assignee == "researcher"
+    assert detail.missing == "agents:message:researcher"
   end
 
   test "F10: auto_dispatch skipped when requires_approval: director" do
@@ -677,7 +734,12 @@ defmodule Glorbo.Company.RouterTest do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo", "researcher"])
     seed_project!(base, "blog")
-    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    # agents:message granted so the flow reaches the dependency gate
+    # (the B-025 ACL check is upstream of it).
+    perms_fun = fn _sender, _state ->
+      {:ok, [{"projects", "write", "*"}, {"agents", "message", "*"}]}
+    end
+
     {name, _pid} = start_router_with_perms!(base, perms_fun)
 
     # Dependency task exists but is not done-terminal (status: todo).
@@ -735,7 +797,10 @@ defmodule Glorbo.Company.RouterTest do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo", "researcher"])
     seed_project!(base, "blog")
-    perms_fun = fn _sender, _state -> {:ok, [{"projects", "write", "*"}]} end
+    perms_fun = fn _sender, _state ->
+      {:ok, [{"projects", "write", "*"}, {"agents", "message", "*"}]}
+    end
+
     {name, _pid} = start_router_with_perms!(base, perms_fun)
 
     tasks_dir = Path.join([base, "companies", @company, "projects", "blog", "tasks"])

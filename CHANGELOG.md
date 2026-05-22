@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — auto_dispatch now requires `agents:message:<assignee>` (codex B-025)
+
+An agent filing an outbox task with `auto_dispatch: true` caused the Router
+to write directly into `agents/<assignee>/inbox` — the same privileged action
+a direct `to: agent:<assignee>` message performs — but the only authorization
+checked was `tasks:create`/`projects:write` for filing the task. Since
+`assigned_to` is attacker-controllable frontmatter, a low-privileged agent
+could wake **any** agent and make it process attacker-authored task content
+(consuming its budget, acting with its privileges). `maybe_auto_dispatch` now
+gates the inbox write on the same `agents:message:<assignee>` permission a
+direct message requires, emitting a `task.auto_dispatch_denied` audit on
+refusal. Legitimate spawn-and-dispatch flows (where the spawner holds
+messaging permission) are unaffected.
+
 ## [0.21.1] — 2026-05-22
 
 ### Fixed — dashboard re-render thrash / click-drop under `:agent_status` churn
