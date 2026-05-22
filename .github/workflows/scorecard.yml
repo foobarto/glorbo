@@ -10,6 +10,7 @@
 #   - branch_protection_rule : re-score when branch protection changes
 #   - schedule               : weekly baseline
 #   - push to main           : score the default branch on every merge
+#   - workflow_dispatch       : manual on-demand re-score
 name: Scorecard supply-chain security
 
 on:
@@ -18,6 +19,7 @@ on:
     - cron: '23 4 * * 1'
   push:
     branches: ["main"]
+  workflow_dispatch:
 
 # Top-level least-privilege default; the analysis job widens per need.
 permissions: read-all

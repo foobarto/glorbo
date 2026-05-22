@@ -242,11 +242,16 @@ jobs:
           mix assets.setup
           mix assets.build
           # Install harness node deps + Playwright Chrome.
-          (cd scripts && npm install --no-audit --no-fund)
+          # `npm ci` installs strictly from the committed scripts/package-lock.json
+          # (hash-pinned) — satisfies OpenSSF Scorecard Pinned-Dependencies, vs
+          # `npm install` which can drift.
+          (cd scripts && npm ci --no-audit --no-fund)
           # The capture script calls `chromium.launch()` which needs
           # the chromium browser, not Chrome stable — they're separate
-          # downloads in Playwright's cache.
-          (cd scripts && npx playwright install --with-deps chromium)
+          # downloads in Playwright's cache. Use the lockfile-pinned local
+          # playwright binary (`npm exec`) rather than `npx`, which can fetch
+          # an unpinned version.
+          (cd scripts && npm exec -- playwright install --with-deps chromium)
           # Run the diff. `continue-on-error` swallows a non-zero
           # exit, but the per-LV drift lines still appear in the
           # log so reviewers can eyeball regressions.
