@@ -79,8 +79,9 @@ defmodule Glorbo.MixProject do
     [
       {:phoenix, "~> 1.8"},
       # Force decimal past GHSA-rhv4-8758-jx7v (Decimal.new unbounded-exponent
-      # DoS, fixed in 3.0). ecto/ecto_sqlite3 still pin `~> 2.0`; override until
-      # they relax. Glorbo doesn't use Decimal directly — verified safe.
+      # DoS, fixed in 3.0). ecto pins `~> 2.0` and ecto_sqlite3 `~> 1.6 or
+      # ~> 2.0` — neither admits `~> 3.0` yet, so override until they relax.
+      # Glorbo doesn't use Decimal directly — verified safe.
       {:decimal, "~> 3.0", override: true},
       {:phoenix_ecto, "~> 4.6"},
       {:ecto_sql, "~> 3.12"},
