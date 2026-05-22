@@ -10,6 +10,28 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed — dashboard re-render thrash / click-drop under `:agent_status` churn
+
+`CompanyLive` and `AgentLive` re-rendered synchronously on **every**
+`:agent_status` PubSub flip. A misconfigured or looping agent flips
+status several times/sec; each flip rebuilt the agent roster (CompanyLive)
+or the full agent-detail panel (AgentLive) and patched the live DOM, which
+could replace a toolbar/modal node mid-click and drop the click, and
+thrash the detail panel's layout.
+
+Both views now **coalesce** `:agent_status` bursts through the existing
+`schedule_coalesced_reload` helper (250 ms window) — the same mechanism
+already used for the `:file_event` storm — collapsing a burst to one
+light reload per window. `CompanyLive` also defers the reload while a
+modal/editor is open (re-arming on close), matching the `:file_event`
+behaviour. The "working on …" roster line is now backed by a **durable
+per-slug overlay** (`working_on_by_slug`) re-applied by *both* the
+`:file_event` and `:agent_status` reload paths, so a filesystem-driven
+reload no longer erases the working-on line of a busy agent until its
+next status flip. `schedule_coalesced_reload/4` + `clear_reload_pending/2`
+gained a `latch_key` so the two coalesced streams don't share a pending
+flag. (TODO P1: modal click-drop + agent-detail thrash.)
+
 ## [0.21.0] — 2026-05-21
 
 ### Fixed — `network: proxy` dispatch hard-failed with `:invalid_proxy_url`

@@ -44,7 +44,9 @@ defmodule GlorboWeb.CompanyLiveTest do
       {:agent_status, "ceo", :busy, "projects/foo/tasks/bar.md"}
     )
 
-    Process.sleep(50)
+    # :agent_status is coalesced (250 ms window) — wait past it so the
+    # deferred light reload fires and stamps working-on.
+    Process.sleep(350)
     html = render(view)
     assert html =~ "working on"
     assert html =~ "projects/foo/tasks/bar.md"
@@ -55,8 +57,83 @@ defmodule GlorboWeb.CompanyLiveTest do
       {:agent_status, "ceo", :idle, nil}
     )
 
-    Process.sleep(50)
+    Process.sleep(350)
     refute render(view) =~ "projects/foo/tasks/bar.md"
+  end
+
+  test "rapid :agent_status burst coalesces to the latest flip",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+    # Fire a burst inside one coalescing window: busy → busy → idle. Only
+    # the last flip should be reflected once the window closes.
+    for path <- ["a.md", "b.md", "c.md"] do
+      Phoenix.PubSub.broadcast(
+        Glorbo.PubSub,
+        "company:acme:agents:status",
+        {:agent_status, "ceo", :busy, "projects/foo/tasks/#{path}"}
+      )
+    end
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :idle, nil}
+    )
+
+    Process.sleep(350)
+    html = render(view)
+    # Latest flip was :idle → no working-on line at all, and none of the
+    # intermediate busy paths leak through.
+    refute html =~ "projects/foo/tasks/a.md"
+    refute html =~ "projects/foo/tasks/c.md"
+  end
+
+  test "working-on survives a :file_event reload (durable overlay)",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :busy, "projects/foo/tasks/sticky.md"}
+    )
+
+    Process.sleep(350)
+    assert render(view) =~ "projects/foo/tasks/sticky.md"
+
+    # A :file_event triggers a full load_company_data, whose agent rows
+    # carry no working-on. The durable per-slug overlay must re-stamp it,
+    # otherwise the "working on" line vanishes mid-work until the next
+    # status flip (codex review, 2026-05-22).
+    send(view.pid, {:file_event, "companies/acme/agents/ceo/outbox/x.md", [:created]})
+
+    Process.sleep(350)
+    assert render(view) =~ "projects/foo/tasks/sticky.md"
+  end
+
+  test ":agent_status reload is deferred while the new-agent modal is open",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+    # Open the new-agent modal, then fire a status flip.
+    render_click(view, "new_agent", %{})
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :busy, "projects/foo/tasks/deferred.md"}
+    )
+
+    # Past the window: the reload re-arms instead of firing, so the
+    # working-on stamp is withheld while the modal is open.
+    Process.sleep(350)
+    refute render(view) =~ "projects/foo/tasks/deferred.md"
+
+    # Close the modal; the deferred reload now lands.
+    render_click(view, "new_agent_cancel", %{})
+    Process.sleep(350)
+    assert render(view) =~ "projects/foo/tasks/deferred.md"
   end
 
   test "goals: frontmatter renders a goals panel with a tasks deep link",

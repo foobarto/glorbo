@@ -20,28 +20,29 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
-- [ ] **Agent-detail page re-render thrash while working — NOT
-  REPRODUCED (needs operator repro detail).** Reported 2026-05-21. On
-  investigation the layout looks correct: root is `gl-view--tall`,
-  `.gl-stdout-tail` is `flex:1; min-height:0; overflow-y:auto`, and
-  `.gl-main:has(.gl-view--tall)` bounds the main area — so stdout streams
-  scroll *internally*. Measured `document.scrollHeight` over 4 s on
-  `/companies/acme/agents/ceo` with an active (looping) ceo AND under
-  ~20 stdout-lines/sec: **stable at 900 px, 0 changes**. Could not
-  reproduce document-height oscillation. If it persists for the operator,
-  need: which tab (stdout / history / runtime), viewport width, and
-  whether a steadily-streaming (vs looping) agent triggers it. Possible
-  remaining suspects not yet excluded: the right-column history panel
-  (audit `prepend`) lacking its own fixed-height scroll, or a narrow
-  viewport reflow.
-- [ ] **Modal click-drop under rapid `agent_status` churn.** When an
-  agent flips status several times/sec (e.g. a misconfigured agent
-  looping on heartbeat dispatch), CompanyLive's per-flip `load_agents`
-  re-render can still occasionally replace a toolbar/modal node mid-click
-  and drop it. The realistic working-agent case (file_event storm) is
-  fixed via coalescing; this needs either coalescing `agent_status` with
-  a *light* reload (a naive full-coalesce regressed modal-open — needs
-  care) or stable DOM ids / re-render scoping on the toolbar+modal.
+- [x] **Agent-detail page re-render thrash while working.** Reported
+  2026-05-21; the specific `document.scrollHeight` oscillation could not
+  be reproduced (measured stable 900 px under load). Root cause addressed
+  2026-05-22 regardless: `AgentLive` re-rendered the full detail panel
+  synchronously on **every** `:agent_status` flip for the viewed agent
+  (un-coalesced `load_agent_detail` + `@detail` reassign), so a looping
+  agent thrashed the panel several times/sec. Now coalesced via
+  `schedule_coalesced_reload(:coalesced_detail_reload, …, :detail_reload_pending?)`
+  (250 ms window), working-on stamped from an unrendered pending assign.
+  If the operator's symptom persists, it's a *different* (likely CSS /
+  narrow-viewport) cause — still need: which tab, viewport width,
+  streaming-vs-looping.
+- [x] **Modal click-drop under rapid `agent_status` churn.** Fixed
+  2026-05-22. `CompanyLive` now coalesces `:agent_status` through a
+  *light* reload on a dedicated latch (`:agent_reload_pending?`) and
+  defers it while a modal is open (re-arm on close) — the option the
+  prior note flagged as "needs care." The naive full-coalesce regression
+  was avoided by keeping the reload light (`load_agents` only, not
+  `load_company_data`) and giving it its own latch. The "working on …"
+  roster line is now backed by a durable `working_on_by_slug` overlay
+  re-applied by both the `:file_event` and `:agent_status` reload paths
+  (codex caught that a file_event reload would otherwise erase it). 7 new
+  tests (4 CompanyLive, 2 AgentLive, 1 LiveHelpers).
 - [x] **GEP-32 phase 3 — native model discovery + cache surface.**
   Shipped `Glorbo.Providers.ModelCatalog` + `NativeConfig` +
   `ProviderModel` schema + migration. Wires `cache/providers/*.json`

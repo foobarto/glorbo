@@ -46,6 +46,39 @@ defmodule GlorboWeb.AgentLiveTest do
     assert content =~ "reason:"
   end
 
+  test "viewed agent's :agent_status stamps working-on after the coalesce window",
+       %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "ceo", :busy, "projects/foo/tasks/detail.md"}
+    )
+
+    # Coalesced (250 ms) — wait past the window for the deferred detail
+    # reload to fire.
+    Process.sleep(350)
+    assert render(view) =~ "projects/foo/tasks/detail.md"
+  end
+
+  test "another agent's :agent_status does not disturb this detail view",
+       %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:agents:status",
+      {:agent_status, "someone-else", :busy, "projects/foo/tasks/other.md"}
+    )
+
+    Process.sleep(350)
+    html = render(view)
+    refute html =~ "projects/foo/tasks/other.md"
+    # The view is still alive and rendering its own agent.
+    assert html =~ "ceo"
+  end
+
   describe "config tab (paperclip-ux-gaps §5)" do
     test "edit button flips to structured form", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")

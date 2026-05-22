@@ -33,5 +33,27 @@ defmodule GlorboWeb.LiveHelpersTest do
       _again = LiveHelpers.schedule_coalesced_reload(reset, :reload_test, 20)
       assert_receive :reload_test, 200
     end
+
+    test "distinct latch_keys coalesce independently" do
+      # A LiveView coalescing two streams (e.g. :file_event + :agent_status)
+      # must not let one stream's pending reload suppress the other's.
+      s = socket()
+
+      s1 = LiveHelpers.schedule_coalesced_reload(s, :reload_a, 30, :latch_a)
+      assert s1.assigns.latch_a
+
+      # Different latch → schedules its own message even while latch_a is set.
+      s2 = LiveHelpers.schedule_coalesced_reload(s1, :reload_b, 30, :latch_b)
+      assert s2.assigns.latch_b
+      assert s2.assigns.latch_a
+
+      assert_receive :reload_a, 200
+      assert_receive :reload_b, 200
+
+      # Clearing one latch leaves the other untouched.
+      cleared = LiveHelpers.clear_reload_pending(s2, :latch_a)
+      refute cleared.assigns.latch_a
+      assert cleared.assigns.latch_b
+    end
   end
 end

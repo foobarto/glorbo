@@ -44,6 +44,11 @@ defmodule GlorboWeb.AgentLive do
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{StatusPill, StdoutTail}
 
+  # Coalescing window for :agent_status churn on the viewed agent. Matches
+  # the company-roster + :file_event window so the detail panel refreshes
+  # at the same cadence as the rest of the dashboard.
+  @agent_status_coalesce_ms 250
+
   @impl true
   def mount(%{"company" => co, "agent" => ag}, _session, socket) do
     cond do
@@ -169,20 +174,40 @@ defmodule GlorboWeb.AgentLive do
 
   def handle_info({:agent_status, slug, _status, working_on}, socket) do
     if slug == socket.assigns[:agent_slug] do
-      # If this IS the agent we're viewing, re-materialise the detail
-      # so the runtime panel refreshes, and stamp the current working-on
-      # task path on the socket so the dashboard renders it immediately.
-      base = GlorboWeb.LiveHelpers.base_dir()
-      co = socket.assigns.company_slug
-      detail = load_agent_detail(base, co, slug)
+      # Coalesce status churn for the viewed agent. A looping agent flips
+      # state several times/sec, and a synchronous load_agent_detail +
+      # full @detail re-render per flip thrashes the (large) detail panel's
+      # layout (TODO P1 agent-detail thrash, 2026-05-22). Stash the latest
+      # working-on in an *unrendered* assign — an assign not in the
+      # template yields an empty diff, so no DOM is patched — and fold the
+      # burst into one detail reload per window.
+      socket =
+        socket
+        |> assign(:pending_working_on, working_on)
+        |> GlorboWeb.LiveHelpers.schedule_coalesced_reload(
+          :coalesced_detail_reload,
+          @agent_status_coalesce_ms,
+          :detail_reload_pending?
+        )
 
-      {:noreply,
-       socket
-       |> assign(:detail, detail)
-       |> assign(:working_on, working_on)}
+      {:noreply, socket}
     else
-      {:noreply, assign(socket, :_agent_status_tick, System.unique_integer([:positive]))}
+      # Another agent flipping state has no bearing on this detail view.
+      {:noreply, socket}
     end
+  end
+
+  def handle_info(:coalesced_detail_reload, socket) do
+    base = GlorboWeb.LiveHelpers.base_dir()
+    co = socket.assigns.company_slug
+    slug = socket.assigns.agent_slug
+    detail = load_agent_detail(base, co, slug)
+
+    {:noreply,
+     socket
+     |> assign(:detail, detail)
+     |> assign(:working_on, Map.get(socket.assigns, :pending_working_on))
+     |> GlorboWeb.LiveHelpers.clear_reload_pending(:detail_reload_pending?)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

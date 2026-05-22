@@ -43,6 +43,11 @@ defmodule GlorboWeb.CompanyLive do
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.{Spark, StatBreakdown, StatCard, StatusPill}
 
+  # Coalescing window for :agent_status churn. Matches the :file_event
+  # window (LiveHelpers @coalesce_reload_ms) so pill + working-on updates
+  # land at the same cadence as filesystem-driven roster refreshes.
+  @agent_status_coalesce_ms 250
+
   @impl true
   def mount(%{"company" => slug}, _session, socket) do
     if Glorbo.Slug.valid?(slug) do
@@ -156,46 +161,95 @@ defmodule GlorboWeb.CompanyLive do
       slug = socket.assigns.company_slug
       co_path = Path.join([base, "companies", slug])
       data = load_company_data(base, slug, co_path)
+
+      # load_company_data's build_agent_row carries no working-on (it's
+      # runtime-only state delivered via :agent_status), so re-apply the
+      # durable overlay — otherwise a file_event reload erases the
+      # "working on X" line of a busy agent until its next status flip.
+      data = Map.update(data, :agents, [], &apply_working_on(&1, working_on_by_slug(socket)))
+
       {:noreply, socket |> assign(:company, data) |> GlorboWeb.LiveHelpers.clear_reload_pending()}
     end
   end
 
   def handle_info({:agent_status, slug, status, working_on}, socket) do
-    # The agent grid's pill_status is snapshotted at build time (see
-    # build_agent_row → agent_pill_status → agent_runtime_status). For
-    # the pills to re-derive we have to rebuild the agents list. Other
-    # company data (audit tail, budget, projects) is stable for the
-    # duration of a dispatch flip, so we only refresh `agents` +
-    # dependent stats — cheaper than the full load_company_data.
-    base = GlorboWeb.LiveHelpers.base_dir()
-    co_slug = socket.assigns.company_slug
-    co_path = Path.join([base, "companies", co_slug])
-    agents = load_agents(base, co_slug, co_path)
+    # Coalesce status churn exactly like :file_event. A misconfigured
+    # agent can flip status several times/sec; a synchronous load_agents
+    # + re-render per flip patches the stats/roster subtree mid-click and
+    # drops toolbar/modal clicks (TODO P1 modal click-drop, 2026-05-22).
+    # Record the resolved working-on per slug in an *unrendered* durable
+    # assign — an assign not referenced by the template produces an empty
+    # diff, so no DOM is patched — and fold the whole burst into one light
+    # reload per window. The map is durable (not per-window) so the
+    # :file_event reload can re-apply it too. A dedicated latch keeps this
+    # independent of the :file_event reload (see schedule_coalesced_reload/4).
+    resolved = if status == :busy and is_binary(working_on), do: working_on, else: nil
+    by_slug = Map.put(working_on_by_slug(socket), slug, resolved)
 
-    # Inject the working-on path for the agent that just flipped state
-    # so the roster renders it immediately — don't wait for the next
-    # inotify sweep.
-    agents = Enum.map(agents, &maybe_stamp_working_on(&1, slug, status, working_on))
+    socket =
+      socket
+      |> assign(:working_on_by_slug, by_slug)
+      |> GlorboWeb.LiveHelpers.schedule_coalesced_reload(
+        :coalesced_agent_status,
+        @agent_status_coalesce_ms,
+        :agent_reload_pending?
+      )
 
-    company =
-      socket.assigns[:company]
-      |> Map.put(:agents, agents)
-      |> Map.put(:agents_alive, Enum.count(agents, &(&1.pill_status == :alive)))
-      |> Map.put(:agents_idle, Enum.count(agents, &(&1.pill_status == :idle)))
-      |> Map.put(:agents_warn, Enum.count(agents, &(&1.pill_status == :warn)))
-      |> Map.put(:agents_crashed, Enum.count(agents, &(&1.pill_status == :stop)))
+    {:noreply, socket}
+  end
 
-    {:noreply, assign(socket, :company, company)}
+  def handle_info(:coalesced_agent_status, socket) do
+    # Defer while a modal/editor is open — a roster re-render mid-edit
+    # wipes the (uncontrolled) form inputs and can drop the click that
+    # opened it. Re-arm so the roster refreshes once the modal closes
+    # (mirrors :coalesced_reload).
+    if modal_open?(socket) do
+      Process.send_after(self(), :coalesced_agent_status, @agent_status_coalesce_ms)
+      {:noreply, socket}
+    else
+      # The agent grid's pill_status is snapshotted at build time (see
+      # build_agent_row → agent_pill_status → agent_runtime_status). For
+      # the pills to re-derive we rebuild the agents list. Other company
+      # data (audit tail, budget, projects) is stable for the duration of
+      # a dispatch flip, so we refresh only `agents` + dependent stats —
+      # cheaper than a full load_company_data.
+      base = GlorboWeb.LiveHelpers.base_dir()
+      co_slug = socket.assigns.company_slug
+      co_path = Path.join([base, "companies", co_slug])
+
+      # Inject the working-on path for each agent that flipped during the
+      # window so the roster renders it without waiting for the next
+      # inotify sweep.
+      agents =
+        base
+        |> load_agents(co_slug, co_path)
+        |> apply_working_on(working_on_by_slug(socket))
+
+      company =
+        socket.assigns[:company]
+        |> Map.put(:agents, agents)
+        |> Map.put(:agents_alive, Enum.count(agents, &(&1.pill_status == :alive)))
+        |> Map.put(:agents_idle, Enum.count(agents, &(&1.pill_status == :idle)))
+        |> Map.put(:agents_warn, Enum.count(agents, &(&1.pill_status == :warn)))
+        |> Map.put(:agents_crashed, Enum.count(agents, &(&1.pill_status == :stop)))
+
+      {:noreply,
+       socket
+       |> assign(:company, company)
+       |> GlorboWeb.LiveHelpers.clear_reload_pending(:agent_reload_pending?)}
+    end
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
-  defp maybe_stamp_working_on(agent_row, slug, :busy, path) when is_binary(path) do
-    if agent_row.slug == slug, do: Map.put(agent_row, :working_on, path), else: agent_row
-  end
+  defp working_on_by_slug(socket), do: socket.assigns[:working_on_by_slug] || %{}
 
-  defp maybe_stamp_working_on(agent_row, slug, _status, _) do
-    if agent_row.slug == slug, do: Map.put(agent_row, :working_on, nil), else: agent_row
+  # Overlay the durable per-slug working-on state onto freshly-loaded
+  # agent rows. A slug mapped to a binary path renders "working on …";
+  # mapped to nil (idle) or absent (never observed) it renders the agent's
+  # activity hint — both falsy in the template, so the two are equivalent.
+  defp apply_working_on(agents, by_slug) do
+    Enum.map(agents, &Map.put(&1, :working_on, Map.get(by_slug, &1.slug)))
   end
 
   defp modal_open?(socket) do

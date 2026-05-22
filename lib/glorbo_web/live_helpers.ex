@@ -32,28 +32,37 @@ defmodule GlorboWeb.LiveHelpers do
 
   Call this from the high-frequency `handle_info({:file_event, …})`
   clause and perform the real reload in the `reload_msg` handler,
-  clearing the latch there with `clear_reload_pending/1`. Repeated calls
+  clearing the latch there with `clear_reload_pending/2`. Repeated calls
   while a reload is already pending are no-ops, so a burst collapses to
   one reload per window.
+
+  `latch_key` names the assign used as the pending-flag. A LiveView that
+  coalesces two *independent* high-frequency streams (e.g. `:file_event`
+  and `:agent_status`) must give each its own latch — sharing one means
+  a pending reload of one kind suppresses scheduling the other, and the
+  message that fires clears the shared latch on behalf of both. Pass a
+  distinct `latch_key` (and matching `reload_msg`) per stream.
   """
-  @spec schedule_coalesced_reload(Phoenix.LiveView.Socket.t(), term(), pos_integer()) ::
+  @spec schedule_coalesced_reload(Phoenix.LiveView.Socket.t(), term(), pos_integer(), atom()) ::
           Phoenix.LiveView.Socket.t()
   def schedule_coalesced_reload(
         socket,
         reload_msg \\ :coalesced_reload,
-        delay_ms \\ @coalesce_reload_ms
+        delay_ms \\ @coalesce_reload_ms,
+        latch_key \\ :reload_pending?
       ) do
-    if socket.assigns[:reload_pending?] do
+    if socket.assigns[latch_key] do
       socket
     else
       Process.send_after(self(), reload_msg, delay_ms)
-      Phoenix.Component.assign(socket, :reload_pending?, true)
+      Phoenix.Component.assign(socket, latch_key, true)
     end
   end
 
-  @doc "Clear the coalesced-reload latch set by `schedule_coalesced_reload/3`."
-  @spec clear_reload_pending(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def clear_reload_pending(socket), do: Phoenix.Component.assign(socket, :reload_pending?, false)
+  @doc "Clear the coalesced-reload latch set by `schedule_coalesced_reload/4`."
+  @spec clear_reload_pending(Phoenix.LiveView.Socket.t(), atom()) :: Phoenix.LiveView.Socket.t()
+  def clear_reload_pending(socket, latch_key \\ :reload_pending?),
+    do: Phoenix.Component.assign(socket, latch_key, false)
 
   @doc """
   Pretty-print the base dir for UI labels. When the base is the
