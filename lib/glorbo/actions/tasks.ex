@@ -185,9 +185,23 @@ defmodule Glorbo.Actions.Tasks do
     explicit = Map.get(params, "peer_review_required")
 
     cond do
-      severity not in ["major", "critical"] -> params
-      explicit in [true, false, "true", "false"] -> params
-      true -> Map.put(params, "peer_review_required", true)
+      severity not in ["major", "critical"] ->
+        params
+
+      # C-062: only a genuine boolean-false opt-out is honoured. The
+      # string `"true"` previously counted as an "explicit value" and
+      # returned params unchanged — but it round-trips through YAML as
+      # a quoted string and `coerce_peer_review_required/1` coerces any
+      # non-boolean to `false`, silently defeating the major/critical
+      # auto-flip (GEP-41 D1). Force boolean `true` whenever the caller
+      # did not supply an explicit boolean-false (or its `"false"`
+      # string form), normalising any other value to the safe-on
+      # default for high-severity tasks.
+      explicit in [false, "false"] ->
+        Map.put(params, "peer_review_required", false)
+
+      true ->
+        Map.put(params, "peer_review_required", true)
     end
   end
 

@@ -276,5 +276,82 @@ defmodule Glorbo.Actions.ReviewsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # B-008: `assignee` is attacker-controlled (it's the task's
+    # `assigned_to` frontmatter). A traversal value must NOT write a
+    # sentinel outside the company tree, and the path must be rejected
+    # before any write — no audit, no file.
+    test "rejects a traversal assignee and writes nothing outside the company",
+         %{base: base, audit: audit} do
+      # Stand up a sibling company with a victim agent inbox.
+      victim_inbox =
+        Path.join([base, "companies", "other-co", "agents", "victim", "inbox"])
+
+      File.mkdir_p!(victim_inbox)
+
+      task = make_task(task_id: "demo-1", project: "demo")
+
+      assert :ok =
+               Reviews.write_revise_feedback(
+                 "acme",
+                 "../../other-co/agents/victim",
+                 task,
+                 "pwned",
+                 base: base,
+                 audit: audit
+               )
+
+      # No sentinel landed in the victim's inbox.
+      refute File.exists?(Path.join(victim_inbox, "peer-review-feedback-demo-1.md"))
+      # And the path was rejected before any audit fired.
+      assert FakeAudit.calls(audit) == []
+    end
+
+    # B-008: a symlinked inbox ancestor (e.g. the agent dir is a
+    # symlink to another company) must NOT be followed — `File.lstat`
+    # gating + `any_symlink_in_path?` reject it.
+    test "refuses a symlinked inbox ancestor", %{base: base, audit: audit} do
+      # Real inbox lives in the sibling company.
+      real_inbox =
+        Path.join([base, "companies", "other-co", "agents", "victim", "inbox"])
+
+      File.mkdir_p!(real_inbox)
+
+      # Plant a symlink: acme/agents/decoy -> other-co/agents/victim
+      acme_agents = Path.join([base, "companies", "acme", "agents"])
+      File.mkdir_p!(acme_agents)
+      decoy = Path.join(acme_agents, "decoy")
+
+      File.ln_s(
+        Path.join([base, "companies", "other-co", "agents", "victim"]),
+        decoy
+      )
+
+      task = make_task(task_id: "demo-1", project: "demo")
+
+      assert :ok =
+               Reviews.write_revise_feedback("acme", "decoy", task, "pwned",
+                 base: base,
+                 audit: audit
+               )
+
+      refute File.exists?(Path.join(real_inbox, "peer-review-feedback-demo-1.md"))
+      assert FakeAudit.calls(audit) == []
+    end
+
+    # B-008: a malformed task_id must not become a path component.
+    test "rejects a non-slug task_id before building the sentinel filename",
+         %{base: base, audit: audit} do
+      seed_assignee_inbox(base, "acme", "engineer")
+      task = make_task(task_id: "../../escape", project: "demo")
+
+      assert :ok =
+               Reviews.write_revise_feedback("acme", "engineer", task, "note",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
   end
 end

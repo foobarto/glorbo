@@ -764,25 +764,52 @@ defmodule Glorbo.TaskDefinitionTest do
       assert hd(td.handoff_chain).reason == "good entry"
     end
 
-    test "G40-5: peer_review_required accepts booleans only; other values → false",
+    test "G40-5: peer_review_required normalises \"true\"/\"false\" strings; junk → false",
          ctx do
-      # String "true" is NOT a valid boolean — should coerce to default false
-      # per GEP-40 D1 (schema uses strict booleans; see the open-questions
-      # note about possible future normalisation).
-      content = """
+      # C-062: the quoted YAML string forms `"true"` / `"false"` now
+      # coerce to the matching boolean. Previously `"true"` coerced to
+      # `false`, which let a critical task look review-required while
+      # the gate treated review as off (fail-open). Anything that is
+      # neither a boolean nor `"true"`/`"false"` still falls to the
+      # safe `false` default.
+      true_content = """
       ---
       kind: task/v1
-      title: String trick
+      title: String trick true
       status: todo
       peer_review_required: "true"
       ---
       """
 
-      path = write_task(ctx, "string-bool.md", content)
+      path = write_task(ctx, "string-bool-true.md", true_content)
       assert {:ok, td} = TaskDefinition.parse_file(path, base: ctx.base, company: ctx.company)
+      assert td.peer_review_required == true
 
-      # String "true" is not a valid boolean; safe default wins.
-      assert td.peer_review_required == false
+      false_content = """
+      ---
+      kind: task/v1
+      title: String trick false
+      status: todo
+      peer_review_required: "false"
+      ---
+      """
+
+      path2 = write_task(ctx, "string-bool-false.md", false_content)
+      assert {:ok, td2} = TaskDefinition.parse_file(path2, base: ctx.base, company: ctx.company)
+      assert td2.peer_review_required == false
+
+      junk_content = """
+      ---
+      kind: task/v1
+      title: String trick junk
+      status: todo
+      peer_review_required: "yes"
+      ---
+      """
+
+      path3 = write_task(ctx, "string-bool-junk.md", junk_content)
+      assert {:ok, td3} = TaskDefinition.parse_file(path3, base: ctx.base, company: ctx.company)
+      assert td3.peer_review_required == false
     end
 
     test "G40-6: severity enum rejects unknown values (coerces to nil)",

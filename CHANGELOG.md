@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — revise-feedback path, severity auto-flip, MCP actor provenance (codex B-008/C-062/C-077)
+
+- **B-008:** `Reviews.write_revise_feedback/5` joined the task's `assigned_to` value
+  (attacker-controllable) into the inbox path with a symlink-following `File.dir?`.
+  It now validates the assignee + task_id slugs and refuses symlinked ancestors.
+- **C-062:** a string `peer_review_required: "true"` defeated the severity auto-flip
+  (major/critical tasks silently skipped review). The flip now treats only
+  boolean/`"false"` as opt-out, and the parser coerces the string form properly.
+- **C-077:** an overlong MCP `client_name` made `safe_actor_tag/1` collapse to the
+  trusted `"director"` provenance; it now never collapses an untrusted/overlong actor
+  to `director` (truncates with an `mcp:` prefix or marks `mcp:unknown`).
+
 ### Security — refuse agent-planted symlinks across host-side filesystem walks (codex B-007/C-041/B-016/B-019/B-010/C-037/C-098/C-070/D-146/C-040/C-058)
 
 Several host-side (unsandboxed) code paths walked or read agent-writable trees

@@ -149,6 +149,90 @@ defmodule GlorboWeb.ActionsTest do
       assert "agent.wake" in actions
     end
 
+    # C-077: an overlong MCP actor must NOT collapse to the trusted
+    # "director" provenance. Pre-fix, `safe_actor_tag/1` returned
+    # "director" for any actor over 128 bytes; an MCP caller with an
+    # unbounded `Mcp-Client-Name` could thereby forge director-authored
+    # mention frontmatter. The written `from:` must stay MCP-flavoured.
+    test "overlong mcp actor does NOT forge director provenance in mention",
+         %{base: base, audit: audit} do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      long_client = String.duplicate("a", 200)
+      actor = "mcp:" <> long_client
+
+      assert :ok =
+               Actions.post_message(
+                 "acme",
+                 "general",
+                 "@ceo please look",
+                 base: base,
+                 audit: audit,
+                 actor: actor
+               )
+
+      mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+
+      [content] =
+        mentions_dir
+        |> File.ls!()
+        |> Enum.map(&File.read!(Path.join(mentions_dir, &1)))
+        |> Enum.take(1)
+
+      refute content =~ ~s(from: "director")
+      # Provenance stays MCP-flavoured and bounded.
+      assert content =~ ~r/from: "mcp:/
+    end
+
+    # C-077: an empty/whitespace actor must not collapse to "director"
+    # either — it's untrusted input, not the legitimate default (which
+    # passes the literal "director" string through unchanged).
+    test "empty actor does NOT forge director provenance in mention",
+         %{base: base, audit: audit} do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      assert :ok =
+               Actions.post_message(
+                 "acme",
+                 "general",
+                 "@ceo please look",
+                 base: base,
+                 audit: audit,
+                 actor: "   "
+               )
+
+      mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+
+      [content] =
+        mentions_dir
+        |> File.ls!()
+        |> Enum.map(&File.read!(Path.join(mentions_dir, &1)))
+        |> Enum.take(1)
+
+      refute content =~ ~s(from: "director")
+      assert content =~ ~s(from: "mcp:unknown")
+    end
+
+    # C-077 regression guard: the legitimate Director default (actor
+    # absent → literal "director") must still stamp `from: "director"`.
+    test "default director actor still stamps director provenance",
+         %{base: base, audit: audit} do
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
+
+      assert :ok =
+               Actions.post_message("acme", "general", "@ceo hi", base: base, audit: audit)
+
+      mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+
+      [content] =
+        mentions_dir
+        |> File.ls!()
+        |> Enum.map(&File.read!(Path.join(mentions_dir, &1)))
+        |> Enum.take(1)
+
+      assert content =~ ~s(from: "director")
+    end
+
     test "@mention of unknown agent is a no-op", %{base: base, audit: audit} do
       assert :ok =
                Actions.post_message(

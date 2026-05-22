@@ -159,24 +159,57 @@ defmodule Glorbo.Actions.Reviews do
     audit = Keyword.get(opts, :audit, AuditLog)
     now = Keyword.get(opts, :now_fun, &DateTime.utc_now/0).()
 
-    inbox_dir =
-      Path.join([base, "companies", company, "agents", assignee, "inbox"])
+    # B-008: `assignee` comes verbatim from the task's `assigned_to`
+    # frontmatter, which an agent with `tasks:update` controls. Unlike
+    # `request_peer_review/4` (which validates the reviewer slug), this
+    # path previously joined `assignee` straight into the inbox path
+    # with no validation and gated on `File.dir?/1` (follows symlinks)
+    # — so a traversal value like `../../other-co/agents/victim` plus a
+    # symlinked ancestor could land a wake/prompt-injection sentinel in
+    # another company's tree, crossing the company boundary and
+    # bypassing Router-mediated messaging. Validate the slug, reject a
+    # non-slug `task_id` before building the filename, refuse symlinked
+    # ancestors, and require a real directory via `File.lstat`.
+    with :ok <- Support.validate_slug(assignee, :agent),
+         :ok <- Support.validate_slug(company, :company),
+         true <- valid_task_id?(task.task_id) do
+      inbox_dir =
+        Path.join([base, "companies", company, "agents", assignee, "inbox"])
 
-    if File.dir?(inbox_dir) do
-      reviewer = effective_reviewer(task)
-      sentinel_path = Path.join(inbox_dir, "peer-review-feedback-#{task.task_id}.md")
-      content = render_feedback_sentinel(task, reviewer, note, now)
+      if real_directory?(inbox_dir) and
+           not Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(inbox_dir) do
+        reviewer = effective_reviewer(task)
+        sentinel_path = Path.join(inbox_dir, "peer-review-feedback-#{task.task_id}.md")
+        content = render_feedback_sentinel(task, reviewer, note, now)
 
-      case atomic_write(sentinel_path, content) do
-        :ok ->
-          emit_feedback_audit(audit, company, task, assignee, note)
-          :ok
+        case atomic_write(sentinel_path, content) do
+          :ok ->
+            emit_feedback_audit(audit, company, task, assignee, note)
+            :ok
 
-        {:error, _} ->
-          :ok
+          {:error, _} ->
+            :ok
+        end
+      else
+        :ok
       end
     else
-      :ok
+      _ -> :ok
+    end
+  end
+
+  # B-008: `task_id` is the filename component of the sentinel; reject
+  # anything that isn't a Glorbo slug (no `/`, `..`, NUL, etc.) before
+  # it reaches `Path.join`.
+  defp valid_task_id?(id) when is_binary(id), do: Glorbo.Slug.valid?(id)
+  defp valid_task_id?(_), do: false
+
+  # B-008: require a real directory (not a symlink to one). `File.dir?`
+  # follows symlinks; `File.lstat` + `type: :directory` does not.
+  defp real_directory?(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory}} -> true
+      _ -> false
     end
   end
 

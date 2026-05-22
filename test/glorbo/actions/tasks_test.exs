@@ -557,6 +557,61 @@ defmodule Glorbo.Actions.TasksTest do
       content = File.read!(Path.join([base, "companies", "acme", rel]))
       assert content =~ "peer_review_required: true"
     end
+
+    # C-062: a STRING "true" must not defeat the auto-flip. Pre-fix it
+    # was treated as an explicit value, round-tripped through YAML as a
+    # quoted `"true"`, and coerced back to `false` — silently bypassing
+    # the gate on a critical task. The written value must parse as
+    # boolean `true` and the parsed TaskDefinition must report
+    # `peer_review_required: true`.
+    test "string \"true\" peer_review_required does NOT bypass auto-flip on critical",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{
+                   "title" => "ship it",
+                   "severity" => "critical",
+                   "peer_review_required" => "true"
+                 },
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-6"
+               )
+
+      abs = Path.join([base, "companies", "acme", rel])
+      content = File.read!(abs)
+      # Must be an unquoted boolean, not the quoted string "true".
+      assert content =~ ~r/^peer_review_required: true$/m
+      refute content =~ ~s(peer_review_required: "true")
+
+      {:ok, td} = Glorbo.TaskDefinition.parse_file(abs, base: base, company: "acme")
+      assert td.peer_review_required == true
+    end
+
+    test "string \"false\" peer_review_required is honoured as the opt-out",
+         %{base: base, audit: audit} do
+      assert {:ok, %{rel_path: rel}} =
+               Tasks.create(
+                 "acme",
+                 "demo",
+                 %{
+                   "title" => "ship it",
+                   "severity" => "critical",
+                   "peer_review_required" => "false"
+                 },
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 task_id: "demo-auto-7"
+               )
+
+      abs = Path.join([base, "companies", "acme", rel])
+      {:ok, td} = Glorbo.TaskDefinition.parse_file(abs, base: base, company: "acme")
+      assert td.peer_review_required == false
+    end
   end
 
   # ---------------------------------------------------------------------------

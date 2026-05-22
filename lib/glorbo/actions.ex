@@ -351,8 +351,20 @@ defmodule Glorbo.Actions do
   # trailing whitespace from the actor before it lands in YAML
   # frontmatter. Caller-supplied actors are already built from
   # `"mcp:#{context.client}"` or the literal "director", but an
-  # adversarial context could push bad bytes in. Fall back to
-  # "director" on pathological values to preserve the old default.
+  # adversarial context could push bad bytes in.
+  #
+  # C-077: the fallback must NEVER collapse to the trusted literal
+  # "director". The legitimate Director web path already passes the
+  # literal "director" (the default in `post_message/4`), so it
+  # round-trips through the truthy branch unchanged. An empty or
+  # overlong actor is, by definition, untrusted (MCP `client_name`
+  # is unbounded — `"mcp:" <> <longname>` can exceed 128 bytes), and
+  # downgrading it to "director" is a privilege upgrade — exactly the
+  # spoof this function exists to block. Instead:
+  #   * empty / non-binary → explicit "mcp:unknown" provenance;
+  #   * overlong           → truncate to @max_actor_bytes, preserving
+  #     any `mcp:` prefix so provenance stays honest.
+  @max_actor_bytes 128
   defp safe_actor_tag(actor) when is_binary(actor) do
     cleaned =
       actor
@@ -360,13 +372,32 @@ defmodule Glorbo.Actions do
       |> String.trim()
 
     cond do
-      cleaned == "" -> "director"
-      byte_size(cleaned) > 128 -> "director"
+      cleaned == "" -> "mcp:unknown"
+      byte_size(cleaned) > @max_actor_bytes -> truncate_actor(cleaned)
       true -> cleaned
     end
   end
 
-  defp safe_actor_tag(_), do: "director"
+  defp safe_actor_tag(_), do: "mcp:unknown"
+
+  # Truncate an overlong actor without ever yielding the trusted
+  # "director" literal. Preserve the `mcp:` prefix so the resulting
+  # tag still reads as tool-originated provenance, then take the
+  # leading bytes of the remainder up to the budget. `binary_part/3`
+  # is byte-oriented; an overlong actor is attacker-controlled bytes,
+  # so a mid-codepoint cut is acceptable (the tag is a provenance
+  # marker, not displayed prose) and never collapses to a trusted tag.
+  defp truncate_actor("mcp:" <> rest) do
+    keep = @max_actor_bytes - byte_size("mcp:")
+    "mcp:" <> binary_part(rest, 0, min(byte_size(rest), keep))
+  end
+
+  defp truncate_actor(_other) do
+    # Unknown overlong provenance — mark it untrusted explicitly
+    # rather than emitting a bare truncated string that could collide
+    # with a trusted slug.
+    "mcp:unknown"
+  end
 
   defp safe_wake_mention(company, slug) do
     case Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, slug}) do

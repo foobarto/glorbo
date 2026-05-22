@@ -230,11 +230,22 @@ defmodule Glorbo.TaskDefinition do
   defp coerce_severity("info"), do: :info
   defp coerce_severity(_), do: nil
 
-  # GEP-41 peer-review trigger flag. Booleans only; never strings.
-  # A bad value is coerced to the safe default (false) so a malformed
-  # task doesn't accidentally escape the gate.
+  # GEP-41 peer-review trigger flag.
+  #
+  # C-062: accept the string forms `"true"`/`"false"` in addition to
+  # the booleans. A `peer_review_required: "true"` that round-trips
+  # through YAML as a quoted string previously coerced to `false`,
+  # silently defeating the severity auto-flip (GEP-41 D1) — i.e. a
+  # task could *look* like it requested review while the gate treated
+  # review as not required (fail-open). Coercing the truthy string to
+  # `true` makes the round-trip safe. Any other value still falls to
+  # the safe-on default for a malformed task: `false` would fail open,
+  # so we keep the catch-all at `false` only for genuinely absent /
+  # non-true values, matching the original strict-flag intent.
   defp coerce_peer_review_required(true), do: true
+  defp coerce_peer_review_required("true"), do: true
   defp coerce_peer_review_required(false), do: false
+  defp coerce_peer_review_required("false"), do: false
   defp coerce_peer_review_required(_), do: false
 
   # GEP-41 three-way verdict — normalized to the canonical lowercase
