@@ -72,6 +72,10 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0046 | [Parallelisation of company agents](./0046-parallelisation-of-company-agents.md)         | Standards     | Implemented |
 | 0047 | [`depends_on:` for tasks — explicit blocking dependencies](./0047-task-depends-on.md)     | Standards     | Implemented |
 | 0048 | [Local auth hardening — epmd loopback + mandatory dashboard token](./0048-local-auth-hardening.md) | Standards | Implemented |
+| 0049 | [One-time bootstrap token → rotating per-session cookie](./0049-session-token-rotation.md) | Standards | Draft |
+| 0050 | [Per-agent egress authorization — default-deny + caller-identity authz](./0050-per-agent-egress-authorization.md) | Standards | Draft |
+| 0051 | [Trusted peer-review verdict store — derive provenance from the audit log](./0051-trusted-peer-review-verdict-store.md) | Standards | Draft |
+| 0052 | [Provider-CLI credential hardening via in-sandbox guard hooks](./0052-provider-cli-hook-hardening.md) | Standards | Draft |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

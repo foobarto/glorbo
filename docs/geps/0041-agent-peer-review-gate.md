@@ -79,7 +79,7 @@ history:
       path is added later, the enforcement lands in that
       same commit.
 requires: [2, 19, 40]
-extended-by: [42]
+extended-by: [42, 51]
 see-also: [6, 19, 28, 30, 36, 37]
 ---
 

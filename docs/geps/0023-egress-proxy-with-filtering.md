@@ -7,6 +7,7 @@ type: Standards
 created: 2026-04-21
 requires: [2, 5, 19]
 see-also: [4, 8, 22, 32]
+extended-by: [50]
 history:
   - date: 2026-04-21
     status: Draft

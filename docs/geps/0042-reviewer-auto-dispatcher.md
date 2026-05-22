@@ -55,6 +55,7 @@ history:
       Full suite: 2118 tests, 0 failures, 1 skipped (42
       excluded). Credo: 5104 mods/funs, 0 issues. Format clean.
 requires: [2, 19, 36, 40, 41]
+extended-by: [51]
 see-also: [3, 25]
 ---
 

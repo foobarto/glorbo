@@ -5,6 +5,7 @@ author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
 type: Standards
 created: 2026-05-11
+extended-by: [49]
 history:
   - date: 2026-05-11
     status: Draft
