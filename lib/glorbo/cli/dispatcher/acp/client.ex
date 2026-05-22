@@ -507,8 +507,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     new_bytes = state.reply_bytes + byte_size(text)
 
     if new_bytes > state.reply_max_bytes do
-      {:error,
-       {:provider_protocol_error, {:reply_too_large, new_bytes, state.reply_max_bytes}}}
+      {:error, {:provider_protocol_error, {:reply_too_large, new_bytes, state.reply_max_bytes}}}
     else
       {:ok,
        %{

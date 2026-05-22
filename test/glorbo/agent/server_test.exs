@@ -379,6 +379,7 @@ defmodule Glorbo.Agent.ServerTest do
       # If a dispatch were ever started for the poison task it would crash;
       # this fun would mark that we got that far.
       test_pid = ctx.test_pid
+
       dispatch_fun = fn _spec, task, _opts ->
         send(test_pid, {:should_not_dispatch, task.task_id})
         {:ok, %{exit_status: 0}}
@@ -943,6 +944,37 @@ defmodule Glorbo.Agent.ServerTest do
       content = File.read!(path)
       assert content =~ ~r/^assigned_to: "?director"?$/m
       assert content =~ ~r/^status: "?todo"?$/m
+    end
+
+    test "TA-4c: many reassign_to directives are capped to a single reassign (C-067)", ctx do
+      # C-067: an attacker-controlled reply can pack the ACTIONS block
+      # with thousands of `reassign_to` directives. The unbounded loop
+      # applied every one — each a frontmatter rewrite + handoff_chain
+      # append + audit event — flooding the task file and audit log.
+      # Alternating two valid slugs dodges the `:noop` same-assignee
+      # guard, so the cap must be enforced independently.
+      directives =
+        1..50
+        |> Enum.map_join("\n", fn i ->
+          slug = if rem(i, 2) == 0, do: "director", else: "otheragent"
+          "- reassign_to: #{slug}"
+        end)
+
+      reply = """
+      Handing off a lot.
+
+      ACTIONS:
+      #{directives}
+      """
+
+      %{task_path: path} = setup_task_assignment(ctx, "t-04c", reply)
+
+      content = File.read!(path)
+
+      # handoff_chain serializes one `from:` per appended entry. The cap
+      # is one reassign per reply, so at most one chain entry is written.
+      chain_entries = content |> String.split("from:") |> length() |> Kernel.-(1)
+      assert chain_entries <= 1, "expected <= 1 handoff_chain entry, got #{chain_entries}"
     end
 
     test "TA-4b: verdict directive routes through record_peer_review_verdict/4 (GEP-41)",

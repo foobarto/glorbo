@@ -835,6 +835,7 @@ defmodule Glorbo.Company.RouterTest do
     base = TmpGlorboHome.setup()
     scaffold_company(base, ["ceo", "researcher"])
     seed_project!(base, "blog")
+
     perms_fun = fn _sender, _state ->
       {:ok, [{"projects", "write", "*"}, {"agents", "message", "*"}]}
     end

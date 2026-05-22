@@ -980,13 +980,24 @@ defmodule Glorbo.Sandbox.Bwrap do
   defp tee_write(io, chunk, written) do
     remaining = @tee_cap - written
 
-    if byte_size(chunk) <= remaining do
+    # NOTE: use `<` (not `<=`) so a chunk that lands EXACTLY on the cap
+    # boundary still takes the truncation branch and emits the marker.
+    # The BEAM port delivers stdout in power-of-2-sized chunks, so a
+    # 16 MiB cap is frequently hit exactly on a chunk boundary; with `<=`
+    # the marker was never written in that case (the next chunk hit the
+    # `>= @tee_cap` guard and was dropped silently) — a CI-only flake.
+    if byte_size(chunk) < remaining do
       IO.binwrite(io, chunk)
       written + byte_size(chunk)
     else
-      # Write what fits, then a truncation marker, then go silent.
+      # Write what fits, then a one-shot truncation marker, then go silent.
       IO.binwrite(io, binary_part(chunk, 0, remaining))
-      IO.binwrite(io, "\n=== stdout.log truncated: per-dispatch #{@tee_cap}-byte cap reached ===\n")
+
+      IO.binwrite(
+        io,
+        "\n=== stdout.log truncated: per-dispatch #{@tee_cap}-byte cap reached ===\n"
+      )
+
       @tee_cap
     end
   end

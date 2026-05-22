@@ -202,6 +202,7 @@ defmodule Glorbo.BenchmarksTest do
 
     test "rejects traversal run_ids before any path join", ctx do
       base = tmp_base(ctx)
+
       assert {:error, :invalid_run_id} =
                Benchmarks.score("../../evil", ["codex"], base: base)
     end
