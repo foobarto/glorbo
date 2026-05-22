@@ -231,6 +231,87 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert html =~ "50%"
   end
 
+  # C-113 / C-101 / C-102 — the overview reads agent-controlled task
+  # .md files, the shared chat drawer reads channels/general.md, and
+  # the sparklines read the month audit file. All three must be
+  # size-/symlink-gated so a planted huge or symlinked file can't OOM
+  # or hang the dashboard when a director opens the overview.
+  describe "overview DoS gates (C-113 / C-101 / C-102)" do
+    test "an oversized task.md is skipped, not slurped, and the overview still renders",
+         %{conn: conn, base: base} do
+      tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+      File.mkdir_p!(tasks_dir)
+
+      File.write!(Path.join([base, "companies/acme/projects/foo/project.md"]), """
+      ---
+      slug: foo
+      name: foo
+      ---
+      """)
+
+      # One legitimate task + one planted >1 MiB task.md.
+      File.write!(Path.join(tasks_dir, "foo-1.md"), """
+      ---
+      kind: task/v1
+      title: real
+      status: done
+      ---
+      """)
+
+      File.write!(
+        Path.join(tasks_dir, "huge.md"),
+        "---\nstatus: todo\n---\n" <> String.duplicate("x", 1_100_000)
+      )
+
+      # Should not crash / hang — the gate skips the huge file.
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ "Overview"
+    end
+
+    test "a symlinked task.md is not followed", %{conn: conn, base: base} do
+      tasks_dir = Path.join([base, "companies/acme/projects/foo/tasks"])
+      File.mkdir_p!(tasks_dir)
+
+      secret = Path.join(System.tmp_dir!(), "task-secret-#{System.unique_integer([:positive])}")
+      File.write!(secret, "---\nstatus: done\ntitle: LEAKED-TASK-TITLE\n---\n")
+      on_exit(fn -> File.rm(secret) end)
+
+      File.ln_s!(secret, Path.join(tasks_dir, "evil.md"))
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      refute html =~ "LEAKED-TASK-TITLE"
+    end
+
+    test "the chat drawer tail-reads a huge general.md", %{conn: conn, base: base} do
+      path = Path.join([base, "companies", "acme", "channels", "general.md"])
+
+      old =
+        for i <- 1..20_000 do
+          "## 2026-01-01T00:00:00Z | director\nDRAWER-OLD-#{i} #{String.duplicate("x", 80)}\n"
+        end
+        |> Enum.join("\n")
+
+      File.write!(path, old <> "\n## 2026-04-16T10:00:00Z | director\nDRAWER-FRESH\n")
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ "DRAWER-FRESH"
+      refute html =~ "DRAWER-OLD-1 "
+    end
+
+    test "an oversized audit file does not crash the overview", %{conn: conn, base: base} do
+      audit_dir = Path.join([base, "companies", "acme", "audit"])
+      File.mkdir_p!(audit_dir)
+      ym = Calendar.strftime(DateTime.utc_now(), "%Y-%m")
+
+      line = ~s({"ts":"2026-04-16T10:00:00Z","action":"agent.complete","actor":"ceo"}\n)
+      # ~20 MiB > 16 MiB cap.
+      File.write!(Path.join(audit_dir, "#{ym}.jsonl"), String.duplicate(line, 300_000))
+
+      {:ok, _view, html} = live(conn, ~p"/companies/acme")
+      assert html =~ "Overview"
+    end
+  end
+
   describe "wizard chain (paperclip-ux-gaps §13)" do
     test "?wizard=new_agent opens the new-agent modal with step marker",
          %{conn: conn} do

@@ -25,6 +25,17 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias Glorbo.Filesystem.AgentWritableFile
+
+  # `channels/general.md` is agent-influenced (any agent with chat
+  # write to #general appends to it) and grows without bound. The
+  # drawer renders only the last ~200 messages, so reading the whole
+  # file just to throw most of it away is an O(file bytes) regex +
+  # markdown DoS on every company-page mount + general.md file_event.
+  # Read only the last 256 KiB tail before scanning — far more than
+  # 200 messages of real chat, but a hard ceiling on parse/render work.
+  @tail_bytes 262_144
+
   # Split channel messages `## <iso-ts> | <author>\n<body>` without
   # snagging markdown sub-headers inside message bodies — anchor on
   # the YYYY-MM-DD prefix of real timestamps. Matches
@@ -96,7 +107,10 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
   defp load_messages(base, co) when is_binary(co) do
     path = Path.join([base, "companies", co, "channels", "general.md"])
 
-    case File.read(path) do
+    # tail-read drops a leading partial message on truncation; the
+    # @message_re anchor only matches from a `## <YYYY-MM-DD ts> | author`
+    # header, so the partial is discarded by parse_messages.
+    case AgentWritableFile.read_tail(path, @tail_bytes) do
       {:ok, content} -> parse_messages(content, co)
       _ -> []
     end

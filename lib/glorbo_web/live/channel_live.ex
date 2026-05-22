@@ -22,6 +22,7 @@ defmodule GlorboWeb.ChannelLive do
   use GlorboWeb, :live_view
   require Logger
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+  alias Glorbo.Filesystem.AgentWritableFile
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.ChannelMessage
 
@@ -31,6 +32,14 @@ defmodule GlorboWeb.ChannelLive do
   # require an ISO date (YYYY-MM-DD) prefix before the `|` separator.
   # Named captures return alphabetically: [author, body, ts].
   @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
+
+  # Channel + archive .md files are agent-influenced chat content and
+  # grow without bound. Cap the listed archive segments (a director
+  # opening the channel renders one row per segment) and tail-read
+  # message files so a director opening/viewing a channel does
+  # bounded regex + markdown work rather than O(total bytes) (C-089).
+  @max_archive_segments 50
+  @channel_tail_bytes 262_144
 
   @impl true
   def mount(%{"company" => co, "channel" => ch}, _session, socket) do
@@ -417,6 +426,9 @@ defmodule GlorboWeb.ChannelLive do
         files
         |> Enum.filter(&String.ends_with?(&1, ".md"))
         |> Enum.sort(:desc)
+        # Cap rows so an agent that forces many rotations can't make
+        # the director's channel view render unbounded segment rows.
+        |> Enum.take(@max_archive_segments)
         |> Enum.map(&summarise_archive(dir, &1))
 
       _ ->
@@ -542,7 +554,10 @@ defmodule GlorboWeb.ChannelLive do
   defp compose_placeholder(ch), do: "Message ##{ch} as Director…"
 
   defp load_messages(path, company) do
-    case File.read(path) do
+    # A leading partial message left by tail truncation is dropped by
+    # @message_re, which only matches from a `## <YYYY-MM-DD ts> | author`
+    # header.
+    case AgentWritableFile.read_tail(path, @channel_tail_bytes) do
       {:ok, content} -> parse_messages(content, company)
       _ -> []
     end
@@ -560,5 +575,7 @@ defmodule GlorboWeb.ChannelLive do
         body_html: GlorboWeb.Markdown.render(String.trim(body), company: company)
       }
     end)
+    # Bound rendered messages even within the tail window.
+    |> Enum.take(-200)
   end
 end

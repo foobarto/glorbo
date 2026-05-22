@@ -142,7 +142,9 @@ defmodule Glorbo.Agent.ServerTest do
     :ok = AgentServer.wake(pid, :heartbeat, nil)
 
     status = AgentServer.status(pid)
-    assert match?({:heartbeat, %DateTime{}}, status.pending_wake)
+    # D-185: pending_wake now carries an explicit-task slot ({trigger,
+    # task | nil, ts}). A task-less heartbeat coalesces with nil task.
+    assert match?({:heartbeat, nil, %DateTime{}}, status.pending_wake)
   end
 
   test "A5: third wake replaces pending_wake trigger (most-recent wins)", ctx do
@@ -155,7 +157,8 @@ defmodule Glorbo.Agent.ServerTest do
     :ok = AgentServer.wake(pid, :mention, nil)
 
     status = AgentServer.status(pid)
-    assert match?({:mention, %DateTime{}}, status.pending_wake)
+    # D-185: 3-tuple pending_wake; task-less mention coalesces with nil.
+    assert match?({:mention, nil, %DateTime{}}, status.pending_wake)
   end
 
   # ---------------------------------------------------------------------------
@@ -446,7 +449,9 @@ defmodule Glorbo.Agent.ServerTest do
       assert File.exists?(Path.join([base, "companies", "acme", rel_path]))
 
       # And the work is re-queued for the next slot-free signal.
-      assert %{pending_wake: {:inbox, _}} = :sys.get_state(pid)
+      # D-185: pending_wake is now a 3-tuple {trigger, task | nil, ts}; a
+      # re-queued throttled inbox wake carries no explicit task.
+      assert %{pending_wake: {:inbox, nil, _}} = :sys.get_state(pid)
     end
   end
 
@@ -1216,6 +1221,145 @@ defmodule Glorbo.Agent.ServerTest do
       assert [%{task_id: "first"}, %{task_id: "second"}] = status.in_flight
       # Legacy `current_task` reflects the OLDEST in-flight invocation.
       assert status.current_task == "first"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # C-105 — a heartbeat wake that adopts a real inbox file must drain it.
+  # Otherwise the file stays unread and the next heartbeat re-picks +
+  # re-dispatches it, re-burning a provider turn every tick.
+  # ---------------------------------------------------------------------------
+
+  describe "C-105 — heartbeat-picked inbox file is drained" do
+    test "heartbeat scan that adopts an inbox file moves it to history/processed/",
+         ctx do
+      {base, _rel, src} = setup_inbox_file(ctx, "hb-msg.md")
+
+      dispatch_fun = fn _spec, _task, _opts -> {:ok, %{exit_status: 0}} end
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      # A :heartbeat wake with no explicit task → resolve_task scans the
+      # inbox via the real default_inbox_scan and adopts hb-msg.md.
+      :ok = AgentServer.wake(pid, :heartbeat, nil)
+      await_state(pid, :idle)
+
+      refute File.exists?(src),
+             "heartbeat-adopted inbox file must be drained, not left to re-pick"
+
+      processed = Path.join([base, "companies/acme/agents/engineer/history/processed"])
+      assert {:ok, [moved]} = File.ls(processed)
+      assert String.ends_with?(moved, "-hb-msg.md")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # C-115 — an oversized (>5 MiB) inbox file reads as "" and would dispatch
+  # an EMPTY prompt. The scanner must skip it instead.
+  # ---------------------------------------------------------------------------
+
+  describe "C-115 — oversized inbox file is not dispatched empty" do
+    test "oversized inbox file is skipped, no dispatch", ctx do
+      big = String.duplicate("A", 5 * 1024 * 1024 + 1024)
+      {base, _rel, src} = setup_inbox_file(ctx, "huge.md", big)
+
+      test_pid = ctx.test_pid
+
+      dispatch_fun = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, task.task_id})
+        {:ok, %{exit_status: 0}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      # Heartbeat wake → real inbox scan. The oversized file must NOT be
+      # selected, so no dispatch is started for it.
+      :ok = AgentServer.wake(pid, :heartbeat, nil)
+      await_state(pid, :idle)
+
+      refute_received {:dispatched, "huge"}
+      # File stays in place (skipped, not drained) — never dispatched empty.
+      assert File.exists?(src)
+    end
+
+    test "an in-cap file is still picked when an oversized sibling exists", ctx do
+      base = Path.join(System.tmp_dir!(), "c115-#{System.unique_integer([:positive])}")
+      inbox_dir = Path.join([base, "companies", "acme", "agents", "engineer", "inbox"])
+      File.mkdir_p!(inbox_dir)
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      # Oversized file is OLDER (would be FIFO-first) but must be skipped;
+      # the in-cap newer file should still be dispatched.
+      big_path = Path.join(inbox_dir, "old-huge.md")
+      File.write!(big_path, String.duplicate("A", 5 * 1024 * 1024 + 1024))
+      File.touch!(big_path, {{2020, 1, 1}, {0, 0, 0}})
+
+      ok_path = Path.join(inbox_dir, "new-ok.md")
+      File.write!(ok_path, "---\nfrom: director\n---\n\nreal work")
+
+      test_pid = ctx.test_pid
+
+      dispatch_fun = fn _spec, task, _opts ->
+        send(test_pid, {:dispatched, task.task_id})
+        {:ok, %{exit_status: 0}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      :ok = AgentServer.wake(pid, :inbox, nil)
+      await_state(pid, :idle)
+
+      assert_receive {:dispatched, "new-ok"}, 1_000
+      refute_received {:dispatched, "old-huge"}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # D-185 — an at-cap :director_approval wake must preserve its explicit
+  # task_map across the wake so the approved task dispatches on drain,
+  # rather than falling back to a generic inbox scan (which attacker inbox
+  # traffic could dominate).
+  # ---------------------------------------------------------------------------
+
+  describe "D-185 — queued director task_map survives an at-cap wake" do
+    test "at-cap :director_approval task_map is dispatched on drain", ctx do
+      spec = %{ctx.spec | max_concurrency: 1}
+
+      # If the drain fell back to inbox scan it would dispatch this:
+      inbox_scan_fun = fn _spec, _base, _trigger ->
+        %{task_id: "from-inbox", task_path: nil, prompt: "x", trigger: :inbox}
+      end
+
+      pid =
+        start_server(%{ctx | spec: spec},
+          dispatch_fun: blocking_dispatch(ctx.test_pid),
+          inbox_scan_fun: inbox_scan_fun
+        )
+
+      # Fill the single slot.
+      :ok = AgentServer.wake(pid, :inbox, sample_task("busy"))
+      assert_receive {:dispatch_started, "busy", pbusy}, 1_000
+      assert AgentServer.status(pid).at_cap? == true
+
+      # Director approval arrives while at cap, carrying the approved task.
+      approved = %{
+        task_id: "approved-1",
+        task_path: "projects/foo/tasks/approved-1.md",
+        prompt: "do the approved thing",
+        trigger: :director_approval
+      }
+
+      :ok = AgentServer.wake(pid, :director_approval, approved)
+
+      # A flood of task-less inbox wakes must NOT displace the queued
+      # approval (priority over inbox coalescing).
+      :ok = AgentServer.wake(pid, :inbox, nil)
+      :ok = AgentServer.wake(pid, :inbox, nil)
+
+      # Free the slot → drain must dispatch the APPROVED task, not the scan.
+      send(pbusy, {:finish, {:ok, %{exit_status: 0, reply: ""}}})
+
+      assert_receive {:dispatch_started, "approved-1", _p}, 1_000
+      refute_received {:dispatch_started, "from-inbox", _}
     end
   end
 end

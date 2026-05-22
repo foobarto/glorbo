@@ -487,7 +487,13 @@ defmodule Glorbo.CLI.Harness.Tools do
           method: :get,
           url: raw_url,
           headers: [{"accept", "text/plain, text/html, application/json, */*"}],
-          timeout_ms: timeout_ms
+          timeout_ms: timeout_ms,
+          # C-034: web_fetch targets are attacker-influenced (a prompt-injected
+          # task can point this anywhere), so cap the streamed body hard at
+          # 1 MiB. This is per-callsite — chat completions use the module's
+          # generous default since the model endpoint's own response can be
+          # legitimately large (tool-call payloads).
+          max_response_bytes: 1_048_576
         }
 
         request_opts = [

@@ -10,6 +10,28 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — P2 hardening wave: DoS caps, audit/budget integrity, scheduler/wake (codex)
+
+A batch of 19 medium findings from the codex sweep:
+
+- **Unbounded-read DoS caps** (C-032/C-034/C-101/C-102/C-107/C-113/B-021/C-089) —
+  host-side reads of agent-controlled files now go through size-bounded readers
+  (`AgentWritableFile.read_bounded` / `File.stat` gates / streaming-abort for
+  `web_fetch`): native usage.json, the web_fetch HTTP client, the chat drawer +
+  channel tail (256 KiB tail-read + segment cap), the overview audit/month +
+  per-task reads, project icons (64 KiB), and the agent-detail io previews.
+- **Audit & budget integrity** (C-033/C-087/C-053/C-054/D-187/C-099) — tool-audit
+  events capped per dispatch (+ truncation marker, bounded strings); retries
+  re-check budget before re-entry; budget reindex reads the nested `detail` audit
+  shape and accepts underscore slugs (was silently zeroing/dropping spend);
+  `BudgetTracker` uses `append_for/2` so budget events actually persist; retiring
+  an agent now stops its running supervisor child + unregisters its heartbeat.
+- **Scheduler/wake integrity** (C-046/C-047/C-078/C-105/C-115/D-185) — the
+  scheduler re-parses the live `schedule:` on fire (no stale-cron firing) and only
+  arms `kind: task/v1` files (not `*.comments.md`); heartbeat-picked inbox messages
+  are drained; oversized (>5 MiB) inbox files are skipped instead of dispatched as
+  an empty prompt; a queued director-approval task survives an at-cap wake.
+
 ## [0.22.0] — 2026-05-22
 
 Security-hardening release. Resolves ~40 findings from a codex security sweep

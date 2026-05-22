@@ -49,6 +49,10 @@ defmodule Glorbo.Agent.Server do
 
   @valid_triggers ~w(inbox heartbeat mention director_approval director_request)a
 
+  # Cap inbox-file reads at the prompt size limit (see read_or_empty/1).
+  # Also used to skip oversized files at selection time (C-115).
+  @inbox_read_cap 5 * 1024 * 1024
+
   @type trigger :: :inbox | :heartbeat | :mention | :director_approval | :director_request
   @type invocation :: %{
           task_id: String.t(),
@@ -67,7 +71,7 @@ defmodule Glorbo.Agent.Server do
           current_task_pid: pid() | nil,
           in_flight: [invocation()],
           at_cap?: boolean(),
-          pending_wake: {trigger(), DateTime.t()} | nil,
+          pending_wake: {trigger(), map() | nil, DateTime.t()} | nil,
           last_exit_status: term() | nil
         }
 
@@ -206,10 +210,14 @@ defmodule Glorbo.Agent.Server do
     if has_free_slot?(state) do
       handle_wake_with_slot(state, trigger, task)
     else
-      # At cap: coalesce to the single most-recent-wins pending slot.
-      # Drain-on-free in finish/2 will scan the inbox once a slot
-      # opens (GEP-46 D3).
-      {:reply, :ok, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
+      # At cap: coalesce into the pending slot. D-185: preserve the
+      # explicit `task` map (e.g. a Gate/Director `:director_approval`
+      # payload) so drain_on_free/1 dispatches THAT task rather than
+      # falling back to a generic inbox scan — otherwise attacker inbox
+      # traffic that floods :file_event wakes could displace/starve the
+      # approved task. Coalescing still prefers an explicit-task wake over
+      # a task-less one (see coalesce_pending/3).
+      {:reply, :ok, %{state | pending_wake: coalesce_pending(state.pending_wake, trigger, task)}}
     end
   end
 
@@ -397,7 +405,8 @@ defmodule Glorbo.Agent.Server do
 
       {:noreply, start_dispatch(state, task)}
     else
-      {:noreply, %{state | pending_wake: {:director_request, DateTime.utc_now()}}}
+      {:noreply,
+       %{state | pending_wake: coalesce_pending(state.pending_wake, :director_request, nil)}}
     end
   end
 
@@ -436,9 +445,9 @@ defmodule Glorbo.Agent.Server do
         %{} = task -> {:noreply, start_dispatch(state, task)}
       end
     else
-      # At cap: coalesce most-recent-wins. drain_on_free/1 fires
-      # when a slot opens.
-      {:noreply, %{state | pending_wake: {trigger, DateTime.utc_now()}}}
+      # At cap: coalesce. drain_on_free/1 fires when a slot opens.
+      # These PubSub-driven wakes never carry an explicit task map.
+      {:noreply, %{state | pending_wake: coalesce_pending(state.pending_wake, trigger, nil)}}
     end
   end
 
@@ -618,10 +627,39 @@ defmodule Glorbo.Agent.Server do
   # this trigger so the work isn't lost. Non-inbox triggers don't own inbox
   # traffic, so there's nothing to re-queue.
   defp requeue_wake(existing, trigger) when trigger in [:inbox, :mention] do
-    existing || {trigger, DateTime.utc_now()}
+    existing || {trigger, nil, DateTime.utc_now()}
   end
 
   defp requeue_wake(existing, _trigger), do: existing
+
+  # D-185: coalesce a new wake into the single pending slot.
+  #
+  # The crown-jewel case: a Gate/Director `wake(.., :director_approval,
+  # task_map)` that lands while the agent is at cap must keep its
+  # task_map so drain_on_free/1 dispatches THAT approved task — not a
+  # generic inbox scan. Without this, attacker inbox `:file_event` traffic
+  # could overwrite the queued approval (single-slot, last-wins) and starve
+  # the human-in-loop approval path.
+  #
+  # Scope: only the director-driven triggers carry an explicit task map
+  # through coalescing. `:inbox`/`:mention` wakes deliberately drop their
+  # task arg and re-resolve via inbox scan on drain (FIFO inbox semantics,
+  # unchanged contract). And a pending director task wins over a later
+  # task-less wake of any flavour (priority over inbox coalescing).
+  @director_triggers [:director_approval, :director_request]
+
+  defp coalesce_pending({t, %{} = _task, _ts} = existing, _trigger, nil)
+       when t in @director_triggers,
+       do: existing
+
+  defp coalesce_pending(_existing, trigger, task)
+       when trigger in @director_triggers and is_map(task) do
+    {trigger, task, DateTime.utc_now()}
+  end
+
+  defp coalesce_pending(_existing, trigger, _task) do
+    {trigger, nil, DateTime.utc_now()}
+  end
 
   # GEP-46 D3 — on every slot-freeing event, look for more work and
   # fill remaining slots. Process the pending_wake (if any). Auto-drain
@@ -639,10 +677,12 @@ defmodule Glorbo.Agent.Server do
         state
 
       state.pending_wake != nil ->
-        {trigger, _ts} = state.pending_wake
+        {trigger, task, _ts} = state.pending_wake
         cleared = %{state | pending_wake: nil}
 
-        case resolve_task(cleared, trigger, nil) do
+        # D-185: pass the preserved explicit task map (if any) to
+        # resolve_task/3 so an approved director task dispatches as-is.
+        case resolve_task(cleared, trigger, task) do
           nil -> maybe_auto_drain_inbox(cleared, completed_trigger)
           resolved -> start_dispatch(cleared, resolved)
         end
@@ -1206,6 +1246,16 @@ defmodule Glorbo.Agent.Server do
       nil when trigger == :heartbeat ->
         heartbeat_task(state)
 
+      %{task_path: path} = task when trigger == :heartbeat and is_binary(path) ->
+        # C-105: a heartbeat wake that adopts a real inbox file must be
+        # processed (and drained/routed) as an inbox message. If it keeps
+        # `trigger: :heartbeat`, maybe_drain_inbox/maybe_route_reply both
+        # early-return (their guards exclude :heartbeat), the file is never
+        # moved to history/processed/, and the next heartbeat re-picks the
+        # same file — re-burning a provider turn every tick. Re-tag to
+        # :inbox so the drain/route paths fire.
+        %{task | trigger: :inbox}
+
       task ->
         task
     end
@@ -1569,16 +1619,32 @@ defmodule Glorbo.Agent.Server do
   defp pick_inbox_file(inbox_dir, :mention) do
     mentions_dir = Path.join(inbox_dir, "mentions")
 
-    case md_files_in(mentions_dir) |> Enum.sort_by(&file_mtime/1) do
+    case md_files_in(mentions_dir) |> Enum.sort_by(&file_mtime/1) |> reject_oversized() do
       [first | _] -> first
       [] -> pick_inbox_file(inbox_dir, nil)
     end
   end
 
   defp pick_inbox_file(inbox_dir, _trigger) do
-    case list_inbox_md_files(inbox_dir) do
+    case list_inbox_md_files(inbox_dir) |> reject_oversized() do
       [first | _] -> first
       [] -> nil
+    end
+  end
+
+  # C-115: never select an inbox file larger than the read cap. Such a
+  # file reads as `""` (read_or_empty/1) and would otherwise dispatch an
+  # EMPTY prompt — the composed prompt still carries the system
+  # scaffolding so it slips under Dispatch.check_prompt_size/1 and runs a
+  # wasted, content-free provider turn. Skipping it here means the
+  # oversized file is never dispatched; valid newer messages still get
+  # picked (FIFO over the in-cap set is preserved).
+  defp reject_oversized(paths), do: Enum.reject(paths, &inbox_file_oversized?/1)
+
+  defp inbox_file_oversized?(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} -> size > @inbox_read_cap
+      _ -> false
     end
   end
 
@@ -1634,8 +1700,8 @@ defmodule Glorbo.Agent.Server do
   # default_inbox_scan → read_or_empty on its way to dispatch — which
   # would then reject the prompt as :prompt_too_large anyway. Short-circuit
   # here so the GenServer doesn't spend milliseconds reading multi-GB
-  # junk (TODO.md Important #2).
-  @inbox_read_cap 5 * 1024 * 1024
+  # junk (TODO.md Important #2). `@inbox_read_cap` is defined near the top
+  # of the module so the C-115 selection-time guard can share it.
 
   defp read_or_empty(path) do
     case File.stat(path) do

@@ -277,6 +277,58 @@ defmodule Glorbo.Actions.AgentsTest do
       assert FakeAudit.calls(audit) == []
     end
 
+    # C-099: retire is a decommission action — it MUST stop the running
+    # AgentSupervisor child and unregister the heartbeat, not just rename
+    # the dir. Before the fix, retire only renamed: the Agent.Server +
+    # scheduler kept running with the old spec. Assert both the stop and
+    # the unregister fire (company-scoped, with the right slug), and that
+    # they happen BEFORE the directory is gone.
+    test "C-099: stops the running agent + unregisters heartbeat on retire",
+         %{base: base, audit: audit, ag_dir: ag_dir} do
+      parent = self()
+
+      stop_fun = fn company, slug ->
+        # The dir must still exist when the stop fires (stop-before-move).
+        send(parent, {:stopped, company, slug, File.dir?(ag_dir)})
+        :ok
+      end
+
+      unregister_fun = fn company, slug ->
+        send(parent, {:unregistered, company, slug})
+        :ok
+      end
+
+      assert {:ok, _} =
+               Agents.retire("acme", "ceo",
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 stop_agent_fun: stop_fun,
+                 unregister_fun: unregister_fun
+               )
+
+      assert_received {:stopped, "acme", "ceo", true}
+      assert_received {:unregistered, "acme", "ceo"}
+      refute File.dir?(ag_dir)
+    end
+
+    # C-099: the decommission steps are best-effort — a not-running agent
+    # (stop/unregister raising or exiting) must NOT fail the retire.
+    test "C-099: retire still succeeds when the agent isn't running",
+         %{base: base, audit: audit} do
+      stop_fun = fn _c, _s -> exit(:noproc) end
+      unregister_fun = fn _c, _s -> raise "boom" end
+
+      assert {:ok, _} =
+               Agents.retire("acme", "ceo",
+                 actor: "director",
+                 base: base,
+                 audit: audit,
+                 stop_agent_fun: stop_fun,
+                 unregister_fun: unregister_fun
+               )
+    end
+
     test "rejects invalid slug",
          %{base: base, audit: audit} do
       assert {:error, {:invalid_slug, :agent, "../evil"}} =

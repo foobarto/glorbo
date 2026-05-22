@@ -1069,6 +1069,200 @@ defmodule Glorbo.Agent.DispatchTest do
 
       refute_received :retry_audit
     end
+
+    # C-087: a malicious provider can burn cost then time out / omit the
+    # reply file so the failed attempt's cost is never recorded, then get
+    # `max_retries` more free invocations. The pre-retry budget gate must
+    # cap retries against budget: if the agent has crossed its cap by the
+    # time the first attempt fails, the retry is refused with a hard stop
+    # rather than launched.
+    test "C-087: a hard-stop budget between attempts halts retries", ctx do
+      parent = self()
+
+      silent = fn _a, _e, _b, _r ->
+        send(parent, :attempted)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      # First budget check (pre-dispatch on attempt 0) is :ok so the
+      # first attempt runs; every check thereafter (the pre-retry gate)
+      # returns {:stop, ...} as if cost crossed the cap mid-flight.
+      counter = :counters.new(1, [])
+
+      budget_fun = fn _spec ->
+        n = :counters.get(counter, 1)
+        :counters.add(counter, 1, 1)
+        if n == 0, do: :ok, else: {:stop, 100, 50}
+      end
+
+      spec = %{ctx.spec | max_retries: 3}
+
+      assert {:stopped, :budget_hard_stop} =
+               Dispatch.execute(spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: silent,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun,
+                 budget_tracker_fun: budget_fun
+               )
+
+      # Exactly ONE invocation: the first attempt ran, the pre-retry gate
+      # then hard-stopped before burning any of the 3 allowed retries.
+      assert_received :attempted
+      refute_received :attempted
+    end
+
+    # C-087: a company-level cap reached between attempts must also halt
+    # retries, not just the per-agent cap.
+    test "C-087: company-cap hard-stop between attempts halts retries", ctx do
+      parent = self()
+
+      silent = fn _a, _e, _b, _r ->
+        send(parent, :attempted)
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      counter = :counters.new(1, [])
+
+      company_fun = fn _company ->
+        n = :counters.get(counter, 1)
+        :counters.add(counter, 1, 1)
+        if n == 0, do: :ok, else: {:stop, 100, 50}
+      end
+
+      spec = %{ctx.spec | max_retries: 3}
+
+      assert {:stopped, :budget_hard_stop} =
+               Dispatch.execute(spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: silent,
+                 provider_fun: fn _ -> stub_provider() end,
+                 audit_fun: ctx.audit_fun,
+                 company_budget_fun: company_fun
+               )
+
+      assert_received :attempted
+      refute_received :attempted
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # C-033 — tool-audit event cap (attacker-controlled usage.json)
+  # ---------------------------------------------------------------------------
+
+  describe "C-033: tool-audit event flooding cap" do
+    # The native harness accepts an `audit_events` array from the
+    # sandbox-visible (attacker-controlled) usage.json. An unbounded list
+    # would drive one fsync'd audit write per element. The dispatcher
+    # must cap the count and emit a single truncation marker.
+    defp native_provider_for_audit(base) do
+      self_dir = Path.join(base, "native-bin")
+      File.mkdir_p!(self_dir)
+      self_binary = Path.join(self_dir, "glorbo")
+      File.write!(self_binary, "#!/bin/sh\n")
+      File.chmod!(self_binary, 0o755)
+
+      provider =
+        stub_provider(
+          name: "openai",
+          kind: :native,
+          binary: nil,
+          resolved_path: nil,
+          usage_parser: "native-v1",
+          usage_path: %{kind: :json_file, path: "{workspace}/.glorbo-run/{task_id}/usage.json"}
+        )
+
+      {provider, self_binary}
+    end
+
+    test "caps audit_events at 50 and emits a truncation marker", ctx do
+      {native_provider, self_binary} = native_provider_for_audit(ctx.base)
+
+      # 200 events — far over the cap.
+      events =
+        Enum.map_join(1..200, ",", fn i ->
+          ~s({"action": "tool.write_file", "target": "f#{i}.md", "detail": {"i": #{i}}})
+        end)
+
+      run_fun = fn _args, env, _bwrap, run_opts ->
+        usage_path = Path.join(run_opts.usage_dir, "usage.json")
+        File.mkdir_p!(Path.dirname(usage_path))
+
+        File.write!(
+          usage_path,
+          ~s({"tracked": true, "prompt_tokens": 1, "completion_tokens": 1, "audit_events": [#{events}]})
+        )
+
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+      end
+
+      collector = :ets.new(:tool_audits, [:public, :duplicate_bag])
+
+      audit_fun = fn _company, entry ->
+        :ets.insert(collector, {entry[:action], entry})
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+                 base: ctx.base,
+                 run_fun: run_fun,
+                 provider_fun: fn _ -> native_provider end,
+                 self_binary_fun: fn -> self_binary end,
+                 audit_fun: audit_fun
+               )
+
+      tool_writes = :ets.match_object(collector, {"tool.write_file", :_})
+      truncations = :ets.match_object(collector, {"agent.tool_audit_truncated", :_})
+
+      # At most the cap (50) tool.write_file audit entries.
+      assert length(tool_writes) == 50
+      # Exactly one truncation marker recording the overflow.
+      assert length(truncations) == 1
+      {_, marker} = hd(truncations)
+      assert marker[:detail] == %{emitted: 200, cap: 50}
+    end
+
+    test "bounds oversized target/detail strings", ctx do
+      {native_provider, self_binary} = native_provider_for_audit(ctx.base)
+
+      big_target = String.duplicate("A", 5_000)
+      big_detail_val = String.duplicate("B", 10_000)
+
+      run_fun = fn _args, env, _bwrap, run_opts ->
+        usage_path = Path.join(run_opts.usage_dir, "usage.json")
+        File.mkdir_p!(Path.dirname(usage_path))
+
+        File.write!(
+          usage_path,
+          ~s({"tracked": true, "prompt_tokens": 1, "completion_tokens": 1, "audit_events": [{"action": "tool.write_file", "target": "#{big_target}", "detail": {"blob": "#{big_detail_val}"}}]})
+        )
+
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
+      end
+
+      parent = self()
+
+      audit_fun = fn _company, entry ->
+        if entry[:action] == "tool.write_file", do: send(parent, {:tool_audit, entry})
+      end
+
+      assert {:ok, _} =
+               Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+                 base: ctx.base,
+                 run_fun: run_fun,
+                 provider_fun: fn _ -> native_provider end,
+                 self_binary_fun: fn -> self_binary end,
+                 audit_fun: audit_fun
+               )
+
+      assert_received {:tool_audit, entry}
+      # Target truncated to the cap.
+      assert byte_size(entry[:target]) <= 1_024
+      # Oversized detail replaced with a small truncation marker.
+      assert entry[:detail][:truncated] == true
+    end
   end
 
   # ---------------------------------------------------------------------------

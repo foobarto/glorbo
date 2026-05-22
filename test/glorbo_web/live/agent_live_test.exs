@@ -369,6 +369,47 @@ defmodule GlorboWeb.AgentLiveTest do
     assert html =~ "inbox/outbox"
   end
 
+  # B-021: the outbox is an agent-RW bwrap bind. A planted multi-GB
+  # *regular* .md (the lexicographically-latest, so it's the one
+  # previewed) must be size-capped before reading, not slurped into
+  # the dashboard heap. The symlink prong was already fixed (wave 5);
+  # this guards the unbounded-read prong.
+  test "outbox preview refuses an oversized .md instead of reading it",
+       %{conn: conn, base: base} do
+    ag = Path.join([base, "companies", "acme", "agents", "ceo"])
+    File.mkdir_p!(Path.join(ag, "outbox"))
+
+    # `load_io_preview` picks the lexicographically-latest .md.
+    File.write!(
+      Path.join([ag, "outbox", "zzz-huge.md"]),
+      "---\ntitle: HUGE-OUTBOX-LEAK\n---\n" <> String.duplicate("x", 1_100_000)
+    )
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+    html = render_click(view, "tab", %{"tab" => "inbox"})
+    # Did not crash, and the oversized file's content was not surfaced.
+    assert html =~ "inbox/outbox"
+    refute html =~ "HUGE-OUTBOX-LEAK"
+  end
+
+  test "outbox preview does not follow a symlinked .md", %{conn: conn, base: base} do
+    ag = Path.join([base, "companies", "acme", "agents", "ceo"])
+    File.mkdir_p!(Path.join(ag, "outbox"))
+
+    secret = Path.join(System.tmp_dir!(), "outbox-secret-#{System.unique_integer([:positive])}")
+    File.write!(secret, "---\ntitle: SYMLINK-OUTBOX-LEAK\n---\nsecret body\n")
+    on_exit(fn -> File.rm(secret) end)
+
+    File.ln_s!(secret, Path.join([ag, "outbox", "zzz-link.md"]))
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+
+    html = render_click(view, "tab", %{"tab" => "inbox"})
+    assert html =~ "inbox/outbox"
+    refute html =~ "SYMLINK-OUTBOX-LEAK"
+  end
+
   # task #117 — workspace file tree + edit overlay.
   describe "workspace file editor" do
     test "open_file opens workspace files via the widened resolver",

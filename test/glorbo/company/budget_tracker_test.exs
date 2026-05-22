@@ -224,6 +224,68 @@ defmodule Glorbo.Company.BudgetTrackerTest do
     assert is_integer(cost) and cost >= 0
   end
 
+  # D-187: with the DEFAULT audit_fun (no override), budget events must
+  # actually land in the append-only audit log. The old default
+  # `&AuditLog.append/2` fed the company SLUG where a GenServer name was
+  # expected, so every budget.usage / alert / hard_stop raised, was
+  # rescued, and was silently dropped. The fix routes the default through
+  # `AuditLog.append_for/2` (slug-resolving). This test deliberately does
+  # NOT inject an audit_fun so it exercises the production default.
+  test "D-187: default audit_fun persists budget.usage to the audit log" do
+    base = TmpGlorboHome.setup()
+    company = "acme"
+    File.mkdir_p!(Path.join([base, "companies", company, "alerts"]))
+
+    # A bare-module AuditLog (the shared-test shape `append_for/2`
+    # resolves to when no per-company tree is running).
+    audit_pid = start_supervised!({Glorbo.Company.AuditLog, [base: base]})
+    Sandbox.allow(Glorbo.Repo, self(), audit_pid)
+
+    name = Glorbo.Test.UniqueName.gen("budget_tracker")
+
+    tracker_pid =
+      start_supervised!({BudgetTracker,
+       [
+         name: name,
+         company: company,
+         base: base,
+         budgets_fun: fn _ -> 10_000 end
+         # NOTE: no :audit_fun — uses the production default.
+       ]})
+
+    Sandbox.allow(Glorbo.Repo, self(), tracker_pid)
+
+    BudgetTracker.record(name, %{
+      agent_slug: "alice",
+      provider: "claude-code",
+      model: "claude-opus-4-6",
+      prompt_tokens: 100,
+      completion_tokens: 50,
+      task_id: "t-187"
+    })
+
+    # record/2 is a cast → sync via a check_budget call so the record has
+    # been processed before we read the JSONL.
+    _ = BudgetTracker.check_budget(name, "alice")
+
+    month = Ledger.month_bucket(DateTime.utc_now())
+    jsonl_path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
+
+    # The bug left this file absent/empty (event dropped). The fix makes
+    # it contain the budget.usage line.
+    assert File.exists?(jsonl_path), "expected audit JSONL to exist — budget event was dropped"
+
+    lines = jsonl_path |> File.read!() |> String.split("\n", trim: true)
+    decoded = Enum.map(lines, &Jason.decode!/1)
+
+    usage_event = Enum.find(decoded, &(&1["action"] == "budget.usage"))
+    assert usage_event, "budget.usage event was not persisted to the audit log"
+    assert usage_event["actor"] == "alice"
+    # Token/cost live under detail (the exact shape C-053's reindex reads).
+    assert usage_event["detail"]["prompt_tokens"] == 100
+    assert usage_event["detail"]["completion_tokens"] == 50
+  end
+
   test "Test 9: record/2 with zero tokens still creates/updates a row" do
     {name, _pid, _base, company} = start_tracker!(%{"alice" => 10_000})
 

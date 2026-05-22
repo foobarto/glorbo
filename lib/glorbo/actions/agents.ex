@@ -31,6 +31,8 @@ defmodule Glorbo.Actions.Agents do
       `agent.file_trash` / `agent.retire` audit entries.
   """
 
+  require Logger
+
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
   alias Glorbo.HomeHistory
@@ -143,8 +145,25 @@ defmodule Glorbo.Actions.Agents do
 
   @doc """
   Retire an agent by moving its whole dir to
-  `agents/.archive/<slug>-<ts>/`. Call sites SHOULD stop any in-flight
-  dispatch first; this function does not touch the OTP tree.
+  `agents/.archive/<slug>-<ts>/`.
+
+  C-099: retire is a security action — an operator runs it to *stop* an
+  untrusted agent. So before archiving the directory we genuinely
+  decommission the running process:
+
+    * terminate the company-scoped `AgentSupervisor` sub-tree (the
+      `Agent.Server` + its `Task.Supervisor`), which holds the agent's
+      old in-memory spec (provider, permissions, network policy), and
+    * unregister the heartbeat from the company `Scheduler` so a
+      `heartbeat:` cron can't keep firing `wake/1` against the moved
+      inbox with the stale spec.
+
+  Both steps are best-effort and run BEFORE the rename so a busy server
+  can't pop a pending dispatch against the directory mid-move. A
+  not-running agent (idle / no scheduler entry / unsupervised test
+  harness) is a no-op. The OTP-touching seams are dep-injectable via
+  `:stop_agent_fun` / `:unregister_fun` so unit tests can assert the
+  stop happens without standing up a full company tree.
   """
   @spec retire(String.t(), String.t(), opts()) ::
           {:ok, %{archive_rel_path: String.t()}} | {:error, term()}
@@ -166,6 +185,10 @@ defmodule Glorbo.Actions.Agents do
              :ok <- Support.validate_slug(slug, :agent),
              src = agent_dir(base, company, slug),
              :ok <- guard_exists_dir(src) do
+          # C-099: stop the running agent + cancel its heartbeat BEFORE
+          # the dir moves. Only reached after both slugs validate, so we
+          # never feed an unsafe slug to the registry lookup.
+          decommission_running_agent(company, slug, opts)
           do_retire_move(tx_id, src, base, company, slug, actor: actor, audit: audit)
         end
       end)
@@ -174,6 +197,52 @@ defmodule Glorbo.Actions.Agents do
       {:ok, result, _tx_id} -> {:ok, result}
       {:error, _} = err -> err
     end
+  end
+
+  # C-099: terminate the agent's OTP sub-tree and unregister its
+  # heartbeat. Best-effort: a `{:error, :not_found}` (idle/never-started)
+  # or an `:exit` from an absent supervisor/scheduler (test harnesses
+  # without a company tree) is fine — the goal is "if it's running, stop
+  # it", not "fail the retire when nothing is running".
+  defp decommission_running_agent(company, slug, opts) do
+    stop_fun = Keyword.get(opts, :stop_agent_fun, &default_stop_agent/2)
+    unregister_fun = Keyword.get(opts, :unregister_fun, &default_unregister/2)
+
+    _ = safe_decommission_step("stop_agent", company, slug, fn -> stop_fun.(company, slug) end)
+
+    _ =
+      safe_decommission_step("unregister_heartbeat", company, slug, fn ->
+        unregister_fun.(company, slug)
+      end)
+
+    :ok
+  end
+
+  # Best-effort, but no longer silent: an idle/absent agent (`:noproc`,
+  # `:not_found`) is the expected no-op, while any OTHER rescued exception
+  # or exit is logged (debug) with company+slug+step so a genuinely-failed
+  # decommission is diagnosable rather than invisible (C-099 review).
+  defp safe_decommission_step(step, company, slug, fun) do
+    fun.()
+  rescue
+    e ->
+      Logger.debug("retire #{company}/#{slug}: #{step} failed (rescued): #{Exception.message(e)}")
+
+      :error
+  catch
+    :exit, reason ->
+      Logger.debug("retire #{company}/#{slug}: #{step} exited: #{inspect(reason)}")
+      :error
+  end
+
+  defp default_stop_agent(company, slug) do
+    sup = Glorbo.Company.Supervisor.via(company, :agent_sup)
+    Glorbo.Company.AgentSupervisor.stop_agent(sup, company, slug)
+  end
+
+  defp default_unregister(company, slug) do
+    sched = Glorbo.Company.Supervisor.via(company, :scheduler)
+    Glorbo.Company.Scheduler.unregister(sched, slug)
   end
 
   defp do_retire_move(tx_id, src, base, company, slug, opts) do

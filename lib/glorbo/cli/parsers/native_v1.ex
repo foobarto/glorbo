@@ -18,16 +18,22 @@ defmodule Glorbo.CLI.Parsers.NativeV1 do
 
   alias Glorbo.CLI.Harness.Tools
   alias Glorbo.CLI.Parsers
+  alias Glorbo.Filesystem.AgentWritableFile
+
+  # `usage.json` is written by the CLI inside the sandbox and is
+  # attacker-controlled (GEP-32 threat model). A bare `File.read/1`
+  # would slurp a multi-GB planted file into the dispatcher's BEAM
+  # heap, OOMing the node. 1 MiB is far above any legitimate usage
+  # report (a few hundred bytes in practice).
+  @max_usage_bytes 1_048_576
 
   @spec parse(Parsers.source()) :: {:ok, Parsers.usage()} | {:error, term()}
   def parse({:json_file, path}) when is_binary(path) do
-    with true <- File.exists?(path) or {:error, :enoent},
-         {:ok, raw} <- File.read(path),
+    with {:ok, raw} <- AgentWritableFile.read_bounded(path, @max_usage_bytes),
          {:ok, decoded} <- Jason.decode(raw),
          {:ok, usage} <- build_usage(decoded) do
       {:ok, usage}
     else
-      false -> {:error, :enoent}
       {:error, _} = err -> err
     end
   end
