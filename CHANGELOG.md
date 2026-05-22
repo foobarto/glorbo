@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — dependency: bump `decimal` past GHSA-rhv4-8758-jx7v
+
+- `decimal` 2.4.1 → 3.1.0 via an explicit `override: true` (it's a transitive
+  dep of `ecto`/`ecto_sqlite3`, which still pin `~> 2.0`; no decimal-3.0-aware
+  upstream release exists yet). Clears the OpenSSF Scorecard "Vulnerabilities"
+  high alert for the `Decimal.new` unbounded-exponent DoS
+  (EEF-CVE-2026-32686). Glorbo never calls `Decimal`/uses `:decimal` Ecto
+  types, so the vulnerable path was unreachable in practice — but the bump is
+  clean (full suite green against 3.1.0) and removes the flagged version.
+
 ### Security — P2 hardening wave: DoS caps, audit/budget integrity, scheduler/wake (codex)
 
 A batch of 19 medium findings from the codex sweep:
