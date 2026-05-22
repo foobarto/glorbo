@@ -16,6 +16,16 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
+    groups:
+      # Bundle low-risk hex bumps into one PR to cut review noise.
+      # MAJOR bumps are intentionally NOT grouped — they land as
+      # individual PRs so each gets scrutiny (breaking-change risk).
+      hex-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -24,3 +34,11 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "ci"
+    groups:
+      # Group ALL action bumps (incl. majors) into one PR so the
+      # upload-artifact / download-artifact majors — which must move
+      # together to keep the build→release artifact format compatible —
+      # are reviewed and merged as a single unit, never split.
+      github-actions:
+        patterns:
+          - "*"

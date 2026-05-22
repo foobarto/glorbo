@@ -102,12 +102,26 @@ Two distinct credentials after this GEP:
 | Credential | Source | Lifetime | Accepted on |
 |---|---|---|---|
 | **Bootstrap token** (`dashboard_token`) | `config.md`, 0600 | Stable until operator rotates | `?token=` query param **for an unauthenticated session only**; `Authorization: Bearer` on MCP |
-| **Per-session token** | minted at first auth | Until logout / session expiry / config-token rotation | the signed session cookie (browser pipeline only) |
+| **Per-session token** | minted at first auth, rotated per request (prior value invalidated **server-side**) | ~15 min sliding idle TTL; also invalidated by logout / config-token rotation | an opaque session id in the signed cookie, backed by a **server-side** token-version record |
 
 The config token degrades from "recurring bearer" to "bootstrap
 credential": you can start a session with it, but once a session holds
 a per-session token, the config token is no longer consulted for that
 session.
+
+> **Implementation constraint (Copilot review, codex C-120).** "Invalidate
+> after use" / rotate-on-use / replay-protection is **not achievable with a
+> stateless `store: :cookie` session** — a stolen *older* signed cookie stays
+> valid until its own expiry because the server holds no state to revoke it.
+> Honoring the operator's "invalidated after use" therefore requires
+> **server-side session state**: a per-session token-version record (ETS or the
+> existing SQLite DB) that the plug checks on each request and bumps on rotation,
+> rejecting any superseded token. The signed cookie then carries only an opaque
+> session id, not the bearer value. With a pure cookie store the *only*
+> enforceable bound is an **absolute ~15-minute TTL baked into the signed token**
+> (reject if `issued_at` is older than the cap) — that gives short-lived, but
+> **not** single-use / replay-proof. GEP-49 adopts the server-side-store path
+> (see D4) to meet the requirement as stated.
 
 ### Plug flow (`GlorboWeb.Plugs.DashboardToken`, `:browser` pipeline)
 
@@ -228,10 +242,13 @@ session creation, so it is still a secret worth not persisting:
 
 ## Open questions
 
-- **Per-session token TTL.** Fixed (e.g. 12 h) vs sliding vs
-  cookie-session-lifetime only? C-120's comment suggested 15 min for a
-  bootstrap token; that's too short for a working dashboard session.
-  Leaning sliding-with-cap; deferred to implementation. (D4.)
+- **Per-session token store: ETS vs SQLite.** The server-side token-version
+  record that makes "invalidate after use" enforceable (see D4 + the Design
+  implementation-constraint note) can live in ETS (fast, lost on restart →
+  forces re-bootstrap after a restart, which is acceptable) or in the existing
+  SQLite DB (survives restart, but the DB is a *rebuildable index* so a
+  session table there is slightly off-pattern). Leaning ETS; deferred to
+  implementation.
 - **Bootstrap-window cap.** Should the config token only be acceptable
   from `?token=` for the first N minutes after boot, or indefinitely?
   Indefinite is simpler and matches "operator pastes on demand"; a cap
@@ -289,6 +306,19 @@ session creation, so it is still a secret worth not persisting:
   URL stale and force constant `config.md` rotation. Putting the bound
   on the session token achieves "invalidated after use / short-lived"
   for the recurring credential without breaking the bootstrap UX.
+- **Concrete (operator, 2026-05-22):** the per-session token's bound is a
+  **~15-minute sliding idle TTL** plus **rotate-on-use** (each request mints a
+  new token and invalidates the prior). Operator accepted that an idle
+  (>15 min) dashboard must re-bootstrap.
+- **Correctness (Copilot review):** rotate-on-use only invalidates the prior
+  token — and thus only mitigates cookie-theft replay — when the valid token
+  is tracked **server-side** (a per-session version record the plug checks +
+  bumps on each request). A stateless `store: :cookie` session **cannot** revoke
+  an already-issued signed cookie, so an older still-unexpired cookie would
+  replay. D4 therefore commits to a server-side token-version store (ETS or
+  SQLite — see Open questions); with cookie-store alone the design degrades to
+  an absolute 15-min TTL only (short-lived, not single-use). The claim is scoped
+  accordingly, not asserted for the stateless-cookie case.
 
 ### D5. MCP stays stateless bearer; rotation is browser-only
 

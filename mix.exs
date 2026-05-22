@@ -83,7 +83,7 @@ defmodule Glorbo.MixProject do
       {:yaml_front_matter, "~> 1.0"},
       {:yaml_elixir, "~> 2.9"},
       # GEP-8 — provider registry TOML parser (priv/providers/*.toml +
-      # ~/.glorbo/providers.toml). Pure-Elixir, Apache-2.0.
+      # ~/.glorbo/providers.toml). Pure-Elixir, dual-licensed MIT OR Apache-2.0.
       {:toml, "~> 0.7"},
       {:finch, "~> 0.21"},
       # Finch/Mint's TLS certificate verification relies on castore (marked
