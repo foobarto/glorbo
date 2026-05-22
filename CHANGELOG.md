@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-05-22
+
 ### Security — dependency: bump `decimal` past GHSA-rhv4-8758-jx7v
 
 - `decimal` 2.4.1 → 3.1.0 via an explicit `override: true` (it's a transitive
