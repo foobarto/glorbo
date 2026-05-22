@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-05-22
+
 ### Fixed — dashboard re-render thrash / click-drop under `:agent_status` churn
 
 `CompanyLive` and `AgentLive` re-rendered synchronously on **every**
