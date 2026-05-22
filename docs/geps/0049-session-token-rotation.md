@@ -102,7 +102,7 @@ Two distinct credentials after this GEP:
 | Credential | Source | Lifetime | Accepted on |
 |---|---|---|---|
 | **Bootstrap token** (`dashboard_token`) | `config.md`, 0600 | Stable until operator rotates | `?token=` query param **for an unauthenticated session only**; `Authorization: Bearer` on MCP |
-| **Per-session token** | minted at first auth | Until logout / session expiry / config-token rotation | the signed session cookie (browser pipeline only) |
+| **Per-session token** | minted at first auth, rotated on each use | ~15 min sliding TTL (idle expiry); also invalidated by logout / config-token rotation | the signed session cookie (browser pipeline only) |
 
 The config token degrades from "recurring bearer" to "bootstrap
 credential": you can start a session with it, but once a session holds
@@ -228,10 +228,16 @@ session creation, so it is still a secret worth not persisting:
 
 ## Open questions
 
-- **Per-session token TTL.** Fixed (e.g. 12 h) vs sliding vs
-  cookie-session-lifetime only? C-120's comment suggested 15 min for a
-  bootstrap token; that's too short for a working dashboard session.
-  Leaning sliding-with-cap; deferred to implementation. (D4.)
+- **Per-session token TTL — DECIDED (operator, 2026-05-22).** The
+  per-session token gets a **~15-minute sliding TTL** and is
+  **rotated on use** (each authenticated request mints a fresh token and
+  invalidates the prior value). Idle > 15 min → expires → re-bootstrap
+  from a `?token=` URL. This is the operator's "short-lived (e.g. 15 min)
+  + invalidated after use" requirement from the C-120 follow-up, applied
+  to the *session* token (not the bootstrap token — see D4). Tradeoff
+  accepted: a dashboard left idle > 15 min requires re-pasting the
+  bootstrap URL; rotate-on-use also defends against cookie-theft replay.
+  (See D4.)
 - **Bootstrap-window cap.** Should the config token only be acceptable
   from `?token=` for the first N minutes after boot, or indefinitely?
   Indefinite is simpler and matches "operator pastes on demand"; a cap
@@ -289,6 +295,11 @@ session creation, so it is still a secret worth not persisting:
   URL stale and force constant `config.md` rotation. Putting the bound
   on the session token achieves "invalidated after use / short-lived"
   for the recurring credential without breaking the bootstrap UX.
+- **Concrete (operator, 2026-05-22):** the per-session token's bound is a
+  **~15-minute sliding TTL** plus **rotate-on-use** (each request mints a
+  new token, invalidating the prior). Operator accepted that an idle
+  (>15 min) dashboard must re-bootstrap. Rotate-on-use additionally
+  defeats cookie-theft replay.
 
 ### D5. MCP stays stateless bearer; rotation is browser-only
 
