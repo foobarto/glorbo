@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — budget enforcement wired into auto-booted agents (codex C-108)
+
+Auto-booted agents (the heartbeat- and inbox-driven production wake path)
+were started with no `:dispatch_opts`, so `Dispatch.execute` fell back to the
+no-op `budget_tracker_fun` and `record_usage_fun` defaults: the per-agent
+budget gate never fired AND the usage ledger was never written. Because the
+company cap sums that same ledger, the SEC-05 pre-dispatch hard stop read
+zero spend and never tripped — budget enforcement (a crown-jewel "no runaway
+cost" guarantee) was effectively dead for every auto-booted agent.
+`AgentBoot` now threads production `dispatch_opts` (the real per-company
+`BudgetTracker` check + usage recorder, plus the resolved `base`) into each
+agent's `Agent.Server`, so budget gating and usage recording are live on the
+wake path. Threading `base` also fixes dispatch reading the wrong filesystem
+root under a custom `GLORBO_HOME` (codex C-114).
+
 ### Security — auto_dispatch now requires `agents:message:<assignee>` (codex B-025)
 
 An agent filing an outbox task with `auto_dispatch: true` caused the Router

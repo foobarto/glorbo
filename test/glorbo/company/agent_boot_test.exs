@@ -101,6 +101,37 @@ defmodule Glorbo.Company.AgentBootTest do
            end)
   end
 
+  # codex C-108: auto-booted agents must carry the production
+  # dispatch_opts (real per-company budget gate + usage recorder + the
+  # resolved base) so budget enforcement isn't silently disabled on the
+  # heartbeat/inbox wake path. Previously start_agent was called with no
+  # agent_opts, leaving dispatch_opts == [] → no-op budget/usage funs.
+  test "AgentBoot wires budget enforcement into auto-booted agents' dispatch_opts" do
+    base = TmpGlorboHome.setup()
+    company = "co_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(Path.join([base, "companies", company]))
+    write_agent(base, company, "engineer", nil)
+
+    _sup = start_company(company, base)
+
+    server = {:via, Registry, {Glorbo.Agent.Registry, {:agent_server, company, "engineer"}}}
+
+    assert wait_for(fn ->
+             Registry.lookup(Glorbo.Agent.Registry, {:agent_server, company, "engineer"}) != []
+           end)
+
+    state = :sys.get_state(server)
+    opts = state.dispatch_opts
+
+    assert is_function(opts[:budget_tracker_fun], 1),
+           "auto-booted agent missing :budget_tracker_fun (budget gate disabled)"
+
+    assert is_function(opts[:record_usage_fun], 3),
+           "auto-booted agent missing :record_usage_fun (usage never recorded)"
+
+    assert opts[:base] == base, "auto-booted agent dispatch base must be the resolved GLORBO_HOME"
+  end
+
   test "AgentBoot skips malformed AGENT.md without crashing the company" do
     base = TmpGlorboHome.setup()
     company = "co_#{System.unique_integer([:positive])}"

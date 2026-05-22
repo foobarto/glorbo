@@ -60,7 +60,7 @@ defmodule Glorbo.Company.AgentBoot do
           slugs
           |> Enum.filter(&File.dir?(Path.join(agents_dir, &1)))
           |> Enum.reject(&String.starts_with?(&1, "."))
-          |> Enum.each(&boot_one(company, &1, Path.join(agents_dir, &1)))
+          |> Enum.each(&boot_one(company, &1, Path.join(agents_dir, &1), base))
 
         _ ->
           :ok
@@ -70,23 +70,35 @@ defmodule Glorbo.Company.AgentBoot do
     :ok
   end
 
-  defp boot_one(company, slug, agent_dir) do
+  defp boot_one(company, slug, agent_dir, base) do
     agent_md = FileLayout.agent_md(agent_dir)
 
     case AgentParser.parse_file(agent_md) do
       {:ok, spec} ->
         maybe_warn_unknown_model(spec)
-        start_and_register(company, slug, spec)
+        start_and_register(company, slug, spec, base)
 
       {:error, reason} ->
         Logger.warning("agent_boot: skipped #{company}/#{slug}: #{inspect(reason)} (#{agent_md})")
     end
   end
 
-  defp start_and_register(company, slug, spec) do
+  defp start_and_register(company, slug, spec, base) do
     sup = CompanySup.via(company, :agent_sup)
 
-    case AgentSupervisor.start_agent(sup, spec) do
+    # codex C-108: auto-booted agents (the heartbeat/inbox-driven
+    # production path) previously started with no `:dispatch_opts`, so
+    # `Dispatch.execute` fell back to the no-op `budget_tracker_fun` +
+    # `record_usage_fun` defaults — the per-agent budget gate AND the
+    # ledger write were both disabled, and the company cap (which sums
+    # the ledger) read zero. The SEC-05 hard stop was effectively dead
+    # for every auto-booted agent. Wire the real per-company BudgetTracker
+    # + the resolved base so budget enforcement and usage recording are
+    # live on the production wake path (also fixes C-114: base now flows
+    # into dispatch instead of defaulting to ~/.glorbo).
+    agent_opts = [dispatch_opts: production_dispatch_opts(company, base)]
+
+    case AgentSupervisor.start_agent(sup, spec, agent_opts) do
       {:ok, _pid} ->
         maybe_register_heartbeat(company, slug, spec)
 
@@ -136,6 +148,35 @@ defmodule Glorbo.Company.AgentBoot do
   # The dispatch_fun runs inside the Scheduler process when the timer
   # fires. It calls into the AgentServer's wake queue by registered
   # name so we don't hold on to a pid that might have restarted.
+  # codex C-108 / C-114: the production dispatch options every auto-booted
+  # agent's `Agent.Server` carries, threaded into `Dispatch.execute` on
+  # each wake. `budget_tracker_fun` + `record_usage_fun` route to this
+  # company's `BudgetTracker` (mirroring the proven wiring in
+  # `budget_hard_stop_e2e_test`); `base` is the resolved GLORBO_HOME so
+  # dispatch reads the right filesystem root rather than defaulting to
+  # `~/.glorbo`. Without these, budget enforcement + usage recording are
+  # silently disabled for the heartbeat/inbox wake path.
+  defp production_dispatch_opts(company, base) do
+    tracker = CompanySup.via(company, :budget_tracker)
+
+    [
+      base: base,
+      budget_tracker_fun: fn spec ->
+        Glorbo.Company.BudgetTracker.check_budget(tracker, spec.slug)
+      end,
+      record_usage_fun: fn spec, task, usage ->
+        Glorbo.Company.BudgetTracker.record(tracker, %{
+          agent_slug: spec.slug,
+          provider: Map.get(usage, :provider) || spec.provider || "",
+          model: Map.get(usage, :model) || spec.model || "",
+          prompt_tokens: Map.get(usage, :prompt_tokens, 0),
+          completion_tokens: Map.get(usage, :completion_tokens, 0),
+          task_id: Map.get(task, :task_id) || ""
+        })
+      end
+    ]
+  end
+
   defp build_dispatch_fun(company, slug) do
     fn trigger ->
       name = {:via, Registry, {Glorbo.Agent.Registry, {:agent_server, company, slug}}}
