@@ -124,3 +124,7 @@ NOTES-*.md
 # punch list during dogfood sessions. Not shared history.
 TODO.md
 .serena/
+.tmp/
+
+# Dialyzer PLT cache (build artifact)
+/priv/plts/
