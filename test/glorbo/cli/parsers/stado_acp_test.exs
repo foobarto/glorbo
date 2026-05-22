@@ -98,10 +98,11 @@ defmodule Glorbo.CLI.Parsers.StadoAcpTest do
 
     test "passes the right argv to the command" do
       captured = :counters.new(1, [])
+      test_pid = self()
 
       command_fun = fn bin, args, opts ->
         :counters.add(captured, 1, 1)
-        send(self(), {:cmd, bin, args, opts})
+        send(test_pid, {:cmd, bin, args, opts})
         {empty_session_json(), 0}
       end
 
@@ -116,6 +117,49 @@ defmodule Glorbo.CLI.Parsers.StadoAcpTest do
       assert_received {:cmd, "/path/to/stado", ["stats", "--session", "acp-xyz", "--json"], opts}
       assert opts[:stderr_to_stdout] == true
       assert :counters.get(captured, 1) == 1
+    end
+
+    test "stats_env is threaded into the command :env (A-001/B-006)" do
+      env = [
+        {"XDG_CONFIG_HOME", "/host/ws/.config"},
+        {"XDG_DATA_HOME", "/host/ws/.local/share"},
+        {"XDG_STATE_HOME", "/host/ws/.local/state"}
+      ]
+
+      test_pid = self()
+
+      command_fun = fn _bin, _args, opts ->
+        send(test_pid, {:cmd_env, opts[:env]})
+        {empty_session_json(), 0}
+      end
+
+      ctx = %{
+        session_id: "acp-env",
+        host_binary: "/path/to/stado",
+        stats_env: env,
+        command_fun: command_fun
+      }
+
+      assert {:ok, _} = StadoAcp.parse({:stado_session, ctx})
+      assert_received {:cmd_env, ^env}
+    end
+
+    test "no :env override when stats_env is absent" do
+      test_pid = self()
+
+      command_fun = fn _bin, _args, opts ->
+        send(test_pid, {:cmd_env, Keyword.get(opts, :env, :absent)})
+        {empty_session_json(), 0}
+      end
+
+      ctx = %{
+        session_id: "acp-noenv",
+        host_binary: "/path/to/stado",
+        command_fun: command_fun
+      }
+
+      assert {:ok, _} = StadoAcp.parse({:stado_session, ctx})
+      assert_received {:cmd_env, :absent}
     end
   end
 
@@ -165,6 +209,22 @@ defmodule Glorbo.CLI.Parsers.StadoAcpTest do
 
       assert {:error, {:invalid_json, "expected an object"}} =
                StadoAcp.parse({:stado_session, ctx})
+    end
+
+    test "a hung stats command is bounded by the timeout (B-006)" do
+      slow_command = fn _bin, _args, _opts ->
+        Process.sleep(1_000)
+        {empty_session_json(), 0}
+      end
+
+      ctx = %{
+        session_id: "x",
+        host_binary: "/usr/local/bin/stado",
+        command_fun: slow_command,
+        stats_timeout_ms: 20
+      }
+
+      assert {:error, {:stado_stats_timeout, 20}} = StadoAcp.parse({:stado_session, ctx})
     end
 
     test "non-stado_session sources are rejected" do

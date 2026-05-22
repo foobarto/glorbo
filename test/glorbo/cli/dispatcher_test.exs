@@ -883,6 +883,125 @@ defmodule Glorbo.CLI.DispatcherTest do
       assert result.usage_error == nil
     end
 
+    test "A-001/B-006: stats command_fun receives XDG env pointing into the agent workspace" do
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "c0000000-0000-4000-8000-00000000000a",
+           chunks: 1,
+           ignored_updates: 0
+         }}
+      end
+
+      stats_json = ~s({"total":{},"by_model":{},"by_tool":{}})
+      test_pid = self()
+
+      command_fun = fn _bin, _args, opts ->
+        send(test_pid, {:stats_opts, opts})
+        {stats_json, 0}
+      end
+
+      p =
+        base_provider(
+          name: "stado",
+          binary: "/host/stado",
+          resolved_path: "/host/stado",
+          prompt_mode: :acp,
+          usage_parser: "stado_acp"
+        )
+
+      ws = tmp_workspace()
+      ctx = ws |> base_ctx() |> Map.put(:host_cli_binary, "/host/stado")
+
+      assert {:ok, _} =
+               Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun, command_fun: command_fun)
+
+      assert_received {:stats_opts, opts}
+      env = Keyword.fetch!(opts, :env)
+
+      # XDG points at the HOST side of the per-agent workspace bind, so
+      # the stats walker reads the relocated per-agent trace — never the
+      # host's shared ~/.local/{share,state}/stado.
+      assert {"XDG_DATA_HOME", Path.join(ws, ".local/share")} in env
+      assert {"XDG_STATE_HOME", Path.join(ws, ".local/state")} in env
+      assert {"XDG_CONFIG_HOME", Path.join(ws, ".config")} in env
+
+      # The host's shared XDG dirs are never referenced.
+      home = System.user_home!()
+      refute Enum.any?(env, fn {_k, v} -> v == Path.join(home, ".local/share") end)
+    end
+
+    # B-024: the ACP session file lives in the agent-writable workspace.
+    # An untrusted CLI can replace it with a symlink to a host file. Both
+    # the read and write paths must lstat-and-refuse non-regular shapes.
+    test "B-024: read refuses a symlinked session file (no resume id threaded)" do
+      test_pid = self()
+      ws = tmp_workspace()
+
+      # Plant a symlink at the session path pointing at a host file.
+      sessions_dir = Path.join([ws, ".glorbo", "sessions"])
+      File.mkdir_p!(sessions_dir)
+      session_file = Path.join(sessions_dir, "stado__symlink-rd.txt")
+
+      secret = Path.join(System.tmp_dir!(), "b024-secret-#{System.unique_integer([:positive])}")
+      File.write!(secret, "11111111-1111-4111-8111-111111111111")
+      on_exit(fn -> File.rm_rf!(secret) end)
+      File.ln_s!(secret, session_file)
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, opts ->
+        send(test_pid, {:opts_seen, opts})
+        {:ok, %{reply: "ok", session_id: nil, chunks: 1, ignored_updates: 0}}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ctx = base_ctx(ws, task_id: "symlink-rd")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      assert_received {:opts_seen, opts}
+
+      refute Keyword.has_key?(opts, :resume_session_id),
+             "symlinked session file must NOT be followed to read a resume id"
+
+      # The symlink entry is removed; the host target is untouched.
+      refute File.exists?(session_file)
+      assert File.read!(secret) == "11111111-1111-4111-8111-111111111111"
+    end
+
+    test "B-024: write refuses to clobber a symlinked session file (host target preserved)" do
+      ws = tmp_workspace()
+
+      sessions_dir = Path.join([ws, ".glorbo", "sessions"])
+      File.mkdir_p!(sessions_dir)
+      session_file = Path.join(sessions_dir, "stado__symlink-wr.txt")
+
+      victim = Path.join(System.tmp_dir!(), "b024-victim-#{System.unique_integer([:positive])}")
+      File.write!(victim, "DO NOT CLOBBER")
+      on_exit(fn -> File.rm_rf!(victim) end)
+      File.ln_s!(victim, session_file)
+
+      acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
+        {:ok,
+         %{
+           reply: "ok",
+           session_id: "d0000000-0000-4000-8000-00000000000d",
+           chunks: 1,
+           ignored_updates: 0
+         }}
+      end
+
+      p = base_provider(name: "stado", prompt_mode: :acp)
+      ctx = base_ctx(ws, task_id: "symlink-wr")
+
+      assert {:ok, _} = Dispatcher.invoke(p, ctx, acp_run_fun: acp_run_fun)
+
+      # The write through the symlink is refused — the host target keeps
+      # its original content and is NOT overwritten with the UUID.
+      assert File.read!(victim) == "DO NOT CLOBBER",
+             "write must NOT follow the symlink and clobber the host target"
+    end
+
     test "invoke/3 records usage_error when stado stats fails (preserves dispatch result)" do
       acp_run_fun = fn _bwrap_opts, _run_opts_map, _opts ->
         {:ok, %{reply: "ok", session_id: "acp-bench-9", chunks: 1, ignored_updates: 0}}

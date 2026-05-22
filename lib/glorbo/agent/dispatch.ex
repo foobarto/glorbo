@@ -508,6 +508,17 @@ defmodule Glorbo.Agent.Dispatch do
     agent_root = Path.dirname(path)
     Enum.each(~w(inbox outbox history state), &fs.mkdir_p!.(Path.join(agent_root, &1)))
 
+    # A-001 / B-023 / B-026: providers that relocate XDG data/state into
+    # the sandbox workspace (stado sets XDG_DATA_HOME=/workspace/.local/share
+    # and XDG_STATE_HOME=/workspace/.local/state) need those parent dirs to
+    # exist on the host side of the rw workspace bind before dispatch, so
+    # the CLI can mkdir its own subdir under them. These are agent-private
+    # (per-company workspace), so nothing is shared across companies.
+    Enum.each(
+      [".local/share", ".local/state", ".config"],
+      &fs.mkdir_p!.(Path.join(path, &1))
+    )
+
     {:ok, path}
   end
 

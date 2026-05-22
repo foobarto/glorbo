@@ -10,6 +10,21 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — stado provider state relocated into the per-agent sandbox (codex A-001/B-006/B-023/B-026/B-024)
+
+The bundled stado provider mounted the host's XDG data/state dirs
+(`~/.local/share/stado`, `~/.local/state/stado`) as **read-write** binds shared
+across *all* companies, and ran `stado stats` on the host against that shared
+state. A sandboxed agent could read/modify another company's stado sessions and
+git worktrees (cross-company isolation breach), and the usage walker executed the
+provider outside bwrap. Now: stado's `XDG_DATA_HOME`/`XDG_STATE_HOME` point into
+the agent-private workspace (the rw host binds are dropped; only `~/.config/stado`
+stays RO-bound for model selection), so sessions/worktrees are per-agent and never
+touch shared host state. The `stado stats` usage call is handed that same
+per-agent XDG env (no host secrets reachable) and bounded by a hard timeout. ACP
+session-id files are now lstat-guarded against symlink swaps (B-024). Note:
+existing host-side stado sessions are not migrated (pre-1.0 atomic cut).
+
 ### Security — dependency CVE bumps + supply-chain hardening (OpenSSF)
 
 - Bumped vulnerable deps within existing constraints: **Phoenix 1.8.5→1.8.7**

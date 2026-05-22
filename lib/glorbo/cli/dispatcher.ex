@@ -48,6 +48,7 @@ defmodule Glorbo.CLI.Dispatcher do
   alias Glorbo.CLI.Parsers
   alias Glorbo.CLI.PathTransforms
   alias Glorbo.CLI.Registry.Provider
+  alias Glorbo.Filesystem.AgentWritableFile
   alias Glorbo.Sandbox.Bwrap
 
   @type ctx :: %{
@@ -419,11 +420,20 @@ defmodule Glorbo.CLI.Dispatcher do
     end)
   end
 
-  # ACP usage parsing — runs after the dispatch returns, OUTSIDE the
-  # bwrap sandbox. Currently only the `stado_acp` parser is supported;
-  # it shells out to the host's stado binary (`stado stats --session
-  # <sid> --json`) to extract token + cost. Tests inject `:command_fun`
-  # to bypass the real subprocess.
+  # ACP usage parsing — runs after the dispatch returns. The `stado_acp`
+  # parser shells out to the host's stado binary (`stado stats --session
+  # <sid> --json`) to extract token + cost.
+  #
+  # A-001 / B-006 hardening: stado's session/audit trace no longer lives
+  # in shared host XDG dirs — `priv/providers/stado.toml` relocates
+  # XDG_DATA_HOME / XDG_STATE_HOME into the per-agent, per-company rw
+  # workspace (`<workspace>/.local/{share,state}`). So the stats walker
+  # runs against THAT per-agent state, never the host's shared
+  # `~/.local/{share,state}/stado`. We pass the same XDG env (pointed at
+  # the host side of the workspace bind) to the stats subprocess so it
+  # reads the trace the dispatch just wrote, and we bound it with a hard
+  # timeout so a hung stats can't block the dispatch pipeline. Tests
+  # inject `:command_fun` to bypass the real subprocess.
   defp parse_acp_usage(%Provider{usage_parser: name}, acp_meta, ctx, opts)
        when name in [nil, "", "none"] do
     _ = {acp_meta, ctx, opts}
@@ -438,6 +448,7 @@ defmodule Glorbo.CLI.Dispatcher do
       %{
         session_id: Map.get(acp_meta, :session_id) || "",
         host_binary: stado_host_binary(provider, ctx),
+        stats_env: stado_stats_env(ctx),
         command_fun: Keyword.get(opts, :command_fun, &System.cmd/3)
       }
     }
@@ -460,6 +471,27 @@ defmodule Glorbo.CLI.Dispatcher do
       provider.resolved_path ||
       provider.binary ||
       "stado"
+  end
+
+  # XDG env for the host-side `stado stats` call, pointed at the HOST
+  # side of the per-agent workspace bind so the stats walker reads the
+  # relocated session trace (and never the host's shared
+  # `~/.local/{share,state}/stado`). Mirrors the sandbox XDG env from
+  # stado.toml: inside bwrap the workspace is `/workspace`; on the host
+  # it's `ctx.workspace`. Returns `nil` when no workspace is known so
+  # the parser falls back to a bare `System.cmd` (test path).
+  defp stado_stats_env(ctx) do
+    case Map.get(ctx, :workspace) do
+      ws when is_binary(ws) and ws != "" ->
+        [
+          {"XDG_CONFIG_HOME", Path.join(ws, ".config")},
+          {"XDG_DATA_HOME", Path.join(ws, ".local/share")},
+          {"XDG_STATE_HOME", Path.join(ws, ".local/state")}
+        ]
+
+      _ ->
+        nil
+    end
   end
 
   # Bind the per-frame audit emission to `Glorbo.CLI.Audit.emit/3` with
@@ -903,7 +935,14 @@ defmodule Glorbo.CLI.Dispatcher do
   defp read_acp_session_id(nil), do: nil
 
   defp read_acp_session_id(path) do
-    # D8: validate the on-disk content as a canonical UUID before
+    # B-024: the session file lives in the agent-writable workspace, so
+    # an untrusted ACP CLI can replace it with a symlink to an arbitrary
+    # host file (e.g. `~/.glorbo/config.md`). A bare `File.read` follows
+    # the link. lstat-and-refuse non-regular shapes first — mirrors the
+    # reply-path guard in `write_reply_file!/4` and the shared helper
+    # every other agent-writable read site uses.
+    #
+    # D8: then validate the on-disk content as a canonical UUID before
     # handing it back to the caller. Files written by older Glorbo
     # versions, or by a peer that returned a non-UUID `sessionId`
     # (e.g. a description / project slug — stado's `--resume`
@@ -911,7 +950,7 @@ defmodule Glorbo.CLI.Dispatcher do
     # rejects with `code: -32602, "invalid UUID length: N"` and
     # wedges the dispatch). Treat any non-UUID content as "no
     # prior session" and let the dispatch proceed fresh.
-    case File.read(path) do
+    case AgentWritableFile.read(path) do
       {:ok, content} ->
         case String.trim(content) do
           "" ->
@@ -923,11 +962,24 @@ defmodule Glorbo.CLI.Dispatcher do
             else
               # Best-effort cleanup: drop the bad file so the next
               # dispatch starts clean and the operator's directory
-              # listing reflects what's actually usable.
+              # listing reflects what's actually usable. `File.rm`
+              # unlinks the entry itself (a symlink, if any), never
+              # the target — safe.
               _ = File.rm(path)
               nil
             end
         end
+
+      {:error, {:not_regular_file, type}} ->
+        # Refuse a planted symlink/dir/device. Drop the rogue entry so
+        # the next dispatch starts clean; `File.rm` unlinks the symlink,
+        # not its target.
+        Logger.warning(
+          "[dispatcher] refusing non-regular ACP session file (#{inspect(type)}): #{path}"
+        )
+
+        _ = File.rm(path)
+        nil
 
       _ ->
         nil
@@ -941,8 +993,30 @@ defmodule Glorbo.CLI.Dispatcher do
   defp write_acp_session_id(path, session_id) when is_binary(session_id) do
     if uuid_shape?(session_id) do
       File.mkdir_p!(Path.dirname(path))
-      File.write!(path, session_id)
-      :ok
+
+      # B-024: refuse to write through a symlink an agent may have
+      # planted at the session path (which would clobber the link
+      # target on the host). lstat-and-require regular-or-absent,
+      # mirroring `write_reply_file!/4`.
+      case AgentWritableFile.ensure_writable(path) do
+        :ok ->
+          File.write!(path, session_id)
+          :ok
+
+        {:error, {:not_regular_file, type}} ->
+          Logger.warning(
+            "[dispatcher] refusing to write ACP session id through non-regular path (#{inspect(type)}): #{path}"
+          )
+
+          :ok
+
+        {:error, reason} ->
+          Logger.warning(
+            "[dispatcher] ACP session file lstat failed (#{inspect(reason)}): #{path}"
+          )
+
+          :ok
+      end
     else
       # D8: refuse to persist a non-UUID sessionId. A future
       # dispatch trying to `resumeSession` against it would be

@@ -21,11 +21,19 @@ defmodule Glorbo.CLI.Parsers.StadoAcp do
       {:stado_session, %{
         session_id: "acp-abc123",
         host_binary: "/usr/local/bin/stado",
+        stats_env: [{"XDG_DATA_HOME", "…/workspace/.local/share"}, …],
         command_fun: &System.cmd/3   # injectable for tests
       }}
 
   `command_fun` defaults to `&System.cmd/3` and can be overridden so
   tests don't need to spawn a real stado.
+
+  `stats_env` (optional) is the XDG env handed in by the dispatcher so
+  the host-side `stado stats` call reads the per-agent session trace
+  that the relocated `XDG_DATA_HOME`/`XDG_STATE_HOME` wrote into the
+  agent workspace, NOT the host's shared `~/.local/{share,state}/stado`
+  (A-001 / B-006). When absent the call falls back to a bare
+  `System.cmd` with no `:env` override.
 
   ## Output
 
@@ -57,18 +65,31 @@ defmodule Glorbo.CLI.Parsers.StadoAcp do
     * `{:error, {:stado_exit, code, output_tail}}` — stado returned
       non-zero. The first 8 lines of stderr-merged output are
       forwarded for debug.
+    * `{:error, {:stado_stats_timeout, ms}}` — the host-side stats
+      subprocess overran its hard timeout and was shut down so it
+      could not block the dispatch pipeline.
     * `{:error, {:invalid_json, reason}}` — stado emitted something
       we couldn't decode.
   """
 
   alias Glorbo.CLI.Parsers
 
+  # Hard upper bound on the host-side `stado stats` subprocess (B-006).
+  # The stats walker only reads the session git refs from the per-agent
+  # workspace — it needs no network and should finish in well under a
+  # second. Bounding it stops a hung/wedged stats from blocking the
+  # dispatch pipeline indefinitely.
+  @stats_timeout_ms 15_000
+
   @spec parse(Parsers.source()) :: {:ok, Parsers.usage()} | {:error, term()}
   def parse({:stado_session, %{} = ctx}) do
     with {:ok, session_id} <- fetch(ctx, :session_id, :missing_session_id),
          {:ok, host_binary} <- fetch(ctx, :host_binary, :missing_host_binary),
          command_fun = Map.get(ctx, :command_fun, &System.cmd/3),
-         {:ok, json} <- run_stado_stats(host_binary, session_id, command_fun),
+         stats_env = Map.get(ctx, :stats_env),
+         timeout_ms = Map.get(ctx, :stats_timeout_ms, @stats_timeout_ms),
+         {:ok, json} <-
+           run_stado_stats(host_binary, session_id, command_fun, stats_env, timeout_ms),
          {:ok, decoded} <- decode_json(json) do
       {:ok, to_usage(decoded)}
     end
@@ -85,27 +106,54 @@ defmodule Glorbo.CLI.Parsers.StadoAcp do
     end
   end
 
-  defp run_stado_stats(host_binary, session_id, command_fun) do
+  defp run_stado_stats(host_binary, session_id, command_fun, stats_env, timeout_ms) do
     args = ["stats", "--session", session_id, "--json"]
 
-    case command_fun.(host_binary, args, stderr_to_stdout: true) do
-      {output, 0} ->
-        {:ok, output}
+    # A-001/B-006: when the dispatcher relocated stado's XDG dirs into
+    # the per-agent workspace, it hands us `stats_env` pointing there so
+    # the host-side stats walker reads the per-agent session trace (not
+    # the host's shared `~/.local/{share,state}/stado`). `System.cmd/3`
+    # supports `:env`; it does NOT support `:timeout`, so we bound the
+    # whole call with a Task (below) instead.
+    cmd_opts = [stderr_to_stdout: true] |> put_env(stats_env)
 
-      {output, code} ->
-        tail =
-          output
-          |> String.trim()
-          |> String.split("\n")
-          |> Enum.take(-8)
-          |> Enum.join("\n")
+    with_timeout(timeout_ms, fn ->
+      case command_fun.(host_binary, args, cmd_opts) do
+        {output, 0} ->
+          {:ok, output}
 
-        {:error, {:stado_exit, code, tail}}
-    end
+        {output, code} ->
+          tail =
+            output
+            |> String.trim()
+            |> String.split("\n")
+            |> Enum.take(-8)
+            |> Enum.join("\n")
+
+          {:error, {:stado_exit, code, tail}}
+      end
+    end)
   rescue
     e in [ErlangError, ArgumentError] ->
       {:error, {:stado_invocation_failed, Exception.message(e)}}
   end
+
+  # B-006: bound the host-side stats subprocess so a hung `stado stats`
+  # cannot block the dispatch pipeline. `System.cmd/3` has no `:timeout`
+  # option, so run it in a Task and shut the Task down if it overruns —
+  # the dispatch then proceeds with `usage: nil` rather than wedging.
+  defp with_timeout(timeout_ms, fun) do
+    task = Task.async(fun)
+
+    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      nil -> {:error, {:stado_stats_timeout, timeout_ms}}
+      {:exit, reason} -> {:error, {:stado_invocation_failed, inspect(reason)}}
+    end
+  end
+
+  defp put_env(opts, env) when is_list(env) and env != [], do: Keyword.put(opts, :env, env)
+  defp put_env(opts, _), do: opts
 
   defp decode_json(body) when is_binary(body) do
     case Jason.decode(body) do

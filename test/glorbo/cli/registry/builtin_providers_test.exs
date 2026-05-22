@@ -50,20 +50,21 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
     assert stado.prompt_mode == :acp
     assert stado.binary == "stado"
     assert stado.args == ["acp", "--tools"]
-    # Three auth_binds present: config (ro) + share (rw) + state (rw).
-    # share/state split is XDG-correct — stado writes session JSONL
-    # under XDG_DATA_HOME/stado and per-session worktrees under
-    # XDG_STATE_HOME/stado (TODO D3).
-    modes = Enum.map(stado.auth_binds, & &1.mode) |> Enum.sort()
-    assert modes == [:ro, :rw, :rw]
+    # A-001/B-023/B-026: only the RO config bind remains. Stado's DATA +
+    # STATE dirs are NOT bound to the host — they're relocated INTO the
+    # per-agent workspace via XDG env (below), so no shared rw host state
+    # crosses the company-isolation boundary.
+    assert [%{host: "~/.config/stado", sandbox: "/workspace/.config/stado", mode: :ro}] =
+             stado.auth_binds
 
-    sandboxes = Enum.map(stado.auth_binds, & &1.sandbox) |> Enum.sort()
-
-    assert sandboxes == [
-             "/workspace/.config/stado",
-             "/workspace/.local/share/stado",
-             "/workspace/.local/state/stado"
-           ]
+    # XDG env points stado's config/data/state into the sandbox
+    # workspace. `{workspace}` is the host workspace; the ACP dispatch
+    # branch rewrites it to `/workspace` before the env reaches the CLI.
+    assert stado.env == %{
+             "XDG_CONFIG_HOME" => "{workspace}/.config",
+             "XDG_DATA_HOME" => "{workspace}/.local/share",
+             "XDG_STATE_HOME" => "{workspace}/.local/state"
+           }
   end
 
   test "ACP variants of the dogfood CLIs declare prompt_mode :acp", %{providers: p} do

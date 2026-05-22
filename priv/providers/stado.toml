@@ -41,10 +41,10 @@ version_regex       = '(\d+\.\d+\.\d+)'
 allow_version_probe = true
 
 # Usage parser (GEP-45 Phase 3). After each ACP dispatch the
-# Dispatcher invokes `<host_binary> stats --session <sessionId> --json`
-# on the host (NOT inside the bwrap sandbox — stado writes its
-# session JSONL trace under `~/.local/share/stado/sessions/`, and the
-# stats walker reads commit trailers from those refs). The parser
+# Dispatcher invokes `stado stats --session <sessionId> --json`
+# INSIDE the bwrap sandbox (same XDG env as the dispatch), reading
+# stado's session JSONL trace from the per-agent sandbox-local
+# `XDG_DATA_HOME` under `/workspace/.local/share/stado`. The parser
 # maps the JSON to glorbo's canonical `Parsers.usage()` shape,
 # extending it with `cost_usd` + `duration_ms` so the budget ledger
 # can attribute spend per dispatch.
@@ -54,35 +54,35 @@ allow_version_probe = true
 # as `{:invalid_json, _}` and the dispatcher records `usage: nil`.
 usage_parser = "stado_acp"
 
-# Stado's per-user state — its config file (provider/model selection,
-# inference presets, custom tools) and its audit/session storage.
-# Config is read-only; data + state dirs are rw because stado writes
-# session JSONL traces there during the dispatch (see GEP-45 D4).
+# Relocate stado's data + state INTO the per-agent sandbox workspace
+# (A-001 / B-006 / B-023 / B-026). Stado follows XDG, so pointing
+# XDG_DATA_HOME + XDG_STATE_HOME at `/workspace/.local/{share,state}`
+# moves stado's session JSONL audit refs and per-session git worktrees
+# into the agent-private, per-company, rw workspace mount — they never
+# touch shared host state, so there is no cross-company read/write
+# breach and no rw host bind. XDG_CONFIG_HOME stays pointed at the
+# RO-bound `/workspace/.config` (operator config / model selection,
+# like other providers' creds).
 #
-# XDG layout (stado follows the spec):
-#   ~/.config/stado          — config.toml + tool overrides (XDG_CONFIG_HOME)
-#   ~/.local/share/stado     — session JSONL audit refs (XDG_DATA_HOME)
-#   ~/.local/state/stado     — per-session git worktrees (XDG_STATE_HOME)
-#
-# All three are mounted so stado's session resume (F6) and worktree
-# creation work end-to-end. Without the state dir, `OpenSession` /
-# `CreateSession` calls in `MkdirAllUnderUserConfig` fail silently
-# (no executor, no tools) on hosts whose `~/.local/state/stado/`
-# was never created — see TODO D3 for the original report.
+# `{workspace}` expands to the HOST workspace path; the ACP dispatch
+# branch rewrites host-workspace → `/workspace` before the env reaches
+# the sandbox (mirrors codex-acp's CODEX_HOME pattern), so the CLI
+# sees the sandbox paths below.
+[env]
+XDG_CONFIG_HOME = "{workspace}/.config"
+XDG_DATA_HOME   = "{workspace}/.local/share"
+XDG_STATE_HOME  = "{workspace}/.local/state"
+
+# Stado's config is the only thing it reads from the host: provider /
+# model selection, inference presets, custom tools. Read-only, mounted
+# under XDG_CONFIG_HOME (like other providers' credentials). Stado's
+# DATA + STATE dirs are NOT bound — they live inside the workspace via
+# the XDG env above, so session resume (F6) and worktree creation work
+# per-agent without sharing host state across companies.
 [[auth_binds]]
 host    = "~/.config/stado"
 sandbox = "/workspace/.config/stado"
 mode    = "ro"
-
-[[auth_binds]]
-host    = "~/.local/share/stado"
-sandbox = "/workspace/.local/share/stado"
-mode    = "rw"
-
-[[auth_binds]]
-host    = "~/.local/state/stado"
-sandbox = "/workspace/.local/state/stado"
-mode    = "rw"
 
 # Broker-style providers like stado don't expose an HTTP /models
 # endpoint — they pick a backend (anthropic / openai / ollama / etc.)
