@@ -441,17 +441,15 @@ defmodule Glorbo.BrainDump do
   # the leaf lstat follows. Walk every ancestor segment via the
   # canonical `any_symlink_in_path?/1` seam (used by Router + Actions.Tasks).
   defp ensure_safe_dir(path) do
-    cond do
-      Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path) ->
-        {:error, :symlink_in_path}
-
-      true ->
-        case File.lstat(path) do
-          {:ok, %File.Stat{type: :directory}} -> :ok
-          {:ok, %File.Stat{}} -> {:error, :not_a_directory}
-          {:error, :enoent} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(path) do
+      {:error, :symlink_in_path}
+    else
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :directory}} -> :ok
+        {:ok, %File.Stat{}} -> {:error, :not_a_directory}
+        {:error, :enoent} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 end

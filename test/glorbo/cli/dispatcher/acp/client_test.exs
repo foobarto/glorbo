@@ -901,9 +901,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
 
             :session_done ->
               {:ok,
-               IO.iodata_to_binary(
-                 Framing.encode(Message.new_response(2, %{"sessionId" => "s"}))
-               )}
+               IO.iodata_to_binary(Framing.encode(Message.new_response(2, %{"sessionId" => "s"})))}
 
             :prompting ->
               # Endless stream of valid (non-terminal) notifications,
@@ -1013,11 +1011,14 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
       assert length(frame_events) == 5
 
       # Exactly one truncation summary emitted.
-      truncations = Enum.filter(log, fn {role, kind, _} -> role == :meta and kind == :audit_truncated end)
+      truncations =
+        Enum.filter(log, fn {role, kind, _} -> role == :meta and kind == :audit_truncated end)
+
       assert length(truncations) == 1
 
       # :meta bookends still pass through (not counted against the cap).
       assert Enum.any?(log, fn {role, kind, _} -> role == :meta and kind == :dispatch_start end)
+
       assert Enum.any?(log, fn {role, kind, _} -> role == :meta and kind == :dispatch_complete end)
     end
 
@@ -1037,7 +1038,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.ClientTest do
           &session_new_response_to/1,
           fn {:request, id, "session/prompt", _} ->
             [
-              Framing.encode(Message.new_error_response(id, -32000, huge_message))
+              Framing.encode(Message.new_error_response(id, -32_000, huge_message))
             ]
           end
         ])

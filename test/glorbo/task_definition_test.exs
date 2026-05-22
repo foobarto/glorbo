@@ -285,7 +285,17 @@ defmodule Glorbo.TaskDefinitionTest do
     # Address it via a path that lexically begins with acme's prefix but
     # uses ../ to climb into the sibling company.
     traversal =
-      Path.join([ctx.base, "companies", ctx.company, "..", "other", "projects", "x", "tasks", "evil.md"])
+      Path.join([
+        ctx.base,
+        "companies",
+        ctx.company,
+        "..",
+        "other",
+        "projects",
+        "x",
+        "tasks",
+        "evil.md"
+      ])
 
     assert {:error, {:path_outside_company, ^traversal}} =
              TaskDefinition.parse_file(traversal, base: ctx.base, company: ctx.company)
@@ -764,7 +774,7 @@ defmodule Glorbo.TaskDefinitionTest do
       assert hd(td.handoff_chain).reason == "good entry"
     end
 
-    test "G40-5: peer_review_required normalises \"true\"/\"false\" strings; junk → false",
+    test "G40-5: peer_review_required normalises 'true'/'false' strings; junk → false",
          ctx do
       # C-062: the quoted YAML string forms `"true"` / `"false"` now
       # coerce to the matching boolean. Previously `"true"` coerced to

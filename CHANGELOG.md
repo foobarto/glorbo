@@ -10,6 +10,12 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-05-22
+
+Security-hardening release. Resolves ~40 findings from a codex security sweep
+(plus dependency CVE bumps and OpenSSF supply-chain tooling). See the per-area
+entries below.
+
 ### Security — CLI/runtime hardening: terminal-escape, MCP DoS, poison inbox, retry spin, dep-gate (codex C-117/C-079/C-076/C-129/C-130)
 
 - **C-117:** `glorbo logs` printed agent `stdout.log` verbatim, allowing terminal-escape
