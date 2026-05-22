@@ -124,6 +124,37 @@ jobs:
         # the ecto family allows decimal 3.x.
         run: mix deps.audit --ignore-advisory-ids "GHSA-rhv4-8758-jx7v"
 
+      # Dialyzer (success-typing static analysis). x86_64 only — the PLT
+      # build is slow and arch-independent for our pure-Elixir code.
+      # Count-regression gate: the codebase has a documented baseline of
+      # pre-existing warnings (docs/testing/dialyzer-baseline.md); CI fails
+      # only when the count EXCEEDS the baseline, i.e. a change introduced a
+      # NEW typing error. Burn the baseline down over time, then make it
+      # blocking outright.
+      - name: Cache Dialyzer PLT
+        if: matrix.arch == 'x86_64'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: priv/plts
+          key: plt-ubuntu24-otp28.0.2-ex1.18.4-${{ hashFiles('mix.lock') }}
+          restore-keys: plt-ubuntu24-otp28.0.2-ex1.18.4-
+
+      - name: Dialyzer (type analysis — fails on NEW warnings vs baseline)
+        if: matrix.arch == 'x86_64'
+        run: |
+          # Build the PLT first so a genuine PLT build error fails the step
+          # (rather than being masked by the `|| true` on the analysis run).
+          mix dialyzer --plt
+          mix dialyzer --format short > dialyzer.out 2>&1 || true
+          count=$(grep -cE '^(lib|lib_dev|test)/[^[:space:]]+:[0-9]+' dialyzer.out || true)
+          baseline=163
+          echo "Dialyzer warnings: ${count} (baseline ${baseline})"
+          if [ "${count}" -gt "${baseline}" ]; then
+            echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."
+            grep -E '^(lib|lib_dev|test)/' dialyzer.out || true
+            exit 1
+          fi
+
       - name: Install Zig 0.15.2
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:

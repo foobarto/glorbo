@@ -12,6 +12,28 @@ defmodule Glorbo.MixProject do
       deps: deps(),
       releases: releases(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      # Dialyzer (success-typing static analysis). PLTs live under
+      # priv/plts/ (gitignored, cached in CI keyed on mix.lock + OTP/Elixir
+      # version). `:mix`/`:ex_unit` are added to the PLT so analysis knows
+      # those modules' types (CI runs dialyzer in :dev, so test/support is
+      # not itself analyzed). CI is kept green NOT by `.dialyzer_ignore.exs`
+      # (intentionally empty) but by the COUNT-regression gate in the CI
+      # workflow — see docs/testing/dialyzer-baseline.md.
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts",
+        # :credo is needed so the custom Credo check in lib_dev/ (which
+        # calls Credo.Check.*, Credo.Code.prewalk/2, etc.) doesn't trip
+        # `unknown_function` warnings — those modules live in the :credo
+        # dep, not the app.
+        plt_add_apps: [:mix, :ex_unit, :credo],
+        # Per-warning ignores stay empty by design — adoption uses a
+        # COUNT-regression gate in CI (docs/testing/dialyzer-baseline.md)
+        # rather than per-warning tuples (dialyxir's .exs matcher keys on
+        # dialyzer's absolute file path, which isn't portable CI-vs-local).
+        ignore_warnings: ".dialyzer_ignore.exs",
+        format: :short
+      ],
       # `Phoenix.CodeReloader` ships in `phoenix_live_reload`, which is
       # `only: :dev`. Listing it as a listener in all envs causes mix
       # release to flag phoenix_live_reload as a runtime dep and embed
@@ -79,6 +101,9 @@ defmodule Glorbo.MixProject do
       # Burrito release (runtime: false keeps them out of the OTP manifest).
       {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      # Dialyzer (success-typing static analysis) via dialyxir. Dev-only,
+      # never in the Burrito release.
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:file_system, "~> 1.0"},
       {:yaml_front_matter, "~> 1.0"},
       {:yaml_elixir, "~> 2.9"},
