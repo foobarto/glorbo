@@ -922,33 +922,74 @@ defmodule Glorbo.Sandbox.Bwrap do
   # surfaces (TODO.md Minor #5).
   @stdout_cap 16 * 1024 * 1024
 
+  # C-103: per-dispatch ceiling on bytes written to the agent's
+  # `stdout.log` tee. The in-memory `@stdout_cap` only bounds the BEAM
+  # return value; without a disk cap a malicious/runaway agent could
+  # append unbounded output (append mode, persists across dispatches)
+  # and fill the host filesystem. Mirror the 16 MiB in-memory cap on
+  # disk: once hit, stop teeing and write a single truncation marker
+  # while the port runs to completion.
+  @tee_cap 16 * 1024 * 1024
+
   # Receive-loop over the port: accumulate stdout/stderr data until the
   # `{port, {:exit_status, status}}` message arrives OR the timeout fires.
   # When `tee_io` is non-nil (task #131), every chunk also appends to the
   # agent's `stdout.log` so the dashboard STDOUT tab + `glorbo logs` CLI
   # see live output, not just the post-exit capture.
+  #
+  # C-103: the receive deadline is an ABSOLUTE monotonic deadline
+  # computed once at loop entry, not an `after timeout_s*1000` that
+  # resets on every chunk. A continuously-chatty process is therefore
+  # bounded by the agent's `timeout_seconds` rather than able to refresh
+  # the timer indefinitely. `tee_written` tracks bytes appended to the
+  # tee file so we can cap it per dispatch.
   defp drain_port(port, timeout_s, acc, tee_io) do
-    deadline_ms = timeout_s * 1_000
+    deadline_mono = System.monotonic_time(:millisecond) + timeout_s * 1_000
+    drain_port_loop(port, deadline_mono, acc, tee_io, 0)
+  end
+
+  defp drain_port_loop(port, deadline_mono, acc, tee_io, tee_written) do
+    remaining_ms = max(deadline_mono - System.monotonic_time(:millisecond), 0)
 
     receive do
       {^port, {:data, chunk}} ->
-        tee_write(tee_io, chunk)
+        tee_written = tee_write(tee_io, chunk, tee_written)
 
         new_acc =
           if byte_size(acc) >= @stdout_cap, do: acc, else: acc <> chunk
 
-        drain_port(port, timeout_s, new_acc, tee_io)
+        drain_port_loop(port, deadline_mono, new_acc, tee_io, tee_written)
 
       {^port, {:exit_status, status}} ->
         {:ok, status, acc}
     after
-      deadline_ms ->
+      remaining_ms ->
         {:error, :timeout}
     end
   end
 
-  defp tee_write(nil, _chunk), do: :ok
-  defp tee_write(io, chunk), do: IO.binwrite(io, chunk)
+  # C-103: cap total bytes written to the tee file per dispatch. Returns
+  # the updated written-byte count. Once the cap is reached, append a
+  # one-shot truncation marker (the first time only) and stop writing;
+  # subsequent chunks are dropped from the file but still drained from
+  # the port so the exit code surfaces.
+  defp tee_write(nil, _chunk, written), do: written
+
+  defp tee_write(_io, _chunk, written) when written >= @tee_cap, do: written
+
+  defp tee_write(io, chunk, written) do
+    remaining = @tee_cap - written
+
+    if byte_size(chunk) <= remaining do
+      IO.binwrite(io, chunk)
+      written + byte_size(chunk)
+    else
+      # Write what fits, then a truncation marker, then go silent.
+      IO.binwrite(io, binary_part(chunk, 0, remaining))
+      IO.binwrite(io, "\n=== stdout.log truncated: per-dispatch #{@tee_cap}-byte cap reached ===\n")
+      @tee_cap
+    end
+  end
 
   defp safe_port_close(port) do
     try do

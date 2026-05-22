@@ -41,12 +41,34 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   counted but not surfaced in v1; future iterations may pass them to
   the audit log.
 
-  ## Per-phase timeout
+  ## Per-phase timeout + total deadline
 
-  Each `read` call has a deadline. Default 30s per phase; override via
-  `:phase_timeout_ms` opt. The streaming phase resets the deadline on
-  every successful chunk so a long answer doesn't trip the timer as
-  long as the peer is making progress.
+  Each `read` call has a per-phase deadline (`:phase_timeout_ms`,
+  default 600s). The streaming phase resets it on every successful
+  chunk so a long answer doesn't trip the timer while the peer makes
+  progress. Because that per-read timer alone never fires for a
+  steadily-chatty peer, an **absolute conversation deadline**
+  (`:conversation_timeout_ms`, default 30 min) bounds the whole
+  conversation regardless of chunk cadence — once it passes the run
+  aborts with `{:provider_timeout, :conversation_deadline}` (C-049).
+
+  ## DoS bounds (untrusted peer)
+
+  ACP stdout is untrusted external-CLI output. Three bounds protect the
+  host from a malicious/looping peer:
+
+    * **Reply byte cap** (`:reply_max_bytes`) — accumulated reply bytes
+      are checked DURING streaming; exceeding aborts with
+      `{:provider_protocol_error, {:reply_too_large, …}}` rather than
+      growing BEAM heap until the post-run check (C-049 / D-155 / D-156).
+    * **Max-line cap** (`:max_line_bytes`, default 16 MiB) — an
+      unterminated (newline-free) stream is rejected via
+      `Framing.parse_stream/3` once the buffer exceeds the cap (D-154).
+    * **Audit-frame budget** (`:audit_frames_max`, default 5_000) —
+      per-frame audit emissions stop past the cap (one
+      `meta.audit_truncated` summary is emitted), and peer-controlled
+      strings are truncated to 256 bytes, bounding audit-log growth
+      (C-044 / C-048).
   """
 
   alias Glorbo.CLI.Dispatcher.Acp.Framing
@@ -80,6 +102,36 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   @default_phase_timeout_ms 600_000
   @default_protocol_version 1
 
+  # Total wall-clock ceiling for one ACP conversation (C-049 / D-155 /
+  # D-156). The per-phase read timeout resets on every chunk, so a peer
+  # emitting one frame just under the per-read deadline forever never
+  # trips it. This absolute deadline — tracked from run start — bounds
+  # the whole conversation regardless of how chatty the peer is.
+  # Default 30 min; the dispatcher overrides with the agent's
+  # `timeout_seconds` via `:conversation_timeout_ms`.
+  @default_conversation_timeout_ms 30 * 60 * 1_000
+
+  # Running cap on assembled reply bytes (C-049 / D-155 / D-156).
+  # `reply_max_bytes` was previously checked only AFTER the run
+  # returned, so an endless `agent_message_chunk` stream could exhaust
+  # BEAM memory before the post-hoc check ran. We now accumulate the
+  # byte count DURING streaming and abort the moment it is exceeded.
+  # Default mirrors the framing line cap (16 MiB); the dispatcher
+  # overrides with the provider's `reply_max_bytes` via
+  # `:reply_max_bytes`.
+  @default_reply_max_bytes 16 * 1024 * 1024
+
+  # Max number of per-frame audit events emitted per dispatch (C-044 /
+  # C-048). Beyond this we stop auditing individual frames and emit a
+  # single `meta.audit_truncated` summary, so a peer streaming endless
+  # notifications cannot inflate the fsync-per-line `_system` audit log.
+  @default_audit_frames_max 5_000
+
+  # Max byte length of any peer-controlled string (error message,
+  # session_update kind, method) persisted into an audit detail
+  # (C-044 / C-048). Truncated before it reaches the audit callback.
+  @audit_string_max 256
+
   @doc false
   @spec noop_audit(atom(), atom(), map()) :: :ok
   def noop_audit(_role, _kind, _detail), do: :ok
@@ -110,6 +162,15 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
     * `:phase_timeout_ms` (integer, default 600_000) — read deadline
       for each phase. Streaming phase resets the deadline on every
       chunk.
+    * `:conversation_timeout_ms` (integer, default 1_800_000) —
+      absolute wall-clock ceiling for the whole conversation,
+      independent of the per-read reset (C-049).
+    * `:reply_max_bytes` (integer, default 16 MiB) — running cap on
+      assembled reply bytes; checked during streaming (C-049).
+    * `:max_line_bytes` (integer, default 16 MiB) — cap on an
+      unterminated stdout line / buffer remainder (D-154).
+    * `:audit_frames_max` (integer, default 5_000) — per-dispatch cap
+      on per-frame audit emissions (C-044 / C-048).
     * `:audit_fun` (`(role, kind, detail -> :ok)`, default no-op) —
       callback invoked for every protocol-level event so the
       dispatcher can persist a replayable trace. Roles: `:client`
@@ -120,7 +181,10 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   @spec run(IO.t(), String.t(), keyword()) ::
           {:ok, ok_result()} | {:error, error_reason()}
   def run(%IO{} = io, prompt, opts \\ []) when is_binary(prompt) do
-    audit_fun = Keyword.get(opts, :audit_fun, &__MODULE__.noop_audit/3)
+    raw_audit_fun = Keyword.get(opts, :audit_fun, &__MODULE__.noop_audit/3)
+
+    conversation_timeout_ms =
+      Keyword.get(opts, :conversation_timeout_ms, @default_conversation_timeout_ms)
 
     state = %{
       io: io,
@@ -132,12 +196,31 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
       client_info: Keyword.get(opts, :client_info, %{"name" => "glorbo", "version" => "1"}),
       session_id: nil,
       reply: [],
+      reply_bytes: 0,
+      reply_max_bytes: Keyword.get(opts, :reply_max_bytes, @default_reply_max_bytes),
+      max_line_bytes: Keyword.get(opts, :max_line_bytes, Framing.default_max_line_bytes()),
       chunks: 0,
       ignored_updates: 0,
       tool_summary: nil,
       resume_session_id: Keyword.get(opts, :resume_session_id),
-      audit_fun: audit_fun
+      # C-049: absolute monotonic deadline for the whole conversation.
+      deadline_mono: System.monotonic_time(:millisecond) + conversation_timeout_ms,
+      # C-044 / C-048: per-dispatch audit-frame budget + truncation.
+      # The counter ref is dispatch-local mutable state so the
+      # side-effect-only audit helpers don't need to thread state.
+      audit_frames_max: Keyword.get(opts, :audit_frames_max, @default_audit_frames_max),
+      audit_frame_counter: :counters.new(1, [:atomics])
     }
+
+    # Wrap the caller's audit callback so the per-frame cap + string
+    # truncation apply uniformly to every emission. `:meta` bookends
+    # (start/complete/error/audit_truncated) always pass through; only
+    # peer/client per-frame events count against the budget.
+    audit_fun = fn role, kind, detail ->
+      audit_with_budget(state, raw_audit_fun, role, kind, detail)
+    end
+
+    state = Map.put(state, :audit_fun, audit_fun)
 
     audit_fun.(:meta, :dispatch_start, %{prompt_size: byte_size(prompt)})
 
@@ -313,8 +396,10 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         end
 
       {:ok, {:notification, "session/update", params}, state} ->
-        state = absorb_update(state, params)
-        drain_session_prompt(state, prompt_id)
+        case absorb_update(state, params) do
+          {:ok, state} -> drain_session_prompt(state, prompt_id)
+          {:error, _} = err -> err
+        end
 
       {:ok, {:notification, _other_method, _params}, state} ->
         drain_session_prompt(%{state | ignored_updates: state.ignored_updates + 1}, prompt_id)
@@ -372,7 +457,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
 
   defp absorb_update(state, %{"update" => %{"kind" => "agent_message_chunk", "text" => text}})
        when is_binary(text) do
-    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+    append_chunk(state, text)
   end
 
   # Some ACP variants surface the chunk fields at the top of params
@@ -380,18 +465,18 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   # kinds (tool calls, status changes) are counted but not extracted.
   defp absorb_update(state, %{"kind" => "agent_message_chunk", "text" => text})
        when is_binary(text) do
-    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+    append_chunk(state, text)
   end
 
   # stado uses kind="text" for text delta events (stado internal/acp/server.go:200).
   defp absorb_update(state, %{"kind" => "text", "text" => text})
        when is_binary(text) do
-    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+    append_chunk(state, text)
   end
 
   defp absorb_update(state, %{"update" => %{"kind" => "text", "text" => text}})
        when is_binary(text) do
-    %{state | reply: [text | state.reply], chunks: state.chunks + 1}
+    append_chunk(state, text)
   end
 
   # F9: stado v0.46.0 emits kind=tool_summary on any turn with ≥1 tool
@@ -401,15 +486,38 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   # lastTool: "shell__bash", lastError: bool}. Both wrapped and
   # unwrapped shapes appear on the wire.
   defp absorb_update(state, %{"update" => %{"kind" => "tool_summary"} = summary}) do
-    %{state | tool_summary: summary}
+    {:ok, %{state | tool_summary: summary}}
   end
 
   defp absorb_update(state, %{"kind" => "tool_summary"} = summary) do
-    %{state | tool_summary: summary}
+    {:ok, %{state | tool_summary: summary}}
   end
 
   defp absorb_update(state, _other_params) do
-    %{state | ignored_updates: state.ignored_updates + 1}
+    {:ok, %{state | ignored_updates: state.ignored_updates + 1}}
+  end
+
+  # Append one text chunk to the reply, enforcing the running reply-byte
+  # cap DURING streaming (C-049 / D-155 / D-156). Aborting here — rather
+  # than after the whole conversation drains — bounds BEAM heap and
+  # terminates a peer that emits an endless `agent_message_chunk`
+  # stream. `reply_too_large` is reported under `:provider_protocol_error`
+  # so the dispatcher's existing error handling surfaces it.
+  defp append_chunk(state, text) when is_binary(text) do
+    new_bytes = state.reply_bytes + byte_size(text)
+
+    if new_bytes > state.reply_max_bytes do
+      {:error,
+       {:provider_protocol_error, {:reply_too_large, new_bytes, state.reply_max_bytes}}}
+    else
+      {:ok,
+       %{
+         state
+         | reply: [text | state.reply],
+           reply_bytes: new_bytes,
+           chunks: state.chunks + 1
+       }}
+    end
   end
 
   defp synthesize_tool_summary_reply(summary) when is_map(summary) do
@@ -533,7 +641,22 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   end
 
   defp next_message(%{pending: []} = state, phase) do
-    case state.io.read.(state.phase_timeout_ms) do
+    # C-049: bound each read by whichever is smaller — the per-phase
+    # timeout or the time left on the absolute conversation deadline.
+    # Once the conversation deadline passes, abort regardless of how
+    # recently the peer sent a chunk (the per-read timeout alone resets
+    # on every chunk and never fires for a steadily-chatty peer).
+    case read_timeout(state) do
+      {:expired, _} ->
+        {:error, {:provider_timeout, :conversation_deadline}}
+
+      {:ok, timeout_ms} ->
+        do_next_read(state, phase, timeout_ms)
+    end
+  end
+
+  defp do_next_read(state, phase, timeout_ms) do
+    case state.io.read.(timeout_ms) do
       {:ok, ""} ->
         # Port closed (peer hung up). Before reporting EOF, do a
         # non-blocking drain of any final bytes the peer wrote
@@ -546,13 +669,22 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         # `:eof_in_phase` (TODO B7).
         case final_drain(state, phase) do
           {:ok, state} -> next_message(state, phase)
+          {:error, _} = err -> err
           :exhausted -> {:error, {:provider_protocol_error, {:eof_in_phase, phase}}}
         end
 
       {:ok, chunk} when is_binary(chunk) ->
-        {parsed, remainder} = Framing.parse_stream(state.buffer, chunk)
-        state = %{state | buffer: remainder, pending: parsed}
-        next_message(state, phase)
+        # D-154: cap the unterminated-line remainder so a peer that
+        # streams bytes without ever sending `\n` can't grow the
+        # buffer without bound.
+        case Framing.parse_stream(state.buffer, chunk, state.max_line_bytes) do
+          {:error, {:line_too_large, _} = reason} ->
+            {:error, {:provider_protocol_error, reason}}
+
+          {parsed, remainder} ->
+            state = %{state | buffer: remainder, pending: parsed}
+            next_message(state, phase)
+        end
 
       {:error, :timeout} ->
         # Same defensive drain on timeout — covers the rare case where
@@ -560,6 +692,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         # firing and us reporting the timeout (TODO B7).
         case final_drain(state, phase) do
           {:ok, state} -> next_message(state, phase)
+          {:error, _} = err -> err
           :exhausted -> {:error, {:provider_timeout, phase}}
         end
 
@@ -579,11 +712,72 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
         :exhausted
 
       {:ok, chunk} when is_binary(chunk) and byte_size(chunk) > 0 ->
-        {parsed, remainder} = Framing.parse_stream(state.buffer, chunk)
-        {:ok, %{state | buffer: remainder, pending: parsed}}
+        case Framing.parse_stream(state.buffer, chunk, state.max_line_bytes) do
+          {:error, {:line_too_large, _} = reason} ->
+            {:error, {:provider_protocol_error, reason}}
+
+          {parsed, remainder} ->
+            {:ok, %{state | buffer: remainder, pending: parsed}}
+        end
 
       _ ->
         :exhausted
+    end
+  end
+
+  # ---------- audit budget + truncation (C-044 / C-048) ----------
+
+  # Gate every audit emission through a per-dispatch frame budget and
+  # truncate peer-controlled strings. `:meta` bookends
+  # (start/complete/error/audit_truncated) always pass through and do
+  # not count against the budget — they are Glorbo-generated, bounded,
+  # and one-shot. Per-frame `:client`/`:peer` events count: once the
+  # cap is hit we stop emitting them and emit a single
+  # `meta.audit_truncated` summary instead, preventing a peer that
+  # streams endless notifications from inflating the fsync-per-line
+  # `_system` audit log (and exhausting disk).
+  defp audit_with_budget(_state, raw_audit_fun, :meta, kind, detail) do
+    raw_audit_fun.(:meta, kind, truncate_detail(detail))
+  end
+
+  defp audit_with_budget(state, raw_audit_fun, role, kind, detail) do
+    counter = state.audit_frame_counter
+    :counters.add(counter, 1, 1)
+    count = :counters.get(counter, 1)
+
+    cond do
+      count <= state.audit_frames_max ->
+        raw_audit_fun.(role, kind, truncate_detail(detail))
+
+      count == state.audit_frames_max + 1 ->
+        # First frame past the cap: emit one summary, then go silent.
+        raw_audit_fun.(:meta, :audit_truncated, %{
+          frame_cap: state.audit_frames_max,
+          note: "per-frame ACP audit suppressed beyond cap"
+        })
+
+      true ->
+        :ok
+    end
+  end
+
+  # Truncate any binary value in an audit detail map to a sane max so a
+  # peer-controlled error message / kind / method can't write an
+  # oversized line to the audit log (C-044 / C-048).
+  defp truncate_detail(detail) when is_map(detail) do
+    Map.new(detail, fn
+      {k, v} when is_binary(v) -> {k, truncate_string(v)}
+      kv -> kv
+    end)
+  end
+
+  defp truncate_detail(detail), do: detail
+
+  defp truncate_string(s) when is_binary(s) do
+    if byte_size(s) > @audit_string_max do
+      binary_part(s, 0, @audit_string_max) <> "…[truncated]"
+    else
+      s
     end
   end
 
@@ -623,4 +817,17 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
   # ---------- helpers ----------
 
   defp take_id(state), do: {state.next_id, %{state | next_id: state.next_id + 1}}
+
+  # C-049: compute the read timeout as the smaller of the per-phase
+  # timeout and the time remaining on the absolute conversation
+  # deadline. `{:expired, _}` when the deadline has already passed.
+  defp read_timeout(state) do
+    remaining = state.deadline_mono - System.monotonic_time(:millisecond)
+
+    if remaining <= 0 do
+      {:expired, remaining}
+    else
+      {:ok, min(state.phase_timeout_ms, remaining)}
+    end
+  end
 end

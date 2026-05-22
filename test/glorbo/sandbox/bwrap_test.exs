@@ -408,6 +408,39 @@ defmodule Glorbo.Sandbox.BwrapTest do
              "expected DONE marker with empty prompt, stdout was: #{inspect(out)}"
     end
 
+    test "C-103: stdout.log tee is capped at the per-dispatch byte ceiling", %{ctx: ctx} do
+      # Generous timeout: draining ~24 MiB through the BEAM port can take
+      # several seconds under parallel test load — we are testing the
+      # byte cap, not the time cap.
+      opts = run_opts_for(ctx, %{timeout_seconds: 60})
+      stdout_log = Path.join(ctx.workspace, "stdout.log")
+
+      # Emit ~24 MiB to stdout (> the 16 MiB tee cap). `tr` reading
+      # /dev/zero translates NULs to 'a'; `head -c` bounds the total and
+      # exits, so the dispatch returns. `head` closing the pipe makes
+      # `tr` exit on SIGPIPE — both acceptable terminal states.
+      assert {:ok, %{exit_status: status}} =
+               Bwrap.start(opts,
+                 cli_binary: "/bin/sh",
+                 cli_args: ["-c", "tr '\\0' 'a' < /dev/zero | head -c 25165824"],
+                 prompt: "",
+                 stdout_log: stdout_log
+               )
+
+      assert status == 0
+
+      %File.Stat{size: size} = File.stat!(stdout_log)
+      cap = 16 * 1024 * 1024
+
+      # Header + capped payload + truncation marker + footer — a few
+      # hundred bytes of framing over the cap, never the full 24 MiB.
+      assert size <= cap + 4_096,
+             "expected stdout.log capped near #{cap} bytes, got #{size}"
+
+      assert String.contains?(File.read!(stdout_log), "truncated: per-dispatch"),
+             "expected a truncation marker in the capped stdout.log"
+    end
+
     test "B13: prompt tempfile is cleaned up after invocation (no leak)", %{ctx: ctx} do
       opts = run_opts_for(ctx)
 

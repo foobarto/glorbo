@@ -208,4 +208,43 @@ defmodule Glorbo.CLI.Dispatcher.Acp.FramingTest do
       assert [{:ok, {:request, 42, "session/prompt", %{"sessionId" => "s"}}}] = messages
     end
   end
+
+  describe "parse_stream/3 max-line cap (D-154)" do
+    test "rejects an unterminated buffer that exceeds the cap" do
+      # No newline anywhere — the whole thing is a partial line.
+      big = String.duplicate("x", 100)
+
+      assert {:error, {:line_too_large, 100}} = Framing.parse_stream("", big, 50)
+    end
+
+    test "accumulated remainder across reads is rejected once over cap" do
+      part = String.duplicate("y", 30)
+
+      {[], rem1} = Framing.parse_stream("", part, 50)
+      assert rem1 == part
+
+      # Second newline-free chunk pushes the combined remainder over the cap.
+      assert {:error, {:line_too_large, 60}} = Framing.parse_stream(rem1, part, 50)
+    end
+
+    test "trailing partial line over the cap is rejected even with complete lines" do
+      complete = ~s({"jsonrpc":"2.0","method":"x"}\n)
+      tail = String.duplicate("z", 100)
+
+      assert {:error, {:line_too_large, 100}} =
+               Framing.parse_stream("", complete <> tail, 50)
+    end
+
+    test "lines within the cap parse normally" do
+      chunk = ~s({"jsonrpc":"2.0","id":1,"result":null}\n)
+
+      assert {[{:ok, {:response, 1, nil}}], ""} =
+               Framing.parse_stream("", chunk, 16 * 1024 * 1024)
+    end
+
+    test "parse_stream/2 delegates with the default 16 MiB cap" do
+      chunk = ~s({"jsonrpc":"2.0","id":1,"result":null}\n)
+      assert {[{:ok, {:response, 1, nil}}], ""} = Framing.parse_stream("", chunk)
+    end
+  end
 end

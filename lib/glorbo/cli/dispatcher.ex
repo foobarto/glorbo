@@ -122,6 +122,18 @@ defmodule Glorbo.CLI.Dispatcher do
         ms -> Keyword.put_new(opts, :phase_timeout_ms, ms)
       end
 
+    # C-049 / D-155 / D-156: bound the whole ACP conversation by the
+    # agent's wall-clock `timeout_seconds` (carried in bwrap_opts on the
+    # production path) and cap the assembled reply by the provider's
+    # `reply_max_bytes` DURING streaming, not only after the run returns.
+    opts =
+      case acp_conversation_timeout_ms(ctx) do
+        nil -> opts
+        ms -> Keyword.put_new(opts, :conversation_timeout_ms, ms)
+      end
+
+    opts = Keyword.put_new(opts, :reply_max_bytes, provider.reply_max_bytes)
+
     with :ok <- prepare_reply_dir(reply_dir, reply_path, fs),
          args <- Enum.map(provider.args, &expand(&1, substitutions)),
          env <- build_env(provider, provider.env, substitutions, reply_path, invocation_id, ctx),
@@ -331,6 +343,18 @@ defmodule Glorbo.CLI.Dispatcher do
     end
   end
 
+  # C-049: the agent's wall-clock `timeout_seconds` rides in
+  # `ctx.bwrap_opts` on the production path (set by
+  # `Glorbo.Agent.Dispatch`). Convert to ms for the ACP client's
+  # absolute conversation deadline. nil → client falls back to its own
+  # default (30 min).
+  defp acp_conversation_timeout_ms(ctx) do
+    case Map.get(ctx, :bwrap_opts, %{}) |> Map.get(:timeout_seconds) do
+      s when is_integer(s) and s > 0 -> s * 1_000
+      _ -> nil
+    end
+  end
+
   defp default_acp_run_fun(bwrap_opts, run_opts_map, opts) do
     case Bwrap.start_acp(bwrap_opts, Map.to_list(run_opts_map)) do
       {:ok, port} ->
@@ -343,7 +367,11 @@ defmodule Glorbo.CLI.Dispatcher do
             :phase_timeout_ms,
             :protocol_version,
             :client_info,
-            :resume_session_id
+            :resume_session_id,
+            :conversation_timeout_ms,
+            :reply_max_bytes,
+            :max_line_bytes,
+            :audit_frames_max
           ])
           |> Keyword.put(:audit_fun, audit_fun_for_acp(opts))
 

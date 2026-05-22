@@ -33,6 +33,20 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Framing do
 
   @json_rpc_version "2.0"
 
+  # Hard cap on a single unterminated line / accumulated remainder
+  # (D-154). ACP stdout is untrusted external-CLI output; a peer that
+  # streams bytes without ever emitting a `\n` would otherwise grow the
+  # client's `state.buffer` without bound until BEAM OOM. Mirror the
+  # 16 MiB cap the non-ACP sandbox stdout path (`Sandbox.Bwrap`)
+  # already enforces. Once the combined buffer exceeds this with no
+  # complete line, `parse_stream/3` returns `{:error, {:line_too_large,
+  # size}}` so the client can abort the conversation.
+  @default_max_line_bytes 16 * 1024 * 1024
+
+  @doc false
+  @spec default_max_line_bytes() :: pos_integer()
+  def default_max_line_bytes, do: @default_max_line_bytes
+
   @doc """
   Encode a tagged-tuple message into iodata ending in `\\n`.
 
@@ -106,27 +120,56 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Framing do
 
   Empty lines are silently dropped (some peers emit blank
   keep-alives).
+
+  ## Max-line cap (D-154)
+
+  `parse_stream/3` enforces a `max_line_bytes` ceiling on the
+  unterminated trailing remainder so an untrusted peer streaming bytes
+  with no `\\n` cannot grow the caller's buffer without bound. When the
+  combined buffer carries no complete line **and** exceeds the cap, it
+  returns `{:error, {:line_too_large, size}}` instead of a
+  `{messages, remainder}` tuple. `parse_stream/2` delegates with the
+  default 16 MiB cap.
   """
   @spec parse_stream(binary(), binary()) ::
           {[{:ok, Message.t()} | {:error, term()}], binary()}
-  def parse_stream(prev_remainder, chunk)
-      when is_binary(prev_remainder) and is_binary(chunk) do
+          | {:error, {:line_too_large, non_neg_integer()}}
+  def parse_stream(prev_remainder, chunk),
+    do: parse_stream(prev_remainder, chunk, @default_max_line_bytes)
+
+  @spec parse_stream(binary(), binary(), pos_integer()) ::
+          {[{:ok, Message.t()} | {:error, term()}], binary()}
+          | {:error, {:line_too_large, non_neg_integer()}}
+  def parse_stream(prev_remainder, chunk, max_line_bytes)
+      when is_binary(prev_remainder) and is_binary(chunk) and is_integer(max_line_bytes) and
+             max_line_bytes > 0 do
     combined = prev_remainder <> chunk
 
     case String.split(combined, "\n") do
       [single] ->
-        # No newline yet — whole buffer is still partial.
-        {[], single}
+        # No newline yet — whole buffer is still partial. Reject once
+        # the partial line alone exceeds the cap (D-154): an endless
+        # newline-free stream would otherwise grow the remainder
+        # forever.
+        if byte_size(single) > max_line_bytes do
+          {:error, {:line_too_large, byte_size(single)}}
+        else
+          {[], single}
+        end
 
       parts ->
         {complete_lines, [remainder]} = Enum.split(parts, length(parts) - 1)
 
-        messages =
-          complete_lines
-          |> Enum.reject(&(String.trim(&1) == ""))
-          |> Enum.map(&decode_message/1)
+        if byte_size(remainder) > max_line_bytes do
+          {:error, {:line_too_large, byte_size(remainder)}}
+        else
+          messages =
+            complete_lines
+            |> Enum.reject(&(String.trim(&1) == ""))
+            |> Enum.map(&decode_message/1)
 
-        {messages, remainder}
+          {messages, remainder}
+        end
     end
   end
 

@@ -10,6 +10,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — bound ACP streams + stdout tee against provider-driven DoS (codex C-044/C-048/C-049/C-103)
+
+An untrusted/looping provider could exhaust host resources through the dispatch
+path: unbounded ACP frame auditing (one fsynced audit line per frame, untruncated
+peer strings → audit-log/disk flood), an ACP stream with only a per-chunk-resetting
+read timeout + unbounded in-memory reply accumulation, an unbounded line buffer in
+the ACP framer, and a stdout tee that appended every chunk to `stdout.log` with no
+cap. Now: ACP audited frames are capped per dispatch (5 000) with per-frame strings
+truncated (256 B); the ACP client enforces an absolute conversation deadline and a
+running reply-byte cap that aborts mid-stream; the framer caps line size (16 MiB);
+and the stdout tee is capped at 16 MiB/dispatch with a truncation marker. `drain_port`
+now uses a single absolute deadline instead of resetting per chunk.
+
 ### Security — secret-file permission hardening (codex B-013/C-074/C-075)
 
 Three places could expose secret-bearing files (`config.md` carries
