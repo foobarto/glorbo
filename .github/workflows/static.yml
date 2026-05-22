@@ -2,9 +2,14 @@
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
+  # Only deploy when the landing page (or this workflow) actually changes —
+  # not on every commit to main. `assets/` is the marketing site that gets
+  # published to Pages; the rest of the repo (the app) doesn't affect it.
   push:
     branches: ["main"]
+    paths:
+      - "assets/**"
+      - ".github/workflows/static.yml"
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
