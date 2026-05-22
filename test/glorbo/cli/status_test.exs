@@ -38,8 +38,10 @@ defmodule Glorbo.CLI.StatusTest do
       assert out =~ "yes"
     end
 
-    test "--json emits valid JSON with dashboard_url containing token", %{glorbo_home: home} do
-      # Config.load auto-generates a token when config.md is absent.
+    test "--json emits valid JSON with a tokenless dashboard_url", %{glorbo_home: home} do
+      # Config.load auto-generates a token when config.md is absent — but
+      # status must NEVER emit it (B-027: status output is operational
+      # metadata captured by monitoring/CI/support bundles, not login UX).
       {:ok, cfg} = Glorbo.Config.load(home)
 
       assert {:status, 3, out} = Status.run(["--json"], port_closed())
@@ -49,13 +51,24 @@ defmodule Glorbo.CLI.StatusTest do
       assert Map.has_key?(parsed, "port_listening")
       assert Map.has_key?(parsed, "dashboard_url")
       assert parsed["running"] == false
-      assert parsed["dashboard_url"] =~ "http://127.0.0.1:4000/?token="
-      assert parsed["dashboard_url"] =~ cfg.dashboard_token
+      assert parsed["dashboard_url"] == "http://127.0.0.1:4000"
+      refute parsed["dashboard_url"] =~ "token="
+      refute parsed["dashboard_url"] =~ cfg.dashboard_token
+      # Whole serialized payload must be free of the token + the param.
+      refute out =~ "token="
+      refute out =~ cfg.dashboard_token
     end
 
-    test "human table includes token URL", %{glorbo_home: _home} do
+    test "human table emits a tokenless URL + a non-secret config pointer",
+         %{glorbo_home: home} do
+      {:ok, cfg} = Glorbo.Config.load(home)
+
       assert {:status, 3, out} = Status.run([], port_closed())
-      assert out =~ "http://127.0.0.1:4000/?token="
+      assert out =~ "http://127.0.0.1:4000"
+      refute out =~ "token="
+      refute out =~ cfg.dashboard_token
+      # A pointer to where the token lives is fine (non-secret).
+      assert out =~ "config.md"
     end
 
     test "--json with alive pid reports pid in payload", %{glorbo_home: home} do

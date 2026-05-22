@@ -15,9 +15,20 @@ defmodule Glorbo.CLI.Lifecycle.Status do
 
     * default (human): 4-row table (running / pid / port / dashboard_url).
     * `--json`: `Jason.encode!` of `%{running: bool, pid: int|nil,
-      port_listening: bool, dashboard_url: "http://.../?token=<token>"}` with
-      pretty-print. The token is read from `config.md` via `Glorbo.Config.load/1`;
-      if unavailable a descriptive placeholder is used instead.
+      port_listening: bool, dashboard_url: "http://127.0.0.1:4000"}` with
+      pretty-print.
+
+  ## Security — no token here (B-027)
+
+  `status` is a health/probe command (exit 0 = running, 3 = not),
+  routinely captured by monitoring agents, service managers, shell
+  wrappers, support bundles, and CI smoke tests. It deliberately
+  emits only the **bare** dashboard URL — never the `?token=<token>`
+  query param. The dashboard auth token is the bearer credential for
+  the dashboard / API / MCP endpoint (`GlorboWeb.Plugs.DashboardToken`)
+  and must not leak into operational output or logs. The one-time
+  browser-login URL with the token lives in the interactive
+  `serve`/`up` banners and in `~/.glorbo/config.md` (0600) — not here.
   """
 
   alias Glorbo.CLI.Lifecycle.Pidfile
@@ -34,8 +45,7 @@ defmodule Glorbo.CLI.Lifecycle.Status do
   end
 
   defp do_run(opts, run_opts) do
-    base = glorbo_home()
-    status_map = build_status_map(base, run_opts)
+    status_map = build_status_map(run_opts)
     exit_code = if status_map.running and status_map.port_listening, do: 0, else: 3
 
     output =
@@ -48,7 +58,8 @@ defmodule Glorbo.CLI.Lifecycle.Status do
     {:status, exit_code, output}
   end
 
-  defp build_status_map(base, run_opts) do
+  defp build_status_map(run_opts) do
+    base = glorbo_home()
     pidfile_status = Pidfile.status(base)
     running? = pidfile_status == :running
 
@@ -65,22 +76,14 @@ defmodule Glorbo.CLI.Lifecycle.Status do
 
     port_check = Keyword.get(run_opts, :port_check_fun, &port_listening?/0)
 
-    # Read token from config.md so the URL is immediately usable — the Status
-    # command runs out-of-process from the daemon and has no other source.
-    dashboard_url =
-      case Glorbo.Config.load(base) do
-        {:ok, %{dashboard_token: t}} when is_binary(t) and t != "" ->
-          "http://127.0.0.1:#{@port}/?token=#{t}"
-
-        _ ->
-          "http://127.0.0.1:#{@port}  (token unavailable — check config.md)"
-      end
-
     %{
       running: running?,
       pid: pid,
       port_listening: port_check.(),
-      dashboard_url: dashboard_url
+      # Bare URL only — the dashboard auth token is a bearer credential
+      # and must never reach status output / logs (B-027). The login
+      # URL with the token lives in config.md + the serve/up banners.
+      dashboard_url: "http://127.0.0.1:#{@port}"
     }
   end
 
@@ -103,7 +106,7 @@ defmodule Glorbo.CLI.Lifecycle.Status do
       running       : #{if r, do: "yes", else: "no"}
       pid           : #{p || "-"}
       port #{@port}     : #{if pl, do: "listening", else: "closed"}
-      dashboard_url : #{url}
+      dashboard_url : #{url}  (login token in ~/.glorbo/config.md)
     """
   end
 

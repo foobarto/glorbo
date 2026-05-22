@@ -16,6 +16,19 @@ Security-hardening release. Resolves ~40 findings from a codex security sweep
 (plus dependency CVE bumps and OpenSSF supply-chain tooling). See the per-area
 entries below.
 
+### Security — `glorbo status` no longer prints the token, history won't commit provider secrets, reassign flood capped (codex B-027/C-063/C-067)
+
+- **B-027:** `glorbo status` inlined the dashboard token (`?token=…`) in both `--json`
+  and the table — operational metadata that lands in monitoring/CI/supervisor logs.
+  Status now prints the bare base URL plus a non-secret pointer; the token is gone.
+- **C-063:** the HomeHistory git repo used a denylist `.gitignore` that excluded only
+  `config.md`, so a user-controlled `providers.toml` carrying `[env]` API tokens got
+  committed. `providers.toml` is now git-ignored by the history layer.
+- **C-067:** an agent reply's `ACTIONS` block applied *every* `reassign_to` directive
+  (each = a frontmatter rewrite + handoff-chain append + audit event), so one reply
+  could flood the audit log. Reassign is now capped to one effective reassign per reply
+  (last-writer-wins).
+
 ### Security — CLI/runtime hardening: terminal-escape, MCP DoS, poison inbox, retry spin, dep-gate (codex C-117/C-079/C-076/C-129/C-130)
 
 - **C-117:** `glorbo logs` printed agent `stdout.log` verbatim, allowing terminal-escape

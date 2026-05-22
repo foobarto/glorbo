@@ -886,8 +886,20 @@ defmodule Glorbo.Agent.Server do
     # the handoff_chain append + assigned_to flip + audit happen
     # atomically (GEP-40 Round G). Status flips still go through
     # write_frontmatter directly — they don't affect ownership.
-    for {"reassign_to", slug} <- actions, Glorbo.Slug.valid?(slug) do
-      apply_reassign(state, abs, task_id, slug)
+    #
+    # C-067: cap to one reassign per reply. `parse_task_actions/1`
+    # returns *every* matching `reassign_to` directive, and an
+    # attacker-controlled reply (bounded only by reply_max_bytes) can
+    # pack thousands — alternating two valid slugs to dodge the
+    # `:noop` same-assignee guard — each one a frontmatter rewrite +
+    # handoff_chain append + audit event, flooding the task file and
+    # the append-only audit log and blocking this GenServer. A reply
+    # reassigns at most once; we honor the last directive (matching
+    # the pre-GEP-40 "single assigned_to update" behavior) and ignore
+    # the rest.
+    case last_reassign_target(actions) do
+      {:ok, slug} -> apply_reassign(state, abs, task_id, slug)
+      :none -> :ok
     end
 
     # GEP-41 Round J: a `verdict:` directive (only meaningful when
@@ -927,6 +939,21 @@ defmodule Glorbo.Agent.Server do
           :ok
       end
     end
+  end
+
+  # C-067: collapse a reply's `reassign_to` directives to at most one
+  # effective target. Honor the last valid slug (last-writer-wins,
+  # matching the pre-GEP-40 single-update behavior); ignore extras and
+  # invalid slugs.
+  defp last_reassign_target(actions) do
+    actions
+    |> Enum.reduce(:none, fn
+      {"reassign_to", slug}, acc ->
+        if Glorbo.Slug.valid?(slug), do: {:ok, slug}, else: acc
+
+      _, acc ->
+        acc
+    end)
   end
 
   defp verdict_from(actions) do

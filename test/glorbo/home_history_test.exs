@@ -54,6 +54,9 @@ defmodule Glorbo.HomeHistoryTest do
       refute HomeHistory.tracked?(Path.join(base, "runtime/socket"), base)
       refute HomeHistory.tracked?(Path.join(base, "run/glorbo.pid"), base)
       refute HomeHistory.tracked?(Path.join(base, "cache/providers/openai.json"), base)
+      # C-063: providers.toml carries an arbitrary [env] table operators
+      # may load with API tokens — must never enter history.
+      refute HomeHistory.tracked?(Path.join(base, "providers.toml"), base)
     end
 
     test "ignores per-agent transport / state / scratch dirs", %{base: base} do
@@ -116,6 +119,9 @@ defmodule Glorbo.HomeHistoryTest do
 
       assert content =~ "/.git/"
       assert content =~ "/config.md"
+      # C-063: the user-controlled provider registry (may carry [env]
+      # secrets) is excluded.
+      assert content =~ "/providers.toml"
       assert content =~ "/glorbo.db"
       assert content =~ "/logs/"
       assert content =~ "/cache/"
@@ -179,6 +185,31 @@ defmodule Glorbo.HomeHistoryTest do
              )
 
       assert ".gitignore" in tracked_files
+    end
+
+    test "providers.toml (secret-bearing) does not enter the initial commit",
+         %{base: base} do
+      seed_minimal_company(base)
+
+      # C-063: operators may put provider API tokens in providers.toml's
+      # [env] table. It must never be staged/committed to history.
+      File.write!(
+        Path.join(base, "providers.toml"),
+        "[[providers]]\nname = \"acme\"\n[providers.env]\nACME_API_KEY = \"sk-secret-token\"\n"
+      )
+
+      assert {:ok, _} = HomeHistory.init(base: base)
+
+      {out, 0} = System.cmd("git", ["ls-files"], cd: base)
+      tracked_files = out |> String.split("\n", trim: true)
+
+      refute "providers.toml" in tracked_files
+
+      # The secret value must not live in any git object.
+      {grep_out, _code} =
+        System.cmd("git", ["grep", "-r", "sk-secret-token"], cd: base, stderr_to_stdout: true)
+
+      refute grep_out =~ "sk-secret-token"
     end
   end
 

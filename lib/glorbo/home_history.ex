@@ -40,7 +40,9 @@ defmodule Glorbo.HomeHistory do
       proposals/*.md, audit/*.jsonl, goals/*.md, skills/*.md,
       agents/<slug>/{AGENT.md, agent.md, SOUL.md, HEARTBEAT.md,
       memory/**, history/**}}`, plus `.gitignore` itself.
-    * ignored: `.git/`, `config.md` (carries secrets), `glorbo.db*`,
+    * ignored: `.git/`, `config.md` (carries secrets),
+      `providers.toml` (user-controlled `[env]` may carry provider
+      API tokens — C-063), `glorbo.db*`,
       `logs/**`, `runtime/**`, `run/**`, `cache/**`, plus per-agent
       `inbox/**`, `outbox/**`, `state/**`, `workspace/**`,
       `stdout.log` (transport / scratch / runtime).
@@ -65,8 +67,12 @@ defmodule Glorbo.HomeHistory do
   # Self
   /.git/
 
-  # Secrets
+  # Secrets — config.md (key base / dashboard token) and the
+  # user-controlled provider registry, whose `[env]` table may carry
+  # provider API tokens (C-063). Both are denied so they never enter
+  # git objects.
   /config.md
+  /providers.toml
 
   # Derived state
   /glorbo.db
@@ -611,6 +617,7 @@ defmodule Glorbo.HomeHistory do
     cond do
       String.starts_with?(rel, ".git/") or rel == ".git" -> true
       rel == "config.md" -> true
+      rel == "providers.toml" -> true
       rel == "glorbo.db" or rel == "glorbo.db-shm" or rel == "glorbo.db-wal" -> true
       String.starts_with?(rel, "logs/") -> true
       String.starts_with?(rel, "runtime/") -> true
