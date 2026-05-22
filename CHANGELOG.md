@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-05-22
+
 ### Security — dependency: bump `decimal` past GHSA-rhv4-8758-jx7v
 
 - `decimal` 2.4.1 → 3.1.0 via an explicit `override: true` (it's a transitive
@@ -6056,7 +6058,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/foobarto/glorbo/releases/tag/v0.23.0
 [0.4.0]: https://github.com/foobarto/glorbo/releases/tag/v0.4.0
 [0.3.0]: https://github.com/foobarto/glorbo/releases/tag/v0.3.0
 [0.2.0]: https://github.com/foobarto/glorbo/releases/tag/v0.2.0
