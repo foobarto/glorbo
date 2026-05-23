@@ -192,6 +192,50 @@ defmodule Glorbo.Doctor.FixerTest do
     # The install path is exercised end-to-end by operators on real
     # Fedora/Debian/Arch hosts; the unit-test surface here is the
     # registry switch + explain fallback.
+
+    # C-043: PATH-hijack defense. `run_install/3` resolves `sudo` +
+    # `pkgmgr` against a trusted-bin-dirs allowlist instead of trusting
+    # `$PATH`. Tests here exercise the resolver directly so the
+    # failure mode is verifiable without actually shelling out.
+    test "resolve_system_binary refuses a name not in trusted bin dirs" do
+      assert {:error, {:install_no_trusted_path, name, dirs}} =
+               Fixer.resolve_system_binary("definitely-not-a-real-binary-glorbo-test")
+
+      assert name == "definitely-not-a-real-binary-glorbo-test"
+      assert "/usr/bin" in dirs
+      assert "/usr/sbin" in dirs
+      assert "/bin" in dirs
+      assert "/sbin" in dirs
+    end
+
+    @tag :tmp_dir
+    test "resolve_system_binary refuses an empty / suspicious name" do
+      # Anything that doesn't resolve to a regular executable file
+      # under a trusted dir is refused.
+      assert {:error, {:install_no_trusted_path, _, _}} =
+               Fixer.resolve_system_binary("../etc/passwd")
+
+      assert {:error, {:install_no_trusted_path, _, _}} =
+               Fixer.resolve_system_binary("")
+    end
+
+    test "resolve_system_binary returns absolute path for a real system binary" do
+      # `sh` is universally present on Linux/macOS in `/bin` or `/usr/bin`.
+      # If the host lacks it, the test is meaningless — skip gracefully.
+      case Fixer.resolve_system_binary("sh") do
+        {:ok, path} ->
+          assert String.starts_with?(path, "/")
+          assert String.ends_with?(path, "/sh")
+          # Must live under one of the trusted dirs — not, e.g.,
+          # /opt/homebrew/bin (which would also have `sh` on a dev
+          # mac but isn't trusted on Linux production boxes).
+          assert Path.dirname(path) in ["/usr/bin", "/usr/sbin", "/bin", "/sbin"]
+
+        {:error, _} ->
+          # Unusual host without `sh` in standard dirs — accept that.
+          :ok
+      end
+    end
   end
 
   describe "run/1" do

@@ -12,7 +12,7 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Security — `doctor --install-deps` no longer trusts `$PATH` (C-043)
 
-`Doctor.Fixer.run_install/3` previously did `System.cmd("sudo", …)` and
+`Glorbo.Doctor.Fixer.run_install/3` previously did `System.cmd("sudo", …)` and
 let Erlang resolve `sudo` (and the package manager) via the operator's
 `$PATH`. An attacker with PATH-write but no root could plant a malicious
 `sudo` and steal the password prompt the feature tells operators to
