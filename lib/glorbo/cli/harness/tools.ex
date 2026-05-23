@@ -721,13 +721,17 @@ defmodule Glorbo.CLI.Harness.Tools do
                 "(workspace=#{workspace_abs})"
 
       # Codex deep-dive F3/F4: lexical containment is not enough. If
-      # any ancestor of `expanded` is a symlink, `File.write` / `File.read`
-      # will follow it OUT of the workspace at I/O time. Under bwrap the
-      # bind mounts narrow what's reachable, but the unsandboxed fallback
-      # path (`Glorbo.Sandbox.Unsandboxed`, macOS, `--no-sandbox`) hits
-      # the host FS directly — and the agent controls `raw_path`. Refuse
-      # any path whose canonicalised form crosses a symlinked segment.
-      Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(expanded) ->
+      # any ancestor of `expanded` (BELOW workspace_abs) is a symlink,
+      # `File.write` / `File.read` will follow it OUT of the workspace
+      # at I/O time. Under bwrap the bind mounts narrow what's
+      # reachable, but the unsandboxed fallback (`Glorbo.Sandbox.
+      # Unsandboxed`, macOS, `--no-sandbox`) hits the host FS directly
+      # — and the agent controls `raw_path`. Scope the scan to
+      # workspace-RELATIVE segments only — Copilot review on PR #28
+      # flagged that walking from filesystem root would refuse all
+      # tool paths whenever a system ancestor is a symlink (macOS
+      # `/tmp -> /private/tmp`, symlinked checkout paths, etc.).
+      symlink_in_workspace_relative_path?(expanded, workspace_abs) ->
         raise ArgumentError,
               "tool path crosses a symlinked component: #{inspect(path)} → " <>
                 "#{expanded} (workspace=#{workspace_abs})"
@@ -740,6 +744,38 @@ defmodule Glorbo.CLI.Harness.Tools do
   defp lexically_inside?(expanded, workspace_abs) do
     expanded == workspace_abs or
       String.starts_with?(expanded, workspace_abs <> "/")
+  end
+
+  # Walk only the segments BETWEEN `workspace_abs` and `expanded` — the
+  # workspace itself is trusted (operators may legitimately host it
+  # under a symlinked path; macOS `/tmp` is itself a symlink). Each
+  # interior segment gets an lstat; any symlink along that path means
+  # the tool I/O would follow it out of the workspace at write/read
+  # time, so refuse.
+  defp symlink_in_workspace_relative_path?(expanded, workspace_abs) do
+    case Path.relative_to(expanded, workspace_abs) do
+      ^expanded ->
+        # Not actually under workspace (shouldn't reach here — the
+        # lexical check above gates this). Fail-safe to "no symlink"
+        # so the caller's existing escape error wins.
+        false
+
+      relative ->
+        relative
+        |> Path.split()
+        |> Enum.reduce_while(workspace_abs, fn seg, prefix ->
+          new_path = Path.join(prefix, seg)
+
+          case File.lstat(new_path) do
+            {:ok, %File.Stat{type: :symlink}} -> {:halt, true}
+            _ -> {:cont, new_path}
+          end
+        end)
+        |> case do
+          true -> true
+          _ -> false
+        end
+    end
   end
 
   defp display_tool_path(path, workspace) do

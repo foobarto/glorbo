@@ -16,7 +16,7 @@ change between minor versions. Pin exact versions in downstream usage.
 workspace containment check (`Path.expand` + `String.starts_with?`). If
 an agent planted a symlink at `<workspace>/escape` pointing OUT of the
 workspace (`/etc/`, `/`, etc.), a subsequent `write_file`/`edit_file`/
-`read_file`/`grep_file` tool call with `path = "escape/poc"` would
+`read_file`/`grep` tool call with `path = "escape/poc"` would
 canonicalise to `<workspace>/escape/poc`, pass the string-prefix
 check, then `File.write` would follow the symlink at I/O time and hit
 the host path. Under bwrap the bind mounts narrow what's reachable;
