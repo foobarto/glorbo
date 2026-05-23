@@ -736,5 +736,29 @@ defmodule Glorbo.Sandbox.BwrapTest do
       assert Enum.member?(argv, "--bind")
       assert Enum.member?(argv, "/external/future-file")
     end
+
+    # Copilot review on PR #31: fail closed on lstat errors other than
+    # `:enoent`. If a path component is `:eacces`/`:eloop`/`:enotdir`,
+    # we genuinely cannot verify the segment is symlink-free; treating
+    # that as "no symlink" was a silent-skip on the security check.
+    test "fails closed when an ancestor segment can't be lstat'd (:enotdir)",
+         %{tmp: tmp} do
+      # `regular-file` is a regular file; treating it as a directory
+      # makes the subsequent lstat return `:enotdir` (not `:enoent`).
+      regular_file = Path.join(tmp, "regular-file")
+      File.write!(regular_file, "stuff")
+
+      granted = [
+        %{
+          host_path: Path.join(regular_file, "sub/file"),
+          sandbox_path: "/external/x",
+          mode: :read
+        }
+      ]
+
+      assert_raise ArgumentError, ~r/lstat failed/, fn ->
+        Bwrap.approved_path_flags(granted)
+      end
+    end
   end
 end

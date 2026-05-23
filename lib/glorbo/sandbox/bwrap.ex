@@ -579,8 +579,21 @@ defmodule Glorbo.Sandbox.Bwrap do
           {:ok, %File.Stat{type: :symlink}} ->
             {:halt, {:symlink, candidate}}
 
-          _ ->
+          {:ok, _other_type} ->
             {:cont, [candidate | acc]}
+
+          # Not-yet-existing trailing segment is allowed (operator may
+          # have approved a path the agent intends to create).
+          {:error, :enoent} ->
+            {:cont, [candidate | acc]}
+
+          # Fail closed on EVERY OTHER lstat error (`:eacces`,
+          # `:eloop`, `:enotdir`, etc.). Treating these as "no
+          # symlink" would silently skip the check when we can't
+          # actually verify — the original `_ ->` branch did exactly
+          # that. (Copilot review on PR #31.)
+          {:error, reason} ->
+            {:halt, {:stat_failed, candidate, reason}}
         end
     end)
     |> case do
@@ -588,6 +601,12 @@ defmodule Glorbo.Sandbox.Bwrap do
         raise ArgumentError,
               "approved_path_flags: host_path crosses a symlinked component, " <>
                 "got #{inspect(where)} (full path: #{inspect(path)})"
+
+      {:stat_failed, where, reason} ->
+        raise ArgumentError,
+              "approved_path_flags: host_path lstat failed at #{inspect(where)} " <>
+                "(reason=#{inspect(reason)}; full path=#{inspect(path)}); refusing — " <>
+                "cannot verify the path is symlink-free"
 
       _ ->
         :ok
