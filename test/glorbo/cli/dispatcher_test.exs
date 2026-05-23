@@ -171,8 +171,22 @@ defmodule Glorbo.CLI.DispatcherTest do
         {:ok, %{exit_status: 0, stdout: "stdout reply body", usage_dir: nil}}
       end
 
-      assert {:ok, %{reply: _}} =
+      assert {:ok, %{reply: reply, reply_path: reply_path}} =
                Dispatcher.invoke(base_provider(), base_ctx(ws), run_fun: chatty)
+
+      # Guard the materialisation behaviour directly: the reply file
+      # exists on disk AND its on-disk content matches what came back
+      # in :reply. (Dispatcher returns :reply = text content,
+      # :reply_path = path to the materialised file.) The earlier
+      # version of this test also refuted the `reply_exists?=false`
+      # Logger.warning, but that bled under `async: true` — other
+      # concurrent dispatcher tests legitimately emit it and
+      # ExUnit.CaptureLog's gl isolation didn't hold. Asserting on
+      # the file's on-disk presence + content is the direct
+      # behaviour test the D6 fix is about.
+      assert reply =~ "stdout reply body"
+      assert File.exists?(reply_path)
+      assert File.read!(reply_path) =~ "stdout reply body"
     end
 
     test "stdout-as-reply skipped when exit != 0" do

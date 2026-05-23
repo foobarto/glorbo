@@ -12,8 +12,24 @@ defmodule Glorbo.Network.ProxyTest do
         allowlist_fun: fn _co -> allowlist end
       )
 
-    on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+    on_exit(fn -> safe_stop(pid) end)
     {pid, Proxy.port(pid)}
+  end
+
+  # Best-effort teardown wrapper. The production `Proxy.stop/1` keeps a
+  # narrow `:noproc`-only catch so real bugs propagate; here in the test
+  # `on_exit`, where the proxy can terminate with any reason during the
+  # `Process.alive?` → `Proxy.stop` window (especially under
+  # low-parallelism CI + 10-concurrent-CONNECT load), we swallow any
+  # exit — "process is gone" is what teardown wants either way.
+  defp safe_stop(pid) do
+    if Process.alive?(pid) do
+      try do
+        Proxy.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+    end
   end
 
   # Start a local TCP echo server representing "upstream". Accepts ONE
@@ -382,7 +398,7 @@ defmodule Glorbo.Network.ProxyTest do
           port: 0
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       # api.anthropic.com is in the config/network_policy.exs base list.
@@ -412,7 +428,7 @@ defmodule Glorbo.Network.ProxyTest do
           classifier_fun: classifier
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -436,7 +452,7 @@ defmodule Glorbo.Network.ProxyTest do
           classifier_fun: classifier
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -456,7 +472,7 @@ defmodule Glorbo.Network.ProxyTest do
           classifier_fun: classifier
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -476,7 +492,7 @@ defmodule Glorbo.Network.ProxyTest do
           classifier_fun: classifier
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -498,7 +514,7 @@ defmodule Glorbo.Network.ProxyTest do
           classifier_fun: classifier
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -554,7 +570,7 @@ defmodule Glorbo.Network.ProxyTest do
           history_put_fun: put_fun
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -587,7 +603,7 @@ defmodule Glorbo.Network.ProxyTest do
           history_put_fun: put_fun
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -612,7 +628,7 @@ defmodule Glorbo.Network.ProxyTest do
           history_put_fun: put_fun
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, response} =
@@ -640,7 +656,7 @@ defmodule Glorbo.Network.ProxyTest do
           history_put_fun: put_fun
         )
 
-      on_exit(fn -> if Process.alive?(pid), do: Proxy.stop(pid) end)
+      on_exit(fn -> safe_stop(pid) end)
       port = Proxy.port(pid)
 
       {_sock, _response} =
