@@ -58,8 +58,17 @@ jobs:
           fi
           echo "Substituting v$VERSION into assets/index.html"
           sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v$VERSION/g" assets/index.html
-          echo "After sync — first three mentions:"
-          grep -nE "v$VERSION" assets/index.html | head -3
+          # Assert the substitution actually landed — guards against future
+          # edits that drop the version literal from the landing page (which
+          # would leave the deploy with stale data we couldn't otherwise
+          # detect). `grep -c` exits 0 even with 0 matches and just prints
+          # the count.
+          MATCHES=$(grep -cE "v$VERSION" assets/index.html || true)
+          echo "Found $MATCHES v$VERSION mentions in assets/index.html"
+          if [ "$MATCHES" -lt 1 ]; then
+            echo "::error::landing-page sync produced 0 v$VERSION mentions — refusing to deploy stale page"
+            exit 1
+          fi
 
       - name: Upload artifact
         # v4.0.0 — v3.0.1 internally used a bare `actions/upload-artifact@v4`,
