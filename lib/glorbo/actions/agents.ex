@@ -375,7 +375,14 @@ defmodule Glorbo.Actions.Agents do
   end
 
   defp refuse_contract_write(rel) do
-    if Path.basename(rel) in @contract_files,
+    # `Path.basename/1` on the raw input is bypassable: e.g.
+    # `Path.basename("workspace/../AGENT.md/.")` returns `"."` (not
+    # `"AGENT.md"`), while `Path.expand/1` normalises away the trailing
+    # `/.` and ascendant `..`, resolving to the real `AGENT.md` path
+    # that the write would actually hit. Compare against the canonical
+    # basename so director-form input cannot smuggle a write to an
+    # agent's contract file. (Gemini deep-dive finding F1.)
+    if Path.basename(Path.expand(rel)) in @contract_files,
       do: {:error, :contract_file},
       else: :ok
   end

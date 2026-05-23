@@ -87,6 +87,33 @@ defmodule Glorbo.Actions.AgentsTest do
       assert FakeAudit.calls(audit) == []
     end
 
+    # Gemini deep-dive F1 (CRITICAL): the original `Path.basename/1`
+    # check could be bypassed with trailing `/.` because
+    # `Path.basename("workspace/../AGENT.md/.")` returns `"."` while
+    # `Path.expand/1` resolves to the real `AGENT.md` and the write
+    # would proceed against `agent_root/AGENT.md`. Pin the canonical-
+    # form check shut.
+    test "refuses contract files even via Path.basename bypass forms",
+         %{base: base, audit: audit} do
+      for sneaky <- [
+            "AGENT.md/.",
+            "workspace/../AGENT.md/.",
+            "stdout.log/.",
+            "./AGENT.md/.",
+            "./AGENT.md"
+          ] do
+        assert {:error, :contract_file} =
+                 Agents.create_workspace_file("acme", "ceo", sneaky,
+                   actor: "director",
+                   base: base,
+                   audit: audit
+                 ),
+               "expected #{inspect(sneaky)} to be refused as contract_file"
+      end
+
+      assert FakeAudit.calls(audit) == []
+    end
+
     test "refuses path traversal",
          %{base: base, audit: audit} do
       assert {:error, :invalid_path} =
