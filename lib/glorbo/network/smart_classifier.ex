@@ -323,19 +323,29 @@ defmodule Glorbo.Network.SmartClassifier do
 
   defp integer_encoded_private_ipv4?(host) do
     with true <- String.match?(host, @numeric_ip_re),
-         # `:inet.getaddrs/3` honours `inet_aton`'s legacy parser for
-         # integer-encoded forms WITHOUT performing DNS — the resolution
-         # is purely local, even with a tiny timeout. (Confirmed
-         # empirically; DNS labels with letters/dashes won't match the
-         # regex above so we never even reach this call for them.)
-         {:ok, [tup | _]} <- :inet.getaddrs(String.to_charlist(host), :inet, 0) do
+         # `:inet.getaddrs/3` parses integer-encoded IPv4 forms via
+         # `inet_parse:ipv4_address/1` BEFORE it considers DNS — those
+         # paths never touch the resolver. We pre-filter to numeric-IP
+         # shapes via the regex above, so a real DNS hostname (which
+         # would consume the timeout budget) never reaches this call.
+         # The small positive timeout is belt-and-braces: if a future
+         # Erlang version did dispatch to the resolver for some edge
+         # case, it fails fast rather than blocking the classifier hot
+         # path. (Copilot review on PR #24.)
+         {:ok, [tup | _]} <- :inet.getaddrs(String.to_charlist(host), :inet, 100) do
       ipv4_tuple_private?(tup)
     else
       _ -> false
     end
   end
 
-  defp ipv4_tuple_private?({0, _, _, _}), do: true
+  # Mirrors the string-prefix checks in `private_ip?/1` exactly:
+  # `0.0.0.0` is the unspecified address (and the only `0.x.y.z`
+  # variant the string check rejects). Don't broaden the range to
+  # all of `0.0.0.0/8` — Copilot flagged the original `{0, _, _, _}`
+  # as more permissive (denying more) than the upstream check; pin
+  # this list to match. (Copilot review on PR #24.)
+  defp ipv4_tuple_private?({0, 0, 0, 0}), do: true
   defp ipv4_tuple_private?({127, _, _, _}), do: true
   defp ipv4_tuple_private?({10, _, _, _}), do: true
   defp ipv4_tuple_private?({172, b, _, _}) when b in 16..31, do: true
