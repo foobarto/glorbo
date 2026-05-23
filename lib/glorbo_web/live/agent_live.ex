@@ -481,22 +481,140 @@ defmodule GlorboWeb.AgentLive do
       )
 
     # Threatmodel: form values are client-controlled and could carry
-    # anything (DevTools edits, replay attacks). Drop any `network`
-    # value that isn't in the parser's allowlist before persisting,
-    # otherwise we'd write garbage like `network: bogus` to AGENT.md
-    # and break subsequent parses for the entire company.
-    updates =
-      %{
-        "provider" => params["provider"],
-        "model" => params["model"],
-        "reports_to" => params["reports_to"],
-        "heartbeat" => params["heartbeat"],
-        "network" => sanitise_network(params["network"]),
-        "autonomy" => params["autonomy"]
-      }
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
-      |> Map.new()
+    # anything (DevTools edits, replay attacks). Each field is checked
+    # against a strict shape BEFORE we persist anything to AGENT.md.
+    # Gemini deep-dive F2: previously only `network` was sanitised;
+    # `provider`, `model`, `reports_to`, `autonomy` flowed through
+    # verbatim. Combined with F3 (dispatcher `{model}` substitution
+    # into reply_dir / reply_filename_template with no escaping) this
+    # was an arbitrary-file-write primitive — e.g. `model =
+    # "../../../AGENT.md"` would cause `prepare_reply_dir/2` to
+    # `rm!` the agent's own contract file on the next dispatch.
+    with :ok <- safe_config_identifier(params["provider"], :provider),
+         :ok <- safe_config_model(params["model"], :model),
+         :ok <- safe_config_slug(params["reports_to"], :reports_to),
+         :ok <- safe_config_autonomy(params["autonomy"]) do
+      updates =
+        %{
+          "provider" => params["provider"],
+          "model" => params["model"],
+          "reports_to" => params["reports_to"],
+          "heartbeat" => params["heartbeat"],
+          "network" => sanitise_network(params["network"]),
+          "autonomy" => params["autonomy"]
+        }
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
+        |> Map.new()
 
+      do_persist_config_save(agent_md, updates, socket)
+    else
+      {:error, {:invalid_identifier, {:model, _}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Invalid model: allowed chars are letters/digits/`._-/`; no `..`, `//`, " <>
+             "leading or trailing `/`; up to 128 chars."
+         )}
+
+      {:error, {:invalid_identifier, {field, _}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Invalid #{field}: must be 1-64 chars, letters/digits/`._-` only, " <>
+             "starting with a letter."
+         )}
+
+      {:error, {:invalid_slug, {field, _}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Invalid #{field}: must be 1-64 chars, lowercase letters/digits/`-_` only."
+         )}
+
+      {:error, {:invalid_autonomy, _}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Invalid autonomy: must be one of \"manual\", \"supervised\", or \"auto\"."
+         )}
+    end
+  end
+
+  # Same shape as `GlorboWeb.MCP.Args.require_safe_identifier/2`. We
+  # don't call it directly because the MCP layer raises on certain
+  # error shapes; here we return tagged errors that map to flash
+  # messages. Identifiers (provider / model / template names) must
+  # not carry path traversal, quotes, newlines, etc.
+  @safe_identifier_re ~r/\A[A-Za-z][A-Za-z0-9._-]{0,63}\z/
+
+  defp safe_config_identifier(nil, _field), do: :ok
+  defp safe_config_identifier("", _field), do: :ok
+
+  defp safe_config_identifier(v, field) when is_binary(v) do
+    if Regex.match?(@safe_identifier_re, v) do
+      :ok
+    else
+      {:error, {:invalid_identifier, {field, v}}}
+    end
+  end
+
+  defp safe_config_identifier(v, field),
+    do: {:error, {:invalid_identifier, {field, v}}}
+
+  # Model identifiers in the wild include provider/namespace slashes
+  # (e.g. `lmstudio/qwen/qwen3.6-35b-a3b`, `openai/gpt-4o`). Allow
+  # `/` so legit values aren't rejected, BUT explicitly forbid:
+  #   * `..`  — path traversal
+  #   * `//`  — empty-segment / absolute-anchor confusion
+  #   * leading or trailing `/`
+  # alongside the same alphanum + `._-` allowlist. Anything that
+  # would let an attacker write `../../../AGENT.md` through to the
+  # dispatcher's `{model}` template substitution is refused here.
+  @safe_model_re ~r/\A[A-Za-z0-9][A-Za-z0-9._\/-]{0,127}\z/
+
+  defp safe_config_model(nil, _field), do: :ok
+  defp safe_config_model("", _field), do: :ok
+
+  defp safe_config_model(v, field) when is_binary(v) do
+    cond do
+      not Regex.match?(@safe_model_re, v) -> {:error, {:invalid_identifier, {field, v}}}
+      String.contains?(v, "..") -> {:error, {:invalid_identifier, {field, v}}}
+      String.contains?(v, "//") -> {:error, {:invalid_identifier, {field, v}}}
+      String.ends_with?(v, "/") -> {:error, {:invalid_identifier, {field, v}}}
+      true -> :ok
+    end
+  end
+
+  defp safe_config_model(v, field), do: {:error, {:invalid_identifier, {field, v}}}
+
+  # Agent slugs (reports_to) follow the project's lowercase-kebab/snake
+  # convention. Looser than the identifier regex (no leading uppercase)
+  # but still strictly path-safe.
+  @safe_slug_re ~r/\A[a-z0-9][a-z0-9_-]{0,63}\z/
+
+  defp safe_config_slug(nil, _field), do: :ok
+  defp safe_config_slug("", _field), do: :ok
+
+  defp safe_config_slug(v, field) when is_binary(v) do
+    if Regex.match?(@safe_slug_re, v) do
+      :ok
+    else
+      {:error, {:invalid_slug, {field, v}}}
+    end
+  end
+
+  defp safe_config_slug(v, field), do: {:error, {:invalid_slug, {field, v}}}
+
+  defp safe_config_autonomy(nil), do: :ok
+  defp safe_config_autonomy(""), do: :ok
+  defp safe_config_autonomy(v) when v in ["manual", "supervised", "auto"], do: :ok
+  defp safe_config_autonomy(v), do: {:error, {:invalid_autonomy, v}}
+
+  defp do_persist_config_save(agent_md, updates, socket) do
     case Glorbo.Filesystem.FrontmatterWriter.update_keys(agent_md, updates) do
       :ok ->
         base = base_dir()

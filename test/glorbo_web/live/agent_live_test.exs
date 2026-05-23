@@ -135,6 +135,119 @@ defmodule GlorboWeb.AgentLiveTest do
       refute agent_md =~ "wutang-clan"
     end
 
+    # Gemini deep-dive F2: provider/model/reports_to/autonomy used to
+    # flow from the form into AGENT.md verbatim. Combined with F3
+    # (dispatcher `{model}` substitution into reply_dir templates with
+    # no escaping), a malicious `model = "../../../AGENT.md"` was an
+    # arbitrary-file-write primitive: the next dispatch's
+    # `prepare_reply_dir/2` would `rm!` the agent's own contract file.
+    # These tests pin the validation shut.
+    test "config_save rejects path-traversal model strings",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      for sneaky <- [
+            "../../../AGENT.md",
+            "../foo",
+            "foo/../bar",
+            "/etc/passwd",
+            "foo//bar",
+            "foo/",
+            "\nfoo",
+            "foo bar"
+          ] do
+        html =
+          render_submit(view, "config_save", %{
+            "provider" => "claude-code",
+            "model" => sneaky,
+            "reports_to" => "",
+            "heartbeat" => "",
+            "network" => "proxy"
+          })
+
+        assert html =~ "Invalid model",
+               "expected #{inspect(sneaky)} to be rejected"
+      end
+
+      # AGENT.md untouched — no sneaky model string written.
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      refute agent_md =~ "../"
+      refute agent_md =~ "passwd"
+    end
+
+    test "config_save rejects malicious provider/reports_to/autonomy",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      # Invalid provider (slash → identifier regex rejects)
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "../etc",
+          "model" => "claude-sonnet-4-5",
+          "reports_to" => "",
+          "heartbeat" => "",
+          "network" => "proxy"
+        })
+
+      assert html =~ "Invalid provider"
+
+      # Invalid reports_to (slash)
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "claude-code",
+          "model" => "claude-sonnet-4-5",
+          "reports_to" => "../bob",
+          "heartbeat" => "",
+          "network" => "proxy"
+        })
+
+      assert html =~ "Invalid reports_to"
+
+      # Invalid autonomy (not in enum)
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "claude-code",
+          "model" => "claude-sonnet-4-5",
+          "reports_to" => "",
+          "heartbeat" => "",
+          "network" => "proxy",
+          "autonomy" => "yeet"
+        })
+
+      assert html =~ "Invalid autonomy"
+
+      # AGENT.md untouched
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      refute agent_md =~ "../etc"
+      refute agent_md =~ "../bob"
+      refute agent_md =~ "yeet"
+    end
+
+    test "config_save still accepts legit slashed model identifiers",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      render_submit(view, "config_save", %{
+        "provider" => "opencode",
+        "model" => "lmstudio/qwen/qwen3.6-35b-a3b",
+        "reports_to" => "",
+        "heartbeat" => "",
+        "network" => "proxy"
+      })
+
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      assert agent_md =~ "model: lmstudio/qwen/qwen3.6-35b-a3b"
+    end
+
     test "config_save accepts blank heartbeat (no-heartbeat agent)",
          %{conn: conn, base: base} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
