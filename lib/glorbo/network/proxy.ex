@@ -106,8 +106,15 @@ defmodule Glorbo.Network.Proxy do
   def stop(server) do
     GenServer.stop(server)
   catch
-    :exit, {:noproc, _} -> :ok
-    :exit, :noproc -> :ok
+    # `stop/1`'s contract is just "ensure the process is gone." If the
+    # proxy died with any reason during the call window (e.g. teardown
+    # race in a test on_exit where `Process.alive?` returned true but
+    # the proxy crashed before `GenServer.stop` reached it, or it
+    # terminated with a non-`:normal` reason and GenServer.stop re-exits
+    # with that reason), an already-dead server still satisfies the
+    # contract. Swallow any exit — `:noproc`, `:normal`/non-`:normal`
+    # mismatch, killed by acceptor death, etc.
+    :exit, _ -> :ok
   end
 
   # ---------------------------------------------------------------------------

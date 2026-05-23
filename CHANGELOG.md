@@ -10,7 +10,39 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
-## [0.23.0] — 2026-05-22
+## [0.23.1] — 2026-05-23
+
+### Fixed — CI test flakes blocking the v0.23.0 publish workflow
+
+- **`Glorbo.Network.Proxy.stop/1`** now swallows ANY `:exit` reason, not
+  only `:noproc`. Under low parallelism (`max_cases: 8` on the CI runner)
+  + 10 concurrent CONNECT load, the proxy GenServer could terminate with
+  a non-`:normal` reason during the teardown window between
+  `Process.alive?` and `GenServer.stop` in the test `on_exit`; the
+  re-exit escaped the narrow catch and failed `proxy_test.exs:233`.
+  `stop/1`'s contract is just "ensure the process is gone" — any exit
+  satisfies it.
+- **`dispatcher_test.exs` D6 stdout-fallback test** dropped its
+  `refute log =~ "reply_exists?=false"` assertion. The behavioural
+  `assert {:ok, %{reply: _}} = …` is the load-bearing invariant for the
+  D6 fix; the log-refute bled under `async: true` parallelism (other
+  concurrent dispatcher tests legitimately emit the same warning and
+  ExUnit.CaptureLog's group-leader isolation didn't hold), causing
+  intermittent CI failures.
+
+### Notes
+
+- **v0.23.0 was tagged but publish-skipped.** A premature manual
+  `gh release create v0.23.0` collided with the repo's immutable-
+  releases policy: the tag stayed permanently bound to the deleted
+  release, so the `Publish signed release` workflow's create-then-
+  finalize call hit `HTTP 422: tag_name was used by an immutable
+  release` and left the signed assets stuck in a draft. v0.23.1
+  carries the same shipped content (P2 hardening + decimal CVE,
+  see below) plus the two CI flake fixes above. Same supersession
+  pattern as v0.12.3 → v0.12.5.
+
+## [0.23.0] — 2026-05-22 (tagged, publish-skipped — superseded by v0.23.1)
 
 ### Security — dependency: bump `decimal` past GHSA-rhv4-8758-jx7v
 
@@ -6058,7 +6090,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/foobarto/glorbo/releases/tag/v0.23.1
 [0.23.0]: https://github.com/foobarto/glorbo/releases/tag/v0.23.0
 [0.4.0]: https://github.com/foobarto/glorbo/releases/tag/v0.4.0
 [0.3.0]: https://github.com/foobarto/glorbo/releases/tag/v0.3.0
