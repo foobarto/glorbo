@@ -10,6 +10,30 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — tool I/O paths refuse symlink-ancestor crossings (codex-F3/F4)
+
+`Glorbo.CLI.Harness.Tools.resolve_tool_path/2` did a **lexical-only**
+workspace containment check (`Path.expand` + `String.starts_with?`). If
+an agent planted a symlink at `<workspace>/escape` pointing OUT of the
+workspace (`/etc/`, `/`, etc.), a subsequent `write_file`/`edit_file`/
+`read_file`/`grep` tool call with `path = "escape/poc"` would
+canonicalise to `<workspace>/escape/poc`, pass the string-prefix
+check, then `File.write` would follow the symlink at I/O time and hit
+the host path. Under bwrap the bind mounts narrow what's reachable;
+under the **unsandboxed fallback** (`Glorbo.Sandbox.Unsandboxed`,
+macOS, `--no-sandbox`) it lands directly on the host FS.
+
+Fix: `resolve_tool_path` now consults
+`AgentWritableFile.any_symlink_in_path?/1` after the lexical check
+and raises an `ArgumentError` (`"tool path crosses a symlinked
+component"`) if any ancestor segment is a symlink. The wrapping
+`Tools.execute/3` `rescue` clause surfaces this as
+`{"error" => "path_crosses_symlink"}` alongside the existing
+`path_escapes_workspace`. Regression test exercises 3 tool calls
+(write, edit, read) with a planted symlink + 2 negative cases (normal
+write succeeds, `..`-escape still produces `path_escapes_workspace`).
+Identified by the codex deep-dive sweep.
+
 ### Security — bwrap auth-binds validate host+sandbox paths before argv assembly (HIGH, codex-F1)
 
 `Glorbo.Sandbox.Bwrap` previously spliced provider-config `auth_binds`
