@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — approved-path TOCTOU re-check at bwrap argv assembly (codex-F2)
+
+`Glorbo.PathRequestGate.do_approve/4` canonicalises every approved
+path with `validate_no_symlink_segments/1` at APPROVAL time, then the
+grant sits in `PathGrantStore` until the agent dispatches. Between
+those events an attacker with write access to any ancestor of the
+granted path could plant a symlink (`/home/u/granted-dir → /etc`) and
+have `bwrap` bind the redirect, escaping the approved scope.
+
+Fix: re-walk lstat-checks on `host_path` at `approved_path_flags/1`
+argv-assembly. The TOCTOU window collapses to the `assert → Port.open`
+interval (microseconds, host-FS-bound). Trailing `:enoent` segments
+are still allowed (operator may approve a path the agent will create).
+Regression test plants a symlink between two `approved_path_flags`
+calls to prove the second one raises. Identified by the codex
+deep-dive sweep.
+
 ### Security — unsandboxed runner gets drain caps + symlink-gated stdout tee (codex-F7/F8)
 
 `Glorbo.Sandbox.Unsandboxed` (the macOS / `--no-sandbox` runner) was

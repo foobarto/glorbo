@@ -658,4 +658,107 @@ defmodule Glorbo.Sandbox.BwrapTest do
                Glorbo.CLI.Dispatcher.Acp.Client.run(io, "say hi", phase_timeout_ms: 2_000)
     end
   end
+
+  # Codex deep-dive F2: PathRequestGate canonicalises (lstat-walks)
+  # approved paths at APPROVAL time, but the grant then sits in
+  # PathGrantStore until dispatch. Between those events an attacker
+  # with write access to any ancestor could plant a symlink and have
+  # bwrap bind to the redirect. The argv-assembly re-walk shrinks
+  # that window to the assert→Port.open interval.
+  describe "approved_path_flags TOCTOU defense (codex-F2)" do
+    setup do
+      tmp =
+        Path.join(
+          System.tmp_dir!(),
+          "glorbo-f2-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(tmp)
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      {:ok, tmp: tmp}
+    end
+
+    test "refuses an approved path whose ancestor became a symlink",
+         %{tmp: tmp} do
+      # Plant the layout the gate APPROVED:
+      #   tmp/granted-dir/  (real dir)
+      #   tmp/granted-dir/some-file
+      real_dir = Path.join(tmp, "granted-dir")
+      File.mkdir_p!(real_dir)
+      File.write!(Path.join(real_dir, "some-file"), "approved content")
+
+      # Now simulate the TOCTOU: between approval and dispatch the
+      # attacker replaces granted-dir with a symlink to /etc.
+      attacker_target = Path.join(tmp, "attacker-target")
+      File.mkdir_p!(attacker_target)
+      File.rm_rf!(real_dir)
+      File.ln_s!(attacker_target, real_dir)
+
+      granted = [
+        %{host_path: Path.join(real_dir, "some-file"), sandbox_path: "/external/x", mode: :read}
+      ]
+
+      assert_raise ArgumentError, ~r/crosses a symlinked component/, fn ->
+        Bwrap.approved_path_flags(granted)
+      end
+    end
+
+    test "permits an approved path whose ancestors stay regular",
+         %{tmp: tmp} do
+      real_dir = Path.join(tmp, "ok-dir")
+      File.mkdir_p!(real_dir)
+      file = Path.join(real_dir, "f")
+      File.write!(file, "ok")
+
+      granted = [%{host_path: file, sandbox_path: "/external/f", mode: :read}]
+
+      argv = Bwrap.approved_path_flags(granted)
+      assert ["--ro-bind", ^file, "/external/f"] = argv
+    end
+
+    test "permits a not-yet-existing trailing segment under a real ancestor",
+         %{tmp: tmp} do
+      # Operator approves a path the agent will create. Trailing
+      # `:enoent` is allowed; only existing symlinks along the path
+      # are refused.
+      real_dir = Path.join(tmp, "create-here")
+      File.mkdir_p!(real_dir)
+
+      granted = [
+        %{
+          host_path: Path.join(real_dir, "future-file"),
+          sandbox_path: "/external/future-file",
+          mode: :write
+        }
+      ]
+
+      argv = Bwrap.approved_path_flags(granted)
+      assert Enum.member?(argv, "--bind")
+      assert Enum.member?(argv, "/external/future-file")
+    end
+
+    # Copilot review on PR #31: fail closed on lstat errors other than
+    # `:enoent`. If a path component is `:eacces`/`:eloop`/`:enotdir`,
+    # we genuinely cannot verify the segment is symlink-free; treating
+    # that as "no symlink" was a silent-skip on the security check.
+    test "fails closed when an ancestor segment can't be lstat'd (:enotdir)",
+         %{tmp: tmp} do
+      # `regular-file` is a regular file; treating it as a directory
+      # makes the subsequent lstat return `:enotdir` (not `:enoent`).
+      regular_file = Path.join(tmp, "regular-file")
+      File.write!(regular_file, "stuff")
+
+      granted = [
+        %{
+          host_path: Path.join(regular_file, "sub/file"),
+          sandbox_path: "/external/x",
+          mode: :read
+        }
+      ]
+
+      assert_raise ArgumentError, ~r/lstat failed/, fn ->
+        Bwrap.approved_path_flags(granted)
+      end
+    end
+  end
 end
