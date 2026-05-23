@@ -10,6 +10,37 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — bwrap auth-binds validate host+sandbox paths before argv assembly (HIGH, codex-F1)
+
+`Glorbo.Sandbox.Bwrap` previously spliced provider-config `auth_binds`
+`host` and `sandbox` paths into bwrap argv with no validation — only
+`mode` was checked in the loader. A config-influencer (untrusted
+provider-registry contribution, malicious copy-paste from a 3rd-party
+`providers.toml`) could mount `host="/"` at `sandbox="/workspace/.creds"`,
+exfiltrating the entire host FS through the sandbox surface; or
+`host` at `sandbox="/etc"`/`/workspace`/`/inbox`, shadowing critical
+mount points inside the namespace. Validation now runs before argv
+assembly and refuses:
+
+- **host**: not absolute (must be tilde-expanded); contains `..`;
+  contains any control byte (`\x00`-`\x1F`, `\x7F`); EXACTLY matches
+  a critical host root (`/`, `/etc`, `/root`, `/proc`, `/sys`,
+  `/boot`, `/home`, `/lib`, `/lib64`, `/dev`).
+- **sandbox**: not absolute; contains `..`; contains any control
+  byte; canonically matches a critical mount point that a bind
+  would shadow (`/workspace`, `/inbox`, `/outbox`, `/usr`, `/etc`,
+  `/proc`, `/sys`, `/dev`, `/run`, `/bin`, `/sbin`, `/lib`,
+  `/lib64`, `/var`, `/root`, `/home`, `/boot`, `/tmp`, `/`). The
+  canonical check normalises trailing `/` and `/.` so
+  `/workspace`, `/workspace/`, and `/workspace/.` are all caught.
+
+Mirrors the existing `approved_path_flags` validation pattern. Legit
+non-`/workspace/` bind targets (e.g. the `/tmp/glorbo-cli-<name>`
+slot used by `Glorbo.Agent.Dispatch` to keep agents from enumerating
+the host binary's parent dir per T5) keep working. Regression test
+pins 22 unsafe shapes shut (B5d) plus positive cases (B5e). Identified
+by the codex deep-dive sweep.
+
 ### Security — agent config form validates provider/model/reports_to/autonomy (HIGH, gemini-F2)
 
 `GlorboWeb.AgentLive.do_config_save/2` used to write `provider`,

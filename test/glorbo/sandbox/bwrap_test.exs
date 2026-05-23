@@ -198,11 +198,11 @@ defmodule Glorbo.Sandbox.BwrapTest do
       argv =
         Bwrap.build_argv(
           base_opts(%{
-            cli_auth_binds: [{"/home/user/.claude", "/host-claude"}]
+            cli_auth_binds: [{"/home/user/.claude", "/workspace/.claude"}]
           })
         )
 
-      assert_subsequence(argv, ["--ro-bind", "/home/user/.claude", "/host-claude"])
+      assert_subsequence(argv, ["--ro-bind", "/home/user/.claude", "/workspace/.claude"])
     end
 
     test "B5b: 3-tuple cli_auth_binds with :rw mode emit --bind not --ro-bind" do
@@ -210,14 +210,14 @@ defmodule Glorbo.Sandbox.BwrapTest do
         Bwrap.build_argv(
           base_opts(%{
             cli_auth_binds: [
-              {"/h/rw", "/sb/rw", :rw},
-              {"/h/ro", "/sb/ro", :ro}
+              {"/h/rw", "/workspace/.rw-dir", :rw},
+              {"/h/ro", "/workspace/.ro-dir", :ro}
             ]
           })
         )
 
-      assert_subsequence(argv, ["--bind", "/h/rw", "/sb/rw"])
-      assert_subsequence(argv, ["--ro-bind", "/h/ro", "/sb/ro"])
+      assert_subsequence(argv, ["--bind", "/h/rw", "/workspace/.rw-dir"])
+      assert_subsequence(argv, ["--ro-bind", "/h/ro", "/workspace/.ro-dir"])
     end
 
     test "B5c: 4-tuple cli_auth_binds with :dir type emit --dir before the bind" do
@@ -225,15 +225,95 @@ defmodule Glorbo.Sandbox.BwrapTest do
         Bwrap.build_argv(
           base_opts(%{
             cli_auth_binds: [
-              {"/h/datadir", "/project", :rw, :dir},
-              {"/h/cli", "/tmp/cli-bin", :ro, :file}
+              {"/h/datadir", "/workspace/.project", :rw, :dir},
+              {"/h/cli", "/workspace/.cli-bin", :ro, :file}
             ]
           })
         )
 
-      assert_subsequence(argv, ["--dir", "/project", "--bind", "/h/datadir", "/project"])
-      assert_subsequence(argv, ["--ro-bind", "/h/cli", "/tmp/cli-bin"])
-      refute_subsequence(argv, ["--dir", "/tmp/cli-bin"])
+      assert_subsequence(argv, [
+        "--dir",
+        "/workspace/.project",
+        "--bind",
+        "/h/datadir",
+        "/workspace/.project"
+      ])
+
+      assert_subsequence(argv, ["--ro-bind", "/h/cli", "/workspace/.cli-bin"])
+      refute_subsequence(argv, ["--dir", "/workspace/.cli-bin"])
+    end
+
+    # Codex deep-dive F1: cli_auth_bind paths previously flowed into
+    # bwrap argv with no validation. A config-influencer (untrusted
+    # provider registry contribution, malicious copy-paste, etc.)
+    # could mount `host="/"` at `sandbox="/etc"`, exfiltrating host
+    # creds through the sandbox surface or shadowing critical mounts
+    # inside the namespace. These cases now raise.
+    test "B5d (codex-F1): unsafe auth-bind paths raise" do
+      bad_cases = [
+        # host: not absolute
+        [{"relative/path", "/workspace/.x"}],
+        # host: contains ..
+        [{"/etc/../passwd", "/workspace/.x"}],
+        [{"/foo/..", "/workspace/.x"}],
+        # host: control bytes — NUL, CR, LF, tab, DEL
+        [{"/etc\0/passwd", "/workspace/.x"}],
+        [{"/etc\n/passwd", "/workspace/.x"}],
+        [{"/etc\r/passwd", "/workspace/.x"}],
+        [{"/etc\t/passwd", "/workspace/.x"}],
+        [{"/etc\x7F/passwd", "/workspace/.x"}],
+        # host: critical system roots — mount the host FS or dirs that
+        # should never be agent-readable. (Copilot PR #27 review.)
+        [{"/", "/workspace/.creds"}],
+        [{"/etc", "/workspace/.etc"}],
+        [{"/root", "/workspace/.root"}],
+        [{"/proc", "/workspace/.proc"}],
+        [{"/sys", "/workspace/.sys"}],
+        # sandbox: not absolute
+        [{"/home/user/.claude", "relative/sandbox"}],
+        # sandbox: EXACTLY shadows the workspace mount, AND its
+        # bypass variants that the OS resolves to the same path.
+        [{"/home/user/.claude", "/workspace"}],
+        [{"/home/user/.claude", "/workspace/"}],
+        [{"/home/user/.claude", "/workspace/."}],
+        # sandbox: EXACTLY shadows other critical mounts
+        [{"/home/user/.claude", "/"}],
+        [{"/home/user/.claude", "/etc"}],
+        [{"/home/user/.claude", "/usr"}],
+        [{"/home/user/.claude", "/inbox"}],
+        # sandbox: contains ..
+        [{"/home/user/.claude", "/workspace/../etc"}],
+        # sandbox: control bytes
+        [{"/home/user/.claude", "/workspace/\0evil"}],
+        [{"/home/user/.claude", "/workspace/\nevil"}]
+      ]
+
+      for binds <- bad_cases do
+        assert_raise ArgumentError, fn ->
+          Bwrap.build_argv(base_opts(%{cli_auth_binds: binds}))
+        end
+      end
+    end
+
+    # Negative cases: legit mount points used in the codebase that
+    # were previously broken by an over-strict allowlist.
+    test "B5e (codex-F1): legit non-/workspace sandbox prefixes are accepted" do
+      ok_cases = [
+        # CLI-binary bind used by dispatch.ex `cli_binary_bind/1` —
+        # intentionally under /tmp so agents can't enumerate the host
+        # binary's parent dir.
+        [{"/usr/bin/claude", "/tmp/glorbo-cli-claude-code", :ro, :file}],
+        # Other legitimate /workspace/ subpaths (shipped providers).
+        [{"/home/u/.claude", "/workspace/.claude"}],
+        [{"/home/u/.gemini", "/workspace/.gemini", :rw}]
+      ]
+
+      for binds <- ok_cases do
+        argv = Bwrap.build_argv(base_opts(%{cli_auth_binds: binds}))
+        # If validation rejected, build_argv would have raised — just
+        # assert it produced some argv.
+        assert is_list(argv) and argv != []
+      end
     end
 
     # B8: auth_bind `mode = "rw"` whose sandbox path is a sub-path of
