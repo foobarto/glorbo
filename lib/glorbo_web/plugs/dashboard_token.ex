@@ -156,15 +156,15 @@ defmodule GlorboWeb.Plugs.DashboardToken do
   # CR/LF (request-smuggling), and no backslash (some clients
   # treat `\\` as `/` for path purposes). Anything weird → leave the
   # `?token=` in the URL (cosmetic regression, security-safe).
+  # Single regex match instead of multiple `String.contains?/2` passes;
+  # also drops the redundant `starts_with?("/\\")` (already covered by
+  # the backslash-anywhere check). (Copilot review on PR #29.)
+  @unsafe_redirect_chars ~r/[\\\x00\r\n]|:\/\//
+
   defp safe_request_path?(path) when is_binary(path) do
     String.starts_with?(path, "/") and
       not String.starts_with?(path, "//") and
-      not String.starts_with?(path, "/\\") and
-      not String.contains?(path, "\\") and
-      not String.contains?(path, "\0") and
-      not String.contains?(path, "\r") and
-      not String.contains?(path, "\n") and
-      not String.contains?(path, "://")
+      not Regex.match?(@unsafe_redirect_chars, path)
   end
 
   defp safe_request_path?(_), do: false

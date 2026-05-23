@@ -286,6 +286,11 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
 
       refute result.status == 302,
              "expected NO redirect when request_path starts with `//` (would be protocol-relative)"
+
+      # And the request still authenticates — the strip-query 302 is
+      # cosmetic; auth happens earlier in the plug. (Copilot review.)
+      refute result.halted,
+             "expected the plug NOT to halt — request should still authenticate"
     end
 
     test "does NOT redirect for pathological request_paths (CRLF/NUL/scheme/backslash)" do
@@ -309,6 +314,9 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
 
         refute result.status == 302,
                "expected no 302 redirect for request_path=#{inspect(bad)}"
+
+        refute result.halted,
+               "expected the plug NOT to halt for request_path=#{inspect(bad)} — auth still passes"
       end
     end
 
