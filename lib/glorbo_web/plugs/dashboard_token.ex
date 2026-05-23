@@ -127,7 +127,7 @@ defmodule GlorboWeb.Plugs.DashboardToken do
   # just don't get the cosmetic strip.
   defp maybe_strip_query_token(conn) do
     if session_fetched?(conn) and conn.method in ["GET", "HEAD"] and
-         is_binary(query_token(conn)) do
+         is_binary(query_token(conn)) and safe_request_path?(conn.request_path) do
       conn = fetch_query_params(conn)
       stripped = Map.delete(conn.query_params, "token")
 
@@ -146,6 +146,28 @@ defmodule GlorboWeb.Plugs.DashboardToken do
       conn
     end
   end
+
+  # Gemini deep-dive F4 (open-redirect defense): a request with
+  # `request_path = "//evil.com/foo"` would produce
+  # `Location: //evil.com/foo` — a PROTOCOL-RELATIVE URL that browsers
+  # follow off-origin. Bandit ought to normalise `//` to `/`, but
+  # defense-in-depth: only redirect to paths that begin with a
+  # single `/` and contain no embedded scheme delimiter, no NUL, no
+  # CR/LF (request-smuggling), and no backslash (some clients
+  # treat `\\` as `/` for path purposes). Anything weird → leave the
+  # `?token=` in the URL (cosmetic regression, security-safe).
+  defp safe_request_path?(path) when is_binary(path) do
+    String.starts_with?(path, "/") and
+      not String.starts_with?(path, "//") and
+      not String.starts_with?(path, "/\\") and
+      not String.contains?(path, "\\") and
+      not String.contains?(path, "\0") and
+      not String.contains?(path, "\r") and
+      not String.contains?(path, "\n") and
+      not String.contains?(path, "://")
+  end
+
+  defp safe_request_path?(_), do: false
 
   # The session is only loaded by the `:browser` pipeline's
   # `fetch_session`; on the `:api` pipeline `get_session/put_session`
