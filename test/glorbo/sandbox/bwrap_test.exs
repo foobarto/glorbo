@@ -246,10 +246,9 @@ defmodule Glorbo.Sandbox.BwrapTest do
     # Codex deep-dive F1: cli_auth_bind paths previously flowed into
     # bwrap argv with no validation. A config-influencer (untrusted
     # provider registry contribution, malicious copy-paste, etc.)
-    # could mount `host="/"` or `host="/root"` at `sandbox="/etc"`,
-    # either exfiltrating host creds through the sandbox surface or
-    # shadowing system mounts inside the namespace. These cases now
-    # raise ArgumentError before argv is built.
+    # could mount `host="/"` at `sandbox="/etc"`, exfiltrating host
+    # creds through the sandbox surface or shadowing critical mounts
+    # inside the namespace. These cases now raise.
     test "B5d (codex-F1): unsafe auth-bind paths raise" do
       bad_cases = [
         # host: not absolute
@@ -259,9 +258,15 @@ defmodule Glorbo.Sandbox.BwrapTest do
         [{"/foo/..", "/workspace/.x"}],
         # host: contains NUL
         [{"/etc\0/passwd", "/workspace/.x"}],
-        # sandbox: not under /workspace/
-        [{"/home/user/.claude", "/etc/glorbo-creds"}],
+        # sandbox: not absolute
+        [{"/home/user/.claude", "relative/sandbox"}],
+        # sandbox: EXACTLY shadows the workspace mount
         [{"/home/user/.claude", "/workspace"}],
+        # sandbox: EXACTLY shadows other critical mounts
+        [{"/home/user/.claude", "/"}],
+        [{"/home/user/.claude", "/etc"}],
+        [{"/home/user/.claude", "/usr"}],
+        [{"/home/user/.claude", "/inbox"}],
         # sandbox: contains ..
         [{"/home/user/.claude", "/workspace/../etc"}],
         # sandbox: NUL
@@ -272,6 +277,27 @@ defmodule Glorbo.Sandbox.BwrapTest do
         assert_raise ArgumentError, fn ->
           Bwrap.build_argv(base_opts(%{cli_auth_binds: binds}))
         end
+      end
+    end
+
+    # Negative cases: legit mount points used in the codebase that
+    # were previously broken by an over-strict allowlist.
+    test "B5e (codex-F1): legit non-/workspace sandbox prefixes are accepted" do
+      ok_cases = [
+        # CLI-binary bind used by dispatch.ex `cli_binary_bind/1` —
+        # intentionally under /tmp so agents can't enumerate the host
+        # binary's parent dir.
+        [{"/usr/bin/claude", "/tmp/glorbo-cli-claude-code", :ro, :file}],
+        # Other legitimate /workspace/ subpaths (shipped providers).
+        [{"/home/u/.claude", "/workspace/.claude"}],
+        [{"/home/u/.gemini", "/workspace/.gemini", :rw}]
+      ]
+
+      for binds <- ok_cases do
+        argv = Bwrap.build_argv(base_opts(%{cli_auth_binds: binds}))
+        # If validation rejected, build_argv would have raised — just
+        # assert it produced some argv.
+        assert is_list(argv) and argv != []
       end
     end
 

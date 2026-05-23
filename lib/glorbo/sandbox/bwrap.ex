@@ -441,22 +441,39 @@ defmodule Glorbo.Sandbox.Bwrap do
           "cli_auth_bind_flags: host must be a string, got #{inspect(other)}"
   end
 
+  # Sandbox is the path INSIDE the bwrap namespace where the host
+  # path gets mounted. The defense is shape-based + a denylist of
+  # critical mount points; an allowlist is too brittle (legit code
+  # mounts CLI binaries under `/tmp/glorbo-cli-<name>` to keep agents
+  # from enumerating the host binary's parent dir — see
+  # `Glorbo.Agent.Dispatch.cli_binary_bind/1` + T5 comment). Refuse:
+  #   * non-absolute paths
+  #   * any path containing `..` or NUL
+  #   * paths that EXACTLY match a critical Glorbo or system mount
+  #     point, which a bind there would shadow.
+  @forbidden_sandbox_exact ~w(
+    / /workspace /inbox /outbox /usr /etc /proc /sys /dev /run
+    /bin /sbin /lib /lib64 /var /root /home /boot /tmp
+  )
+
   defp assert_valid_auth_bind_sandbox!(path) when is_binary(path) do
     cond do
       String.contains?(path, <<0>>) ->
         raise ArgumentError,
               "cli_auth_bind_flags: sandbox must not contain NUL, got #{inspect(path)}"
 
-      # `/workspace` alone would shadow the workspace mount; require a
-      # subpath under `/workspace/`.
-      not String.starts_with?(path, "/workspace/") ->
+      not String.starts_with?(path, "/") ->
         raise ArgumentError,
-              "cli_auth_bind_flags: sandbox must live under `/workspace/`, " <>
-                "got #{inspect(path)}"
+              "cli_auth_bind_flags: sandbox must be absolute, got #{inspect(path)}"
 
       String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
         raise ArgumentError,
               "cli_auth_bind_flags: sandbox must not contain `..`, got #{inspect(path)}"
+
+      path in @forbidden_sandbox_exact ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: sandbox must not exactly shadow a critical " <>
+                "mount point, got #{inspect(path)}"
 
       true ->
         :ok
