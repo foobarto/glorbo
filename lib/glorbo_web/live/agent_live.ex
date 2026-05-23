@@ -509,8 +509,7 @@ defmodule GlorboWeb.AgentLive do
       do_persist_config_save(agent_md, updates, socket)
     else
       {:error, {:invalid_identifier, {:model, ""}}} ->
-        {:noreply,
-         put_flash(socket, :error, "model cannot be empty.")}
+        {:noreply, put_flash(socket, :error, "model cannot be empty.")}
 
       {:error, {:invalid_identifier, {:model, _}}} ->
         {:noreply,
