@@ -508,14 +508,21 @@ defmodule GlorboWeb.AgentLive do
 
       do_persist_config_save(agent_md, updates, socket)
     else
+      {:error, {:invalid_identifier, {:model, ""}}} ->
+        {:noreply,
+         put_flash(socket, :error, "model cannot be empty.")}
+
       {:error, {:invalid_identifier, {:model, _}}} ->
         {:noreply,
          put_flash(
            socket,
            :error,
-           "Invalid model: allowed chars are letters/digits/`._-/`; no `..`, `//`, " <>
+           "Invalid model: allowed chars are letters/digits/`._-/:`; no `..`, `//`, " <>
              "leading or trailing `/`; up to 128 chars."
          )}
+
+      {:error, {:invalid_identifier, {field, ""}}} ->
+        {:noreply, put_flash(socket, :error, "#{field} cannot be empty.")}
 
       {:error, {:invalid_identifier, {field, _}}} ->
         {:noreply,
@@ -551,8 +558,14 @@ defmodule GlorboWeb.AgentLive do
   # not carry path traversal, quotes, newlines, etc.
   @safe_identifier_re ~r/\A[A-Za-z][A-Za-z0-9._-]{0,63}\z/
 
+  # `provider` is REQUIRED in AGENT.md (`validate_provider/1` returns
+  # `:missing_provider` for nil/empty). nil from the form means "field
+  # absent in submit" — accept silently (other code preserves the
+  # existing value). `""` means a tampered submit that would persist
+  # an empty contract — REJECT so the next dispatch's AGENT.md parse
+  # doesn't break the agent. (Copilot review on PR #26.)
   defp safe_config_identifier(nil, _field), do: :ok
-  defp safe_config_identifier("", _field), do: :ok
+  defp safe_config_identifier("", field), do: {:error, {:invalid_identifier, {field, ""}}}
 
   defp safe_config_identifier(v, field) when is_binary(v) do
     if Regex.match?(@safe_identifier_re, v) do
@@ -565,19 +578,23 @@ defmodule GlorboWeb.AgentLive do
   defp safe_config_identifier(v, field),
     do: {:error, {:invalid_identifier, {field, v}}}
 
-  # Model identifiers in the wild include provider/namespace slashes
-  # (e.g. `lmstudio/qwen/qwen3.6-35b-a3b`, `openai/gpt-4o`). Allow
-  # `/` so legit values aren't rejected, BUT explicitly forbid:
+  # Model identifiers in the wild include:
+  #   * provider/namespace slashes: `lmstudio/qwen/qwen3.6-35b-a3b`,
+  #     `openai/gpt-4o`
+  #   * Ollama-style `tag` separators: `llama2:7b`, `mistral:7b-instruct`
+  # Allow `/` and `:` so legit values aren't rejected, BUT explicitly
+  # forbid:
   #   * `..`  — path traversal
   #   * `//`  — empty-segment / absolute-anchor confusion
   #   * leading or trailing `/`
-  # alongside the same alphanum + `._-` allowlist. Anything that
-  # would let an attacker write `../../../AGENT.md` through to the
-  # dispatcher's `{model}` template substitution is refused here.
-  @safe_model_re ~r/\A[A-Za-z0-9][A-Za-z0-9._\/-]{0,127}\z/
+  # alongside the alphanum + `._-` allowlist. Anything that would let
+  # an attacker write `../../../AGENT.md` through to the dispatcher's
+  # `{model}` template substitution is refused here.
+  @safe_model_re ~r/\A[A-Za-z0-9][A-Za-z0-9._\/:-]{0,127}\z/
 
+  # `model` is REQUIRED in AGENT.md (same as `provider`). Same nil-vs-"" rule.
   defp safe_config_model(nil, _field), do: :ok
-  defp safe_config_model("", _field), do: :ok
+  defp safe_config_model("", field), do: {:error, {:invalid_identifier, {field, ""}}}
 
   defp safe_config_model(v, field) when is_binary(v) do
     cond do

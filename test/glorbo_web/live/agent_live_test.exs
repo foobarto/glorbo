@@ -248,6 +248,68 @@ defmodule GlorboWeb.AgentLiveTest do
       assert agent_md =~ "model: lmstudio/qwen/qwen3.6-35b-a3b"
     end
 
+    # Ollama-style `vendor:tag` identifiers. Copilot review on PR #26
+    # flagged the original model regex as rejecting `:`, which would
+    # break legit configs like `llama2:7b`, `mistral:7b-instruct`.
+    test "config_save accepts Ollama-style model IDs with `:`",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      render_submit(view, "config_save", %{
+        "provider" => "ollama",
+        "model" => "llama2:7b",
+        "reports_to" => "",
+        "heartbeat" => "",
+        "network" => "proxy"
+      })
+
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      # YAML quotes values containing `:` (since `:` is a key-value
+      # delimiter in flow scalars). Accept either bare or quoted form.
+      assert agent_md =~ ~r/^model: "?llama2:7b"?$/m
+    end
+
+    # Copilot review on PR #26: empty `""` was previously :ok, which let
+    # a tampered submit persist `provider: ""` / `model: ""` and break
+    # subsequent AGENT.md parsing. Now empty is rejected.
+    test "config_save rejects empty provider/model with inline error",
+         %{conn: conn, base: base} do
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      render_click(view, "config_edit", %{})
+
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "",
+          "model" => "claude-sonnet-4-5",
+          "reports_to" => "",
+          "heartbeat" => "",
+          "network" => "proxy"
+        })
+
+      assert html =~ "provider cannot be empty"
+
+      html =
+        render_submit(view, "config_save", %{
+          "provider" => "claude-code",
+          "model" => "",
+          "reports_to" => "",
+          "heartbeat" => "",
+          "network" => "proxy"
+        })
+
+      assert html =~ "model cannot be empty"
+
+      # AGENT.md still carries its original (non-empty) provider/model.
+      agent_md =
+        File.read!(Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"]))
+
+      refute agent_md =~ ~r/^provider: ?$/m
+      refute agent_md =~ ~r/^model: ?$/m
+    end
+
     test "config_save accepts blank heartbeat (no-heartbeat agent)",
          %{conn: conn, base: base} do
       {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
