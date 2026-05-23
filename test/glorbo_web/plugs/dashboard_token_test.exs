@@ -266,6 +266,60 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
       refute result.resp_body =~ "super-secret-42"
     end
 
+    # Gemini deep-dive F4: defense against an open-redirect via the
+    # strip-query 302. If `request_path` were `//evil.com/foo`, the
+    # `Location: //evil.com/foo` header is a protocol-relative URL —
+    # browsers follow off-origin. Bandit ought to normalise but
+    # defense-in-depth: the plug refuses to emit a 302 for any
+    # request_path that doesn't start with a single `/`, contains a
+    # backslash, NUL, CR/LF, or embedded `://`. In those cases the
+    # token-strip becomes a no-op (the request still authenticates;
+    # only the cosmetic URL-bar cleanup is dropped).
+    test "does NOT redirect when request_path is `//evil.com/...` (open-redirect defense)" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      result =
+        conn(:get, "/companies?token=secret")
+        |> Plug.Test.init_test_session(%{})
+        |> Map.put(:request_path, "//evil.com/companies")
+        |> GlorboWeb.Plugs.DashboardToken.call([])
+
+      refute result.status == 302,
+             "expected NO redirect when request_path starts with `//` (would be protocol-relative)"
+
+      # And the request still authenticates — the strip-query 302 is
+      # cosmetic; auth happens earlier in the plug. (Copilot review.)
+      refute result.halted,
+             "expected the plug NOT to halt — request should still authenticate"
+    end
+
+    test "does NOT redirect for pathological request_paths (CRLF/NUL/scheme/backslash)" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      for bad <- [
+            "//evil.com/x",
+            "/\\evil.com/x",
+            "/foo\\bar",
+            "/foo\r\nLocation: https://evil.com",
+            "/foo\0bar",
+            "/foo://evil.com",
+            "no-leading-slash",
+            "/path/with://embedded-scheme"
+          ] do
+        result =
+          conn(:get, "/companies?token=secret")
+          |> Plug.Test.init_test_session(%{})
+          |> Map.put(:request_path, bad)
+          |> GlorboWeb.Plugs.DashboardToken.call([])
+
+        refute result.status == 302,
+               "expected no 302 redirect for request_path=#{inspect(bad)}"
+
+        refute result.halted,
+               "expected the plug NOT to halt for request_path=#{inspect(bad)} — auth still passes"
+      end
+    end
+
     test "does NOT redirect a POST carrying ?token= (would drop body)" do
       Application.put_env(:glorbo, :dashboard_token, "secret")
 

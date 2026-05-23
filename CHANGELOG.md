@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — strip-query redirect refuses protocol-relative paths (gemini-F4)
+
+`GlorboWeb.Plugs.DashboardToken.maybe_strip_query_token/1` 302-redirects
+authenticated browser requests to the same URL minus `?token=` (C-120),
+using `conn.request_path` as the `Location` header. If
+`request_path` were `//evil.com/foo`, the resulting protocol-relative
+`Location` header is followed off-origin by browsers — open-redirect
+from a trusted origin. Bandit should normalise `//` to `/` but
+defense-in-depth: a new `safe_request_path?/1` guard refuses to emit
+the 302 for any path that doesn't start with a single `/`, or that
+contains a backslash, NUL, CR, LF, or embedded `://`. In those
+pathological cases the strip becomes a no-op (the request still
+authenticates; only the cosmetic URL-bar cleanup is dropped).
+Regression test pins 8 unsafe shapes (`//evil.com/...`,
+`/\evil.com/...`, embedded CRLF, NUL, scheme, etc.). Identified by
+the gemini deep-dive sweep.
+
 ### Security — `SmartClassifier` rejects integer-encoded IPv4 SSRF bypass
 
 `Glorbo.Network.SmartClassifier.private_ip?/1` only string-prefix-checked
