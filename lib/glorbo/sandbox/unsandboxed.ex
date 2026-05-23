@@ -180,6 +180,20 @@ defmodule Glorbo.Sandbox.Unsandboxed do
   defp open_stdout_tee(path) when is_binary(path) do
     _ = File.mkdir_p(Path.dirname(path))
 
+    # Codex deep-dive F7: lstat-gate before opening to avoid following
+    # a pre-planted symlink at `<agent>/stdout.log`. See the bwrap.ex
+    # mirror of this function for the full threat sketch — same
+    # primitive, this path is hit in the unsandboxed fallback (macOS,
+    # `--no-sandbox`), where there's no namespace boundary to contain
+    # the host write.
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> do_open_stdout_tee(path)
+      {:error, :enoent} -> do_open_stdout_tee(path)
+      _ -> nil
+    end
+  end
+
+  defp do_open_stdout_tee(path) do
     case File.open(path, [:append, :binary]) do
       {:ok, io} -> io
       _ -> nil
@@ -208,24 +222,58 @@ defmodule Glorbo.Sandbox.Unsandboxed do
   # factors these out.
   # ------------------------------------------------------------------
 
+  # Codex deep-dive F8: mirror the bwrap drain caps. Previously the
+  # unsandboxed path's drain_loop did `acc <> data` per chunk with no
+  # ceiling, and the tee `IO.binwrite/2` was unbounded; a malicious or
+  # runaway CLI process could balloon BEAM heap AND fill the host
+  # filesystem (the tee log is append-mode, persists across
+  # dispatches). Same 16 MiB caps used on the bwrap path.
+  @stdout_cap 16 * 1024 * 1024
+  @tee_cap 16 * 1024 * 1024
+
   defp drain_port(port, timeout_s, acc, tee_io) do
     deadline_ms = System.monotonic_time(:millisecond) + timeout_s * 1000
-    drain_loop(port, deadline_ms, acc, tee_io)
+    drain_loop(port, deadline_ms, acc, tee_io, 0)
   end
 
-  defp drain_loop(port, deadline_ms, acc, tee_io) do
+  defp drain_loop(port, deadline_ms, acc, tee_io, tee_written) do
     timeout_ms = max(deadline_ms - System.monotonic_time(:millisecond), 0)
 
     receive do
       {^port, {:data, data}} ->
-        _ = if tee_io, do: IO.binwrite(tee_io, data)
-        drain_loop(port, deadline_ms, acc <> data, tee_io)
+        tee_written = tee_write(tee_io, data, tee_written)
+
+        new_acc =
+          if byte_size(acc) >= @stdout_cap, do: acc, else: acc <> data
+
+        drain_loop(port, deadline_ms, new_acc, tee_io, tee_written)
 
       {^port, {:exit_status, status}} ->
         {:ok, status, acc}
     after
       timeout_ms ->
         {:error, :timeout}
+    end
+  end
+
+  defp tee_write(nil, _chunk, written), do: written
+  defp tee_write(_io, _chunk, written) when written >= @tee_cap, do: written
+
+  defp tee_write(io, chunk, written) do
+    remaining = @tee_cap - written
+
+    if byte_size(chunk) < remaining do
+      IO.binwrite(io, chunk)
+      written + byte_size(chunk)
+    else
+      IO.binwrite(io, binary_part(chunk, 0, remaining))
+
+      IO.binwrite(
+        io,
+        "\n=== stdout.log truncated: per-dispatch #{@tee_cap}-byte cap reached ===\n"
+      )
+
+      @tee_cap
     end
   end
 

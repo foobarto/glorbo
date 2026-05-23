@@ -1018,6 +1018,35 @@ defmodule Glorbo.Sandbox.Bwrap do
   defp open_stdout_tee(path) when is_binary(path) do
     File.mkdir_p!(Path.dirname(path))
 
+    # Codex deep-dive F7: `File.open(path, [:append, ...])` follows
+    # symlinks. The agent has write access to its own workspace + stdout
+    # slot (`agents/<slug>/stdout.log`), so a pre-planted symlink there
+    # could redirect host-side appends to any path the BEAM process can
+    # write (e.g. `/tmp/glorbo.pid`, `~/.bashrc`, the operator's audit
+    # log). Lstat-gate refuses non-regular existing files (incl.
+    # symlinks); nonexistent → fall through to create.
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        do_open_stdout_tee(path)
+
+      {:error, :enoent} ->
+        do_open_stdout_tee(path)
+
+      {:ok, %File.Stat{type: other}} ->
+        Logger.warning(
+          "stdout_log refused path=#{path} type=#{inspect(other)} " <>
+            "(only regular files / nonexistent paths are tee'd)"
+        )
+
+        nil
+
+      {:error, reason} ->
+        Logger.warning("stdout_log lstat failed path=#{path} reason=#{inspect(reason)}")
+        nil
+    end
+  end
+
+  defp do_open_stdout_tee(path) do
     case File.open(path, [:append, :binary]) do
       {:ok, io} ->
         io

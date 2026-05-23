@@ -10,6 +10,43 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — unsandboxed runner gets drain caps + symlink-gated stdout tee (codex-F7/F8)
+
+`Glorbo.Sandbox.Unsandboxed` (the macOS / `--no-sandbox` runner) was
+missing two defenses that `Glorbo.Sandbox.Bwrap` had:
+
+1. **Drain caps (F8).** `drain_loop`'s in-memory `acc <> data` was
+   unbounded and `IO.binwrite(tee_io, data)` had no per-dispatch ceiling.
+   A malicious or runaway CLI writing GBs to stdout could balloon BEAM
+   heap AND fill the host filesystem (the tee log is append-mode and
+   persists across dispatches). Now mirrors the bwrap path's 16 MiB
+   in-memory + 16 MiB on-disk caps; once a cap is reached the port is
+   still drained to completion so the CLI's exit code surfaces, but
+   subsequent chunks are dropped + a one-shot truncation marker is
+   written to disk.
+
+2. **Stdout-tee symlink gate (F7, see below).**
+
+### Security — stdout-tee paths lstat-gated before append (codex-F7)
+
+Both `Glorbo.Sandbox.Bwrap` and `Glorbo.Sandbox.Unsandboxed` opened
+the per-dispatch stdout tee log with
+`File.open(stdout_log_path, [:append, :binary])`, which **follows
+symlinks**. The agent has write access to its own
+`agents/<slug>/stdout.log` slot; a pre-planted symlink there could
+redirect host-side appends to any path the BEAM process can write —
+`/tmp/glorbo.pid`, `~/.bashrc`, the operator's audit log, etc. Under
+bwrap the bind layout limits the agent's reach during normal
+execution, but the stdout-tee opens happen on the HOST side
+(`open_stdout_tee/1` runs in the BEAM, not the sandboxed child), so
+a symlink redirects host-side I/O directly.
+
+Fixed by `File.lstat`-gating the path before open: only regular files
+(or nonexistent paths, where the open creates a fresh file) are
+tee'd. Symlinks, directories, devices, FIFOs, etc. are refused with
+a logged warning and the tee silently degrades to nil (best-effort
+logging). Identified by the codex deep-dive sweep.
+
 ### Security — strip-query redirect refuses protocol-relative paths (gemini-F4)
 
 `GlorboWeb.Plugs.DashboardToken.maybe_strip_query_token/1` 302-redirects
