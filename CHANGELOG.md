@@ -10,6 +10,27 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — `cli_auth_bind_flags` validates host+sandbox paths (HIGH, codex-F1)
+
+`Glorbo.Sandbox.Bwrap.cli_auth_bind_flags/1` previously spliced `host`
+and `sandbox` paths from provider-config TOML into bwrap argv with no
+validation — only `mode` was checked in the loader. A config-influencer
+(untrusted provider-registry contribution, malicious copy-paste from a
+3rd-party `providers.toml`, etc.) could mount `host="/"` or
+`host="/root"` at `sandbox="/etc"`, either exfiltrating host creds
+through the sandbox surface or shadowing system mounts inside the
+namespace. Now `assert_valid_auth_bind_paths!/2` raises on:
+
+- **host**: not absolute (must be tilde-expanded); contains `..`;
+  contains NUL.
+- **sandbox**: not under `/workspace/` (the only prefix shipped
+  providers use, matching where the agent's workspace mount lives);
+  contains `..`; contains NUL.
+
+Mirrors the existing `approved_path_flags`/`assert_valid_grant_path!`
+pattern. Regression test (B5d) pins 7 unsafe shapes shut. Identified by
+the codex deep-dive sweep.
+
 ### Security — agent config form validates provider/model/reports_to/autonomy (HIGH, gemini-F2)
 
 `GlorboWeb.AgentLive.do_config_save/2` used to write `provider`,

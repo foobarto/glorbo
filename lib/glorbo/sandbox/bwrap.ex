@@ -378,15 +378,95 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   defp cli_auth_bind_flags(binds) when is_list(binds) do
     Enum.flat_map(binds, fn
-      {host, sandbox, mode, :dir} -> ["--dir", sandbox] ++ bind_flag(host, sandbox, mode)
-      {host, sandbox, mode, _type} -> bind_flag(host, sandbox, mode)
-      {host, sandbox, mode} -> bind_flag(host, sandbox, mode)
-      {host, sandbox} -> bind_flag(host, sandbox, :ro)
+      {host, sandbox, mode, :dir} ->
+        :ok = assert_valid_auth_bind_paths!(host, sandbox)
+        ["--dir", sandbox] ++ bind_flag(host, sandbox, mode)
+
+      {host, sandbox, mode, _type} ->
+        :ok = assert_valid_auth_bind_paths!(host, sandbox)
+        bind_flag(host, sandbox, mode)
+
+      {host, sandbox, mode} ->
+        :ok = assert_valid_auth_bind_paths!(host, sandbox)
+        bind_flag(host, sandbox, mode)
+
+      {host, sandbox} ->
+        :ok = assert_valid_auth_bind_paths!(host, sandbox)
+        bind_flag(host, sandbox, :ro)
     end)
   end
 
   defp bind_flag(host, sandbox, :rw), do: ["--bind", host, sandbox]
   defp bind_flag(host, sandbox, _), do: ["--ro-bind", host, sandbox]
+
+  # Defense-in-depth for the auth-bind argv slot (codex deep-dive F1).
+  # Loader.parse_auth_binds only validates `mode`; `host` and `sandbox`
+  # flow into argv unchecked. A config-influencer (untrusted provider
+  # registry contribution, copy-paste from a 3rd-party config, etc.)
+  # could mount `host="/"` or `host="/root"` at `sandbox="/workspace"`,
+  # either reading host creds out of the sandbox surface or shadowing
+  # Glorbo's own workspace mount. The constraints below mirror the
+  # `approved_path_flags` checks: both paths absolute, no `..`, no NUL/
+  # control chars, and sandbox restricted to the `/workspace/` subtree
+  # (the only prefix shipped providers actually use, and the only one
+  # an agent's host workspace is mounted at).
+  defp assert_valid_auth_bind_paths!(host, sandbox) do
+    :ok = assert_valid_auth_bind_host!(host)
+    :ok = assert_valid_auth_bind_sandbox!(sandbox)
+    :ok
+  end
+
+  defp assert_valid_auth_bind_host!(path) when is_binary(path) do
+    cond do
+      String.contains?(path, <<0>>) ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: host must not contain NUL, got #{inspect(path)}"
+
+      not String.starts_with?(path, "/") ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: host must be absolute (tilde-expanded), " <>
+                "got #{inspect(path)}"
+
+      String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: host must not contain `..`, got #{inspect(path)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp assert_valid_auth_bind_host!(other) do
+    raise ArgumentError,
+          "cli_auth_bind_flags: host must be a string, got #{inspect(other)}"
+  end
+
+  defp assert_valid_auth_bind_sandbox!(path) when is_binary(path) do
+    cond do
+      String.contains?(path, <<0>>) ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: sandbox must not contain NUL, got #{inspect(path)}"
+
+      # `/workspace` alone would shadow the workspace mount; require a
+      # subpath under `/workspace/`.
+      not String.starts_with?(path, "/workspace/") ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: sandbox must live under `/workspace/`, " <>
+                "got #{inspect(path)}"
+
+      String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: sandbox must not contain `..`, got #{inspect(path)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp assert_valid_auth_bind_sandbox!(other) do
+    raise ArgumentError,
+          "cli_auth_bind_flags: sandbox must be a string, got #{inspect(other)}"
+  end
 
   # ---------------------------------------------------------------------------
   # GEP-27: approved external path mounts
