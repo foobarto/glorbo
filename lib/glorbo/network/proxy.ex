@@ -106,6 +106,12 @@ defmodule Glorbo.Network.Proxy do
   def stop(server) do
     GenServer.stop(server)
   catch
+    # Narrow catch — only the benign "process is already gone" race.
+    # Any OTHER exit reason from GenServer.stop (e.g. terminate/2
+    # crashed, or the server died abnormally during the call) is
+    # propagated so callers can see real failures rather than have
+    # them masked as `:ok`. Best-effort teardown contexts (test
+    # `on_exit`) should wrap their own try/catch.
     :exit, {:noproc, _} -> :ok
     :exit, :noproc -> :ok
   end
