@@ -1410,11 +1410,13 @@ defmodule Glorbo.Agent.Dispatch do
   # can't bloat the audit JSONL. Non-binary targets are left untouched
   # (maybe_put_target drops them).
   defp bound_target(target) when is_binary(target) do
-    if byte_size(target) > @max_tool_audit_target_bytes do
-      binary_part(target, 0, @max_tool_audit_target_bytes)
-    else
-      target
-    end
+    # Codex deep-dive follow-up: `binary_part/3` slices by raw bytes
+    # and can split a multi-byte UTF-8 codepoint, producing an invalid
+    # binary that crashes `Jason.encode!` in the audit writer — which
+    # then drops the audit record entirely (because `Audit.emit/3`
+    # swallows the failure). Route through `Glorbo.Util.UTF8.safe_byte_slice/2`
+    # so the cap lands on a codepoint boundary.
+    Glorbo.Util.UTF8.safe_byte_slice(target, @max_tool_audit_target_bytes)
   end
 
   defp bound_target(target), do: target

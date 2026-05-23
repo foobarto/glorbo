@@ -494,19 +494,19 @@ defmodule Glorbo.Sandbox.Bwrap do
           "cli_auth_bind_flags: sandbox must be a string, got #{inspect(other)}"
   end
 
-  # Catch bypass variants like `/workspace/`, `/workspace/.`, that
-  # the OS would resolve to the same mount as bare `/workspace`. Strip
-  # trailing slashes and `/.` segments so the denylist check is
-  # canonical. (Copilot review on PR #27.)
-  defp normalise_path(path) do
-    path
-    |> String.replace_suffix("/.", "")
-    |> String.trim_trailing("/")
-    |> case do
-      "" -> "/"
-      normalised -> normalised
-    end
-  end
+  # Canonicalise a path so the denylist exact-match check is
+  # bypass-proof. The original implementation stripped only ONE trailing
+  # `/.`, which let codex's follow-up PoC bypass the denylist with
+  # `/etc/./`, `/./etc`, `/./`, `/workspace/./`, and other dot-segment
+  # variants the kernel resolves to the same forbidden target.
+  #
+  # `Path.expand/1` is the canonical normaliser — it collapses ALL `/./`
+  # segments (leading, internal, trailing) and removes trailing slashes.
+  # It also resolves `..` segments, but that's safe here because the
+  # callers reject `..` with an explicit `String.contains?` check BEFORE
+  # calling this helper, so a `..` can never sneak past Path.expand's
+  # silent collapse. (Codex deep-dive follow-up on PR #27.)
+  defp normalise_path(path), do: Path.expand(path)
 
   # Reject NUL, all C0 control codes (0x00..0x1F), and DEL (0x7F).
   # Bare argv slots don't need CR/LF for header smuggling but they

@@ -126,5 +126,9 @@ TODO.md
 .serena/
 .tmp/
 
-# Dialyzer PLT cache (build artifact)
-/priv/plts/
+# Dialyzer PLT cache (build artifact). Under `_build/` (which is
+# already ignored above) so Mix releases / Burrito don't ship it as
+# runtime priv data — see the mix.exs `dialyzer:` comment for the
+# codex-deep-dive follow-up. Explicit anyway in case `_build/` ever
+# stops being a blanket ignore.
+/_build/dialyzer_plts/

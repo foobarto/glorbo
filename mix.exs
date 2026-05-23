@@ -20,8 +20,14 @@ defmodule Glorbo.MixProject do
       # (intentionally empty) but by the COUNT-regression gate in the CI
       # workflow — see docs/testing/dialyzer-baseline.md.
       dialyzer: [
-        plt_local_path: "priv/plts",
-        plt_core_path: "priv/plts",
+        # Codex deep-dive follow-up: PLTs MUST NOT live under `priv/`.
+        # Mix releases (and Burrito wrapping) copy `priv/` into the
+        # release tarball as runtime data, so PLTs under `priv/plts`
+        # were bundled into the shipped x86_64 binary — bloat + leaked
+        # build/module/type metadata. Park them under `_build/` instead,
+        # which is already release-excluded.
+        plt_local_path: "_build/dialyzer_plts",
+        plt_core_path: "_build/dialyzer_plts",
         # :credo is needed so the custom Credo check in lib_dev/ (which
         # calls Credo.Check.*, Credo.Code.prewalk/2, etc.) doesn't trip
         # `unknown_function` warnings — those modules live in the :credo

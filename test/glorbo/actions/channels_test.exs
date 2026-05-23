@@ -7,6 +7,45 @@ defmodule Glorbo.Actions.ChannelsTest do
   alias Glorbo.Actions.Channels
   alias Glorbo.Test.TmpGlorboHome
 
+  # Codex-deep-dive follow-up: poll-based wait for a commit to land in
+  # the HomeHistory log. The previous `Process.sleep(1000)` flaked on
+  # loaded CI (aarch64) when the commit took >1s to fsync, leaving
+  # HEAD pointing at the earlier commit and surfacing the wrong
+  # subject. `prefix` is the expected commit-subject prefix (e.g.
+  # "channel.archive:"); we poll up to `timeout_ms` for HEAD to
+  # match before giving up with a clear diagnostic.
+  defp wait_for_history_head(base, prefix, timeout_ms \\ 10_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_wait_for_history_head(base, prefix, deadline)
+  end
+
+  defp do_wait_for_history_head(base, prefix, deadline) do
+    case Glorbo.HomeHistory.log(base: base, limit: 5) do
+      {:ok, [head | _]} ->
+        if String.starts_with?(head.subject, prefix) do
+          head
+        else
+          if System.monotonic_time(:millisecond) < deadline do
+            Process.sleep(50)
+            do_wait_for_history_head(base, prefix, deadline)
+          else
+            flunk(
+              "history HEAD did not match prefix #{inspect(prefix)} within timeout; " <>
+                "got subject=#{inspect(head.subject)}"
+            )
+          end
+        end
+
+      _ ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(50)
+          do_wait_for_history_head(base, prefix, deadline)
+        else
+          flunk("history log empty / unreadable after timeout waiting for #{inspect(prefix)}")
+        end
+    end
+  end
+
   defmodule FakeAudit do
     use GenServer
 
@@ -224,9 +263,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                  audit: audit
                )
 
-      Process.sleep(1000)
-
-      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      head = wait_for_history_head(base, "channel.create: ")
       assert head.subject == "channel.create: companies/acme/channels/engineering.md"
       assert head.author_name == "Agent ceo"
 
@@ -247,7 +284,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                )
 
       # Wait for the create commit to land before archiving.
-      Process.sleep(1000)
+      _ = wait_for_history_head(base, "channel.create: ")
 
       assert {:ok, _} =
                Channels.archive("acme", "engineering",
@@ -256,9 +293,7 @@ defmodule Glorbo.Actions.ChannelsTest do
                  audit: audit
                )
 
-      Process.sleep(1000)
-
-      {:ok, [head | _]} = HomeHistory.log(base: base, limit: 5)
+      head = wait_for_history_head(base, "channel.archive:")
       assert head.subject =~ "channel.archive:"
 
       {body, 0} = System.cmd("git", ["log", "-1", "--pretty=%B"], cd: base)

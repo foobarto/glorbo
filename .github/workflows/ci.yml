@@ -135,9 +135,14 @@ jobs:
         if: matrix.arch == 'x86_64'
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          path: priv/plts
-          key: plt-ubuntu24-otp28.0.2-ex1.18.4-${{ hashFiles('mix.lock') }}
-          restore-keys: plt-ubuntu24-otp28.0.2-ex1.18.4-
+          path: _build/dialyzer_plts
+          # Bumped key prefix (`plt2-`) after the codex-deep-dive PLT
+          # relocation: PLTs moved from `priv/plts` (which Mix releases
+          # bundle as runtime data) into `_build/dialyzer_plts` (release-
+          # excluded). Old cache entries still point at the old path; the
+          # key bump forces a one-time rebuild.
+          key: plt2-ubuntu24-otp28.0.2-ex1.18.4-${{ hashFiles('mix.lock') }}
+          restore-keys: plt2-ubuntu24-otp28.0.2-ex1.18.4-
 
       - name: Dialyzer (type analysis — fails on NEW warnings vs baseline)
         if: matrix.arch == 'x86_64'

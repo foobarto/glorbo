@@ -10,6 +10,58 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex deep-dive follow-up: auth-bind canonicalisation, UTF-8-safe audit truncation, throttled-stall fix, PLT relocation, flake fix
+
+A bundled wave of fixes addressing the five codex findings filed after
+the v0.24.0 deep-dive review, plus one CI flake the wave surfaced:
+
+- **Auth-bind dot-segment bypass** — `cli_auth_bind_flags`'s
+  `normalise_path/1` previously stripped only ONE trailing `/.`, so
+  variants like `/etc/./`, `/./etc`, `/./`, and `/workspace/./` slipped
+  past the critical-mount denylist (kernel resolves them to the same
+  forbidden target). Now uses `Path.expand/1` which collapses ALL
+  dot-segments. The pre-existing `..` rejection runs first so
+  `Path.expand`'s silent `..` resolution can't be smuggled. New
+  regression tests pin 9 dot-segment shapes shut.
+- **UTF-8-safe audit truncation** — `Glorbo.Util.UTF8.safe_byte_slice/2`
+  is the new shared helper; both `Glorbo.Agent.Dispatch.bound_target/1`
+  (tool-audit `target`, 1 KiB cap) and
+  `Glorbo.CLI.Dispatcher.Acp.Client.truncate_string/1` (ACP detail
+  fields, 256 B cap) now route through it. Previously `binary_part/3`
+  could split a multi-byte codepoint, leaving an invalid UTF-8 binary
+  that crashed `Jason.encode!` in the audit writer — which then
+  dropped the audit record (the calling `Audit.emit/3` swallows the
+  failure). The new helper walks back over UTF-8 continuation bytes
+  so the cap lands on a codepoint boundary, even for 2/3/4-byte
+  sequences. 7 focused tests cover ASCII, é/日/🦊 split-tail cases,
+  and Jason-encodability round-trip.
+- **Throttled inbox stall** — `Agent.Server`'s
+  `finish/{:throttled, ...}` recorded `pending_wake` but had no retry
+  mechanism; the per-company `DispatchSemaphore` doesn't notify on
+  slot release, so the only consumer of `pending_wake` was a future
+  unrelated dispatch's `drain_on_free`. A malicious agent that kept
+  the cap saturated could stall other agents' work indefinitely. Now
+  arms a jittered (1–5 s) `Process.send_after :throttled_retry` self-
+  message, coalesced via a `throttled_retry_ref` so successive
+  throttles don't pile up timers. Polling is bounded and only fires
+  when the agent has queued work; no semaphore-coupling needed.
+- **PLT relocation** — `dialyzer:` `plt_local_path` and
+  `plt_core_path` moved from `priv/plts/` (inside the application's
+  runtime priv tree, which Mix releases bundle as runtime data and
+  Burrito packages into the shipped binary) to `_build/dialyzer_plts/`
+  (release-excluded). CI cache key bumped to `plt2-…` so old cache
+  entries don't restore into the new location. Avoids artifact
+  bloat + low-sensitivity build-metadata leak in shipped releases.
+- **`channels_test.exs` flake** — Replaced two `Process.sleep(1000)`
+  calls in the `channel.archive` test with a polling
+  `wait_for_history_head/3` helper. Under loaded CI (especially
+  aarch64) the 1 s sleep wasn't always enough for the commit to
+  fsync; the test then read HEAD and got the previous
+  `channel.create` commit. Polling waits up to 10 s for the expected
+  subject prefix and flunks with a clear diagnostic on timeout —
+  faster on the happy path (3.4 s vs ~10 s wall) AND robust against
+  slow runners.
+
 ## [0.24.0] — 2026-05-23
 
 Substantial security-hardening release driven by a deep-dive review

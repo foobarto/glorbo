@@ -452,6 +452,45 @@ defmodule Glorbo.Agent.ServerTest do
       # D-185: pending_wake is now a 3-tuple {trigger, task | nil, ts}; a
       # re-queued throttled inbox wake carries no explicit task.
       assert %{pending_wake: {:inbox, nil, _}} = :sys.get_state(pid)
+
+      # Codex deep-dive follow-up: a throttled_retry timer must be
+      # armed so the wake doesn't sit forever waiting for an unrelated
+      # later event.
+      assert %{throttled_retry_ref: ref} = :sys.get_state(pid)
+      assert is_reference(ref)
+    end
+
+    # Codex deep-dive follow-up: when the throttled_retry timer fires
+    # (or the test sends :throttled_retry directly), the agent must
+    # consume pending_wake and re-attempt dispatch — re-throttling
+    # if the cap is still saturated, or proceeding if it's freed.
+    test "throttled_retry triggers a re-dispatch attempt", ctx do
+      {base, rel_path, _src} = setup_inbox_file(ctx, "retry.md")
+      counter = :counters.new(1, [:atomics])
+      test_pid = ctx.test_pid
+
+      dispatch_fun = fn _spec, task, _opts ->
+        :ok = :counters.add(counter, 1, 1)
+        n = :counters.get(counter, 1)
+        send(test_pid, {:dispatched, task.task_id, n})
+        # First call throttles, second call succeeds.
+        if n == 1, do: {:throttled, :company_dispatch_cap}, else: {:ok, %{exit_status: 0}}
+      end
+
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      task = %{task_id: "retry", task_path: rel_path, prompt: "x", trigger: :inbox}
+      :ok = AgentServer.wake(pid, :inbox, task)
+      assert_receive {:dispatched, "retry", 1}, 1_000
+
+      # Manually fire the retry without waiting for the 1-5s jitter.
+      send(pid, :throttled_retry)
+      assert_receive {:dispatched, "retry", 2}, 1_000
+
+      # After success, the ref clears and pending_wake clears.
+      Process.sleep(50)
+      state = :sys.get_state(pid)
+      assert state.throttled_retry_ref == nil
     end
   end
 
