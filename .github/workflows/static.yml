@@ -5,11 +5,15 @@ on:
   # Only deploy when the landing page (or this workflow) actually changes —
   # not on every commit to main. `assets/` is the marketing site that gets
   # published to Pages; the rest of the repo (the app) doesn't affect it.
+  # `mix.exs` IS included: a release commit bumps the version there, and
+  # the Sync step below pulls that version into the landing page at deploy
+  # time, so chore(release) commits need to re-deploy too.
   push:
     branches: ["main"]
     paths:
       - "assets/**"
       - ".github/workflows/static.yml"
+      - "mix.exs"
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -38,6 +42,34 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      # Single source of truth for the version is `mix.exs`. Substitute
+      # whatever `v\d+\.\d+\.\d+` shape sits in the committed landing
+      # page so the deployed page can never drift behind a release.
+      # `mix.exs` is a tracked file in our own repo — no event-data
+      # interpolation, no injection vector.
+      - name: Sync landing-page version from mix.exs
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -nE 's/.*version: *"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' mix.exs | head -1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read version from mix.exs"
+            exit 1
+          fi
+          echo "Substituting v$VERSION into assets/index.html"
+          sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v$VERSION/g" assets/index.html
+          # Assert the substitution actually landed — guards against future
+          # edits that drop the version literal from the landing page (which
+          # would leave the deploy with stale data we couldn't otherwise
+          # detect). `grep -c` exits 0 even with 0 matches and just prints
+          # the count.
+          MATCHES=$(grep -cE "v$VERSION" assets/index.html || true)
+          echo "Found $MATCHES v$VERSION mentions in assets/index.html"
+          if [ "$MATCHES" -lt 1 ]; then
+            echo "::error::landing-page sync produced 0 v$VERSION mentions — refusing to deploy stale page"
+            exit 1
+          fi
+
       - name: Upload artifact
         # v4.0.0 — v3.0.1 internally used a bare `actions/upload-artifact@v4`,
         # which the repo's "require SHA-pinned actions" ruleset rejects
