@@ -10,6 +10,28 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — `refuse_contract_write` canonicalises before name check (CRITICAL, gemini-F1)
+
+`Glorbo.Actions.Agents.refuse_contract_write/1` compared
+`Path.basename(rel)` to `@contract_files` (`AGENT.md` / `stdout.log`).
+That check could be bypassed with a trailing `/.`:
+
+```elixir
+Path.basename("workspace/../AGENT.md/.")  # => "."  (gate passes)
+Path.expand("workspace/../AGENT.md/.")    # => ".../AGENT.md"  (write hits)
+```
+
+while `Path.expand/1` resolves to the real `AGENT.md` path the write
+would hit. Reachable by anyone holding director-form access (or,
+transitively, by any auth/CSRF/XSS path to that form). Overwriting
+`AGENT.md` is a privilege-escalation primitive in a system whose trust
+model rests on the contract file (it carries the agent's provider,
+permissions, sandbox config). Fix: compare
+`Path.basename(Path.expand(rel))` so the trailing `/.` (and any `..`)
+are normalised before the gate check. Regression test pins 5 bypass
+forms shut. Identified by the gemini deep-dive sweep + empirical
+verification.
+
 ### Security — `doctor --install-deps` no longer trusts `$PATH` (C-043)
 
 `Glorbo.Doctor.Fixer.run_install/3` previously did `System.cmd("sudo", …)` and
