@@ -540,6 +540,14 @@ defmodule Glorbo.Sandbox.Bwrap do
       # unchecked pass-through.
       :ok = assert_valid_grant_path!(host, :host_path)
       :ok = assert_valid_sandbox_path!(sandbox)
+      # Codex deep-dive F2: PathRequestGate's symlink-segment check ran
+      # at APPROVAL time. The grant then sits in PathGrantStore until
+      # the agent dispatches; between those events an attacker with
+      # write access to any ancestor of `host` could plant a symlink
+      # (`/home/u/granted-dir/..` → `/etc`) that bwrap then binds. Re-
+      # walk lstat-checks here so the TOCTOU window collapses to the
+      # `assert → Port.open` interval (microseconds, host-FS-bound).
+      :ok = assert_no_symlink_segment!(host)
 
       flag = if mode == :write, do: "--bind", else: "--ro-bind"
       [flag, host, sandbox]
@@ -547,6 +555,44 @@ defmodule Glorbo.Sandbox.Bwrap do
   end
 
   def approved_path_flags(_), do: []
+
+  # Walk every ancestor of `path` from `/` down and refuse if any
+  # segment is a symlink. Non-existent trailing segments are allowed
+  # — the path may name a yet-to-be-created file the operator approved
+  # ahead of time. Matches `Glorbo.PathRequestGate`'s approval-time
+  # check; called again here to close the TOCTOU window between
+  # approval and dispatch.
+  defp assert_no_symlink_segment!(path) when is_binary(path) do
+    path
+    |> Path.split()
+    |> Enum.reduce_while([], fn
+      "/", _acc ->
+        {:cont, ["/"]}
+
+      seg, [] ->
+        {:cont, [seg]}
+
+      seg, [head | _] = acc ->
+        candidate = Path.join(head, seg)
+
+        case File.lstat(candidate) do
+          {:ok, %File.Stat{type: :symlink}} ->
+            {:halt, {:symlink, candidate}}
+
+          _ ->
+            {:cont, [candidate | acc]}
+        end
+    end)
+    |> case do
+      {:symlink, where} ->
+        raise ArgumentError,
+              "approved_path_flags: host_path crosses a symlinked component, " <>
+                "got #{inspect(where)} (full path: #{inspect(path)})"
+
+      _ ->
+        :ok
+    end
+  end
 
   # host_path must be an absolute path with no `..` segments so
   # bwrap's `--bind` / `--ro-bind` can't accidentally resolve
