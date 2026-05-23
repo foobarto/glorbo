@@ -293,10 +293,66 @@ defmodule Glorbo.Network.SmartClassifier do
       ipv6_ula?(host) ->
         true
 
+      # Threatmodel wave 26: `inet_aton`-legacy integer-encoded IPv4
+      # forms (decimal `2852039166`, hex `0xa9fea9fe`, octal-dotted
+      # `0251.0376.0251.0376`, hybrid short-form `169.16689662`, etc.)
+      # all resolve via `:inet.getaddrs` to the same 4-byte address as
+      # their canonical dotted form — but the string-prefix checks above
+      # only catch the canonical shape. An attacker can encode
+      # `169.254.169.254` (AWS metadata) as `2852039166` to bypass
+      # `private_ip?` and reach link-local from a smart-mode classifier
+      # cache hit / denylist-fallthrough allow verdict. (DNS-rebind
+      # defense in `proxy.ex` still catches the *resolved* IP for the
+      # data path, but the classifier's T8 invariant — "no private IP
+      # destination, ever" — must hold at THIS layer too: future
+      # refactors could remove Layer 2, and a misleading `:allow`
+      # verdict pollutes audit / smart-mode cache.)
+      integer_encoded_private_ipv4?(host) ->
+        true
+
       true ->
         false
     end
   end
+
+  # A host is "numeric-IP-shaped" if every dot-separated segment is a
+  # plain decimal, an `0x`-prefixed hex literal, or a leading-zero
+  # octal literal — i.e. the encodings BSD `inet_aton` accepts beyond
+  # the strict dotted-decimal form. Bounded check; no DNS.
+  @numeric_ip_re ~r/^(0[xX][0-9a-fA-F]+|0[0-7]+|[1-9][0-9]*|0)(\.(0[xX][0-9a-fA-F]+|0[0-7]+|[1-9][0-9]*|0)){0,3}$/
+
+  defp integer_encoded_private_ipv4?(host) do
+    with true <- String.match?(host, @numeric_ip_re),
+         # `:inet.getaddrs/3` parses integer-encoded IPv4 forms via
+         # `inet_parse:ipv4_address/1` BEFORE it considers DNS — those
+         # paths never touch the resolver. We pre-filter to numeric-IP
+         # shapes via the regex above, so a real DNS hostname (which
+         # would consume the timeout budget) never reaches this call.
+         # The small positive timeout is belt-and-braces: if a future
+         # Erlang version did dispatch to the resolver for some edge
+         # case, it fails fast rather than blocking the classifier hot
+         # path. (Copilot review on PR #24.)
+         {:ok, [tup | _]} <- :inet.getaddrs(String.to_charlist(host), :inet, 100) do
+      ipv4_tuple_private?(tup)
+    else
+      _ -> false
+    end
+  end
+
+  # Mirrors the string-prefix checks in `private_ip?/1` exactly:
+  # `0.0.0.0` is the unspecified address (and the only `0.x.y.z`
+  # variant the string check rejects). Don't broaden the range to
+  # all of `0.0.0.0/8` — Copilot flagged the original `{0, _, _, _}`
+  # as more permissive (denying more) than the upstream check; pin
+  # this list to match. (Copilot review on PR #24.)
+  defp ipv4_tuple_private?({0, 0, 0, 0}), do: true
+  defp ipv4_tuple_private?({127, _, _, _}), do: true
+  defp ipv4_tuple_private?({10, _, _, _}), do: true
+  defp ipv4_tuple_private?({172, b, _, _}) when b in 16..31, do: true
+  defp ipv4_tuple_private?({192, 168, _, _}), do: true
+  defp ipv4_tuple_private?({169, 254, _, _}), do: true
+  defp ipv4_tuple_private?({100, b, _, _}) when b in 64..127, do: true
+  defp ipv4_tuple_private?(_), do: false
 
   defp ipv6_loopback_or_unspec?(host) do
     normal = host |> String.trim_leading("[") |> String.trim_trailing("]")

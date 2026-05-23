@@ -76,6 +76,41 @@ defmodule Glorbo.Network.SmartClassifierTest do
       end
     end
 
+    # Threatmodel wave 26: `inet_aton`-legacy integer-encoded IPv4
+    # forms bypass string-prefix private-IP checks but still resolve
+    # via `:inet.getaddrs` to the canonical private/loopback/link-local
+    # address. The canonical SSRF technique here is encoding
+    # 169.254.169.254 (AWS metadata) as the decimal `2852039166`,
+    # octal-dotted `0251.0376.0251.0376`, or hybrid short-form
+    # `169.16689662` — all of which an attacker can put in the CONNECT
+    # request's host:port to reach link-local from a smart-mode classifier
+    # cache hit / denylist-fallthrough allow verdict.
+    test "private-IP integer-encoded forms — denied (wave 26)" do
+      cfg = %{allow: [], deny: []}
+
+      for {bad, label} <- [
+            {"2852039166", "decimal 169.254.169.254 (AWS metadata)"},
+            {"0251.0376.0251.0376", "octal-dotted 169.254.169.254"},
+            {"169.254.43518", "hybrid 3-part 169.254.169.254"},
+            {"169.16689662", "hybrid 2-part 169.254.169.254"},
+            {"2130706433", "decimal 127.0.0.1 (loopback)"},
+            {"0177.0.0.1", "octal-leading 127.0.0.1"},
+            {"127.1", "short-form 127.0.0.1"},
+            {"167772161", "decimal 10.0.0.1 (RFC1918)"},
+            {"3232235521", "decimal 192.168.0.1 (RFC1918)"}
+          ] do
+        assert {:deny, :private_ip} = SmartClassifier.classify(bad, cfg),
+               "expected #{bad} (#{label}) to be rejected as private"
+      end
+
+      # Negative cases: real DNS labels + public IPv4s must still pass
+      # `private_ip?` (i.e. fall through to allowlist/denylist logic).
+      for good <- ["example.com", "api.anthropic.com", "8.8.8.8", "1.1.1.1"] do
+        refute match?({:deny, :private_ip}, SmartClassifier.classify(good, cfg)),
+               "expected #{good} to NOT be rejected as private"
+      end
+    end
+
     # T8: private-IP rejection outranks operator/agent-supplied
     # allowlists. SSRF via the proxy is the only reason the proxy
     # exists on a netns — letting "127.0.0.1" or "10.0.0.1" through
