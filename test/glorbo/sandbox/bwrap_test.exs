@@ -256,12 +256,26 @@ defmodule Glorbo.Sandbox.BwrapTest do
         # host: contains ..
         [{"/etc/../passwd", "/workspace/.x"}],
         [{"/foo/..", "/workspace/.x"}],
-        # host: contains NUL
+        # host: control bytes — NUL, CR, LF, tab, DEL
         [{"/etc\0/passwd", "/workspace/.x"}],
+        [{"/etc\n/passwd", "/workspace/.x"}],
+        [{"/etc\r/passwd", "/workspace/.x"}],
+        [{"/etc\t/passwd", "/workspace/.x"}],
+        [{"/etc\x7F/passwd", "/workspace/.x"}],
+        # host: critical system roots — mount the host FS or dirs that
+        # should never be agent-readable. (Copilot PR #27 review.)
+        [{"/", "/workspace/.creds"}],
+        [{"/etc", "/workspace/.etc"}],
+        [{"/root", "/workspace/.root"}],
+        [{"/proc", "/workspace/.proc"}],
+        [{"/sys", "/workspace/.sys"}],
         # sandbox: not absolute
         [{"/home/user/.claude", "relative/sandbox"}],
-        # sandbox: EXACTLY shadows the workspace mount
+        # sandbox: EXACTLY shadows the workspace mount, AND its
+        # bypass variants that the OS resolves to the same path.
         [{"/home/user/.claude", "/workspace"}],
+        [{"/home/user/.claude", "/workspace/"}],
+        [{"/home/user/.claude", "/workspace/."}],
         # sandbox: EXACTLY shadows other critical mounts
         [{"/home/user/.claude", "/"}],
         [{"/home/user/.claude", "/etc"}],
@@ -269,8 +283,9 @@ defmodule Glorbo.Sandbox.BwrapTest do
         [{"/home/user/.claude", "/inbox"}],
         # sandbox: contains ..
         [{"/home/user/.claude", "/workspace/../etc"}],
-        # sandbox: NUL
-        [{"/home/user/.claude", "/workspace/\0evil"}]
+        # sandbox: control bytes
+        [{"/home/user/.claude", "/workspace/\0evil"}],
+        [{"/home/user/.claude", "/workspace/\nevil"}]
       ]
 
       for binds <- bad_cases do

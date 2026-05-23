@@ -403,24 +403,32 @@ defmodule Glorbo.Sandbox.Bwrap do
   # Loader.parse_auth_binds only validates `mode`; `host` and `sandbox`
   # flow into argv unchecked. A config-influencer (untrusted provider
   # registry contribution, copy-paste from a 3rd-party config, etc.)
-  # could mount `host="/"` or `host="/root"` at `sandbox="/workspace"`,
-  # either reading host creds out of the sandbox surface or shadowing
-  # Glorbo's own workspace mount. The constraints below mirror the
-  # `approved_path_flags` checks: both paths absolute, no `..`, no NUL/
-  # control chars, and sandbox restricted to the `/workspace/` subtree
-  # (the only prefix shipped providers actually use, and the only one
-  # an agent's host workspace is mounted at).
+  # could mount `host="/"` at `sandbox="/workspace/.creds"`, exfiltrating
+  # the entire host FS through the sandbox surface; or `sandbox="/etc"`
+  # to shadow system mounts. Both paths are gated below: absolute, no
+  # `..`, no NUL/control bytes, and neither EXACTLY matches a critical
+  # mount point that a bind would shadow.
   defp assert_valid_auth_bind_paths!(host, sandbox) do
     :ok = assert_valid_auth_bind_host!(host)
     :ok = assert_valid_auth_bind_sandbox!(sandbox)
     :ok
   end
 
+  # Hosts: mounting any of these as the bind SOURCE either drags
+  # the entire host FS into the namespace (`/`) or pulls in dirs
+  # that should never be agent-readable (root home, system
+  # configs, kernel surfaces, etc.). Identified by Copilot review
+  # on PR #27.
+  @forbidden_host_exact ~w(
+    / /root /etc /proc /sys /dev /boot /home /lib /lib64
+  )
+
   defp assert_valid_auth_bind_host!(path) when is_binary(path) do
     cond do
-      String.contains?(path, <<0>>) ->
+      contains_control_char?(path) ->
         raise ArgumentError,
-              "cli_auth_bind_flags: host must not contain NUL, got #{inspect(path)}"
+              "cli_auth_bind_flags: host must not contain control bytes " <>
+                "(NUL, CR, LF, etc.), got #{inspect(path)}"
 
       not String.starts_with?(path, "/") ->
         raise ArgumentError,
@@ -430,6 +438,11 @@ defmodule Glorbo.Sandbox.Bwrap do
       String.contains?(path, "/../") or String.ends_with?(path, "/..") ->
         raise ArgumentError,
               "cli_auth_bind_flags: host must not contain `..`, got #{inspect(path)}"
+
+      normalise_path(path) in @forbidden_host_exact ->
+        raise ArgumentError,
+              "cli_auth_bind_flags: host must not be a critical system root, " <>
+                "got #{inspect(path)}"
 
       true ->
         :ok
@@ -442,15 +455,10 @@ defmodule Glorbo.Sandbox.Bwrap do
   end
 
   # Sandbox is the path INSIDE the bwrap namespace where the host
-  # path gets mounted. The defense is shape-based + a denylist of
-  # critical mount points; an allowlist is too brittle (legit code
-  # mounts CLI binaries under `/tmp/glorbo-cli-<name>` to keep agents
-  # from enumerating the host binary's parent dir — see
-  # `Glorbo.Agent.Dispatch.cli_binary_bind/1` + T5 comment). Refuse:
-  #   * non-absolute paths
-  #   * any path containing `..` or NUL
-  #   * paths that EXACTLY match a critical Glorbo or system mount
-  #     point, which a bind there would shadow.
+  # path gets mounted. Shape + critical-mount-point denylist.
+  # `normalise_path/1` strips trailing slashes and `/.` so
+  # `/workspace`, `/workspace/`, `/workspace/.` are all caught by
+  # the same denylist entry. (Copilot review on PR #27.)
   @forbidden_sandbox_exact ~w(
     / /workspace /inbox /outbox /usr /etc /proc /sys /dev /run
     /bin /sbin /lib /lib64 /var /root /home /boot /tmp
@@ -458,9 +466,10 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   defp assert_valid_auth_bind_sandbox!(path) when is_binary(path) do
     cond do
-      String.contains?(path, <<0>>) ->
+      contains_control_char?(path) ->
         raise ArgumentError,
-              "cli_auth_bind_flags: sandbox must not contain NUL, got #{inspect(path)}"
+              "cli_auth_bind_flags: sandbox must not contain control bytes " <>
+                "(NUL, CR, LF, etc.), got #{inspect(path)}"
 
       not String.starts_with?(path, "/") ->
         raise ArgumentError,
@@ -470,7 +479,7 @@ defmodule Glorbo.Sandbox.Bwrap do
         raise ArgumentError,
               "cli_auth_bind_flags: sandbox must not contain `..`, got #{inspect(path)}"
 
-      path in @forbidden_sandbox_exact ->
+      normalise_path(path) in @forbidden_sandbox_exact ->
         raise ArgumentError,
               "cli_auth_bind_flags: sandbox must not exactly shadow a critical " <>
                 "mount point, got #{inspect(path)}"
@@ -483,6 +492,28 @@ defmodule Glorbo.Sandbox.Bwrap do
   defp assert_valid_auth_bind_sandbox!(other) do
     raise ArgumentError,
           "cli_auth_bind_flags: sandbox must be a string, got #{inspect(other)}"
+  end
+
+  # Catch bypass variants like `/workspace/`, `/workspace/.`, that
+  # the OS would resolve to the same mount as bare `/workspace`. Strip
+  # trailing slashes and `/.` segments so the denylist check is
+  # canonical. (Copilot review on PR #27.)
+  defp normalise_path(path) do
+    path
+    |> String.replace_suffix("/.", "")
+    |> String.trim_trailing("/")
+    |> case do
+      "" -> "/"
+      normalised -> normalised
+    end
+  end
+
+  # Reject NUL, all C0 control codes (0x00..0x1F), and DEL (0x7F).
+  # Bare argv slots don't need CR/LF for header smuggling but they
+  # corrupt logs + are never legitimate in filesystem paths. Mirrors
+  # the validation surface advertised by the comment block above.
+  defp contains_control_char?(s) when is_binary(s) do
+    Enum.any?(0..0x1F, &String.contains?(s, <<&1>>)) or String.contains?(s, <<0x7F>>)
   end
 
   # ---------------------------------------------------------------------------
