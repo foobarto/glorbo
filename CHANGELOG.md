@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — `doctor --install-deps` no longer trusts `$PATH` (C-043)
+
+`Glorbo.Doctor.Fixer.run_install/3` previously did `System.cmd("sudo", …)` and
+let Erlang resolve `sudo` (and the package manager) via the operator's
+`$PATH`. An attacker with PATH-write but no root could plant a malicious
+`sudo` and steal the password prompt the feature tells operators to
+expect. `sudo` and the allowlisted package manager (`dnf`/`apt`/`pacman`)
+are now resolved against a fixed list of trusted system bin dirs
+(`/usr/bin`, `/usr/sbin`, `/bin`, `/sbin`) and refused with
+`:install_no_trusted_path` if not found — defense-in-depth on top of
+sudoers `secure_path`.
+
 ## [0.23.1] — 2026-05-23
 
 ### Fixed — CI test flakes blocking the v0.23.0 publish workflow

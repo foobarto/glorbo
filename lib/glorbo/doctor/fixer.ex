@@ -1,4 +1,6 @@
 defmodule Glorbo.Doctor.Fixer do
+  import Bitwise, only: [&&&: 2]
+
   @moduledoc """
   Registry of repair functions keyed by Doctor check name (D-16).
 
@@ -422,26 +424,70 @@ defmodule Glorbo.Doctor.Fixer do
   end
 
   defp run_install(pkgmgr, pkg, args) do
-    full_args = ["-n", pkgmgr | args] ++ [pkg]
-    # `sudo -n` causes sudo to fail (rather than block forever) when no
-    # cached credentials AND no controlling TTY are available; if the
-    # user IS at a TTY, sudo will still prompt them via the parent
-    # process. Stderr captured for the error path so the operator sees
-    # the actual reason on failure.
-    case System.cmd("sudo", full_args, stderr_to_stdout: true) do
-      {_output, 0} ->
-        {:ok, "installed #{pkg} via #{pkgmgr}"}
+    # C-043: do NOT trust `$PATH` for `sudo` or the package manager.
+    # `System.cmd("sudo", ...)` would resolve `sudo` via the operator's
+    # PATH, so an attacker with PATH-write but no root could plant a
+    # malicious `sudo` that steals the password prompt the operator
+    # was told to expect. Resolve both binaries against a fixed list
+    # of trusted system dirs (root-owned on a sane Linux box); the
+    # `with` short-circuits with an `{:error, :install_no_trusted_path,
+    # ...}` if EITHER binary can't be found inside the trusted set.
+    with {:ok, sudo_bin} <- resolve_system_binary("sudo"),
+         {:ok, pkgmgr_bin} <- resolve_system_binary(pkgmgr) do
+      # Pass the package manager as an absolute path so sudo executes
+      # the trusted binary directly — sudoers `secure_path` is the
+      # normal defense, but not all configs set it. Belt and braces.
+      full_args = ["-n", pkgmgr_bin | args] ++ [pkg]
 
-      {output, code} ->
-        trimmed =
-          output
-          |> String.trim()
-          |> tail_lines(8)
+      # `sudo -n` causes sudo to fail (rather than block forever) when
+      # no cached credentials AND no controlling TTY are available; if
+      # the user IS at a TTY, sudo will still prompt them via the
+      # parent process. Stderr captured so the operator sees the
+      # actual reason on failure.
+      case System.cmd(sudo_bin, full_args, stderr_to_stdout: true) do
+        {_output, 0} ->
+          {:ok, "installed #{pkg} via #{pkgmgr}"}
 
-        {:error, {:install_failed, code, trimmed}}
+        {output, code} ->
+          trimmed =
+            output
+            |> String.trim()
+            |> tail_lines(8)
+
+          {:error, {:install_failed, code, trimmed}}
+      end
     end
   rescue
     e -> {:error, {:install_exception, Exception.message(e)}}
+  end
+
+  @doc false
+  # Trusted-search-path resolver. Returns the absolute path to `name`
+  # if it lives DIRECTLY under one of the fixed system bin dirs and is
+  # executable. Uses `File.lstat/1` (NOT `File.stat/1`) so a planted
+  # symlink at e.g. `/usr/bin/sudo → /tmp/evil-sudo` is refused: the
+  # whole point of the trusted-bin-dirs allowlist is to constrain
+  # `which binary actually runs`, and a symlink leads anywhere.
+  # (Copilot review on PR #23.) Public-but-`@doc false` so the unit
+  # test can drive both the resolve-success and `:install_no_trusted_path`
+  # paths without mutating the host's package state.
+  @trusted_bin_dirs ["/usr/bin", "/usr/sbin", "/bin", "/sbin"]
+  def resolve_system_binary(name) when is_binary(name) do
+    Enum.find_value(@trusted_bin_dirs, fn dir ->
+      path = Path.join(dir, name)
+
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :regular, mode: mode}} when (mode &&& 0o111) != 0 ->
+          path
+
+        _ ->
+          nil
+      end
+    end)
+    |> case do
+      nil -> {:error, {:install_no_trusted_path, name, @trusted_bin_dirs}}
+      path -> {:ok, path}
+    end
   end
 
   defp tail_lines(str, n) do
