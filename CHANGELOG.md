@@ -10,6 +10,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — agent config form validates provider/model/reports_to/autonomy (HIGH, gemini-F2)
+
+`GlorboWeb.AgentLive.do_config_save/2` used to write `provider`,
+`model`, `reports_to`, and `autonomy` from the director form into
+`AGENT.md` verbatim — only `network` was sanitised, and a comment
+explicitly noted the form values were client-controlled. Combined with
+the dispatcher's `{model}` substitution into `reply_dir` /
+`reply_filename_template` (gemini-F3 — `prepare_reply_dir/2` calls
+`File.rm!` on the target before writing), a malicious
+`model = "../../../AGENT.md"` was an arbitrary-file-delete + write
+primitive. Now each field is gated before persistence:
+
+- **`provider`** — strict identifier (`[A-Za-z][A-Za-z0-9._-]{0,63}`).
+- **`model`** — model identifier with provider-namespace slashes
+  allowed (`lmstudio/qwen/...`), but `..`, `//`, and leading/trailing
+  `/` refused; alphanum + `._/-` only; max 128 chars.
+- **`reports_to`** — slug shape (`[a-z0-9][a-z0-9_-]{0,63}`).
+- **`autonomy`** — enum (`manual` / `supervised` / `auto`).
+
+On any failure the save aborts with a per-field flash message and
+nothing reaches disk. Regression tests pin 8 path-traversal model
+strings, 3 invalid provider/reports_to/autonomy shapes, AND the
+legit slashed-model case (`lmstudio/qwen/qwen3.6-35b-a3b` still
+saves). Identified by the gemini deep-dive sweep.
+
 ### Security — `refuse_contract_write` canonicalises before name check (CRITICAL, gemini-F1)
 
 `Glorbo.Actions.Agents.refuse_contract_write/1` compared
