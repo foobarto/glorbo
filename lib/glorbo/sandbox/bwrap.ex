@@ -1018,6 +1018,38 @@ defmodule Glorbo.Sandbox.Bwrap do
   defp open_stdout_tee(path) when is_binary(path) do
     File.mkdir_p!(Path.dirname(path))
 
+    # Codex deep-dive F7: `File.open(path, [:append, ...])` follows
+    # symlinks. The agent has write access to its own workspace + stdout
+    # slot (`agents/<slug>/stdout.log`), so a pre-planted symlink there
+    # could redirect host-side appends to any path the BEAM process can
+    # write (e.g. `/tmp/glorbo.pid`, `~/.bashrc`, the operator's audit
+    # log). Reuse `AgentWritableFile.ensure_writable/1` (refuses non-
+    # regular existing files; permits `:enoent` so the open below
+    # creates the file). Residual TOCTOU between lstat and open is
+    # acceptably narrow given that (a) the primary defense is the
+    # workspace bind layout — the agent can't redirect the LOG slot
+    # from inside the sandboxed namespace, only from a prior dispatch
+    # — and (b) Erlang doesn't expose `O_NOFOLLOW` for an O_APPEND
+    # open. (Copilot review on PR #30.)
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok ->
+        do_open_stdout_tee(path)
+
+      {:error, {:not_regular_file, type}} ->
+        Logger.warning(
+          "stdout_log refused path=#{path} type=#{inspect(type)} " <>
+            "(only regular files / nonexistent paths are tee'd)"
+        )
+
+        nil
+
+      {:error, reason} ->
+        Logger.warning("stdout_log refused path=#{path} reason=#{inspect(reason)}")
+        nil
+    end
+  end
+
+  defp do_open_stdout_tee(path) do
     case File.open(path, [:append, :binary]) do
       {:ok, io} ->
         io
