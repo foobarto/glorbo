@@ -293,10 +293,56 @@ defmodule Glorbo.Network.SmartClassifier do
       ipv6_ula?(host) ->
         true
 
+      # Threatmodel wave 26: `inet_aton`-legacy integer-encoded IPv4
+      # forms (decimal `2852039166`, hex `0xa9fea9fe`, octal-dotted
+      # `0251.0376.0251.0376`, hybrid short-form `169.16689662`, etc.)
+      # all resolve via `:inet.getaddrs` to the same 4-byte address as
+      # their canonical dotted form — but the string-prefix checks above
+      # only catch the canonical shape. An attacker can encode
+      # `169.254.169.254` (AWS metadata) as `2852039166` to bypass
+      # `private_ip?` and reach link-local from a smart-mode classifier
+      # cache hit / denylist-fallthrough allow verdict. (DNS-rebind
+      # defense in `proxy.ex` still catches the *resolved* IP for the
+      # data path, but the classifier's T8 invariant — "no private IP
+      # destination, ever" — must hold at THIS layer too: future
+      # refactors could remove Layer 2, and a misleading `:allow`
+      # verdict pollutes audit / smart-mode cache.)
+      integer_encoded_private_ipv4?(host) ->
+        true
+
       true ->
         false
     end
   end
+
+  # A host is "numeric-IP-shaped" if every dot-separated segment is a
+  # plain decimal, an `0x`-prefixed hex literal, or a leading-zero
+  # octal literal — i.e. the encodings BSD `inet_aton` accepts beyond
+  # the strict dotted-decimal form. Bounded check; no DNS.
+  @numeric_ip_re ~r/^(0[xX][0-9a-fA-F]+|0[0-7]+|[1-9][0-9]*|0)(\.(0[xX][0-9a-fA-F]+|0[0-7]+|[1-9][0-9]*|0)){0,3}$/
+
+  defp integer_encoded_private_ipv4?(host) do
+    with true <- String.match?(host, @numeric_ip_re),
+         # `:inet.getaddrs/3` honours `inet_aton`'s legacy parser for
+         # integer-encoded forms WITHOUT performing DNS — the resolution
+         # is purely local, even with a tiny timeout. (Confirmed
+         # empirically; DNS labels with letters/dashes won't match the
+         # regex above so we never even reach this call for them.)
+         {:ok, [tup | _]} <- :inet.getaddrs(String.to_charlist(host), :inet, 0) do
+      ipv4_tuple_private?(tup)
+    else
+      _ -> false
+    end
+  end
+
+  defp ipv4_tuple_private?({0, _, _, _}), do: true
+  defp ipv4_tuple_private?({127, _, _, _}), do: true
+  defp ipv4_tuple_private?({10, _, _, _}), do: true
+  defp ipv4_tuple_private?({172, b, _, _}) when b in 16..31, do: true
+  defp ipv4_tuple_private?({192, 168, _, _}), do: true
+  defp ipv4_tuple_private?({169, 254, _, _}), do: true
+  defp ipv4_tuple_private?({100, b, _, _}) when b in 64..127, do: true
+  defp ipv4_tuple_private?(_), do: false
 
   defp ipv6_loopback_or_unspec?(host) do
     normal = host |> String.trim_leading("[") |> String.trim_trailing("]")

@@ -10,6 +10,26 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — `SmartClassifier` rejects integer-encoded IPv4 SSRF bypass
+
+`Glorbo.Network.SmartClassifier.private_ip?/1` only string-prefix-checked
+canonical dotted-decimal private IPs. An attacker could encode
+`169.254.169.254` (AWS metadata) as the decimal `2852039166`, octal-dotted
+`0251.0376.0251.0376`, hybrid `169.16689662`, or short-form `127.1` — all
+forms that `inet_aton`'s legacy parser resolves to the same bytes, yet
+none matched the string-prefix checks. In `:deny`-mode (denylist) egress
+the classifier returned `:allow, :denylist_fallthrough` for these
+encodings, polluting the smart-mode cache and the audit log with a
+misleading allow verdict. (The proxy's DNS-rebind defense in
+`open_and_splice` still catches the *resolved* IP for the data path, but
+the classifier's T8 invariant — "no private-IP destination, ever" — must
+hold at this layer too; a future refactor could drop the second layer
+and re-expose the bypass.) Fixed by adding a `numeric_ip_shaped?` regex
+gate followed by a no-DNS `:inet.getaddrs` resolution + tuple-form
+private-IP check. Regression tests pin 9 integer-encoded forms and 4
+public negatives (wave 26 in `smart_classifier_test.exs`). Identified by
+the codex deep-dive sweep + empirical verification.
+
 ### Security — tool I/O paths refuse symlink-ancestor crossings (codex-F3/F4)
 
 `Glorbo.CLI.Harness.Tools.resolve_tool_path/2` did a **lexical-only**
