@@ -180,15 +180,14 @@ defmodule Glorbo.Sandbox.Unsandboxed do
   defp open_stdout_tee(path) when is_binary(path) do
     _ = File.mkdir_p(Path.dirname(path))
 
-    # Codex deep-dive F7: lstat-gate before opening to avoid following
-    # a pre-planted symlink at `<agent>/stdout.log`. See the bwrap.ex
-    # mirror of this function for the full threat sketch — same
-    # primitive, this path is hit in the unsandboxed fallback (macOS,
-    # `--no-sandbox`), where there's no namespace boundary to contain
-    # the host write.
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} -> do_open_stdout_tee(path)
-      {:error, :enoent} -> do_open_stdout_tee(path)
+    # Codex deep-dive F7: reuse `AgentWritableFile.ensure_writable/1`
+    # so the lstat-before-open policy is shared with the bwrap path
+    # (Copilot review on PR #30). Best-effort semantics on this
+    # fallback runner — silently degrade to nil on any lstat
+    # rejection. See the bwrap.ex mirror for the full threat sketch
+    # + residual-TOCTOU rationale.
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok -> do_open_stdout_tee(path)
       _ -> nil
     end
   end

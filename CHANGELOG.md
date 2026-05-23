@@ -41,11 +41,15 @@ execution, but the stdout-tee opens happen on the HOST side
 (`open_stdout_tee/1` runs in the BEAM, not the sandboxed child), so
 a symlink redirects host-side I/O directly.
 
-Fixed by `File.lstat`-gating the path before open: only regular files
-(or nonexistent paths, where the open creates a fresh file) are
-tee'd. Symlinks, directories, devices, FIFOs, etc. are refused with
-a logged warning and the tee silently degrades to nil (best-effort
-logging). Identified by the codex deep-dive sweep.
+Fixed by routing both call sites through
+`Glorbo.Filesystem.AgentWritableFile.ensure_writable/1` (lstat-gates
+the path before open: only regular files, or nonexistent paths where
+the open creates a fresh file, are tee'd). The bwrap path logs a
+warning on refusal so an operator-noticed misconfiguration surfaces in
+the daemon log; the unsandboxed path silently degrades to nil
+(best-effort logging stays best-effort — matches the existing
+unsandboxed semantics where logging itself is permitted to fail without
+disrupting the dispatch). Identified by the codex deep-dive sweep.
 
 ### Security — strip-query redirect refuses protocol-relative paths (gemini-F4)
 

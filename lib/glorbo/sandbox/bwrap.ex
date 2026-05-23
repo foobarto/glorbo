@@ -1023,25 +1023,28 @@ defmodule Glorbo.Sandbox.Bwrap do
     # slot (`agents/<slug>/stdout.log`), so a pre-planted symlink there
     # could redirect host-side appends to any path the BEAM process can
     # write (e.g. `/tmp/glorbo.pid`, `~/.bashrc`, the operator's audit
-    # log). Lstat-gate refuses non-regular existing files (incl.
-    # symlinks); nonexistent → fall through to create.
-    case File.lstat(path) do
-      {:ok, %File.Stat{type: :regular}} ->
+    # log). Reuse `AgentWritableFile.ensure_writable/1` (refuses non-
+    # regular existing files; permits `:enoent` so the open below
+    # creates the file). Residual TOCTOU between lstat and open is
+    # acceptably narrow given that (a) the primary defense is the
+    # workspace bind layout — the agent can't redirect the LOG slot
+    # from inside the sandboxed namespace, only from a prior dispatch
+    # — and (b) Erlang doesn't expose `O_NOFOLLOW` for an O_APPEND
+    # open. (Copilot review on PR #30.)
+    case Glorbo.Filesystem.AgentWritableFile.ensure_writable(path) do
+      :ok ->
         do_open_stdout_tee(path)
 
-      {:error, :enoent} ->
-        do_open_stdout_tee(path)
-
-      {:ok, %File.Stat{type: other}} ->
+      {:error, {:not_regular_file, type}} ->
         Logger.warning(
-          "stdout_log refused path=#{path} type=#{inspect(other)} " <>
+          "stdout_log refused path=#{path} type=#{inspect(type)} " <>
             "(only regular files / nonexistent paths are tee'd)"
         )
 
         nil
 
       {:error, reason} ->
-        Logger.warning("stdout_log lstat failed path=#{path} reason=#{inspect(reason)}")
+        Logger.warning("stdout_log refused path=#{path} reason=#{inspect(reason)}")
         nil
     end
   end
