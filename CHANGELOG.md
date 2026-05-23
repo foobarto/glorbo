@@ -10,6 +10,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-05-23
+
+Substantial security-hardening release driven by a deep-dive review
+using codex + gemini in parallel. **One critical, three high, five
+medium** issues fixed across the sandbox, dispatcher, auth, and tool
+surfaces. See entries below for per-PR detail.
+
+### Docs — landing-page version auto-syncs to `mix.exs`
+
+The marketing site (`assets/index.html`, deployed via the GitHub Pages
+workflow) hardcoded the version in three spots and had drifted to
+v0.11.1. Fixed for this release (now shows v0.24.0) AND the
+`Deploy static content to Pages` workflow now re-derives the version
+from `mix.exs` at deploy time, sed-substituting any `v<x>.<y>.<z>`
+matches in `assets/index.html` before upload. The committed source
+stays in sync at release-cut time; the deploy step is the safety net.
+The trigger filter also now includes `mix.exs` so a release commit
+without `assets/` changes still re-deploys.
+
 ### Security — approved-path TOCTOU re-check at bwrap argv assembly (codex-F2)
 
 `Glorbo.PathRequestGate.do_approve/4` canonicalises every approved
@@ -6299,7 +6318,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0
 [0.23.1]: https://github.com/foobarto/glorbo/releases/tag/v0.23.1
 [0.23.0]: https://github.com/foobarto/glorbo/releases/tag/v0.23.0
 [0.4.0]: https://github.com/foobarto/glorbo/releases/tag/v0.4.0
