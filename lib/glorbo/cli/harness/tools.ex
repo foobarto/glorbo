@@ -69,18 +69,27 @@ defmodule Glorbo.CLI.Harness.Tools do
         try do
           execute_decoded(name, args, config, opts)
         rescue
-          # Workspace-escape from `resolve_tool_path/2` raises
-          # `ArgumentError` with a message starting `tool path escapes
-          # workspace:`. Surface as a structured tool error payload
-          # rather than bringing down the harness.
+          # `resolve_tool_path/2` raises `ArgumentError` for two policy
+          # violations: lexical workspace-escape, and ancestor-symlink
+          # crossings (codex deep-dive F3/F4). Both surface as
+          # structured tool error payloads rather than bringing down
+          # the harness.
           e in ArgumentError ->
-            if String.starts_with?(Exception.message(e), "tool path escapes workspace") do
-              %{
-                tool_name: name,
-                payload: %{"ok" => false, "error" => "path_escapes_workspace"}
-              }
-            else
-              reraise e, __STACKTRACE__
+            cond do
+              String.starts_with?(Exception.message(e), "tool path escapes workspace") ->
+                %{
+                  tool_name: name,
+                  payload: %{"ok" => false, "error" => "path_escapes_workspace"}
+                }
+
+              String.starts_with?(Exception.message(e), "tool path crosses a symlinked") ->
+                %{
+                  tool_name: name,
+                  payload: %{"ok" => false, "error" => "path_crosses_symlink"}
+                }
+
+              true ->
+                reraise e, __STACKTRACE__
             end
         end
 
@@ -705,14 +714,32 @@ defmodule Glorbo.CLI.Harness.Tools do
         Path.expand(path, workspace_abs)
       end
 
-    if expanded == workspace_abs or
-         String.starts_with?(expanded, workspace_abs <> "/") do
-      expanded
-    else
-      raise ArgumentError,
-            "tool path escapes workspace: #{inspect(path)} → #{expanded} " <>
-              "(workspace=#{workspace_abs})"
+    cond do
+      not lexically_inside?(expanded, workspace_abs) ->
+        raise ArgumentError,
+              "tool path escapes workspace: #{inspect(path)} → #{expanded} " <>
+                "(workspace=#{workspace_abs})"
+
+      # Codex deep-dive F3/F4: lexical containment is not enough. If
+      # any ancestor of `expanded` is a symlink, `File.write` / `File.read`
+      # will follow it OUT of the workspace at I/O time. Under bwrap the
+      # bind mounts narrow what's reachable, but the unsandboxed fallback
+      # path (`Glorbo.Sandbox.Unsandboxed`, macOS, `--no-sandbox`) hits
+      # the host FS directly — and the agent controls `raw_path`. Refuse
+      # any path whose canonicalised form crosses a symlinked segment.
+      Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(expanded) ->
+        raise ArgumentError,
+              "tool path crosses a symlinked component: #{inspect(path)} → " <>
+                "#{expanded} (workspace=#{workspace_abs})"
+
+      true ->
+        expanded
     end
+  end
+
+  defp lexically_inside?(expanded, workspace_abs) do
+    expanded == workspace_abs or
+      String.starts_with?(expanded, workspace_abs <> "/")
   end
 
   defp display_tool_path(path, workspace) do
