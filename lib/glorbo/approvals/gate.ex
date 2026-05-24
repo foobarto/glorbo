@@ -582,10 +582,11 @@ defmodule Glorbo.Approvals.Gate do
   # `peer_review_verdict: "approve"` directly into the frontmatter.
   # `Glorbo.Actions.Tasks.record_peer_review_verdict/4` (the legit
   # path) enforces `guard_actor_is_reviewer/2` and emits a
-  # `task.peer_review.approve` audit row with `actor: "agent:<reviewer>"`.
-  # Require the corroborating audit entry from the actor named in
-  # `peer_review_verdict_by` before honouring an `approve` verdict
-  # — same pattern as the loop-detector corroboration (round 3).
+  # `task.peer_review.approve` audit row with `actor: <bare-slug>`
+  # (no `agent:` prefix). Require the corroborating audit entry
+  # from the actor named in `peer_review_verdict_by` before
+  # honouring an `approve` verdict — same pattern as the
+  # loop-detector corroboration (round 3).
   # `Tools.valid_audit_action?/1` (round 3) keeps the agent from
   # forging the audit row through `audit_events`.
   defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "approve"} = td, state) do
@@ -595,7 +596,7 @@ defmodule Glorbo.Approvals.Gate do
       Logger.warning(
         "approvals/gate: peer_review_verdict=approve for #{td.task_path} but no " <>
           "corroborating `task.peer_review.approve` audit entry from " <>
-          "agent:#{td.peer_review_verdict_by || "<unset>"} — refusing as awaiting_peer_review"
+          "#{td.peer_review_verdict_by || "<unset>"} — refusing as awaiting_peer_review"
       )
 
       {:error, :awaiting_peer_review}
@@ -613,37 +614,64 @@ defmodule Glorbo.Approvals.Gate do
 
   defp peer_review_ready?(_td, _state), do: {:error, :awaiting_peer_review}
 
-  # Match the legit verdict emitter: Actions.Tasks.record_peer_review_verdict
-  # emits `action: "task.peer_review.approve"` with
-  # `actor: "agent:<reviewer-slug>"`. The `verdict_by` field on the
-  # task must equal that reviewer slug. Scope the audit scan to a
-  # reasonable window — the verdict was recorded recently if at
-  # all (the gate runs on the Director's status flip).
+  # Match the legit verdict emitter:
+  # `Glorbo.Actions.Tasks.emit_verdict_audit/6` writes
+  # `action: "task.peer_review.approve"` with `actor: <bare-slug>`
+  # (no `agent:` prefix). The `verdict_by` field on the task must
+  # equal that bare reviewer slug.
+  #
+  # Codex P1 review on PR #36: scan CURRENT + PREVIOUS UTC month
+  # so a verdict recorded April 30 and an approval that lands May
+  # 1 still finds the corroboration row across the audit-file
+  # rotation boundary. Same pattern as the loop-detector
+  # corroboration's month-boundary fix.
+  #
+  # Copilot review on PR #36: only accept `peer_review_verdict_by`
+  # as a binary; nil / non-binary / "" → refuse without raising
+  # (the field is typed `String.t() | nil`, but a forged
+  # frontmatter could produce any term, and `to_string/1` on a
+  # tuple/map would crash the Gate).
   defp peer_review_verdict_corroborated?(%TaskDefinition{} = td, %{base: base, company: co}) do
-    case to_string(td.peer_review_verdict_by) do
-      "" ->
-        # No `peer_review_verdict_by` → can't even ask whose
-        # verdict it was. Refuse.
-        false
+    case td.peer_review_verdict_by do
+      verdict_by when is_binary(verdict_by) and verdict_by != "" ->
+        months = corroboration_months(DateTime.utc_now())
 
-      verdict_by ->
-        # Codex P0 review of 3dc4eba: the legit emitter
-        # `Glorbo.Actions.Tasks.emit_verdict_audit/6` writes
-        # `actor: <bare-slug>` (no `agent:` prefix). The previous
-        # `"agent:" <> verdict_by` comparison meant EVERY real
-        # reviewer-emitted approval would fail corroboration —
-        # only the synthetic-seed test passed. Compare against the
-        # bare slug AND `target == task_path` (no fuzzy match —
-        # avoid cross-task corroboration leaks through
-        # `Audit.Query`'s substring fallback).
-        base
-        |> Glorbo.Audit.Query.for_task(co, td.task_path, limit: 100)
-        |> Enum.any?(fn entry ->
-          entry["action"] == "task.peer_review.approve" and
-            entry["actor"] == verdict_by and
-            entry["target"] == td.task_path
+        Enum.any?(months, fn month ->
+          base
+          |> Glorbo.Audit.Query.for_task(co, td.task_path, limit: 100, month: month)
+          |> Enum.any?(fn entry ->
+            entry["action"] == "task.peer_review.approve" and
+              entry["actor"] == verdict_by and
+              entry["target"] == td.task_path
+          end)
         end)
+
+      _ ->
+        # nil, non-binary, or empty-string verdict_by → can't even
+        # ask whose verdict it was. Refuse.
+        false
     end
+  end
+
+  # Current + previous UTC month — covers the audit-file rotation
+  # boundary where the system-emitted `task.peer_review.approve`
+  # row landed in month N and the Director's approval click lands
+  # in N+1. Mirror of `Glorbo.Agent.LoopDetector.corroboration_months/1`.
+  defp corroboration_months(%DateTime{} = now) do
+    cur_date = DateTime.to_date(now)
+    cur = year_month(cur_date)
+
+    prev_date =
+      cur_date
+      |> Date.beginning_of_month()
+      |> Date.add(-1)
+
+    prev = year_month(prev_date)
+    Enum.uniq([cur, prev])
+  end
+
+  defp year_month(%Date{year: y, month: m}) do
+    :io_lib.format("~4..0B-~2..0B", [y, m]) |> IO.iodata_to_binary()
   end
 
   defp revert_peer_review_block(td, abs_path, agent, reason, state) do

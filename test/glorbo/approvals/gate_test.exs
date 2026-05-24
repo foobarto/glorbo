@@ -865,6 +865,77 @@ defmodule Glorbo.Approvals.GateTest do
            "seed helper must NOT write actor with `agent:` prefix"
   end
 
+  # Codex P1 review on PR #36: peer_review_verdict_corroborated?/2
+  # initially only scanned the current UTC month, so a reviewer's
+  # verdict landing April 30 + Director approval on May 1 left the
+  # corroboration row in the previous month's file → forever
+  # invisible → real reviewer approvals turned into permanent
+  # false negatives. Fix: scan current + previous UTC month.
+  test "G18-month-boundary: corroboration finds a verdict from the previous month",
+       ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-18-boundary",
+        title: "verdict from last month",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # Seed the corroborating audit row in the PREVIOUS UTC month.
+    # `Date.beginning_of_month |> Date.add(-1)` gives the last day
+    # of the prior month — same calendar arithmetic the gate uses.
+    last_month_date =
+      DateTime.utc_now()
+      |> DateTime.to_date()
+      |> Date.beginning_of_month()
+      |> Date.add(-1)
+
+    last_month_ts =
+      DateTime.new!(last_month_date, ~T[10:00:00], "Etc/UTC")
+
+    seed_peer_review_audit(
+      ctx,
+      "projects/foo/tasks/t-18-boundary.md",
+      "critiqueops",
+      ts: last_month_ts
+    )
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "verdict from last month"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    peer_review_verdict: approve
+    peer_review_verdict_by: critiqueops
+    peer_review_verdict_at: "#{DateTime.to_iso8601(last_month_ts)}"
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-18-boundary.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-18-boundary.md", [:modified]})
+
+    assert_receive {:wake, "engineer", :director_approval, _}, 1_500
+    assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
   test "G18-bypass: agent-seeded peer_review_verdict WITHOUT corroborating audit is refused",
        ctx do
     %{pid: pid} = start_gate(ctx)
@@ -922,10 +993,11 @@ defmodule Glorbo.Approvals.GateTest do
     assert reverted.status == "pending-approval"
   end
 
-  defp seed_peer_review_audit(ctx, task_path, reviewer_slug) do
+  defp seed_peer_review_audit(ctx, task_path, reviewer_slug, opts \\ []) do
     audit_dir = Path.join([ctx.base, "companies", "acme", "audit"])
     File.mkdir_p!(audit_dir)
-    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    ts = Keyword.get(opts, :ts, DateTime.utc_now())
+    ym = ts |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     audit_path = Path.join(audit_dir, "#{ym}.jsonl")
 
     # Codex P0 review of 3dc4eba: must mirror the legit emitter
@@ -938,7 +1010,7 @@ defmodule Glorbo.Approvals.GateTest do
         "actor" => reviewer_slug,
         "agent" => reviewer_slug,
         "target" => task_path,
-        "ts" => DateTime.to_iso8601(DateTime.utc_now())
+        "ts" => DateTime.to_iso8601(ts)
       })
 
     File.write!(audit_path, entry <> "\n", [:append])

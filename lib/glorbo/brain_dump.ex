@@ -124,9 +124,16 @@ defmodule Glorbo.BrainDump do
   limited to the last N days.
   """
   @spec list(Path.t(), String.t(), keyword()) :: [entry()]
-  def list(base, company, opts \\ []) when is_binary(company) do
+  def list(base, company, opts \\ [])
+
+  def list(base, company, opts) when is_binary(company) do
     if Glorbo.Slug.valid?(company), do: do_list(base, company, opts), else: []
   end
+
+  # Copilot review on PR #36: non-binary `company` used to raise
+  # `FunctionClauseError`. Module is intentional fail-safe — return
+  # an empty list rather than crashing callers.
+  def list(_base, _company, _opts), do: []
 
   defp do_list(base, company, opts) do
     limit_days = Keyword.get(opts, :limit_days, 14)
@@ -153,6 +160,8 @@ defmodule Glorbo.BrainDump do
   """
   @spec convert_to_task(Path.t(), String.t(), entry()) ::
           {:ok, String.t()} | {:error, term()}
+  def convert_to_task(base, company, entry)
+
   def convert_to_task(base, company, entry) when is_binary(company) do
     if Glorbo.Slug.valid?(company) do
       do_convert_to_task(base, company, entry)
@@ -160,6 +169,11 @@ defmodule Glorbo.BrainDump do
       {:error, :invalid_company}
     end
   end
+
+  # Copilot review on PR #36: non-binary `company` used to raise
+  # `FunctionClauseError`. Return the same error shape as the
+  # invalid-slug branch.
+  def convert_to_task(_base, _company, _entry), do: {:error, :invalid_company}
 
   defp do_convert_to_task(base, company, entry) do
     co_dir = Path.join([base, "companies", company])

@@ -26,6 +26,8 @@ defmodule Glorbo.Inbox.Archive do
   # the gate can't `..` into `Path.join` via `company: "../../etc"`.
   # Mirrors the round-3 audit/query hardening.
   @spec list(Path.t(), String.t()) :: MapSet.t(key())
+  def list(base, company)
+
   def list(base, company) when is_binary(company) do
     if Glorbo.Slug.valid?(company) do
       case File.read(path(base, company)) do
@@ -43,7 +45,14 @@ defmodule Glorbo.Inbox.Archive do
     end
   end
 
+  # Copilot review on PR #36: non-binary `company` used to raise
+  # `FunctionClauseError`. Return an empty set — module is
+  # intentional fail-safe defense-in-depth.
+  def list(_base, _company), do: MapSet.new()
+
   @spec add(Path.t(), String.t(), key()) :: :ok | {:error, :invalid_company}
+  def add(base, company, key)
+
   def add(base, company, key) when is_binary(company) and is_binary(key) do
     if Glorbo.Slug.valid?(company) do
       set = list(base, company) |> MapSet.put(key)
@@ -53,7 +62,11 @@ defmodule Glorbo.Inbox.Archive do
     end
   end
 
+  def add(_base, _company, _key), do: {:error, :invalid_company}
+
   @spec remove(Path.t(), String.t(), key()) :: :ok | {:error, :invalid_company}
+  def remove(base, company, key)
+
   def remove(base, company, key) when is_binary(company) and is_binary(key) do
     if Glorbo.Slug.valid?(company) do
       set = list(base, company) |> MapSet.delete(key)
@@ -62,6 +75,8 @@ defmodule Glorbo.Inbox.Archive do
       {:error, :invalid_company}
     end
   end
+
+  def remove(_base, _company, _key), do: {:error, :invalid_company}
 
   @spec member?(MapSet.t(key()), key()) :: boolean()
   def member?(set, key) when is_binary(key), do: MapSet.member?(set, key)
