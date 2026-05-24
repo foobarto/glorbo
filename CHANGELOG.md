@@ -83,9 +83,29 @@ depth + grant-leak window).
   the check since the operator is authoritative by design. Closed
   in concert with the `emit_tool_audits` whitelist (so the agent
   can't forge `actor: "system"` audit rows in the first place).
-  New regression test exercises the agent-origin refusal path; 3
-  pre-existing file-drop tests updated to seed the corroborating
-  audit row.
+  3 hardening rounds against codex's pre-push review of d5ba9b5
+  layered on top:
+  - **PATH-derived agent binding.** Frontmatter `agent` was
+    agent-controlled — agent A under `/agents/A/state/` could
+    forge `agent: B` to inherit any legit B-corroboration row.
+    `apply_one_resolution/4` now passes the path-derived agent
+    via `:path_agent`; `resolve/5` refuses with
+    `:sentinel_agent_mismatch` on disagreement.
+  - **Frontmatter `audit_month` ignored.** Was passed as
+    `:month` to the audit query, letting agent A point the scan
+    at any historical month with a legit row. Now scans current
+    UTC month + previous (covers month-boundary races) only;
+    no agent input honored.
+  - **24h freshness window.** Without it, a single legit
+    `agent.loop_detected` row could be replayed indefinitely.
+    `agent.loop_detected.ts` must fall within the last 86 400
+    seconds — long enough for legit operator-reaction lag,
+    short enough to render replay attacks uninteresting.
+
+  3 new regression tests for the codex-review hardening (frontmatter
+  agent mismatch, stale corroboration, multi-agent file-drop),
+  plus the original agent-origin refusal test; 3 pre-existing
+  file-drop tests updated to seed the corroborating audit row.
 
 - **Untracked-budget bypass via parser failure** (gemini, HIGH) —
   `Glorbo.Agent.Dispatch.check_runtime_untracked_allowed/3` gated

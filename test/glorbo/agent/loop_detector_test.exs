@@ -32,10 +32,14 @@ defmodule Glorbo.Agent.LoopDetectorTest do
   # `agent.loop_detected` audit entry with `actor: "system"` before
   # `LoopDetector.resolve/5` will mutate the task. Tests that exercise
   # the file-drop / agent-actor path need to seed that audit row.
-  defp seed_loop_detected_audit(base, company, agent, task_path) do
+  #
+  # `:ts` overrides the recorded timestamp (default: now); used by
+  # the freshness-window test to seed a stale corroboration.
+  defp seed_loop_detected_audit(base, company, agent, task_path, opts \\ []) do
     audit_dir = Path.join([base, "companies", company, "audit"])
     File.mkdir_p!(audit_dir)
-    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    now = Keyword.get(opts, :ts, DateTime.utc_now())
+    ym = now |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     audit_path = Path.join(audit_dir, "#{ym}.jsonl")
 
     entry =
@@ -44,7 +48,7 @@ defmodule Glorbo.Agent.LoopDetectorTest do
         "actor" => "system",
         "agent" => agent,
         "target" => task_path,
-        "ts" => DateTime.utc_now() |> DateTime.to_iso8601()
+        "ts" => DateTime.to_iso8601(now)
       })
 
     File.write!(audit_path, entry <> "\n", [:append])
@@ -450,6 +454,73 @@ defmodule Glorbo.Agent.LoopDetectorTest do
       assert fm["status"] == "in-progress"
       assert File.exists?(ctx.sentinel)
       refute_received {:audit, _, %{action: "agent.loop_resolved"}}
+    end
+
+    # Codex review of d5ba9b5 (round-3 hardening, follow-up): the
+    # initial F4 fix passed the frontmatter `agent` field straight
+    # into the corroboration query. Agent A under `/agents/A/state/`
+    # could forge `agent: B` in the sentinel and inherit any legit
+    # B-corroboration row. `apply_one_resolution/4` now supplies the
+    # PATH-derived agent via `:path_agent`, and `resolve/5` rejects
+    # any sentinel where the frontmatter `agent` disagrees.
+    test "REJECTS sentinel whose frontmatter agent != PATH-derived agent",
+         ctx do
+      # Frontmatter claims `agent: researcher`, but file lives under
+      # `/agents/ceo/state/` — the binding check refuses.
+      File.write!(ctx.sentinel, """
+      ---
+      kind: sentinel-stuck/v1
+      agent: researcher
+      task_id: #{ctx.task_id}
+      task_path: projects/blog/tasks/#{ctx.task_id}.md
+      failure_count: 3
+      ---
+
+      forged
+      """)
+
+      assert {:error, :sentinel_agent_mismatch} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 path_agent: ctx.agent
+               )
+
+      {:ok, fm, _body} =
+        Glorbo.Filesystem.Frontmatter.parse(File.read!(ctx.abs_task))
+
+      assert fm["status"] == "in-progress"
+      assert File.exists?(ctx.sentinel)
+    end
+
+    # Codex review hardening: stale corroboration rows can't be
+    # replayed. A `agent.loop_detected` audit entry from > 24h ago
+    # doesn't count — agent A can't drop a sentinel today and
+    # inherit a legit row from last week.
+    test "REJECTS resolution corroborated only by stale (>24h) audit entry",
+         ctx do
+      stale_ts = DateTime.utc_now() |> DateTime.add(-2 * 86_400, :second)
+
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md",
+        ts: stale_ts
+      )
+
+      assert {:error, :sentinel_not_corroborated} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 path_agent: ctx.agent
+               )
     end
   end
 
