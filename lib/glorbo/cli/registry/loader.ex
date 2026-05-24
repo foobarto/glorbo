@@ -216,7 +216,9 @@ defmodule Glorbo.CLI.Registry.Loader do
   # the name and make refresh/dispatch read or write outside the
   # provider-owned directories. Reject anything that isn't a strict
   # single-segment slug (lowercase letters/digits + `-`/`_`, length
-  # 1-64, leading alphanumeric) before constructing the Provider.
+  # 1-64, leading lowercase letter, then lowercase letters/digits/`-`/`_`)
+  # before constructing the Provider. Leading digits/underscore/hyphen
+  # are refused so names can't collide with shell/argv quirks.
   @provider_name_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
 
   defp parse_name(raw, path) do

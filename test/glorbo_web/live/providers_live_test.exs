@@ -221,7 +221,7 @@ defmodule GlorboWeb.ProvidersLiveTest do
       assert masked =~ ~s|timeout_seconds = "30"|
     end
 
-    test "handles indented (inline-table) entries" do
+    test "handles indented entries under a standard table header" do
       input = """
       [env]
         ANTHROPIC_API_KEY = "sk-indented"
@@ -232,6 +232,30 @@ defmodule GlorboWeb.ProvidersLiveTest do
       assert masked =~ ~s|ANTHROPIC_API_KEY = "***"|
       assert masked =~ ~s|DEBUG = "1"|
       refute masked =~ "sk-indented"
+    end
+
+    # Copilot review on PR #34 round 2: an earlier line-anchored regex
+    # missed TOML INLINE tables (one-liners with `{ ... }`). Pin the
+    # actual inline-table syntax shut.
+    test "masks secrets inside TOML inline tables" do
+      input = ~s|env = { ANTHROPIC_API_KEY = "sk-inline", DEBUG = "1" }|
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|ANTHROPIC_API_KEY = "***"|
+      assert masked =~ ~s|DEBUG = "1"|
+      refute masked =~ "sk-inline"
+    end
+
+    # Copilot review on PR #34 round 2: the prior body-character class
+    # `[^"\r\n]*` stopped at the FIRST unescaped quote — so a value
+    # containing an escaped quote (`"a\"b"`) had only the prefix
+    # masked, leaving the rest in the clear.
+    test "masks values containing escaped quotes" do
+      input = ~s|api_key = "secret\\"with\\"quotes"|
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|api_key = "***"|
+      refute masked =~ "secret"
     end
   end
 end

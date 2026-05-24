@@ -405,7 +405,7 @@ defmodule GlorboWeb.ProvidersLive do
   # `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `*_TOKEN`, and single-
   # quoted TOML strings stayed in the clear. Now matches:
   #   * keys containing any of: key, token, secret, password, auth,
-  #     bearer, credential, cookie, session, sas, signature, sig
+  #     bearer, credential, cookie, session, sas, signature
   #   * the whole `[A-Z][A-Z0-9_]*` env-style identifier wrapper
   #     (so `ANTHROPIC_API_KEY` matches via the `_KEY` substring)
   #   * either double- or single-quoted string values
@@ -425,20 +425,21 @@ defmodule GlorboWeb.ProvidersLive do
   # this is a dashboard masking, not the source of truth.
   @secret_key_substrings ~w(key token secret password auth bearer credential cookie session sas signature)
 
+  # Match a TOML `key = "..."` (or `'...'`) assignment ANYWHERE in the
+  # text — NOT line-anchored — so inline-table entries like
+  # `env = { ANTHROPIC_API_KEY = "sk-..." }` get masked too (Copilot
+  # review on PR #34 round 2). The string body uses
+  # `(?:\\.|(?!\k<q>).)*` so it handles escaped quote characters
+  # (`"a\"b"`) without truncating early.
+  @toml_assignment_re ~r/(?<key>[A-Za-z_][A-Za-z0-9_-]*)(?<spc>[\t ]*=[\t ]*)(?<q>["'])(?<val>(?:\\.|(?!\k<q>).)*)\k<q>/
+
   # Public-but-`@doc false` so tests can drive the masking logic
   # without going through the full LiveView render.
   @doc false
   def mask_toml_secrets(text) when is_binary(text) do
-    # Match: optional leading whitespace, an identifier-ish key
-    # (alphanumerics + `_` + `-`), `=`, an optional space, then a
-    # quoted string (either `"..."` or `'...'`). Capture key + quote
-    # char so the replacement preserves the original syntax.
-    re =
-      ~r/^(?<indent>[\t ]*)(?<key>[A-Za-z_][A-Za-z0-9_-]*)(?<spc>[\t ]*=[\t ]*)(?<q>["'])[^"'\r\n]*\k<q>/m
-
-    Regex.replace(re, text, fn full, indent, key, spc, q ->
+    Regex.replace(@toml_assignment_re, text, fn full, key, spc, q, _val ->
       if secret_shaped_key?(key) do
-        "#{indent}#{key}#{spc}#{q}***#{q}"
+        "#{key}#{spc}#{q}***#{q}"
       else
         full
       end

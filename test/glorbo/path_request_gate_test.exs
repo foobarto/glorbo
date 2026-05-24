@@ -251,23 +251,33 @@ defmodule Glorbo.PathRequestGateTest do
     end
 
     test "rejects requests for paths under user-secret dirs (HOME-relative)" do
-      home = System.user_home() || System.get_env("HOME")
-      assert is_binary(home), "HOME must be set for this test"
+      # Override HOME to a deterministic temp dir so this test doesn't
+      # depend on the runner's environment (Copilot review on PR #34).
+      prev_home = System.get_env("HOME")
 
-      forbidden_home_paths = [
-        Path.join(home, ".ssh/id_ed25519"),
-        Path.join(home, ".gnupg/private-keys-v1.d/foo.key"),
-        Path.join(home, ".aws/credentials"),
-        Path.join(home, ".glorbo/config.md"),
-        Path.join(home, ".kube/config"),
-        Path.join(home, ".netrc")
-      ]
+      try do
+        fake_home = Path.join(System.tmp_dir!(), "glorbo-pathgate-test-#{System.unique_integer([:positive])}")
+        File.mkdir_p!(fake_home)
+        System.put_env("HOME", fake_home)
 
-      for p <- forbidden_home_paths do
-        result = PathRequestGate.validate_request(req(paths: [%{"path" => p, "mode" => "read"}]))
+        forbidden_home_paths = [
+          Path.join(fake_home, ".ssh/id_ed25519"),
+          Path.join(fake_home, ".gnupg/private-keys-v1.d/foo.key"),
+          Path.join(fake_home, ".aws/credentials"),
+          Path.join(fake_home, ".glorbo/config.md"),
+          Path.join(fake_home, ".kube/config"),
+          Path.join(fake_home, ".netrc")
+        ]
 
-        assert match?({:error, e} when e in [:forbidden_path, :invalid_path_entry], result),
-               "expected refusal for #{p}, got #{inspect(result)}"
+        for p <- forbidden_home_paths do
+          result =
+            PathRequestGate.validate_request(req(paths: [%{"path" => p, "mode" => "read"}]))
+
+          assert match?({:error, e} when e in [:forbidden_path, :invalid_path_entry], result),
+                 "expected refusal for #{p}, got #{inspect(result)}"
+        end
+      after
+        if prev_home, do: System.put_env("HOME", prev_home), else: System.delete_env("HOME")
       end
     end
 

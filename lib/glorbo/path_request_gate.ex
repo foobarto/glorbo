@@ -309,7 +309,11 @@ defmodule Glorbo.PathRequestGate do
   # absolute-prefix strings. `HOME` is read lazily so tests / mocks can
   # point at a tmpdir.
   defp forbidden_prefixes do
-    home = System.user_home() || System.get_env("HOME") || "/nonexistent"
+    # Prefer `$HOME` over `System.user_home/0` so a test can override
+    # by setting the env var. On a sane Unix system these resolve to
+    # the same path; the env var takes precedence specifically for
+    # determinism in CI / sandboxed test runs.
+    home = System.get_env("HOME") || System.user_home() || "/nonexistent"
 
     home_relative =
       Enum.map(@forbidden_home_relative, fn rel -> Path.join(home, rel) end)
