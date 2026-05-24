@@ -627,13 +627,21 @@ defmodule Glorbo.Approvals.Gate do
         false
 
       verdict_by ->
-        expected_actor = "agent:" <> verdict_by
-
+        # Codex P0 review of 3dc4eba: the legit emitter
+        # `Glorbo.Actions.Tasks.emit_verdict_audit/6` writes
+        # `actor: <bare-slug>` (no `agent:` prefix). The previous
+        # `"agent:" <> verdict_by` comparison meant EVERY real
+        # reviewer-emitted approval would fail corroboration —
+        # only the synthetic-seed test passed. Compare against the
+        # bare slug AND `target == task_path` (no fuzzy match —
+        # avoid cross-task corroboration leaks through
+        # `Audit.Query`'s substring fallback).
         base
         |> Glorbo.Audit.Query.for_task(co, td.task_path, limit: 100)
         |> Enum.any?(fn entry ->
           entry["action"] == "task.peer_review.approve" and
-            entry["actor"] == expected_actor
+            entry["actor"] == verdict_by and
+            entry["target"] == td.task_path
         end)
     end
   end

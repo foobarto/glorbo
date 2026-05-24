@@ -467,14 +467,22 @@ defmodule Glorbo.FileSpec.Formatter do
   end
 
   defp expand_paths(path) do
-    # Codex round-4 finding (PR #36): `File.stat` and `File.regular?`
-    # follow symlinks. If `glorbo fmt --write` is run over a path
-    # that contains agent-planted symlinks (e.g. an agent symlinks
-    # `projects/x/tasks/t.md` → `/etc/passwd`), the formatter would
-    # read the link target and write a re-rendered version BACK
-    # into the company tree — exfiltrating host content into a
-    # location agents can read. Use `File.lstat` so symlinks are
-    # never followed during expansion or filtering.
+    # Codex round-4 finding (PR #36) + codex pre-push review of
+    # 3dc4eba: `File.stat` and `File.regular?` follow symlinks.
+    # The initial fix swapped to `File.lstat` on the LEAF, but
+    # `Path.wildcard("**/*.md")` itself descends through symlinked
+    # intermediate directories. An agent doing
+    # `rmdir projects/x/tasks/sub && ln -s /home/foo/secrets
+    # projects/x/tasks/sub` makes the glob enumerate
+    # `/home/foo/secrets/*.md`; the leaf lstat sees a regular
+    # file (lstat resolves all-but-last) and the formatter reads
+    # + rewrites host content into agent-readable space.
+    #
+    # Defense: filter each candidate through
+    # `SymlinkGuard.assert_no_symlink_segment!/2` — any ancestor
+    # of the candidate that's a symlink causes rejection. Combined
+    # with the leaf lstat below, this catches both symlinked dirs
+    # and symlinked files.
     case File.lstat(path) do
       {:ok, %{type: :regular}} ->
         [path]
@@ -483,7 +491,7 @@ defmodule Glorbo.FileSpec.Formatter do
         path
         |> Path.join("**/*.md")
         |> Path.wildcard(match_dot: false)
-        |> Enum.filter(&lstat_regular_file?/1)
+        |> Enum.filter(&candidate_safe?/1)
         |> Enum.reject(&excluded?/1)
         |> Enum.sort()
 
@@ -492,11 +500,18 @@ defmodule Glorbo.FileSpec.Formatter do
     end
   end
 
-  defp lstat_regular_file?(path) do
+  defp candidate_safe?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      path,
+      "formatter: candidate"
+    )
+
     case File.lstat(path) do
       {:ok, %{type: :regular}} -> true
       _ -> false
     end
+  rescue
+    ArgumentError -> false
   end
 
   @excluded_segments ~w(.git _build deps node_modules burrito_out)

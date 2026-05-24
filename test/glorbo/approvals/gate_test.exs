@@ -819,6 +819,52 @@ defmodule Glorbo.Approvals.GateTest do
   # gate must refuse unless a corroborating system-emitted
   # `task.peer_review.approve` audit row from the named reviewer
   # is present.
+  # Codex pre-push review of 3dc4eba (PR #36 P0): the gate's
+  # corroboration check MUST match the actor format that
+  # `Glorbo.Actions.Tasks.emit_verdict_audit/6` writes. The legit
+  # emitter writes the actor as the BARE slug (no `agent:`
+  # prefix) — see test/glorbo/actions/tasks_test.exs:301 which
+  # pins that contract. The previous corroboration compared
+  # against `"agent:" <> verdict_by` and would have silently
+  # failed every real approval (synthetic-seed tests masked the
+  # bug because they mirrored the broken convention). This test
+  # asserts the seed helper's convention matches what
+  # `Tasks.emit_verdict_audit/6` actually produces — drift in
+  # either file should flag this test as well as the tasks test.
+  test "G18-emitter-contract: seed_peer_review_audit actor matches Tasks emitter convention",
+       ctx do
+    # Capture what the real emitter writes by handing it an
+    # audit-collector fun via the test seam. We don't drive the
+    # full record_peer_review_verdict path here (it requires a
+    # per-company AuditLog server), but we DO assert the seed
+    # helper above uses the same bare-slug shape that
+    # actions/tasks emits and that the gate's corroboration
+    # check looks for.
+
+    # The seed helper writes `"actor" => reviewer_slug` (bare).
+    # That MUST match what Actions.Tasks.emit_verdict_audit/6
+    # writes (tasks_test:301 — `event[:actor] == "critiqueops"`).
+    # If you change one, you must change both.
+    seed_peer_review_audit(ctx, "projects/foo/tasks/t-contract.md", "critiqueops")
+
+    audit_dir = Path.join([ctx.base, "companies", "acme", "audit"])
+    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    {:ok, content} = File.read(path)
+    [last_line | _] = content |> String.split("\n", trim: true) |> Enum.reverse()
+    {:ok, entry} = Jason.decode(last_line)
+
+    # If this assertion ever fails, the gate's
+    # `peer_review_verdict_corroborated?` actor compare needs to
+    # be updated to match the new shape.
+    assert entry["actor"] == "critiqueops",
+           "seed helper must write actor as bare slug to match Actions.Tasks emitter convention"
+
+    refute entry["actor"] == "agent:critiqueops",
+           "seed helper must NOT write actor with `agent:` prefix"
+  end
+
   test "G18-bypass: agent-seeded peer_review_verdict WITHOUT corroborating audit is refused",
        ctx do
     %{pid: pid} = start_gate(ctx)
@@ -882,10 +928,14 @@ defmodule Glorbo.Approvals.GateTest do
     ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
     audit_path = Path.join(audit_dir, "#{ym}.jsonl")
 
+    # Codex P0 review of 3dc4eba: must mirror the legit emitter
+    # `Glorbo.Actions.Tasks.emit_verdict_audit/6` which writes the
+    # actor as the bare slug (no `agent:` prefix). Earlier shape
+    # `"agent:" <> reviewer_slug` masked the gate's mismatch bug.
     entry =
       Jason.encode!(%{
         "action" => "task.peer_review.approve",
-        "actor" => "agent:" <> reviewer_slug,
+        "actor" => reviewer_slug,
         "agent" => reviewer_slug,
         "target" => task_path,
         "ts" => DateTime.to_iso8601(DateTime.utc_now())

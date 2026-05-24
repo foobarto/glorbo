@@ -48,14 +48,22 @@ for round 5.
   been recorded through `Actions.Tasks.record_peer_review_verdict/4`
   (which enforces `guard_actor_is_reviewer/2` and emits the
   audit row). The gate now requires a corroborating
-  `task.peer_review.approve` audit entry with
-  `actor: "agent:<reviewer-slug>"` matching the task's
-  `peer_review_verdict_by` field — same pattern as round-3's
-  loop-detector corroboration. Closed in concert with round-3's
+  `task.peer_review.approve` audit entry with `actor` matching
+  the task's `peer_review_verdict_by` slug AND `target` matching
+  the task path — same pattern as round-3's loop-detector
+  corroboration. Closed in concert with round-3's
   `emit_tool_audits` whitelist (`Tools.valid_audit_action?/1`
   rejects `task.peer_review.approve` from agent-supplied
   `audit_events`, so the corroboration row can't be forged).
-  New G18-bypass regression test pins the refusal shape.
+  Codex pre-push review of 3dc4eba caught a P0 regression in
+  the initial gate compare: it used `"agent:" <> verdict_by`
+  but the legit emitter writes the bare slug — every real
+  reviewer-emitted approval would have failed corroboration in
+  production. Both compare + seed helper now use the bare-slug
+  shape; new G18-emitter-contract test pins the
+  cross-file invariant (matches tasks_test:301 emitter
+  assertion). New G18-bypass regression test pins the refusal
+  shape.
 
 - **Search index TOCTOU lstat→read** (gemini, MED) —
   `Glorbo.Search.parse_fields/2` ran `:file.read_link_info`
@@ -81,8 +89,13 @@ for round 5.
   an Approve click would call `Actions.set_approval(:approved)`
   which only validates slug/path, flipping the victim task's
   status. Fix: require the actual `TaskDefinition.status ==
-  "pending-approval"` before listing the row. Sentinel left on
-  disk for forensic + operator's manual review.
+  "pending-approval"` before listing the row. Initial fix in
+  3dc4eba was looser (`requires_approval` set + status not
+  terminal); codex pre-push review noted the agent could
+  trivially set `requires_approval: director` on its own task,
+  so tightened to the canonical post-`Gate.request_approval`
+  state. Sentinel left on disk for forensic + operator's manual
+  review.
 
 - **Audit symlink-following on dashboard reads** (codex, MED;
   3 sites) — `audit_export_controller`, `inbox_live`, and
@@ -101,9 +114,15 @@ for round 5.
   (e.g. agent symlinks `projects/x/tasks/t.md` → `/etc/passwd`),
   the formatter would read the link target and write a
   re-rendered version back into the company tree — exfiltrating
-  host content into agent-readable storage. Switched to
-  `File.lstat` so symlinks are never followed during expansion
-  or filtering.
+  host content into agent-readable storage. Initial fix in
+  3dc4eba switched the LEAF check to `File.lstat` — but codex
+  pre-push review noted that `Path.wildcard("**/*.md")` itself
+  descends through symlinked intermediate directories, and
+  `lstat` on the leaf resolves all-but-last (so a symlinked dir
+  in the middle is invisible to leaf-only lstat). Now uses
+  `Sandbox.SymlinkGuard.assert_no_symlink_segment!/2` on each
+  candidate to reject any ancestor symlink, then the leaf
+  lstat catches symlinked files.
 
 - **Restore archive TOCTOU** (gemini, LOW) — `traversal_guard/1`
   and `extract/2` each opened the archive path independently. On

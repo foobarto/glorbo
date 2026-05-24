@@ -316,12 +316,6 @@ defmodule GlorboWeb.InboxLive do
   @state_glob "agents/*/state/awaiting-approval-*.md"
   @stuck_glob "agents/*/state/stuck-on-*.md"
 
-  # Codex round-4 finding (PR #36): sentinel_row anti-spoof set —
-  # tasks already in a terminal status can't be re-approved by the
-  # Director's click, so the row would be meaningless. See the
-  # `sentinel_row/4` clause below.
-  @approval_terminal_statuses ~w(approved denied cancelled done)
-
   defp load_sentinels(base, company) do
     co_dir = Path.join([base, "companies", company])
 
@@ -443,33 +437,26 @@ defmodule GlorboWeb.InboxLive do
         else
           rel = Path.relative_to(task_path, co_dir)
 
-          # Codex round-4 finding (PR #36): `awaiting-approval-X.md`
-          # lives under `agents/<slug>/state/` which is agent-writable.
-          # A malicious agent can drop a sentinel for ANY task in the
-          # company (via the glob lookup above) and have InboxLive
-          # render it as a pending approval. The Director's Approve
-          # click then calls `Glorbo.Actions.set_approval(:approved)`
-          # which only validates slug/path shape — flipping the
-          # victim task's status without the task ever requesting
-          # approval.
-          #
-          # The legit flow REQUIRES the task to carry
-          # `requires_approval: director` in its frontmatter (the
-          # gate only writes the sentinel for those tasks). A
-          # malicious agent could try to set requires_approval on a
-          # task it owns and then drop a sentinel — but in that
-          # case the task was already in a pre-approval state
-          # legitimately. The agent gains nothing from forging if
-          # the task already has requires_approval set.
-          #
-          # Drop the row UNLESS the actual TaskDefinition has
-          # requires_approval set AND its status is not already
-          # in a terminal state (see @approval_terminal_statuses).
-          # The sentinel is left on disk for forensic + operator's
-          # manual review.
+          # Codex round-4 finding + codex pre-push review of 3dc4eba
+          # (PR #36): `awaiting-approval-X.md` lives under
+          # `agents/<slug>/state/` which is agent-writable. A
+          # malicious agent could drop a sentinel for ANY task in
+          # the company; the Director's Approve click would call
+          # `Glorbo.Actions.set_approval(:approved)` and flip the
+          # victim's status. Initial fix gated on
+          # `requires_approval` + `status not terminal`, but the
+          # codex review noted that an agent can write
+          # `requires_approval: director` to its own task
+          # (frontmatter is agent-controlled in the agent's project
+          # tree), so the gate must require the canonical
+          # post-Gate.request_approval state: `status:
+          # "pending-approval"`. The agent can't write that status
+          # on their own task because TaskDefinition writes are
+          # gated upstream; only the Director / Gate transition
+          # sequence produces it. The sentinel is left on disk for
+          # forensic + operator's manual review.
           case Glorbo.TaskDefinition.parse_file(task_path, base: base, company: company) do
-            {:ok, %{requires_approval: ra, status: status} = task}
-            when ra not in [nil, ""] and status not in @approval_terminal_statuses ->
+            {:ok, %{status: "pending-approval"} = task} ->
               %{
                 task_id: task_id,
                 task_path: rel,
@@ -478,8 +465,8 @@ defmodule GlorboWeb.InboxLive do
               }
 
             _ ->
-              # Either parse failed, requires_approval is unset, or
-              # status is already terminal. Either way: ignore the
+              # Either parse failed or status isn't
+              # `pending-approval`. Either way: ignore the
               # sentinel (it's a forgery, a stale row from a
               # resolved cycle, or otherwise not actionable).
               nil
