@@ -574,12 +574,29 @@ defmodule Glorbo.Agent.LoopDetector do
     end
   end
 
+  @doc false
   # Current + previous UTC month — covers the rotation boundary
   # where the system-emitted `agent.loop_detected` row landed in
   # month N and the resolution arrives in N+1.
-  defp corroboration_months(%DateTime{} = now) do
-    cur = now |> DateTime.to_date() |> to_year_month()
-    prev = now |> DateTime.add(-32 * 86_400, :second) |> DateTime.to_date() |> to_year_month()
+  #
+  # Codex P1 review on PR #35: the previous `DateTime.add(-32d)`
+  # math lands in month N-2 when called from the FIRST day of
+  # month N (e.g. March 1 minus 32d = January 28 → "01"), so the
+  # immediately-previous month gets skipped at the boundary. Use
+  # calendar arithmetic instead: roll the day to 1, then subtract
+  # one day → guaranteed last day of the prior month.
+  #
+  # Public for the boundary-correctness regression test.
+  def corroboration_months(%DateTime{} = now) do
+    cur_date = DateTime.to_date(now)
+    cur = to_year_month(cur_date)
+
+    prev_date =
+      cur_date
+      |> Date.beginning_of_month()
+      |> Date.add(-1)
+
+    prev = to_year_month(prev_date)
     Enum.uniq([cur, prev])
   end
 

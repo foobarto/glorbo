@@ -19,6 +19,17 @@ agent-driven privilege/bypass primitives + 1 cross-agent sandbox
 escape), 1 MED (workspace symlink-follow), 2 LOW (defense-in-
 depth + grant-leak window).
 
+PR-review feedback round (codex P1 + Copilot, post-push of d5ba9b5):
+calendar arithmetic fix for the corroboration-month rollover boundary
+(was `DateTime.add(-32d)`, now `Date.beginning_of_month |> Date.add(-1)`),
+loud failure on workspace `File.rm` errors (was silent — would have
+restored the symlink-follow bug if rm ever returned `{:error, _}`),
+sanitisation of `sample_actions` in the audit-rejection feedback row
+(was raw `event.action`; non-binary or oversized terms now stringified
++ truncated to 80 bytes via `Util.UTF8.safe_byte_slice`), comment
+correction in `stop_inflight`. 5 new boundary regression tests for the
+corroboration calendar math.
+
 - **Cross-agent sandbox escape via permission-mount symlink-segment**
   (codex, HIGH) — `Glorbo.Sandbox.PermissionMapper` emitted bwrap
   `--bind` / `--ro-bind` source paths without checking ancestor

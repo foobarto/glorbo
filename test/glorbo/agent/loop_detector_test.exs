@@ -524,6 +524,39 @@ defmodule Glorbo.Agent.LoopDetectorTest do
     end
   end
 
+  # Codex P1 review on PR #35: corroboration_months was using
+  # `DateTime.add(-32d)`, which from the FIRST day of month N
+  # rolls back to month N-2 (e.g. March 1 → Jan 28 → "01"),
+  # skipping the immediately-previous month. The boundary-correct
+  # arithmetic uses `Date.beginning_of_month |> Date.add(-1)` to
+  # land on the last day of month N-1.
+  describe "corroboration_months/1 — boundary correctness (codex P1)" do
+    test "from first day of March returns [March, February], not [March, January]" do
+      now = ~U[2026-03-01 00:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-03", "2026-02"]
+    end
+
+    test "from first day of January returns [Jan, Dec of prior year]" do
+      now = ~U[2026-01-01 00:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-01", "2025-12"]
+    end
+
+    test "from first day of March in a non-leap year returns [March, February]" do
+      now = ~U[2025-03-01 12:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2025-03", "2025-02"]
+    end
+
+    test "from mid-month returns the obvious pair" do
+      now = ~U[2026-04-15 12:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-04", "2026-03"]
+    end
+
+    test "from last day of month returns [that-month, prior-month]" do
+      now = ~U[2026-04-30 23:59:59Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-04", "2026-03"]
+    end
+  end
+
   describe "apply_resolution_files/3 — file-drop protocol" do
     setup do
       base = Path.join(System.tmp_dir!(), "glorbo-loop-res-#{System.unique_integer([:positive])}")

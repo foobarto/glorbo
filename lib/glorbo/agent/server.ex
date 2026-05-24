@@ -245,7 +245,7 @@ defmodule Glorbo.Agent.Server do
         # (PathGrantStore revoke + proxy-token revoke + slot release
         # at `Dispatch.do_execute/4` tail) runs AFTER the `with`
         # block — SIGKILL bypasses it. PathGrantStore entries would
-        # leak with their original `{company, slot, task_id}` key
+        # leak with their original `{company, agent_slug, task_id}` key
         # until the next dispatch for the same task overwrote them
         # (and emergency-stop blocks new dispatches in this state).
         # Revoke explicitly before the kill. Proxy tokens have a

@@ -626,7 +626,7 @@ defmodule Glorbo.Agent.Dispatch do
           "dispatch: workspace path #{candidate} is a symlink; removing and recreating"
         )
 
-        _ = File.rm(candidate)
+        remove_suspect_entry!(candidate)
         fs.mkdir_p!.(candidate)
 
       {:ok, %File.Stat{type: :directory}} ->
@@ -640,7 +640,7 @@ defmodule Glorbo.Agent.Dispatch do
           "dispatch: workspace path #{candidate} is not a directory; removing and recreating"
         )
 
-        _ = File.rm(candidate)
+        remove_suspect_entry!(candidate)
         fs.mkdir_p!.(candidate)
 
       {:error, :enoent} ->
@@ -653,6 +653,27 @@ defmodule Glorbo.Agent.Dispatch do
         raise File.Error,
           reason: reason,
           action: "stat workspace subdir",
+          path: candidate
+    end
+  end
+
+  # Copilot review on PR #35: the previous shape was
+  # `_ = File.rm(candidate)` followed by `mkdir_p!`. If `rm` failed
+  # (EACCES, EBUSY, ...) the symlink stayed in place; `mkdir_p!`
+  # then followed it (a symlink to a directory satisfies the
+  # post-condition), restoring the very bypass the fix was meant
+  # to close. Raise loudly on rm failure so the caller's dispatch
+  # short-circuits rather than silently following the suspect
+  # entry.
+  defp remove_suspect_entry!(candidate) do
+    case File.rm(candidate) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise File.Error,
+          reason: reason,
+          action: "remove suspect workspace entry",
           path: candidate
     end
   end
@@ -1457,7 +1478,18 @@ defmodule Glorbo.Agent.Dispatch do
       end)
 
     if rejected != [] do
-      bad_actions = rejected |> Enum.map(&Map.get(&1, :action)) |> Enum.uniq()
+      # Copilot review on PR #35: `sample_actions` stored raw
+      # `Map.get(event, :action)` values into the audit detail
+      # JSON. The whole reason these events were rejected is the
+      # action was something unexpected — non-binary terms,
+      # arbitrarily large strings, agent-controlled payloads.
+      # Bound + stringify each sample so the audit row stays
+      # JSON-safe and size-bounded (and an attacker can't exfil
+      # via the rejection feedback loop).
+      bad_actions =
+        rejected
+        |> Enum.map(&sanitise_rejected_action(Map.get(&1, :action)))
+        |> Enum.uniq()
 
       Logger.warning(
         "dispatch: agent #{spec.slug} attempted to emit unrecognised audit actions " <>
@@ -1568,6 +1600,23 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp bound_detail(detail), do: detail
+
+  # Copilot review on PR #35: rejected actions feed back into the
+  # audit log via `sample_actions`. Coerce each entry to a short
+  # printable string so non-binary terms (atoms, integers, maps,
+  # …) don't crash `Jason.encode`, and oversized strings can't
+  # bloat the audit row or smuggle data out via the rejection
+  # feedback channel.
+  @rejected_action_sample_bytes 80
+  defp sanitise_rejected_action(action) when is_binary(action) do
+    Glorbo.Util.UTF8.safe_byte_slice(action, @rejected_action_sample_bytes)
+  end
+
+  defp sanitise_rejected_action(other) do
+    other
+    |> inspect(limit: 5, printable_limit: @rejected_action_sample_bytes)
+    |> Glorbo.Util.UTF8.safe_byte_slice(@rejected_action_sample_bytes)
+  end
 
   # Post-dispatch loop check — reads this month's audit jsonl for
   # consecutive failures on the same task_path and, on threshold,
