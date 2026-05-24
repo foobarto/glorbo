@@ -11,7 +11,7 @@ which isn't portable across CI vs local checkouts; `.dialyzer_ignore.exs`
 is kept intentionally empty).
 
 ```
-DIALYZER_BASELINE = 166
+DIALYZER_BASELINE = 167
 ```
 
 > **163 → 166 (P2 security wave, 2026-05-22).** The wave added 4 private
@@ -20,6 +20,14 @@ DIALYZER_BASELINE = 166
 > whose *caller* functions are already in this baseline as `unused_fun`
 > false-positives (dialyzer can't trace the audit-line fold / dep-injection paths),
 > so the new callees inherit the same false flag. Net +3.
+>
+> **166 → 167 (PR #35 round-3 review-feedback wave, 2026-05-24).** Added
+> `sanitise_rejected_action/1` (dispatch.ex) — bounds `Map.get(event, :action)`
+> samples in the `agent.tool_audit_rejected` audit row to 80 bytes via
+> `Util.UTF8.safe_byte_slice` (Copilot review). Verifiably called from
+> `emit_tool_audits/5`, but `emit_tool_audits` is itself already in this
+> baseline as `unused_fun` (same dialyzer-can't-trace-audit-fold pattern
+> as the P2 wave), so the new callee inherits the same false flag. Net +1.
 
 **Burn-down:** when you fix warnings, lower the baseline number in
 `.github/workflows/ci.yml` (the `baseline=` in the Dialyzer step). When it

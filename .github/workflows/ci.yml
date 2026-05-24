@@ -157,7 +157,13 @@ jobs:
           # whose callers are themselves already-baselined unused_fun
           # false-positives, so dialyzer flags the new callees too. They are
           # verifiably called + tested; net +3. See docs/testing/dialyzer-baseline.md.
-          baseline=166
+          #
+          # 166 -> 167: PR #35 round-3 review-feedback wave added
+          # `sanitise_rejected_action/1` (dispatch.ex) — reachable only via
+          # `emit_tool_audits/5`, which is already baselined as unused_fun
+          # (dialyzer can't trace the audit-fold call graph). Same false-
+          # positive class as the P2 wave; net +1.
+          baseline=167
           echo "Dialyzer warnings: ${count} (baseline ${baseline})"
           if [ "${count}" -gt "${baseline}" ]; then
             echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."
