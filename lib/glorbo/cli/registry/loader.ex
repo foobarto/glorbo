@@ -158,7 +158,8 @@ defmodule Glorbo.CLI.Registry.Loader do
   # ---------------------------------------------------------------------------
 
   defp build_provider(raw, path, source) when is_map(raw) do
-    with {:ok, kind} <- parse_kind(raw, path),
+    with {:ok, name} <- parse_name(raw, path),
+         {:ok, kind} <- parse_kind(raw, path),
          :ok <- check_required(raw, path, kind),
          {:ok, binary} <- parse_binary(raw, path, kind),
          {:ok, prompt_mode} <- parse_prompt_mode(raw, path),
@@ -178,7 +179,7 @@ defmodule Glorbo.CLI.Registry.Loader do
          {:ok, fallback_paths} <- parse_fallback_paths(raw, path),
          {:ok, phase_timeout_ms} <- parse_phase_timeout_ms(raw, path) do
       provider = %Provider{
-        name: raw["name"],
+        name: name,
         kind: kind,
         binary: binary,
         args: args,
@@ -204,6 +205,34 @@ defmodule Glorbo.CLI.Registry.Loader do
       }
 
       {:ok, provider}
+    end
+  end
+
+  # Codex round-2 finding: `raw["name"]` used to flow straight into
+  # `%Provider{name: ...}` and from there into filesystem paths —
+  # model-cache files, native-credential filenames, ACP session
+  # filenames (`<reply_dir>/../sessions/<provider_name>__<task_id>.txt`).
+  # A config influencer could put `..` segments or path separators in
+  # the name and make refresh/dispatch read or write outside the
+  # provider-owned directories. Reject anything that isn't a strict
+  # single-segment slug (lowercase letters/digits + `-`/`_`, length
+  # 1-64, leading alphanumeric) before constructing the Provider.
+  @provider_name_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
+
+  defp parse_name(raw, path) do
+    case Map.get(raw, "name") do
+      nil ->
+        {:error, {:missing_field, path, "name"}}
+
+      name when is_binary(name) ->
+        if Regex.match?(@provider_name_re, name) do
+          {:ok, name}
+        else
+          {:error, {:invalid_provider_name, path, name}}
+        end
+
+      other ->
+        {:error, {:invalid_provider_name, path, other}}
     end
   end
 
@@ -661,6 +690,11 @@ defmodule Glorbo.CLI.Registry.Loader do
   def format_error({:invalid_kind, path, value}),
     do:
       "providers config error: #{path} kind #{inspect(value)} not in #{inspect(Provider.kinds())}"
+
+  def format_error({:invalid_provider_name, path, value}),
+    do:
+      "providers config error: #{path} name #{inspect(value)} must match " <>
+        "`[a-z][a-z0-9_-]{0,63}` (single-segment slug, no path separators or dot segments)"
 
   def format_error({:invalid_binary, path, detail}),
     do: "providers config error: #{path} #{detail}"

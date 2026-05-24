@@ -585,7 +585,23 @@ defmodule Glorbo.CLI.Dispatcher do
   # Reply-file contract
   # ---------------------------------------------------------------------------
 
-  defp prepare_reply_dir(dir, reply_path, fs) do
+  # Public-but-`@doc false` so the symlink-ancestor defense can be
+  # unit-tested without standing up a full ACP dispatch.
+  @doc false
+  def prepare_reply_dir(dir, reply_path, fs) do
+    # Codex round-2 finding: the ACP CLI runs concurrently in the
+    # workspace and can replace `.glorbo/outbox` (or any ancestor of
+    # the reply path) with a symlink BEFORE the host runs `mkdir_p!`.
+    # `mkdir_p!` is happy to follow that symlink, and the subsequent
+    # `write_reply_file!` would then land OUTSIDE the workspace. The
+    # leaf `lstat` check on `reply_path` happens later but only
+    # protects against a symlinked LEAF — not a symlinked ancestor.
+    # Refuse here, before any I/O, so the host can never be used as a
+    # confused-deputy writer.
+    if Glorbo.Filesystem.AgentWritableFile.any_symlink_in_path?(dir) do
+      raise "prepare_reply_dir: refusing to write under symlinked ancestor: #{dir}"
+    end
+
     fs.mkdir_p!.(dir)
     if fs.exists?.(reply_path), do: fs.rm!.(reply_path)
     :ok
@@ -991,43 +1007,59 @@ defmodule Glorbo.CLI.Dispatcher do
   defp write_acp_session_id(_, ""), do: :ok
 
   defp write_acp_session_id(path, session_id) when is_binary(session_id) do
-    if uuid_shape?(session_id) do
-      File.mkdir_p!(Path.dirname(path))
+    cond do
+      not uuid_shape?(session_id) ->
+        # D8: refuse to persist a non-UUID sessionId. A future
+        # dispatch trying to `resumeSession` against it would be
+        # rejected by stado / any other ACP peer that validates
+        # input strictly. Better to start fresh next call than to
+        # wedge the agent on a bad token.
+        Logger.warning(
+          "[dispatcher] dropping non-UUID ACP sessionId from persistence: " <>
+            "#{inspect(session_id)} — next dispatch will start a fresh session"
+        )
 
-      # B-024: refuse to write through a symlink an agent may have
-      # planted at the session path (which would clobber the link
-      # target on the host). lstat-and-require regular-or-absent,
-      # mirroring `write_reply_file!/4`.
-      case AgentWritableFile.ensure_writable(path) do
-        :ok ->
-          File.write!(path, session_id)
-          :ok
+        :ok
 
-        {:error, {:not_regular_file, type}} ->
-          Logger.warning(
-            "[dispatcher] refusing to write ACP session id through non-regular path (#{inspect(type)}): #{path}"
-          )
+      AgentWritableFile.any_symlink_in_path?(Path.dirname(path)) ->
+        # Codex round-2 finding: refuse if any ancestor of the session
+        # file is a symlink BEFORE the host calls `mkdir_p!` (which
+        # follows ancestor symlinks). Agents control the workspace and
+        # can replace `.glorbo/sessions/` with a symlink to a host path
+        # between dispatch start and ACP completion; without this check,
+        # the host writes the session-id file at the redirected
+        # location. The `ensure_writable(path)` leaf-check below stays
+        # as a second layer (B-024).
+        Logger.warning(
+          "[dispatcher] refusing to write ACP session id under symlinked ancestor: " <>
+            "#{Path.dirname(path)}"
+        )
 
-          :ok
+        :ok
 
-        {:error, reason} ->
-          Logger.warning(
-            "[dispatcher] ACP session file lstat failed (#{inspect(reason)}): #{path}"
-          )
+      true ->
+        File.mkdir_p!(Path.dirname(path))
 
-          :ok
-      end
-    else
-      # D8: refuse to persist a non-UUID sessionId. A future
-      # dispatch trying to `resumeSession` against it would be
-      # rejected by stado / any other ACP peer that validates
-      # input strictly. Better to start fresh next call than to
-      # wedge the agent on a bad token.
-      Logger.warning(
-        "[dispatcher] dropping non-UUID ACP sessionId from persistence: #{inspect(session_id)} — next dispatch will start a fresh session"
-      )
+        case AgentWritableFile.ensure_writable(path) do
+          :ok ->
+            File.write!(path, session_id)
+            :ok
 
-      :ok
+          {:error, {:not_regular_file, type}} ->
+            Logger.warning(
+              "[dispatcher] refusing to write ACP session id through non-regular path " <>
+                "(#{inspect(type)}): #{path}"
+            )
+
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "[dispatcher] ACP session file lstat failed (#{inspect(reason)}): #{path}"
+            )
+
+            :ok
+        end
     end
   end
 

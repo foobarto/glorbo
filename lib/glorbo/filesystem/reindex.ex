@@ -84,9 +84,31 @@ defmodule Glorbo.Filesystem.Reindex do
   The `company` argument is currently unused but reserved for Phase-3
   per-company pipelining.
   """
-  @spec process_path(String.t(), Path.t()) :: :indexed | :unchanged | {:skip, term()}
+  @spec process_path(String.t(), Path.t()) ::
+          :indexed | :unchanged | {:skip, term()}
   def process_path(_company, path) do
-    process_file(path)
+    # Codex round-2 finding: the full-reindex pass uses
+    # `safe_markdown_files/1` which rejects any path whose ANCESTOR
+    # chain crosses a symlink (via
+    # `AgentWritableFile.any_symlink_in_path?/1`). The watcher-driven
+    # incremental path went straight to `process_file/1`, which only
+    # lstat'd the LEAF — so an agent with `projects:write` could plant a
+    # symlinked DIRECTORY in the project tree and have files reached
+    # through it indexed into SQLite/UI as if they belonged to the
+    # company. Mirror the full-pass discipline at the ancestor level
+    # here. Leaf-symlink rejection stays in `process_file/1` (returns
+    # `{:skip, {:not_regular_file, :symlink}}` via the lstat check).
+    if symlinked_ancestor?(path) do
+      Logger.warning("reindex rejected incremental path (symlinked ancestor segment): #{path}")
+      {:skip, :symlinked_ancestor}
+    else
+      process_file(path)
+    end
+  end
+
+  defp symlinked_ancestor?(path) do
+    parent = Path.dirname(path)
+    parent != path and AgentWritableFile.any_symlink_in_path?(parent)
   end
 
   @doc """

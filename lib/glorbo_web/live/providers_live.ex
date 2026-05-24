@@ -397,10 +397,18 @@ defmodule GlorboWeb.ProvidersLive do
   defp version_display(%Provider{version: v}), do: v
 
   # Threatmodel: the raw TOML may contain user-set env overrides
-  # such as `env = { ANTHROPIC_API_KEY = "sk-..." }`. Mask any line
-  # whose key looks secret-shaped (api_key / token / secret /
-  # password / authorization) so the dashboard doesn't render
-  # credentials in plaintext.
+  # such as `env = { ANTHROPIC_API_KEY = "sk-..." }`. Mask any value
+  # whose key looks secret-shaped so the dashboard doesn't render
+  # credentials in plaintext. Codex round-2 review pointed out the
+  # original regex only matched a small set of bare key names + only
+  # double-quoted strings, so common env names like
+  # `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `*_TOKEN`, and single-
+  # quoted TOML strings stayed in the clear. Now matches:
+  #   * keys containing any of: key, token, secret, password, auth,
+  #     bearer, credential, cookie, session, sas, signature, sig
+  #   * the whole `[A-Z][A-Z0-9_]*` env-style identifier wrapper
+  #     (so `ANTHROPIC_API_KEY` matches via the `_KEY` substring)
+  #   * either double- or single-quoted string values
   defp read_toml(%Provider{source_file: path}) when is_binary(path) do
     case File.read(path) do
       {:ok, text} -> mask_toml_secrets(text)
@@ -410,12 +418,36 @@ defmodule GlorboWeb.ProvidersLive do
 
   defp read_toml(_), do: "# (no source file)"
 
-  @secret_key_re ~r/(?i)\b(api[_-]?key|secret|token|password|auth(?:orization)?|access[_-]?key)\s*=\s*"[^"]*"/
+  # A TOML key is "secret-shaped" if its name (case-insensitive)
+  # contains any of these substrings. Substring match (not word
+  # boundary) so `ANTHROPIC_API_KEY` matches via `key`, `gh_token`
+  # via `token`, `auth_bearer` via both. False positives are fine —
+  # this is a dashboard masking, not the source of truth.
+  @secret_key_substrings ~w(key token secret password auth bearer credential cookie session sas signature)
 
-  defp mask_toml_secrets(text) when is_binary(text) do
-    Regex.replace(@secret_key_re, text, fn _full, key ->
-      ~s(#{key} = "***")
+  # Public-but-`@doc false` so tests can drive the masking logic
+  # without going through the full LiveView render.
+  @doc false
+  def mask_toml_secrets(text) when is_binary(text) do
+    # Match: optional leading whitespace, an identifier-ish key
+    # (alphanumerics + `_` + `-`), `=`, an optional space, then a
+    # quoted string (either `"..."` or `'...'`). Capture key + quote
+    # char so the replacement preserves the original syntax.
+    re =
+      ~r/^(?<indent>[\t ]*)(?<key>[A-Za-z_][A-Za-z0-9_-]*)(?<spc>[\t ]*=[\t ]*)(?<q>["'])[^"'\r\n]*\k<q>/m
+
+    Regex.replace(re, text, fn full, indent, key, spc, q ->
+      if secret_shaped_key?(key) do
+        "#{indent}#{key}#{spc}#{q}***#{q}"
+      else
+        full
+      end
     end)
+  end
+
+  defp secret_shaped_key?(key) when is_binary(key) do
+    lower = String.downcase(key)
+    Enum.any?(@secret_key_substrings, &String.contains?(lower, &1))
   end
 
   defp subscribe_agent_status_all do
