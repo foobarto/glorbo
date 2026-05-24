@@ -153,7 +153,12 @@ defmodule Glorbo.Sandbox.PermissionMapperTest do
       File.mkdir_p!(Path.join([co, "projects", "foo", "tasks"]))
 
       argv = PermissionMapper.to_argv([{"tasks", "update", "foo"}], co)
-      assert argv == ["--bind", Path.join([co, "projects", "foo", "tasks"]), "/projects/foo/tasks"]
+
+      assert argv == [
+               "--bind",
+               Path.join([co, "projects", "foo", "tasks"]),
+               "/projects/foo/tasks"
+             ]
     end
   end
 end
