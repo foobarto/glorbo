@@ -226,6 +226,66 @@ defmodule Glorbo.RestoreTest do
                  skip_fixer: true
                )
     end
+
+    # PR #36 (gemini round-4 F1): tar symlink-extraction bypass.
+    # `:erl_tar.extract` materialises entries in archive order,
+    # including symlinks. An archive with entry 1 = `evil`
+    # (symlink → outside-target) and entry 2 = `evil/payload`
+    # (regular file) would have the kernel write the payload
+    # OUTSIDE the staging dir during extract — the post-extract
+    # `verify_no_escaping_symlinks` walk caught the residual symlink
+    # but couldn't undo the out-of-tree write. The pre-extract
+    # `reject_symlink_entries/1` now refuses any archive containing
+    # `:symlink` or `:link` entries up-front. Glorbo backups never
+    # contain links (Backup.run flat-list creates with
+    # :erl_tar.create), so any link entry is the attack we're
+    # defending against (or a non-Glorbo archive we don't support).
+    test "REFUSES archive containing symlink entries (pre-extract defense)",
+         %{host_b: b} do
+      bad_archive =
+        Path.join(
+          System.tmp_dir!(),
+          "evil-symlink-pre-#{System.unique_integer([:positive])}.tar.gz"
+        )
+
+      on_exit(fn -> File.rm_rf!(bad_archive) end)
+
+      archive_root =
+        Path.join(
+          System.tmp_dir!(),
+          "evil-symlink-src-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(archive_root)
+      # Symlink → /tmp; if not pre-rejected, extract would create
+      # `staging/evil → /tmp`, then a sibling `evil/payload` entry
+      # would write `/tmp/payload`.
+      :ok = File.ln_s("/tmp", Path.join(archive_root, "evil"))
+
+      {:ok, tar} = :erl_tar.open(String.to_charlist(bad_archive), [:write, :compressed])
+
+      :ok =
+        :erl_tar.add(
+          tar,
+          String.to_charlist(Path.join(archive_root, "evil")),
+          ~c"evil",
+          []
+        )
+
+      :ok = :erl_tar.close(tar)
+      File.rm_rf!(archive_root)
+
+      assert {:error, {:archive_contains_links, bad}} =
+               Glorbo.Restore.run(bad_archive,
+                 base: b,
+                 force: true,
+                 skip_migrate: true,
+                 skip_fixer: true
+               )
+
+      assert is_list(bad) and bad != []
+      assert hd(bad).type in [:symlink, :link]
+    end
   end
 
   describe "Glorbo.Restore.run_cli/1" do

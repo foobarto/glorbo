@@ -720,7 +720,9 @@ defmodule GlorboWeb.TaskLive do
     path = Path.join([base, "companies", co, "audit", "#{month}.jsonl"])
     zero = %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
 
-    if File.regular?(path) do
+    # Codex round-4 finding (PR #36): same symlink-following risk as
+    # audit_export + inbox_live. Walk ancestors with `SymlinkGuard`.
+    if audit_path_safe_to_read?(path) do
       path
       |> File.stream!([], :line)
       |> Enum.reduce(zero, fn line, acc -> accumulate_usage(line, rel_path, acc) end)
@@ -729,6 +731,17 @@ defmodule GlorboWeb.TaskLive do
     end
   rescue
     _ -> %{prompt_tokens: 0, completion_tokens: 0, cost_usd_cents: 0, dispatch_count: 0}
+  end
+
+  defp audit_path_safe_to_read?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(path, "task_live: audit JSONL")
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
   end
 
   defp accumulate_usage(line, rel_path, acc) do

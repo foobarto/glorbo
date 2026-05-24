@@ -28,7 +28,16 @@ defmodule GlorboWeb.AuditExportController do
 
       # Threatmodel wave 23: stream the JSONL into the CSV body
       # row-by-row instead of slurping the whole month into RAM.
-      if File.regular?(path) do
+      #
+      # Codex round-4 finding (PR #36): `File.regular?` + `File.stream!`
+      # both follow symlinks. If any agent ever has transient write
+      # to the `audit/` dir (or an ancestor), a planted symlink
+      # redirects the export to an arbitrary host path the daemon
+      # user owns. Use the shared `SymlinkGuard` to refuse any
+      # symlinked ancestor segment, then `lstat` the leaf to refuse
+      # a symlink-as-file. The audit dir is operator-managed; an
+      # unexpected lstat error should fail safely as "empty export".
+      if audit_path_safe_to_read?(path) do
         csv_body =
           path
           |> File.stream!([], :line)
@@ -119,5 +128,24 @@ defmodule GlorboWeb.AuditExportController do
 
   defp needs_quoting?(value) do
     String.contains?(value, [",", "\"", "\n", "\r", "'"])
+  end
+
+  # Pre-stream lstat-walk to refuse any symlinked ancestor + a
+  # symlink-as-file at the leaf. Same defense as
+  # `Glorbo.Filesystem.Reindex` for full-pass scans (round 2).
+  # Returns true ONLY when every segment from `/` down to the file
+  # is a regular non-symlink directory + a regular non-symlink leaf.
+  defp audit_path_safe_to_read?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      path,
+      "audit_export: audit JSONL"
+    )
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
   end
 end

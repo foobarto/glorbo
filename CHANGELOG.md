@@ -10,6 +10,141 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex + gemini round-4 deep-dive: 10 hardening fixes (bundled)
+
+Round 4 of the ongoing codex + gemini audit cycle, scanning the
+post-PR-#35 codebase. 10 findings bundled into one PR per the
+"reduce review-cycle overhead" workflow; 2 HIGH (1 tar-extraction
+bypass + 1 peer-review gate bypass), 4 MED (1 TOCTOU + 1 inbox
+sentinel-spoof + 2 symlink-following), 4 LOW (3 defense-in-depth
++ 1 grant-pattern). Codex deferred `kanban_live.ex` +
+`agent_live.ex` (too large for one codex invocation) → flagged
+for round 5.
+
+- **Restore tar symlink-extraction bypass** (gemini, HIGH) —
+  `Glorbo.Restore.extract/2`'s `:erl_tar.extract` materialised
+  entries in archive order, including symlinks. A crafted
+  archive with entry 1 = `evil` (symlink → `/tmp`) + entry 2 =
+  `evil/payload` (regular file) caused the kernel to write
+  `/tmp/payload` during EXTRACT — `verify_no_escaping_symlinks`
+  walked staging post-extract but couldn't undo the out-of-tree
+  write. The pre-extract `traversal_guard/1` only inspected
+  entry NAMES via `:erl_tar.table`, not link TARGETS. Fix:
+  `reject_symlink_entries/1` refuses ANY archive containing
+  `:symlink` or `:link` entries up-front. Glorbo backups never
+  contain links (`Backup.run` builds via `:erl_tar.create` on a
+  flat file list which stores resolved file content, not link
+  records), so any link entry is the attack we're defending
+  against (or a non-Glorbo archive we don't support). New
+  regression test plants a `staging/evil → /tmp` symlink entry
+  and asserts pre-extract refusal.
+
+- **Peer-review verdict agent-self-approval bypass** (codex, HIGH) —
+  An agent assigned to a task can write its own task .md file
+  (`projects:write:<proj>` → `tasks/`) and pre-seed
+  `peer_review_required: true` + `peer_review_verdict: "approve"`
+  directly into the frontmatter. `Glorbo.Approvals.Gate.peer_review_ready?/1`
+  only checked the verdict string, never that the verdict had
+  been recorded through `Actions.Tasks.record_peer_review_verdict/4`
+  (which enforces `guard_actor_is_reviewer/2` and emits the
+  audit row). The gate now requires a corroborating
+  `task.peer_review.approve` audit entry with
+  `actor: "agent:<reviewer-slug>"` matching the task's
+  `peer_review_verdict_by` field — same pattern as round-3's
+  loop-detector corroboration. Closed in concert with round-3's
+  `emit_tool_audits` whitelist (`Tools.valid_audit_action?/1`
+  rejects `task.peer_review.approve` from agent-supplied
+  `audit_events`, so the corroboration row can't be forged).
+  New G18-bypass regression test pins the refusal shape.
+
+- **Search index TOCTOU lstat→read** (gemini, MED) —
+  `Glorbo.Search.parse_fields/2` ran `:file.read_link_info`
+  (lstat — refuses symlinks), then called `File.read(path)`
+  later, which re-resolves and follows symlinks. An agent that
+  owns its task file can race the indexer:
+  `unlink t-1.md && ln -s /home/.../other-co/proposals/secret.md t-1.md`
+  between the two checks. The secret then becomes the task's
+  `title` in the search cache → Ctrl+K leaks it to the director.
+  Defense: `read_task_body_with_inode_check/1` opens an fd
+  first, fstats it, compares the fstat inode to the inode the
+  lstat saw moments earlier; refuses on mismatch. Erlang's
+  `:file.open` doesn't expose `O_NOFOLLOW`, so this is the
+  closest we can get without a C NIF.
+
+- **Inbox sentinel-row spoofing** (codex, MED) —
+  `Glorbo.InboxLive.sentinel_row/4` rendered any
+  `agents/*/state/awaiting-approval-*.md` file as a pending
+  approval row by globbing the task by id; no check that the
+  task was actually in `status: pending-approval`. A malicious
+  agent could drop `agents/<own>/state/awaiting-approval-victim-99.md`
+  and the Director's Inbox would show victim-99 as pending —
+  an Approve click would call `Actions.set_approval(:approved)`
+  which only validates slug/path, flipping the victim task's
+  status. Fix: require the actual `TaskDefinition.status ==
+  "pending-approval"` before listing the row. Sentinel left on
+  disk for forensic + operator's manual review.
+
+- **Audit symlink-following on dashboard reads** (codex, MED;
+  3 sites) — `audit_export_controller`, `inbox_live`, and
+  `task_live` all called `File.regular?` + `File.stream!` on
+  `companies/<co>/audit/<YYYY-MM>.jsonl`. Both follow symlinks.
+  If any agent ever has transient write to the `audit/` dir (or
+  an ancestor), a planted symlink redirects the read to an
+  arbitrary host path the daemon user owns. All three sites now
+  gate via `Sandbox.SymlinkGuard.assert_no_symlink_segment!/2`
+  + leaf `File.lstat` before streaming.
+
+- **Formatter follows agent-planted symlinks** (codex, MED) —
+  `Glorbo.FileSpec.Formatter.expand_paths/1` used `File.stat` +
+  `File.regular?`, both of which follow symlinks. If `glorbo fmt
+  --write` ran over a path containing agent-planted symlinks
+  (e.g. agent symlinks `projects/x/tasks/t.md` → `/etc/passwd`),
+  the formatter would read the link target and write a
+  re-rendered version back into the company tree — exfiltrating
+  host content into agent-readable storage. Switched to
+  `File.lstat` so symlinks are never followed during expansion
+  or filtering.
+
+- **Restore archive TOCTOU** (gemini, LOW) — `traversal_guard/1`
+  and `extract/2` each opened the archive path independently. On
+  a shared filesystem (archive in `/tmp` with concurrent
+  writers), an attacker with write to the archive path could
+  swap a verified-safe archive for a malicious one between the
+  two opens. Single-user host: not exploitable. Defense-in-depth:
+  `copy_archive_to_private/2` copies the archive bytes into a
+  private path under `base` (which the daemon user owns) with
+  `:file.open([:exclusive])` (O_EXCL); both passes run against
+  that immutable local copy; cleaned up in `run/2`'s `after`.
+
+- **home_history validate_rev permitted extended-SHA1 syntax**
+  (gemini, LOW) — `validate_rev/1` rejected control chars,
+  whitespace, leading `-`, but permitted `:`, `~`, `^`, `@{`,
+  `..`. All carry extended `git rev-parse` semantics (`rev:path`,
+  `rev~N`, `rev^N`, `rev@{date}`, `A..B`) that turn a single-rev
+  arg into a range / blob-path / reflog lookup. Only `glorbo
+  history show <rev>` is the live caller (director → director
+  privilege boundary). Now rejects those characters outright.
+
+- **company_boot File.dir? follows symlinks** (gemini, LOW) —
+  `CompanyBoot.do_boot/1` checked `File.dir?` on
+  `companies/<slug>`. An attacker who can plant
+  `~/.glorbo/companies/<valid-slug>` as a symlink to an
+  attacker-controlled tree (requires write to user's $HOME,
+  already-compromised host) would have CompanyBoot start a
+  supervisor against that tree. New `real_directory?/1` uses
+  `:file.read_link_info` so symlinks don't qualify.
+
+- **BrainDump + Search + Inbox.Archive missing internal Slug
+  guards** (gemini, LOW) — Public functions accepted a
+  `company`/`co` string without internal `Glorbo.Slug.valid?`
+  validation. All current callers (BrainDumpLive, MCP
+  CaptureBrainDump, SearchController, InboxLive) gate via
+  `Slug.valid?` before calling, so not exploitable today, but a
+  future caller forgetting the gate would let
+  `co == "../../etc"` reach `Path.join`. Mirrors round-3's
+  hardening of `Audit.Query` and `Tools.valid_audit_action?` —
+  add the gate at module entry, fail safe.
+
 ### Security — codex + gemini round-3 deep-dive: 8 hardening fixes (bundled)
 
 Round 3 of the ongoing codex + gemini audit cycle, scanning the

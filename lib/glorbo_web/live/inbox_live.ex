@@ -316,6 +316,12 @@ defmodule GlorboWeb.InboxLive do
   @state_glob "agents/*/state/awaiting-approval-*.md"
   @stuck_glob "agents/*/state/stuck-on-*.md"
 
+  # Codex round-4 finding (PR #36): sentinel_row anti-spoof set —
+  # tasks already in a terminal status can't be re-approved by the
+  # Director's click, so the row would be meaningless. See the
+  # `sentinel_row/4` clause below.
+  @approval_terminal_statuses ~w(approved denied cancelled done)
+
   defp load_sentinels(base, company) do
     co_dir = Path.join([base, "companies", company])
 
@@ -437,8 +443,33 @@ defmodule GlorboWeb.InboxLive do
         else
           rel = Path.relative_to(task_path, co_dir)
 
+          # Codex round-4 finding (PR #36): `awaiting-approval-X.md`
+          # lives under `agents/<slug>/state/` which is agent-writable.
+          # A malicious agent can drop a sentinel for ANY task in the
+          # company (via the glob lookup above) and have InboxLive
+          # render it as a pending approval. The Director's Approve
+          # click then calls `Glorbo.Actions.set_approval(:approved)`
+          # which only validates slug/path shape — flipping the
+          # victim task's status without the task ever requesting
+          # approval.
+          #
+          # The legit flow REQUIRES the task to carry
+          # `requires_approval: director` in its frontmatter (the
+          # gate only writes the sentinel for those tasks). A
+          # malicious agent could try to set requires_approval on a
+          # task it owns and then drop a sentinel — but in that
+          # case the task was already in a pre-approval state
+          # legitimately. The agent gains nothing from forging if
+          # the task already has requires_approval set.
+          #
+          # Drop the row UNLESS the actual TaskDefinition has
+          # requires_approval set AND its status is not already
+          # in a terminal state (see @approval_terminal_statuses).
+          # The sentinel is left on disk for forensic + operator's
+          # manual review.
           case Glorbo.TaskDefinition.parse_file(task_path, base: base, company: company) do
-            {:ok, task} ->
+            {:ok, %{requires_approval: ra, status: status} = task}
+            when ra not in [nil, ""] and status not in @approval_terminal_statuses ->
               %{
                 task_id: task_id,
                 task_path: rel,
@@ -447,7 +478,11 @@ defmodule GlorboWeb.InboxLive do
               }
 
             _ ->
-              %{task_id: task_id, task_path: rel, title: task_id, assignee: nil}
+              # Either parse failed, requires_approval is unset, or
+              # status is already terminal. Either way: ignore the
+              # sentinel (it's a forgery, a stale row from a
+              # resolved cycle, or otherwise not actionable).
+              nil
           end
         end
 
@@ -492,7 +527,12 @@ defmodule GlorboWeb.InboxLive do
     month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
     path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
 
-    if File.regular?(path) do
+    # Codex round-4 finding (PR #36): `File.regular?` + `File.stream!`
+    # both follow symlinks. Walk ancestors with `SymlinkGuard` +
+    # lstat the leaf so a planted symlink in `audit/` (transient
+    # agent write would be required) can't redirect the dashboard
+    # render to an arbitrary host path.
+    if audit_path_safe_to_read?(path) do
       path
       |> File.stream!([], :line)
       |> Enum.reduce([], &push_audit_row/2)
@@ -502,6 +542,17 @@ defmodule GlorboWeb.InboxLive do
     end
   rescue
     _ -> []
+  end
+
+  defp audit_path_safe_to_read?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(path, "inbox_live: audit JSONL")
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
   end
 
   # Append-with-cap: keep newest @audit_limit visible rows at the head;

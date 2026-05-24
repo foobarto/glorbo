@@ -656,6 +656,30 @@ defmodule Glorbo.HomeHistoryTest do
       assert {:error, :invalid_rev} = HomeHistory.show("HEAD\r\n--foo", base: base)
       assert {:error, :invalid_rev} = HomeHistory.show("HEAD\0/etc", base: base)
     end
+
+    # PR #36 (gemini round-4 LOW): `validate_rev/1` previously
+    # permitted `:`, `~`, `^`, `@{`, `..` — all extended git rev
+    # syntax that turns a single-rev arg into a range / blob-path
+    # / reflog lookup. Defense-in-depth — only `glorbo history
+    # show <rev>` is the live caller (director→director privilege
+    # boundary), but a future direct caller could leak path
+    # contents via `HEAD:secret.md` or reflog state via
+    # `HEAD@{1.week.ago}`. Reject up-front.
+    test "rejects extended rev syntax (gemini round-4)", %{base: base} do
+      seed_minimal_company(base)
+      {:ok, _} = HomeHistory.init(base: base)
+
+      # `rev:path` (blob lookup)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD:secret.md", base: base)
+      # `rev~N` (ancestor offset)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD~5", base: base)
+      # `rev^N` (parent selector)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD^2", base: base)
+      # `rev@{...}` (reflog lookup)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD@{yesterday}", base: base)
+      # `A..B` (range)
+      assert {:error, :invalid_rev} = HomeHistory.show("HEAD..main", base: base)
+    end
   end
 
   describe "diff/3" do

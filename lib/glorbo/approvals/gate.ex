@@ -409,7 +409,7 @@ defmodule Glorbo.Approvals.Gate do
       %TasksApprovalState{agent_slug: agent} ->
         case consume_director_mark(state, td.task_path) do
           {:director, state} ->
-            case peer_review_ready?(td) do
+            case peer_review_ready?(td, state) do
               :ok ->
                 :ok = resolve_granted(td, agent, state)
                 state
@@ -573,20 +573,70 @@ defmodule Glorbo.Approvals.Gate do
   #   * verdict = "approve"  → :ok (Director's flip takes effect)
   #
   # `peer_review_required: false` (or unset) → :ok unconditionally.
-  defp peer_review_ready?(%TaskDefinition{peer_review_required: false}), do: :ok
-  defp peer_review_ready?(%TaskDefinition{peer_review_required: nil}), do: :ok
-  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "approve"}), do: :ok
+  defp peer_review_ready?(%TaskDefinition{peer_review_required: false}, _state), do: :ok
+  defp peer_review_ready?(%TaskDefinition{peer_review_required: nil}, _state), do: :ok
 
-  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "block"}),
+  # Codex round-4 finding (PR #36): the agent assigned to a task can
+  # write its own task .md file (`projects:write:<proj>` → `tasks/`)
+  # and pre-seed `peer_review_required: true` +
+  # `peer_review_verdict: "approve"` directly into the frontmatter.
+  # `Glorbo.Actions.Tasks.record_peer_review_verdict/4` (the legit
+  # path) enforces `guard_actor_is_reviewer/2` and emits a
+  # `task.peer_review.approve` audit row with `actor: "agent:<reviewer>"`.
+  # Require the corroborating audit entry from the actor named in
+  # `peer_review_verdict_by` before honouring an `approve` verdict
+  # — same pattern as the loop-detector corroboration (round 3).
+  # `Tools.valid_audit_action?/1` (round 3) keeps the agent from
+  # forging the audit row through `audit_events`.
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "approve"} = td, state) do
+    if peer_review_verdict_corroborated?(td, state) do
+      :ok
+    else
+      Logger.warning(
+        "approvals/gate: peer_review_verdict=approve for #{td.task_path} but no " <>
+          "corroborating `task.peer_review.approve` audit entry from " <>
+          "agent:#{td.peer_review_verdict_by || "<unset>"} — refusing as awaiting_peer_review"
+      )
+
+      {:error, :awaiting_peer_review}
+    end
+  end
+
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "block"}, _state),
     do: {:error, :peer_review_blocked}
 
-  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "revise"}),
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: "revise"}, _state),
     do: {:error, :peer_review_revise}
 
-  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: nil}),
+  defp peer_review_ready?(%TaskDefinition{peer_review_verdict: nil}, _state),
     do: {:error, :awaiting_peer_review}
 
-  defp peer_review_ready?(_td), do: {:error, :awaiting_peer_review}
+  defp peer_review_ready?(_td, _state), do: {:error, :awaiting_peer_review}
+
+  # Match the legit verdict emitter: Actions.Tasks.record_peer_review_verdict
+  # emits `action: "task.peer_review.approve"` with
+  # `actor: "agent:<reviewer-slug>"`. The `verdict_by` field on the
+  # task must equal that reviewer slug. Scope the audit scan to a
+  # reasonable window — the verdict was recorded recently if at
+  # all (the gate runs on the Director's status flip).
+  defp peer_review_verdict_corroborated?(%TaskDefinition{} = td, %{base: base, company: co}) do
+    case to_string(td.peer_review_verdict_by) do
+      "" ->
+        # No `peer_review_verdict_by` → can't even ask whose
+        # verdict it was. Refuse.
+        false
+
+      verdict_by ->
+        expected_actor = "agent:" <> verdict_by
+
+        base
+        |> Glorbo.Audit.Query.for_task(co, td.task_path, limit: 100)
+        |> Enum.any?(fn entry ->
+          entry["action"] == "task.peer_review.approve" and
+            entry["actor"] == expected_actor
+        end)
+    end
+  end
 
   defp revert_peer_review_block(td, abs_path, agent, reason, state) do
     audit(state, %{

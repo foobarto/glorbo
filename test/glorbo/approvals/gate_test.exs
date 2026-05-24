@@ -778,6 +778,14 @@ defmodule Glorbo.Approvals.GateTest do
 
     _ = collect_audit(100)
 
+    # PR #36 (codex round-4 F2): peer-review verdict in the
+    # frontmatter alone is no longer trusted — the gate now
+    # requires a corroborating `task.peer_review.approve` audit
+    # row from `actor: "agent:<reviewer>"`, the row that
+    # `Actions.Tasks.record_peer_review_verdict/4` emits. Seed
+    # it directly so the gate sees the legit verdict.
+    seed_peer_review_audit(ctx, "projects/foo/tasks/t-18.md", "critiqueops")
+
     # Reviewer has emitted verdict:approve already (simulating the
     # Round J directive path landing before Director flips).
     File.write!(path, """
@@ -802,6 +810,89 @@ defmodule Glorbo.Approvals.GateTest do
     # Agent SHOULD be woken — approval is clean.
     assert_receive {:wake, "engineer", :director_approval, _}, 500
     assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
+  # PR #36 (codex round-4 F2): an assignee agent can write its own
+  # task .md file (`projects:write:<proj>` → `tasks/`) and pre-seed
+  # `peer_review_verdict: approve` directly into the frontmatter —
+  # bypassing `Actions.Tasks.record_peer_review_verdict/4`. The
+  # gate must refuse unless a corroborating system-emitted
+  # `task.peer_review.approve` audit row from the named reviewer
+  # is present.
+  test "G18-bypass: agent-seeded peer_review_verdict WITHOUT corroborating audit is refused",
+       ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-18-bypass",
+        title: "forged verdict",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # NOTE: NO `seed_peer_review_audit` call here — exercising the
+    # agent-bypass shape directly. The verdict + verdict_by are
+    # planted by the assignee agent, not by the legit reviewer
+    # path, so no corroborating audit row exists.
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "forged verdict"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    peer_review_verdict: approve
+    peer_review_verdict_by: critiqueops
+    peer_review_verdict_at: "2026-04-24T16:00:00Z"
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-18-bypass.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-18-bypass.md", [:modified]})
+
+    # Agent MUST NOT be woken — the verdict is not corroborated.
+    refute_receive {:wake, _, :director_approval, _}, 200
+
+    assert_audit_within(:action, "approval.peer_review_block", 1_500)
+
+    # File reverted to pending-approval so a legit verdict (with
+    # audit row) can re-flip it later.
+    {:ok, reverted} = Glorbo.TaskDefinition.parse_file(path, base: ctx.base, company: "acme")
+    assert reverted.status == "pending-approval"
+  end
+
+  defp seed_peer_review_audit(ctx, task_path, reviewer_slug) do
+    audit_dir = Path.join([ctx.base, "companies", "acme", "audit"])
+    File.mkdir_p!(audit_dir)
+    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    entry =
+      Jason.encode!(%{
+        "action" => "task.peer_review.approve",
+        "actor" => "agent:" <> reviewer_slug,
+        "agent" => reviewer_slug,
+        "target" => task_path,
+        "ts" => DateTime.to_iso8601(DateTime.utc_now())
+      })
+
+    File.write!(audit_path, entry <> "\n", [:append])
+    :ok
   end
 
   # ---- helpers ---------------------------------------------------------

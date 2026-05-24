@@ -20,30 +20,47 @@ defmodule Glorbo.Inbox.Archive do
 
   @filename "_inbox_archive.json"
 
+  # Gemini round-4 finding (PR #36, LOW defense-in-depth): all
+  # live callers (InboxLive) already gate on `Slug.valid?` —
+  # adding the guard here too so a future caller that forgets
+  # the gate can't `..` into `Path.join` via `company: "../../etc"`.
+  # Mirrors the round-3 audit/query hardening.
   @spec list(Path.t(), String.t()) :: MapSet.t(key())
-  def list(base, company) do
-    case File.read(path(base, company)) do
-      {:ok, content} ->
-        case Jason.decode(content) do
-          {:ok, %{"keys" => keys}} when is_list(keys) -> MapSet.new(keys, &to_string/1)
-          _ -> MapSet.new()
-        end
+  def list(base, company) when is_binary(company) do
+    if Glorbo.Slug.valid?(company) do
+      case File.read(path(base, company)) do
+        {:ok, content} ->
+          case Jason.decode(content) do
+            {:ok, %{"keys" => keys}} when is_list(keys) -> MapSet.new(keys, &to_string/1)
+            _ -> MapSet.new()
+          end
 
-      _ ->
-        MapSet.new()
+        _ ->
+          MapSet.new()
+      end
+    else
+      MapSet.new()
     end
   end
 
-  @spec add(Path.t(), String.t(), key()) :: :ok
-  def add(base, company, key) when is_binary(key) do
-    set = list(base, company) |> MapSet.put(key)
-    write(base, company, set)
+  @spec add(Path.t(), String.t(), key()) :: :ok | {:error, :invalid_company}
+  def add(base, company, key) when is_binary(company) and is_binary(key) do
+    if Glorbo.Slug.valid?(company) do
+      set = list(base, company) |> MapSet.put(key)
+      write(base, company, set)
+    else
+      {:error, :invalid_company}
+    end
   end
 
-  @spec remove(Path.t(), String.t(), key()) :: :ok
-  def remove(base, company, key) when is_binary(key) do
-    set = list(base, company) |> MapSet.delete(key)
-    write(base, company, set)
+  @spec remove(Path.t(), String.t(), key()) :: :ok | {:error, :invalid_company}
+  def remove(base, company, key) when is_binary(company) and is_binary(key) do
+    if Glorbo.Slug.valid?(company) do
+      set = list(base, company) |> MapSet.delete(key)
+      write(base, company, set)
+    else
+      {:error, :invalid_company}
+    end
   end
 
   @spec member?(MapSet.t(key()), key()) :: boolean()

@@ -38,6 +38,15 @@ defmodule Glorbo.BrainDump do
     body = String.trim(body)
 
     cond do
+      not is_binary(company) or not Glorbo.Slug.valid?(company) ->
+        # Gemini round-4 finding (PR #36, LOW defense-in-depth):
+        # all live callers (BrainDumpLive, MCP CaptureBrainDump)
+        # already gate on Slug.valid? — adding the guard here too
+        # so a future caller that forgets the gate can't `..` into
+        # `Path.join` via `company: "../../etc"`. Mirrors the
+        # round-3 hardening on audit/query, harness/tools.
+        {:error, :invalid_company}
+
       body == "" ->
         {:error, :empty}
 
@@ -115,7 +124,11 @@ defmodule Glorbo.BrainDump do
   limited to the last N days.
   """
   @spec list(Path.t(), String.t(), keyword()) :: [entry()]
-  def list(base, company, opts \\ []) do
+  def list(base, company, opts \\ []) when is_binary(company) do
+    if Glorbo.Slug.valid?(company), do: do_list(base, company, opts), else: []
+  end
+
+  defp do_list(base, company, opts) do
     limit_days = Keyword.get(opts, :limit_days, 14)
     dir = dir(base, company)
 
@@ -140,7 +153,15 @@ defmodule Glorbo.BrainDump do
   """
   @spec convert_to_task(Path.t(), String.t(), entry()) ::
           {:ok, String.t()} | {:error, term()}
-  def convert_to_task(base, company, entry) do
+  def convert_to_task(base, company, entry) when is_binary(company) do
+    if Glorbo.Slug.valid?(company) do
+      do_convert_to_task(base, company, entry)
+    else
+      {:error, :invalid_company}
+    end
+  end
+
+  defp do_convert_to_task(base, company, entry) do
     co_dir = Path.join([base, "companies", company])
     project = "inbox"
     project_dir = Path.join([co_dir, "projects", project])

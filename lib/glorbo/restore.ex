@@ -51,11 +51,17 @@ defmodule Glorbo.Restore do
 
     with :ok <- archive_exists?(archive),
          :ok <- check_empty_or_force(base, force?),
-         :ok <- traversal_guard(archive),
-         :ok <- extract(archive, base),
-         :ok <- maybe_migrate(repo, skip_migrate?),
-         :ok <- reindex(base) do
-      maybe_fixer(skip_fixer?)
+         {:ok, private_archive} <- copy_archive_to_private(archive, base) do
+      try do
+        with :ok <- traversal_guard(private_archive),
+             :ok <- extract(private_archive, base),
+             :ok <- maybe_migrate(repo, skip_migrate?),
+             :ok <- reindex(base) do
+          maybe_fixer(skip_fixer?)
+        end
+      after
+        _ = File.rm(private_archive)
+      end
     end
   end
 
@@ -107,6 +113,39 @@ defmodule Glorbo.Restore do
     if File.exists?(archive), do: :ok, else: {:error, :archive_not_found}
   end
 
+  # Gemini round-4 finding (PR #36, LOW): `traversal_guard/1` and
+  # `extract/2` each open the archive path independently. On a
+  # shared filesystem (archive in `/tmp` with concurrent writers),
+  # an attacker who can write to the archive path can swap a
+  # verified-safe archive for a malicious one between the two opens.
+  # Single-user host: not exploitable. Defense-in-depth: copy the
+  # archive bytes once into a private path under `base` (which the
+  # daemon user owns), with `O_EXCL`-style exclusive open via
+  # `:file.open([:exclusive])`, then run both passes against that
+  # immutable local copy. Cleaned up in the `after` block of
+  # `run/2`.
+  defp copy_archive_to_private(archive, base) do
+    File.mkdir_p!(base)
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    private = Path.join(base, ".restore-input-#{rand}")
+
+    with {:ok, src_fd} <- :file.open(String.to_charlist(archive), [:read, :raw, :binary]),
+         {:ok, dst_fd} <-
+           :file.open(String.to_charlist(private), [:write, :raw, :binary, :exclusive]) do
+      try do
+        case :file.copy(src_fd, dst_fd) do
+          {:ok, _bytes} -> {:ok, private}
+          {:error, reason} -> {:error, {:archive_copy_failed, reason}}
+        end
+      after
+        _ = :file.close(src_fd)
+        _ = :file.close(dst_fd)
+      end
+    else
+      {:error, reason} -> {:error, {:archive_copy_failed, reason}}
+    end
+  end
+
   defp check_empty_or_force(_base, true), do: :ok
 
   defp check_empty_or_force(base, false) do
@@ -133,7 +172,8 @@ defmodule Glorbo.Restore do
   defp traversal_guard(archive) do
     with {:ok, names} <- tar_table_names(archive),
          {:ok, headers} <- tar_table_verbose(archive),
-         :ok <- reject_path_traversal(names) do
+         :ok <- reject_path_traversal(names),
+         :ok <- reject_symlink_entries(headers) do
       reject_size_overflow(headers, @default_max_uncompressed)
     end
   end
@@ -160,6 +200,43 @@ defmodule Glorbo.Restore do
       end)
 
     if dangerous == [], do: :ok, else: {:error, {:unsafe_archive, dangerous}}
+  end
+
+  # Gemini round-4 finding (PR #36): `:erl_tar.extract` materialises
+  # entries in archive order, including symlinks. A crafted archive
+  # with entry 1 = `evil` (symlink → `/tmp`) and entry 2 =
+  # `evil/payload` (regular file) caused the kernel to write
+  # `/tmp/payload` during EXTRACT — the post-extract
+  # `verify_no_escaping_symlinks` walk caught the residual symlink
+  # but couldn't prevent the OOB write that already happened.
+  #
+  # Defense: refuse ANY archive containing symlink or hardlink
+  # entries up-front, BEFORE the extract call ever runs.
+  # `Glorbo.Backup.run/1` builds archives from a flat file list with
+  # `:erl_tar.create` (which follows source-side symlinks and stores
+  # the resolved file content, not link records), so no legitimate
+  # Glorbo backup contains :symlink / :link entries. Any archive
+  # that does is either the attack we're defending against or a
+  # non-Glorbo source we don't support.
+  defp reject_symlink_entries(headers) do
+    links =
+      Enum.filter(headers, fn
+        {_name, type, _size, _mtime, _mode, _uid, _gid} -> type in [:symlink, :link]
+        _ -> false
+      end)
+
+    case links do
+      [] ->
+        :ok
+
+      _ ->
+        bad =
+          Enum.map(links, fn {name, type, _size, _mtime, _mode, _uid, _gid} ->
+            %{name: to_string(name), type: type}
+          end)
+
+        {:error, {:archive_contains_links, bad}}
+    end
   end
 
   # WR-03: sum uncompressed entry sizes and reject archives exceeding the
@@ -427,9 +504,20 @@ defmodule Glorbo.Restore do
      "⚠ archive contains symlinks that escape ~/.glorbo/: #{inspect(entries)}. Refusing to extract.\n"}
   end
 
+  defp format_cli_result({:error, {:archive_contains_links, entries}}, _archive) do
+    {:restore, 2,
+     "⚠ archive contains symlink/hardlink entries (#{length(entries)}): " <>
+       "#{inspect(entries)}. Glorbo backups never contain links — refusing to extract " <>
+       "(pre-extract symlink-write defense).\n"}
+  end
+
   defp format_cli_result({:error, {:archive_too_large, total, cap}}, _archive) do
     {:restore, 2,
      "⚠ archive uncompressed size #{total} bytes exceeds cap #{cap} bytes (archive-bomb guard). Refusing to extract.\n"}
+  end
+
+  defp format_cli_result({:error, {:archive_copy_failed, reason}}, _archive) do
+    {:restore, 2, "Failed to stage archive into private location: #{inspect(reason)}.\n"}
   end
 
   defp format_cli_result({:error, reason}, _archive) do

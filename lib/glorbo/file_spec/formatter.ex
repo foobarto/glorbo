@@ -467,7 +467,15 @@ defmodule Glorbo.FileSpec.Formatter do
   end
 
   defp expand_paths(path) do
-    case File.stat(path) do
+    # Codex round-4 finding (PR #36): `File.stat` and `File.regular?`
+    # follow symlinks. If `glorbo fmt --write` is run over a path
+    # that contains agent-planted symlinks (e.g. an agent symlinks
+    # `projects/x/tasks/t.md` → `/etc/passwd`), the formatter would
+    # read the link target and write a re-rendered version BACK
+    # into the company tree — exfiltrating host content into a
+    # location agents can read. Use `File.lstat` so symlinks are
+    # never followed during expansion or filtering.
+    case File.lstat(path) do
       {:ok, %{type: :regular}} ->
         [path]
 
@@ -475,12 +483,19 @@ defmodule Glorbo.FileSpec.Formatter do
         path
         |> Path.join("**/*.md")
         |> Path.wildcard(match_dot: false)
-        |> Enum.filter(&File.regular?/1)
+        |> Enum.filter(&lstat_regular_file?/1)
         |> Enum.reject(&excluded?/1)
         |> Enum.sort()
 
       _ ->
         []
+    end
+  end
+
+  defp lstat_regular_file?(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> true
+      _ -> false
     end
   end
 

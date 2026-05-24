@@ -507,15 +507,27 @@ defmodule Glorbo.HomeHistory do
   # argument parser or smuggle a second logical arg. `\t`, `\n`,
   # `\r`, NUL, and other control chars are all rejected; bare
   # spaces likewise. Leading `-` is the option-injection vector
-  # (`-c`, `--upload-pack=...`); reject too. `git rev-parse
-  # --verify` is the strict resolver downstream — this is
-  # defense-in-depth.
+  # (`-c`, `--upload-pack=...`); reject too.
+  #
+  # Gemini round-4 finding (PR #36): the previous shape also
+  # permitted `:` `~` `^` `@{` `..`, all of which carry extended
+  # `git rev-parse` semantics (`rev:path`, `rev~N`, `rev^N`,
+  # `rev@{date}`, `A..B`) that turn a single-rev arg into a
+  # range / blob-path / reflog lookup. Only `glorbo history
+  # show <rev>` is the live caller (director → director privilege
+  # boundary), but defense-in-depth: reject those characters
+  # outright. The downstream `git rev-parse --verify` would
+  # canonicalise anyway, but rejecting at the entry point keeps
+  # the surface narrow.
+  @rev_extended_chars ~w(: ~ ^ ..)
   defp validate_rev(rev) do
     cond do
       not is_binary(rev) -> {:error, :invalid_rev}
       rev == "" -> {:error, :invalid_rev}
       Regex.match?(~r/[\s\x00-\x1f\x7f]/, rev) -> {:error, :invalid_rev}
       String.starts_with?(rev, "-") -> {:error, :invalid_rev}
+      String.contains?(rev, "@{") -> {:error, :invalid_rev}
+      Enum.any?(@rev_extended_chars, &String.contains?(rev, &1)) -> {:error, :invalid_rev}
       true -> :ok
     end
   end
