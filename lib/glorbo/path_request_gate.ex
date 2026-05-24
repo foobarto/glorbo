@@ -221,12 +221,47 @@ defmodule Glorbo.PathRequestGate do
 
   @valid_mode_re ~r/\A(read|write)\z/
   @absolute_path_re ~r/\A\//
-  @forbidden_paths ["/proc", "/sys", "/dev"]
+  # Gemini round-2 finding: the original list (`/proc /sys /dev`) was
+  # too narrow — an auto-approving director or a human scanning a long
+  # path list could approve a request for `/etc/shadow`, `~/.ssh/*`,
+  # `~/.glorbo/config.md` (dashboard_token + key_base), `/root/`,
+  # cloud-cred dirs, etc. Broaden the prefix denylist to cover the
+  # obvious host-secret surfaces; `~` is expanded against the operator's
+  # actual home dir at validation time. Anything under these prefixes
+  # is refused at request-time so the director never even sees the
+  # option to approve.
+  @forbidden_path_prefixes ~w(
+    /proc /sys /dev /boot /etc /root /var/log /var/lib /var/spool /lib /lib64
+    /usr/share/keyrings /run/secrets
+  )
 
-  defp validate_request(meta) do
+  # Per-user / user-relative dirs whose absolute paths depend on the
+  # operator's home. Expanded lazily so tests can override `HOME`.
+  @forbidden_home_relative ~w(
+    .ssh .gnupg .gpg .aws .azure .config/gcloud .docker .kube
+    .pki .sigstore .password-store .netrc .git-credentials
+    .glorbo
+  )
+
+  # Gemini round-2 finding: `validate_request` only checked
+  # `is_binary(task_id) and != ""`, relying on the single live caller
+  # (`Glorbo.Company.Router`) to slug-validate before forwarding.
+  # Self-defend so any future caller / out-of-band reader gets the same
+  # constraint without depending on caller hygiene. Slug regex matches
+  # what Router enforces upstream.
+  @task_id_re ~r/\A[a-z][a-z0-9_-]*-\d+\z/
+
+  # Public-but-`@doc false` so the gate's self-defending validators
+  # (task_id slug check, broader path denylist) can be unit-tested
+  # without setting up the full GenServer + Router caller chain.
+  @doc false
+  def validate_request(meta) do
     cond do
       not is_binary(meta.task_id) or meta.task_id == "" ->
         {:error, :missing_task_id}
+
+      not Regex.match?(@task_id_re, meta.task_id) ->
+        {:error, :invalid_task_id}
 
       not is_list(meta.paths) or meta.paths == [] ->
         {:error, :missing_paths}
@@ -263,9 +298,27 @@ defmodule Glorbo.PathRequestGate do
   defp valid_host_path?(_), do: false
 
   defp any_forbidden_path?(paths) do
+    forbidden = forbidden_prefixes()
+
     Enum.any?(paths, fn %{"path" => p} ->
-      Enum.any?(@forbidden_paths, fn fp -> String.starts_with?(p, fp) end)
+      Enum.any?(forbidden, fn fp -> p == fp or String.starts_with?(p, fp <> "/") end)
     end)
+  end
+
+  # Resolve absolute + home-relative denylists into a single list of
+  # absolute-prefix strings. `HOME` is read lazily so tests / mocks can
+  # point at a tmpdir.
+  defp forbidden_prefixes do
+    # Prefer `$HOME` over `System.user_home/0` so a test can override
+    # by setting the env var. On a sane Unix system these resolve to
+    # the same path; the env var takes precedence specifically for
+    # determinism in CI / sandboxed test runs.
+    home = System.get_env("HOME") || System.user_home() || "/nonexistent"
+
+    home_relative =
+      Enum.map(@forbidden_home_relative, fn rel -> Path.join(home, rel) end)
+
+    @forbidden_path_prefixes ++ home_relative
   end
 
   defp validate_granted_paths(paths) when is_list(paths) and paths != [] do

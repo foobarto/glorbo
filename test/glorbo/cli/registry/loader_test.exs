@@ -315,6 +315,41 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                Loader.load_all(builtin_dir: dir, user_file: nil)
     end
 
+    # Codex round-2 finding: `raw["name"]` flowed into filesystem
+    # paths (model cache files, native credential filenames, ACP
+    # session filenames built via `<reply_dir>/../sessions/`). A
+    # name containing `..` or path separators would escape the
+    # provider-owned dir. Now rejected at parse-time.
+    test "rejects provider name with path traversal segments", %{builtin_dir: dir} do
+      for bad <- ["../escape", "foo/bar", "/abs", "../../etc", "bad.name", "UPPER"] do
+        write!(
+          dir,
+          "x-#{:erlang.phash2(bad)}.toml",
+          String.replace(minimal_toml("placeholder"), "placeholder", bad)
+        )
+
+        assert {:error, {:invalid_provider_name, _, ^bad}} =
+                 Loader.load_all(builtin_dir: dir, user_file: nil)
+
+        File.rm!(Path.join(dir, "x-#{:erlang.phash2(bad)}.toml"))
+      end
+    end
+
+    test "accepts well-formed slug names", %{builtin_dir: dir} do
+      for good <- ["a", "myprovider", "claude-code", "claude_code_acp", "openrouter_alt2"] do
+        write!(
+          dir,
+          "ok-#{:erlang.phash2(good)}.toml",
+          String.replace(minimal_toml("placeholder"), "placeholder", good)
+        )
+
+        assert {:ok, providers} = Loader.load_all(builtin_dir: dir, user_file: nil)
+        assert Enum.any?(providers, &(&1.name == good))
+
+        File.rm!(Path.join(dir, "ok-#{:erlang.phash2(good)}.toml"))
+      end
+    end
+
     test "invalid kind", %{builtin_dir: dir} do
       write!(dir, "bad-kind.toml", """
       name = "bad-kind"

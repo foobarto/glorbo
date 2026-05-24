@@ -179,4 +179,118 @@ defmodule Glorbo.PathRequestGateTest do
                )
     end
   end
+
+  # Gemini round-2 finding: the gate's request validator was too
+  # permissive — it relied on the upstream Router caller to slug-
+  # validate task_id, and the forbidden-paths list only covered
+  # /proc, /sys, /dev. Any future caller / out-of-band reader that
+  # skipped Router could exfiltrate config.md (dashboard_token +
+  # key_base), /etc/shadow, ~/.ssh, etc.
+  describe "validate_request/1 — task_id self-defense + broadened denylist (gemini round-2)" do
+    defp req(overrides) do
+      Map.merge(
+        %{
+          task_id: "task-1",
+          paths: [%{"path" => "/srv/data/foo.txt", "mode" => "read"}],
+          reason: "needs the data for the analysis pass"
+        },
+        Map.new(overrides)
+      )
+    end
+
+    test "rejects task_ids that don't match the slug-and-number shape" do
+      for bad <- [
+            "../../etc/passwd",
+            "task; rm -rf /",
+            "task\n\nyaml-injected: true",
+            "Task-1",
+            "task",
+            "1-task",
+            ""
+          ] do
+        result = PathRequestGate.validate_request(req(task_id: bad))
+
+        assert match?({:error, e} when e in [:invalid_task_id, :missing_task_id], result),
+               "expected invalid_task_id for #{inspect(bad)}, got #{inspect(result)}"
+      end
+    end
+
+    test "accepts well-formed task_ids" do
+      for good <- ["task-1", "blog-101", "user-onboarding-12", "x_y_z-999"] do
+        assert :ok == PathRequestGate.validate_request(req(task_id: good))
+      end
+    end
+
+    test "rejects requests for paths under critical host roots" do
+      forbidden_paths = [
+        "/etc/shadow",
+        "/etc/passwd",
+        "/etc/sudoers.d/00-glorbo",
+        "/root/.bashrc",
+        "/boot/grub.cfg",
+        "/var/log/auth.log",
+        "/var/lib/secret-thing",
+        "/lib/systemd/system/x.service",
+        "/proc/self/environ",
+        "/sys/class/net/eth0/address",
+        "/dev/sda1"
+      ]
+
+      # The per-entry validator (`valid_path_entry?`) calls
+      # `any_forbidden_path?` internally and returns
+      # `:invalid_path_entry`; the dedicated `:forbidden_path` tag
+      # only fires when an entry passes per-entry shape but the
+      # multi-entry sweep catches a forbidden prefix. Either reason
+      # is a refusal — accept both.
+      for p <- forbidden_paths do
+        result = PathRequestGate.validate_request(req(paths: [%{"path" => p, "mode" => "read"}]))
+
+        assert match?({:error, e} when e in [:forbidden_path, :invalid_path_entry], result),
+               "expected refusal (forbidden_path | invalid_path_entry) for #{p}, got #{inspect(result)}"
+      end
+    end
+
+    test "rejects requests for paths under user-secret dirs (HOME-relative)" do
+      # Override HOME to a deterministic temp dir so this test doesn't
+      # depend on the runner's environment (Copilot review on PR #34).
+      prev_home = System.get_env("HOME")
+
+      try do
+        fake_home =
+          Path.join(
+            System.tmp_dir!(),
+            "glorbo-pathgate-test-#{System.unique_integer([:positive])}"
+          )
+
+        File.mkdir_p!(fake_home)
+        System.put_env("HOME", fake_home)
+
+        forbidden_home_paths = [
+          Path.join(fake_home, ".ssh/id_ed25519"),
+          Path.join(fake_home, ".gnupg/private-keys-v1.d/foo.key"),
+          Path.join(fake_home, ".aws/credentials"),
+          Path.join(fake_home, ".glorbo/config.md"),
+          Path.join(fake_home, ".kube/config"),
+          Path.join(fake_home, ".netrc")
+        ]
+
+        for p <- forbidden_home_paths do
+          result =
+            PathRequestGate.validate_request(req(paths: [%{"path" => p, "mode" => "read"}]))
+
+          assert match?({:error, e} when e in [:forbidden_path, :invalid_path_entry], result),
+                 "expected refusal for #{p}, got #{inspect(result)}"
+        end
+      after
+        if prev_home, do: System.put_env("HOME", prev_home), else: System.delete_env("HOME")
+      end
+    end
+
+    test "accepts well-formed requests for project paths" do
+      assert :ok ==
+               PathRequestGate.validate_request(
+                 req(paths: [%{"path" => "/tmp/glorbo-uat/proj/x.md", "mode" => "read"}])
+               )
+    end
+  end
 end

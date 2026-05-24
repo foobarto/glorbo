@@ -175,4 +175,87 @@ defmodule GlorboWeb.ProvidersLiveTest do
     assert Process.whereis(Registry) != nil
     :ok
   end
+
+  # Codex round-2 finding: the original regex caught only a small set
+  # of bare key names (`api_key`/`token`/`secret`/`password`/`auth`/
+  # `access_key`) and only double-quoted strings. Common env names like
+  # `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, and single-
+  # quoted TOML strings rendered in plaintext on /providers.
+  describe "mask_toml_secrets/1 (codex round-2)" do
+    test "masks env-style identifiers containing secret-shaped substrings" do
+      cases = [
+        {~s|ANTHROPIC_API_KEY = "sk-live-abc"|, "ANTHROPIC_API_KEY", "sk-live-abc"},
+        {~s|OPENAI_API_KEY = "sk-proj-xyz"|, "OPENAI_API_KEY", "sk-proj-xyz"},
+        {~s|GITHUB_TOKEN = "ghp_abcdef"|, "GITHUB_TOKEN", "ghp_abcdef"},
+        {~s|MY_BEARER_TOKEN = "Bearer abc.def.ghi"|, "MY_BEARER_TOKEN", "Bearer abc.def"},
+        {~s|AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI"|, "AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI"},
+        {~s|SESSION_COOKIE = "s%3Aabc123"|, "SESSION_COOKIE", "s%3Aabc123"},
+        {~s|DATABASE_PASSWORD = "hunter2"|, "DATABASE_PASSWORD", "hunter2"}
+      ]
+
+      for {input, expected_key, secret_value} <- cases do
+        masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+        assert masked =~ expected_key
+        assert masked =~ "***"
+        refute masked =~ secret_value
+      end
+    end
+
+    test "masks single-quoted TOML strings, not just double-quoted" do
+      input = "api_key = 'sk-single-quoted'"
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ "api_key = '***'"
+      refute masked =~ "sk-single-quoted"
+    end
+
+    test "preserves non-secret keys verbatim" do
+      input = """
+      name = "claude-code"
+      endpoint = "https://api.anthropic.com/v1"
+      timeout_seconds = "30"
+      """
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|name = "claude-code"|
+      assert masked =~ ~s|endpoint = "https://api.anthropic.com/v1"|
+      assert masked =~ ~s|timeout_seconds = "30"|
+    end
+
+    test "handles indented entries under a standard table header" do
+      input = """
+      [env]
+        ANTHROPIC_API_KEY = "sk-indented"
+        DEBUG = "1"
+      """
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|ANTHROPIC_API_KEY = "***"|
+      assert masked =~ ~s|DEBUG = "1"|
+      refute masked =~ "sk-indented"
+    end
+
+    # Copilot review on PR #34 round 2: an earlier line-anchored regex
+    # missed TOML INLINE tables (one-liners with `{ ... }`). Pin the
+    # actual inline-table syntax shut.
+    test "masks secrets inside TOML inline tables" do
+      input = ~s|env = { ANTHROPIC_API_KEY = "sk-inline", DEBUG = "1" }|
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|ANTHROPIC_API_KEY = "***"|
+      assert masked =~ ~s|DEBUG = "1"|
+      refute masked =~ "sk-inline"
+    end
+
+    # Copilot review on PR #34 round 2: the prior body-character class
+    # `[^"\r\n]*` stopped at the FIRST unescaped quote — so a value
+    # containing an escaped quote (`"a\"b"`) had only the prefix
+    # masked, leaving the rest in the clear.
+    test "masks values containing escaped quotes" do
+      input = ~s|api_key = "secret\\"with\\"quotes"|
+
+      masked = GlorboWeb.ProvidersLive.mask_toml_secrets(input)
+      assert masked =~ ~s|api_key = "***"|
+      refute masked =~ "secret"
+    end
+  end
 end

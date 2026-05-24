@@ -1157,4 +1157,59 @@ defmodule Glorbo.CLI.DispatcherTest do
       refute Keyword.has_key?(opts, :phase_timeout_ms)
     end
   end
+
+  # Codex round-2 finding: the ACP CLI runs concurrently in the
+  # workspace and can replace `.glorbo/outbox` (or any ancestor of
+  # the reply path) with a symlink BEFORE the host runs `mkdir_p!`.
+  # Without an ancestor lstat check, the host follows the symlink
+  # and writes the reply at the attacker-chosen location.
+  describe "prepare_reply_dir/3 — ancestor symlink refusal (codex round-2)" do
+    setup do
+      root =
+        Path.join(System.tmp_dir!(), "glorbo-acp-anc-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(root)
+      on_exit(fn -> File.rm_rf!(root) end)
+      {:ok, root: root}
+    end
+
+    defp default_fs do
+      %{
+        mkdir_p!: &File.mkdir_p!/1,
+        exists?: &File.exists?/1,
+        rm!: &File.rm!/1
+      }
+    end
+
+    test "raises when reply dir's ancestor is a symlink", %{root: root} do
+      # Workspace layout: workspace/.glorbo/outbox; CLI swaps .glorbo
+      # for a symlink to a host-writable location before host writes.
+      workspace = Path.join(root, "workspace")
+      File.mkdir_p!(workspace)
+
+      attacker_target = Path.join(root, "attacker-target")
+      File.mkdir_p!(attacker_target)
+
+      File.ln_s!(attacker_target, Path.join(workspace, ".glorbo"))
+
+      reply_dir = Path.join([workspace, ".glorbo", "outbox"])
+      reply_path = Path.join(reply_dir, "reply.md")
+
+      assert_raise RuntimeError, ~r/symlinked ancestor/, fn ->
+        Glorbo.CLI.Dispatcher.prepare_reply_dir(reply_dir, reply_path, default_fs())
+      end
+
+      # And the attacker target was NOT touched.
+      refute File.exists?(Path.join(attacker_target, "outbox"))
+    end
+
+    test "permits a clean workspace ancestor", %{root: root} do
+      workspace = Path.join(root, "workspace")
+      reply_dir = Path.join([workspace, ".glorbo", "outbox"])
+      reply_path = Path.join(reply_dir, "reply.md")
+
+      assert :ok = Glorbo.CLI.Dispatcher.prepare_reply_dir(reply_dir, reply_path, default_fs())
+      assert File.dir?(reply_dir)
+    end
+  end
 end

@@ -948,5 +948,29 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert {:skip, {:not_regular_file, :symlink}} = Reindex.process_path("acme", path)
       assert Repo.all(Company) == []
     end
+
+    # Codex round-2 finding: a SYMLINKED ANCESTOR (not just the leaf)
+    # must also be refused. Full-pass reindex's `safe_markdown_files/1`
+    # already checks this — incremental `process_path/2` did NOT, so an
+    # agent with `projects:write` could plant a symlinked directory and
+    # have files reached through it indexed as if they belonged to the
+    # company.
+    test "process_path/2 skips a path whose ancestor directory is a symlink" do
+      base = TmpGlorboHome.setup()
+      external_dir = Path.join(base, "outside-project")
+      File.mkdir_p!(external_dir)
+      File.write!(Path.join(external_dir, "leak.md"), "---\nname: leak\n---\n")
+
+      project_dir = Path.join([base, "companies/acme/projects/realproj"])
+      File.mkdir_p!(project_dir)
+      symlinked_subdir = Path.join(project_dir, "shortcut")
+      File.ln_s!(external_dir, symlinked_subdir)
+
+      # The leaf itself is a regular file, but `shortcut/` is a symlink.
+      target_path = Path.join(symlinked_subdir, "leak.md")
+
+      assert {:skip, :symlinked_ancestor} = Reindex.process_path("acme", target_path)
+      assert Repo.all(Company) == []
+    end
   end
 end

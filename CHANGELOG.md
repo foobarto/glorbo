@@ -10,6 +10,77 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex + gemini round-2 deep-dive: 6 hardening fixes (bundled)
+
+Bundled wave addressing the second-round codex + gemini deep-dive
+against the codebase post-PR-#33. All fixes surgical, no design
+changes:
+
+- **Provider TOML secret masking misses env keys** (codex,
+  medium) — `GlorboWeb.ProvidersLive.mask_toml_secrets/1` regex
+  caught only bare `api_key`/`token`/`secret`/`password`/`auth`/
+  `access_key` and only double-quoted strings, so env-style names
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`,
+  `*_BEARER_TOKEN`, `*_COOKIE`, `*_PASSWORD`, single-quoted strings)
+  rendered in plaintext on `/providers`. Now matches any TOML key
+  whose name contains `key`, `token`, `secret`, `password`, `auth`,
+  `bearer`, `credential`, `cookie`, `session`, `sas`, or
+  `signature` (case-insensitive substring) and masks both quote
+  styles. 4 focused tests on the helper.
+
+- **Provider names can escape provider-owned paths** (codex, low) —
+  `Loader.build_provider/3` accepted `raw["name"]` without slug/
+  path-component validation; the name flowed into model-cache
+  filenames, native-credential filenames, ACP session paths
+  (`<reply_dir>/../sessions/<name>__<task_id>.txt`). A config-
+  influencer could put `..` segments or `/` in the name and escape
+  the provider-owned dirs. Now validated with strict
+  `[a-z][a-z0-9_-]{0,63}` slug regex at parse time; 6 bad / 5 good
+  shapes covered.
+
+- **Incremental reindex bypasses symlink-ancestor rejection**
+  (codex, medium) — `Glorbo.Filesystem.Reindex.process_path/2`
+  (watcher-driven) went straight to `process_file/1` which only
+  lstat'd the LEAF. Full-pass reindex's `safe_markdown_files/1`
+  already rejected any path whose ancestor crossed a symlink; the
+  incremental path now mirrors that discipline at the ancestor
+  level. Leaf-symlink rejection stays in `process_file/1`.
+  Regression test plants a symlinked sub-directory and verifies the
+  watcher refuses to index files reached through it.
+
+- **ACP reply/session writes trust workspace symlink ancestors**
+  (codex, medium) — `Dispatcher.prepare_reply_dir/3` and
+  `write_acp_session_id/2` did `mkdir_p!` on the parent with no
+  lstat check on the ancestor chain. The ACP CLI runs concurrently
+  in the workspace and can replace `.glorbo/outbox` (or
+  `.glorbo/sessions`) with a symlink before returning, turning the
+  host dispatcher into a confused-deputy writer at an attacker-chosen
+  path. Both sites now call `AgentWritableFile.any_symlink_in_path?/1`
+  on the parent BEFORE `mkdir_p!`; refusal is logged + skipped
+  (session) or raised (reply dir). Regression tests cover both
+  rejection + happy-path.
+
+- **PathRequestGate denylist too narrow** (gemini, medium) —
+  `@forbidden_paths` only covered `/proc /sys /dev`; an auto-
+  approving director (or a human skimming a long path list) could
+  approve a request for `/etc/shadow`, `~/.ssh/id_*`,
+  `~/.glorbo/config.md` (dashboard_token + key_base), `/root/`,
+  cloud-cred dirs, etc. Broadened to `/etc`, `/root`, `/boot`,
+  `/var/log`, `/var/lib`, `/var/spool`, `/lib`, `/lib64`,
+  `/usr/share/keyrings`, `/run/secrets`, plus HOME-relative dirs
+  (`.ssh`, `.gnupg`, `.aws`, `.glorbo`, `.kube`, `.netrc`, and
+  several more). HOME is resolved lazily so test runs can override.
+  11 host-root paths + 6 HOME-relative paths pinned shut.
+
+- **PathRequestGate task_id self-defense** (gemini, low) —
+  `validate_request/1` only checked `is_binary(task_id) and != ""`,
+  relying on the single live caller (`Glorbo.Company.Router`) to
+  slug-validate first. Any future caller / out-of-band reader that
+  skipped Router could open a YAML-injection / path-traversal hole.
+  Gate now enforces the same `[a-z][a-z0-9_-]*-\d+` slug regex
+  Router uses, so it's self-defending. 7 malformed task_id forms
+  rejected, 4 well-formed accepted.
+
 ### Security — codex deep-dive follow-up: auth-bind canonicalisation, UTF-8-safe audit truncation, throttled-stall fix, PLT relocation, flake fix
 
 A bundled wave of fixes addressing the five codex findings filed after
