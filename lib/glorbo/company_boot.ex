@@ -51,7 +51,7 @@ defmodule Glorbo.CompanyBoot do
         {:ok, slugs} ->
           slugs
           |> Enum.filter(fn slug ->
-            Glorbo.Slug.valid?(slug) and File.dir?(Path.join(companies_dir, slug))
+            Glorbo.Slug.valid?(slug) and real_directory?(Path.join(companies_dir, slug))
           end)
           |> Enum.each(&start_company(&1, base))
 
@@ -61,6 +61,20 @@ defmodule Glorbo.CompanyBoot do
     end
 
     :ok
+  end
+
+  # Gemini round-4 finding (PR #36): `File.dir?` follows symlinks.
+  # Requires the attacker to have write into the user's $HOME
+  # (already-compromised host), so defense-in-depth — but mirrors
+  # the pattern used in Restore.walk_all_entries / Sandbox.
+  # SymlinkGuard. Use `read_link_info` so a symlink at
+  # `companies/<valid-slug>` pointing at an attacker-controlled
+  # tree doesn't get booted as a company.
+  defp real_directory?(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} -> elem(info, 2) == :directory
+      _ -> false
+    end
   end
 
   defp start_company(slug, base) do

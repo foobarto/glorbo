@@ -46,7 +46,15 @@ defmodule Glorbo.Audit.Query do
     # Threatmodel wave 23: stream the JSONL line-by-line and keep a
     # rolling-window of the last `limit` matches, so memory stays
     # bounded by N regardless of file size.
-    if File.regular?(path) do
+    #
+    # Copilot review on PR #36: `for_task/4` now backs security
+    # gates (loop-detector + peer-review corroboration), so a
+    # symlink planted under `audit/` (or any ancestor) would let an
+    # attacker redirect the corroboration read to an arbitrary host
+    # path and spoof the audit row. Mirror the dashboard audit-read
+    # hardening (3 sites in PR #36) by walking ancestors with
+    # `SymlinkGuard` + an `lstat` on the leaf before streaming.
+    if audit_path_safe_to_read?(path) do
       # `[entry | Enum.take(acc, limit-1)]` keeps the rolling window
       # sorted newest-first as the stream progresses, since the file
       # is chronologically oldest-first. The final acc IS already
@@ -59,6 +67,20 @@ defmodule Glorbo.Audit.Query do
     end
   rescue
     _ -> []
+  end
+
+  defp audit_path_safe_to_read?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      path,
+      "audit/query: audit JSONL"
+    )
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
   end
 
   defp push_match(line, acc, task_path, task_id, limit) do

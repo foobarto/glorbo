@@ -18,11 +18,17 @@ defmodule GlorboWeb.InboxLiveTest do
     ---
     """)
 
+    # PR #36 (codex pre-push review of 3dc4eba): sentinel_row now
+    # requires the canonical post-Gate.request_approval state of
+    # `status: pending-approval`. Earlier fixture used `pending`
+    # which let an agent self-promote a `requires_approval: director`
+    # task by dropping a forged sentinel. Updated to match production
+    # invariant.
     File.write!(Path.join(tasks_dir, "demo-1.md"), """
     ---
     kind: task/v1
     title: decide X
-    status: pending
+    status: pending-approval
     assigned_to: ceo
     requires_approval: director
     ---

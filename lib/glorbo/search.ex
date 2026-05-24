@@ -42,6 +42,20 @@ defmodule Glorbo.Search do
   def search(_base, _co, nil, _opts), do: []
 
   def search(base, co, query, opts) when is_binary(query) do
+    # Gemini round-4 finding (PR #36, LOW defense-in-depth): all
+    # live callers (SearchController, /api/search) already gate on
+    # `Slug.valid?` — adding the guard here too so a future caller
+    # that forgets the gate can't `..` into `Path.join` via
+    # `co: "../../etc"`. Mirrors the round-3 audit/query
+    # hardening.
+    cond do
+      not is_binary(co) -> []
+      not Glorbo.Slug.valid?(co) -> []
+      true -> do_search(base, co, query, opts)
+    end
+  end
+
+  defp do_search(base, co, query, opts) do
     limit = Keyword.get(opts, :limit, 20)
     normalised = String.downcase(String.trim(query))
 
@@ -148,7 +162,24 @@ defmodule Glorbo.Search do
   end
 
   defp parse_fields(path, task_id) do
-    case File.read(path) do
+    # Gemini round-4 finding (PR #36): the previous shape ran
+    # `:file.read_link_info` (lstat — refuses symlinks), then later
+    # called `File.read(path)`, which re-resolves the path and
+    # follows symlinks. An agent that owns its task file can race
+    # the indexer:
+    #   1. indexer: lstat(t-1.md) → regular file
+    #   2. agent:   unlink t-1.md && ln -s /home/.../other-co/proposals/secret.md t-1.md
+    #   3. indexer: File.read(t-1.md) → follows symlink → reads secret
+    # The secret then becomes the task's `title` in the search
+    # cache → Ctrl+K leaks it to the director.
+    #
+    # Defense: open an fd FIRST, fstat the fd, compare its inode
+    # to the inode the lstat saw moments earlier. If they differ,
+    # someone swapped the path between the two checks — refuse
+    # rather than serve the swap target's content. Erlang's
+    # `:file.open` doesn't expose `O_NOFOLLOW`, so this is the
+    # closest we can get without a C nif.
+    case read_task_body_with_inode_check(path) do
       {:ok, content} ->
         case Glorbo.Filesystem.Frontmatter.parse(content) do
           {:ok, fm, _body} ->
@@ -165,6 +196,46 @@ defmodule Glorbo.Search do
 
       _ ->
         {truncate_title(task_id), ""}
+    end
+  end
+
+  # file_info record layout (matches OTP's `file:read_file_info/1`):
+  # {:file_info, size, type, access, atime, mtime, ctime, mode,
+  #  links, major_device, minor_device, inode, uid, gid}
+  # So `elem(info, 1) = size`, `elem(info, 2) = type`,
+  #    `elem(info, 11) = inode`.
+  defp read_task_body_with_inode_check(path) do
+    with {:ok, lstat_info} <- :file.read_link_info(path),
+         :regular <- elem(lstat_info, 2),
+         expected_inode <- elem(lstat_info, 11),
+         {:ok, fd} <- :file.open(path, [:read, :raw, :binary]) do
+      try do
+        with {:ok, fstat_info} <- :file.read_file_info(fd),
+             :regular <- elem(fstat_info, 2),
+             ^expected_inode <- elem(fstat_info, 11),
+             size when is_integer(size) and size <= 1_048_576 <- elem(fstat_info, 1),
+             {:ok, content} when is_binary(content) <-
+               :file.read(fd, max(size, 1)) do
+          {:ok, content}
+        else
+          :eof ->
+            {:ok, ""}
+
+          _swap_or_too_large ->
+            require Logger
+
+            Logger.debug(
+              "search: refused #{path} — inode/type mismatch between lstat and fstat " <>
+                "(symlink-swap defense)"
+            )
+
+            :error
+        end
+      after
+        _ = :file.close(fd)
+      end
+    else
+      _ -> :error
     end
   end
 

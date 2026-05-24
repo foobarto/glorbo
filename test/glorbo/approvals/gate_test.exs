@@ -778,6 +778,14 @@ defmodule Glorbo.Approvals.GateTest do
 
     _ = collect_audit(100)
 
+    # PR #36 (codex round-4 F2): peer-review verdict in the
+    # frontmatter alone is no longer trusted — the gate now
+    # requires a corroborating `task.peer_review.approve` audit
+    # row from `actor: "agent:<reviewer>"`, the row that
+    # `Actions.Tasks.record_peer_review_verdict/4` emits. Seed
+    # it directly so the gate sees the legit verdict.
+    seed_peer_review_audit(ctx, "projects/foo/tasks/t-18.md", "critiqueops")
+
     # Reviewer has emitted verdict:approve already (simulating the
     # Round J directive path landing before Director flips).
     File.write!(path, """
@@ -802,6 +810,211 @@ defmodule Glorbo.Approvals.GateTest do
     # Agent SHOULD be woken — approval is clean.
     assert_receive {:wake, "engineer", :director_approval, _}, 500
     assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
+  # PR #36 (codex round-4 F2): an assignee agent can write its own
+  # task .md file (`projects:write:<proj>` → `tasks/`) and pre-seed
+  # `peer_review_verdict: approve` directly into the frontmatter —
+  # bypassing `Actions.Tasks.record_peer_review_verdict/4`. The
+  # gate must refuse unless a corroborating system-emitted
+  # `task.peer_review.approve` audit row from the named reviewer
+  # is present.
+  # Codex pre-push review of 3dc4eba (PR #36 P0): the gate's
+  # corroboration check MUST match the actor format that
+  # `Glorbo.Actions.Tasks.emit_verdict_audit/6` writes. The legit
+  # emitter writes the actor as the BARE slug (no `agent:`
+  # prefix) — see test/glorbo/actions/tasks_test.exs:301 which
+  # pins that contract. The previous corroboration compared
+  # against `"agent:" <> verdict_by` and would have silently
+  # failed every real approval (synthetic-seed tests masked the
+  # bug because they mirrored the broken convention). This test
+  # asserts the seed helper's convention matches what
+  # `Tasks.emit_verdict_audit/6` actually produces — drift in
+  # either file should flag this test as well as the tasks test.
+  test "G18-emitter-contract: seed_peer_review_audit actor matches Tasks emitter convention",
+       ctx do
+    # Capture what the real emitter writes by handing it an
+    # audit-collector fun via the test seam. We don't drive the
+    # full record_peer_review_verdict path here (it requires a
+    # per-company AuditLog server), but we DO assert the seed
+    # helper above uses the same bare-slug shape that
+    # actions/tasks emits and that the gate's corroboration
+    # check looks for.
+
+    # The seed helper writes `"actor" => reviewer_slug` (bare).
+    # That MUST match what Actions.Tasks.emit_verdict_audit/6
+    # writes (tasks_test:301 — `event[:actor] == "critiqueops"`).
+    # If you change one, you must change both.
+    seed_peer_review_audit(ctx, "projects/foo/tasks/t-contract.md", "critiqueops")
+
+    audit_dir = Path.join([ctx.base, "companies", "acme", "audit"])
+    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    {:ok, content} = File.read(path)
+    [last_line | _] = content |> String.split("\n", trim: true) |> Enum.reverse()
+    {:ok, entry} = Jason.decode(last_line)
+
+    # If this assertion ever fails, the gate's
+    # `peer_review_verdict_corroborated?` actor compare needs to
+    # be updated to match the new shape.
+    assert entry["actor"] == "critiqueops",
+           "seed helper must write actor as bare slug to match Actions.Tasks emitter convention"
+
+    refute entry["actor"] == "agent:critiqueops",
+           "seed helper must NOT write actor with `agent:` prefix"
+  end
+
+  # Codex P1 review on PR #36: peer_review_verdict_corroborated?/2
+  # initially only scanned the current UTC month, so a reviewer's
+  # verdict landing April 30 + Director approval on May 1 left the
+  # corroboration row in the previous month's file → forever
+  # invisible → real reviewer approvals turned into permanent
+  # false negatives. Fix: scan current + previous UTC month.
+  test "G18-month-boundary: corroboration finds a verdict from the previous month",
+       ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-18-boundary",
+        title: "verdict from last month",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # Seed the corroborating audit row in the PREVIOUS UTC month.
+    # `Date.beginning_of_month |> Date.add(-1)` gives the last day
+    # of the prior month — same calendar arithmetic the gate uses.
+    last_month_date =
+      DateTime.utc_now()
+      |> DateTime.to_date()
+      |> Date.beginning_of_month()
+      |> Date.add(-1)
+
+    last_month_ts =
+      DateTime.new!(last_month_date, ~T[10:00:00], "Etc/UTC")
+
+    seed_peer_review_audit(
+      ctx,
+      "projects/foo/tasks/t-18-boundary.md",
+      "critiqueops",
+      ts: last_month_ts
+    )
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "verdict from last month"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    peer_review_verdict: approve
+    peer_review_verdict_by: critiqueops
+    peer_review_verdict_at: "#{DateTime.to_iso8601(last_month_ts)}"
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-18-boundary.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-18-boundary.md", [:modified]})
+
+    assert_receive {:wake, "engineer", :director_approval, _}, 1_500
+    assert_audit_within(:action, "approval.granted", 1_500)
+  end
+
+  test "G18-bypass: agent-seeded peer_review_verdict WITHOUT corroborating audit is refused",
+       ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    {path, td} =
+      td_for(ctx, "t-18-bypass",
+        title: "forged verdict",
+        status: "pending-approval",
+        requires_approval: "director",
+        severity: "major",
+        peer_review_required: "true",
+        reviewer: "critiqueops"
+      )
+
+    :ok =
+      Gate.request_approval(pid, %{
+        agent: "engineer",
+        task_definition: td,
+        requesting_trigger: :inbox
+      })
+
+    _ = collect_audit(100)
+
+    # NOTE: NO `seed_peer_review_audit` call here — exercising the
+    # agent-bypass shape directly. The verdict + verdict_by are
+    # planted by the assignee agent, not by the legit reviewer
+    # path, so no corroborating audit row exists.
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: "forged verdict"
+    status: approved
+    requires_approval: director
+    severity: major
+    peer_review_required: true
+    peer_review_verdict: approve
+    peer_review_verdict_by: critiqueops
+    peer_review_verdict_at: "2026-04-24T16:00:00Z"
+    reviewer: critiqueops
+    ---
+    body
+    """)
+
+    :ok = Gate.mark_director_decision(pid, "projects/foo/tasks/t-18-bypass.md")
+    send(pid, {:file_event, "projects/foo/tasks/t-18-bypass.md", [:modified]})
+
+    # Agent MUST NOT be woken — the verdict is not corroborated.
+    refute_receive {:wake, _, :director_approval, _}, 200
+
+    assert_audit_within(:action, "approval.peer_review_block", 1_500)
+
+    # File reverted to pending-approval so a legit verdict (with
+    # audit row) can re-flip it later.
+    {:ok, reverted} = Glorbo.TaskDefinition.parse_file(path, base: ctx.base, company: "acme")
+    assert reverted.status == "pending-approval"
+  end
+
+  defp seed_peer_review_audit(ctx, task_path, reviewer_slug, opts \\ []) do
+    audit_dir = Path.join([ctx.base, "companies", "acme", "audit"])
+    File.mkdir_p!(audit_dir)
+    ts = Keyword.get(opts, :ts, DateTime.utc_now())
+    ym = ts |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    # Codex P0 review of 3dc4eba: must mirror the legit emitter
+    # `Glorbo.Actions.Tasks.emit_verdict_audit/6` which writes the
+    # actor as the bare slug (no `agent:` prefix). Earlier shape
+    # `"agent:" <> reviewer_slug` masked the gate's mismatch bug.
+    entry =
+      Jason.encode!(%{
+        "action" => "task.peer_review.approve",
+        "actor" => reviewer_slug,
+        "agent" => reviewer_slug,
+        "target" => task_path,
+        "ts" => DateTime.to_iso8601(ts)
+      })
+
+    File.write!(audit_path, entry <> "\n", [:append])
+    :ok
   end
 
   # ---- helpers ---------------------------------------------------------

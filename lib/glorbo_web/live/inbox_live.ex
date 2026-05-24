@@ -437,8 +437,26 @@ defmodule GlorboWeb.InboxLive do
         else
           rel = Path.relative_to(task_path, co_dir)
 
+          # Codex round-4 finding + codex pre-push review of 3dc4eba
+          # (PR #36): `awaiting-approval-X.md` lives under
+          # `agents/<slug>/state/` which is agent-writable. A
+          # malicious agent could drop a sentinel for ANY task in
+          # the company; the Director's Approve click would call
+          # `Glorbo.Actions.set_approval(:approved)` and flip the
+          # victim's status. Initial fix gated on
+          # `requires_approval` + `status not terminal`, but the
+          # codex review noted that an agent can write
+          # `requires_approval: director` to its own task
+          # (frontmatter is agent-controlled in the agent's project
+          # tree), so the gate must require the canonical
+          # post-Gate.request_approval state: `status:
+          # "pending-approval"`. The agent can't write that status
+          # on their own task because TaskDefinition writes are
+          # gated upstream; only the Director / Gate transition
+          # sequence produces it. The sentinel is left on disk for
+          # forensic + operator's manual review.
           case Glorbo.TaskDefinition.parse_file(task_path, base: base, company: company) do
-            {:ok, task} ->
+            {:ok, %{status: "pending-approval"} = task} ->
               %{
                 task_id: task_id,
                 task_path: rel,
@@ -447,7 +465,11 @@ defmodule GlorboWeb.InboxLive do
               }
 
             _ ->
-              %{task_id: task_id, task_path: rel, title: task_id, assignee: nil}
+              # Either parse failed or status isn't
+              # `pending-approval`. Either way: ignore the
+              # sentinel (it's a forgery, a stale row from a
+              # resolved cycle, or otherwise not actionable).
+              nil
           end
         end
 
@@ -492,7 +514,12 @@ defmodule GlorboWeb.InboxLive do
     month = DateTime.utc_now() |> Calendar.strftime("%Y-%m")
     path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
 
-    if File.regular?(path) do
+    # Codex round-4 finding (PR #36): `File.regular?` + `File.stream!`
+    # both follow symlinks. Walk ancestors with `SymlinkGuard` +
+    # lstat the leaf so a planted symlink in `audit/` (transient
+    # agent write would be required) can't redirect the dashboard
+    # render to an arbitrary host path.
+    if audit_path_safe_to_read?(path) do
       path
       |> File.stream!([], :line)
       |> Enum.reduce([], &push_audit_row/2)
@@ -502,6 +529,17 @@ defmodule GlorboWeb.InboxLive do
     end
   rescue
     _ -> []
+  end
+
+  defp audit_path_safe_to_read?(path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(path, "inbox_live: audit JSONL")
+
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
   end
 
   # Append-with-cap: keep newest @audit_limit visible rows at the head;
