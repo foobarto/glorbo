@@ -256,7 +256,12 @@ defmodule Glorbo.PathRequestGateTest do
       prev_home = System.get_env("HOME")
 
       try do
-        fake_home = Path.join(System.tmp_dir!(), "glorbo-pathgate-test-#{System.unique_integer([:positive])}")
+        fake_home =
+          Path.join(
+            System.tmp_dir!(),
+            "glorbo-pathgate-test-#{System.unique_integer([:positive])}"
+          )
+
         File.mkdir_p!(fake_home)
         System.put_env("HOME", fake_home)
 
