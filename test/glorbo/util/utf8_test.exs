@@ -64,6 +64,32 @@ defmodule Glorbo.Util.UTF8Test do
       assert UTF8.safe_byte_slice(s2, 1024) == s2
     end
 
+    # Copilot review on PR #33: an earlier byte-pattern implementation
+    # of `trim_partial_utf8/1` incorrectly stripped trailing
+    # continuation bytes from COMPLETE codepoints (e.g. `é` is
+    # `0xC3 0xA9`, where `0xA9` is a continuation byte). With cap=2
+    # on input "éB" (3 bytes), the byte slice gives the complete
+    # 2-byte "é" — which the previous logic then destroyed. Pin
+    # this case shut.
+    test "keeps a complete multi-byte codepoint when cap lands on its trailing byte" do
+      # "éB" — 3 bytes (0xC3 0xA9 0x42); cap=2 lands AFTER the
+      # complete 2-byte é.
+      assert UTF8.safe_byte_slice("éB", 2) == "é"
+
+      # "é日B" — 6 bytes (0xC3 0xA9 0xE6 0x97 0xA5 0x42); cap=5 lands
+      # AFTER the complete 3-byte 日 → should keep "é日".
+      assert UTF8.safe_byte_slice("é日B", 5) == "é日"
+
+      # "🦊!" — 5 bytes (4-byte emoji + 1 ASCII); cap=4 keeps emoji.
+      assert UTF8.safe_byte_slice("🦊!", 4) == "🦊"
+    end
+
+    test "drops just the partial sequence at the cut, not more" do
+      # cap=3 on "éB日" lands inside 日's first byte (0xC3 0xA9 0x42 0xE6 ...)
+      # — should return "éB", not lose the trailing ASCII or strip back further.
+      assert UTF8.safe_byte_slice("éB日", 3) == "éB"
+    end
+
     test "round-trips through Jason without raising (the load-bearing invariant)" do
       # The point of the helper: whatever we return must be Jason-encodable.
       # All the tricky cases combined.

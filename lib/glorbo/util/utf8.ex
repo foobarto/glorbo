@@ -55,31 +55,27 @@ defmodule Glorbo.Util.UTF8 do
     end
   end
 
-  # Walk backward stripping UTF-8 continuation bytes (`10xxxxxx`,
-  # 0x80..0xBF) until we land on a non-continuation byte. Then if THAT
-  # byte is a multi-byte LEAD byte (0xC0..0xFF), strip it too — it
-  # started a sequence whose tail we just removed. Worst case: 4
-  # iterations (a stripped 4-byte sequence).
+  # Walk backward one byte at a time until the prefix is valid UTF-8.
+  # An earlier byte-pattern-based version (strip continuation bytes,
+  # then strip the lead) was incorrect: valid multi-byte codepoints
+  # END with continuation bytes too — e.g. `é` is `0xC3 0xA9`, where
+  # `0xA9` is a continuation byte. The byte-pattern walk would strip
+  # the trailing `0xA9` from a complete `é` and then the `0xC3` lead,
+  # destroying a valid codepoint. (Copilot review on PR #33.)
+  #
+  # `String.valid?/1` is the authoritative check. A truncated UTF-8
+  # binary's longest valid prefix is at most 3 bytes shorter (max
+  # codepoint length is 4 bytes; if the last is cut, strip its 1-3
+  # trailing bytes).
   defp trim_partial_utf8(<<>>), do: <<>>
 
   defp trim_partial_utf8(binary) do
-    last = :binary.last(binary)
-
-    cond do
-      # Continuation byte (10xxxxxx) — part of an unfinished codepoint.
-      last >= 0x80 and last <= 0xBF ->
-        binary
-        |> binary_part(0, byte_size(binary) - 1)
-        |> trim_partial_utf8()
-
-      # Lead byte of a multi-byte sequence (11xxxxxx) — we trimmed its
-      # continuations above (or it never had any); drop it too.
-      last >= 0xC0 ->
-        binary_part(binary, 0, byte_size(binary) - 1)
-
-      # ASCII or already on a codepoint boundary — safe.
-      true ->
-        binary
+    if String.valid?(binary) do
+      binary
+    else
+      binary
+      |> binary_part(0, byte_size(binary) - 1)
+      |> trim_partial_utf8()
     end
   end
 end
