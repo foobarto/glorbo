@@ -421,6 +421,52 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute content =~ "Trying to skip"
   end
 
+  # PR #37 (codex P2 / Copilot review of 40c8ea6): when the
+  # gate ALLOWS the clear (e.g., task already at `status:
+  # approved`), the write must actually reach
+  # `TaskDefinition.write_frontmatter/2` so the field is
+  # cleared on disk. The previous shape dropped the key from
+  # `fm` entirely, making the legit clear a silent no-op.
+  test "save_task ALLOWS explicit clear of requires_approval on an already-approved task",
+       %{conn: conn, base: base} do
+    # Seed a fresh task that's past the gate.
+    tasks_dir = Path.join([base, "companies", "acme", "projects", "website", "tasks"])
+    File.mkdir_p!(tasks_dir)
+    abs = Path.join(tasks_dir, "post-approval-#{System.unique_integer([:positive])}.md")
+    rel = Path.relative_to(abs, Path.join([base, "companies", "acme"]))
+
+    File.write!(abs, """
+    ---
+    kind: task/v1
+    title: "Post-approval task"
+    status: approved
+    assigned_to: ceo
+    requires_approval: director
+    ---
+
+    Body.
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "open_task", %{"path" => rel})
+
+    render_submit(view, "save_task", %{
+      "title" => "Post-approval task",
+      "status" => "approved",
+      "assigned_to" => "ceo",
+      "priority" => "",
+      "requires_approval" => "",
+      "body" => "Body."
+    })
+
+    content = File.read!(abs)
+    # The gate-cleared write should actually land — `requires_approval`
+    # is gone from the frontmatter.
+    refute content =~ "requires_approval:"
+    # Title stays.
+    assert content =~ ~s(title: "Post-approval task")
+  end
+
   # PR #37 (codex round-5 F3): clearing `requires_approval` on a
   # currently-gate-pending task is the second bypass shape — same
   # outcome (no Director approval needed) by simply removing the

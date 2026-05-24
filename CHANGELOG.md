@@ -117,7 +117,8 @@ multi-tenant message-routing surface (chat/proposals/router/doctor).
   user boundaries, but it did break per-company scoping for
   write ops.) Now validates `id` against
   `~r/\A[a-z0-9][a-z0-9_-]*\z/` and company slug at flip/4's
-  entry; returns `{:error, :invalid_id}` on miss.
+  entry; returns `{:error, :invalid_proposal_id}` (or
+  `{:error, :invalid_company}` for a bad company slug) on miss.
 
 - **Router rejection-write YAML scalar injection** (gemini, LOW)
   — `write_rejection_file/3` and `write_rejection_notice/3`

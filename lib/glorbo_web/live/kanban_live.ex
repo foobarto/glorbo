@@ -427,10 +427,14 @@ defmodule GlorboWeb.KanbanLive do
         # `write_frontmatter`'s "drop empty keys" rule treated
         # that empty as "CLEAR the field on disk". Partial form
         # submissions (edit title only, no approval-gate UI) thus
-        # silently cleared `requires_approval: director`. Skip
-        # the field unless the param is explicitly non-empty; an
-        # explicit clear-to-empty is then caught by
-        # `refuse_if_clears_required_approval/2` below.
+        # silently cleared `requires_approval: director`.
+        #
+        # Codex P2 + Copilot review of 40c8ea6: skip the field
+        # ONLY when the form omits it entirely (param absent);
+        # an EXPLICIT empty value is a legitimate clear-request
+        # that the gate may allow (e.g. task is already
+        # approved). Pass it through to `write_frontmatter` so
+        # the clear actually lands when the gate permits it.
         base_fm = %{
           "title" => Map.get(params, "title", "") |> String.trim(),
           "status" => Map.get(params, "status", task.status),
@@ -445,12 +449,10 @@ defmodule GlorboWeb.KanbanLive do
         }
 
         fm =
-          case Map.get(params, "requires_approval") do
-            value when is_binary(value) and value != "" ->
-              Map.put(base_fm, "requires_approval", value)
-
-            _ ->
-              base_fm
+          if Map.has_key?(params, "requires_approval") do
+            Map.put(base_fm, "requires_approval", Map.get(params, "requires_approval"))
+          else
+            base_fm
           end
 
         prompt = Map.get(params, "body", "") |> String.trim()
