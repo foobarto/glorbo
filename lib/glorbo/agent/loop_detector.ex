@@ -344,6 +344,18 @@ defmodule Glorbo.Agent.LoopDetector do
   def resolve(abs_sentinel, decision, base, company, opts \\ [])
       when decision in @resolution_decisions do
     actor = Keyword.get(opts, :actor, "director")
+    # Codex round-3 review of PR #35 d5ba9b5: the corroboration
+    # check used the FRONTMATTER `agent` and `audit_month` to scope
+    # the audit query — both are agent-controlled. Agent A under
+    # `/agents/A/state/` could drop a sentinel with `agent: B,
+    # audit_month: 2024-01` and inherit any legit B-corroboration
+    # row from January. `apply_resolution_files/3` derives the real
+    # agent from the state-dir PATH and now passes it as
+    # `:path_agent`; here we enforce that the frontmatter agent
+    # matches AND we use the path-derived value for the
+    # corroboration query.
+    path_agent = Keyword.get(opts, :path_agent)
+
     # Coerce a nil `:audit_fun` to the default: get_lazy only fires
     # when the key is ABSENT, and apply_one_resolution forwards the
     # key whether or not the caller provided one. Without this,
@@ -358,8 +370,16 @@ defmodule Glorbo.Agent.LoopDetector do
     with {:ok, content} <- File.read(abs_sentinel),
          {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       task_path = to_string(fm["task_path"] || "")
-      agent_slug = to_string(fm["agent"] || "")
+      fm_agent_slug = to_string(fm["agent"] || "")
       task_id = to_string(fm["task_id"] || Path.basename(task_path, ".md"))
+
+      # When `:path_agent` is provided (the agent-origin file-drop
+      # path), it wins for the corroboration key; the frontmatter
+      # value is only used to refuse a forged-agent sentinel via
+      # `check_agent_binding/2`. Director-origin resolutions
+      # (button-click via InboxLive/TaskLive) pass no `:path_agent`,
+      # which is fine because corroboration is skipped for them.
+      bound_agent_slug = path_agent || fm_agent_slug
 
       # threatmodel M02/M11: the sentinel file lives under
       # `agents/<slug>/state/` which is agent-writable. A malicious
@@ -367,7 +387,31 @@ defmodule Glorbo.Agent.LoopDetector do
       # have the director-initiated resolution write (via
       # apply_task_mutation) escape the company. Confine the path
       # to `projects/<slug>/tasks/<id>.md` within this company.
+      #
+      # Gemini round-3 finding (PR #35): even with `task_path`
+      # confined to the company, the AGENT owns both the
+      # `stuck-on-X.md` sentinel and the `resolved-*-X.md`
+      # resolution file under its own `agents/<slug>/state/` dir.
+      # A malicious agent can forge BOTH for any task in the
+      # company (any project) and on the next `apply_resolution_files`
+      # scan the director's InboxLive render will silently mutate
+      # the task (`:stop` → `status: denied`; `:skip` → reassign
+      # to director) — bypassing the `projects:write` ACL
+      # entirely. Require a corroborating system-emitted
+      # `agent.loop_detected` audit entry before honoring
+      # agent-origin resolutions. The corroboration check is
+      # skipped for the director-origin path (button click in
+      # InboxLive/TaskLive) where the operator is authoritative.
       with :ok <- validate_sentinel_task_path(task_path),
+           :ok <- check_agent_binding(path_agent, fm_agent_slug),
+           :ok <-
+             require_system_corroboration(
+               actor,
+               base,
+               company,
+               bound_agent_slug,
+               task_path
+             ),
            abs_task = Path.join([base, "companies", company, task_path]),
            :ok <- apply_task_mutation(decision, abs_task) do
         _ = File.rm(abs_sentinel)
@@ -375,7 +419,7 @@ defmodule Glorbo.Agent.LoopDetector do
         emit_resolved_audit(audit_fun, company, %{
           actor: actor,
           decision: to_string(decision),
-          agent: agent_slug,
+          agent: bound_agent_slug,
           task_path: task_path,
           task_id: task_id
         })
@@ -425,7 +469,13 @@ defmodule Glorbo.Agent.LoopDetector do
       result =
         resolve(sentinel_path, decision_atom, base, company,
           actor: actor,
-          audit_fun: Keyword.get(opts, :audit_fun)
+          audit_fun: Keyword.get(opts, :audit_fun),
+          # Codex round-3 review of PR #35: bind the corroboration
+          # query to the PATH-derived agent, not the
+          # frontmatter-supplied one. Without this, agent A could
+          # plant `agent: B` in its own state dir's sentinel and
+          # inherit B's legit `agent.loop_detected` audit row.
+          path_agent: agent_slug
         )
 
       _ = File.rm(res_path)
@@ -470,6 +520,114 @@ defmodule Glorbo.Agent.LoopDetector do
   end
 
   defp validate_sentinel_task_path(_), do: {:error, :sentinel_invalid_task_path}
+
+  # Skip corroboration entirely for director-origin resolutions:
+  # the operator clicked a button (or a CLI tool acting on behalf
+  # of the operator) and that is authoritative by design.
+  defp require_system_corroboration("director", _base, _co, _slug, _task_path), do: :ok
+
+  defp require_system_corroboration(_actor, _base, _co, _slug, ""),
+    do: {:error, :sentinel_corroboration_missing_task_path}
+
+  defp require_system_corroboration(_actor, _base, _co, "", _task_path),
+    do: {:error, :sentinel_corroboration_missing_agent}
+
+  # Window the system-emitted `agent.loop_detected` corroboration
+  # must fall within. Codex round-3 review of PR #35 raised this:
+  # without a freshness bound, agent A could replay any historical
+  # legit `agent.loop_detected` row (from weeks/months ago) to
+  # authorise a freshly-dropped resolution today. 24h is long
+  # enough to cover monthly audit-file rotation gap + slow operator
+  # reaction, and short enough to make replay attacks uninteresting.
+  @corroboration_window_secs 24 * 3_600
+
+  defp require_system_corroboration(actor, base, company, agent_slug, task_path) do
+    # Codex round-3 review of PR #35 also closed the
+    # frontmatter-driven `audit_month` opt: the agent could point
+    # the corroboration scan at any historical month containing a
+    # legit row. The corroboration query now scans the current UTC
+    # month + the previous one (covers the month-boundary race
+    # where detection landed in month N and resolution lands in
+    # N+1) — no agent input is honored.
+    now = DateTime.utc_now()
+    threshold = DateTime.add(now, -@corroboration_window_secs, :second)
+
+    months = corroboration_months(now)
+
+    corroborated? =
+      Enum.any?(months, fn month ->
+        base
+        |> Glorbo.Audit.Query.for_task(company, task_path, limit: 100, month: month)
+        |> Enum.any?(&matches_system_loop?(&1, agent_slug, threshold))
+      end)
+
+    if corroborated? do
+      :ok
+    else
+      Logger.warning(
+        "loop_detector: refusing #{actor}-origin resolution for #{task_path} " <>
+          "(agent=#{agent_slug}) — no corroborating system-emitted " <>
+          "agent.loop_detected audit entry found within #{@corroboration_window_secs}s window"
+      )
+
+      {:error, :sentinel_not_corroborated}
+    end
+  end
+
+  @doc false
+  # Current + previous UTC month — covers the rotation boundary
+  # where the system-emitted `agent.loop_detected` row landed in
+  # month N and the resolution arrives in N+1.
+  #
+  # Codex P1 review on PR #35: the previous `DateTime.add(-32d)`
+  # math lands in month N-2 when called from the FIRST day of
+  # month N (e.g. March 1 minus 32d = January 28 → "01"), so the
+  # immediately-previous month gets skipped at the boundary. Use
+  # calendar arithmetic instead: roll the day to 1, then subtract
+  # one day → guaranteed last day of the prior month.
+  #
+  # Public for the boundary-correctness regression test.
+  def corroboration_months(%DateTime{} = now) do
+    cur_date = DateTime.to_date(now)
+    cur = to_year_month(cur_date)
+
+    prev_date =
+      cur_date
+      |> Date.beginning_of_month()
+      |> Date.add(-1)
+
+    prev = to_year_month(prev_date)
+    Enum.uniq([cur, prev])
+  end
+
+  defp matches_system_loop?(entry, agent_slug, threshold) do
+    entry["action"] == "agent.loop_detected" and
+      entry["actor"] == "system" and
+      (entry["agent"] == agent_slug or
+         get_in(entry, ["detail", "agent"]) == agent_slug) and
+      within_corroboration_window?(entry["ts"], threshold)
+  end
+
+  defp within_corroboration_window?(ts, threshold) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> DateTime.compare(dt, threshold) != :lt
+      _ -> false
+    end
+  end
+
+  defp within_corroboration_window?(_ts, _threshold), do: false
+
+  # When the file-drop scan supplies the PATH-derived agent
+  # (`:path_agent` opt), refuse if the frontmatter `agent` field
+  # disagrees — it means the agent tried to assert ownership of a
+  # different agent's sentinel from inside its own state dir.
+  # Director-origin resolutions don't pass `:path_agent` and are
+  # skipped.
+  defp check_agent_binding(nil, _fm_agent), do: :ok
+  defp check_agent_binding(path_agent, fm_agent) when path_agent == fm_agent, do: :ok
+
+  defp check_agent_binding(_path_agent, _fm_agent),
+    do: {:error, :sentinel_agent_mismatch}
 
   defp apply_task_mutation(:retry, _abs_task), do: :ok
 

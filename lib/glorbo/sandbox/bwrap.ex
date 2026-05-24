@@ -547,7 +547,11 @@ defmodule Glorbo.Sandbox.Bwrap do
       # (`/home/u/granted-dir/..` → `/etc`) that bwrap then binds. Re-
       # walk lstat-checks here so the TOCTOU window collapses to the
       # `assert → Port.open` interval (microseconds, host-FS-bound).
-      :ok = assert_no_symlink_segment!(host)
+      :ok =
+        Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+          host,
+          "approved_path_flags: host_path"
+        )
 
       flag = if mode == :write, do: "--bind", else: "--ro-bind"
       [flag, host, sandbox]
@@ -555,63 +559,6 @@ defmodule Glorbo.Sandbox.Bwrap do
   end
 
   def approved_path_flags(_), do: []
-
-  # Walk every ancestor of `path` from `/` down and refuse if any
-  # segment is a symlink. Non-existent trailing segments are allowed
-  # — the path may name a yet-to-be-created file the operator approved
-  # ahead of time. Matches `Glorbo.PathRequestGate`'s approval-time
-  # check; called again here to close the TOCTOU window between
-  # approval and dispatch.
-  defp assert_no_symlink_segment!(path) when is_binary(path) do
-    path
-    |> Path.split()
-    |> Enum.reduce_while([], fn
-      "/", _acc ->
-        {:cont, ["/"]}
-
-      seg, [] ->
-        {:cont, [seg]}
-
-      seg, [head | _] = acc ->
-        candidate = Path.join(head, seg)
-
-        case File.lstat(candidate) do
-          {:ok, %File.Stat{type: :symlink}} ->
-            {:halt, {:symlink, candidate}}
-
-          {:ok, _other_type} ->
-            {:cont, [candidate | acc]}
-
-          # Not-yet-existing trailing segment is allowed (operator may
-          # have approved a path the agent intends to create).
-          {:error, :enoent} ->
-            {:cont, [candidate | acc]}
-
-          # Fail closed on EVERY OTHER lstat error (`:eacces`,
-          # `:eloop`, `:enotdir`, etc.). Treating these as "no
-          # symlink" would silently skip the check when we can't
-          # actually verify — the original `_ ->` branch did exactly
-          # that. (Copilot review on PR #31.)
-          {:error, reason} ->
-            {:halt, {:stat_failed, candidate, reason}}
-        end
-    end)
-    |> case do
-      {:symlink, where} ->
-        raise ArgumentError,
-              "approved_path_flags: host_path crosses a symlinked component, " <>
-                "got #{inspect(where)} (full path: #{inspect(path)})"
-
-      {:stat_failed, where, reason} ->
-        raise ArgumentError,
-              "approved_path_flags: host_path lstat failed at #{inspect(where)} " <>
-                "(reason=#{inspect(reason)}; full path=#{inspect(path)}); refusing — " <>
-                "cannot verify the path is symlink-free"
-
-      _ ->
-        :ok
-    end
-  end
 
   # host_path must be an absolute path with no `..` segments so
   # bwrap's `--bind` / `--ro-bind` can't accidentally resolve

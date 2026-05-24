@@ -511,6 +511,32 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
+  # Gemini round-3 finding: only the `tracked: false` shape was
+  # gated. A usage parser that crashes or a provider that emits
+  # un-parseable output yields `%{usage: nil, usage_error: <reason>}`
+  # — that map fell through the wildcard catch-all and skipped
+  # budget enforcement entirely. A malicious agent could
+  # deliberately corrupt its `usage.json` (or pick a provider whose
+  # parser crashes on its output) to record zero spend against a
+  # tracked-only budget. Use the `:usage_error` field to
+  # differentiate intentional skip (`usage: nil, usage_error: nil`
+  # for the `"none"` parser — already caught at pre-flight by
+  # `check_untracked_allowed/3`) from parse failure (`usage_error`
+  # set). Only the parse-failure path is the bypass.
+  defp check_runtime_untracked_allowed(spec, %{usage: nil, usage_error: err}, _opts)
+       when not is_nil(err) do
+    if Map.get(spec, :allow_untracked_budget) == true do
+      :ok
+    else
+      Logger.warning(
+        "dispatch: agent #{spec.slug} lacks allow_untracked_budget; " <>
+          "runtime usage parse failed (#{inspect(err)})"
+      )
+
+      {:error, :untracked_disallowed}
+    end
+  end
+
   defp check_runtime_untracked_allowed(_spec, _dispatcher_result, _opts), do: :ok
 
   defp verify_installed(spec, provider, opts) do
@@ -553,12 +579,103 @@ defmodule Glorbo.Agent.Dispatch do
     # exist on the host side of the rw workspace bind before dispatch, so
     # the CLI can mkdir its own subdir under them. These are agent-private
     # (per-company workspace), so nothing is shared across companies.
+    #
+    # Gemini round-3 finding: `mkdir_p!` follows symlinks. The
+    # workspace is rw-mounted INSIDE the sandbox, so a previous
+    # dispatch could have left `.local` as a symlink pointing at
+    # another host directory (e.g. another company's state dir, or
+    # a path the OS user owns). The next dispatch's host-side
+    # `mkdir_p!` would then create `share` / `state` under the
+    # symlink target. Walk every ancestor segment with `lstat` and
+    # refuse if any is a symlink — fall back to removing the trap
+    # and recreating fresh so dispatch can still proceed.
     Enum.each(
       [".local/share", ".local/state", ".config"],
-      &fs.mkdir_p!.(Path.join(path, &1))
+      &ensure_workspace_subdir!(path, &1, fs)
     )
 
     {:ok, path}
+  end
+
+  # Walk each segment of `subpath` (relative to `base`) and refuse
+  # if any intermediate is a symlink. On detection, attempt to
+  # remove the symlink and recreate as a regular dir — the
+  # workspace is agent-controlled and we'd rather lose a malicious
+  # in-flight chain than let `mkdir_p!` follow it.
+  defp ensure_workspace_subdir!(base, subpath, fs) do
+    # Walk segments left-to-right, building a path accumulator and
+    # checking each candidate before mkdir. The accumulator IS the
+    # candidate path for the next iteration; we ignore the final
+    # return value (the deepest path) by binding `_walked`.
+    _walked =
+      subpath
+      |> Path.split()
+      |> Enum.reduce(base, fn seg, acc ->
+        candidate = Path.join(acc, seg)
+        ensure_one_workspace_segment!(candidate, fs)
+        candidate
+      end)
+
+    :ok
+  end
+
+  defp ensure_one_workspace_segment!(candidate, fs) do
+    case File.lstat(candidate) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        Logger.warning(
+          "dispatch: workspace path #{candidate} is a symlink; removing and recreating"
+        )
+
+        remove_suspect_entry!(candidate)
+        fs.mkdir_p!.(candidate)
+
+      {:ok, %File.Stat{type: :directory}} ->
+        :ok
+
+      {:ok, %File.Stat{}} ->
+        # Pre-existing non-directory (regular file, fifo, …) at a
+        # segment that should be a directory. Same defense: nuke
+        # and recreate.
+        Logger.warning(
+          "dispatch: workspace path #{candidate} is not a directory; removing and recreating"
+        )
+
+        remove_suspect_entry!(candidate)
+        fs.mkdir_p!.(candidate)
+
+      {:error, :enoent} ->
+        fs.mkdir_p!.(candidate)
+
+      {:error, reason} ->
+        # Fail closed: refusing dispatch is better than blindly
+        # following an unknown stat error into a `mkdir_p!` call
+        # that would resolve through whatever's there.
+        raise File.Error,
+          reason: reason,
+          action: "stat workspace subdir",
+          path: candidate
+    end
+  end
+
+  # Copilot review on PR #35: the previous shape was
+  # `_ = File.rm(candidate)` followed by `mkdir_p!`. If `rm` failed
+  # (EACCES, EBUSY, ...) the symlink stayed in place; `mkdir_p!`
+  # then followed it (a symlink to a directory satisfies the
+  # post-condition), restoring the very bypass the fix was meant
+  # to close. Raise loudly on rm failure so the caller's dispatch
+  # short-circuits rather than silently following the suspect
+  # entry.
+  defp remove_suspect_entry!(candidate) do
+    case File.rm(candidate) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise File.Error,
+          reason: reason,
+          action: "remove suspect workspace entry",
+          path: candidate
+    end
   end
 
   defp materialize_skills(spec, run_dir, opts) do
@@ -1345,13 +1462,57 @@ defmodule Glorbo.Agent.Dispatch do
        when is_list(events) do
     audit = audit_fun(opts)
 
+    # Gemini round-3 finding: `event.action` flowed verbatim from
+    # parsed CLI output into the audit log's `action` field. While
+    # `Glorbo.CLI.Parsers.NativeV1.parse_audit_events/1` filters at
+    # parse time, the gate at the EMISSION boundary was missing —
+    # any parser that forwards `action` unvalidated, or any future
+    # parser regression, would let an agent forge `agent.complete`
+    # (defeats `LoopDetector`), `budget.usage` (poisons the reindex
+    # spend rebuild), or `approval.granted` (poisons approval
+    # rebuild). Re-validate against the same whitelist here as a
+    # defense-in-depth boundary check.
+    {valid, rejected} =
+      Enum.split_with(events, fn event ->
+        Glorbo.CLI.Harness.Tools.valid_audit_action?(Map.get(event, :action))
+      end)
+
+    if rejected != [] do
+      # Copilot review on PR #35: `sample_actions` stored raw
+      # `Map.get(event, :action)` values into the audit detail
+      # JSON. The whole reason these events were rejected is the
+      # action was something unexpected — non-binary terms,
+      # arbitrarily large strings, agent-controlled payloads.
+      # Bound + stringify each sample so the audit row stays
+      # JSON-safe and size-bounded (and an attacker can't exfil
+      # via the rejection feedback loop).
+      bad_actions =
+        rejected
+        |> Enum.map(&sanitise_rejected_action(Map.get(&1, :action)))
+        |> Enum.uniq()
+
+      Logger.warning(
+        "dispatch: agent #{spec.slug} attempted to emit unrecognised audit actions " <>
+          "(#{inspect(bad_actions)}); dropping #{length(rejected)} event(s)"
+      )
+
+      audit.(spec.company, %{
+        actor: spec.slug,
+        action: "agent.tool_audit_rejected",
+        agent: spec.slug,
+        task_path: task.task_path,
+        invocation_id: invocation_id,
+        detail: %{rejected: length(rejected), sample_actions: Enum.take(bad_actions, 5)}
+      })
+    end
+
     # C-033: hard-cap the event count per dispatch so an attacker-
     # controlled `audit_events` list can't drive unbounded fsync'd audit
     # writes. When the list overflows the cap, drop the overflow and emit
     # a single `agent.tool_audit_truncated` marker so the truncation is
     # itself auditable.
-    total = length(events)
-    capped = Enum.take(events, @max_tool_audit_events)
+    total = length(valid)
+    capped = Enum.take(valid, @max_tool_audit_events)
 
     Enum.each(capped, fn event ->
       entry =
@@ -1439,6 +1600,23 @@ defmodule Glorbo.Agent.Dispatch do
   end
 
   defp bound_detail(detail), do: detail
+
+  # Copilot review on PR #35: rejected actions feed back into the
+  # audit log via `sample_actions`. Coerce each entry to a short
+  # printable string so non-binary terms (atoms, integers, maps,
+  # …) don't crash `Jason.encode`, and oversized strings can't
+  # bloat the audit row or smuggle data out via the rejection
+  # feedback channel.
+  @rejected_action_sample_bytes 80
+  defp sanitise_rejected_action(action) when is_binary(action) do
+    Glorbo.Util.UTF8.safe_byte_slice(action, @rejected_action_sample_bytes)
+  end
+
+  defp sanitise_rejected_action(other) do
+    other
+    |> inspect(limit: 5, printable_limit: @rejected_action_sample_bytes)
+    |> Glorbo.Util.UTF8.safe_byte_slice(@rejected_action_sample_bytes)
+  end
 
   # Post-dispatch loop check — reads this month's audit jsonl for
   # consecutive failures on the same task_path and, on threshold,

@@ -27,6 +27,34 @@ defmodule Glorbo.Agent.LoopDetectorTest do
     }
   end
 
+  # PR #35 (gemini round-3 F4): agent-origin resolutions
+  # (`actor: "agent:<slug>"`) now require a corroborating
+  # `agent.loop_detected` audit entry with `actor: "system"` before
+  # `LoopDetector.resolve/5` will mutate the task. Tests that exercise
+  # the file-drop / agent-actor path need to seed that audit row.
+  #
+  # `:ts` overrides the recorded timestamp (default: now); used by
+  # the freshness-window test to seed a stale corroboration.
+  defp seed_loop_detected_audit(base, company, agent, task_path, opts \\ []) do
+    audit_dir = Path.join([base, "companies", company, "audit"])
+    File.mkdir_p!(audit_dir)
+    now = Keyword.get(opts, :ts, DateTime.utc_now())
+    ym = now |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    entry =
+      Jason.encode!(%{
+        "action" => "agent.loop_detected",
+        "actor" => "system",
+        "agent" => agent,
+        "target" => task_path,
+        "ts" => DateTime.to_iso8601(now)
+      })
+
+    File.write!(audit_path, entry <> "\n", [:append])
+    :ok
+  end
+
   describe "detect_loop/2 — pure logic" do
     test "empty → :no_loop" do
       assert LoopDetector.detect_loop([], 3) == :no_loop
@@ -379,6 +407,14 @@ defmodule Glorbo.Agent.LoopDetectorTest do
       me = self()
       audit_fun = fn co, entry -> send(me, {:audit, co, entry}) end
 
+      # Agent-origin actor → corroboration required (PR #35 F4).
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
+
       assert :ok =
                Glorbo.Agent.LoopDetector.resolve(
                  ctx.sentinel,
@@ -390,6 +426,134 @@ defmodule Glorbo.Agent.LoopDetectorTest do
                )
 
       assert_receive {:audit, _co, %{actor: "agent:ceo"}}
+    end
+
+    # PR #35 (gemini round-3 F4): the agent-origin path now requires
+    # a corroborating system-emitted `agent.loop_detected` audit row.
+    # Without it, resolve/5 refuses the mutation — the agent can't
+    # silently coerce the director-applied resolution by forging
+    # sentinel + resolution files in its own state dir.
+    test "agent-origin resolve REFUSED without corroborating audit entry", ctx do
+      me = self()
+      audit_fun = fn co, entry -> send(me, {:audit, co, entry}) end
+
+      assert {:error, :sentinel_not_corroborated} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 audit_fun: audit_fun
+               )
+
+      # Task left untouched, sentinel left in place for forensics.
+      {:ok, fm, _body} =
+        Glorbo.Filesystem.Frontmatter.parse(File.read!(ctx.abs_task))
+
+      assert fm["status"] == "in-progress"
+      assert File.exists?(ctx.sentinel)
+      refute_received {:audit, _, %{action: "agent.loop_resolved"}}
+    end
+
+    # Codex review of d5ba9b5 (round-3 hardening, follow-up): the
+    # initial F4 fix passed the frontmatter `agent` field straight
+    # into the corroboration query. Agent A under `/agents/A/state/`
+    # could forge `agent: B` in the sentinel and inherit any legit
+    # B-corroboration row. `apply_one_resolution/4` now supplies the
+    # PATH-derived agent via `:path_agent`, and `resolve/5` rejects
+    # any sentinel where the frontmatter `agent` disagrees.
+    test "REJECTS sentinel whose frontmatter agent != PATH-derived agent",
+         ctx do
+      # Frontmatter claims `agent: researcher`, but file lives under
+      # `/agents/ceo/state/` — the binding check refuses.
+      File.write!(ctx.sentinel, """
+      ---
+      kind: sentinel-stuck/v1
+      agent: researcher
+      task_id: #{ctx.task_id}
+      task_path: projects/blog/tasks/#{ctx.task_id}.md
+      failure_count: 3
+      ---
+
+      forged
+      """)
+
+      assert {:error, :sentinel_agent_mismatch} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 path_agent: ctx.agent
+               )
+
+      {:ok, fm, _body} =
+        Glorbo.Filesystem.Frontmatter.parse(File.read!(ctx.abs_task))
+
+      assert fm["status"] == "in-progress"
+      assert File.exists?(ctx.sentinel)
+    end
+
+    # Codex review hardening: stale corroboration rows can't be
+    # replayed. A `agent.loop_detected` audit entry from > 24h ago
+    # doesn't count — agent A can't drop a sentinel today and
+    # inherit a legit row from last week.
+    test "REJECTS resolution corroborated only by stale (>24h) audit entry",
+         ctx do
+      stale_ts = DateTime.utc_now() |> DateTime.add(-2 * 86_400, :second)
+
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md",
+        ts: stale_ts
+      )
+
+      assert {:error, :sentinel_not_corroborated} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 path_agent: ctx.agent
+               )
+    end
+  end
+
+  # Codex P1 review on PR #35: corroboration_months was using
+  # `DateTime.add(-32d)`, which from the FIRST day of month N
+  # rolls back to month N-2 (e.g. March 1 → Jan 28 → "01"),
+  # skipping the immediately-previous month. The boundary-correct
+  # arithmetic uses `Date.beginning_of_month |> Date.add(-1)` to
+  # land on the last day of month N-1.
+  describe "corroboration_months/1 — boundary correctness (codex P1)" do
+    test "from first day of March returns [March, February], not [March, January]" do
+      now = ~U[2026-03-01 00:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-03", "2026-02"]
+    end
+
+    test "from first day of January returns [Jan, Dec of prior year]" do
+      now = ~U[2026-01-01 00:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-01", "2025-12"]
+    end
+
+    test "from first day of March in a non-leap year returns [March, February]" do
+      now = ~U[2025-03-01 12:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2025-03", "2025-02"]
+    end
+
+    test "from mid-month returns the obvious pair" do
+      now = ~U[2026-04-15 12:00:00Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-04", "2026-03"]
+    end
+
+    test "from last day of month returns [that-month, prior-month]" do
+      now = ~U[2026-04-30 23:59:59Z]
+      assert Glorbo.Agent.LoopDetector.corroboration_months(now) == ["2026-04", "2026-03"]
     end
   end
 
@@ -453,6 +617,15 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       res_file = Path.join(ctx.state_dir, "resolved-skip-#{ctx.task_id}.md")
       File.write!(res_file, "")
+
+      # PR #35 F4: agent-origin file-drops require the corroborating
+      # system-emitted `agent.loop_detected` audit entry.
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
 
       results =
         Glorbo.Agent.LoopDetector.apply_resolution_files(
@@ -540,6 +713,17 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(Path.join(ctx.state_dir, "resolved-retry-#{ctx.task_id}.md"), "")
       File.write!(Path.join(state_dir_2, "resolved-stop-#{task_id_2}.md"), "")
+
+      # PR #35 F4: both agent-origin file-drops need corroborating
+      # system-emitted `agent.loop_detected` audit entries.
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
+
+      seed_loop_detected_audit(ctx.base, ctx.company, agent2, rel_path_2)
 
       results = Glorbo.Agent.LoopDetector.apply_resolution_files(ctx.base, ctx.company)
 

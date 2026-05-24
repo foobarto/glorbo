@@ -10,6 +10,168 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex + gemini round-3 deep-dive: 8 hardening fixes (bundled)
+
+Round 3 of the ongoing codex + gemini audit cycle, scanning the
+post-PR-#34 codebase. 8 findings bundled into one PR per the
+"reduce review-cycle overhead" workflow; 5 HIGH severity (4
+agent-driven privilege/bypass primitives + 1 cross-agent sandbox
+escape), 1 MED (workspace symlink-follow), 2 LOW (defense-in-
+depth + grant-leak window).
+
+PR-review feedback round (codex P1 + Copilot, post-push of d5ba9b5):
+calendar arithmetic fix for the corroboration-month rollover boundary
+(was `DateTime.add(-32d)`, now `Date.beginning_of_month |> Date.add(-1)`),
+loud failure on workspace `File.rm` errors (was silent — would have
+restored the symlink-follow bug if rm ever returned `{:error, _}`),
+sanitisation of `sample_actions` in the audit-rejection feedback row
+(was raw `event.action`; non-binary or oversized terms now stringified
++ truncated to 80 bytes via `Util.UTF8.safe_byte_slice`), comment
+correction in `stop_inflight`. 5 new boundary regression tests for the
+corroboration calendar math.
+
+- **Cross-agent sandbox escape via permission-mount symlink-segment**
+  (codex, HIGH) — `Glorbo.Sandbox.PermissionMapper` emitted bwrap
+  `--bind` / `--ro-bind` source paths without checking ancestor
+  symlinks. Agent A holding `projects:write:foo` could plant a
+  symlink at `<co>/projects/foo/tasks` → `~/.ssh`; agent B holding
+  `tasks:update:foo` would then have bwrap resolve the symlink
+  HOST-SIDE before the namespace switch, mounting `~/.ssh` rw
+  inside B's sandbox at `/projects/foo/tasks`. Affected all
+  per-scope clauses (`projects:read/write:<name>`,
+  `chat:read:<channel>`, `tasks:update:<project>`). Hoisted the
+  existing `Bwrap.assert_no_symlink_segment!/1` helper (from the
+  GEP-27 approved-path check) into a new
+  `Glorbo.Sandbox.SymlinkGuard` shared module; both call sites now
+  walk + lstat every host source's ancestor segments before
+  emitting the argv triple. 4 regression tests cover leaf-symlink,
+  ancestor-symlink, chat-channel symlink, and happy-path.
+
+- **Agent forges system audit actions** (gemini, HIGH) —
+  `Glorbo.Agent.Dispatch.emit_tool_audits/5` forwarded
+  `event.action` verbatim from the parsed CLI output into the
+  audit log's `action` field. An agent could forge
+  `agent.complete` (defeats LoopDetector's failure-chain
+  detection), `budget.usage` (poisons reindex spend rebuild), or
+  `approval.granted` (poisons approval rebuild). The native_v1
+  parser already filtered at parse time, but the audit-emission
+  boundary was missing the gate — any parser regression (or new
+  parser) would reopen the hole. Added
+  `Glorbo.CLI.Harness.Tools.valid_audit_action?/1` as the canonical
+  whitelist (the same `tool.*` + `egress.web_fetch` set the
+  parser uses); emission now filters via this gate and emits a
+  `agent.tool_audit_rejected` audit row for any drop attempt.
+  Whitelist coverage + 4 rejection-shape tests pin the new gate
+  shut.
+
+- **Inbox-message task_id traversal/glob into reply path** (gemini,
+  HIGH) — `Glorbo.Agent.Server.reply_target/1` and
+  `resolve_task_path/2` flowed attacker-controlled `task_id` from
+  inbox-message frontmatter straight into `Path.wildcard` —
+  shapes like `task_id: "../foo"` (traversal) or `task_id: "*"`
+  (glob expansion) could match arbitrary task files in the
+  company, and `apply_task_actions` would then run `reassign` /
+  `status` mutation on the matched file. Both call sites now
+  validate via the existing `safe_task_id?/1`
+  (`~r/\A[a-z0-9][a-z0-9._-]*\z/`) — defense-in-depth at both
+  the routing seam and the wildcard interpolation site. TA-7
+  regression test exercises 9 malicious shapes and asserts the
+  real task file stays untouched.
+
+- **Agent-forged loop-detector resolutions bypass ACL** (gemini,
+  HIGH) — `Glorbo.Agent.LoopDetector.apply_resolution_files/3`
+  scans `agents/*/state/resolved-*-*.md` and applies any
+  resolution that has a sibling `stuck-on-*.md` sentinel. Both
+  files live in the agent's own state dir (agent-writable). A
+  malicious agent could forge both for any task in the company
+  and on the next `InboxLive` render the task would silently get
+  `status: denied` (or `assigned_to: director` on skip) —
+  bypassing the `projects:write` ACL entirely since
+  `apply_task_mutation` doesn't re-check permissions. `resolve/5`
+  now requires a corroborating `agent.loop_detected` audit entry
+  with `actor: "system"` for `{agent, task_path}` before honoring
+  the mutation; director-origin resolutions (button click) skip
+  the check since the operator is authoritative by design. Closed
+  in concert with the `emit_tool_audits` whitelist (so the agent
+  can't forge `actor: "system"` audit rows in the first place).
+  3 hardening rounds against codex's pre-push review of d5ba9b5
+  layered on top:
+  - **PATH-derived agent binding.** Frontmatter `agent` was
+    agent-controlled — agent A under `/agents/A/state/` could
+    forge `agent: B` to inherit any legit B-corroboration row.
+    `apply_one_resolution/4` now passes the path-derived agent
+    via `:path_agent`; `resolve/5` refuses with
+    `:sentinel_agent_mismatch` on disagreement.
+  - **Frontmatter `audit_month` ignored.** Was passed as
+    `:month` to the audit query, letting agent A point the scan
+    at any historical month with a legit row. Now scans current
+    UTC month + previous (covers month-boundary races) only;
+    no agent input honored.
+  - **24h freshness window.** Without it, a single legit
+    `agent.loop_detected` row could be replayed indefinitely.
+    `agent.loop_detected.ts` must fall within the last 86 400
+    seconds — long enough for legit operator-reaction lag,
+    short enough to render replay attacks uninteresting.
+
+  3 new regression tests for the codex-review hardening (frontmatter
+  agent mismatch, stale corroboration, multi-agent file-drop),
+  plus the original agent-origin refusal test; 3 pre-existing
+  file-drop tests updated to seed the corroborating audit row.
+
+- **Untracked-budget bypass via parser failure** (gemini, HIGH) —
+  `Glorbo.Agent.Dispatch.check_runtime_untracked_allowed/3` gated
+  only the explicit `usage: %{tracked: false}` shape. A parser
+  crash (e.g. agent corrupts `usage.json` or emits bytes that
+  trip the JSON decoder) returns `%{usage: nil, usage_error: <reason>}`
+  — which fell through the wildcard catch-all to `:ok`, recording
+  zero spend against a tracked-only budget. Narrow fix: refuse
+  ONLY the parser-failure shape (`usage: nil` + `usage_error`
+  set); the legitimate `:none` parser path
+  (`usage: nil, usage_error: nil`) is still allowed when
+  `allow_untracked_budget: true`. 2 new tests + 19 existing
+  dispatch-flow tests rerouted via fixture update to keep
+  exercising what they meant to exercise.
+
+- **Workspace mkdir_p! follows attacker-planted symlinks**
+  (gemini, MED) — `Glorbo.Agent.Dispatch.ensure_workspace/2`
+  called `mkdir_p!(path/.local/share)` etc. directly; the
+  workspace is rw-mounted INSIDE the sandbox so a previous
+  dispatch could pre-plant `.local` as a symlink to an arbitrary
+  host directory, and the next dispatch's host-side `mkdir_p!`
+  would create `share`/`state` under the symlink target (another
+  company's state dir, etc.). New `ensure_workspace_subdir!/3`
+  walks each segment with `lstat`, removes any symlink found
+  (and any non-directory entry), and recreates as a fresh dir
+  before mkdir-ing the next segment. Regression test plants a
+  symlink to a "victim" dir and asserts the workspace bind is
+  unaffected after dispatch.
+
+- **Audit query :month path-traversal foot-gun** (gemini, LOW) —
+  `Glorbo.Audit.Query.for_task/4` interpolated the `:month` opt
+  into the audit file `Path.join` with no validation. No live
+  caller currently exposes `:month` from a request param, but
+  one MCP tool already accepts month-range opts; a future caller
+  dropping it through could path-traverse into any JSONL on
+  disk. Now enforces `\A\d{4}-(0[1-9]|1[0-2])\z`; invalid or
+  non-binary values silently fall back to the current UTC month
+  rather than raising (callers without `:month` already got that
+  fallback via `Keyword.get_lazy/3`). 14 malicious + 4
+  non-binary shapes pinned shut.
+
+- **stop_inflight leaks PathGrantStore grants past SIGKILL**
+  (gemini, LOW) — `Glorbo.Agent.Server.handle_call/2` for
+  `:stop_inflight` called `Process.exit(:kill)` on each in-flight
+  dispatch Task. SIGKILL bypasses the `Dispatch.do_execute/4`
+  post-with cleanup that normally calls `PathGrantStore.revoke/3`
+  (plus the proxy-token revoke and slot release). PathGrantStore
+  grants would leak under the `{company, agent, task_id}` key
+  until the next dispatch of the same task overwrote them
+  (emergency-stop blocks new dispatches in this state, bounding
+  but not closing the window). Now revokes grants explicitly
+  BEFORE the kill; the proxy-token expiry failsafe + semaphore
+  pid-monitor catch the other two. Regression test pre-pins a
+  grant, calls stop_inflight, asserts the grant is gone.
+
 ### Security — codex + gemini round-2 deep-dive: 6 hardening fixes (bundled)
 
 Bundled wave addressing the second-round codex + gemini deep-dive

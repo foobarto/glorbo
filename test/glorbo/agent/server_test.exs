@@ -774,6 +774,41 @@ defmodule Glorbo.Agent.ServerTest do
       assert status2.current_task == nil
       assert status2.last_exit_status == "stopped_by_director"
     end
+
+    # PR #35 (gemini round-3 F8): stop_inflight kills the dispatch
+    # Task via `Process.exit(:kill)` — SIGKILL bypasses the
+    # `Dispatch.do_execute/4` post-with cleanup that normally calls
+    # `PathGrantStore.revoke/3`. Pre-emptively revoke before the
+    # kill so grants don't leak past stop_inflight.
+    test "F8: stop_inflight revokes PathGrantStore grants before killing", ctx do
+      pid = start_server(ctx, dispatch_fun: blocking_dispatch(ctx.test_pid))
+
+      task = %{task_id: "t-revoke-1", prompt: "x"}
+      :ok = AgentServer.wake(pid, :director_request, task)
+      assert_receive {:dispatch_started, "t-revoke-1", _task_pid}, 1_000
+
+      # Simulate a real dispatch having grants pinned in the store
+      # for this in-flight {company, agent, task_id} triple.
+      Glorbo.PathGrantStore.ensure_started()
+
+      Glorbo.PathGrantStore.grant(
+        ctx.spec.company,
+        ctx.spec.slug,
+        "t-revoke-1",
+        [%{host_path: "/tmp/x", sandbox_path: "/external/x", mode: :read}],
+        DateTime.utc_now()
+      )
+
+      assert {:ok, _} =
+               Glorbo.PathGrantStore.lookup(ctx.spec.company, ctx.spec.slug, "t-revoke-1")
+
+      assert :ok == AgentServer.stop_inflight(pid)
+      await_state(pid, :idle)
+
+      # Grant gone — would have leaked under the pre-fix shape.
+      assert :not_found ==
+               Glorbo.PathGrantStore.lookup(ctx.spec.company, ctx.spec.slug, "t-revoke-1")
+    end
   end
 
   # End-to-end regression: the Actions-driven path writes a mention
@@ -1161,6 +1196,104 @@ defmodule Glorbo.Agent.ServerTest do
       content = File.read!(path)
       # Status frontmatter unchanged (no ACTIONS block = no parse)
       assert content =~ ~r/^status: "?todo"?$/m
+    end
+
+    # PR #35 (gemini round-3 F3): inbox-message `task_id` flows
+    # from attacker-controlled frontmatter into `Path.wildcard` via
+    # `resolve_task_path/2`. Without validation, `task_id: "../foo"`
+    # or `task_id: "*"` would let the reply path traverse / glob
+    # outside the legitimate `projects/*/tasks/<id>.md` shape and
+    # then `apply_task_actions` would mutate whatever file matched.
+    # `reply_target/1` now rejects via `safe_task_id?/1` and
+    # `resolve_task_path/2` re-checks defensively.
+    test "TA-7: malicious task_id in frontmatter is refused — no traversal", ctx do
+      base =
+        Path.join(System.tmp_dir!(), "srv_task_traverse_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(base)
+      slug = ctx.spec.slug
+      co = ctx.spec.company
+      co_root = Path.join([base, "companies", co])
+
+      # Real task that exists — the malicious task_id might glob-match
+      # `real-1` if `*` is allowed. Asserting the legit file is
+      # UNCHANGED + no comments thread was created proves the refusal.
+      tasks_dir = Path.join([co_root, "projects", "demo", "tasks"])
+      File.mkdir_p!(tasks_dir)
+      legit_task = Path.join(tasks_dir, "real-1.md")
+
+      File.write!(legit_task, """
+      ---
+      kind: task/v1
+      title: Real Task
+      status: "todo"
+      assigned_to: "#{slug}"
+      ---
+
+      Should stay untouched.
+      """)
+
+      inbox_dir = Path.join([co_root, "agents", slug, "inbox"])
+      File.mkdir_p!(inbox_dir)
+
+      dispatch_fun = fn _spec, task, _opts ->
+        # The reply body the server will route via `reply_target/1` —
+        # if `task_id` is unsafe, the routing rejects + returns
+        # :no_reply_target and no `write_task_comment_reply` runs.
+        {:ok, %{exit_status: 0, reply: "ACK for #{task.task_id}"}}
+      end
+
+      # ONE supervised server, reused across malicious-id wakes
+      # (start_supervised! can't be called twice for the same
+      # task_supervisor in the ctx).
+      pid = start_server(ctx, base: base, dispatch_fun: dispatch_fun)
+
+      # Try every shape that the unsafe regex would let through.
+      malicious_task_ids = [
+        "../../etc/passwd",
+        "*",
+        "*/../etc",
+        "..",
+        "../..",
+        "REAL-1",
+        "real 1",
+        "real;rm",
+        ""
+      ]
+
+      for {bad_id, idx} <- Enum.with_index(malicious_task_ids) do
+        inbox_file = Path.join(inbox_dir, "m#{idx}-task-x.md")
+
+        File.write!(inbox_file, """
+        ---
+        from: director
+        task_id: "#{bad_id}"
+        kind: task_assignment
+        delivered_at: "2026-04-20T00:00:00Z"
+        ---
+
+        Body
+        """)
+
+        task = %{
+          task_id: "t-m#{idx}",
+          task_path: "agents/#{slug}/inbox/m#{idx}-task-x.md",
+          prompt: "x",
+          trigger: :inbox
+        }
+
+        :ok = AgentServer.wake(pid, :inbox, task)
+        await_state(pid, :idle)
+      end
+
+      # Real task body unchanged — no comment thread was written and
+      # no ACTIONS mutation applied via a globbed match.
+      assert File.read!(legit_task) =~ "Should stay untouched."
+      # Comments file should NOT have been created via globbing.
+      comments_path = Glorbo.TaskComments.path_for(legit_task)
+      refute File.exists?(comments_path), "comment file appeared via globbed task_id"
+
+      on_exit(fn -> File.rm_rf!(base) end)
     end
   end
 

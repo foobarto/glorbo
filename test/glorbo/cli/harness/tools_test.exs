@@ -122,4 +122,61 @@ defmodule Glorbo.CLI.Harness.ToolsTest do
       assert result.payload["error"] == "path_escapes_workspace"
     end
   end
+
+  # PR #35 (gemini round-3 F2): the agent's `audit_events` were
+  # forwarded into the audit log with `event.action` taken verbatim.
+  # An agent could forge `agent.complete` (defeats LoopDetector),
+  # `budget.usage` (poisons reindex sum), or `approval.granted`
+  # (poisons approval rebuild). `valid_audit_action?/1` is the
+  # whitelist gate that both `NativeV1.parse_audit_events/1` (parse
+  # boundary) and `Dispatch.emit_tool_audits/5` (emission boundary)
+  # use to reject forged actions.
+  describe "valid_audit_action?/1 (gemini round-3 F2)" do
+    test "accepts the canonical harness tool actions" do
+      for action <- [
+            "tool.read_file",
+            "tool.write_file",
+            "tool.edit_file",
+            "tool.glob",
+            "tool.grep",
+            "tool.bash",
+            "egress.web_fetch"
+          ] do
+        assert Tools.valid_audit_action?(action),
+               "expected #{action} to be whitelisted"
+      end
+    end
+
+    test "rejects forged system-owned actions" do
+      for forged <- [
+            "agent.complete",
+            "agent.dispatch",
+            "agent.loop_detected",
+            "agent.loop_resolved",
+            "budget.usage",
+            "approval.granted",
+            "approval.requested",
+            "task.reassign",
+            "system.boot",
+            "audit.append"
+          ] do
+        refute Tools.valid_audit_action?(forged),
+               "expected #{forged} to be REJECTED"
+      end
+    end
+
+    test "rejects non-string and empty inputs" do
+      refute Tools.valid_audit_action?(nil)
+      refute Tools.valid_audit_action?(:agent_complete)
+      refute Tools.valid_audit_action?(42)
+      refute Tools.valid_audit_action?(%{})
+      refute Tools.valid_audit_action?("")
+    end
+
+    test "case-sensitive — variants with different case are rejected" do
+      refute Tools.valid_audit_action?("TOOL.BASH")
+      refute Tools.valid_audit_action?("Tool.Bash")
+      refute Tools.valid_audit_action?("tool.Bash")
+    end
+  end
 end

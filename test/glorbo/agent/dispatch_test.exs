@@ -30,7 +30,17 @@ defmodule Glorbo.Agent.DispatchTest do
       skills: [],
       budget_usd_cents_month: nil,
       timeout_seconds: 300,
-      allow_untracked_budget: false,
+      # PR #35 (gemini round-3 F5): many tests use inline `run_fun`
+      # stubs that return empty stdout, which `gemini_stdout`
+      # interprets as a parse failure (`usage_error: :json_decode_error`).
+      # `Dispatch.check_runtime_untracked_allowed/3` now correctly
+      # refuses parse failures unless `allow_untracked_budget: true`.
+      # Default the fixture to allow untracked so the dispatch-flow
+      # tests (D3 / D5 / task overrides / proxy / etc.) exercise
+      # what they actually intend to exercise. Budget-enforcement
+      # tests (D10, D10b, the runtime tracked:false case) override
+      # `allow_untracked_budget` or use specific dispatcher shapes.
+      allow_untracked_budget: true,
       file_path: Path.join([base, "companies", "acme", "agents", "engineer", "AGENT.md"])
     }
 
@@ -68,7 +78,18 @@ defmodule Glorbo.Agent.DispatchTest do
   end
 
   # A run_fun that writes a canned reply and returns exit 0 + stdout.
-  defp writer(stdout \\ "") do
+  #
+  # PR #35 (gemini round-3 F5): bare `writer()` previously returned
+  # empty stdout, which made `gemini_stdout` raise `:json_decode_error`
+  # and produce `%{usage: nil, usage_error: :json_decode_error}`.
+  # `Dispatch.check_runtime_untracked_allowed/3` now correctly refuses
+  # that shape unless the agent has `allow_untracked_budget: true` —
+  # closing the bypass where a corrupted parser output recorded zero
+  # spend silently. Default to a minimal-valid gemini blob so tests
+  # exercise the success path; tests that want to trigger parser
+  # failure pass explicit stdout (`writer("")`).
+  @default_empty_gemini_blob ~s|{"stats":{"models":{"claude":{"tokens":{"prompt":0,"candidates":0}}}}}|
+  defp writer(stdout \\ @default_empty_gemini_blob) do
     fn _args, env, _bwrap, _run_opts ->
       File.write!(env["GLORBO_REPLY_PATH"], "reply body")
       {:ok, %{exit_status: 0, stdout: stdout, usage_dir: nil}}
@@ -669,10 +690,14 @@ defmodule Glorbo.Agent.DispatchTest do
   # ---------------------------------------------------------------------------
 
   test "D10: untracked provider without allow_untracked_budget refuses", ctx do
+    # PR #35 F5: default fixture flipped to allow_untracked_budget: true
+    # so dispatch-flow tests don't trip on stub stdout shapes; this
+    # test specifically exercises the refusal path, so opt back out.
+    spec = %{ctx.spec | allow_untracked_budget: false}
     untracked = stub_provider(usage_parser: "none", usage_path: nil)
 
     assert {:error, :untracked_disallowed} =
-             Dispatch.execute(ctx.spec, ctx.task,
+             Dispatch.execute(spec, ctx.task,
                base: ctx.base,
                run_fun: writer(),
                provider_fun: fn _ -> untracked end,
@@ -716,14 +741,100 @@ defmodule Glorbo.Agent.DispatchTest do
       {:ok, %{exit_status: 0, stdout: "", usage_dir: run_opts.usage_dir}}
     end
 
+    # PR #35 F5: default fixture is now allow_untracked_budget: true;
+    # this test asserts the refusal path so override back to false.
+    spec = %{ctx.spec | provider: "openai", allow_untracked_budget: false}
+
     assert {:error, :untracked_disallowed} =
-             Dispatch.execute(%{ctx.spec | provider: "openai"}, ctx.task,
+             Dispatch.execute(spec, ctx.task,
                base: ctx.base,
                run_fun: run_fun,
                provider_fun: fn _ -> native_provider end,
                self_binary_fun: fn -> self_binary end,
                audit_fun: ctx.audit_fun
              )
+  end
+
+  # PR #35 (gemini round-3 F5): when the usage parser CRASHES on
+  # the provider's output (yielding `usage: nil, usage_error: <reason>`),
+  # the original wildcard catch-all returned `:ok` and the dispatch
+  # recorded zero spend — a tracked-budget bypass via parser
+  # corruption. The narrow fix refuses ONLY the parser-failure shape
+  # (so the legitimate `:none` parser path — `usage: nil,
+  # usage_error: nil` — is still allowed when `allow_untracked_budget`
+  # is true).
+  test "F5: parser failure (usage_error set) refuses without allow_untracked_budget", ctx do
+    spec = %{ctx.spec | allow_untracked_budget: false}
+
+    # Stub stdout that gemini_stdout will fail to decode (not JSON).
+    bad_blob = "definitely not json"
+
+    assert {:error, :untracked_disallowed} =
+             Dispatch.execute(spec, ctx.task,
+               base: ctx.base,
+               run_fun: writer(bad_blob),
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: ctx.audit_fun
+             )
+  end
+
+  test "F5: parser failure WITH allow_untracked_budget: true still routes", ctx do
+    spec = %{ctx.spec | allow_untracked_budget: true}
+
+    assert {:ok, _} =
+             Dispatch.execute(spec, ctx.task,
+               base: ctx.base,
+               run_fun: writer("not json either"),
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: ctx.audit_fun
+             )
+  end
+
+  # PR #35 (gemini round-3 F6): `mkdir_p!` follows symlinks. The
+  # workspace is rw-mounted INSIDE the sandbox, so a previous
+  # dispatch could leave `.local` as a symlink pointing at an
+  # arbitrary host directory; the next dispatch's host-side
+  # `mkdir_p!(.local/share)` would create the subdir under the
+  # symlink target (e.g. another company's state dir). The fix
+  # walks each segment with `lstat`, removes any symlink found,
+  # and recreates as a fresh directory.
+  test "F6: ensure_workspace removes a pre-existing .local symlink and recreates it", ctx do
+    workspace =
+      Path.join([
+        ctx.base,
+        "companies",
+        "acme",
+        "agents",
+        "engineer",
+        "workspace"
+      ])
+
+    File.mkdir_p!(workspace)
+
+    # Simulate a previous dispatch having planted a malicious
+    # symlink at `.local` pointing at a victim dir.
+    victim = Path.join(ctx.base, "victim-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(victim)
+    :ok = File.ln_s(victim, Path.join(workspace, ".local"))
+
+    assert {:ok, _} =
+             Dispatch.execute(ctx.spec, ctx.task,
+               base: ctx.base,
+               run_fun: writer(),
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: ctx.audit_fun
+             )
+
+    # Symlink replaced with a real directory; `share` lives INSIDE
+    # the workspace, not under `victim`.
+    stat = File.lstat!(Path.join(workspace, ".local"))
+    assert stat.type == :directory
+
+    refute File.exists?(Path.join([victim, "share"])),
+           "victim/share should NOT exist — workspace dispatch followed the symlink"
+
+    assert File.dir?(Path.join([workspace, ".local", "share"])),
+           "workspace/.local/share should exist (real subdir created)"
   end
 
   # ---------------------------------------------------------------------------

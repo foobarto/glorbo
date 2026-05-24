@@ -44,6 +44,23 @@ defmodule Glorbo.CLI.Harness.Tools do
   @spec known_audit_actions() :: [String.t()]
   def known_audit_actions, do: @known_audit_actions
 
+  @doc """
+  Return true when `action` is one of the harness-emitted audit
+  actions (`tool.*` + `egress.web_fetch`). Used by
+  `Glorbo.Agent.Dispatch.emit_tool_audits/5` to filter
+  attacker-controlled `audit_events.action` values at the emission
+  boundary — gemini round-3 finding closed the gap left by parsers
+  that might forward `action` verbatim from agent output (e.g. a
+  forged `agent.complete` would defeat `LoopDetector`, a forged
+  `budget.usage` would poison the reindex sum, a forged
+  `approval.granted` would poison the approval rebuild).
+  """
+  @spec valid_audit_action?(term()) :: boolean()
+  def valid_audit_action?(action) when is_binary(action),
+    do: action in @known_audit_actions
+
+  def valid_audit_action?(_), do: false
+
   @spec known_tool_names() :: [String.t()]
   def known_tool_names,
     do: ["read_file", "write_file", "edit_file", "glob", "grep", "bash", "web_fetch"]
