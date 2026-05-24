@@ -100,4 +100,60 @@ defmodule Glorbo.Sandbox.PermissionMapperTest do
              ]
     end
   end
+
+  # PR #35 (codex round-3 F1): cross-agent symlink-segment bypass.
+  # Agent A holds `projects:write:foo` → rw on `<co>/projects/foo` →
+  # plants `<co>/projects/foo/tasks` → `~/.ssh`; agent B holds
+  # `tasks:update:foo` → bwrap resolves the symlink HOST-SIDE before
+  # the namespace switch and mounts `~/.ssh` rw inside B's sandbox.
+  # `PermissionMapper.to_argv/2` must refuse at argv-emission time.
+  describe "to_argv/2 — symlink-segment refusal (codex round-3 F1)" do
+    setup do
+      co = Path.join(System.tmp_dir!(), "glorbo-pm-symlink-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(Path.join([co, "projects", "foo"]))
+      on_exit(fn -> File.rm_rf!(co) end)
+      {:ok, co: co}
+    end
+
+    test "tasks:update:<project> refuses when the tasks/ leaf is a symlink", %{co: co} do
+      # Simulate agent A's planted symlink at the leaf.
+      target = Path.join([System.tmp_dir!(), "victim-#{System.unique_integer([:positive])}"])
+      File.mkdir_p!(target)
+      :ok = File.ln_s(target, Path.join([co, "projects", "foo", "tasks"]))
+
+      assert_raise ArgumentError, ~r/permission_mapper: mount source/, fn ->
+        PermissionMapper.to_argv([{"tasks", "update", "foo"}], co)
+      end
+    end
+
+    test "projects:write:<name> refuses when an ancestor segment is a symlink", %{co: co} do
+      # Plant the symlink ABOVE the leaf — at `<co>/projects/foo`.
+      File.rm_rf!(Path.join([co, "projects", "foo"]))
+      target = Path.join([System.tmp_dir!(), "vict2-#{System.unique_integer([:positive])}"])
+      File.mkdir_p!(target)
+      :ok = File.ln_s(target, Path.join([co, "projects", "foo"]))
+
+      assert_raise ArgumentError, ~r/symlinked component/, fn ->
+        PermissionMapper.to_argv([{"projects", "write", "foo"}], co)
+      end
+    end
+
+    test "chat:read:<channel> refuses when the channel file segment is a symlink", %{co: co} do
+      File.mkdir_p!(Path.join(co, "channels"))
+      target = Path.join([System.tmp_dir!(), "leak-#{System.unique_integer([:positive])}"])
+      File.write!(target, "secrets")
+      :ok = File.ln_s(target, Path.join([co, "channels", "general.md"]))
+
+      assert_raise ArgumentError, ~r/symlinked component/, fn ->
+        PermissionMapper.to_argv([{"chat", "read", "general"}], co)
+      end
+    end
+
+    test "real (non-symlink) tasks/ dir is allowed", %{co: co} do
+      File.mkdir_p!(Path.join([co, "projects", "foo", "tasks"]))
+
+      argv = PermissionMapper.to_argv([{"tasks", "update", "foo"}], co)
+      assert argv == ["--bind", Path.join([co, "projects", "foo", "tasks"]), "/projects/foo/tasks"]
+    end
+  end
 end

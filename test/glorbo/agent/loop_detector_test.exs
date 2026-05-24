@@ -27,6 +27,30 @@ defmodule Glorbo.Agent.LoopDetectorTest do
     }
   end
 
+  # PR #35 (gemini round-3 F4): agent-origin resolutions
+  # (`actor: "agent:<slug>"`) now require a corroborating
+  # `agent.loop_detected` audit entry with `actor: "system"` before
+  # `LoopDetector.resolve/5` will mutate the task. Tests that exercise
+  # the file-drop / agent-actor path need to seed that audit row.
+  defp seed_loop_detected_audit(base, company, agent, task_path) do
+    audit_dir = Path.join([base, "companies", company, "audit"])
+    File.mkdir_p!(audit_dir)
+    ym = DateTime.utc_now() |> DateTime.to_date() |> Date.to_string() |> String.slice(0, 7)
+    audit_path = Path.join(audit_dir, "#{ym}.jsonl")
+
+    entry =
+      Jason.encode!(%{
+        "action" => "agent.loop_detected",
+        "actor" => "system",
+        "agent" => agent,
+        "target" => task_path,
+        "ts" => DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+    File.write!(audit_path, entry <> "\n", [:append])
+    :ok
+  end
+
   describe "detect_loop/2 — pure logic" do
     test "empty → :no_loop" do
       assert LoopDetector.detect_loop([], 3) == :no_loop
@@ -379,6 +403,14 @@ defmodule Glorbo.Agent.LoopDetectorTest do
       me = self()
       audit_fun = fn co, entry -> send(me, {:audit, co, entry}) end
 
+      # Agent-origin actor → corroboration required (PR #35 F4).
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
+
       assert :ok =
                Glorbo.Agent.LoopDetector.resolve(
                  ctx.sentinel,
@@ -390,6 +422,34 @@ defmodule Glorbo.Agent.LoopDetectorTest do
                )
 
       assert_receive {:audit, _co, %{actor: "agent:ceo"}}
+    end
+
+    # PR #35 (gemini round-3 F4): the agent-origin path now requires
+    # a corroborating system-emitted `agent.loop_detected` audit row.
+    # Without it, resolve/5 refuses the mutation — the agent can't
+    # silently coerce the director-applied resolution by forging
+    # sentinel + resolution files in its own state dir.
+    test "agent-origin resolve REFUSED without corroborating audit entry", ctx do
+      me = self()
+      audit_fun = fn co, entry -> send(me, {:audit, co, entry}) end
+
+      assert {:error, :sentinel_not_corroborated} =
+               Glorbo.Agent.LoopDetector.resolve(
+                 ctx.sentinel,
+                 :stop,
+                 ctx.base,
+                 ctx.company,
+                 actor: "agent:ceo",
+                 audit_fun: audit_fun
+               )
+
+      # Task left untouched, sentinel left in place for forensics.
+      {:ok, fm, _body} =
+        Glorbo.Filesystem.Frontmatter.parse(File.read!(ctx.abs_task))
+
+      assert fm["status"] == "in-progress"
+      assert File.exists?(ctx.sentinel)
+      refute_received {:audit, _, %{action: "agent.loop_resolved"}}
     end
   end
 
@@ -453,6 +513,15 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       res_file = Path.join(ctx.state_dir, "resolved-skip-#{ctx.task_id}.md")
       File.write!(res_file, "")
+
+      # PR #35 F4: agent-origin file-drops require the corroborating
+      # system-emitted `agent.loop_detected` audit entry.
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
 
       results =
         Glorbo.Agent.LoopDetector.apply_resolution_files(
@@ -540,6 +609,17 @@ defmodule Glorbo.Agent.LoopDetectorTest do
 
       File.write!(Path.join(ctx.state_dir, "resolved-retry-#{ctx.task_id}.md"), "")
       File.write!(Path.join(state_dir_2, "resolved-stop-#{task_id_2}.md"), "")
+
+      # PR #35 F4: both agent-origin file-drops need corroborating
+      # system-emitted `agent.loop_detected` audit entries.
+      seed_loop_detected_audit(
+        ctx.base,
+        ctx.company,
+        ctx.agent,
+        "projects/blog/tasks/#{ctx.task_id}.md"
+      )
+
+      seed_loop_detected_audit(ctx.base, ctx.company, agent2, rel_path_2)
 
       results = Glorbo.Agent.LoopDetector.apply_resolution_files(ctx.base, ctx.company)
 

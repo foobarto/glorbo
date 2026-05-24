@@ -64,35 +64,35 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # projects:write:* → rw-bind whole projects tree
   defp permission_to_flags({"projects", "write", "*"}, co) do
-    ["--bind", Path.join(co, "projects"), "/projects"]
+    mount(:write, Path.join(co, "projects"), "/projects")
   end
 
   # projects:write:<name> → rw-bind just that project (sibling projects invisible)
   defp permission_to_flags({"projects", "write", name}, co) when name != "*" do
     name = assert_safe_scope!(name)
-    ["--bind", Path.join([co, "projects", name]), "/projects/#{name}"]
+    mount(:write, Path.join([co, "projects", name]), "/projects/#{name}")
   end
 
   # projects:read:* → ro-bind whole projects tree
   defp permission_to_flags({"projects", "read", "*"}, co) do
-    ["--ro-bind", Path.join(co, "projects"), "/projects"]
+    mount(:read, Path.join(co, "projects"), "/projects")
   end
 
   # projects:read:<name>
   defp permission_to_flags({"projects", "read", name}, co) when name != "*" do
     name = assert_safe_scope!(name)
-    ["--ro-bind", Path.join([co, "projects", name]), "/projects/#{name}"]
+    mount(:read, Path.join([co, "projects", name]), "/projects/#{name}")
   end
 
   # chat:read:* → ro-bind whole channels tree
   defp permission_to_flags({"chat", "read", "*"}, co) do
-    ["--ro-bind", Path.join(co, "channels"), "/channels"]
+    mount(:read, Path.join(co, "channels"), "/channels")
   end
 
   # chat:read:<channel> → ro-bind single channel file
   defp permission_to_flags({"chat", "read", channel}, co) when channel != "*" do
     channel = assert_safe_scope!(channel)
-    ["--ro-bind", Path.join([co, "channels", "#{channel}.md"]), "/channels/#{channel}.md"]
+    mount(:read, Path.join([co, "channels", "#{channel}.md"]), "/channels/#{channel}.md")
   end
 
   # chat:write:* → empty (Router mediates; no direct write)
@@ -114,12 +114,12 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   # tasks:update:<project> → rw-bind the project's tasks/ subdir
   defp permission_to_flags({"tasks", "update", project}, co) when project != "*" do
     project = assert_safe_scope!(project)
-    ["--bind", Path.join([co, "projects", project, "tasks"]), "/projects/#{project}/tasks"]
+    mount(:write, Path.join([co, "projects", project, "tasks"]), "/projects/#{project}/tasks")
   end
 
   # proposals:read:* → ro-bind whole proposals tree
   defp permission_to_flags({"proposals", "read", "*"}, co) do
-    ["--ro-bind", Path.join(co, "proposals"), "/proposals"]
+    mount(:read, Path.join(co, "proposals"), "/proposals")
   end
 
   # proposals:propose:* / proposals:decide:* → no kernel mount.
@@ -133,6 +133,31 @@ defmodule Glorbo.Sandbox.PermissionMapper do
 
   # Unknown permission family → empty (no kernel mount)
   defp permission_to_flags({_resource, _action, _scope}, _co), do: []
+
+  # Build the `--bind`/`--ro-bind` flag triple AFTER walking the host
+  # path's ancestor segments to refuse any symlink.
+  #
+  # Codex round-3 finding (PR #35): the previous shape interpolated
+  # `Path.join` straight into the argv list, trusting that scope-slug
+  # validation kept the path safe. But the LEAF segment of a scope-
+  # built mount source (e.g. `<co>/projects/foo/tasks`) is on a writable
+  # tree if a sibling permission (e.g. `projects:write:foo`) is granted
+  # — the writer could replace `tasks` with a symlink to `~/.ssh`, and
+  # a subsequent dispatch holding only `tasks:update:foo` would have
+  # bwrap mount `~/.ssh` rw inside the new namespace. Walk the host
+  # path here so the check applies at the argv-emission boundary —
+  # whether the bind is granted to the same agent or a sibling, the
+  # next dispatch's argv gets refused.
+  defp mount(mode, host, sandbox) when mode in [:read, :write] do
+    :ok =
+      Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+        host,
+        "permission_mapper: mount source"
+      )
+
+    flag = if mode == :write, do: "--bind", else: "--ro-bind"
+    [flag, host, sandbox]
+  end
 
   # Defense-in-depth assertion: every scope string that reaches
   # `Path.join` here is supposed to already be slug-validated by

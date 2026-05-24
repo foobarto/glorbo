@@ -98,4 +98,66 @@ defmodule Glorbo.Audit.QueryTest do
     assert length(entries) == 1
     assert hd(entries)["action"] == "ok"
   end
+
+  # PR #35 (gemini round-3 F7): `:month` was interpolated into the
+  # audit file path with no validation. A future caller dropping
+  # request-param data through `:month` could path-traverse into
+  # any JSONL on disk. Defense-in-depth: only `YYYY-MM` reaches
+  # `Path.join`; anything else falls back to the current UTC month.
+  describe "month option validation (gemini round-3 F7)" do
+    test "well-formed month string is honoured", %{base: base} do
+      # Seed an entry into a SPECIFIC non-current month and assert
+      # that asking for that month with the well-formed string
+      # actually returns it (proving the validation doesn't break
+      # the legitimate path).
+      explicit_month = "2024-07"
+      path = Path.join([base, "companies/acme/audit", "#{explicit_month}.jsonl"])
+      File.write!(path, Jason.encode!(%{"action" => "a", "target" => "projects/x/tasks/t.md"}))
+
+      entries =
+        Glorbo.Audit.Query.for_task(base, "acme", "projects/x/tasks/t.md", month: explicit_month)
+
+      assert length(entries) == 1
+    end
+
+    test "malformed month falls back to current month (no path traversal)", %{base: base} do
+      # Seed an entry into the current month so we can detect the
+      # fallback fired (returning current-month data) rather than
+      # the malicious month string having traversed elsewhere.
+      seed(base, [%{"action" => "current", "target" => "projects/x/tasks/t.md"}])
+
+      for bad <- [
+            "../../etc",
+            "../../../tmp/secret",
+            "2024-13",
+            "24-07",
+            "2024-7",
+            "2024-07/extra",
+            "../2024-07",
+            "2024-07.jsonl",
+            "1234-99",
+            ""
+          ] do
+        entries =
+          Glorbo.Audit.Query.for_task(base, "acme", "projects/x/tasks/t.md", month: bad)
+
+        # Should return the current-month entry (fallback applied);
+        # if the malicious month string had escaped into Path.join,
+        # we'd be reading from a different file path entirely.
+        assert length(entries) == 1, "expected current-month fallback for #{inspect(bad)}"
+        assert hd(entries)["action"] == "current"
+      end
+    end
+
+    test "non-binary month opt falls back without crashing", %{base: base} do
+      seed(base, [%{"action" => "current", "target" => "projects/x/tasks/t.md"}])
+
+      for bad <- [:atom_month, 202_407, nil, %{not: :a, month: :string}] do
+        entries =
+          Glorbo.Audit.Query.for_task(base, "acme", "projects/x/tasks/t.md", month: bad)
+
+        assert length(entries) == 1, "expected current-month fallback for #{inspect(bad)}"
+      end
+    end
+  end
 end

@@ -240,7 +240,27 @@ defmodule Glorbo.Agent.Server do
         # Kill every in-flight dispatch Task. `Process.exit(:kill)`
         # converts the monitor's {:DOWN, ...} to :normal, so we clean
         # state here directly rather than relying on handle_info.
-        Enum.each(state.in_flight, fn {_ref, %{pid: pid}} ->
+        #
+        # Gemini round-3 finding: the dispatch's normal cleanup
+        # (PathGrantStore revoke + proxy-token revoke + slot release
+        # at `Dispatch.do_execute/4` tail) runs AFTER the `with`
+        # block — SIGKILL bypasses it. PathGrantStore entries would
+        # leak with their original `{company, slot, task_id}` key
+        # until the next dispatch for the same task overwrote them
+        # (and emergency-stop blocks new dispatches in this state).
+        # Revoke explicitly before the kill. Proxy tokens have a
+        # 2× timeout failsafe and the semaphore monitors the holder
+        # pid (so SIGKILL → DOWN → slot freed) — the grant store is
+        # the only piece without an automatic catch.
+        company = state.spec.company
+        slug = state.spec.slug
+
+        Enum.each(state.in_flight, fn {_ref, invocation} ->
+          if task_id = Map.get(invocation, :task_id) do
+            _ = Glorbo.PathGrantStore.revoke(company, slug, task_id)
+          end
+
+          pid = Map.get(invocation, :pid)
           if is_pid(pid) and Process.alive?(pid), do: Process.exit(pid, :kill)
         end)
 
@@ -848,7 +868,15 @@ defmodule Glorbo.Agent.Server do
       # (FileSpec inbox_message_md). Match either so older inbox
       # entries on disk still route to the task-comment reply path
       # rather than falling through to :no_reply_target.
-      task_assignment_kind?(meta) and is_binary(Map.get(meta, "task_id")) ->
+      #
+      # Gemini round-3 finding: `meta["task_id"]` is attacker-
+      # controlled (inbox-message frontmatter is parsed verbatim
+      # from a file the sender wrote). An entry like
+      # `task_id: ../../etc/passwd` or `task_id: *` would flow into
+      # `resolve_task_path/2`'s `Path.wildcard` glob and match
+      # arbitrary files. Gate on `safe_task_id?/1` here at the
+      # routing seam — and `resolve_task_path/2` re-checks defensively.
+      task_assignment_kind?(meta) and safe_task_id?(Map.get(meta, "task_id")) ->
         {:ok, {:task_comment, Map.get(meta, "task_id")}}
 
       is_binary(from = Map.get(meta, "from")) and from == "director" ->
@@ -911,12 +939,20 @@ defmodule Glorbo.Agent.Server do
   end
 
   # Scan projects/*/tasks/<task_id>.md and return the first match.
+  # Defense-in-depth: `reply_target/1` already guards `task_id` via
+  # `safe_task_id?/1`, but this is the function that interpolates
+  # into a glob — re-check at use site so a future caller dropping
+  # an unvalidated id in can't escape into `..` or expand `*`.
   defp resolve_task_path(company_root, task_id) do
-    pattern = Path.join([company_root, "projects", "*", "tasks", "#{task_id}.md"])
+    if safe_task_id?(task_id) do
+      pattern = Path.join([company_root, "projects", "*", "tasks", "#{task_id}.md"])
 
-    case Path.wildcard(pattern) do
-      [abs | _] -> {:ok, abs}
-      [] -> :error
+      case Path.wildcard(pattern) do
+        [abs | _] -> {:ok, abs}
+        [] -> :error
+      end
+    else
+      :error
     end
   end
 

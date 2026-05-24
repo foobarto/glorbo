@@ -20,13 +20,25 @@ defmodule Glorbo.Audit.Query do
 
   @type entry :: map()
 
+  # Gemini round-3 finding: `:month` was interpolated into the audit
+  # file path with no validation. Currently no live web/MCP path
+  # exposes `:month` directly from a request param, but the function
+  # is a public-API foot-gun — one MCP tool already accepts month-
+  # range options, and a future caller dropping it through here
+  # could path-traverse into any JSONL on disk (`../../etc/foo`).
+  # Defense-in-depth: only `YYYY-MM` reaches `Path.join`.
+  @month_re ~r/\A\d{4}-(0[1-9]|1[0-2])\z/
+
   @doc """
   List audit entries for a task, newest-first, capped at `limit`.
+
+  `:month` (optional) must be `YYYY-MM`; invalid month strings are
+  ignored and the current UTC month is used instead.
   """
   @spec for_task(Path.t(), String.t(), String.t(), keyword()) :: [entry()]
   def for_task(base, company, task_path, opts \\ []) do
     limit = Keyword.get(opts, :limit, 50)
-    month = Keyword.get_lazy(opts, :month, fn -> current_year_month() end)
+    month = resolve_month(opts)
     task_id = task_id_from_path(task_path)
 
     path = Path.join([base, "companies", company, "audit", "#{month}.jsonl"])
@@ -90,5 +102,20 @@ defmodule Glorbo.Audit.Query do
     |> DateTime.to_date()
     |> Date.to_string()
     |> String.slice(0, 7)
+  end
+
+  # Validate the caller-supplied `:month`. Strings that don't match
+  # `YYYY-MM` (including `..`, slashes, or anything else that would
+  # let `Path.join` escape the audit dir) fall back to the current
+  # UTC month rather than raising — callers that didn't pass a month
+  # at all already get this fallback via `Keyword.get_lazy/3`.
+  defp resolve_month(opts) do
+    case Keyword.get(opts, :month) do
+      m when is_binary(m) ->
+        if Regex.match?(@month_re, m), do: m, else: current_year_month()
+
+      _ ->
+        current_year_month()
+    end
   end
 end

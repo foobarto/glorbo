@@ -360,6 +360,7 @@ defmodule Glorbo.Agent.LoopDetector do
       task_path = to_string(fm["task_path"] || "")
       agent_slug = to_string(fm["agent"] || "")
       task_id = to_string(fm["task_id"] || Path.basename(task_path, ".md"))
+      audit_month = to_string(fm["audit_month"] || "")
 
       # threatmodel M02/M11: the sentinel file lives under
       # `agents/<slug>/state/` which is agent-writable. A malicious
@@ -367,7 +368,31 @@ defmodule Glorbo.Agent.LoopDetector do
       # have the director-initiated resolution write (via
       # apply_task_mutation) escape the company. Confine the path
       # to `projects/<slug>/tasks/<id>.md` within this company.
+      #
+      # Gemini round-3 finding (PR #35): even with `task_path`
+      # confined to the company, the AGENT owns both the
+      # `stuck-on-X.md` sentinel and the `resolved-*-X.md`
+      # resolution file under its own `agents/<slug>/state/` dir.
+      # A malicious agent can forge BOTH for any task in the
+      # company (any project) and on the next `apply_resolution_files`
+      # scan the director's InboxLive render will silently mutate
+      # the task (`:stop` → `status: denied`; `:skip` → reassign
+      # to director) — bypassing the `projects:write` ACL
+      # entirely. Require a corroborating system-emitted
+      # `agent.loop_detected` audit entry before honoring
+      # agent-origin resolutions. The corroboration check is
+      # skipped for the director-origin path (button click in
+      # InboxLive/TaskLive) where the operator is authoritative.
       with :ok <- validate_sentinel_task_path(task_path),
+           :ok <-
+             require_system_corroboration(
+               actor,
+               base,
+               company,
+               agent_slug,
+               task_path,
+               audit_month
+             ),
            abs_task = Path.join([base, "companies", company, task_path]),
            :ok <- apply_task_mutation(decision, abs_task) do
         _ = File.rm(abs_sentinel)
@@ -470,6 +495,46 @@ defmodule Glorbo.Agent.LoopDetector do
   end
 
   defp validate_sentinel_task_path(_), do: {:error, :sentinel_invalid_task_path}
+
+  # Skip corroboration entirely for director-origin resolutions:
+  # the operator clicked a button (or a CLI tool acting on behalf
+  # of the operator) and that is authoritative by design.
+  defp require_system_corroboration("director", _base, _co, _slug, _task_path, _ym), do: :ok
+
+  defp require_system_corroboration(_actor, _base, _co, _slug, "", _ym),
+    do: {:error, :sentinel_corroboration_missing_task_path}
+
+  defp require_system_corroboration(actor, base, company, agent_slug, task_path, audit_month) do
+    # Bound the corroboration scan to a reasonable size — the
+    # `Audit.Query.for_task/4` walker already caps memory by
+    # streaming line-by-line and keeping a rolling window. We only
+    # need ONE matching entry, but we look at the most recent
+    # batch to confirm the sentinel relates to a recently-detected
+    # loop (`agent.loop_detected` with `actor: "system"`).
+    opts = if audit_month != "", do: [limit: 100, month: audit_month], else: [limit: 100]
+
+    corroborated? =
+      base
+      |> Glorbo.Audit.Query.for_task(company, task_path, opts)
+      |> Enum.any?(fn entry ->
+        entry["action"] == "agent.loop_detected" and
+          entry["actor"] == "system" and
+          (entry["agent"] == agent_slug or
+             get_in(entry, ["detail", "agent"]) == agent_slug)
+      end)
+
+    if corroborated? do
+      :ok
+    else
+      Logger.warning(
+        "loop_detector: refusing #{actor}-origin resolution for #{task_path} " <>
+          "(agent=#{agent_slug}) — no corroborating system-emitted " <>
+          "agent.loop_detected audit entry found"
+      )
+
+      {:error, :sentinel_not_corroborated}
+    end
+  end
 
   defp apply_task_mutation(:retry, _abs_task), do: :ok
 
