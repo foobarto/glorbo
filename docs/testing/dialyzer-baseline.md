@@ -11,7 +11,7 @@ which isn't portable across CI vs local checkouts; `.dialyzer_ignore.exs`
 is kept intentionally empty).
 
 ```
-DIALYZER_BASELINE = 167
+DIALYZER_BASELINE = 168
 ```
 
 > **163 → 166 (P2 security wave, 2026-05-22).** The wave added 4 private
@@ -28,6 +28,14 @@ DIALYZER_BASELINE = 167
 > `emit_tool_audits/5`, but `emit_tool_audits` is itself already in this
 > baseline as `unused_fun` (same dialyzer-can't-trace-audit-fold pattern
 > as the P2 wave), so the new callee inherits the same false flag. Net +1.
+>
+> **167 → 168 (PR #37 round-5 wave, 2026-05-25).** Added several new
+> private helpers: `stat_memory_candidate/2`, `read_memory_entry/2`,
+> `memory_dir_safe?/1` (agent_live.ex); `candidate_safe?/1`
+> (formatter.ex); `ensure_real_directory/1` (doctor/fixer.ex);
+> `refuse_dedicated_subtree/1` (actions/agents.ex). One of these
+> inherits the `unused_fun` false flag from an already-baselined caller
+> (same pattern as the P2 wave + round 3). Net +1.
 
 **Burn-down:** when you fix warnings, lower the baseline number in
 `.github/workflows/ci.yml` (the `baseline=` in the Dialyzer step). When it
