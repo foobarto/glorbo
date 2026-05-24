@@ -420,13 +420,23 @@ defmodule GlorboWeb.KanbanLive do
 
     case resolve_task_path(task.task_path, socket.assigns.company_slug) do
       {:ok, abs} ->
-        fm = %{
+        # Codex round-5 finding (PR #37): the previous shape
+        # always included `requires_approval` in `fm` —
+        # `Map.get(params, "requires_approval", "")` returned
+        # `""` when the form omitted the field, and
+        # `write_frontmatter`'s "drop empty keys" rule treated
+        # that empty as "CLEAR the field on disk". Partial form
+        # submissions (edit title only, no approval-gate UI) thus
+        # silently cleared `requires_approval: director`. Skip
+        # the field unless the param is explicitly non-empty; an
+        # explicit clear-to-empty is then caught by
+        # `refuse_if_clears_required_approval/2` below.
+        base_fm = %{
           "title" => Map.get(params, "title", "") |> String.trim(),
           "status" => Map.get(params, "status", task.status),
           "assigned_to" => Map.get(params, "assigned_to", "") |> String.trim(),
           "priority" => Map.get(params, "priority", ""),
           "severity" => Map.get(params, "severity", ""),
-          "requires_approval" => Map.get(params, "requires_approval", ""),
           # GEP-40 — `done_when` is the agent-facing definition of
           # done. Empty string clears the field via
           # `TaskDefinition.write_frontmatter/2`'s "drop empty keys"
@@ -434,13 +444,39 @@ defmodule GlorboWeb.KanbanLive do
           "done_when" => Map.get(params, "done_when", "") |> String.trim()
         }
 
+        fm =
+          case Map.get(params, "requires_approval") do
+            value when is_binary(value) and value != "" ->
+              Map.put(base_fm, "requires_approval", value)
+
+            _ ->
+              base_fm
+          end
+
         prompt = Map.get(params, "body", "") |> String.trim()
         # GEP-30 D8: comments live in the sibling `.comments.md` file,
         # not inline. Save writes the prompt only — the thread stays
         # untouched.
         body = prompt
 
-        with :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
+        # Codex round-5 finding (PR #37, HIGH): sibling
+        # `kanban:move` already gated via
+        # `refuse_if_bypasses_approval_gate/2`, but `save_task`
+        # didn't — so a crafted payload could set an
+        # approval-gated task straight to `done` (or zero its
+        # `requires_approval` field) without going through the
+        # Inbox approval flow. Gate both transitions here. The
+        # clear-required-approval check fires only when the form
+        # EXPLICITLY included an empty `requires_approval` value
+        # (vs the partial-submit case where the field was absent
+        # entirely — that's a no-op preserve handled above).
+        explicit_clear_attempt? =
+          Map.has_key?(params, "requires_approval") and
+            Map.get(params, "requires_approval") in ["", nil]
+
+        with :ok <- refuse_if_bypasses_approval_gate(abs, fm["status"]),
+             :ok <- refuse_if_clears_required_approval(abs, explicit_clear_attempt?),
+             :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
              :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
           # C-094: record the frontmatter+body edit in the company's
           # append-only audit log. Without this the task editor was a
@@ -478,7 +514,24 @@ defmodule GlorboWeb.KanbanLive do
            |> assign(:open_task, nil)
            |> put_flash(:info, "Saved #{task.task_id}.")}
         else
-          _ -> {:noreply, put_flash(socket, :error, "Could not save task.")}
+          {:error, :approval_gate_bypass} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This task requires director approval — approve it via the Inbox before changing status to done."
+             )}
+
+          {:error, :clears_required_approval} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Cannot clear `requires_approval` on a task currently awaiting director approval."
+             )}
+
+          _ ->
+            {:noreply, put_flash(socket, :error, "Could not save task.")}
         end
 
       _ ->
@@ -630,6 +683,15 @@ defmodule GlorboWeb.KanbanLive do
          {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
          :ok <- refuse_if_bypasses_approval_gate(abs_path, status),
          :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: status}) do
+      # Codex round-5 finding (PR #37, MED): drag/drop status
+      # change wrote the new status without emitting any audit
+      # entry (the sibling save_task path does call
+      # `emit_task_edit_audit/3`). Drag-to-done left no forensic
+      # trail of who moved the task, when, or from where. Emit
+      # the same shape `emit_task_edit_audit` uses so the audit
+      # JSONL has parity across both edit paths.
+      emit_kanban_move_audit(socket, task_path, status)
+
       base = base_dir()
 
       tasks =
@@ -686,6 +748,44 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   defp refuse_if_bypasses_approval_gate(_abs, _status), do: :ok
+
+  # Codex round-5 finding (PR #37, HIGH): the agent or
+  # Director-via-the-form could clear `requires_approval` on a
+  # task currently awaiting approval — bypassing the gate by
+  # simply removing the gate. Fires only when the caller asserts
+  # an explicit clear attempt (form had the field with an empty
+  # value); partial submissions where the field was absent
+  # entirely are preserved upstream and don't trigger this gate.
+  defp refuse_if_clears_required_approval(abs_path, true),
+    do: refuse_if_currently_required(abs_path)
+
+  defp refuse_if_clears_required_approval(_abs, false), do: :ok
+
+  defp refuse_if_currently_required(abs_path) do
+    case File.read(abs_path) do
+      {:ok, content} ->
+        case Glorbo.Filesystem.Frontmatter.parse(content) do
+          {:ok, fm, _body} ->
+            currently_required? =
+              to_string(Map.get(fm, "requires_approval", "")) == "director"
+
+            currently_approved? =
+              to_string(Map.get(fm, "status", "")) == "approved"
+
+            if currently_required? and not currently_approved? do
+              {:error, :clears_required_approval}
+            else
+              :ok
+            end
+
+          _ ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
 
   @impl true
   def render(assigns) do
@@ -1140,6 +1240,25 @@ defmodule GlorboWeb.KanbanLive do
        when is_binary(company) and is_binary(project) and is_binary(task_id) do
     base = base_dir()
 
+    # Codex round-5 finding (PR #37): combined with the
+    # symlinked-project primitive (load_tasks fix above) and the
+    # bare-File.stat (which follows symlinks), a malicious agent
+    # plants `projects/<their-proj>/attachments/<id>/<name> →
+    # /home/.../<other-co>/...` and the overlay leaks the other
+    # tenant's attachment filenames + sizes. Slug-gate the inputs,
+    # walk ancestors via SymlinkGuard, and use lstat for per-entry
+    # size to avoid following symlinks.
+    cond do
+      not Glorbo.Slug.valid?(company) -> []
+      not Glorbo.Slug.valid?(project) -> []
+      not Regex.match?(~r/\A[a-z0-9][a-z0-9._-]*\z/, task_id) -> []
+      true -> do_list_task_attachments(base, company, project, task_id)
+    end
+  end
+
+  defp list_task_attachments(_, _, _), do: []
+
+  defp do_list_task_attachments(base, company, project, task_id) do
     dir =
       Path.join([
         base,
@@ -1151,29 +1270,26 @@ defmodule GlorboWeb.KanbanLive do
         task_id
       ])
 
-    case File.ls(dir) do
-      {:ok, entries} ->
-        entries
-        |> Enum.sort()
-        |> Enum.map(fn name ->
-          abs = Path.join(dir, name)
+    with :ok <- assert_no_symlink_ancestor(dir),
+         {:ok, entries} <- File.ls(dir) do
+      entries
+      |> Enum.sort()
+      |> Enum.map(fn name ->
+        abs = Path.join(dir, name)
 
-          %{
-            name: name,
-            size:
-              case File.stat(abs) do
-                {:ok, %File.Stat{size: s}} -> s
-                _ -> 0
-              end
-          }
-        end)
-
-      _ ->
-        []
+        %{
+          name: name,
+          size:
+            case File.lstat(abs) do
+              {:ok, %File.Stat{type: :regular, size: s}} -> s
+              _ -> 0
+            end
+        }
+      end)
+    else
+      _ -> []
     end
   end
-
-  defp list_task_attachments(_, _, _), do: []
 
   defp apply_search_filter(tasks, nil), do: tasks
   defp apply_search_filter(tasks, ""), do: tasks
@@ -1250,6 +1366,16 @@ defmodule GlorboWeb.KanbanLive do
       action: "task.edit",
       target: task.task_path,
       changed: fm |> Map.keys() |> Enum.sort()
+    })
+  end
+
+  defp emit_kanban_move_audit(socket, task_path, new_status) do
+    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
+      actor: "director",
+      action: "task.move",
+      target: task_path,
+      changed: ["status"],
+      detail: %{new_status: new_status}
     })
   end
 
@@ -1514,7 +1640,16 @@ defmodule GlorboWeb.KanbanLive do
   defp resolve_task_path(rel, company) when is_binary(rel) do
     abs = Path.join([base_dir(), "companies", company, rel])
 
+    # Codex round-5 finding (PR #37, HIGH): the previous shape
+    # only ran `ensure_regular_file` (lstat on the LEAF) — a
+    # symlinked PROJECT or TASKS ancestor (agent plants
+    # `projects/evil → ../../<other-co>/projects/private`)
+    # passes the regex + leaf-lstat check and lets the kanban
+    # UI's open_task / save_task / kanban:move reach
+    # cross-tenant task files. Walk every ancestor segment with
+    # SymlinkGuard so any symlink in the path causes refusal.
     with true <- Regex.match?(@task_path_re, rel),
+         :ok <- assert_no_symlink_ancestor(abs),
          :ok <- ensure_regular_file(abs) do
       {:ok, abs}
     else
@@ -1523,6 +1658,15 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   defp resolve_task_path(_, _), do: :error
+
+  defp assert_no_symlink_ancestor(abs_path) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      abs_path,
+      "kanban_live: task path"
+    )
+  rescue
+    ArgumentError -> :error
+  end
 
   # Caller collapses the full `{:error, ...}` set to a bare `:error`
   # sentinel, so flatten AgentWritableFile's tagged-error return here.
@@ -1546,9 +1690,19 @@ defmodule GlorboWeb.KanbanLive do
   defp load_tasks(base, company) do
     projects_dir = Path.join([base, "companies", company, "projects"])
 
+    # Codex round-5 finding (PR #37, HIGH): the sibling
+    # `list_projects/2` already filters via `Glorbo.Slug.valid?/1`
+    # + `real_directory?/2` (lstat-based), but `load_tasks/2`
+    # did a bare `File.ls` + `flat_map` over project names. An
+    # agent who plants `projects/evil → ../../<other-co>/projects/private`
+    # leaks the OTHER tenant's task titles, assignees, statuses
+    # onto the Director's Kanban board on every file_event
+    # refresh. Mirror the `list_projects/2` discipline here.
     case File.ls(projects_dir) do
       {:ok, projects} ->
-        Enum.flat_map(projects, &load_project_tasks(projects_dir, &1, base, company))
+        projects
+        |> Enum.filter(&(Glorbo.Slug.valid?(&1) and real_directory?(projects_dir, &1)))
+        |> Enum.flat_map(&load_project_tasks(projects_dir, &1, base, company))
 
       _ ->
         []

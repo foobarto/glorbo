@@ -328,9 +328,17 @@ defmodule GlorboWeb.KanbanLiveTest do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
 
+    # PR #37 (codex round-5 F3): save_task now refuses status
+    # transitions to in-progress / done on an approval-gated task
+    # that hasn't yet been director-approved (sibling kanban:move
+    # already had the gate; save_task was bypassed). The seeded
+    # t-01 fixture has `requires_approval: director` + initial
+    # status `pending`, so the test now keeps `status: pending`
+    # (no transition) and focuses on the title/body/priority
+    # writes.
     render_submit(view, "save_task", %{
       "title" => "Deploy landing page v2",
-      "status" => "in-progress",
+      "status" => "pending",
       "assigned_to" => "ceo",
       "priority" => "high",
       "requires_approval" => "director",
@@ -341,7 +349,7 @@ defmodule GlorboWeb.KanbanLiveTest do
     content = File.read!(path)
 
     assert content =~ ~s(title: "Deploy landing page v2")
-    assert content =~ "status: in-progress"
+    assert content =~ "status: pending"
     assert content =~ "priority: high"
     assert content =~ "Updated body content."
     # Old body is gone.
@@ -354,9 +362,12 @@ defmodule GlorboWeb.KanbanLiveTest do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
 
+    # See PR #37 note above; keep status unchanged so the
+    # approval-gate refuse doesn't pre-empt the audit emission
+    # the test is actually verifying.
     render_submit(view, "save_task", %{
       "title" => "Audited kanban edit",
-      "status" => "in-progress",
+      "status" => "pending",
       "assigned_to" => "ceo",
       "priority" => "high",
       "requires_approval" => "director",
@@ -378,6 +389,66 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert edit["target"] == "projects/website/tasks/t-01.md"
     assert "requires_approval" in edit["detail"]["changed"]
     assert "status" in edit["detail"]["changed"]
+  end
+
+  # PR #37 (codex round-5 F3): save_task previously bypassed the
+  # approval gate (sibling kanban:move enforced it; save_task did
+  # not). A crafted payload could drag a `requires_approval:
+  # director` task straight to `done` or `in-progress` via the
+  # save form without the Director's Inbox approval.
+  test "save_task REFUSES status=done on an approval-gated task",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+
+    html =
+      render_submit(view, "save_task", %{
+        "title" => "Deploy landing page",
+        "status" => "done",
+        "assigned_to" => "ceo",
+        "priority" => "high",
+        "requires_approval" => "director",
+        "body" => "Trying to skip director approval."
+      })
+
+    assert html =~ "requires director approval" or html =~ "approve it via the Inbox"
+
+    path = Path.join([base, "companies", "acme", "projects", "website", "tasks", "t-01.md"])
+    content = File.read!(path)
+
+    # On-disk file must be unchanged (gate refused the write).
+    refute content =~ "status: done"
+    refute content =~ "Trying to skip"
+  end
+
+  # PR #37 (codex round-5 F3): clearing `requires_approval` on a
+  # currently-gate-pending task is the second bypass shape — same
+  # outcome (no Director approval needed) by simply removing the
+  # gate. Only refused when the form EXPLICITLY clears the field
+  # (partial submits that omit it preserve the disk value).
+  test "save_task REFUSES explicit clear of requires_approval on a gated task",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    render_click(view, "open_task", %{"path" => "projects/website/tasks/t-01.md"})
+
+    html =
+      render_submit(view, "save_task", %{
+        "title" => "Deploy landing page",
+        "status" => "pending",
+        "assigned_to" => "ceo",
+        "priority" => "high",
+        # Explicit empty — this is the form's "clear" semantics.
+        "requires_approval" => "",
+        "body" => "Body."
+      })
+
+    assert html =~ "Cannot clear" or html =~ "requires_approval"
+
+    path = Path.join([base, "companies", "acme", "projects", "website", "tasks", "t-01.md"])
+    content = File.read!(path)
+
+    # On-disk file must still carry the director gate.
+    assert content =~ "requires_approval: director"
   end
 
   test "close_task clears the detail panel", %{conn: conn} do

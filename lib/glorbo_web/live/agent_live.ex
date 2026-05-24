@@ -2150,12 +2150,34 @@ defmodule GlorboWeb.AgentLive do
   # Returns `%{index: <MEMORY.md body>, files: [%{…}]}` with entries
   # sorted newest-first by mtime. Filesystem-is-truth: every tab
   # click re-reads; no cache.
+  # Codex round-5 finding (PR #37, HIGH): the prior shape used
+  # `File.read` (follows symlinks; no byte cap) and `File.stat`
+  # (follows symlinks) with no cap on the entry list. Two
+  # angles:
+  #   (a) Symlink escape — an agent plants
+  #       `memory/feedback_evil.md → ../../../<other-co>/agents/<other>/AGENT.md`
+  #       and the dashboard renders cross-tenant content under
+  #       the Memory tab.
+  #   (b) DoS — agent writes many / large memory files via the
+  #       outbox/memory pipeline; opening the Memory tab pegs
+  #       the dashboard.
+  # Defenses: per-file byte cap via
+  # `AgentWritableFile.read_bounded/2` (uses lstat refusal +
+  # capped read in one helper, GEP-27 round-3); entry-list cap
+  # (200) post-sort; `:file.read_link_info` for stat so a
+  # symlink at the index is also refused.
+  @memory_file_byte_cap 256 * 1024
+  @memory_entry_cap 200
+
   defp load_memory_files(%{assigns: %{company_slug: co, agent_slug: ag}}) do
     base = base_dir()
     dir = Path.join([base, "companies", co, "agents", ag, "memory"])
 
     index =
-      case File.read(Path.join(dir, "MEMORY.md")) do
+      case Glorbo.Filesystem.AgentWritableFile.read_bounded(
+             Path.join(dir, "MEMORY.md"),
+             @memory_file_byte_cap
+           ) do
         {:ok, content} -> String.trim(content)
         _ -> ""
       end
@@ -2168,6 +2190,7 @@ defmodule GlorboWeb.AgentLive do
           |> Enum.map(&parse_memory_file(&1, dir))
           |> Enum.reject(&is_nil/1)
           |> Enum.sort_by(& &1.mtime, :desc)
+          |> Enum.take(@memory_entry_cap)
 
         _ ->
           []
@@ -2183,9 +2206,13 @@ defmodule GlorboWeb.AgentLive do
   defp parse_memory_file(filename, dir) do
     path = Path.join(dir, filename)
 
-    with {:ok, content} <- File.read(path),
+    # `read_bounded/2` does lstat-refuse-symlink + capped read
+    # in one helper (round-3 GEP-27 surface). `File.lstat` for
+    # mtime so a symlinked memory file is refused by both.
+    with {:ok, content} <-
+           Glorbo.Filesystem.AgentWritableFile.read_bounded(path, @memory_file_byte_cap),
          {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content),
-         {:ok, stat} <- File.stat(path, time: :posix) do
+         {:ok, %File.Stat{type: :regular, mtime: mtime}} <- File.lstat(path, time: :posix) do
       type = filename |> String.split("_", parts: 2) |> List.first() || "?"
 
       %{
@@ -2194,9 +2221,9 @@ defmodule GlorboWeb.AgentLive do
         name: to_string(Map.get(meta, "name") || filename),
         description: to_string(Map.get(meta, "description") || ""),
         body: String.trim(body),
-        mtime: stat.mtime,
-        mtime_iso: DateTime.from_unix!(stat.mtime) |> DateTime.to_iso8601(),
-        mtime_rel: format_relative_mtime(stat.mtime)
+        mtime: mtime,
+        mtime_iso: DateTime.from_unix!(mtime) |> DateTime.to_iso8601(),
+        mtime_rel: format_relative_mtime(mtime)
       }
     else
       _ -> nil
@@ -2320,8 +2347,19 @@ defmodule GlorboWeb.AgentLive do
     target = to_string(e["target"] || "")
     detail_agent = get_in(e, ["detail", "agent"]) |> to_string()
 
+    # Codex round-5 finding (PR #37): the previous
+    # `String.starts_with?(target, "agents/#{slug}")` shape
+    # matched any slug with `slug` as a prefix — e.g. a sibling
+    # agent named `ceo2` polluted the audit/history stream of
+    # `ceo`. Match the exact `agents/<slug>` literal or the
+    # `agents/<slug>/...` namespace (note the trailing slash) so
+    # prefix collisions are rejected.
+    agent_root = "agents/#{slug}"
+    agent_prefix = agent_root <> "/"
+
     actor == slug or
-      String.starts_with?(target, "agents/#{slug}") or
+      target == agent_root or
+      String.starts_with?(target, agent_prefix) or
       detail_agent == slug
   end
 
