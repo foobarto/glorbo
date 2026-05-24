@@ -285,12 +285,29 @@ defmodule Glorbo.Sandbox.BwrapTest do
         [{"/home/user/.claude", "/workspace/../etc"}],
         # sandbox: control bytes
         [{"/home/user/.claude", "/workspace/\0evil"}],
-        [{"/home/user/.claude", "/workspace/\nevil"}]
+        [{"/home/user/.claude", "/workspace/\nevil"}],
+        # Codex deep-dive follow-up: dot-segment bypass variants.
+        # `normalise_path/1` originally stripped only ONE trailing `/.`,
+        # which left `/etc/./`, `/./etc`, `/./`, and `/workspace/./`
+        # as accepted argv after the denylist check — but the kernel
+        # resolves them to the forbidden mount points. Now caught.
+        [{"/etc/./", "/workspace/.x"}],
+        [{"/./etc", "/workspace/.x"}],
+        [{"/./", "/workspace/.x"}],
+        [{"/home/user/.claude", "/etc/./"}],
+        [{"/home/user/.claude", "/./etc"}],
+        [{"/home/user/.claude", "/workspace/./"}],
+        [{"/home/user/.claude", "/workspace/."}],
+        [{"/home/user/.claude", "/./"}],
+        [{"/home/user/.claude", "/./workspace"}]
       ]
 
       for binds <- bad_cases do
-        assert_raise ArgumentError, fn ->
+        try do
           Bwrap.build_argv(base_opts(%{cli_auth_binds: binds}))
+          flunk("expected ArgumentError for binds=#{inspect(binds)}")
+        rescue
+          ArgumentError -> :ok
         end
       end
     end

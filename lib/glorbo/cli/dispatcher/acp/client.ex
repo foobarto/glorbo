@@ -774,7 +774,14 @@ defmodule Glorbo.CLI.Dispatcher.Acp.Client do
 
   defp truncate_string(s) when is_binary(s) do
     if byte_size(s) > @audit_string_max do
-      binary_part(s, 0, @audit_string_max) <> "…[truncated]"
+      # Codex deep-dive follow-up: `binary_part/3` slices by raw bytes
+      # and can split a multi-byte UTF-8 codepoint, leaving an invalid
+      # binary that crashes `Jason.encode!` downstream in AuditLog —
+      # which drops the audit record entirely (the ACP audit callback
+      # routes through `Glorbo.CLI.Audit.emit/3`, which swallows the
+      # failure). UTF-8-safe slice keeps the truncation on a codepoint
+      # boundary.
+      Glorbo.Util.UTF8.safe_byte_slice(s, @audit_string_max) <> "…[truncated]"
     else
       s
     end

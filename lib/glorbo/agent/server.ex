@@ -193,6 +193,12 @@ defmodule Glorbo.Agent.Server do
       in_flight: %{},
       max_concurrency: Map.get(spec, :max_concurrency, 1) || 1,
       pending_wake: nil,
+      # Codex deep-dive follow-up: timer ref for the throttled-retry
+      # wakeup. The per-company DispatchSemaphore doesn't notify
+      # Agent.Servers on slot release, so a throttled dispatch's
+      # pending_wake would otherwise wait for the next unrelated
+      # inbox/wake event. See `finish/{:throttled, ...}` for context.
+      throttled_retry_ref: nil,
       last_exit_status: nil,
       base: Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root()),
       pubsub: Keyword.get(opts, :pubsub, Glorbo.PubSub)
@@ -346,7 +352,27 @@ defmodule Glorbo.Agent.Server do
     end
   end
 
+  # Codex deep-dive follow-up: jittered self-wake for a previously-
+  # throttled dispatch. Clears the ref and tries to drain pending_wake.
+  # If still throttled, `drain_on_free → start_dispatch → finish/throttled`
+  # will arm another timer; if the slot opened, the dispatch proceeds.
+  def handle_info(:throttled_retry, state) do
+    state = %{state | throttled_retry_ref: nil}
+    {:noreply, drain_on_free(state)}
+  end
+
   def handle_info(_other, state), do: {:noreply, state}
+
+  # Arm a jittered retry timer if one isn't already pending.
+  # Bounded — successive throttles coalesce into the existing timer.
+  defp schedule_throttled_retry(%{throttled_retry_ref: ref} = state) when is_reference(ref),
+    do: state
+
+  defp schedule_throttled_retry(state) do
+    delay_ms = 1_000 + :rand.uniform(4_000)
+    ref = Process.send_after(self(), :throttled_retry, delay_ms)
+    %{state | throttled_retry_ref: ref}
+  end
 
   # agents/<slug>/AGENT.md or agents/<slug>/agent.md — hot-reload
   # trigger so edits to permissions/network/provider take effect
@@ -587,6 +613,17 @@ defmodule Glorbo.Agent.Server do
         # up on the next slot-free event instead of looping right now.
         pending_wake: requeue_wake(state.pending_wake, invocation.trigger)
     }
+
+    # Codex deep-dive follow-up: arm a jittered self-retry. Without
+    # this, pending_wake just sits — the per-company DispatchSemaphore
+    # doesn't broadcast slot-release, and the only consumer of
+    # pending_wake is `drain_on_free` (called from another dispatch's
+    # finish). If no other dispatch finishes in this company, the
+    # work stalls indefinitely. Jitter (1-5s) staggers retries so N
+    # throttled agents don't dogpile a freshly released slot. Bounded
+    # by `throttled_retry_ref` so successive throttles don't pile up
+    # timers.
+    new_state = schedule_throttled_retry(new_state)
 
     broadcast_status(new_state)
     {:noreply, new_state}
