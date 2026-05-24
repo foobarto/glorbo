@@ -145,6 +145,45 @@ defmodule Glorbo.Actions.AgentsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    # PR #37 (codex round-5 F6 + pre-push P0 fix):
+    # `create_workspace_file/4` allowed paths under dedicated-
+    # subtree roots (`state/`, `inbox/`, `outbox/`, `history/`)
+    # that have their own dedicated action functions with
+    # stricter validation + audit shape. Authenticated dashboard
+    # could plant a wake trigger or forged inbox message via
+    # the file-manager UI, bypassing wake_agent / post_message
+    # validation. The initial fix used `Path.split(Path.expand(rel))`
+    # which always produces a leading `"/"` for relative input —
+    # the first-segment check never matched and the guard was a
+    # no-op. Normalisation via `Path.expand("/")` |>
+    # `Path.relative_to("/")` makes it work AND collapses `..`
+    # so smuggle attempts like `workspace/../state/wake.md` also
+    # refuse.
+    test "refuses dedicated-subtree paths (state / inbox / outbox / history)",
+         %{base: base, audit: audit} do
+      for forbidden <- [
+            "state/wake-request-attack.md",
+            "inbox/forged-message.md",
+            "outbox/memory/exfil.md",
+            "history/spoofed-entry.md",
+            # Smuggle via `..` — the Path.expand("/")-based
+            # normalisation in refuse_dedicated_subtree must
+            # collapse `workspace/../state/` to `state/`.
+            "workspace/../state/wake-via-traversal.md",
+            "workspace/.././inbox/sneaky.md"
+          ] do
+        assert {:error, {:dedicated_subtree, _root}} =
+                 Agents.create_workspace_file("acme", "ceo", forbidden,
+                   actor: "director",
+                   base: base,
+                   audit: audit
+                 ),
+               "expected refusal for #{inspect(forbidden)}"
+      end
+
+      assert FakeAudit.calls(audit) == []
+    end
   end
 
   describe "write_workspace_file/5" do

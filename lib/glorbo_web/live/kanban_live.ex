@@ -1712,14 +1712,27 @@ defmodule GlorboWeb.KanbanLive do
   defp load_project_tasks(projects_dir, project, base, company) do
     tasks_dir = Path.join([projects_dir, project, "tasks"])
 
-    case File.ls(tasks_dir) do
-      {:ok, files} ->
-        files
-        |> Enum.filter(&String.ends_with?(&1, ".md"))
-        |> Enum.flat_map(&parse_task_file(tasks_dir, &1, base, company))
+    # Codex pre-push review of 0198037: the initial `load_tasks/2`
+    # filter only protected the PROJECT dir from being a symlink,
+    # but a real project with a SYMLINKED `tasks/` subdir
+    # (e.g. `projects/realproj/tasks → ../../<other-co>/projects/private/tasks`)
+    # still enumerated cross-tenant. Walk the tasks_dir's
+    # ancestors via SymlinkGuard + reject if `tasks/` itself is a
+    # symlink.
+    project_dir = Path.join(projects_dir, project)
 
-      _ ->
-        []
+    if real_directory?(project_dir, "tasks") do
+      case File.ls(tasks_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.filter(&String.ends_with?(&1, ".md"))
+          |> Enum.flat_map(&parse_task_file(tasks_dir, &1, base, company))
+
+        _ ->
+          []
+      end
+    else
+      []
     end
   end
 

@@ -2173,60 +2173,108 @@ defmodule GlorboWeb.AgentLive do
     base = base_dir()
     dir = Path.join([base, "companies", co, "agents", ag, "memory"])
 
-    index =
-      case Glorbo.Filesystem.AgentWritableFile.read_bounded(
-             Path.join(dir, "MEMORY.md"),
-             @memory_file_byte_cap
-           ) do
-        {:ok, content} -> String.trim(content)
-        _ -> ""
-      end
+    # Codex pre-push review of 0198037: `File.ls(dir)` follows a
+    # symlinked `memory/` directory; `read_bounded/2` only
+    # protects the leaf. If an agent ever swaps its `memory/`
+    # dir for a symlink to another company's tree, the
+    # enumeration would cross tenants. Reject any symlink
+    # ancestor on `dir` before listing or reading.
+    if memory_dir_safe?(dir) do
+      index =
+        case Glorbo.Filesystem.AgentWritableFile.read_bounded(
+               Path.join(dir, "MEMORY.md"),
+               @memory_file_byte_cap
+             ) do
+          {:ok, content} -> String.trim(content)
+          _ -> ""
+        end
 
-    files =
-      case File.ls(dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(&valid_memory_file?/1)
-          |> Enum.map(&parse_memory_file(&1, dir))
-          |> Enum.reject(&is_nil/1)
-          |> Enum.sort_by(& &1.mtime, :desc)
-          |> Enum.take(@memory_entry_cap)
+      files = load_memory_entries(dir)
 
-        _ ->
-          []
-      end
+      %{index: index, files: files}
+    else
+      %{index: "", files: []}
+    end
+  end
 
-    %{index: index, files: files}
+  defp memory_dir_safe?(dir) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      dir,
+      "agent_live: memory dir"
+    )
+
+    case File.lstat(dir) do
+      {:ok, %File.Stat{type: :directory}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
+  end
+
+  # Codex pre-push review of 0198037: previously the 200-file
+  # cap was applied AFTER reading + parsing every valid memory
+  # file. Worst case 200 × 256 KiB = 50 MiB rendered into the
+  # browser. Two-stage:
+  #   1. lstat every candidate to collect filename + mtime
+  #      (cheap — no body read).
+  #   2. sort by mtime, take 200, THEN read body via
+  #      `read_bounded`.
+  defp load_memory_entries(dir) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&valid_memory_file?/1)
+        |> Enum.flat_map(&stat_memory_candidate(&1, dir))
+        |> Enum.sort_by(& &1.mtime, :desc)
+        |> Enum.take(@memory_entry_cap)
+        |> Enum.flat_map(&read_memory_entry(&1, dir))
+
+      _ ->
+        []
+    end
   end
 
   @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
 
   defp valid_memory_file?(name), do: Regex.match?(@memory_filename_re, name)
 
-  defp parse_memory_file(filename, dir) do
+  # Phase 1: cheap stat-only collection. Returns the entries we
+  # MIGHT keep — body read deferred until after the cap.
+  defp stat_memory_candidate(filename, dir) do
     path = Path.join(dir, filename)
 
-    # `read_bounded/2` does lstat-refuse-symlink + capped read
-    # in one helper (round-3 GEP-27 surface). `File.lstat` for
-    # mtime so a symlinked memory file is refused by both.
+    case File.lstat(path, time: :posix) do
+      {:ok, %File.Stat{type: :regular, mtime: mtime}} ->
+        [%{filename: filename, path: path, mtime: mtime}]
+
+      _ ->
+        []
+    end
+  end
+
+  # Phase 2: bodies read AFTER sort + take, so the 200-file cap
+  # bounds the actual read I/O (max 200 × 256 KiB = 50 MiB
+  # WORST case, but only for the cap'd set, not the whole dir).
+  defp read_memory_entry(%{filename: filename, path: path, mtime: mtime}, _dir) do
     with {:ok, content} <-
            Glorbo.Filesystem.AgentWritableFile.read_bounded(path, @memory_file_byte_cap),
-         {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content),
-         {:ok, %File.Stat{type: :regular, mtime: mtime}} <- File.lstat(path, time: :posix) do
+         {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       type = filename |> String.split("_", parts: 2) |> List.first() || "?"
 
-      %{
-        filename: filename,
-        type: type,
-        name: to_string(Map.get(meta, "name") || filename),
-        description: to_string(Map.get(meta, "description") || ""),
-        body: String.trim(body),
-        mtime: mtime,
-        mtime_iso: DateTime.from_unix!(mtime) |> DateTime.to_iso8601(),
-        mtime_rel: format_relative_mtime(mtime)
-      }
+      [
+        %{
+          filename: filename,
+          type: type,
+          name: to_string(Map.get(meta, "name") || filename),
+          description: to_string(Map.get(meta, "description") || ""),
+          body: String.trim(body),
+          mtime: mtime,
+          mtime_iso: DateTime.from_unix!(mtime) |> DateTime.to_iso8601(),
+          mtime_rel: format_relative_mtime(mtime)
+        }
+      ]
     else
-      _ -> nil
+      _ -> []
     end
   end
 

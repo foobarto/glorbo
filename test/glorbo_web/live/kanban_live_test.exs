@@ -725,6 +725,62 @@ defmodule GlorboWeb.KanbanLiveTest do
     refute html =~ "gl-task-detail"
   end
 
+  # PR #37 (codex round-5 pre-push P0 fix): the initial
+  # round-5 fix only filtered PROJECT dirs through `real_directory?`;
+  # `load_project_tasks/4` still did a bare `File.ls(tasks_dir)`
+  # so a real project with a SYMLINKED `tasks/` subdir
+  # (e.g. `projects/realproj/tasks → ../../<other-co>/projects/private/tasks`)
+  # still enumerated cross-tenant. Now refuses if `tasks/`
+  # itself is a symlink.
+  test "load_project_tasks REFUSES a symlinked tasks/ subdir",
+       %{conn: conn, base: base} do
+    # Seed a "victim" project tree under a SECOND company with a
+    # secret task that should never leak.
+    victim_dir = Path.join([base, "companies", "victim-co", "projects", "secret", "tasks"])
+    File.mkdir_p!(victim_dir)
+
+    File.write!(Path.join([base, "companies", "victim-co", "company.md"]), """
+    ---
+    kind: company/v1
+    slug: victim-co
+    name: victim-co
+    ---
+    """)
+
+    File.write!(Path.join(victim_dir, "secret-001.md"), """
+    ---
+    kind: task/v1
+    id: secret-001
+    title: PR-37-leak-canary cross-tenant
+    status: in-progress
+    ---
+    secret body
+    """)
+
+    # In the kanban-loading company, plant a REAL project whose
+    # `tasks/` dir is a symlink to the victim's tasks.
+    realproj_dir = Path.join([base, "companies", "acme", "projects", "realproj"])
+    File.mkdir_p!(realproj_dir)
+
+    File.write!(Path.join(realproj_dir, "project.md"), """
+    ---
+    kind: project/v1
+    slug: realproj
+    name: realproj
+    ---
+    """)
+
+    # Symlink the tasks/ to the victim's tasks.
+    File.ln_s!(victim_dir, Path.join(realproj_dir, "tasks"))
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/kanban")
+
+    # The leak canary title MUST NOT appear in the board render
+    # of company "acme". The pre-fix shape would have rendered
+    # "PR-37-leak-canary cross-tenant" as a card under realproj.
+    refute html =~ "PR-37-leak-canary"
+  end
+
   test "new_task_create rejects an unknown project", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
     render_click(view, "new_task")
