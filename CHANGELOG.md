@@ -36,9 +36,23 @@ both local and CI on 1.19.5 the cycle collapses.
 
 Local validation: `mix compile --warnings-as-errors`, `mix format
 --check-formatted`, `mix credo --strict`, `mix test` (2939/0) all
-green on the new toolchain. Dialyzer baseline may need a follow-up
-bump if OTP 28.5's success-typing analysis surfaces new false
-positives — addressed in CI once observed.
+green on the new toolchain. Dialyzer count-regression baseline
+bumped 168 → 169: 1.19's inference produces +3 new findings (all
+in `lib/glorbo/cli/lifecycle/` cascading from a `no_return` on
+`do_start/0` — bare `rescue _ -> :ok` in `ensure_epmd/0` plus
+OTP-28.5 narrowed Node.start/2 typespec interact in a way the
+older inferencer didn't catch) and resolves -2 (socket-shutdown
+false positives in `network/proxy.ex` that 1.19 types correctly).
+Net +1. Same false-positive class as the existing baseline.
+Attempted to fix the root via an explicit `@spec` — 1.19's
+inference rejected it as contradictory (`invalid_contract`,
+count went 169 → 170); reverted. Diagnostic confirmed by running
+`mise exec elixir@1.18.4-otp-28 -- mix dialyzer` against the
+same tree (168 vs 169). PLT cache key prefix updated from
+`plt2-ubuntu24-otp28.0.2-ex1.18.4-` to `plt2-ubuntu24-otp28.5-ex1.19.5-`
+so the new toolchain rebuilds the PLT once rather than reusing
+a stale one. Full delta and follow-up plan in
+`docs/testing/dialyzer-baseline.md`.
 
 ### Security — codex + gemini round-6 deep-dive: 10 hardening fixes (bundled)
 

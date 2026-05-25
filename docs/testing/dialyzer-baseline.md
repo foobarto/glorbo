@@ -11,7 +11,7 @@ which isn't portable across CI vs local checkouts; `.dialyzer_ignore.exs`
 is kept intentionally empty).
 
 ```
-DIALYZER_BASELINE = 168
+DIALYZER_BASELINE = 169
 ```
 
 > **163 → 166 (P2 security wave, 2026-05-22).** The wave added 4 private
@@ -36,6 +36,53 @@ DIALYZER_BASELINE = 168
 > `refuse_dedicated_subtree/1` (actions/agents.ex). One of these
 > inherits the `unused_fun` false flag from an already-baselined caller
 > (same pattern as the P2 wave + round 3). Net +1.
+>
+> **168 → 169 (PR #39 Elixir 1.18.4 → 1.19.5 + OTP 28.0.2 → 28.5 bump,
+> 2026-05-25).** 1.19's reworked success-typing inference produces a
+> +1 net delta on this codebase. Verified locally by running
+> `mise exec elixir@1.18.4-otp-28 -- mix dialyzer` against the same
+> tree: 168 vs 169. The composition is +3 new findings under 1.19,
+> all chained from a single root cause, and −2 findings 1.19
+> correctly resolves:
+>
+> **+3 (all in `lib/glorbo/cli/lifecycle/`):**
+> - `distribution.ex:58:8:no_return Function do_start/0 has no
+>   local return.` 1.19 concludes `do_start/0` doesn't return,
+>   likely because the bare `rescue _ -> :ok` body in `ensure_epmd/0`
+>   trips a no-return heuristic, or because OTP 28.5's narrowed
+>   `Node.start/2` typespec interacts with 1.19's flow inference.
+>   `do_start/0` clearly returns
+>   `:ok | {:error, :name_collision, atom()} | {:error, term()}` at
+>   runtime.
+> - `distribution.ex:61:15:call The function call start will not
+>   succeed.` Cascade — once `do_start/0` is typed as no-return,
+>   the `Node.start/2` call inside is unreachable.
+> - `serve.ex:82:16:pattern_match The pattern can never match the
+>   type :ok | {:error, :already_started, atom()}.` Same cascade
+>   — the `{:error, reason}` pattern in `serve/0`'s case on
+>   `Distribution.start/0` can never match if `Distribution.start/0`
+>   only returns the narrower set.
+>
+> Attempted to fix the root by adding `@spec do_start() :: ...`
+> covering the full return type. 1.19's inference rejected the
+> spec as contradictory (`invalid_contract` warning, count went
+> 169 → 170) rather than accepting it as a hint. Reverted.
+>
+> **−2 (in `lib/glorbo/network/proxy.ex`):**
+> - `:715:23:call_without_opaque Type mismatch in call without
+>   opaque term in shutdown.`
+> - `:716:23:call_without_opaque Type mismatch in call without
+>   opaque term in shutdown.`
+>
+> Both 1.18 false positives on socket-shutdown calls; 1.19 types
+> the gen_tcp socket reference correctly and removes them.
+>
+> Net +1. Same false-positive class as the baselined entries
+> (dialyzer can't see through OTP-internal types / defensive
+> rescue bodies). A follow-up should investigate whether
+> narrowing `ensure_epmd/0`'s bare `rescue` to specific
+> exceptions lets 1.19's inference succeed and drops all three
+> new findings together (would bring baseline to 166).
 
 **Burn-down:** when you fix warnings, lower the baseline number in
 `.github/workflows/ci.yml` (the `baseline=` in the Dialyzer step). When it

@@ -141,8 +141,8 @@ jobs:
           # bundle as runtime data) into `_build/dialyzer_plts` (release-
           # excluded). Old cache entries still point at the old path; the
           # key bump forces a one-time rebuild.
-          key: plt2-ubuntu24-otp28.0.2-ex1.18.4-${{ hashFiles('mix.lock') }}
-          restore-keys: plt2-ubuntu24-otp28.0.2-ex1.18.4-
+          key: plt2-ubuntu24-otp28.5-ex1.19.5-${{ hashFiles('mix.lock') }}
+          restore-keys: plt2-ubuntu24-otp28.5-ex1.19.5-
 
       - name: Dialyzer (type analysis — fails on NEW warnings vs baseline)
         if: matrix.arch == 'x86_64'
@@ -171,7 +171,19 @@ jobs:
           # in actions/agents.ex). One of these gets flagged as unused_fun
           # because its caller is in the already-baselined dead-fn set
           # (same false-positive class as rounds P2 and round-3). Net +1.
-          baseline=168
+          #
+          # 168 -> 169: Elixir 1.19.5 + OTP 28.5 upgrade (this PR). 1.19's
+          # inference produces +3 new findings (all in lib/glorbo/cli/lifecycle/
+          # cascading from a no_return on `do_start/0` — bare `rescue` in
+          # `ensure_epmd/0` + OTP-28.5 narrowed Node.start/2 typespec
+          # interact in a way 1.18's older inferencer didn't catch) and
+          # resolves -2 (socket-shutdown false positives in
+          # `network/proxy.ex` that 1.19 types correctly). Net +1, same
+          # false-positive class as the rest of the baseline. See
+          # docs/testing/dialyzer-baseline.md for the full delta + the
+          # `mise exec elixir@1.18.4-otp-28` cross-check that confirms
+          # the count.
+          baseline=169
           echo "Dialyzer warnings: ${count} (baseline ${baseline})"
           if [ "${count}" -gt "${baseline}" ]; then
             echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."
