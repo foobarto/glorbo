@@ -10,6 +10,50 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Tooling — bump Elixir 1.18.4 → 1.19.5 and OTP 28.0.2 → 28.5
+
+Latest stable on both runtimes. Picks up the security patches that
+landed in OTP 28.1-28.5 (CVE fixes in the `inets` HTTP client and
+`ssl` modules) plus the Elixir 1.19 minor-version improvements
+(better warning output, faster `mix compile`). OTP 29.0 was just
+released (2026-05-13) but is held back here — too fresh, dependency
+ecosystem (Phoenix 1.8 / Bandit 1.6 / Ecto 3.12) hasn't yet
+confirmed full OTP-29 compatibility.
+
+Closes a workflow tax: rounds 5-7 of the security wave had repeated
+CI format-check failures because the local Elixir 1.19 formatter
+and CI's pinned 1.18 disagree on idiomatic line-splitting — each
+occurrence cost a ~30-min push/wait/re-format/re-push cycle. With
+both local and CI on 1.19.5 the cycle collapses.
+
+- `.tool-versions` → `elixir 1.19.5-otp-28` + `erlang 28.5`
+- `.github/workflows/ci.yml` → 3 occurrences of
+  `elixir-version: '1.19.5'` + `otp-version: '28.5'`
+- `README.md` quickstart updated to match
+- `mix.exs` `elixir: "~> 1.18"` requirement kept (still accepts
+  1.19.x; tightening to `~> 1.19` would arbitrarily block 1.18.x
+  downstreams that the code itself doesn't need)
+
+Local validation: `mix compile --warnings-as-errors`, `mix format
+--check-formatted`, `mix credo --strict`, `mix test` (2939/0) all
+green on the new toolchain. Dialyzer count-regression baseline
+bumped 168 → 169: 1.19's inference produces +3 new findings (all
+in `lib/glorbo/cli/lifecycle/` cascading from a `no_return` on
+`do_start/0` — bare `rescue _ -> :ok` in `ensure_epmd/0` plus
+OTP-28.5 narrowed Node.start/2 typespec interact in a way the
+older inferencer didn't catch) and resolves -2 (socket-shutdown
+false positives in `network/proxy.ex` that 1.19 types correctly).
+Net +1. Same false-positive class as the existing baseline.
+Attempted to fix the root via an explicit `@spec` — 1.19's
+inference rejected it as contradictory (`invalid_contract`,
+count went 169 → 170); reverted. Diagnostic confirmed by running
+`mise exec elixir@1.18.4-otp-28 -- mix dialyzer` against the
+same tree (168 vs 169). PLT cache key prefix updated from
+`plt2-ubuntu24-otp28.0.2-ex1.18.4-` to `plt2-ubuntu24-otp28.5-ex1.19.5-`
+so the new toolchain rebuilds the PLT once rather than reusing
+a stale one. Full delta and follow-up plan in
+`docs/testing/dialyzer-baseline.md`.
+
 ### Security — codex + gemini round-6 deep-dive: 10 hardening fixes (bundled)
 
 Round 6 of the ongoing codex + gemini audit cycle against the
