@@ -234,8 +234,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
       {:ok, %File.Stat{type: other}} ->
         raise File.Error,
           reason: :enotdir,
-          action:
-            "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
+          action: "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
           path: seg
 
       {:error, :enoent} ->
