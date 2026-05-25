@@ -216,7 +216,11 @@ defmodule Glorbo.Company.Proposals do
   # number/atom (safe `to_string`), route everything else
   # (maps/lists/tuples/refs/pids) through `inspect/2` with a
   # printable_limit, then UTF8-safe-slice.
-  defp scalar_cap(value) when is_atom(value), do: Atom.to_string(value)
+  # Copilot review on PR #38: atoms can be up to 255 bytes
+  # (longer than `@scalar_cap`), so the bare `Atom.to_string/1`
+  # would have let an oversized atom skip the cap. Route through
+  # `safe_slice/1` like every other clause.
+  defp scalar_cap(value) when is_atom(value), do: value |> Atom.to_string() |> safe_slice()
 
   defp scalar_cap(value) when is_number(value), do: value |> to_string() |> safe_slice()
 

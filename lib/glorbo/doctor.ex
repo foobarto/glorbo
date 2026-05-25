@@ -399,8 +399,6 @@ defmodule Glorbo.Doctor do
   @spec write_probe(String.t(), String.t(), String.t()) ::
           {:ok | :fail, String.t(), String.t()}
   defp write_probe(path, required, ok_detail) do
-    File.mkdir_p!(path)
-
     # Gemini round-6 finding (PR #38, MED): the previous shape
     # used `System.unique_integer/1` for the probe filename
     # (monotonic per VM, predictable) and `File.write!` + `File.rm!`
@@ -412,8 +410,10 @@ defmodule Glorbo.Doctor do
     # Defenses: (a) `:crypto.strong_rand_bytes/1` for unguessable
     # probe name; (b) `:file.open([:exclusive])` (O_EXCL) so a
     # pre-planted symlink at the probe path collides on open;
-    # (c) lstat the parent dir is a real directory before any
-    # write.
+    # (c) lstat the parent dir is a real directory BEFORE the
+    # mkdir + write — initial fix had mkdir_p! running ahead of
+    # the lstat, defeating its own purpose since mkdir_p!
+    # follows symlinks in ancestor segments (Copilot review).
     case File.lstat(path) do
       {:ok, %File.Stat{type: :directory}} ->
         do_write_probe(path, required, ok_detail)
@@ -421,6 +421,15 @@ defmodule Glorbo.Doctor do
       {:ok, %File.Stat{type: other}} ->
         {:fail, "probe parent #{path} is #{other}, refusing write (symlink-follow defense)",
          required}
+
+      {:error, :enoent} ->
+        # Parent didn't exist yet — create it (mkdir_p! follows
+        # ancestor symlinks but at this point lstat returned
+        # :enoent for the leaf so no symlink at THIS segment),
+        # then proceed to write_probe which O_EXCL-opens the
+        # leaf-probe-file.
+        File.mkdir_p!(path)
+        do_write_probe(path, required, ok_detail)
 
       {:error, reason} ->
         {:fail, "lstat probe parent failed: #{inspect(reason)}", required}

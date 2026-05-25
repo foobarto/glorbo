@@ -220,10 +220,22 @@ defmodule Glorbo.CLI.ImportPaperclip do
       {:ok, %File.Stat{type: :directory}} ->
         :ok
 
-      {:ok, %File.Stat{type: other}} ->
+      {:ok, %File.Stat{type: :symlink}} ->
+        # `:eloop` ("too many symbolic links") matches the
+        # canonical OS wording for the failure we're refusing
+        # (Copilot review on PR #38: only surface :eloop for
+        # actual symlinks — non-symlink non-directory ancestor
+        # types use :enotdir below).
         raise File.Error,
           reason: :eloop,
-          action: "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
+          action: "import_paperclip: refusing to mkdir under a symlinked ancestor",
+          path: seg
+
+      {:ok, %File.Stat{type: other}} ->
+        raise File.Error,
+          reason: :enotdir,
+          action:
+            "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
           path: seg
 
       {:error, :enoent} ->

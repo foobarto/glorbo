@@ -47,11 +47,12 @@ defmodule Glorbo.CLI.Logs do
   # with the `.log` / `.jsonl` suffix requirement the real risk
   # is narrow (operator-CLI surface, attacker would need write
   # access to the user's home for it to matter). Defense-in-depth:
-  # gate on the same slug regex used elsewhere.
-  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
-
+  # gate on the canonical `Glorbo.Slug.valid?/1` regex so this
+  # path is consistent with `glorbo new company` and the rest of
+  # the CLI surface (both Copilot + codex P2 review flagged the
+  # initial stricter-than-canonical regex as a regression).
   defp do_run([company], opts) do
-    if Regex.match?(@slug_re, company) do
+    if Glorbo.Slug.valid?(company) do
       tail_audit(company, opts)
     else
       {:logs, 1, "Invalid company slug: #{company}\n"}
@@ -60,10 +61,10 @@ defmodule Glorbo.CLI.Logs do
 
   defp do_run([company, agent], opts) do
     cond do
-      not Regex.match?(@slug_re, company) ->
+      not Glorbo.Slug.valid?(company) ->
         {:logs, 1, "Invalid company slug: #{company}\n"}
 
-      not Regex.match?(@slug_re, agent) ->
+      not Glorbo.Slug.valid?(agent) ->
         {:logs, 1, "Invalid agent slug: #{agent}\n"}
 
       true ->
