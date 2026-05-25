@@ -53,8 +53,8 @@ jobs:
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         with:
-          elixir-version: '1.18.4'
-          otp-version: '28.0.2'
+          elixir-version: '1.19.5'
+          otp-version: '28.5'
 
       - name: Install bubblewrap (bwrap)
         run: |
@@ -312,8 +312,8 @@ jobs:
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         with:
-          elixir-version: '1.18.4'
-          otp-version: '28.0.2'
+          elixir-version: '1.19.5'
+          otp-version: '28.5'
           version-type: strict
 
       - name: Cache mix deps + build
@@ -469,8 +469,8 @@ jobs:
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         with:
-          elixir-version: '1.18.4'
-          otp-version: '28.0.2'
+          elixir-version: '1.19.5'
+          otp-version: '28.5'
           version-type: strict
 
       - name: Cache mix deps
