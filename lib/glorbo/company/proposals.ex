@@ -67,6 +67,17 @@ defmodule Glorbo.Company.Proposals do
   `decision` is `:approved` or `:denied`. On `:denied`, an optional
   `:denial_reason` string is persisted into the proposal frontmatter.
   """
+  # Gemini round-5 finding (PR #37): `id` flowed from a
+  # LiveView WS frame into `Path.join` without slug validation
+  # and `AgentWritableFile.ensure_writable/1` only does lstat,
+  # not `..` normalisation. A logged-in dashboard session could
+  # send `id: "../<other-co>/proposals/<their-id>"` to flip
+  # proposals in ANOTHER company — bypassing the URL's
+  # `:company` scoping. Defense: validate id against the same
+  # slug regex the router uses (`\A[a-z0-9][a-z0-9_-]*\z` —
+  # mirrors `Glorbo.Slug.valid?/1`).
+  @proposal_id_re ~r/\A[a-z0-9][a-z0-9_-]*\z/
+
   @spec flip(String.t(), String.t(), :approved | :denied, keyword()) ::
           :ok | {:error, term()}
   def flip(company, id, decision, opts \\ [])
@@ -76,6 +87,19 @@ defmodule Glorbo.Company.Proposals do
     denial_reason = Keyword.get(opts, :denial_reason)
     audit = Keyword.get_lazy(opts, :audit, fn -> resolve_audit(company) end)
 
+    cond do
+      not Glorbo.Slug.valid?(company) ->
+        {:error, :invalid_company}
+
+      not Regex.match?(@proposal_id_re, id) ->
+        {:error, :invalid_proposal_id}
+
+      true ->
+        do_flip(company, id, decision, base, actor, denial_reason, audit)
+    end
+  end
+
+  defp do_flip(company, id, decision, base, actor, denial_reason, audit) do
     path = Path.join([base, "companies", company, "proposals", "#{id}.md"])
 
     history_meta = %{

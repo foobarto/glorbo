@@ -257,10 +257,27 @@ defmodule Glorbo.Doctor.Fixer do
   def fix_sockets_dir(_check) do
     path = Path.join([Glorbo.Filesystem.Hierarchy.default_root(), "runtime", "sockets"])
 
+    # Gemini round-5 finding (PR #37, LOW defense-in-depth):
+    # `File.chmod` follows symlinks. If `~/.glorbo/runtime/sockets`
+    # were ever replaced with a symlink to another directory the
+    # user owns, the chmod would silently tighten perms on the
+    # target. Requires write into `~/.glorbo/runtime/` (not in
+    # any agent's bwrap mount view) so agent-driven escalation is
+    # unlikely — but operator-CLI surface, defense-in-depth.
+    # `lstat` + type check refuses the symlink case.
     with :ok <- File.mkdir_p(path),
+         :ok <- ensure_real_directory(path),
          :ok <- File.chmod(path, 0o700) do
       {:ok, "created #{path} (mode 0700)"}
     else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_real_directory(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory}} -> :ok
+      {:ok, %File.Stat{type: other}} -> {:error, {:not_a_real_directory, other}}
       {:error, reason} -> {:error, reason}
     end
   end

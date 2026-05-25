@@ -384,7 +384,45 @@ defmodule Glorbo.Actions.Agents do
     # agent's contract file. (Gemini deep-dive finding F1.)
     if Path.basename(Path.expand(rel)) in @contract_files,
       do: {:error, :contract_file},
-      else: :ok
+      else: refuse_dedicated_subtree(rel)
+  end
+
+  # Codex round-5 finding (PR #37): the generic file-manager
+  # `create_workspace_file/4` + `write_workspace_file/5` only
+  # blocked contract files. Paths like
+  # `state/wake-request-foo.md`, `inbox/anything.md`,
+  # `outbox/memory/x.md`, `history/...` were accepted — so an
+  # authenticated dashboard client could write a wake trigger
+  # or a forged inbox message via the file manager UI,
+  # bypassing the higher-level `wake_agent/4` or `post_message/N`
+  # validation + audit shape (only an `agent.file_create` audit
+  # row, not the dedicated wake/message audit).
+  #
+  # Defense: refuse any rel_path whose first segment is one of
+  # the dedicated-subtree roots — those have their own action
+  # functions with stricter validation + audit shape.
+  #
+  # Codex pre-push review of 0198037: the previous shape used
+  # `Path.split(Path.expand(rel))` which for a relative input
+  # produces `["/", "var", ...]` (the cwd's absolute split) —
+  # so the first segment was NEVER `state`/`inbox`/`outbox`/`history`
+  # and the guard never matched. Normalise against a fake root
+  # then strip it: `Path.expand(rel, "/") |> Path.relative_to("/")`
+  # yields the rel path's first segment as the first segment.
+  @dedicated_subtree_roots ~w(state inbox outbox history)
+  defp refuse_dedicated_subtree(rel) do
+    normalised =
+      rel
+      |> Path.expand("/")
+      |> Path.relative_to("/")
+
+    case Path.split(normalised) do
+      [root | _] when root in @dedicated_subtree_roots ->
+        {:error, {:dedicated_subtree, root}}
+
+      _ ->
+        :ok
+    end
   end
 
   # Wave 27: O_EXCL create — refuses an existing file or a freshly-

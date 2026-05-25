@@ -2150,56 +2150,131 @@ defmodule GlorboWeb.AgentLive do
   # Returns `%{index: <MEMORY.md body>, files: [%{…}]}` with entries
   # sorted newest-first by mtime. Filesystem-is-truth: every tab
   # click re-reads; no cache.
+  # Codex round-5 finding (PR #37, HIGH): the prior shape used
+  # `File.read` (follows symlinks; no byte cap) and `File.stat`
+  # (follows symlinks) with no cap on the entry list. Two
+  # angles:
+  #   (a) Symlink escape — an agent plants
+  #       `memory/feedback_evil.md → ../../../<other-co>/agents/<other>/AGENT.md`
+  #       and the dashboard renders cross-tenant content under
+  #       the Memory tab.
+  #   (b) DoS — agent writes many / large memory files via the
+  #       outbox/memory pipeline; opening the Memory tab pegs
+  #       the dashboard.
+  # Defenses: per-file byte cap via
+  # `AgentWritableFile.read_bounded/2` (uses lstat refusal +
+  # capped read in one helper, GEP-27 round-3); entry-list cap
+  # (200) post-sort; `:file.read_link_info` for stat so a
+  # symlink at the index is also refused.
+  @memory_file_byte_cap 256 * 1024
+  @memory_entry_cap 200
+
   defp load_memory_files(%{assigns: %{company_slug: co, agent_slug: ag}}) do
     base = base_dir()
     dir = Path.join([base, "companies", co, "agents", ag, "memory"])
 
-    index =
-      case File.read(Path.join(dir, "MEMORY.md")) do
-        {:ok, content} -> String.trim(content)
-        _ -> ""
-      end
+    # Codex pre-push review of 0198037: `File.ls(dir)` follows a
+    # symlinked `memory/` directory; `read_bounded/2` only
+    # protects the leaf. If an agent ever swaps its `memory/`
+    # dir for a symlink to another company's tree, the
+    # enumeration would cross tenants. Reject any symlink
+    # ancestor on `dir` before listing or reading.
+    if memory_dir_safe?(dir) do
+      index =
+        case Glorbo.Filesystem.AgentWritableFile.read_bounded(
+               Path.join(dir, "MEMORY.md"),
+               @memory_file_byte_cap
+             ) do
+          {:ok, content} -> String.trim(content)
+          _ -> ""
+        end
 
-    files =
-      case File.ls(dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(&valid_memory_file?/1)
-          |> Enum.map(&parse_memory_file(&1, dir))
-          |> Enum.reject(&is_nil/1)
-          |> Enum.sort_by(& &1.mtime, :desc)
+      files = load_memory_entries(dir)
 
-        _ ->
-          []
-      end
+      %{index: index, files: files}
+    else
+      %{index: "", files: []}
+    end
+  end
 
-    %{index: index, files: files}
+  defp memory_dir_safe?(dir) do
+    Glorbo.Sandbox.SymlinkGuard.assert_no_symlink_segment!(
+      dir,
+      "agent_live: memory dir"
+    )
+
+    case File.lstat(dir) do
+      {:ok, %File.Stat{type: :directory}} -> true
+      _ -> false
+    end
+  rescue
+    ArgumentError -> false
+  end
+
+  # Codex pre-push review of 0198037: previously the 200-file
+  # cap was applied AFTER reading + parsing every valid memory
+  # file. Worst case 200 × 256 KiB = 50 MiB rendered into the
+  # browser. Two-stage:
+  #   1. lstat every candidate to collect filename + mtime
+  #      (cheap — no body read).
+  #   2. sort by mtime, take 200, THEN read body via
+  #      `read_bounded`.
+  defp load_memory_entries(dir) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&valid_memory_file?/1)
+        |> Enum.flat_map(&stat_memory_candidate(&1, dir))
+        |> Enum.sort_by(& &1.mtime, :desc)
+        |> Enum.take(@memory_entry_cap)
+        |> Enum.flat_map(&read_memory_entry(&1, dir))
+
+      _ ->
+        []
+    end
   end
 
   @memory_filename_re ~r/^(user|feedback|project|reference)_[a-z][a-z0-9_-]{0,63}\.md$/
 
   defp valid_memory_file?(name), do: Regex.match?(@memory_filename_re, name)
 
-  defp parse_memory_file(filename, dir) do
+  # Phase 1: cheap stat-only collection. Returns the entries we
+  # MIGHT keep — body read deferred until after the cap.
+  defp stat_memory_candidate(filename, dir) do
     path = Path.join(dir, filename)
 
-    with {:ok, content} <- File.read(path),
-         {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content),
-         {:ok, stat} <- File.stat(path, time: :posix) do
+    case File.lstat(path, time: :posix) do
+      {:ok, %File.Stat{type: :regular, mtime: mtime}} ->
+        [%{filename: filename, path: path, mtime: mtime}]
+
+      _ ->
+        []
+    end
+  end
+
+  # Phase 2: bodies read AFTER sort + take, so the 200-file cap
+  # bounds the actual read I/O (max 200 × 256 KiB = 50 MiB
+  # WORST case, but only for the cap'd set, not the whole dir).
+  defp read_memory_entry(%{filename: filename, path: path, mtime: mtime}, _dir) do
+    with {:ok, content} <-
+           Glorbo.Filesystem.AgentWritableFile.read_bounded(path, @memory_file_byte_cap),
+         {:ok, meta, body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
       type = filename |> String.split("_", parts: 2) |> List.first() || "?"
 
-      %{
-        filename: filename,
-        type: type,
-        name: to_string(Map.get(meta, "name") || filename),
-        description: to_string(Map.get(meta, "description") || ""),
-        body: String.trim(body),
-        mtime: stat.mtime,
-        mtime_iso: DateTime.from_unix!(stat.mtime) |> DateTime.to_iso8601(),
-        mtime_rel: format_relative_mtime(stat.mtime)
-      }
+      [
+        %{
+          filename: filename,
+          type: type,
+          name: to_string(Map.get(meta, "name") || filename),
+          description: to_string(Map.get(meta, "description") || ""),
+          body: String.trim(body),
+          mtime: mtime,
+          mtime_iso: DateTime.from_unix!(mtime) |> DateTime.to_iso8601(),
+          mtime_rel: format_relative_mtime(mtime)
+        }
+      ]
     else
-      _ -> nil
+      _ -> []
     end
   end
 
@@ -2320,8 +2395,19 @@ defmodule GlorboWeb.AgentLive do
     target = to_string(e["target"] || "")
     detail_agent = get_in(e, ["detail", "agent"]) |> to_string()
 
+    # Codex round-5 finding (PR #37): the previous
+    # `String.starts_with?(target, "agents/#{slug}")` shape
+    # matched any slug with `slug` as a prefix — e.g. a sibling
+    # agent named `ceo2` polluted the audit/history stream of
+    # `ceo`. Match the exact `agents/<slug>` literal or the
+    # `agents/<slug>/...` namespace (note the trailing slash) so
+    # prefix collisions are rejected.
+    agent_root = "agents/#{slug}"
+    agent_prefix = agent_root <> "/"
+
     actor == slug or
-      String.starts_with?(target, "agents/#{slug}") or
+      target == agent_root or
+      String.starts_with?(target, agent_prefix) or
       detail_agent == slug
   end
 

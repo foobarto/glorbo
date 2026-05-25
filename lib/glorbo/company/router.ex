@@ -509,14 +509,23 @@ defmodule Glorbo.Company.Router do
     dir = Path.dirname(path)
     state.fs_fun.mkdir_p!.(dir)
 
+    # Gemini round-5 finding (PR #37): the prior shape did
+    # `"...: \"#{msg.to}\""` (raw `#{}` interpolation into a
+    # quoted YAML scalar). `validate_message/1` blocks `\n \r \0`
+    # but NOT `"` — so `to: foo"bar` produced
+    # `to: "foo"bar"`, corrupting the rejected.md YAML +
+    # the inbox/rejections notice. Pipe every interpolated field
+    # through the canonical `yaml_scalar/1` escaper.
+    yaml = &Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1
+
     frontmatter = """
     ---
     rejection_reason: #{rejection_reason_key(reason)}
-    missing: "#{format_missing(reason)}"
-    rejected_at: "#{DateTime.utc_now() |> DateTime.to_iso8601()}"
-    msg_id: "#{msg.msg_id}"
-    from: "#{msg.sender}"
-    to: "#{msg.to}"
+    missing: #{yaml.(format_missing(reason))}
+    rejected_at: #{yaml.(DateTime.utc_now() |> DateTime.to_iso8601())}
+    msg_id: #{yaml.(msg.msg_id)}
+    from: #{yaml.(msg.sender)}
+    to: #{yaml.(msg.to)}
     ---
 
     """
@@ -543,12 +552,18 @@ defmodule Glorbo.Company.Router do
       ts = DateTime.utc_now() |> DateTime.to_unix(:millisecond)
       path = Path.join(dir, "#{ts}-#{msg.msg_id}.md")
 
+      # Gemini round-5 finding (PR #37): same YAML-scalar
+      # injection vector as `write_rejection_file/3` above. Use
+      # the canonical escaper. The body line keeps `#{msg.to}`
+      # as inline markdown — backticks aren't YAML-sensitive.
+      yaml = &Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1
+
       content = """
       ---
-      rejected_msg_id: "#{msg.msg_id}"
+      rejected_msg_id: #{yaml.(msg.msg_id)}
       rejection_reason: #{rejection_reason_key(reason)}
-      missing: "#{format_missing(reason)}"
-      rejected_at: "#{DateTime.utc_now() |> DateTime.to_iso8601()}"
+      missing: #{yaml.(format_missing(reason))}
+      rejected_at: #{yaml.(DateTime.utc_now() |> DateTime.to_iso8601())}
       ---
 
       Message to `#{msg.to}` was rejected: #{format_missing(reason)}.

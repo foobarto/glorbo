@@ -10,6 +10,156 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex + gemini round-5 deep-dive: 12 hardening fixes (bundled)
+
+Round 5 of the ongoing codex + gemini audit cycle, focused on the
+two LiveView modules deferred from round 4 (kanban_live + agent_live
+— too large for one codex invocation last round) plus the
+multi-tenant message-routing surface (chat/proposals/router/doctor).
+6 HIGH (5 in the deferred LV files + 1 in agent_live audit filter),
+3 MED, 3 LOW (4th LOW deferred — needs design discussion).
+
+- **Cross-tenant kanban access via symlinked project ancestor**
+  (codex, HIGH) — `KanbanLive.resolve_task_path/2` ran only the
+  LEAF check via `AgentWritableFile.ensure_regular/1`; a
+  symlinked PROJECT or TASKS ancestor (e.g. agent plants
+  `projects/evil → ../../<other-co>/projects/private`) passed
+  the regex + leaf-lstat and let `open_task` / `save_task` /
+  `kanban:move` read+mutate cross-tenant task files. Wraps the
+  resolved path through
+  `Sandbox.SymlinkGuard.assert_no_symlink_segment!/2` so any
+  ancestor symlink causes refusal.
+
+- **Cross-tenant kanban board enumeration** (codex, HIGH) —
+  `KanbanLive.load_tasks/2` did a bare `File.ls` on
+  `projects/*/tasks/*.md` with no `Slug.valid?` gate and no
+  `real_directory?` check on the project dir, despite the same
+  module's `list_projects/2` already enforcing that discipline.
+  A symlinked project dir surfaced another tenant's task titles,
+  assignees, and statuses on every `file_event` refresh. Now
+  filters via `Glorbo.Slug.valid?/1 + real_directory?/2` before
+  recursing — same shape as `list_projects/2`.
+
+- **Kanban save_task bypassed approval gate** (codex, HIGH) —
+  `KanbanLive.save_task/3` wrote client-supplied `status` and
+  `requires_approval` straight via
+  `TaskDefinition.write_frontmatter/2`; the sibling `kanban:move`
+  handler gated via `refuse_if_bypasses_approval_gate/2` but
+  `save_task` was bypassed entirely. A crafted save_task payload
+  could set an approval-gated task straight to `done`, or zero
+  its `requires_approval` field to remove the gate. Now calls
+  the existing gate refuse + a new
+  `refuse_if_clears_required_approval/2` (refuses clearing
+  `requires_approval` while the on-disk task is still
+  gate-pending).
+
+- **Kanban drag/drop missing audit emission** (codex, MED) —
+  `kanban:move` wrote `status` via `TaskDefinition.write/2`
+  without emitting any audit entry; the sibling `save_task`
+  path emits `task.edit` via `emit_task_edit_audit/3`.
+  Drag-to-done left no forensic trail of the status change
+  actor/time. New `emit_kanban_move_audit/3` emits `task.move`
+  with the new_status detail, parity with the form-edit path.
+
+- **Kanban attachment listing leaks across tenants** (codex, MED)
+  — `KanbanLive.list_task_attachments/3` used bare `File.ls` +
+  `File.stat` (both follow symlinks) with no `Slug.valid?` on
+  project/task_id and no `real_directory?` on the attachments
+  dir. Combined with the symlinked-project primitive (above)
+  this leaked another tenant's attachment filenames + sizes on
+  overlay open. Now slug-gates inputs, walks ancestors via
+  `SymlinkGuard`, and uses `File.lstat` for per-entry size to
+  avoid following symlinks.
+
+- **agent_live create_file bypasses dedicated Actions** (codex,
+  HIGH) — `Glorbo.Actions.Agents.create_workspace_file/4` refused
+  only `@contract_files` (`AGENT.md` + `stdout.log`); paths like
+  `state/wake-request-foo.md`, `inbox/anything.md`,
+  `outbox/memory/x.md`, `history/...` were accepted by the
+  generic file manager. Authenticated dashboard client could
+  create a wake-trigger or a forged inbox message via the file
+  manager UI, bypassing the higher-level `wake_agent/4` +
+  `post_message/N` validation + audit shape (only an
+  `agent.file_create` row, not the dedicated wake/message audit).
+  New `refuse_dedicated_subtree/1` rejects any rel_path whose
+  first segment is `state` / `inbox` / `outbox` / `history` —
+  those have their own action functions with stricter validation.
+
+- **agent_live audit filter prefix collision** (codex, HIGH) —
+  `audit_for_this_agent?/2` used
+  `String.starts_with?(target, "agents/#{slug}")` so a sibling
+  agent named `ceo2` polluted the audit/history stream of the
+  parent `ceo`. Now matches the exact `agents/<slug>` literal
+  or the `agents/<slug>/` namespace prefix — same defense pattern
+  to grep for in audit_export_controller / inbox_live.
+
+- **agent_live memory tab: symlink-follow + DoS** (codex, HIGH) —
+  `load_memory_files/1` used `File.read` (follows symlinks; no
+  byte cap) + `File.stat` (follows symlinks) with no file-count
+  cap. (a) Symlink dimension: agent plants
+  `memory/feedback_x.md → ../../../<other-co>/agents/<other>/AGENT.md`
+  → dashboard renders cross-tenant content. (b) DoS dimension:
+  agent writes many large memory files via the outbox/memory
+  pipeline → opening Memory tab pegs the dashboard. Switched to
+  `AgentWritableFile.read_bounded/2` (round-3 helper) with a
+  256 KiB per-file cap, capped the entry list at 200 post-sort,
+  and uses `File.lstat` for stat.
+
+- **Cross-company proposal flip via path traversal** (gemini, MED)
+  — `Glorbo.Company.Proposals.flip/4` accepted `id` straight
+  from the LiveView WS frame without slug validation and passed
+  it into `Path.join`. `AgentWritableFile.ensure_writable/1`
+  only does lstat — no `..` normalisation. A logged-in dashboard
+  user could craft a WS frame with
+  `id: "../<other-co>/proposals/<their-id>"` and approve/deny
+  proposals in ANOTHER company, bypassing the URL's `:company`
+  scoping. (Director model is single-token so this didn't cross
+  user boundaries, but it did break per-company scoping for
+  write ops.) Now validates `id` against
+  `~r/\A[a-z0-9][a-z0-9_-]*\z/` and company slug at flip/4's
+  entry; returns `{:error, :invalid_proposal_id}` (or
+  `{:error, :invalid_company}` for a bad company slug) on miss.
+
+- **Router rejection-write YAML scalar injection** (gemini, LOW)
+  — `write_rejection_file/3` and `write_rejection_notice/3`
+  interpolated `msg.msg_id`, `msg.sender`, `msg.to` into quoted
+  YAML scalars via raw `"#{...}"` interpolation.
+  `validate_message/1` blocked `\n \r \0` (and `/` in `msg_id`)
+  but NOT `"`. A malicious agent sending `to: foo"bar`
+  corrupted the YAML in `history/<msg_id>.rejected.md` and
+  `agents/<sender>/inbox/rejections/...`. Newline-based
+  smuggling already closed; this is YAML-parse-DOS / audit-log
+  corruption only. Every interpolated field now piped through
+  `Glorbo.Filesystem.FrontmatterWriter.yaml_scalar/1`.
+
+- **Doctor fix_sockets_dir File.chmod follows symlinks** (gemini,
+  LOW) — `File.chmod` follows symlinks. If
+  `~/.glorbo/runtime/sockets` were ever a symlink to another
+  directory the user owns, the chmod would silently tighten
+  perms on the target. Requires write into `~/.glorbo/runtime/`
+  (not in any agent's bwrap mount view) so agent-driven
+  escalation is unlikely — operator-CLI defense-in-depth. New
+  `ensure_real_directory/1` runs `File.lstat` + type check
+  before chmod; refuses on symlink.
+
+NOT IN BUNDLE (logged):
+
+- LOW codex `agent_live.ex:216/259` — no per-agent rate limit on
+  dispatch-triggering wakes (needs design discussion on
+  token-bucket placement: per-LV vs ETS vs supervisor; deferred
+  to round 6).
+- LOW gemini `router.ex:832-843` ancestor-symlink TOCTOU —
+  documented known limitation; Erlang stdlib doesn't expose
+  `openat`/`O_NOFOLLOW`, so partial mitigation only without a
+  C NIF. Documented in module doc; logged for future GEP if
+  threat model changes.
+- DEFERRED to round 6: nice-to-haves from codex/gemini
+  (search.ex `File.ls` ancestor symlink — same shape as
+  formatter; `reject_symlink_entries` allowlist `[:regular,
+  :directory]` to also block :char/:block/:fifo; audit-export
+  open-then-stream still a check→use race — operator-managed
+  dir = practical exposure nil).
+
 ### Security — codex + gemini round-4 deep-dive: 10 hardening fixes (bundled)
 
 Round 4 of the ongoing codex + gemini audit cycle, scanning the
