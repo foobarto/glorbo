@@ -6,7 +6,7 @@
   <a href="https://github.com/foobarto/glorbo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/foobarto/glorbo/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/foobarto/glorbo/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/foobarto/glorbo?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg"></a>
-  <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.18.4-6E4A7E?logo=elixir&logoColor=white"></a>
+  <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.19.5-6E4A7E?logo=elixir&logoColor=white"></a>
   <a href="SECURITY.md"><img alt="Security Policy" src="https://img.shields.io/badge/security-policy-informational"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/foobarto/glorbo"><img alt="OpenSSF Scorecard" src="https://api.securityscorecards.dev/projects/github.com/foobarto/glorbo/badge"></a>
   <a href="https://www.bestpractices.dev/projects/12943"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/12943/badge"></a>
