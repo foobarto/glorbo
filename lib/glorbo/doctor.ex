@@ -279,10 +279,29 @@ defmodule Glorbo.Doctor do
   defp check_sockets_dir(deps) do
     path = Path.join([glorbo_base(deps), "runtime", "sockets"])
 
+    # Gemini round-6 finding (PR #38, MED): `File.chmod!` follows
+    # symlinks. PR #37 fixed the sibling `fix_sockets_dir/1` but
+    # missed this sister check — same exposure: an attacker who
+    # plants `~/.glorbo/runtime/sockets/ → /etc/shadow` (or any
+    # caller-writable target) has the doctor `chmod 0700` retarget
+    # the link. Lstat-refuse the dir before chmod; mirror
+    # `Glorbo.Doctor.Fixer.ensure_real_directory/1` shape (round-5).
     try do
       File.mkdir_p!(path)
-      File.chmod!(path, 0o700)
-      write_probe(path, "writable runtime socket dir, mode 0700", "#{path} (writable, 0700)")
+
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :directory}} ->
+          File.chmod!(path, 0o700)
+          write_probe(path, "writable runtime socket dir, mode 0700", "#{path} (writable, 0700)")
+
+        {:ok, %File.Stat{type: other}} ->
+          {:fail, "#{path} is #{other}, refusing chmod (symlink-follow defense)",
+           "writable runtime socket dir, mode 0700"}
+
+        {:error, reason} ->
+          {:fail, "lstat #{path} failed: #{inspect(reason)}",
+           "writable runtime socket dir, mode 0700"}
+      end
     rescue
       e in [File.Error] -> {:fail, Exception.message(e), "writable runtime socket dir, mode 0700"}
     end
@@ -380,13 +399,70 @@ defmodule Glorbo.Doctor do
   @spec write_probe(String.t(), String.t(), String.t()) ::
           {:ok | :fail, String.t(), String.t()}
   defp write_probe(path, required, ok_detail) do
-    File.mkdir_p!(path)
-    probe = Path.join(path, ".doctor_probe_#{System.unique_integer([:positive])}")
-    File.write!(probe, "ok")
-    File.rm!(probe)
-    {:ok, ok_detail, required}
+    # Gemini round-6 finding (PR #38, MED): the previous shape
+    # used `System.unique_integer/1` for the probe filename
+    # (monotonic per VM, predictable) and `File.write!` + `File.rm!`
+    # both follow symlinks. An attacker who can write under the
+    # parent dir can pre-plant `.doctor_probe_<low-N>` as a
+    # symlink to a sensitive file; `File.write!` writes "ok" THROUGH
+    # the symlink (overwriting the target if the caller has write
+    # access), then `File.rm!` deletes the link, not the target.
+    # Defenses: (a) `:crypto.strong_rand_bytes/1` for unguessable
+    # probe name; (b) `:file.open([:exclusive])` (O_EXCL) so a
+    # pre-planted symlink at the probe path collides on open;
+    # (c) lstat the parent dir is a real directory BEFORE the
+    # mkdir + write — initial fix had mkdir_p! running ahead of
+    # the lstat, defeating its own purpose since mkdir_p!
+    # follows symlinks in ancestor segments (Copilot review).
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory}} ->
+        do_write_probe(path, required, ok_detail)
+
+      {:ok, %File.Stat{type: other}} ->
+        {:fail, "probe parent #{path} is #{other}, refusing write (symlink-follow defense)",
+         required}
+
+      {:error, :enoent} ->
+        # Parent didn't exist yet — create it (mkdir_p! follows
+        # ancestor symlinks but at this point lstat returned
+        # :enoent for the leaf so no symlink at THIS segment),
+        # then proceed to write_probe which O_EXCL-opens the
+        # leaf-probe-file.
+        File.mkdir_p!(path)
+        do_write_probe(path, required, ok_detail)
+
+      {:error, reason} ->
+        {:fail, "lstat probe parent failed: #{inspect(reason)}", required}
+    end
   rescue
     e in [File.Error] -> {:fail, Exception.message(e), required}
+  end
+
+  defp do_write_probe(path, required, ok_detail) do
+    rand = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    probe = Path.join(path, ".doctor_probe_#{rand}")
+
+    case :file.open(probe, [:write, :raw, :exclusive, :binary]) do
+      {:ok, fd} ->
+        case :file.write(fd, "ok") do
+          :ok ->
+            _ = :file.close(fd)
+            _ = File.rm(probe)
+            {:ok, ok_detail, required}
+
+          {:error, reason} ->
+            _ = :file.close(fd)
+            _ = File.rm(probe)
+            {:fail, "probe write failed: #{inspect(reason)}", required}
+        end
+
+      {:error, reason} ->
+        # O_EXCL collision — could be an attacker-planted symlink
+        # we MUST NOT follow. Do NOT `File.rm` here; we don't own
+        # the path.
+        {:fail, "probe open failed (refusing to follow possible symlink): #{inspect(reason)}",
+         required}
+    end
   end
 
   @spec check_tar_zstd(keyword()) :: {:ok | :fail, String.t(), String.t()}

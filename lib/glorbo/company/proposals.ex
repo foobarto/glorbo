@@ -162,6 +162,15 @@ defmodule Glorbo.Company.Proposals do
   # Internals
   # ------------------------------------------------------------------
 
+  # Codex round-6 finding (PR #38, LOW): agent-controlled
+  # frontmatter scalars (subtype, proposed_at, proposed_by,
+  # denial_reason, etc.) flowed into the LiveView render
+  # unbounded. The 10 MiB AgentWritableFile cap bounds the
+  # worst per-file blast radius, but a single proposal can
+  # still inflate ~10 MiB of HTML per list refresh. Cap each
+  # scalar at the source so EVERY render path benefits.
+  @scalar_cap 240
+
   defp read_one(path) do
     # Wave 27: lstat + bounded read so a planted proposal symlink
     # in the agent-RW proposals/ tree won't be followed and a
@@ -173,14 +182,14 @@ defmodule Glorbo.Company.Proposals do
 
       %{
         id: id,
-        subtype: Map.get(meta, "subtype"),
+        subtype: scalar_cap(Map.get(meta, "subtype")),
         status: Map.get(meta, "status"),
-        proposed_by: Map.get(meta, "proposed_by"),
-        proposed_at: Map.get(meta, "proposed_at"),
-        approved_by: Map.get(meta, "approved_by"),
-        approved_at: Map.get(meta, "approved_at"),
-        denial_reason: Map.get(meta, "denial_reason"),
-        superseded_by: Map.get(meta, "superseded_by"),
+        proposed_by: scalar_cap(Map.get(meta, "proposed_by")),
+        proposed_at: scalar_cap(Map.get(meta, "proposed_at")),
+        approved_by: scalar_cap(Map.get(meta, "approved_by")),
+        approved_at: scalar_cap(Map.get(meta, "approved_at")),
+        denial_reason: scalar_cap(Map.get(meta, "denial_reason")),
+        superseded_by: scalar_cap(Map.get(meta, "superseded_by")),
         body: body,
         path: path,
         frontmatter: meta
@@ -189,6 +198,37 @@ defmodule Glorbo.Company.Proposals do
       _ -> nil
     end
   end
+
+  defp scalar_cap(nil), do: nil
+
+  defp scalar_cap(value) when is_binary(value) do
+    Glorbo.Util.UTF8.safe_byte_slice(value, @scalar_cap)
+  end
+
+  # Codex pre-push review of 7e750cd (PR #38 follow-up): the
+  # previous fallback used `to_string/1` which raises
+  # `Protocol.UndefinedError` for maps / tuples / nested lists.
+  # Forged proposal frontmatter like `subtype:\n  key: value`
+  # parses to a `%{}` and crashes the proposal-list render. The
+  # `else _ -> nil` in `read_one/1`'s `with` does NOT catch
+  # raises from inside the body. Mirror the round-3
+  # `sanitise_rejected_action` shape: explicit clauses for
+  # number/atom (safe `to_string`), route everything else
+  # (maps/lists/tuples/refs/pids) through `inspect/2` with a
+  # printable_limit, then UTF8-safe-slice.
+  # Copilot review on PR #38: atoms can be up to 255 bytes
+  # (longer than `@scalar_cap`), so the bare `Atom.to_string/1`
+  # would have let an oversized atom skip the cap. Route through
+  # `safe_slice/1` like every other clause.
+  defp scalar_cap(value) when is_atom(value), do: value |> Atom.to_string() |> safe_slice()
+
+  defp scalar_cap(value) when is_number(value), do: value |> to_string() |> safe_slice()
+
+  defp scalar_cap(value),
+    do: value |> inspect(printable_limit: @scalar_cap, limit: 8) |> safe_slice()
+
+  defp safe_slice(string),
+    do: Glorbo.Util.UTF8.safe_byte_slice(string, @scalar_cap)
 
   defp read_one!(path) do
     case read_one(path) do

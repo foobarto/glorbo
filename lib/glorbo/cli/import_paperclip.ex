@@ -163,9 +163,90 @@ defmodule Glorbo.CLI.ImportPaperclip do
     {:import_paperclip, 0, render_report(co, slug, imported, hints)}
   end
 
+  # Gemini round-6 finding (PR #38, MED): the previous shape called
+  # `File.mkdir_p!` on `~/.glorbo/companies/<slug>` (and child dirs)
+  # without lstat-checking that the parents weren't symlinks. The
+  # source side has C-098 lstat guards (good), but the destination
+  # side didn't. A prior compromise that plants
+  # `~/.glorbo/companies/<slug>` as a symlink to an attacker-
+  # controlled dir would land the importer's writes (`AGENT.md`,
+  # `HEARTBEAT.md`, etc.) in the attacker's tree. Mostly an
+  # integrity/persistence issue; close it.
   defp ensure_company_dirs(co) do
+    :ok = ensure_real_dest_dir!(co)
     File.mkdir_p!(co)
-    Enum.each(~w(agents projects channels audit), &File.mkdir_p!(Path.join(co, &1)))
+
+    Enum.each(~w(agents projects channels audit), fn sub ->
+      sub_path = Path.join(co, sub)
+      :ok = ensure_real_dest_dir!(sub_path)
+      File.mkdir_p!(sub_path)
+    end)
+  end
+
+  # Raises if `path` exists and is NOT a real directory (i.e.
+  # it's a symlink or any non-dir type) OR if ANY existing
+  # ancestor segment is a symlink. The earlier shape only
+  # lstat'd the leaf — codex review of 7e750cd caught the
+  # commit-message-vs-code mismatch: if `~/.glorbo/companies/`
+  # itself were a symlink, the leaf returns `:enoent`, the
+  # function returned `:ok`, and `mkdir_p!` followed the parent
+  # link. Now walks every ancestor segment with lstat before
+  # green-lighting the mkdir. Mirror the round-3 SymlinkGuard
+  # shape used by sandbox/PermissionMapper.
+  defp ensure_real_dest_dir!(path) do
+    expanded = Path.expand(path)
+
+    # Walk from root down. For each ancestor segment that EXISTS,
+    # require it to be a real directory (no symlink, no
+    # non-directory). Missing segments are fine — mkdir_p! will
+    # create them. Bind the reduce result explicitly so credo
+    # doesn't flag the side-effect-only walk as unused-return.
+    _walked =
+      expanded
+      |> Path.split()
+      |> Enum.reduce("", fn seg, acc ->
+        candidate = if acc == "", do: seg, else: Path.join(acc, seg)
+        :ok = check_dest_segment!(candidate)
+        candidate
+      end)
+
+    :ok
+  end
+
+  defp check_dest_segment!("/"), do: :ok
+
+  defp check_dest_segment!(seg) do
+    case File.lstat(seg) do
+      {:ok, %File.Stat{type: :directory}} ->
+        :ok
+
+      {:ok, %File.Stat{type: :symlink}} ->
+        # `:eloop` ("too many symbolic links") matches the
+        # canonical OS wording for the failure we're refusing
+        # (Copilot review on PR #38: only surface :eloop for
+        # actual symlinks — non-symlink non-directory ancestor
+        # types use :enotdir below).
+        raise File.Error,
+          reason: :eloop,
+          action: "import_paperclip: refusing to mkdir under a symlinked ancestor",
+          path: seg
+
+      {:ok, %File.Stat{type: other}} ->
+        raise File.Error,
+          reason: :enotdir,
+          action: "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
+          path: seg
+
+      {:error, :enoent} ->
+        # Missing intermediate is fine; mkdir_p! creates fresh.
+        :ok
+
+      {:error, reason} ->
+        raise File.Error,
+          reason: reason,
+          action: "import_paperclip: lstat destination ancestor",
+          path: seg
+    end
   end
 
   defp write_company_md_if_missing(co, slug) do
@@ -249,8 +330,19 @@ defmodule Glorbo.CLI.ImportPaperclip do
 
   defp do_import_agent(src_agent_dir, co, agent_slug, co_slug) do
     dest = Path.join([co, "agents", agent_slug])
-    Enum.each(~w(inbox outbox workspace history state), &File.mkdir_p!(Path.join(dest, &1)))
+
+    # PR #38 (gemini round-6): same destination-symlink guard as
+    # `ensure_company_dirs/1`. The per-agent dest dir is created
+    # here; an attacker-planted symlink at `agents/<slug>` would
+    # otherwise redirect the imported AGENT.md + companion writes.
+    :ok = ensure_real_dest_dir!(dest)
     File.mkdir_p!(dest)
+
+    Enum.each(~w(inbox outbox workspace history state), fn sub ->
+      sub_path = Path.join(dest, sub)
+      :ok = ensure_real_dest_dir!(sub_path)
+      File.mkdir_p!(sub_path)
+    end)
 
     # C-098: only read source files that lstat as real regular files —
     # never follow a symlinked `AGENTS.md` / companion into a host

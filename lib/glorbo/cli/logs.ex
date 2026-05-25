@@ -39,8 +39,39 @@ defmodule Glorbo.CLI.Logs do
     end
   end
 
-  defp do_run([company], opts), do: tail_audit(company, opts)
-  defp do_run([company, agent], opts), do: tail_stdout(company, agent, opts)
+  # Gemini round-6 finding (PR #38, LOW): the previous shape passed
+  # `company` / `agent` straight from positional argv into
+  # `Path.join` with no slug validation. Absolute paths don't
+  # actually bypass `Path.join` (Elixir strips leading `/` on
+  # later segments), but `..` traversal IS permitted; combined
+  # with the `.log` / `.jsonl` suffix requirement the real risk
+  # is narrow (operator-CLI surface, attacker would need write
+  # access to the user's home for it to matter). Defense-in-depth:
+  # gate on the canonical `Glorbo.Slug.valid?/1` regex so this
+  # path is consistent with `glorbo new company` and the rest of
+  # the CLI surface (both Copilot + codex P2 review flagged the
+  # initial stricter-than-canonical regex as a regression).
+  defp do_run([company], opts) do
+    if Glorbo.Slug.valid?(company) do
+      tail_audit(company, opts)
+    else
+      {:logs, 1, "Invalid company slug: #{company}\n"}
+    end
+  end
+
+  defp do_run([company, agent], opts) do
+    cond do
+      not Glorbo.Slug.valid?(company) ->
+        {:logs, 1, "Invalid company slug: #{company}\n"}
+
+      not Glorbo.Slug.valid?(agent) ->
+        {:logs, 1, "Invalid agent slug: #{agent}\n"}
+
+      true ->
+        tail_stdout(company, agent, opts)
+    end
+  end
+
   defp do_run(_, _), do: usage()
 
   # ---------------------------------------------------------------------

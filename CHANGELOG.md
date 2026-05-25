@@ -10,6 +10,117 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — codex + gemini round-6 deep-dive: 10 hardening fixes (bundled)
+
+Round 6 of the ongoing codex + gemini audit cycle against the
+post-PR-#37 codebase. Two of these findings are **missed-sister
+regressions of earlier round fixes** — same vulnerability pattern,
+sibling module that the original fix didn't reach. Worth flagging
+as a recurring "fixed module A, missed module B" trend across
+rounds 4/5/6. 1 HIGH + 5 MED + 4 LOW.
+
+- **Cross-tenant project enumeration via symlinked `projects/`**
+  (codex, HIGH; **missed-sister of PR #37 kanban_live fix**) —
+  `Glorbo.CompanyLive.load_projects_and_tasks/1` and
+  `collect_goal_task_counts/1` ran bare `File.ls` over the
+  projects dir with `File.dir?` filtering and NO `Slug.valid?`
+  gate. `File.dir?` follows symlinks → an agent with
+  `projects:write` plants `projects/evil → /etc` and the
+  overview/goal-counts render reads from the target. Exact
+  parallel to the symlink-bypass closed in PR #37 for
+  `KanbanLive.load_tasks/2`. New `safe_projects/2` +
+  `real_subdirectory?/2` (lstat-based, identical shape to
+  kanban_live's gates) applied at both call sites; also gates
+  the `tasks/` subdir to close PR #37's load_project_tasks
+  parallel.
+
+- **Audit JSONL unbounded read in overview** (codex, MED) —
+  `CompanyLive.audit_last_wakes/2` used bare `File.read` on
+  `audit/<YYYY-MM>.jsonl` while the sibling `read_audit_lines/1`
+  already used `AgentWritableFile.read_bounded(path,
+  @max_audit_bytes)`. Agent-driven dispatch could grow the
+  audit file past memory and OOM the dashboard. Switched to
+  the same bounded read.
+
+- **BrainDump read_day unbounded + no SymlinkGuard** (codex,
+  MED) — `Glorbo.BrainDump.read_day/2` used bare `File.read` on
+  each day's brain-dump file. Braindump dir is currently
+  director-only-writable but a previous symlink-plant via some
+  other escape route would slurp through; `convert_to_task/3`
+  already had the lstat discipline via `ensure_safe_dir`, the
+  list path didn't. Now uses
+  `AgentWritableFile.read_bounded(path, 1 MiB)` AND enforces a
+  canonical `YYYY-MM-DD.md` filename regex (closes the related
+  LOW-9 YAML-scalar injection vector via `braindump_ts:`).
+
+- **Doctor write_probe predictable filename + symlink-follow**
+  (gemini, MED) — `Glorbo.Doctor.write_probe/3` used
+  `System.unique_integer/1` for the probe filename (monotonic
+  per VM → predictable) and `File.write!` + `File.rm!` both
+  follow symlinks. An attacker with write access under the
+  parent dir can pre-plant `.doctor_probe_<low-N>` as a symlink
+  to a sensitive file; `File.write!` writes "ok" THROUGH the
+  symlink. New `do_write_probe/3` uses
+  `:crypto.strong_rand_bytes(8)` for the probe name, opens
+  with `:exclusive` (O_EXCL), lstat-checks the parent dir
+  before writing, and does NOT `File.rm` on O_EXCL collision
+  (could be a planted symlink we mustn't follow).
+
+- **Doctor check_sockets_dir File.chmod follows symlinks**
+  (gemini, MED; **missed-sister of PR #37 fix_sockets_dir**) —
+  PR #37 fixed the `Glorbo.Doctor.Fixer.fix_sockets_dir/1`
+  chmod-follows-symlinks finding but missed the sister
+  `Glorbo.Doctor.check_sockets_dir/1` which has the same shape:
+  `File.mkdir_p! → File.chmod!(0o700)`. Same exposure (attacker
+  swaps `~/.glorbo/runtime/sockets/` for a symlink → chmod
+  retargets). Now lstat-refuses non-directory before chmod,
+  mirroring the round-5 fix.
+
+- **import_paperclip destination symlink-follow** (gemini, MED)
+  — `Glorbo.CLI.ImportPaperclip.ensure_company_dirs/1` and
+  `do_import_agent/4` called `File.mkdir_p!` on the destination
+  tree (`~/.glorbo/companies/<slug>` and `<co>/agents/<slug>`)
+  without lstat-checking parents. Source side has C-098 lstat
+  guards (good); destination side didn't. Prior-compromise that
+  planted a destination dir as a symlink would land imports in
+  attacker territory. New `ensure_real_dest_dir!/1` lstat-walks
+  each dest parent before `mkdir_p!`.
+
+- **CompanyLive read_first_line unbounded** (codex, LOW) —
+  `read_first_line/1` used bare `File.read` on agent-routed
+  inbox `.md` files (only first 80 chars rendered, but full
+  file was slurped). Inconsistent with the rest of the module's
+  reads. Switched to `AgentWritableFile.read_bounded(path, 4 KiB)`.
+
+- **BrainDump braindump_ts YAML scalar injection** (codex, LOW;
+  defense-in-depth, closed by the read_day filename regex) —
+  `render_task/2` interpolated `entry.ts = "#{day}T#{time}Z"`
+  bare into the task frontmatter; if a non-canonical day
+  filename had ever landed in braindump/, the bare scalar would
+  permit YAML key injection. Closed implicitly by the
+  `read_day/2` canonical-filename regex above (only valid
+  `YYYY-MM-DD.md` flows through, so `entry.day` is guaranteed
+  safe before `entry.ts` is built).
+
+- **Proposals scalar fields unbounded in render** (codex, LOW)
+  — `subtype`, `proposed_at`, `proposed_by`, `denial_reason`,
+  etc. rendered unbounded via `proposals_live.ex`. Body was
+  capped via `truncate/1`; the others weren't. AgentWritableFile's
+  10 MiB file cap bounds per-file but a single proposal could
+  inflate ~10 MiB of HTML per list refresh. New `scalar_cap/1`
+  in `Glorbo.Company.Proposals.read_one/1` truncates each
+  scalar at 240 bytes via `Util.UTF8.safe_byte_slice` so every
+  render path benefits, not just the LV.
+
+- **CLI logs.ex missing slug validation** (gemini, LOW) —
+  `glorbo logs <company> [<agent>]` passed positional argv
+  straight into `Path.join` with no validation. Absolute paths
+  don't bypass `Path.join` (Elixir strips leading `/` on later
+  segments), but `..` traversal IS permitted. Combined with the
+  `.log` / `.jsonl` suffix requirement the exploit is narrow
+  (operator-CLI surface), but defense-in-depth: now gates both
+  args through `~r/\A[a-z0-9][a-z0-9-]*\z/` at `do_run/2`.
+
 ### Security — codex + gemini round-5 deep-dive: 12 hardening fixes (bundled)
 
 Round 5 of the ongoing codex + gemini audit cycle, focused on the

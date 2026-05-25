@@ -326,13 +326,32 @@ defmodule Glorbo.BrainDump do
     |> String.slice(0, 80)
   end
 
-  defp read_day(dir, filename) do
-    day = Path.basename(filename, ".md")
-    path = Path.join(dir, filename)
+  # Codex round-6 finding (PR #38, MED): the previous shape used
+  # bare `File.read` on each braindump day file. The braindump
+  # dir is currently director-only-writable (no agent permission
+  # tier maps to it), but a previous symlink-plant by some other
+  # escape route would slurp through. `convert_to_task/3` already
+  # proves the discipline via `ensure_safe_dir`; the list/read
+  # path was unguarded. Cap the read AND require canonical
+  # `YYYY-MM-DD.md` filename — anything else is a malformed leak
+  # vector even via the legitimate write path.
+  @brain_dump_file_byte_cap 1_048_576
+  @brain_dump_day_re ~r/\A\d{4}-\d{2}-\d{2}\.md\z/
 
-    case File.read(path) do
-      {:ok, content} -> parse_sections(content, day)
-      _ -> []
+  defp read_day(dir, filename) do
+    if Regex.match?(@brain_dump_day_re, filename) do
+      day = Path.basename(filename, ".md")
+      path = Path.join(dir, filename)
+
+      case Glorbo.Filesystem.AgentWritableFile.read_bounded(
+             path,
+             @brain_dump_file_byte_cap
+           ) do
+        {:ok, content} -> parse_sections(content, day)
+        _ -> []
+      end
+    else
+      []
     end
   end
 
