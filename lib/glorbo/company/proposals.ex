@@ -205,7 +205,26 @@ defmodule Glorbo.Company.Proposals do
     Glorbo.Util.UTF8.safe_byte_slice(value, @scalar_cap)
   end
 
-  defp scalar_cap(value), do: value |> to_string() |> String.slice(0, @scalar_cap)
+  # Codex pre-push review of 7e750cd (PR #38 follow-up): the
+  # previous fallback used `to_string/1` which raises
+  # `Protocol.UndefinedError` for maps / tuples / nested lists.
+  # Forged proposal frontmatter like `subtype:\n  key: value`
+  # parses to a `%{}` and crashes the proposal-list render. The
+  # `else _ -> nil` in `read_one/1`'s `with` does NOT catch
+  # raises from inside the body. Mirror the round-3
+  # `sanitise_rejected_action` shape: explicit clauses for
+  # number/atom (safe `to_string`), route everything else
+  # (maps/lists/tuples/refs/pids) through `inspect/2` with a
+  # printable_limit, then UTF8-safe-slice.
+  defp scalar_cap(value) when is_atom(value), do: Atom.to_string(value)
+
+  defp scalar_cap(value) when is_number(value), do: value |> to_string() |> safe_slice()
+
+  defp scalar_cap(value),
+    do: value |> inspect(printable_limit: @scalar_cap, limit: 8) |> safe_slice()
+
+  defp safe_slice(string),
+    do: Glorbo.Util.UTF8.safe_byte_slice(string, @scalar_cap)
 
   defp read_one!(path) do
     case read_one(path) do

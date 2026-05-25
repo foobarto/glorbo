@@ -518,6 +518,47 @@ handling; they finish under old rules.
   the right moment to align. One-time template change; no
   backwards compat needed (pre-1.0).
 
+### D8. `approve` verdict requires corroborating audit row
+
+- **Decided (PR #36, 2026-05-24):** The Approvals.Gate's
+  `peer_review_ready?/1` no longer trusts `peer_review_verdict:
+  "approve"` in the task frontmatter alone. The gate now scans
+  the company audit log for a corroborating
+  `task.peer_review.approve` entry with
+  `actor: <bare-slug>` matching the task's
+  `peer_review_verdict_by` field AND `target: <task_path>`.
+  Scan window: current + previous UTC month
+  (audit-file-rotation boundary safety).
+- **Alternatives:**
+  - Trust the frontmatter (the original D4 contract). **Rejected:**
+    the task .md is agent-writable for any assignee with
+    `projects:write:<project>` — the assignee could pre-seed
+    `peer_review_required: true` + `peer_review_verdict:
+    "approve"` directly in their own task frontmatter and skip
+    the reviewer-actor check that
+    `Actions.Tasks.record_peer_review_verdict/4` enforces.
+  - Cryptographically sign the verdict at the reviewer.
+    **Rejected:** keys-on-disk for a single-user dashboard adds
+    complexity disproportionate to the threat. Audit log is
+    already append-only and tamper-evident via reindex
+    rebuild (GEP-34); leveraging it is cheap.
+- **Why:** Mirrors the round-3 `LoopDetector` corroboration
+  pattern shipped in PR #35 — the same "agent owns the
+  state file, audit log doesn't trust it" shape. The audit row
+  is emitted by the legit reviewer path
+  (`Actions.Tasks.record_peer_review_verdict/4` ⇒
+  `emit_verdict_audit/6`), which already enforces
+  `guard_actor_is_reviewer/2`. The `Tools.valid_audit_action?/1`
+  whitelist (PR #35) prevents agents from forging the
+  corroboration row through `audit_events`.
+- **Implementation note:** the legit emitter writes
+  `actor: <bare-slug>` (no `agent:` prefix); the gate
+  compare uses that bare-slug shape. A cross-file contract
+  test in `test/glorbo/approvals/gate_test.exs` pins this
+  invariant so future emitter shape changes surface as a
+  gate-test failure rather than silent corroboration
+  regression.
+
 ## Related
 
 - **GEP-2** — architecture overview; peer-review gate is a

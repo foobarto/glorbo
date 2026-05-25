@@ -183,12 +183,40 @@ defmodule Glorbo.CLI.ImportPaperclip do
     end)
   end
 
-  # Raises if `path` exists and is NOT a real directory (i.e. it's
-  # a symlink or any non-dir type). `:enoent` is fine — `mkdir_p!`
-  # will create it fresh. Mirror of the C-098 source-side check
-  # but for the destination tree.
+  # Raises if `path` exists and is NOT a real directory (i.e.
+  # it's a symlink or any non-dir type) OR if ANY existing
+  # ancestor segment is a symlink. The earlier shape only
+  # lstat'd the leaf — codex review of 7e750cd caught the
+  # commit-message-vs-code mismatch: if `~/.glorbo/companies/`
+  # itself were a symlink, the leaf returns `:enoent`, the
+  # function returned `:ok`, and `mkdir_p!` followed the parent
+  # link. Now walks every ancestor segment with lstat before
+  # green-lighting the mkdir. Mirror the round-3 SymlinkGuard
+  # shape used by sandbox/PermissionMapper.
   defp ensure_real_dest_dir!(path) do
-    case File.lstat(path) do
+    expanded = Path.expand(path)
+
+    # Walk from root down. For each ancestor segment that EXISTS,
+    # require it to be a real directory (no symlink, no
+    # non-directory). Missing segments are fine — mkdir_p! will
+    # create them. Bind the reduce result explicitly so credo
+    # doesn't flag the side-effect-only walk as unused-return.
+    _walked =
+      expanded
+      |> Path.split()
+      |> Enum.reduce("", fn seg, acc ->
+        candidate = if acc == "", do: seg, else: Path.join(acc, seg)
+        :ok = check_dest_segment!(candidate)
+        candidate
+      end)
+
+    :ok
+  end
+
+  defp check_dest_segment!("/"), do: :ok
+
+  defp check_dest_segment!(seg) do
+    case File.lstat(seg) do
       {:ok, %File.Stat{type: :directory}} ->
         :ok
 
@@ -196,17 +224,18 @@ defmodule Glorbo.CLI.ImportPaperclip do
         raise File.Error,
           reason: :eloop,
           action:
-            "import_paperclip: refusing to mkdir into a non-directory destination (#{other})",
-          path: path
+            "import_paperclip: refusing to mkdir under a non-directory ancestor (#{other})",
+          path: seg
 
       {:error, :enoent} ->
+        # Missing intermediate is fine; mkdir_p! creates fresh.
         :ok
 
       {:error, reason} ->
         raise File.Error,
           reason: reason,
-          action: "import_paperclip: lstat destination dir",
-          path: path
+          action: "import_paperclip: lstat destination ancestor",
+          path: seg
     end
   end
 

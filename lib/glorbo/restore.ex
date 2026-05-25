@@ -3,12 +3,32 @@ defmodule Glorbo.Restore do
   Extracts a Glorbo backup archive into `~/.glorbo/`, then runs the
   post-extract chain `migrate → reindex → doctor --fix` (D-22).
 
-  Archive entries are pre-validated against path traversal via
-  `:erl_tar.table/2` — entries beginning with `/` or containing `..`
-  segments are rejected before any `:erl_tar.extract/2` call
-  (T-05-01 / Pitfall 6 mitigation).
+  ## Pre-extract validation (defense-in-depth)
 
-  Test-only / decoupling knobs:
+  Three sequential refusal gates run via
+  `:erl_tar.table/2` BEFORE any `:erl_tar.extract/2` call:
+
+    1. **Path traversal** — entries beginning with `/` or containing
+       `..` segments are rejected (T-05-01 / Pitfall 6).
+    2. **Symlink / hardlink entries** — refused outright (PR #36
+       round-4). `:erl_tar.extract` materialises entries in archive
+       order, so a crafted archive with entry 1 = `evil` (symlink →
+       `/tmp`) + entry 2 = `evil/payload` (regular file) caused the
+       kernel to write `/tmp/payload` during EXTRACT, BEFORE the
+       post-extract symlink-escape walk could refuse it. Glorbo
+       backups never contain link entries (`Backup.run` builds via
+       `:erl_tar.create` on a flat file list, which stores resolved
+       file content rather than link records), so any link entry is
+       either an attacker's archive or a non-Glorbo source.
+    3. **Uncompressed size cap** — total uncompressed entry bytes
+       must be ≤ 10 GiB (WR-03 archive-bomb guard).
+
+  Archive bytes are also copied into a private staging file under
+  `base` via `:file.open([:exclusive])` (O_EXCL) before either pass
+  reads them, closing the shared-FS TOCTOU between `traversal_guard`
+  and `extract` (PR #36 round-4 LOW).
+
+  ## Test-only / decoupling knobs
 
     * `:skip_migrate` — bypass `Ecto.Migrator.run/4`; lets tests run
       without booting the real Repo.
