@@ -162,6 +162,15 @@ defmodule Glorbo.Company.Proposals do
   # Internals
   # ------------------------------------------------------------------
 
+  # Codex round-6 finding (PR #38, LOW): agent-controlled
+  # frontmatter scalars (subtype, proposed_at, proposed_by,
+  # denial_reason, etc.) flowed into the LiveView render
+  # unbounded. The 10 MiB AgentWritableFile cap bounds the
+  # worst per-file blast radius, but a single proposal can
+  # still inflate ~10 MiB of HTML per list refresh. Cap each
+  # scalar at the source so EVERY render path benefits.
+  @scalar_cap 240
+
   defp read_one(path) do
     # Wave 27: lstat + bounded read so a planted proposal symlink
     # in the agent-RW proposals/ tree won't be followed and a
@@ -173,14 +182,14 @@ defmodule Glorbo.Company.Proposals do
 
       %{
         id: id,
-        subtype: Map.get(meta, "subtype"),
+        subtype: scalar_cap(Map.get(meta, "subtype")),
         status: Map.get(meta, "status"),
-        proposed_by: Map.get(meta, "proposed_by"),
-        proposed_at: Map.get(meta, "proposed_at"),
-        approved_by: Map.get(meta, "approved_by"),
-        approved_at: Map.get(meta, "approved_at"),
-        denial_reason: Map.get(meta, "denial_reason"),
-        superseded_by: Map.get(meta, "superseded_by"),
+        proposed_by: scalar_cap(Map.get(meta, "proposed_by")),
+        proposed_at: scalar_cap(Map.get(meta, "proposed_at")),
+        approved_by: scalar_cap(Map.get(meta, "approved_by")),
+        approved_at: scalar_cap(Map.get(meta, "approved_at")),
+        denial_reason: scalar_cap(Map.get(meta, "denial_reason")),
+        superseded_by: scalar_cap(Map.get(meta, "superseded_by")),
         body: body,
         path: path,
         frontmatter: meta
@@ -189,6 +198,14 @@ defmodule Glorbo.Company.Proposals do
       _ -> nil
     end
   end
+
+  defp scalar_cap(nil), do: nil
+
+  defp scalar_cap(value) when is_binary(value) do
+    Glorbo.Util.UTF8.safe_byte_slice(value, @scalar_cap)
+  end
+
+  defp scalar_cap(value), do: value |> to_string() |> String.slice(0, @scalar_cap)
 
   defp read_one!(path) do
     case read_one(path) do

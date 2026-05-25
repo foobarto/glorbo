@@ -265,3 +265,13 @@ defmodule GlorboWeb.ProposalsLive do
 
   defp format_at(_), do: "—"
 end
+
+# Codex round-6 finding (PR #38, LOW): agent-controlled
+# frontmatter scalars (subtype, proposed_at, proposed_by,
+# denial_reason) rendered unbounded in the proposals list.
+# `body` was already capped via `truncate/1`; the others
+# weren't. AgentWritableFile's 10 MiB file cap bounds the
+# worst case but a single proposal still hits ~10 MiB of
+# HTML per list refresh. Normalise these in
+# `Glorbo.Company.Proposals.list/2` (the loader) so every
+# render path benefits, not just the LV.

@@ -39,8 +39,38 @@ defmodule Glorbo.CLI.Logs do
     end
   end
 
-  defp do_run([company], opts), do: tail_audit(company, opts)
-  defp do_run([company, agent], opts), do: tail_stdout(company, agent, opts)
+  # Gemini round-6 finding (PR #38, LOW): the previous shape passed
+  # `company` / `agent` straight from positional argv into
+  # `Path.join` with no slug validation. Absolute paths don't
+  # actually bypass `Path.join` (Elixir strips leading `/` on
+  # later segments), but `..` traversal IS permitted; combined
+  # with the `.log` / `.jsonl` suffix requirement the real risk
+  # is narrow (operator-CLI surface, attacker would need write
+  # access to the user's home for it to matter). Defense-in-depth:
+  # gate on the same slug regex used elsewhere.
+  @slug_re ~r/\A[a-z0-9][a-z0-9-]*\z/
+
+  defp do_run([company], opts) do
+    if Regex.match?(@slug_re, company) do
+      tail_audit(company, opts)
+    else
+      {:logs, 1, "Invalid company slug: #{company}\n"}
+    end
+  end
+
+  defp do_run([company, agent], opts) do
+    cond do
+      not Regex.match?(@slug_re, company) ->
+        {:logs, 1, "Invalid company slug: #{company}\n"}
+
+      not Regex.match?(@slug_re, agent) ->
+        {:logs, 1, "Invalid agent slug: #{agent}\n"}
+
+      true ->
+        tail_stdout(company, agent, opts)
+    end
+  end
+
   defp do_run(_, _), do: usage()
 
   # ---------------------------------------------------------------------

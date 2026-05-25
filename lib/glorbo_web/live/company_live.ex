@@ -1362,26 +1362,46 @@ defmodule GlorboWeb.CompanyLive do
 
   # Walk every project's tasks once, counting total + done per goal
   # slug. Returns %{goal_slug => {total, done}}.
+  #
+  # Codex round-6 finding (PR #38, HIGH): the previous shape ran a
+  # bare `File.ls` over the projects dir with no `Slug.valid?` gate
+  # and no `real_directory?` check — same parallel to the
+  # `load_projects_and_tasks/1` site below and the kanban_live
+  # symlink-bypass closed in PR #37. Gate via the safe-project
+  # helper before enumeration.
   defp collect_goal_task_counts(co_path) do
     projects_dir = Path.join(co_path, "projects")
 
     case File.ls(projects_dir) do
-      {:ok, projects} -> Enum.reduce(projects, %{}, &fold_project(&1, projects_dir, &2))
-      _ -> %{}
+      {:ok, projects} ->
+        projects
+        |> safe_projects(projects_dir)
+        |> Enum.reduce(%{}, &fold_project(&1, projects_dir, &2))
+
+      _ ->
+        %{}
     end
   end
 
   defp fold_project(project, projects_dir, acc) do
     tasks_dir = Path.join([projects_dir, project, "tasks"])
 
-    case File.ls(tasks_dir) do
-      {:ok, files} ->
-        Enum.reduce(files, acc, fn file, inner ->
-          fold_task(Path.join(tasks_dir, file), inner)
-        end)
+    # Codex round-6 finding (PR #38, HIGH): also gate the `tasks/`
+    # subdir — same shape as PR #37's `load_project_tasks/4`
+    # follow-up fix (symlinked tasks/ subdir would otherwise
+    # enumerate cross-tenant).
+    if real_subdirectory?(Path.join(projects_dir, project), "tasks") do
+      case File.ls(tasks_dir) do
+        {:ok, files} ->
+          Enum.reduce(files, acc, fn file, inner ->
+            fold_task(Path.join(tasks_dir, file), inner)
+          end)
 
-      _ ->
-        acc
+        _ ->
+          acc
+      end
+    else
+      acc
     end
   end
 
@@ -1580,8 +1600,15 @@ defmodule GlorboWeb.CompanyLive do
     end
   end
 
+  # Codex round-6 finding (PR #38, LOW): the previous shape used
+  # bare `File.read` on agent-routed `inbox/<file>.md`; first line
+  # only is rendered but the full file was slurped. Inconsistent
+  # with the rest of the module's reads which use
+  # `AgentWritableFile.read_bounded`. Cap at 4 KiB — first line is
+  # typically <80 chars; 4 KiB is generous.
+  @first_line_cap 4_096
   defp read_first_line(path) do
-    case File.read(path) do
+    case AgentWritableFile.read_bounded(path, @first_line_cap) do
       {:ok, content} ->
         content
         |> String.split("\n", parts: 2)
@@ -1602,7 +1629,13 @@ defmodule GlorboWeb.CompanyLive do
   defp audit_last_wakes(co_path, year_month) do
     path = Path.join([co_path, "audit", "#{year_month}.jsonl"])
 
-    case File.read(path) do
+    # Codex round-6 finding (PR #38, MED): the previous shape used
+    # bare `File.read` on the audit JSONL while the sibling
+    # `read_audit_lines/1` (line 1673) already uses
+    # `AgentWritableFile.read_bounded(path, @max_audit_bytes)`. An
+    # agent that drives heavy dispatch can grow the audit file
+    # past memory and OOM the dashboard. Use the same cap.
+    case AgentWritableFile.read_bounded(path, @max_audit_bytes) do
       {:ok, content} ->
         content
         |> String.split("\n", trim: true)
@@ -1730,18 +1763,26 @@ defmodule GlorboWeb.CompanyLive do
   defp load_projects_and_tasks(co_path) do
     projects_dir = Path.join(co_path, "projects")
 
+    # Codex round-6 finding (PR #38, HIGH): the previous shape used
+    # `File.dir?` (follows symlinks) and no `Slug.valid?` gate. An
+    # agent with `projects:write` could plant
+    # `projects/evil → /etc` and the dashboard would `File.ls` +
+    # read .md files from the target. Exact parallel to the
+    # kanban_live symlink-bypass closed in PR #37. Now gates via
+    # `safe_projects/2` (slug + lstat-based real-directory check)
+    # AND `real_subdirectory?/2` for the `tasks/` subdir.
     case File.ls(projects_dir) do
       {:ok, projects} ->
-        projects = Enum.filter(projects, &File.dir?(Path.join(projects_dir, &1)))
+        projects = safe_projects(projects, projects_dir)
 
         all_tasks =
           Enum.flat_map(projects, fn p ->
-            load_project_tasks(Path.join(projects_dir, p))
+            load_project_tasks_safe(projects_dir, p)
           end)
 
         stats =
           Enum.map(projects, fn p ->
-            tasks = load_project_tasks(Path.join(projects_dir, p))
+            tasks = load_project_tasks_safe(projects_dir, p)
             build_project_stats(p, tasks)
           end)
 
@@ -1749,6 +1790,31 @@ defmodule GlorboWeb.CompanyLive do
 
       _ ->
         {[], []}
+    end
+  end
+
+  # Codex round-6 PR #38 helpers — close the symlink-bypass /
+  # missing-slug-gate finding in collect_goal_task_counts +
+  # load_projects_and_tasks. Mirror the discipline already shipped
+  # in `Glorbo.KanbanLive.load_tasks/2` (PR #37 round-5).
+  defp safe_projects(projects, projects_dir) do
+    Enum.filter(projects, &(Glorbo.Slug.valid?(&1) and real_subdirectory?(projects_dir, &1)))
+  end
+
+  defp real_subdirectory?(parent, child) do
+    case File.lstat(Path.join(parent, child)) do
+      {:ok, %File.Stat{type: :directory}} -> true
+      _ -> false
+    end
+  end
+
+  defp load_project_tasks_safe(projects_dir, project) do
+    project_dir = Path.join(projects_dir, project)
+
+    if real_subdirectory?(project_dir, "tasks") do
+      load_project_tasks(project_dir)
+    else
+      []
     end
   end
 
