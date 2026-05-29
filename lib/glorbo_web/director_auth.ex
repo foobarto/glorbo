@@ -155,6 +155,12 @@ defmodule GlorboWeb.DirectorAuth do
   defp redirect_to(conn, path) do
     conn
     |> put_resp_header("location", path)
+    # No-referrer + no-store on auth redirects: the bootstrap bounce may
+    # carry a `?token=` on the originating request, and we never want it
+    # leaking via Referer or a shared cache (codex final re-review, Low;
+    # GEP-48 token-strip precedent).
+    |> put_resp_header("referrer-policy", "no-referrer")
+    |> put_resp_header("cache-control", "no-store")
     |> put_resp_content_type("text/html")
     |> send_resp(
       302,

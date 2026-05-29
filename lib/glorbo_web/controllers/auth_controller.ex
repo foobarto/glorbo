@@ -108,6 +108,11 @@ defmodule GlorboWeb.AuthController do
           is_binary(params["token"]) ->
             conn
             |> DashboardToken.remember()
+            # Suppress the Referer so the token-bearing URL can't ride along
+            # to the bare /setup follow-up (codex final re-review, Low;
+            # matches the GEP-48 token-strip pattern).
+            |> put_resp_header("referrer-policy", "no-referrer")
+            |> put_resp_header("cache-control", "no-store")
             |> redirect(to: "/setup")
 
           true ->

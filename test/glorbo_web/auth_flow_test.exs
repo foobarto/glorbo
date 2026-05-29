@@ -96,6 +96,8 @@ defmodule GlorboWeb.AuthFlowTest do
       # the address bar), authorised thereafter by the session cookie.
       conn = get(build_conn(), "/setup?token=#{token}")
       assert redirected_to(conn) == "/setup"
+      # No Referer leak of the token URL on the follow-up (codex Low).
+      assert get_resp_header(conn, "referrer-policy") == ["no-referrer"]
 
       html = conn |> recycle() |> get("/setup") |> html_response(200)
       assert html =~ "Set your passphrase"
