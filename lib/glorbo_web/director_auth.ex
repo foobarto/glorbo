@@ -115,8 +115,9 @@ defmodule GlorboWeb.DirectorAuth do
       :bootstrap ->
         # No passphrase yet — funnel the browser to /setup, which enforces
         # the dashboard_token before it will set one. No long-lived
-        # tokenless window: every protected route bounces here.
-        conn |> redirect_to("/setup") |> halt()
+        # tokenless window: every protected route bounces here. Carry the
+        # `?token=` through so the operator's token URL survives the hop.
+        conn |> redirect_to(setup_path(conn)) |> halt()
 
       {:configured, hash} ->
         if conn_authenticated?(conn, hash) do
@@ -124,6 +125,19 @@ defmodule GlorboWeb.DirectorAuth do
         else
           conn |> redirect_to("/login") |> halt()
         end
+    end
+  end
+
+  # Carry only the `?token=` param (url-encoded) through the bootstrap
+  # bounce, so the operator's `/?token=…` URL survives the redirect to
+  # /setup where it authorises setting the passphrase. Same-origin, single
+  # param — no open-redirect or header-injection surface.
+  defp setup_path(conn) do
+    conn = fetch_query_params(conn)
+
+    case conn.query_params["token"] do
+      t when is_binary(t) and t != "" -> "/setup?token=" <> URI.encode_www_form(t)
+      _ -> "/setup"
     end
   end
 

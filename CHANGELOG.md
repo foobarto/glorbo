@@ -38,7 +38,14 @@ Landing incrementally. So far (config layer):
   `/setup`, CONFIGURED → requires the passphrase session (the token marker
   is never honoured here), DEGRADED → 503 fail-closed. The connected
   socket re-checks every 60s so a passphrase reset disconnects open tabs.
-  (Router wiring lands in the next step.)
+- The browser dashboard is now **wired behind the passphrase gate**:
+  `DirectorAuth` gates the dead render + the dashboard `live_session`
+  gates the socket; `DashboardToken` is now MCP/CLI-only (`:api` + `:mcp`)
+  — a token leak no longer grants dashboard access once a passphrase is
+  set. `/login`, first-run `/setup` (bootstrap + token-gated, single-shot),
+  and `/logout` are live, with CSRF-protected forms; on success the
+  session is rotated (anti-fixation) and `/setup` flips the running node to
+  configured without a restart.
 
 Hardening to the shared secret-write path (also covers `dashboard_token`
 + `erl_cookie`), surfaced by the GEP-0053 security review:

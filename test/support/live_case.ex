@@ -89,13 +89,16 @@ defmodule GlorboWeb.LiveCase do
 
     _ = audit_pid
 
-    # DashboardToken plug requires a bearer token on every request.
-    # Inject the test sentinel so LiveCase tests pass through the gate.
+    # The browser dashboard is behind the GEP-0053 passphrase gate
+    # (DirectorAuth, plug + on_mount). Seed a valid `director_auth` session
+    # so both the dead render and the LiveView socket mount pass. The
+    # Bearer header is kept for any :api calls a test makes.
     token = Application.get_env(:glorbo, :dashboard_token, "test-token")
 
     conn =
       Phoenix.ConnTest.build_conn()
       |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+      |> GlorboWeb.ConnCase.with_director_session()
 
     {:ok, conn: conn, base: seeded.base, company: seeded.company}
   end

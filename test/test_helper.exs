@@ -21,3 +21,15 @@ excludes =
 
 ExUnit.start(exclude: excludes)
 Ecto.Adapters.SQL.Sandbox.mode(Glorbo.Repo, :manual)
+
+# GEP-0053: the dashboard is now behind the director-passphrase gate
+# (GlorboWeb.DirectorAuth). Put the test instance in a CONFIGURED state with
+# a known passphrase so ConnCase/LiveCase can mint a matching `director_auth`
+# session and the existing dashboard suite passes the gate. Tests that need
+# BOOTSTRAP or DEGRADED override :director_password_hash per-test (saving and
+# restoring it). Rounds are pinned to 1 in config/test.exs, so this is fast.
+Application.put_env(
+  :glorbo,
+  :director_password_hash,
+  Pbkdf2.hash_pwd_salt("test-director-passphrase")
+)
