@@ -32,6 +32,13 @@ Landing incrementally. So far (config layer):
   Runtime wires `:director_password_hash` (prod + dev), with a fail-closed
   fallback when the config can't be read.
 - PBKDF2 work factor pinned: 210k rounds (OWASP) in prod, 1 in test.
+- `GlorboWeb.DirectorAuth` — the browser-auth gate. One module, two entry
+  points (a plug for the dead render + an `on_mount` hook for the LiveView
+  socket, since the socket bypasses the router pipeline). BOOTSTRAP →
+  `/setup`, CONFIGURED → requires the passphrase session (the token marker
+  is never honoured here), DEGRADED → 503 fail-closed. The connected
+  socket re-checks every 60s so a passphrase reset disconnects open tabs.
+  (Router wiring lands in the next step.)
 
 Hardening to the shared secret-write path (also covers `dashboard_token`
 + `erl_cookie`), surfaced by the GEP-0053 security review:
