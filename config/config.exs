@@ -36,6 +36,14 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# GEP-0053 — director passphrase login. PBKDF2-HMAC-SHA512 work factor.
+# 210k rounds is the OWASP 2023 minimum for PBKDF2-SHA512. `config/test.exs`
+# overrides this to 1 so the suite isn't paying 210k rounds on every login
+# assertion. The stored hash envelope (`$pbkdf2-sha512$<rounds>$…`) is the
+# source of truth for verify cost; this value only sets the cost for NEW
+# hashes (first `/setup`, and the timing-parity reference hash).
+config :pbkdf2_elixir, rounds: 210_000
+
 # Phase 3 config — LLM rate table (D-30) + proxy network policy allowlist (D-16).
 # These are loaded BEFORE the env-specific import so test/dev/prod can override.
 import_config "llm_rates.exs"

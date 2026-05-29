@@ -24,7 +24,9 @@ defmodule Glorbo.FileSpec.ConfigMd do
   def frontmatter_schema do
     %{
       required: [:kind, :secret_key_base, :dashboard_token, :erl_cookie, :host, :port],
-      optional: [:created_at],
+      # `director_password_hash` (GEP-0053) is optional — absent means
+      # BOOTSTRAP (no director passphrase set yet).
+      optional: [:director_password_hash, :created_at],
       enums: %{},
       patterns: %{},
       caps: %{}
@@ -40,6 +42,7 @@ defmodule Glorbo.FileSpec.ConfigMd do
       :erl_cookie,
       :host,
       :port,
+      :director_password_hash,
       :created_at
     ]
   end

@@ -11,9 +11,17 @@ defmodule Glorbo.Config do
       ---
       secret_key_base: <base-64 string, 64+ bytes of entropy>
       dashboard_token: <url-safe base-64, 32 bytes entropy>   # always required
+      director_password_hash: "$pbkdf2-sha512$..."            # GEP-0053, optional
       host: "127.0.0.1"                # loopback-only by default
       port: 4000
       ---
+
+  `director_password_hash` (GEP-0053) gates the *browser* dashboard with a
+  director passphrase. Absent ⇒ BOOTSTRAP (the token URL leads to
+  `/setup`); a valid `$pbkdf2-sha512$…` hash ⇒ CONFIGURED (browser
+  requires the passphrase, token is MCP/CLI-only). Set via the `/setup`
+  wizard, cleared via `glorbo reset-password`. The `dashboard_token`
+  continues to gate MCP/CLI regardless.
 
       # Glorbo configuration
       (free-form markdown notes here; the frontmatter is the contract)
@@ -37,11 +45,30 @@ defmodule Glorbo.Config do
           secret_key_base: String.t(),
           dashboard_token: String.t(),
           host: String.t(),
-          port: pos_integer()
+          port: pos_integer(),
+          director_password_hash: String.t() | nil | :malformed
         }
 
   @default_host "127.0.0.1"
   @default_port 4000
+
+  # GEP-0053: a `director_password_hash` value is one of three states:
+  #   * key ABSENT            → `nil`        (BOOTSTRAP — no passphrase set)
+  #   * a full `$pbkdf2-…$rounds$salt$hash` → kept (CONFIGURED)
+  #   * present but blank / null / structurally invalid → `:malformed`
+  #                                            (DEGRADED — fail closed)
+  # The third case is the load-bearing one (D9): a torn write or hand-edit
+  # that leaves a corrupt OR EMPTY value must NOT silently degrade to
+  # BOOTSTRAP and re-open `/setup` to a token holder. Only an entirely
+  # absent key is bootstrap; a present-but-empty key is treated as
+  # tampering. DirectorAuth treats `:malformed` as a hard deny.
+  #
+  # Validation is STRUCTURAL, not prefix-only: `$pbkdf2-sha512$garbage`
+  # must be `:malformed`, not a "valid" hash that later makes
+  # `Pbkdf2.verify_pass/2` raise on a broken envelope. Shape:
+  # `$pbkdf2-{sha256|sha512}$<rounds>$<salt>$<hash>` (segments are the
+  # crypt-base64 alphabet — no `$` or whitespace within a segment).
+  @pbkdf2_hash_regex ~r/^\$pbkdf2-sha(?:256|512)\$\d+\$[^$\s]+\$[^$\s]+$/
 
   @doc """
   Load the config map from `<base>/config.md`, creating the file with a
@@ -94,8 +121,26 @@ defmodule Glorbo.Config do
        secret_key_base: secret,
        dashboard_token: maybe_string(meta["dashboard_token"]),
        host: host,
-       port: port
+       port: port,
+       director_password_hash: coerce_password_hash(meta)
      }}
+  end
+
+  # GEP-0053 D9 — fail-closed coercion of the director passphrase hash.
+  # Takes the whole frontmatter map so it can distinguish an ABSENT key
+  # (legitimate bootstrap → nil) from a PRESENT-but-empty/null one
+  # (tampering / torn write → :malformed, NOT bootstrap).
+  defp coerce_password_hash(meta) do
+    case Map.fetch(meta, "director_password_hash") do
+      :error ->
+        nil
+
+      {:ok, val} ->
+        case maybe_string(val) do
+          nil -> :malformed
+          s -> if Regex.match?(@pbkdf2_hash_regex, s), do: s, else: :malformed
+        end
+    end
   end
 
   defp parse_port(str) do
@@ -203,6 +248,158 @@ defmodule Glorbo.Config do
   end
 
   @doc """
+  Persist the director passphrase hash to `<base>/config.md` (GEP-0053).
+
+  Called from the in-daemon `/setup` POST handler once the director sets
+  their passphrase. The hash is written as a **double-quoted** YAML scalar
+  (D16) so its leading `$` and any future envelope bytes can never corrupt
+  the frontmatter into an unparseable file. Preserves every other key +
+  the body, and reasserts mode 0600 via the atomic tmp-write.
+
+  The caller is responsible for `Application.put_env(:glorbo,
+  :director_password_hash, hash)` so the running node flips to CONFIGURED
+  immediately (D3) — this function only touches disk.
+
+  The `hash` value is opaque and MUST NOT be logged.
+  """
+  @spec put_password_hash(Path.t(), String.t()) :: :ok | {:error, term()}
+  def put_password_hash(base \\ Glorbo.Filesystem.Hierarchy.default_root(), hash)
+      when is_binary(hash) and hash != "" do
+    patch_password_hash(Path.join(base, "config.md"), hash)
+  end
+
+  defp patch_password_hash(path, hash) do
+    case File.read(path) do
+      {:ok, content} ->
+        line = ~s(director_password_hash: "#{hash}")
+
+        case put_frontmatter_line(content, "director_password_hash", line) do
+          {:ok, new_content} ->
+            atomic_write_secret!(path, new_content)
+            :ok
+
+          :error ->
+            # No parseable frontmatter — refuse rather than scribble the
+            # credential into the body (where it wouldn't be read back, so
+            # the next boot would silently revert to BOOTSTRAP). Codex r-C1
+            # finding 2.
+            {:error, :no_frontmatter}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  # Frontmatter-scoped key write. Operates ONLY on the lines between the
+  # opening fence and the first closing fence, so a key replace/insert can
+  # never touch (or be confused by) a body line that happens to start with
+  # the same key (codex r-C1 #2). Returns `:error` if `content` isn't
+  # fenced frontmatter. Line-based (not regex-replace) so the value's
+  # `$`/`\` bytes are always literal. CRLF input is normalised to LF — the
+  # whole codebase assumes LF frontmatter (`Frontmatter.parse/1`, the
+  # formatter) and `atomic_write_secret!` rewrites the file anyway, so this
+  # matches what `mix glorbo fmt` would do (codex r-C1 re-review #2).
+  defp put_frontmatter_line(content, key, new_line) do
+    case split_frontmatter(normalize_lf(content)) do
+      {:ok, inner, body} ->
+        prefix = key <> ":"
+        # Drop any existing occurrence (key line + its indented
+        # continuation lines), then append the fresh single-line value.
+        # `fmt` reorders to the canonical slot later. Append-after-drop
+        # avoids leaving orphaned block-scalar continuation lines that
+        # would corrupt the YAML (codex r-C1 round-3).
+        {kept, _found?} = drop_key_span(String.split(inner, "\n"), prefix)
+        new_inner = Enum.join(kept ++ [new_line], "\n")
+        {:ok, "---\n" <> new_inner <> "\n---\n" <> body}
+
+      :error ->
+        :error
+    end
+  end
+
+  # Frontmatter-scoped key removal (body lines untouched).
+  defp delete_frontmatter_line(content, key) do
+    case split_frontmatter(normalize_lf(content)) do
+      {:ok, inner, body} ->
+        prefix = key <> ":"
+        {kept, _found?} = drop_key_span(String.split(inner, "\n"), prefix)
+        {:ok, "---\n" <> Enum.join(kept, "\n") <> "\n---\n" <> body}
+
+      :error ->
+        :error
+    end
+  end
+
+  # Remove every line beginning `<key>:` AND its following indented
+  # continuation lines (YAML block/folded scalar bodies). Frontmatter keys
+  # live at column 0, so any subsequent space/tab-led line belongs to the
+  # preceding key's value. This keeps a (pathological, hand-authored)
+  # multiline secret value from leaving orphaned lines that would fold
+  # into a neighbouring key or break parsing. Returns `{kept_lines,
+  # found?}`.
+  defp drop_key_span(lines, prefix), do: drop_key_span(lines, prefix, [], false)
+
+  defp drop_key_span([], _prefix, acc, found?), do: {Enum.reverse(acc), found?}
+
+  defp drop_key_span([line | rest], prefix, acc, found?) do
+    if String.starts_with?(line, prefix) do
+      rest = Enum.drop_while(rest, &String.starts_with?(&1, [" ", "\t"]))
+      drop_key_span(rest, prefix, acc, true)
+    else
+      drop_key_span(rest, prefix, [line | acc], found?)
+    end
+  end
+
+  defp normalize_lf(content), do: String.replace(content, "\r\n", "\n")
+
+  # Split LF-normalised fenced frontmatter into `{inner, body}` where
+  # `inner` is the trimmed text between the opening `---` fence and the
+  # first closing `---` line (no surrounding newlines), and `body` is
+  # everything after the closing fence. Tolerates trailing spaces on the
+  # closing fence and a body that itself contains `---` (non-greedy).
+  # `:error` if `content` is not fenced frontmatter.
+  defp split_frontmatter(content) do
+    case Regex.run(~r/\A---\n(.*?)\n---[ \t]*\n(.*)\z/s, content, capture: :all_but_first) do
+      [inner, body] -> {:ok, inner, body}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Remove the director passphrase hash from `<base>/config.md` (GEP-0053).
+
+  Backs the `glorbo reset-password` recovery path: deleting the key drops
+  the instance to BOOTSTRAP on next boot so the token URL reaches `/setup`
+  again. A missing file is treated as already-bootstrap (`:ok`).
+  """
+  @spec clear_password_hash(Path.t()) :: :ok | {:error, term()}
+  def clear_password_hash(base \\ Glorbo.Filesystem.Hierarchy.default_root()) do
+    path = Path.join(base, "config.md")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case delete_frontmatter_line(content, "director_password_hash") do
+          {:ok, new_content} -> atomic_write_secret!(path, new_content)
+          # No frontmatter ⇒ nothing to clear ⇒ already bootstrap.
+          :error -> :ok
+        end
+
+        :ok
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   Return the Erlang distribution cookie for this Glorbo install.
 
   Ensures the key is present (and ≥ 16 bytes) in `<base>/config.md`; if
@@ -286,13 +483,25 @@ defmodule Glorbo.Config do
   defp atomic_write_secret!(path, content) do
     # Wave 24: random suffix + `:file.open([:exclusive])` closes the
     # predictable-tmpfile-symlink-redirect race that the `path <>
-    # ".tmp"` flow had. The exclusive-open path also opens at 0600
-    # before the write lands (matches the chmod-then-rename intent
-    # without the window where `tmp` is briefly 0644).
+    # ".tmp"` flow had.
+    #
+    # GEP-0053 codex r-C1 (re-review): `:file.open/2` does NOT honour a
+    # mode — the tmp is created at the umask default (0644). chmod-after-
+    # open is NOT enough on its own: a local user who opens the empty tmp
+    # during that 0644 instant keeps a readable fd (Unix checks perms at
+    # open, not per-read) and can then read the secret bytes we write.
+    # The robust defence is at the CONTAINING DIRECTORY: force the parent
+    # to 0700 so no other user can traverse in to open the tmp at all
+    # (the `~/.ssh` model). We still chmod the tmp 0600 as belt-and-braces
+    # in case the dir perms ever regress.
+    dir = Path.dirname(path)
+    File.chmod!(dir, 0o700)
+
     rand_suffix = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     tmp = "#{path}.tmp-#{System.unique_integer([:positive, :monotonic])}-#{rand_suffix}"
 
     {:ok, fd} = :file.open(tmp, [:write, :raw, :exclusive, :binary])
+    File.chmod!(tmp, 0o600)
 
     try do
       :ok = :file.write(fd, content)
@@ -300,7 +509,6 @@ defmodule Glorbo.Config do
       :ok = :file.close(fd)
     end
 
-    File.chmod!(tmp, 0o600)
     File.rename!(tmp, path)
   end
 end

@@ -10,6 +10,40 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security — director passphrase login (GEP-0053, in progress)
+
+Browser dashboard auth via a director passphrase (PBKDF2-HMAC-SHA512),
+distinct from the MCP/CLI `dashboard_token`. Once a passphrase is set the
+token no longer grants browser access. Specced in GEP-0053 (hardened by a
+six-lens security red-team); hashing is PBKDF2 via `pbkdf2_elixir` — pure
+Elixir, chosen over Argon2id to keep the Burrito cross-build NIF-free
+(GEP-0053 D13).
+
+Landing incrementally. So far (config layer):
+
+- `config.md` gains an optional `director_password_hash` key. Absent ⇒
+  BOOTSTRAP, a valid `$pbkdf2-sha512$…` hash ⇒ CONFIGURED, any malformed
+  value ⇒ DEGRADED (fail-closed — a corrupt byte never silently re-opens
+  setup). Written double-quoted + atomically at mode 0600; survives
+  `mix glorbo fmt`.
+- `Glorbo.Config.put_password_hash/2` + `clear_password_hash/1` patch the
+  key **frontmatter-scoped** (a body line can't divert the write) and
+  span-aware (a multiline value can't orphan lines onto a neighbour).
+  Runtime wires `:director_password_hash` (prod + dev), with a fail-closed
+  fallback when the config can't be read.
+- PBKDF2 work factor pinned: 210k rounds (OWASP) in prod, 1 in test.
+
+Hardening to the shared secret-write path (also covers `dashboard_token`
++ `erl_cookie`), surfaced by the GEP-0053 security review:
+
+- `~/.glorbo/` is now chmod'd to `0700` (was umask-default, typically
+  0755). Closes a local-user read of every secret at rest — config token,
+  password hash, `secret_key_base`, `erl_cookie`, the SQLite projection,
+  and the audit log. `atomic_write_secret!` also forces its parent dir
+  `0700` before writing, so the brief umask-default window on a freshly
+  created temp file is unreachable from other accounts (an open fd
+  survives a later chmod, so the directory is the real boundary).
+
 ### Tooling — bump Elixir 1.18.4 → 1.19.5 and OTP 28.0.2 → 28.5
 
 Latest stable on both runtimes. Picks up the security patches that

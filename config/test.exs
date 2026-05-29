@@ -58,6 +58,13 @@ config :glorbo, :serve_starts_endpoint, false
 # ConnCase/LiveCase can inject it into every conn without reading config files.
 config :glorbo, :dashboard_token, "test-token"
 
+# GEP-0053 — director passphrase login. Drop PBKDF2 to 1 round under test
+# so every /setup + /login assertion (and the DirectorAuth reference-hash
+# timing path) is fast. Test fixtures that bake a stored hash MUST be
+# generated at this same round count (GEP-0053 D13) so a 1-round dummy
+# never mixes with a 210k-round fixture.
+config :pbkdf2_elixir, rounds: 1
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

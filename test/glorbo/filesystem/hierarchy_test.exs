@@ -55,6 +55,16 @@ defmodule Glorbo.Filesystem.HierarchyTest do
       assert Bitwise.band(stat.mode, 0o777) == 0o700
     end
 
+    test "Test 3b: the workspace root itself is chmoded to 0700 (GEP-0053)" do
+      base = TmpGlorboHome.setup()
+      # Prove ensure! tightens an over-permissive root.
+      File.chmod!(base, 0o755)
+      :ok = Hierarchy.ensure!(base)
+
+      {:ok, stat} = File.stat(base)
+      assert Bitwise.band(stat.mode, 0o777) == 0o700
+    end
+
     test "Test 4: config.md — created empty when absent, content preserved when present" do
       base = TmpGlorboHome.setup()
 

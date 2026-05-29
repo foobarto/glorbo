@@ -17,14 +17,14 @@ readable only by the director.
 
 **Required:** `kind`, `secret_key_base`, `dashboard_token`, `erl_cookie`, `host`, `port`
 
-**Optional:** `created_at`
+**Optional:** `director_password_hash`, `created_at`
 
 
 ## Canonical key order
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `secret_key_base`, `dashboard_token`, `erl_cookie`, `host`, `port`, `created_at`
+`kind`, `secret_key_base`, `dashboard_token`, `erl_cookie`, `host`, `port`, `director_password_hash`, `created_at`
 
 Unknown keys fall after the known block, sorted alphabetically.
 

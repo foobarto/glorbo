@@ -31,13 +31,26 @@ defmodule Glorbo.Filesystem.Hierarchy do
   @doc """
   Materialise the `~/.glorbo/` tree rooted at `base`.
 
-  Safe to call repeatedly. The `runtime/sockets/` directory is chmoded to
-  `0o700` on every call (see Pitfall 5: uvicorn's socket is 0766 by default;
-  we defend at the containing-directory level).
+  Safe to call repeatedly. The workspace root and the `runtime/sockets/`
+  and `run/` directories are chmoded to `0o700` on every call (see Pitfall
+  5: uvicorn's socket is 0766 by default; we defend at the
+  containing-directory level). The 0700 root keeps every secret in the
+  tree (config token, password hash, secret_key_base, erl_cookie) and the
+  audit log unreadable by other local users (GEP-0053).
   """
   @spec ensure!(Path.t()) :: :ok
   def ensure!(base) when is_binary(base) do
     Enum.each(@dirs, fn d -> File.mkdir_p!(Path.join(base, d)) end)
+
+    # GEP-0053 codex r-C1: restrict the workspace root itself to 0700 (the
+    # `~/.ssh` model). The tree holds the director_password_hash, the
+    # dashboard token, secret_key_base, erl_cookie, the SQLite projection,
+    # and the append-only audit log — none of which any other local user
+    # should read or enumerate. A private root also means the brief
+    # umask-default window on a freshly-created secret tmp file
+    # (`atomic_write_secret!`) is unreachable from other accounts. Applied
+    # on every call (idempotent), parity with runtime/sockets + run/.
+    File.chmod!(base, 0o700)
 
     Enum.each(@files, fn {path, default} ->
       full = Path.join(base, path)

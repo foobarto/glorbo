@@ -16,6 +16,13 @@ history:
       grants no browser access once a passphrase is set) and folds in a
       six-lens adversarial security red-team (2 critical, 7 high
       findings) run against the locked design before drafting.
+  - date: 2026-05-29
+    status: Draft
+    note: |
+      Amended hashing from Argon2id to PBKDF2-HMAC-SHA512 (pbkdf2_elixir,
+      pure Elixir) during implementation — argon2_elixir is a build-time
+      C NIF that collides with the repo's pure-Elixir-preserves-Burrito
+      rule for the 4-target cross-build. Operator decision; see D13.
 ---
 
 # GEP-0053: Director passphrase login — browser auth distinct from the MCP/CLI token
@@ -45,9 +52,9 @@ must not grant a browser session.
 
 ## Goals
 
-- The browser dashboard requires a **director passphrase** (Argon2id
-  at rest), entered at a `/login` form, riding a signed session cookie
-  thereafter.
+- The browser dashboard requires a **director passphrase**
+  (PBKDF2-HMAC-SHA512 at rest), entered at a `/login` form, riding a
+  signed session cookie thereafter.
 - The passphrase is established through a **first-run web setup
   wizard** (`/setup`), not a CLI step or a hand-edited config file.
 - MCP and CLI keep the existing `dashboard_token` Bearer/`?token=`
@@ -95,7 +102,7 @@ browser session in CONFIGURED mode (D2).
 
 ### Auth state machine
 
-State is keyed on the presence of a **structurally valid** Argon2 hash
+State is keyed on the presence of a **structurally valid** PBKDF2 hash
 (`director_password_hash`) — not mere key presence (D9, fail-closed).
 
 **BOOTSTRAP** (no valid hash):
@@ -172,8 +179,8 @@ It runs on both the dead-render mount and the connected (WS) mount.
 ### Session marker
 
 - **Marker** = `sha256("director-session/v1|" <> hash) |> Base.url_encode64(padding: false)`
-  — a domain-separated fingerprint of the *full encoded Argon2 hash
-  string* (which embeds its own 128-bit salt). Changing or resetting the
+  — a domain-separated fingerprint of the *full encoded PBKDF2 hash
+  string* (which embeds its own random salt). Changing or resetting the
   passphrase changes the hash → changes the marker → every outstanding
   cookie falls dead (D5).
 - **Session key**: `"director_auth"`, distinct from GEP-48's
@@ -201,7 +208,7 @@ per-route `protect_from_forgery` skip is permitted** (D8) — skipping
 
 | Route | Method | Mode | Behaviour |
 |---|---|---|---|
-| `/setup` | GET/POST | BOOTSTRAP only + valid token | Sets the Argon2 hash, `renew`s + opens session, redirects in. Single-shot: re-reads disk inside the write critical section and rejects if a hash already exists (409/redirect). 404/redirect in CONFIGURED. |
+| `/setup` | GET/POST | BOOTSTRAP only + valid token | Sets the PBKDF2 hash, `renew`s + opens session, redirects in. Single-shot: re-reads disk inside the write critical section and rejects if a hash already exists (409/redirect). 404/redirect in CONFIGURED. |
 | `/login` | GET/POST | CONFIGURED only | Verifies passphrase, `renew`s + sets marker, redirects to a same-origin target. Generic error. Rate-limited *before* hashing. |
 | `/logout` | POST | any | `configure_session(conn, drop: true)`; broadcasts a socket disconnect. |
 
@@ -215,20 +222,22 @@ default (D11).
 ### Passphrase verification & timing
 
 The `/login` POST handler is the single decision point and performs
-**one Argon2-cost unit of work in every mode** (D12):
+**one PBKDF2-cost unit of work in every mode** (D12):
 
-- CONFIGURED, any passphrase: `Argon2.verify_pass(supplied, hash)`.
-- No-hash / wrong-mode path: `Argon2.verify_pass(supplied, @reference_hash)`
-  where `@reference_hash` is a compile-time constant Argon2id hash
-  generated with the **same** `t_cost`/`m_cost`/`parallelism` as
-  production — *not* `Argon2.no_user_verify/0`, whose cost is read from
-  mutable `:argon2_elixir` app-env and can desync from the stored hash's
-  envelope cost (D12).
+- CONFIGURED, any passphrase: `Pbkdf2.verify_pass(supplied, hash)`.
+- No-hash / wrong-mode path: `Pbkdf2.verify_pass(supplied, @reference_hash)`
+  where `@reference_hash` is a compile-time constant PBKDF2 hash
+  generated with the **same** round count as production — *not*
+  `Pbkdf2.no_user_verify/0`, whose cost is read from mutable
+  `:pbkdf2_elixir` app-env and can desync from the stored hash's
+  envelope rounds (D12).
 
-Cost params are **pinned** (D13): Argon2id, `t_cost: 3`, `m_cost: 16`
-(64 MiB), `parallelism: 1` (bounds peak memory and removes thread-count
-as a cross-host variable on the Burrito single binary). The stored
-hash's own envelope is the source of truth for verify cost.
+Cost is **pinned** (D13): PBKDF2-HMAC-SHA512, `rounds: 210_000` (OWASP
+2023 minimum for PBKDF2-SHA512). The stored hash's own
+`$pbkdf2-sha512$<rounds>$…` envelope is the source of truth for verify
+cost. Pure Elixir — no NIF, so the Burrito cross-build to all four
+targets is unaffected (the reason PBKDF2 was chosen over Argon2id — see
+D13).
 
 The route-level distinction (`/setup` reachable vs `/login` reachable)
 remains an observable BOOTSTRAP-vs-CONFIGURED oracle; this is an
@@ -239,13 +248,13 @@ remote attacker on a loopback single-user box) and is *not* something
 ### Rate limiting (escalating delay, no hard lockout)
 
 A single O(1) global throttle (one GenServer / one ETS row: `last_attempt`,
-`current_backoff`), consulted **before** any Argon2 call on both
+`current_backoff`), consulted **before** any PBKDF2 call on both
 `/login` and `/setup` POSTs (D14):
 
 1. On POST, read the throttle. If inside the backoff window, return the
-   generic error **immediately** (no `Process.sleep`, no Argon2) with a
+   generic error **immediately** (no `Process.sleep`, no PBKDF2) with a
    `Retry-After`-style next-allowed time.
-2. Otherwise run the single Argon2 verify; on failure, grow the backoff
+2. Otherwise run the single PBKDF2 verify; on failure, grow the backoff
    (exponential, capped at a fixed max e.g. 2–5 s); on success, clear it.
 
 **Binary lockout is rejected** (D15): on single-IP loopback the counter
@@ -255,8 +264,8 @@ attacker who reached the port) lock out the *sole* director indefinitely
 operator reaching the dashboard. The escalating delay self-clears, needs
 no escape hatch, and an exponential-backoff-capped throttle still
 reduces a brute-forcer to a handful of guesses/minute (irrelevant
-against a real passphrase + 64 MiB Argon2). No attacker-controlled value
-is ever used as a throttle key, so the table cannot grow.
+against a real passphrase + 210k-round PBKDF2). No attacker-controlled
+value is ever used as a throttle key, so the table cannot grow.
 
 ### Config storage
 
@@ -266,12 +275,13 @@ is ever used as a throttle key, so the table cannot grow.
   `canonical_key_order/0` (after `:port`, before `:created_at`) and the
   frontmatter schema as optional.
 - **`Config.coerce/1`** (`lib/glorbo/config.ex:72`): extract + validate
-  the hash shape (`^\$argon2(id|i|d)\$`); a present-but-malformed value
+  the hash shape (`^\$pbkdf2-sha512\$`); a present-but-malformed value
   is a hard error (DEGRADED), **not** `nil` (D9).
 - **Write**: always emitted as a **double-quoted** YAML scalar (extend
   `needs_quoting?/1`, `lib/glorbo/file_spec/formatter.ex:318`, to quote
-  `$`-leading values) so `mix glorbo fmt` and the patch writers can
-  never corrupt the credential into an unparseable file (D16). Reuse
+  `$`-leading values — the PBKDF2 hash is `$pbkdf2-sha512$…`) so `mix
+  glorbo fmt` and the patch writers can never corrupt the credential into
+  an unparseable file (D16). Reuse
   `atomic_write_secret!/2` (`config.ex:286` — `:exclusive` open, chmod
   0600, atomic rename).
 - **App-env wiring**: `config/runtime.exs` gains
@@ -334,22 +344,23 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
    first browser visit → `/setup`.
 3. `dashboard_token` semantics for MCP/CLI are **unchanged** — no client
    reconfiguration.
-4. `add_dep argon2_elixir` to `mix.exs`. Add
-   `config :argon2_elixir, t_cost: 1, m_cost: 8` to `config/test.exs`
-   and generate test fixtures' hashes at those same params (D13, so a
-   t:1 dummy never mixes with a t:3 fixture).
+4. Add `{:pbkdf2_elixir, "~> 2.2"}` (pure Elixir, no NIF) to `mix.exs`.
+   Set `config :pbkdf2_elixir, rounds: 210_000` in `config/config.exs`
+   and override `rounds: 1` in `config/test.exs`; generate test fixtures'
+   hashes at `rounds: 1` (D13, so a fast dummy never mixes with a
+   high-rounds fixture).
 5. No `reindex` needed — `config.md` is not a derived projection.
 
 ## Failure modes
 
 | Failure | Surfacing | Mitigation |
 |---|---|---|
-| **Malformed/blanked hash** in `config.md` | DEGRADED 503 + "run glorbo reset-password" | Validate `$argon2…$` shape; fail closed, never downgrade to BOOTSTRAP (D9) |
+| **Malformed/blanked hash** in `config.md` | DEGRADED 503 + "run glorbo reset-password" | Validate `$pbkdf2-sha512$…` shape; fail closed, never downgrade to BOOTSTRAP (D9) |
 | **`config.md` unparseable** post-configuration | Fatal boot / 503 | No ephemeral tokenless fallback once a hash existed (D10) |
 | **`reset-password` while daemon running** | CLI refuses, prints "stop server" | Daemon re-reads on next boot; in-place reset is no-op otherwise (D17) |
 | **Leaked session cookie** | — | 14-day cap + 72h idle timeout; "change passphrase" rotates the marker and kills all cookies. `store: :cookie` gives no instant server-side revoke — GEP-49's server-side store would (see-also) |
 | **Live socket survives logout/reset** | — | `on_mount` revalidation timer (~60 s) re-checks the marker and disconnects; logout broadcasts a socket disconnect (D1) |
-| **`/login` flood** | — | Throttle rejects pre-Argon2; no CPU burned for throttled attempts; immediate rejection holds no connection (D14) |
+| **`/login` flood** | — | Throttle rejects pre-PBKDF2; no CPU burned for throttled attempts; immediate rejection holds no connection (D14) |
 | **DoS-by-lockout** | — | No hard lockout — escalating delay self-clears (D15) |
 | **Plain HTTP on LAN** (`host: 0.0.0.0`) | — | No `Secure` flag → cookie sniffable in transit. Loud startup warning when `host != 127.0.0.1`; operator must set `PHX_HOST` so `check_origin` matches, and is warned that director sessions are unprotected without TLS. Default bind stays loopback (D20) |
 | **Passphrase in logs/crash dump** | — | Add `password`/`passphrase`/`new_passphrase` to `:phoenix, :filter_parameters`; controller never assigns/sessions/echoes the plaintext; recommend `ERL_CRASH_DUMP` to a 0600 path or `/dev/null` (D21) |
@@ -376,10 +387,10 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
   403/invalid; **with** the token → success (proves the form embeds it).
 - **Single-shot `/setup`**: a second POST (concurrent or later) is
   rejected by the in-write-critical-section re-read.
-- **Throttle**: the (N+1)th rapid attempt is rejected **before** Argon2
+- **Throttle**: the (N+1)th rapid attempt is rejected **before** PBKDF2
   (assert no hash cost incurred); backoff self-clears; success clears it.
-- **Timing**: `/login` performs one Argon2 verify in both no-hash and
-  wrong-pass modes (reference hash, matching params).
+- **Timing**: `/login` performs one PBKDF2 verify in both no-hash and
+  wrong-pass modes (reference hash, matching rounds).
 - **CSRF/GET**: `GET /companies/:c/dms/:agent` creates **no** file;
   `return_to=//evil.tld` and `=https://evil.tld` both land on
   `/companies`.
@@ -473,8 +484,8 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
   are the app's first dead-render POST forms, so the precedent matters.
 
 ### D9. Malformed hash fails closed
-- **Decided:** validate `$argon2…$` shape; present-but-invalid → DEGRADED
-  deny, never `nil`/BOOTSTRAP.
+- **Decided:** validate `$pbkdf2-sha512$…` shape; present-but-invalid →
+  DEGRADED deny, never `nil`/BOOTSTRAP.
 - **Alternatives:** `maybe_string` mapping `""`→`nil` (current coerce
   behaviour) → silent fail-open.
 - **Why:** a corrupt byte must not drop the passphrase wall. (Red-team
@@ -494,29 +505,35 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
   phishing pivot; the same guard already exists for the token strip and
   in `kanban_live`.
 
-### D12. `/login` does one Argon2 unit in every mode; reference hash, not `no_user_verify`
+### D12. `/login` does one PBKDF2 unit in every mode; reference hash, not `no_user_verify`
 - **Decided:** verify against the stored hash when present, else against a
-  compile-time reference hash built with the same params. The
+  compile-time reference hash built with the same rounds. The
   route-level BOOTSTRAP/CONFIGURED distinction is an accepted, documented
   oracle.
-- **Alternatives:** `Argon2.no_user_verify/0` (cost from mutable app-env
-  → can desync from the stored hash's envelope cost).
+- **Alternatives:** `Pbkdf2.no_user_verify/0` (cost from mutable app-env
+  → can desync from the stored hash's envelope rounds).
 - **Why:** keeps wrong-pass and no-hash timing identical regardless of
   cost-config drift; stops over-claiming what timing-flattening achieves.
 
-### D13. Argon2 params pinned, test params separate
-- **Decided:** Argon2id `t_cost: 3`, `m_cost: 16` (64 MiB),
-  `parallelism: 1`; tests run `t_cost: 1, m_cost: 8` with fixtures hashed
-  at those params.
-- **Why:** meets OWASP minimums, bounds peak memory on heterogeneous
-  Burrito hosts, removes thread-count as a cross-host variable, keeps the
-  suite fast.
+### D13. PBKDF2 over Argon2id (pure Elixir preserves Burrito); rounds pinned
+- **Decided:** PBKDF2-HMAC-SHA512 via `pbkdf2_elixir`, `rounds: 210_000`
+  (OWASP 2023 min for PBKDF2-SHA512); tests run `rounds: 1` with fixtures
+  hashed at `rounds: 1`.
+- **Alternatives:** Argon2id via `argon2_elixir` (the original spec) —
+  stronger (memory-hard) but a build-time C NIF, which collides with the
+  repo's "pure-Elixir preserves Burrito" rule for the 4-target
+  (incl. macOS) cross-build; the lone shipped NIF (`exqlite`) relies on
+  precompiled binaries that `argon2_elixir` lacks.
+- **Why:** for a 0600 local single-user passphrase the threat model is
+  largely local, so PBKDF2's lack of memory-hardness costs little, while
+  pure Elixir removes all Burrito cross-compile risk. Operator decision
+  on 2026-05-29 (amended this GEP from Argon2id).
 
-### D14. Rate-limit gates before Argon2; immediate rejection, no in-request sleep
+### D14. Rate-limit gates before PBKDF2; immediate rejection, no in-request sleep
 - **Decided:** throttle consulted first on `/login` and `/setup`;
   throttled attempts return immediately with a next-allowed time and run
-  zero Argon2.
-- **Alternatives:** verify-then-throttle (every attempt pays Argon2);
+  zero PBKDF2.
+- **Alternatives:** verify-then-throttle (every attempt pays PBKDF2);
   `Process.sleep` in-request (holds a Bandit process → connection
   exhaustion).
 - **Why:** the limiter must protect the CPU it exists to protect.
@@ -568,7 +585,7 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
 
 ### D21. Passphrase plaintext discipline
 - **Decided:** filter `password`/`passphrase`/`new_passphrase` from
-  Phoenix param logging; controller holds no copy beyond the Argon2 call;
+  Phoenix param logging; controller holds no copy beyond the PBKDF2 call;
   recommend a guarded `ERL_CRASH_DUMP`.
 - **Why:** matches the existing secret-handling discipline (T-04-05) for
   the new credential.
