@@ -65,6 +65,11 @@ config :glorbo, :dashboard_token, "test-token"
 # never mixes with a 210k-round fixture.
 config :pbkdf2_elixir, rounds: 1
 
+# GEP-0053: small throttle params so escalation-order assertions are fast.
+# Tests reset GlorboWeb.LoginThrottle in setup; only the auth-flow suite
+# exercises /login.
+config :glorbo, GlorboWeb.LoginThrottle, base_ms: 100, max_ms: 5_000, free_attempts: 0
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

@@ -13,6 +13,10 @@ defmodule GlorboWeb.AuthFlowTest do
   import Phoenix.LiveViewTest
 
   setup do
+    # The login throttle is a global GenServer; clear it so prior failures
+    # in other tests don't bleed in.
+    GlorboWeb.LoginThrottle.reset()
+
     # Tests here flip auth state; snapshot + restore the global hash.
     original = Application.get_env(:glorbo, :director_password_hash)
 
@@ -123,6 +127,19 @@ defmodule GlorboWeb.AuthFlowTest do
       conn = submit(build_conn(), "/login", "/login", %{"passphrase" => "nope-wrong"})
       assert html_response(conn, 200) =~ "Incorrect passphrase"
       assert get_session(conn, GlorboWeb.DirectorAuth.session_key()) == nil
+    end
+
+    test "is throttled after repeated failures — pre-PBKDF2, so a correct passphrase is still rejected (D14)" do
+      # Engage the throttle directly (deterministic — no racing the window).
+      for _ <- 1..10, do: GlorboWeb.LoginThrottle.record_failure()
+
+      # Even the CORRECT passphrase is rejected, proving the throttle gates
+      # BEFORE the verify (no hashing cost burned while throttled).
+      conn =
+        submit(build_conn(), "/login", "/login", %{"passphrase" => "test-director-passphrase"})
+
+      assert html_response(conn, 200) =~ "Too many attempts"
+      refute get_session(conn, GlorboWeb.DirectorAuth.session_key())
     end
 
     test "POST without the CSRF token is rejected (protect_from_forgery, D8)" do

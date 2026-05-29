@@ -44,6 +44,15 @@ Landing incrementally. So far (config layer):
   until the director's first message, which materialises the file on the
   CSRF-protected socket event (`Glorbo.Actions.ensure_dm_channel/3`). This
   was the only state-changing GET in the router (D19).
+- **`/login` brute-force throttle** (`GlorboWeb.LoginThrottle`): an
+  escalating per-failure delay (capped), consulted *before* the PBKDF2
+  verify so a throttled attempt burns zero hashing cost and holds no
+  connection. Deliberately **no hard lockout** — a lockout on a single-user
+  loopback box is a self-inflicted DoS; the delay self-clears, so the
+  director gets in after one short backoff while a brute-forcer is reduced
+  to a few guesses/minute (irrelevant against a real passphrase + 210k-round
+  PBKDF2). `/setup` needs no throttle — it's single-shot, so at most one
+  hash is ever computed.
 - The browser dashboard is now **wired behind the passphrase gate**:
   `DirectorAuth` gates the dead render + the dashboard `live_session`
   gates the socket; `DashboardToken` is now MCP/CLI-only (`:api` + `:mcp`)

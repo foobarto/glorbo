@@ -28,6 +28,7 @@ defmodule GlorboWeb.AuthController do
   alias Glorbo.Config
   alias Glorbo.Filesystem.Hierarchy
   alias GlorboWeb.DirectorAuth
+  alias GlorboWeb.LoginThrottle
   alias GlorboWeb.Plugs.DashboardToken
 
   @min_passphrase 8
@@ -47,16 +48,7 @@ defmodule GlorboWeb.AuthController do
 
     case DirectorAuth.auth_state() do
       {:configured, hash} ->
-        if is_binary(passphrase) and Pbkdf2.verify_pass(passphrase, hash) do
-          conn
-          |> establish_director_session(hash)
-          |> redirect(to: "/")
-        else
-          # Generic error — never reveal whether the passphrase was close.
-          conn
-          |> put_flash(:error, "Incorrect passphrase.")
-          |> render_login()
-        end
+        verify_and_respond(conn, passphrase, hash)
 
       :bootstrap ->
         redirect(conn, to: "/setup")
@@ -65,6 +57,36 @@ defmodule GlorboWeb.AuthController do
         degraded(conn)
     end
   end
+
+  # D14: consult the throttle BEFORE the PBKDF2 verify, so a throttled
+  # attempt burns zero hashing cost and holds no connection (immediate
+  # rejection, never a sleep).
+  defp verify_and_respond(conn, passphrase, hash) do
+    case LoginThrottle.check() do
+      {:throttled, retry_ms} ->
+        conn
+        |> put_flash(:error, "Too many attempts — wait #{ceil_seconds(retry_ms)}s and try again.")
+        |> render_login()
+
+      :ok ->
+        if is_binary(passphrase) and Pbkdf2.verify_pass(passphrase, hash) do
+          LoginThrottle.record_success()
+
+          conn
+          |> establish_director_session(hash)
+          |> redirect(to: "/")
+        else
+          LoginThrottle.record_failure()
+
+          # Generic error — never reveal whether the passphrase was close.
+          conn
+          |> put_flash(:error, "Incorrect passphrase.")
+          |> render_login()
+        end
+    end
+  end
+
+  defp ceil_seconds(ms), do: max(1, div(ms + 999, 1000))
 
   # ── /setup ───────────────────────────────────────────────────────────────
 

@@ -134,6 +134,9 @@ defmodule Glorbo.Application do
        strategy: :one_for_one,
        max_restarts: 100,
        max_children: 256},
+      # GEP-0053 D14/D15: escalating-delay throttle for /login passphrase
+      # attempts. O(1) global state; must be up before the Endpoint serves.
+      GlorboWeb.LoginThrottle,
       GlorboWeb.Endpoint
     ]
 
