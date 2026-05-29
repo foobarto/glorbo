@@ -127,6 +127,44 @@ defmodule Glorbo.Actions do
     end
   end
 
+  @doc """
+  Create the Director↔agent DM channel file
+  (`channels/dm-director--<agent>.md`) with its canonical `channel-log/v1`
+  header, if it does not already exist. Idempotent.
+
+  GEP-0053 D19: DM channel files are created **lazily on the first director
+  message** (a CSRF-protected LiveView/WS event) — never on the
+  `GET /companies/:co/dms/:agent` redirect, which is forgeable under
+  `SameSite=Lax`. `ChannelLive` renders an empty DM thread until this runs.
+  """
+  @spec ensure_dm_channel(String.t(), String.t(), keyword()) :: ok_or_err
+  def ensure_dm_channel(company, agent, opts \\ []) do
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+
+    with :ok <- validate_slug(company),
+         :ok <- validate_slug(agent) do
+      slug = "dm-director--#{agent}"
+      channels_dir = Path.join([base, "companies", company, "channels"])
+      path = Path.join(channels_dir, "#{slug}.md")
+
+      if File.exists?(path) do
+        :ok
+      else
+        header = """
+        ---
+        kind: channel-log/v1
+        channel: #{slug}
+        ---
+        # DM · director ↔ #{agent}
+        """
+
+        with :ok <- File.mkdir_p(channels_dir) do
+          File.write(path, header)
+        end
+      end
+    end
+  end
+
   @task_path_re ~r{\Aprojects/[a-z0-9-]+/tasks/[a-z0-9-]+\.md\z}
 
   @doc """

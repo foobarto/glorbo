@@ -49,6 +49,35 @@ defmodule GlorboWeb.ActionsTest do
     %{base: base, audit: audit}
   end
 
+  describe "ensure_dm_channel/3 (GEP-0053 D19 — lazy DM creation)" do
+    test "creates the DM file with the canonical channel-log header", %{base: base} do
+      assert :ok = Glorbo.Actions.ensure_dm_channel("acme", "ceo", base: base)
+
+      path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+      assert File.exists?(path)
+      content = File.read!(path)
+      assert content =~ "kind: channel-log/v1"
+      assert content =~ "channel: dm-director--ceo"
+      assert content =~ "DM · director ↔ ceo"
+    end
+
+    test "is idempotent — never clobbers an existing thread", %{base: base} do
+      path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+
+      existing =
+        "---\nkind: channel-log/v1\nchannel: dm-director--ceo\n---\n# DM · director ↔ ceo\n\n## 2026-01-01T00:00:00Z | director\nhi\n"
+
+      File.write!(path, existing)
+
+      assert :ok = Glorbo.Actions.ensure_dm_channel("acme", "ceo", base: base)
+      assert File.read!(path) == existing
+    end
+
+    test "rejects an invalid agent slug (no traversal)", %{base: base} do
+      assert {:error, _} = Glorbo.Actions.ensure_dm_channel("acme", "../etc", base: base)
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # post_message/4
   # ---------------------------------------------------------------------------

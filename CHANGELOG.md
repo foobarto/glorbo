@@ -38,6 +38,12 @@ Landing incrementally. So far (config layer):
   `/setup`, CONFIGURED → requires the passphrase session (the token marker
   is never honoured here), DEGRADED → 503 fail-closed. The connected
   socket re-checks every 60s so a passphrase reset disconnects open tabs.
+- **CSRF: no GET mutates state.** `GET /companies/:c/dms/:agent` no longer
+  writes a DM channel file (a state-changing GET is forgeable under
+  `SameSite=Lax`); it's now a pure redirect. The DM thread renders empty
+  until the director's first message, which materialises the file on the
+  CSRF-protected socket event (`Glorbo.Actions.ensure_dm_channel/3`). This
+  was the only state-changing GET in the router (D19).
 - The browser dashboard is now **wired behind the passphrase gate**:
   `DirectorAuth` gates the dead render + the dashboard `live_session`
   gates the socket; `DashboardToken` is now MCP/CLI-only (`:api` + `:mcp`)
