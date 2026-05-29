@@ -50,6 +50,22 @@ defmodule GlorboWeb.AuthFlowTest do
     end
   end
 
+  describe "live socket re-validation (D1)" do
+    test "a passphrase change disconnects an already-open tab on the next re-check", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies")
+
+      # Simulate a passphrase reset/change while the tab is open: the live
+      # hash no longer matches the marker the socket mounted with.
+      Application.put_env(:glorbo, :director_password_hash, Pbkdf2.hash_pwd_salt("rotated"))
+
+      # Fire the periodic re-check the on_mount hook armed (the real timer
+      # fires every 60s; we trigger it directly).
+      send(view.pid, :director_revalidate)
+
+      assert_redirect(view, "/login")
+    end
+  end
+
   describe "/login" do
     test "renders the form with a CSRF token (CONFIGURED)", %{anon: anon} do
       html = anon |> get("/login") |> html_response(200)
