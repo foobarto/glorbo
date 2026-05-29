@@ -55,6 +55,8 @@ defmodule GlorboWeb.DirectorAuth do
 
   import Plug.Conn
 
+  alias GlorboWeb.Plugs.DashboardToken
+
   require Logger
 
   # Session key holding the passphrase-session fingerprint. Distinct from
@@ -115,9 +117,11 @@ defmodule GlorboWeb.DirectorAuth do
       :bootstrap ->
         # No passphrase yet — funnel the browser to /setup, which enforces
         # the dashboard_token before it will set one. No long-lived
-        # tokenless window: every protected route bounces here. Carry the
-        # `?token=` through so the operator's token URL survives the hop.
-        conn |> redirect_to(setup_path(conn)) |> halt()
+        # tokenless window: every protected route bounces here. If a valid
+        # token is present, stash it in the session and redirect to a BARE
+        # /setup so the raw token leaves the URL (GEP-49 / codex Low) rather
+        # than riding through in `?token=`.
+        conn |> maybe_remember_token() |> redirect_to("/setup") |> halt()
 
       {:configured, hash} ->
         if conn_authenticated?(conn, hash) do
@@ -128,17 +132,12 @@ defmodule GlorboWeb.DirectorAuth do
     end
   end
 
-  # Carry only the `?token=` param (url-encoded) through the bootstrap
-  # bounce, so the operator's `/?token=…` URL survives the redirect to
-  # /setup where it authorises setting the passphrase. Same-origin, single
-  # param — no open-redirect or header-injection surface.
-  defp setup_path(conn) do
-    conn = fetch_query_params(conn)
-
-    case conn.query_params["token"] do
-      t when is_binary(t) and t != "" -> "/setup?token=" <> URI.encode_www_form(t)
-      _ -> "/setup"
-    end
+  # Stash a valid bootstrap token into the session so the subsequent bare
+  # /setup authorises off the session cookie, keeping the raw token out of
+  # the redirect Location + the address bar (GEP-49). No-op if no valid
+  # token is present (the bare /setup then 401s).
+  defp maybe_remember_token(conn) do
+    if DashboardToken.authorized?(conn), do: DashboardToken.remember(conn), else: conn
   end
 
   defp conn_authenticated?(conn, hash) do

@@ -58,11 +58,14 @@ defmodule GlorboWeb.AuthController do
     end
   end
 
-  # D14: consult the throttle BEFORE the PBKDF2 verify, so a throttled
-  # attempt burns zero hashing cost and holds no connection (immediate
-  # rejection, never a sleep).
+  # D14: atomically reserve-or-reject BEFORE the PBKDF2 verify, so a
+  # throttled attempt burns zero hashing cost and holds no connection
+  # (immediate rejection, never a sleep). `reserve/0` pre-records this
+  # attempt as a pending failure in the same serialized call that grants
+  # it, so a parallel burst can't all slip past the gate — only this
+  # attempt reaches the verify per backoff window.
   defp verify_and_respond(conn, passphrase, hash) do
-    case LoginThrottle.check() do
+    case LoginThrottle.reserve() do
       {:throttled, retry_ms} ->
         conn
         |> put_flash(:error, "Too many attempts — wait #{ceil_seconds(retry_ms)}s and try again.")
@@ -70,15 +73,16 @@ defmodule GlorboWeb.AuthController do
 
       :ok ->
         if is_binary(passphrase) and Pbkdf2.verify_pass(passphrase, hash) do
+          # Clear the pre-recorded failure — a correct passphrase resets it.
           LoginThrottle.record_success()
 
           conn
           |> establish_director_session(hash)
           |> redirect(to: "/")
         else
-          LoginThrottle.record_failure()
-
-          # Generic error — never reveal whether the passphrase was close.
+          # Leave the pre-recorded failure in place — it escalates the
+          # backoff. Generic error — never reveal whether the passphrase
+          # was close.
           conn
           |> put_flash(:error, "Incorrect passphrase.")
           |> render_login()
@@ -90,17 +94,26 @@ defmodule GlorboWeb.AuthController do
 
   # ── /setup ───────────────────────────────────────────────────────────────
 
-  def setup_form(conn, _params) do
+  def setup_form(conn, params) do
     case DirectorAuth.auth_state() do
       :bootstrap ->
-        if DashboardToken.authorized?(conn) do
-          # Remember the token in the session so the POST need not re-carry
-          # it (keeps the raw token out of the rendered form's HTML).
-          conn
-          |> DashboardToken.remember()
-          |> render_setup()
-        else
-          unauthorized(conn)
+        cond do
+          not DashboardToken.authorized?(conn) ->
+            unauthorized(conn)
+
+          # Token supplied via the URL query → stash it in the session and
+          # redirect to a BARE /setup, so the raw token leaves the address
+          # bar (GEP-49 / codex Low). The redirected GET authorises off the
+          # session cookie; the form's POST does too — no token in the HTML.
+          is_binary(params["token"]) ->
+            conn
+            |> DashboardToken.remember()
+            |> redirect(to: "/setup")
+
+          true ->
+            conn
+            |> DashboardToken.remember()
+            |> render_setup()
         end
 
       {:configured, _hash} ->
@@ -134,44 +147,17 @@ defmodule GlorboWeb.AuthController do
     end
   end
 
-  # Single-shot commit (D7). The reload→check→write runs inside a
-  # `:global.trans` lock so two concurrent bootstrap POSTs can't both pass
-  # the "no hash yet" check and double-write — the second waits, then sees
-  # the hash and refuses (codex r-C2b #2). Glorbo is single-node loopback,
-  # so the global lock is effectively a local mutex.
-  #
-  # Writes ONLY when the reloaded on-disk value is exactly `nil` (genuine
-  # bootstrap). A `:malformed` value is DEGRADED — never overwrite it from
-  # /setup; fail closed and route the operator to `reset-password` (codex
-  # r-C2b #1). A present binary hash means we lost the race / it's already
-  # configured → /login.
+  # Single-shot commit (D7). The atomic compare-and-set lives in
+  # `Config.put_password_hash_if_absent/2` (node-global lock): it writes
+  # ONLY when disk has no hash, refuses (`:already_set`) if one is already
+  # there (we lost the race / already configured), and fails closed
+  # (`:degraded`) on a `:malformed` disk value — never overwriting it.
   defp commit_setup(conn, passphrase) do
     base = Hierarchy.default_root()
+    hash = Pbkdf2.hash_pwd_salt(passphrase)
 
-    outcome =
-      :global.trans({:glorbo_director_setup, self()}, fn ->
-        case Config.load(base) do
-          {:ok, %{director_password_hash: nil}} ->
-            hash = Pbkdf2.hash_pwd_salt(passphrase)
-
-            case Config.put_password_hash(base, hash) do
-              :ok -> {:ok, hash}
-              {:error, reason} -> {:write_error, reason}
-            end
-
-          {:ok, %{director_password_hash: :malformed}} ->
-            :degraded
-
-          {:ok, %{director_password_hash: hash}} when is_binary(hash) ->
-            :already_configured
-
-          {:error, reason} ->
-            {:read_error, reason}
-        end
-      end)
-
-    case outcome do
-      {:ok, hash} ->
+    case Config.put_password_hash_if_absent(base, hash) do
+      :ok ->
         # D3: flip the running node to CONFIGURED immediately.
         Application.put_env(:glorbo, :director_password_hash, hash)
 
@@ -179,20 +165,15 @@ defmodule GlorboWeb.AuthController do
         |> establish_director_session(hash)
         |> redirect(to: "/")
 
-      :already_configured ->
+      :already_set ->
         redirect(conn, to: "/login")
 
       :degraded ->
         degraded(conn)
 
-      {:write_error, _reason} ->
+      {:error, _reason} ->
         conn
         |> put_flash(:error, "Could not save the passphrase. Check the Glorbo logs.")
-        |> render_setup()
-
-      {:read_error, _reason} ->
-        conn
-        |> put_flash(:error, "Could not read configuration. Check the Glorbo logs.")
         |> render_setup()
     end
   end

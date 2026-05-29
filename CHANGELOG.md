@@ -12,6 +12,24 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Security — director passphrase login (GEP-0053, in progress)
 
+Post-implementation hardening from a final full-auth-surface review:
+
+- **`/login` parallel-burst gate.** The throttle's check+record is now one
+  atomic `reserve/0` call, so a burst of concurrent `/login` requests can't
+  all slip past the pre-PBKDF2 gate (only one verify proceeds per backoff
+  window). A throttled attempt no longer ratchets the delay — a flood can't
+  extend the operator's own lockout.
+- **`/setup` single-shot is now atomic** (`Config.put_password_hash_if_absent/2`
+  under a node-global lock; proven by a concurrency test) — concurrent
+  bootstrap POSTs can't double-write; the loser sees `:already_set`.
+- **`/api/search` is gated by the passphrase session, not the token** — a
+  `dashboard_token` holder without the passphrase can no longer enumerate
+  task titles once a passphrase is set.
+- **Bootstrap token stripped from the `/setup` URL** — a `?token=` is
+  stashed in the session and the request 302s to a bare `/setup`, keeping
+  the raw token out of the address bar / history / Referer.
+
+
 Browser dashboard auth via a director passphrase (PBKDF2-HMAC-SHA512),
 distinct from the MCP/CLI `dashboard_token`. Once a passphrase is set the
 token no longer grants browser access. Specced in GEP-0053 (hardened by a

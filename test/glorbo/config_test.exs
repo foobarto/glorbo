@@ -527,6 +527,46 @@ defmodule Glorbo.ConfigTest do
       assert {:ok, %{director_password_hash: ^hash, port: 4000}} = Config.load(base)
     end
 
+    test "put_password_hash_if_absent is single-shot under concurrency — one writer wins (D7)" do
+      base = TmpGlorboHome.setup()
+      {:ok, _} = Config.load(base)
+
+      results =
+        1..10
+        |> Task.async_stream(
+          fn i -> Config.put_password_hash_if_absent(base, Pbkdf2.hash_pwd_salt("pw-#{i}")) end,
+          max_concurrency: 10,
+          ordered: false
+        )
+        |> Enum.map(fn {:ok, r} -> r end)
+
+      # Proves the :global.trans({_, self()}) mutex serializes concurrent
+      # setup commits: exactly one task sees "no hash" and writes; the other
+      # nine see the freshly-written hash and get :already_set.
+      assert Enum.count(results, &(&1 == :ok)) == 1
+      assert Enum.count(results, &(&1 == :already_set)) == 9
+
+      assert {:ok, %{director_password_hash: stored}} = Config.load(base)
+      assert is_binary(stored)
+    end
+
+    test "put_password_hash_if_absent fails closed on a :malformed disk value (D9)" do
+      base = TmpGlorboHome.setup()
+      write_config(base, ~s(director_password_hash: "garbage-not-a-hash"))
+
+      assert :degraded = Config.put_password_hash_if_absent(base, pbkdf2_hash())
+      # Never overwritten — still malformed.
+      assert {:ok, %{director_password_hash: :malformed}} = Config.load(base)
+    end
+
+    test "put_password_hash_if_absent returns :already_set when a hash is present" do
+      base = TmpGlorboHome.setup()
+      {:ok, _} = Config.load(base)
+      :ok = Config.put_password_hash(base, pbkdf2_hash())
+
+      assert :already_set = Config.put_password_hash_if_absent(base, pbkdf2_hash())
+    end
+
     test "a hash-bearing config.md is a Formatter fixpoint + hash stays quoted (D16)" do
       base = TmpGlorboHome.setup()
       {:ok, _} = Config.load(base)

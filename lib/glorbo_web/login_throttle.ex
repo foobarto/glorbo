@@ -40,15 +40,25 @@ defmodule GlorboWeb.LoginThrottle do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @doc "Permit or reject the next attempt. Call BEFORE the PBKDF2 verify."
-  @spec check() :: :ok | {:throttled, non_neg_integer()}
-  def check, do: GenServer.call(__MODULE__, :check)
+  @doc """
+  Atomically permit-or-reject the next attempt AND pre-record it as a
+  pending failure, in one GenServer call. Call BEFORE the PBKDF2 verify.
 
-  @doc "Record a failed attempt — grows the backoff."
-  @spec record_failure() :: :ok
-  def record_failure, do: GenServer.call(__MODULE__, :record_failure)
+  This is a single call (not `check` + later `record_failure`) on purpose:
+  a burst of N parallel `/login` requests would otherwise all pass an
+  independent `check/0` before any of them recorded a failure, and all N
+  would run PBKDF2 concurrently — bypassing the pre-hash gate (codex final
+  review, High). Because the increment happens inside the same serialized
+  GenServer call that returns `:ok`, the FIRST concurrent reserver gets
+  `:ok` and bumps the backoff; the rest see it and get `{:throttled, …}`,
+  so at most one verify proceeds per backoff window. On a correct
+  passphrase the caller then calls `record_success/0` to clear the
+  pre-recorded failure.
+  """
+  @spec reserve() :: :ok | {:throttled, non_neg_integer()}
+  def reserve, do: GenServer.call(__MODULE__, :reserve)
 
-  @doc "Record a success — clears the backoff."
+  @doc "Clear the backoff after a successful verify."
   @spec record_success() :: :ok
   def record_success, do: GenServer.call(__MODULE__, :record_success)
 
@@ -73,28 +83,31 @@ defmodule GlorboWeb.LoginThrottle do
   end
 
   @impl true
-  def handle_call(:check, _from, state) do
+  def handle_call(:reserve, _from, state) do
     now = now_ms()
 
-    reply =
-      if now < state.next_allowed_at, do: {:throttled, state.next_allowed_at - now}, else: :ok
+    if now < state.next_allowed_at do
+      # Inside the backoff window — reject WITHOUT bumping (so a flood of
+      # rejected attempts can't ratchet the delay to the cap and lock the
+      # operator out longer than the legitimate escalation).
+      {:reply, {:throttled, state.next_allowed_at - now}, state}
+    else
+      # Permit this attempt and pre-record it as a pending failure. Concurrent
+      # reservers serialize through this call: the next one sees the bumped
+      # next_allowed_at and is throttled, so only this attempt reaches PBKDF2.
+      fails = state.fails + 1
 
-    {:reply, reply, state}
-  end
+      next_allowed_at =
+        if fails <= state.free do
+          state.next_allowed_at
+        else
+          exp = min(fails - state.free - 1, @max_exponent)
+          delay = min(state.base_ms * Integer.pow(2, exp), state.max_ms)
+          now + delay
+        end
 
-  def handle_call(:record_failure, _from, state) do
-    fails = state.fails + 1
-
-    next_allowed_at =
-      if fails <= state.free do
-        state.next_allowed_at
-      else
-        exp = min(fails - state.free - 1, @max_exponent)
-        delay = min(state.base_ms * Integer.pow(2, exp), state.max_ms)
-        now_ms() + delay
-      end
-
-    {:reply, :ok, %{state | fails: fails, next_allowed_at: next_allowed_at}}
+      {:reply, :ok, %{state | fails: fails, next_allowed_at: next_allowed_at}}
+    end
   end
 
   def handle_call(:record_success, _from, state) do

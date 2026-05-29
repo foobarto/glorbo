@@ -89,9 +89,15 @@ defmodule GlorboWeb.AuthFlowTest do
       :ok
     end
 
-    test "renders with a valid dashboard_token", %{anon: anon} do
+    test "a URL token is stashed in the session + stripped via redirect, then the form renders" do
       token = Application.get_env(:glorbo, :dashboard_token, "test-token")
-      html = anon |> get("/setup?token=#{token}") |> html_response(200)
+
+      # GEP-0053 / codex Low: ?token= → 302 to a BARE /setup (token leaves
+      # the address bar), authorised thereafter by the session cookie.
+      conn = get(build_conn(), "/setup?token=#{token}")
+      assert redirected_to(conn) == "/setup"
+
+      html = conn |> recycle() |> get("/setup") |> html_response(200)
       assert html =~ "Set your passphrase"
       assert html =~ "_csrf_token"
     end
@@ -129,9 +135,9 @@ defmodule GlorboWeb.AuthFlowTest do
       assert get_session(conn, GlorboWeb.DirectorAuth.session_key()) == nil
     end
 
-    test "is throttled after repeated failures — pre-PBKDF2, so a correct passphrase is still rejected (D14)" do
-      # Engage the throttle directly (deterministic — no racing the window).
-      for _ <- 1..10, do: GlorboWeb.LoginThrottle.record_failure()
+    test "is throttled — pre-PBKDF2, so even a correct passphrase is rejected while throttled (D14)" do
+      # Engage the throttle (one reserve sets the ~2s test window).
+      assert :ok = GlorboWeb.LoginThrottle.reserve()
 
       # Even the CORRECT passphrase is rejected, proving the throttle gates
       # BEFORE the verify (no hashing cost burned while throttled).
@@ -176,10 +182,8 @@ defmodule GlorboWeb.AuthFlowTest do
     test "valid passphrase + token writes the hash and flips the node to CONFIGURED", %{
       base: base
     } do
-      token = Application.get_env(:glorbo, :dashboard_token, "test-token")
-
       conn =
-        submit(build_conn(), "/setup?token=#{token}", "/setup?token=#{token}", %{
+        submit_setup(%{
           "passphrase" => "a-strong-passphrase",
           "passphrase_confirmation" => "a-strong-passphrase"
         })
@@ -193,10 +197,8 @@ defmodule GlorboWeb.AuthFlowTest do
     end
 
     test "mismatched confirmation re-renders with an error and writes nothing", %{base: base} do
-      token = Application.get_env(:glorbo, :dashboard_token, "test-token")
-
       conn =
-        submit(build_conn(), "/setup?token=#{token}", "/setup?token=#{token}", %{
+        submit_setup(%{
           "passphrase" => "a-strong-passphrase",
           "passphrase_confirmation" => "different"
         })
@@ -204,6 +206,23 @@ defmodule GlorboWeb.AuthFlowTest do
       assert html_response(conn, 200) =~ "do not match"
       assert {:ok, %{director_password_hash: nil}} = Glorbo.Config.load(base)
     end
+  end
+
+  # Full bootstrap-setup browser flow: the token URL 302s to a bare /setup
+  # (stashing the token in the session), the bare /setup renders the form,
+  # then POST it with the masked CSRF token. recycle/1 carries the session
+  # cookie across all three hops.
+  defp submit_setup(params) do
+    token = Application.get_env(:glorbo, :dashboard_token, "test-token")
+
+    conn =
+      build_conn()
+      |> get("/setup?token=#{token}")
+      |> recycle()
+      |> get("/setup")
+
+    csrf = csrf_from(html_response(conn, 200))
+    conn |> recycle() |> post("/setup", Map.put(params, "_csrf_token", csrf))
   end
 
   # GET the form (seeds the CSRF token into the session cookie), extract the

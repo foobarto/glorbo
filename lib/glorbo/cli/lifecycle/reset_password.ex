@@ -20,6 +20,17 @@ defmodule Glorbo.CLI.Lifecycle.ResetPassword do
 
   Recovery requires local filesystem access — the same trust level as
   knowing the passphrase — so no further authentication is demanded here.
+
+  ## Known limitation (accepted)
+
+  The pidfile check is a point-in-time read: there is a narrow window where
+  a daemon is *starting* (has already loaded the old hash into app-env) but
+  has not yet written its pidfile, so `reset-password` could clear the disk
+  hash while that daemon keeps serving the old passphrase until it
+  restarts. This requires the operator to start and reset concurrently —
+  not the normal stop → reset → start flow — so it is accepted rather than
+  guarded with an OS-level startup lock (codex final review, Medium). The
+  reset still takes effect on the next clean boot.
   """
 
   alias Glorbo.CLI.Audit

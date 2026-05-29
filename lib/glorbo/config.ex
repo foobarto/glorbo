@@ -268,6 +268,39 @@ defmodule Glorbo.Config do
     patch_password_hash(Path.join(base, "config.md"), hash)
   end
 
+  @doc """
+  Atomically set the director passphrase hash IFF none is currently on disk
+  (GEP-0053 D7 single-shot). The reload→check→write runs under a node-global
+  lock, so two concurrent `/setup` POSTs can't both pass the "no hash yet"
+  check and double-write — the loser sees the freshly-written hash and gets
+  `:already_set`.
+
+    * `:ok`          — written (disk had no hash);
+    * `:already_set` — a valid hash already on disk (lost the race / already
+      configured);
+    * `:degraded`    — disk hash is `:malformed`; NEVER overwrite it from
+      here (fail closed — D9);
+    * `{:error, reason}`.
+
+  `{:glorbo_director_setup, self()}` is the standard `:global` mutex idiom:
+  the lock is on the resource term, and each request process is a distinct
+  LockRequesterId, so different requesters contend (serialize) on it — the
+  concurrency is covered by a test in `config_test.exs`.
+  """
+  @spec put_password_hash_if_absent(Path.t(), String.t()) ::
+          :ok | :already_set | :degraded | {:error, term()}
+  def put_password_hash_if_absent(base \\ Glorbo.Filesystem.Hierarchy.default_root(), hash)
+      when is_binary(hash) and hash != "" do
+    :global.trans({:glorbo_director_setup, self()}, fn ->
+      case load(base) do
+        {:ok, %{director_password_hash: nil}} -> put_password_hash(base, hash)
+        {:ok, %{director_password_hash: :malformed}} -> :degraded
+        {:ok, %{director_password_hash: existing}} when is_binary(existing) -> :already_set
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+  end
+
   defp patch_password_hash(path, hash) do
     case File.read(path) do
       {:ok, content} ->

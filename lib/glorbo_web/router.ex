@@ -59,6 +59,17 @@ defmodule GlorboWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # GEP-0053: browser-owned JSON endpoints (the Ctrl+K search palette).
+  # These serve dashboard data to the authenticated browser, so they must
+  # ride the SAME passphrase gate as the dashboard — not the dashboard_token
+  # (which is MCP/CLI-only once configured, D2). Same-origin browser fetches
+  # carry the session cookie, so DirectorAuth authorises them.
+  pipeline :dashboard_api do
+    plug :accepts, ["json"]
+    plug :fetch_session
+    plug GlorboWeb.DirectorAuth
+  end
+
   # GEP-0053 auth entry points. `:browser` only (so `:protect_from_forgery`
   # covers the POST forms) — NOT behind DirectorAuth, since these ARE the
   # way in. Each action enforces its own state precondition (setup =
@@ -147,14 +158,14 @@ defmodule GlorboWeb.Router do
     get "/companies/:company/audit.csv", AuditExportController, :export
   end
 
-  # T2-B (#232) — Ctrl+K content search. JSON endpoint consumed by
-  # the palette. Pipes through :api AND :dashboard — the same bearer-
-  # token gate that protects the MCP surface also protects this
-  # endpoint on LAN exposure. Otherwise, with `dashboard_token:` set,
-  # the browser UI would be gated but task titles would be enumerable
-  # via `curl /api/search?co=<slug>&q=<prefix>`.
+  # T2-B (#232) — Ctrl+K content search. JSON endpoint consumed by the
+  # browser palette. GEP-0053: gated by the passphrase session
+  # (:dashboard_api), NOT the dashboard_token — otherwise a token-holder
+  # without the passphrase could enumerate task titles via
+  # `curl /api/search?token=…&co=<slug>&q=<prefix>` even though the
+  # dashboard itself is passphrase-gated (codex final review, Medium).
   scope "/api", GlorboWeb do
-    pipe_through [:api, :dashboard]
+    pipe_through :dashboard_api
 
     get "/search", SearchController, :search
   end
