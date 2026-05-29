@@ -37,17 +37,24 @@ defmodule Glorbo.CLI.ServeTest do
     end
 
     @tag :integration
-    test "banner includes token URL", %{glorbo_home: _home} do
+    test "banner is state-aware (GEP-0053 D18): /login when configured, no token", %{
+      glorbo_home: _home
+    } do
       prev = Application.get_env(:glorbo, :dashboard_token)
       Application.put_env(:glorbo, :dashboard_token, "test-token-abc123")
       on_exit(fn -> Application.put_env(:glorbo, :dashboard_token, prev) end)
 
+      # The test env is CONFIGURED (test_helper sets a passphrase hash), so
+      # the banner points at /login and does NOT reprint the token. The
+      # bootstrap /setup?token= banner is covered by Glorbo.CLI.UpTest +
+      # the Banner unit test.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
           Serve.run(["--exit-after", "50"])
         end)
 
-      assert output =~ "http://127.0.0.1:4000/?token=test-token-abc123"
+      assert output =~ "http://127.0.0.1:4000/login"
+      refute output =~ "test-token-abc123"
     end
 
     test "enable_endpoint_serving flips :server to true when flag is on" do

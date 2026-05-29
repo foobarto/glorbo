@@ -36,6 +36,13 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# GEP-0053 D21: keep the director passphrase out of request logs. Phoenix
+# filters params whose key contains any listed term; "passphrase" covers
+# the /login + /setup fields (incl. passphrase_confirmation). "password"
+# is the framework default, kept; "token" masks dashboard_token if a param
+# ever carries it.
+config :phoenix, :filter_parameters, ["password", "passphrase", "token"]
+
 # GEP-0053 — director passphrase login. PBKDF2-HMAC-SHA512 work factor.
 # 210k rounds is the OWASP 2023 minimum for PBKDF2-SHA512. `config/test.exs`
 # overrides this to 1 so the suite isn't paying 210k rounds on every login

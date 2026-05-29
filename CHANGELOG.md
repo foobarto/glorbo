@@ -38,6 +38,18 @@ Landing incrementally. So far (config layer):
   `/setup`, CONFIGURED → requires the passphrase session (the token marker
   is never honoured here), DEGRADED → 503 fail-closed. The connected
   socket re-checks every 60s so a passphrase reset disconnects open tabs.
+- **`glorbo reset-password`** — recovery from a forgotten/compromised
+  passphrase: clears `director_password_hash` from `config.md`, returning
+  the dashboard to first-run setup (the `dashboard_token` is untouched).
+  Refuses while the daemon is running (a separate CLI process can't update
+  the live node's in-memory hash, so the reset wouldn't take effect — stop
+  it with `glorbo down` first).
+- **State-aware startup banner** — `glorbo serve` / `up` print the
+  `?token=` URL only in bootstrap (→ `/setup`); once a passphrase is set
+  they print a bare `/login` and never reprint the token (it grants no
+  browser access then, and stays out of scrollback/journals).
+- Director passphrase params are kept out of request logs
+  (`:phoenix, :filter_parameters` gains `passphrase`/`token`).
 - **CSRF: no GET mutates state.** `GET /companies/:c/dms/:agent` no longer
   writes a DM channel file (a state-changing GET is forgeable under
   `SameSite=Lax`); it's now a pure redirect. The DM thread renders empty
