@@ -72,3 +72,48 @@ not pushed).
    or go Strict and special-case bootstrap?
 4. **GEP-49 (OQ4):** re-scope GEP-49 to "the session-store layer under
    GEP-53", or keep it independent?
+
+---
+
+## Task: implement GEP-0053 (director passphrase auth)
+
+Drove the full implementation via `/pursue` across the six-criteria plan.
+
+**What shipped** (local commits on `main`, not pushed; no version cut):
+
+- **C1** config layer (94ff38f) — `pbkdf2_elixir` (pure Elixir, chosen
+  over Argon2id to keep the Burrito cross-build NIF-free); `config.md`
+  `director_password_hash` with fail-closed tri-state coerce; atomic
+  frontmatter-scoped write; `~/.glorbo` hardened to 0700.
+- **C2** `DirectorAuth` gate (f85ffe5, 28a871c) — plug + `on_mount` so auth
+  holds on BOTH the dead render and the LiveView socket; token is MCP/CLI-
+  only once configured.
+- **C3** `/login` throttle (d150b87) — escalating delay, no DoS-prone
+  lockout, atomic reserve gates before PBKDF2.
+- **C4** socket auth (a48e84e) — `live_session` + revalidation timer
+  (passphrase change disconnects open tabs).
+- **C5** `redirect_to_dm` CSRF fix (f28986c) — pure redirect; DM file
+  created lazily on first message.
+- **C6** CLI + ship (08368bd, a5e8e45) — `glorbo reset-password`,
+  state-aware banner, log-filter, README/UAT/GEP docs.
+- **Hardening** (7db5454, cd23a87) — closed a final holistic review's 5
+  findings (2 High concurrency holes).
+
+**Design calls I made without you:** PBKDF2-over-Argon2id (you confirmed);
+ran a 6-lens red-team on the design pre-implementation; 4 codex review
+rounds during build; marked GEP **Accepted** (not Implemented — unreleased).
+
+**Gates:** `mix precommit` green (3005 tests, 0 failures); credo 0; burrito
+rebuilt.
+
+**Skipped / deferred (your call):** D6 session TTL / idle timeout (OQ1 —
+currently browser-close session cookie); D11 `return_to` guard (optional,
+no vuln today).
+
+## Things I'd like your review
+1. **Session TTL (OQ1):** keep the browser-close session cookie, or want a
+   persistent cap + idle timeout (e.g. 7-day idle)?
+2. **`return_to`:** build the post-login bounce-back (same-origin-guarded),
+   or leave the hardcoded `/`?
+3. **Version cut:** want me to bump `mix.exs` + flip GEP-0053 → Implemented,
+   or hold? (No push without your ask.)
