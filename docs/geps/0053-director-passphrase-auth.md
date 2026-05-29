@@ -2,7 +2,7 @@
 gep: 0053
 title: Director passphrase login — browser auth distinct from the MCP/CLI token
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-05-29
 requires: [48]
@@ -23,9 +23,45 @@ history:
       pure Elixir) during implementation — argon2_elixir is a build-time
       C NIF that collides with the repo's pure-Elixir-preserves-Burrito
       rule for the 4-target cross-build. Operator decision; see D13.
+  - date: 2026-05-29
+    status: Accepted
+    note: |
+      Approved + implemented locally (unreleased). Shipped across commits:
+      config layer (pbkdf2, fail-closed tri-state, dir 0700), DirectorAuth
+      plug + on_mount socket gate, /setup + /login + /logout, live_session,
+      /login escalating-delay throttle, redirect_to_dm CSRF fix,
+      reset-password CLI, state-aware banner, passphrase log-filter.
+      DEFERRED (see Implementation status below): D6 sliding idle timeout +
+      14-day cap (operator open question OQ1 — the session cookie currently
+      expires on browser close, a stricter default); D11 return_to
+      same-origin guard (optional — post-login redirect is hardcoded to
+      `/`, so there is no open-redirect today). Flip to Implemented on the
+      version cut.
 ---
 
 # GEP-0053: Director passphrase login — browser auth distinct from the MCP/CLI token
+
+## Implementation status
+
+Implemented locally (unreleased). **Shipped:** the config layer (PBKDF2
+`director_password_hash`, fail-closed tri-state, `~/.glorbo` 0700);
+`GlorboWeb.DirectorAuth` plug + `on_mount` socket gate (both transports,
+D1/D2/D9); `/setup` + `/login` + `/logout` with CSRF forms, session renew,
+single-shot setup; the `/login` escalating-delay throttle (D14/D15); the
+`redirect_to_dm` state-changing-GET fix (D19); `glorbo reset-password`
+(D17); the state-aware banner (D18); the passphrase log-filter (D21).
+
+**Deferred:**
+
+- **D6** — sliding idle timeout + 14-day absolute cap. Open question OQ1
+  (operator's session-TTL call). Until decided, the session cookie expires
+  on browser close (the stricter default), so this is a refinement, not a
+  gap.
+- **D11** — `return_to` same-origin guard. Optional UX; the post-login
+  redirect is currently hardcoded to `/`, so there is no open-redirect to
+  guard against today.
+
+Flip status to Implemented on the version cut.
 
 ## Problem
 

@@ -225,6 +225,16 @@ glorbo logs acme ceo --follow
 glorbo down
 ```
 
+**Signing in (GEP-0053).** On first run the startup banner prints a
+`http://127.0.0.1:4000/setup?token=…` URL — open it and choose a director
+**passphrase**. After that the dashboard is reached at `/login` with that
+passphrase; the one-time setup token is no longer needed in the browser.
+MCP clients and CLIs keep using the `dashboard_token` (in
+`~/.glorbo/config.md`) as an `Authorization: Bearer` API key — a token
+leak no longer grants browser access once a passphrase is set. Forgot the
+passphrase? Stop the daemon and run `glorbo reset-password` to return to
+first-run setup.
+
 To run as a user-level systemd service that survives shell sessions:
 
 ```bash
@@ -238,6 +248,7 @@ glorbo uninstall       # disable + remove the unit (keeps ~/.glorbo intact)
 ```
 glorbo init [--force] [--no-example]    Bootstrap ~/.glorbo/ and verify deps
 glorbo up | down | status | serve       Daemon lifecycle
+glorbo reset-password                   Clear the dashboard passphrase → first-run setup (GEP-0053)
 glorbo run <co>/<agent> <task>          One-shot agent dispatch (no dashboard)
 glorbo install [--force] [--no-start]   Install user-systemd service (Linux)
 glorbo uninstall                        Remove user-systemd service
