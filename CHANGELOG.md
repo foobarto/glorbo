@@ -12,6 +12,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Added
 
+- **`glorbo import paperclip` reads live paperclip installs (GEP-0054).**
+  The importer now auto-detects the on-disk layout of a *running*
+  paperclip instance (`<src>/agents/<uuid>/instructions/AGENTS.md`) in
+  addition to the flat `paperclipai/companies:main` git template
+  (`<src>/<agent>/AGENTS.md`). Point it at a paperclip company directory
+  and it descends into `agents/`, reads each agent's contract files from
+  `instructions/`, and imports under the agent's UUID directory name
+  (rename later + `glorbo reindex`). Paperclip `memory/`/`life/` dirs are
+  not carried over (flagged in the report, not dropped silently), and a
+  zero-match import now says so loudly instead of scaffolding an empty
+  company. All existing C-098 symlink/lstat guards extend to the deeper
+  paths; flat-layout behaviour is unchanged.
+
 - **MiniMax native provider.** New built-in `minimax` provider
   (`priv/providers/minimax.toml`) targeting MiniMax's OpenAI-compatible
   endpoint (`https://api.minimax.io/v1`) via the existing native harness

@@ -3,8 +3,10 @@ defmodule Glorbo.CLI.ImportPaperclip do
   `glorbo import paperclip <src> [--as <slug>]` — import a paperclip.ai
   `agentcompanies` tree into a Glorbo company directory.
 
-  Paperclip's on-disk layout (observed 2026-04-19 against
-  paperclipai/companies:main):
+  Two paperclip source layouts are auto-detected (GEP-54).
+
+  Flat — the `paperclipai/companies:main` git template
+  (observed 2026-04-19):
 
       <src>/
         <agent-slug>/
@@ -12,6 +14,25 @@ defmodule Glorbo.CLI.ImportPaperclip do
           HEARTBEAT.md    — per-tick checklist
           SOUL.md         — tone + character
           TOOLS.md        — tool manifest (paperclip-specific)
+
+  Instance — a live paperclip install's company directory
+  (observed 2026-06-02 against `~/.paperclip/instances/<id>/
+  companies/<uuid>/`):
+
+      <src>/
+        agents/
+          <agent-uuid>/
+            instructions/
+              AGENTS.md   — system prompt
+              HEARTBEAT.md / SOUL.md / TOOLS.md
+            memory/ life/ — NOT imported (GEP-54 D5)
+          _templates/     — scaffolding, skipped
+
+  Detection: if `<src>/agents/` is a real directory it becomes the
+  agent container; otherwise `<src>` itself is. For each agent dir,
+  AGENTS.md is read from `instructions/` if present, else the dir
+  root. In the instance layout agents import under their UUID dir
+  names — no slug derivation (GEP-54 D2); the Director renames later.
 
   Glorbo's layout (GEP-3 / GEP-15):
 
@@ -38,7 +59,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
        leaves `projects/`, `channels/`, and `audit/` intact.)
     4. Scaffold the target company dir (same shape as
        `glorbo new company`).
-    5. For each sub-directory of `<src>` that contains an `AGENTS.md`:
+    5. For each discovered agent dir (see layout detection above):
        * Wrap the body in Glorbo frontmatter (name / slug / role /
          provider / model / network: proxy / heartbeat: null /
          permissions: []).
@@ -130,20 +151,22 @@ defmodule Glorbo.CLI.ImportPaperclip do
     ensure_company_dirs(co)
     write_company_md_if_missing(co, slug)
 
-    agent_dirs = discover_agents(src)
+    agent_dirs = discover_agents(agent_container(src))
 
-    {imported, hints} =
-      Enum.reduce(agent_dirs, {[], MapSet.new()}, fn agent_src, {imported_acc, hints_acc} ->
+    {imported, hints, dropped_aux?} =
+      Enum.reduce(agent_dirs, {[], MapSet.new(), false}, fn {agent_src, instr_dir},
+                                                            {imported_acc, hints_acc, aux_acc} ->
         agent_slug = Path.basename(agent_src)
 
-        case import_agent(agent_src, co, agent_slug, slug) do
+        case import_agent(instr_dir, co, agent_slug, slug) do
           {:ok, agent_hints} ->
             Audit.emit("import_paperclip", "agent", %{
               source: agent_src,
               target: Path.join([co, "agents", agent_slug])
             })
 
-            {[agent_slug | imported_acc], MapSet.union(hints_acc, agent_hints)}
+            {[agent_slug | imported_acc], MapSet.union(hints_acc, agent_hints),
+             aux_acc or uncarried_aux_dirs?(agent_src)}
 
           {:error, reason} ->
             Audit.emit("import_paperclip", "agent_skipped", %{
@@ -151,7 +174,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
               reason: inspect(reason)
             })
 
-            {imported_acc, hints_acc}
+            {imported_acc, hints_acc, aux_acc}
         end
       end)
 
@@ -160,7 +183,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
       agents_imported: length(imported)
     })
 
-    {:import_paperclip, 0, render_report(co, slug, imported, hints)}
+    {:import_paperclip, 0, render_report(co, slug, imported, hints, dropped_aux?)}
   end
 
   # Gemini round-6 finding (PR #38, MED): the previous shape called
@@ -193,6 +216,43 @@ defmodule Glorbo.CLI.ImportPaperclip do
   # link. Now walks every ancestor segment with lstat before
   # green-lighting the mkdir. Mirror the round-3 SymlinkGuard
   # shape used by sandbox/PermissionMapper.
+  # Codex review (GEP-54): `ensure_real_dest_dir!` guards destination
+  # *directories*, but the leaf files were written with a plain
+  # `File.write!`, which follows symlinks. On a `--force` re-import a
+  # pre-planted `companies/<slug>/agents/<agent>/AGENT.md -> /etc/...`
+  # symlink would redirect the write outside the company tree. Refuse to
+  # write through any pre-existing non-regular file; regular files are
+  # overwritten normally (that is what `--force` means). Mirrors the
+  # read-side `read_source_file!` refusal.
+  defp safe_write!(path, content) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        File.write!(path, content)
+
+      {:error, :enoent} ->
+        File.write!(path, content)
+
+      {:ok, %File.Stat{type: :symlink}} ->
+        raise File.Error,
+          reason: :eloop,
+          action: "import_paperclip: refusing to write through a symlinked destination file",
+          path: path
+
+      {:ok, %File.Stat{type: other}} ->
+        raise File.Error,
+          reason: :eperm,
+          action:
+            "import_paperclip: refusing to overwrite a non-regular destination file (#{other})",
+          path: path
+
+      {:error, reason} ->
+        raise File.Error,
+          reason: reason,
+          action: "import_paperclip: lstat destination file",
+          path: path
+    end
+  end
+
   defp ensure_real_dest_dir!(path) do
     expanded = Path.expand(path)
 
@@ -255,7 +315,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
     if File.exists?(path) do
       :ok
     else
-      File.write!(path, """
+      safe_write!(path, """
       ---
       kind: company/v1
       slug: #{slug}
@@ -275,26 +335,83 @@ defmodule Glorbo.CLI.ImportPaperclip do
     end
   end
 
-  defp discover_agents(src) do
-    case File.ls(src) do
+  # GEP-54: the directory that holds agent dirs is either `<src>` itself
+  # (the flat `paperclipai/companies:main` template layout) or
+  # `<src>/agents/` (a live paperclip instance, e.g.
+  # `~/.paperclip/instances/<id>/companies/<uuid>/`). lstat-checked so a
+  # symlinked `agents/` is never followed.
+  defp agent_container(src) do
+    agents = Path.join(src, "agents")
+
+    # Descend into `agents/` only when it is a real directory that is NOT
+    # itself a flat agent (i.e. has no direct AGENTS.md). This
+    # disambiguates a live instance company dir (whose `agents/` holds
+    # per-agent sub-dirs) from a flat-layout company that happens to have
+    # an agent literally named `agents` (codex review, GEP-54).
+    #
+    # Note: a symlinked `<src>` typed by the operator is followed by the
+    # earlier `File.dir?(src)` — that is operator intent, not the C-098
+    # threat (which is untrusted *content within* the tree). Every entry
+    # discovered below is still lstat-guarded, so a malicious symlink
+    # inside the tree is refused regardless of how `<src>` resolved.
+    if real_dir?(agents) and not real_file?(Path.join(agents, "AGENTS.md")) do
+      agents
+    else
+      src
+    end
+  end
+
+  # Returns `{agent_dir, instr_dir}` pairs. `agent_dir`'s basename is the
+  # imported slug (a UUID in the instance layout — GEP-54 D2); `instr_dir`
+  # is where AGENTS.md and companion files are read from. Skips
+  # `_`/`.`-prefixed entries (e.g. `_templates`) and any directory that
+  # resolves to no AGENTS.md.
+  #
+  # C-098: a paperclip source tree is operator-supplied but may be
+  # attacker-authored (supply chain). `File.dir?`/`File.exists?`/
+  # `File.read!` all follow symlinks, so a symlinked agent dir or
+  # `AGENTS.md -> ~/.glorbo/config.md` would be copied verbatim into
+  # company data. Every check below is lstat-based and refuses symlinks.
+  defp discover_agents(container) do
+    case File.ls(container) do
       {:ok, entries} ->
         entries
-        |> Enum.map(&Path.join(src, &1))
-        |> Enum.filter(fn path ->
-          # C-098: a paperclip source tree is operator-supplied but may
-          # be attacker-authored (supply chain). `File.dir?`/
-          # `File.exists?`/`File.read!` all follow symlinks, so a
-          # symlinked agent dir or `AGENTS.md -> ~/.glorbo/config.md`
-          # would be copied verbatim into company data. Refuse any
-          # symlinked source entry: require the dir AND its AGENTS.md to
-          # be real (lstat-checked) regular dir / file.
-          real_dir?(path) and real_file?(Path.join(path, "AGENTS.md"))
-        end)
+        |> Enum.reject(&excluded_entry?/1)
+        |> Enum.map(&Path.join(container, &1))
+        |> Enum.filter(&real_dir?/1)
+        |> Enum.map(fn dir -> {dir, resolve_instr_dir(dir)} end)
+        |> Enum.reject(fn {_dir, instr} -> is_nil(instr) end)
         |> Enum.sort()
 
       _ ->
         []
     end
+  end
+
+  defp excluded_entry?(name) do
+    String.starts_with?(name, "_") or String.starts_with?(name, ".")
+  end
+
+  # AGENTS.md lives either at `<agent>/instructions/AGENTS.md` (instance
+  # layout) or `<agent>/AGENTS.md` (flat layout). Return the directory
+  # that holds it, or nil if neither (skip the dir). lstat-based, so a
+  # symlinked `instructions/` or a symlinked `AGENTS.md` is refused here,
+  # before any read.
+  defp resolve_instr_dir(agent_dir) do
+    instr = Path.join(agent_dir, "instructions")
+
+    cond do
+      real_dir?(instr) and real_file?(Path.join(instr, "AGENTS.md")) -> instr
+      real_file?(Path.join(agent_dir, "AGENTS.md")) -> agent_dir
+      true -> nil
+    end
+  end
+
+  # GEP-54 D5: paperclip agents may carry `memory/` and `life/`
+  # sub-trees that Glorbo does not import. Detect their presence so the
+  # report can flag the omission instead of dropping them silently.
+  defp uncarried_aux_dirs?(agent_dir) do
+    real_dir?(Path.join(agent_dir, "memory")) or real_dir?(Path.join(agent_dir, "life"))
   end
 
   # C-098: lstat-based type checks that do NOT follow symlinks.
@@ -320,15 +437,18 @@ defmodule Glorbo.CLI.ImportPaperclip do
     end
   end
 
-  defp import_agent(src_agent_dir, co, agent_slug, co_slug) do
+  defp import_agent(instr_dir, co, agent_slug, co_slug) do
     if agent_slug =~ @slug_re do
-      do_import_agent(src_agent_dir, co, agent_slug, co_slug)
+      do_import_agent(instr_dir, co, agent_slug, co_slug)
     else
       {:error, :invalid_agent_slug}
     end
   end
 
-  defp do_import_agent(src_agent_dir, co, agent_slug, co_slug) do
+  # `instr_dir` is the directory that holds AGENTS.md + companions —
+  # `<agent>/instructions/` in the instance layout, `<agent>/` in the
+  # flat layout (resolved by `resolve_instr_dir/1`).
+  defp do_import_agent(instr_dir, co, agent_slug, co_slug) do
     dest = Path.join([co, "agents", agent_slug])
 
     # PR #38 (gemini round-6): same destination-symlink guard as
@@ -347,18 +467,18 @@ defmodule Glorbo.CLI.ImportPaperclip do
     # C-098: only read source files that lstat as real regular files —
     # never follow a symlinked `AGENTS.md` / companion into a host
     # secret (`~/.glorbo/config.md`, provider creds, SSH keys).
-    body = read_source_file!(Path.join(src_agent_dir, "AGENTS.md"))
+    body = read_source_file!(Path.join(instr_dir, "AGENTS.md"))
     hints = detect_hints(body)
 
-    File.write!(Path.join(dest, "AGENT.md"), wrap_agent_md(agent_slug, co_slug, body))
+    safe_write!(Path.join(dest, "AGENT.md"), wrap_agent_md(agent_slug, co_slug, body))
 
     for fname <- ~w(HEARTBEAT.md SOUL.md TOOLS.md) do
-      src_file = Path.join(src_agent_dir, fname)
+      src_file = Path.join(instr_dir, fname)
 
       if real_file?(src_file) do
         content = File.read!(src_file)
         _ = detect_hints(content)
-        File.write!(Path.join(dest, fname), wrap_companion_md(fname, content))
+        safe_write!(Path.join(dest, fname), wrap_companion_md(fname, content))
       end
     end
 
@@ -411,10 +531,29 @@ defmodule Glorbo.CLI.ImportPaperclip do
     end)
   end
 
-  defp render_report(co, slug, imported, hints) do
+  defp render_report(co, slug, imported, hints, dropped_aux?) do
     count = length(imported)
     header = "✓ imported paperclip company -> #{co}\n"
     agent_line = "   agents: #{count} (#{Enum.join(Enum.sort(imported), ", ")})\n"
+
+    empty_block =
+      if count == 0 do
+        "\n⚠  0 agents imported. Nothing under the source matched a paperclip\n" <>
+          "agent layout (expected `<agent>/AGENTS.md` or\n" <>
+          "`<agent>/instructions/AGENTS.md`). Check that <src> points at a\n" <>
+          "paperclip company directory.\n"
+      else
+        ""
+      end
+
+    aux_block =
+      if dropped_aux? do
+        "\nNote: paperclip `memory/` / `life/` directories were present but\n" <>
+          "not carried over — Glorbo agents rebuild working memory from their\n" <>
+          "own inbox/outbox. Copy them by hand if you need the history.\n"
+      else
+        ""
+      end
 
     hint_block =
       case MapSet.to_list(hints) do
@@ -433,7 +572,7 @@ defmodule Glorbo.CLI.ImportPaperclip do
         "set a real role / provider / permissions for each agent, then run\n" <>
         "`glorbo doctor --fix` and `glorbo reindex`.\n"
 
-    header <> agent_line <> hint_block <> next_steps
+    header <> agent_line <> empty_block <> aux_block <> hint_block <> next_steps
   end
 
   defp glorbo_home do
@@ -460,8 +599,12 @@ defmodule Glorbo.CLI.ImportPaperclip do
                        channels/, and audit/ intact.
 
     BEHAVIOUR
-      Scans <src-dir> for agent directories (any sub-directory
-      containing an AGENTS.md). Each agent becomes
+      Auto-detects two paperclip source layouts:
+        * flat template   — <src>/<agent>/AGENTS.md
+        * live instance   — <src>/agents/<uuid>/instructions/AGENTS.md
+
+      If <src>/agents/ is a directory it is treated as the agent
+      container; otherwise <src> itself is. Each agent becomes
       companies/<target>/agents/<agent-slug>/ with:
 
         AGENT.md       — Glorbo frontmatter wrap + paperclip body
@@ -469,12 +612,20 @@ defmodule Glorbo.CLI.ImportPaperclip do
         SOUL.md        — copied verbatim if present
         TOOLS.md       — copied verbatim if present
 
+      In the instance layout, agents keep their UUID directory names
+      (rename them later and re-run `glorbo reindex`). Paperclip
+      `memory/` and `life/` directories are not carried over.
+
       Paperclip uses an HTTP control plane and $AGENT_HOME
       conventions that Glorbo does not expose. The import report
       lists every such reference it found so you can fix them.
 
     EXAMPLE
+      # flat template
       glorbo import paperclip ~/paperclip-templates/default --as mycompany
+      # live instance company directory
+      glorbo import paperclip \\
+        ~/.paperclip/instances/default/companies/<uuid> --as mycompany
     """
   end
 end
