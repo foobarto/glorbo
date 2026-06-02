@@ -33,6 +33,15 @@ history:
       `agents`; symlinked `<src>` accepted by design. End-to-end verified
       against the live "Blade and Blaster" paperclip company (10 agents
       imported, `reindex` indexed=38 skipped=0).
+  - date: 2026-06-02
+    status: Accepted
+    note: |
+      Live import into the real `~/.glorbo` exposed that the PR #38
+      destination guard false-positives on `/home -> /var/home` (atomic
+      Fedora). Fixed by scoping the guard to at/below the glorbo home
+      (D9). Live import succeeded (10 agents); company is DB-visible
+      after reindex. The same flaw in the shared SymlinkGuard (reindex /
+      sandbox) is logged in docs/todo.md as out-of-scope follow-up.
 ---
 
 # GEP-54: Import the live paperclip-instance on-disk layout
@@ -280,6 +289,31 @@ modifies `companies/<slug>/` without explicit Director action".
   within* the tree (still lstat-guarded per entry), not the path the
   operator explicitly named; refusing a symlinked `<src>` would break
   legitimate setups (e.g. `~/paperclip` being a symlink).
+
+### D9. Scope the destination guard to at/below the glorbo home
+
+- **Decided:** `ensure_real_dest_dir!` walks and lstat-checks only the
+  path segments at or below the glorbo home (the trust boundary), not
+  the OS ancestors above it. Paths outside the home are refused
+  fail-closed.
+- **Alternatives:** keep walking from `/` (PR #38's shape); canonicalise
+  the home via realpath before walking.
+- **Why:** discovered during the live "Blade and Blaster" import. The
+  PR #38 guard walked from `/` and refused any symlinked ancestor —
+  which false-positives on `/home → /var/home`, the standard layout on
+  atomic Fedora (Silverblue/Bazzite/Kinoite), making `glorbo import
+  paperclip ~/.glorbo` hard-fail. The threat model is a symlink planted
+  *inside* the glorbo home (still lstat-guarded per segment); OS dirs
+  above the home are operator-owned and may legitimately be symlinks.
+  Realpath-canonicalising the base was rejected as more invasive and
+  unnecessary once the trust boundary is drawn at the home.
+
+  Note: the shared `Glorbo.Sandbox.SymlinkGuard` used by `reindex`,
+  `company_boot`, and the sandbox mappers has the *same* walk-from-`/`
+  false-positive against `/home → /var/home`. That is out of scope here
+  (load-bearing security code, GEP-5) and tracked in `docs/todo.md`;
+  glorbo currently sidesteps it by running against the canonical
+  `/var/home/...` path.
 
 ## Related
 

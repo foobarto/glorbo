@@ -23,7 +23,12 @@ change between minor versions. Pin exact versions in downstream usage.
   not carried over (flagged in the report, not dropped silently), and a
   zero-match import now says so loudly instead of scaffolding an empty
   company. All existing C-098 symlink/lstat guards extend to the deeper
-  paths; flat-layout behaviour is unchanged.
+  paths; flat-layout behaviour is unchanged. The importer's
+  destination-directory guard now scopes its symlink checks to segments
+  at/below the glorbo home (the threat is a symlink planted *inside* the
+  home, not OS dirs above it), so `glorbo import paperclip` works with
+  the default `~/.glorbo` on atomic-Fedora hosts where `/home` itself is
+  a symlink (`/home → /var/home`).
 
 - **MiniMax native provider.** New built-in `minimax` provider
   (`priv/providers/minimax.toml`) targeting MiniMax's OpenAI-compatible

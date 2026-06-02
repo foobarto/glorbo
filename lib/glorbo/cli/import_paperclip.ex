@@ -253,19 +253,36 @@ defmodule Glorbo.CLI.ImportPaperclip do
     end
   end
 
+  # Guard the destination path against symlinked segments — but only AT
+  # OR BELOW the glorbo home (the trust boundary). The threat model is a
+  # symlink planted *inside* the glorbo home (e.g.
+  # `companies/<slug> -> /attacker`), redirecting our writes. Ancestors
+  # at/above the home (`/`, `/home`, `/var`, the home dir itself) are OS-
+  # and operator-owned and may legitimately be symlinks — most notably
+  # `/home -> /var/home` on atomic Fedora (Silverblue/Bazzite), where
+  # walking from `/` would false-positive on `/home` and make `glorbo
+  # import paperclip` unusable with the default `~/.glorbo` (GEP-54).
   defp ensure_real_dest_dir!(path) do
+    base = Path.expand(glorbo_home())
     expanded = Path.expand(path)
+    rel = Path.relative_to(expanded, base)
 
-    # Walk from root down. For each ancestor segment that EXISTS,
-    # require it to be a real directory (no symlink, no
-    # non-directory). Missing segments are fine — mkdir_p! will
-    # create them. Bind the reduce result explicitly so credo
-    # doesn't flag the side-effect-only walk as unused-return.
+    if rel == expanded do
+      # Destination is not under the glorbo home — fail closed.
+      raise File.Error,
+        reason: :eperm,
+        action: "import_paperclip: refusing a destination outside the glorbo home",
+        path: expanded
+    end
+
+    # Walk only the segments below `base`, lstat-checking each. `base`
+    # itself and its ancestors are trusted and not inspected. Bind the
+    # reduce result so credo doesn't flag the side-effect-only walk.
     _walked =
-      expanded
+      rel
       |> Path.split()
-      |> Enum.reduce("", fn seg, acc ->
-        candidate = if acc == "", do: seg, else: Path.join(acc, seg)
+      |> Enum.reduce(base, fn seg, acc ->
+        candidate = Path.join(acc, seg)
         :ok = check_dest_segment!(candidate)
         candidate
       end)

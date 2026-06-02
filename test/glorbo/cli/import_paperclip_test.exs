@@ -261,6 +261,46 @@ defmodule Glorbo.CLI.ImportPaperclipTest do
     end
   end
 
+  describe "destination home under a symlinked ancestor (GEP-54)" do
+    # Regression: `/home -> /var/home` on atomic Fedora made the dest
+    # guard false-positive when walking from `/`. The guard must trust
+    # ancestors at/above the glorbo home and only police segments below
+    # it.
+    test "imports into a glorbo home whose ancestor is a symlink", %{home: home} do
+      real = Path.join(home, "real")
+      File.mkdir_p!(real)
+      link = Path.join(home, "link")
+      File.ln_s!(real, link)
+      linked_home = Path.join(link, ".glorbo")
+      File.mkdir_p!(linked_home)
+      System.put_env("GLORBO_HOME", linked_home)
+
+      src = Path.join(home, "src-anc")
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "You are the CEO.\n"})
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "anc1"])
+      assert out =~ "agents: 1"
+
+      assert File.exists?(
+               Path.join([linked_home, "companies", "anc1", "agents", "ceo", "AGENT.md"])
+             )
+    end
+
+    test "still refuses a symlink planted at companies/<slug> inside the home", %{
+      home: home,
+      src: src
+    } do
+      File.mkdir_p!(Path.join(home, "companies"))
+      # Dangling symlink: the `Target exists` check (File.exists? follows
+      # links) won't short-circuit, so the dest guard is exercised.
+      File.ln_s!(Path.join(home, "no-such-target"), Path.join([home, "companies", "evilco"]))
+
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "You are the CEO.\n"})
+
+      assert_raise File.Error, fn -> ImportPaperclip.run([src, "--as", "evilco"]) end
+    end
+  end
+
   describe "symlink hardening (C-098)" do
     # A symlinked AGENTS.md -> host secret must NOT be discovered as an
     # agent (lstat refuses the non-regular file), so its contents never

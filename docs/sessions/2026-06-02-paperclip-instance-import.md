@@ -42,14 +42,59 @@ SpecFicWriter, AudioOps, CritiqueOps, UXDesigner.
 **Gates.**
 - `mix gep.validate` → **All checks passed** (after the README fix).
 
-**Skipped / not done (this entry).**
-- Build/test/review/ship phases — next.
-- Carrying paperclip `memory/`/`life/` dirs — explicit non-goal (GEP-54
-  D5); flagged in the import report instead of silently dropped.
+**Build / Test (TDD).** Confined to `Glorbo.CLI.ImportPaperclip` +
+its test. RED→GREEN: layout auto-detect (`agent_container/1` descends
+into `agents/` unless it's itself a flat agent; `resolve_instr_dir/1`
+finds AGENTS.md in `instructions/` or the dir root), UUID slugs,
+`_`/`.`-entry exclusion, memory/life report note, loud zero-agent
+report. 21 importer tests; full suite **3015, 0 failures**; credo
+`--strict` exit 0; `mix gep.validate` clean.
 
-**Commit(s).** Pending — will commit GEP + README together, then code +
-tests separately.
+**Review (codex) — 3 findings, all handled.**
+- HIGH: dest leaf writes used plain `File.write!` (PR #38 guarded only
+  dirs) → added `safe_write!/2` refusing writes through a symlink on
+  `--force`. Fixed + regression test.
+- LOW: any real `agents/` treated as instance container → disambiguate
+  (only descend if `agents/` isn't itself a flat agent). Fixed + test.
+- MED: symlinked `<src>` followed → accepted by design (operator-typed
+  path; intra-tree content still lstat-guarded). Documented.
+
+**Live import — found a real environment bug.** First live import into
+`~/.glorbo` hard-failed: the importer's PR #38 dest guard walks from `/`
+and refuses `/home` because `/home → /var/home` (atomic Fedora). Fixed
+by scoping the guard to at/below the glorbo home (GEP-54 **D9**) + 2
+regression tests. Re-ran: **10 agents** imported into
+`companies/bladeandblaster/`, `bla` scaffold + all other companies
+intact. `reindex` (canonical path) **indexed=124 skipped=0**; DB shows
+`bladeandblaster` + 10 agents.
+
+**Design calls I made without you (build phase).**
+- Closed the codex HIGH + LOW + the D9 dest-guard bug autonomously
+  (clear security/hygiene fixes blocking the deliverable).
+- Left the **shared** `SymlinkGuard` `/home`-symlink bug (reindex /
+  sandbox / company_boot) **unfixed** — load-bearing security (GEP-5),
+  out of scope; logged in `docs/todo.md` P1 as likely-needs-a-GEP.
+
+**Gates.** precommit (3015 tests, 0 failures), credo exit 0,
+gep.validate clean.
+
+**Skipped / not done.**
+- Carrying paperclip `memory/`/`life/` — explicit non-goal (D5);
+  flagged in the report.
+- Systemic `SymlinkGuard` fix — out of scope (see todo P1).
+
+**Commit(s).** `8170aaa` (feature + GEP + docs); guard-fix +
+doc-updates commit follows.
 
 ## Things I'd like your review
 
-- (deferred to end of task)
+1. **Systemic `/home → /var/home` SymlinkGuard bug** — reindex/sandbox
+   reject every file when run against the default `~/.glorbo` on atomic
+   Fedora. Want me to open a GEP + fix it next (scope the shared guard
+   to at/below the home, mirroring GEP-54 D9)? It currently only works
+   via the canonical `/var/home` path. **(yes/no)**
+2. **UUID agent dir names in `bladeandblaster`** — as you chose. Want me
+   to rename them to human slugs (ceo, cmo, riven-march, …) now via
+   `mv` + reindex, or leave that to you? **(rename / leave)**
+3. **Push GEP-54 + the fix to remote?** Committed locally only, per your
+   default. **(push / hold)**
