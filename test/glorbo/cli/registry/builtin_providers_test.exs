@@ -1,6 +1,6 @@
 defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   @moduledoc """
-  Canary test against the three shipped `priv/providers/*.toml` files.
+  Canary test against the shipped `priv/providers/*.toml` files.
   Catches schema drift (e.g. referencing a deleted parser name, or
   forgetting to update TOML when the Provider struct grows a field).
 
@@ -25,10 +25,10 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   end
 
   test "all built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 12
+    assert map_size(p) == 13
 
     for name <-
-          ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter stado
+          ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter minimax stado
              gemini-cli-acp claude-code-acp codex-acp) do
       assert Map.has_key?(p, name), "missing built-in provider: #{name}"
     end
@@ -39,7 +39,7 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
       assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
     end
 
-    for name <- ~w(openai openrouter) do
+    for name <- ~w(openai openrouter minimax) do
       assert p[name].kind == :native, "#{name} must stay on the native registry path"
     end
   end
@@ -165,6 +165,35 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
 
       assert prov.model_list == %{shape: :openai, path: "/v1/models", models: []}
     end
+  end
+
+  test "minimax is a native provider with a static M2.x/M3 catalog", %{providers: p} do
+    minimax = p["minimax"]
+    assert minimax.kind == :native
+    assert minimax.binary == nil
+    assert minimax.endpoint == "https://api.minimax.io/v1"
+    assert minimax.auth == :bearer
+    assert minimax.usage_parser == "native-v1"
+
+    assert minimax.usage_path == %{
+             kind: :json_file,
+             path: "{workspace}/.glorbo-run/{task_id}/usage.json"
+           }
+
+    # Static catalog (no /v1/models probe): M3 plus the M2.x family with
+    # its `-highspeed` serving-tier variants. `-highspeed` is a distinct
+    # model id, not a request flag, so each is listed on its own.
+    assert minimax.model_list == %{
+             shape: :static,
+             path: nil,
+             models: [
+               "MiniMax-M3",
+               "MiniMax-M2.7",
+               "MiniMax-M2.7-highspeed",
+               "MiniMax-M2.5",
+               "MiniMax-M2.5-highspeed"
+             ]
+           }
   end
 
   test "built-ins keep the shared reply cap; CLI built-ins still opt into version probes", %{

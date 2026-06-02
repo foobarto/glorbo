@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added
+
+- **MiniMax native provider.** New built-in `minimax` provider
+  (`priv/providers/minimax.toml`) targeting MiniMax's OpenAI-compatible
+  endpoint (`https://api.minimax.io/v1`) via the existing native harness
+  (GEP-32) — bearer auth, `native-v1` usage tracking. Ships a static model
+  catalog: `MiniMax-M3`, plus the M2.x family `MiniMax-M2.7` and
+  `MiniMax-M2.5` each with their `-highspeed` low-latency serving-tier
+  variant. Credentials live in
+  `~/.local/etc/glorbo/credentials/minimax.toml`; select with
+  `provider: minimax` + `model: MiniMax-M2.7` in `AGENT.md`.
+
 ### Security — director passphrase login (GEP-0053, in progress)
 
 Post-implementation hardening from a final full-auth-surface review:

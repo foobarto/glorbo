@@ -81,8 +81,8 @@ headers. No JS framework, no CSS build step.
   escapes the bind-mount list.
 - **Two provider kinds.** CLI adapters for `claude`, `gemini`, `codex`,
   `opencode`, `hermes`, `pi`, etc., plus native OpenAI-compatible endpoints
-  (`openai`, `openrouter`, drop-in LM Studio / Ollama / llama.cpp / LocalAI /
-  vLLM via `glorbo detect-providers` + `+ enable`). See GEP-32.
+  (`openai`, `openrouter`, `minimax`, drop-in LM Studio / Ollama / llama.cpp /
+  LocalAI / vLLM via `glorbo detect-providers` + `+ enable`). See GEP-32.
 - **Budget governance.** Per-agent AND per-company monthly budgets in
   frontmatter; dispatch refuses at 100%, warns at 80%.
 - **Permission model.** Declared in `AGENT.md`, enforced at both the Elixir
@@ -180,9 +180,15 @@ api_key = "sk-..."
 EOF
 ```
 
-Then point an agent at `provider: openai` (or `openrouter`) in `AGENT.md`.
-The native tool catalog is `read_file` / `write_file` / `edit_file` / `glob`
-/ `grep` / `bash` / `web_fetch`. See GEP-32 for the contract.
+Then point an agent at `provider: openai` (or `openrouter` / `minimax`) in
+`AGENT.md`. The native tool catalog is `read_file` / `write_file` /
+`edit_file` / `glob` / `grep` / `bash` / `web_fetch`. See GEP-32 for the
+contract.
+
+MiniMax ships with a static model catalog — `MiniMax-M3`, `MiniMax-M2.7`
+(+`-highspeed`), and `MiniMax-M2.5` (+`-highspeed`); the `-highspeed`
+variants are MiniMax's lower-latency serving tier with identical output.
+Credentials go in `~/.local/etc/glorbo/credentials/minimax.toml`.
 
 Or auto-detect a local server:
 

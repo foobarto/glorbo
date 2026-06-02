@@ -1,0 +1,41 @@
+# MiniMax native harness provider (OpenAI-compatible API).
+#
+# MiniMax exposes an OpenAI-compatible chat-completions endpoint at
+# https://api.minimax.io/v1, so it routes through the same native
+# harness as `openai` / `openrouter` (GEP-32) — no provider CLI binary.
+#
+# Setup: drop a credentials file at
+# `~/.local/etc/glorbo/credentials/minimax.toml` (or under
+# $GLORBO_CREDENTIALS_DIR) with:
+#
+#     api_key = "<MINIMAX_API_KEY>"
+#
+# then point an agent at this provider in AGENT.md, e.g.
+# `provider: minimax` + `model: MiniMax-M2.7`.
+
+name         = "minimax"
+kind         = "native"
+endpoint     = "https://api.minimax.io/v1"
+auth         = "bearer"
+usage_parser = "native-v1"
+usage_path   = { kind = "json_file", path = "{workspace}/.glorbo-run/{task_id}/usage.json" }
+
+# Static catalog rather than an HTTP probe: MiniMax doesn't advertise an
+# OpenAI-style GET /v1/models surface we depend on, and the catalog only
+# needs the alias set to populate the agent-wizard combobox + Kanban
+# model picker (ModelCatalog projects `:static` lists directly, no
+# network). Operators wanting a different set can override the list via a
+# user provider TOML at `~/.glorbo/providers/minimax.toml` (GEP-8).
+#
+# `*-highspeed` is MiniMax's performance-tuned serving tier: identical
+# output to the base model at higher throughput / lower latency. It is a
+# distinct model id, not a request flag, so it is listed as its own entry.
+[model_list]
+shape  = "static"
+models = [
+  "MiniMax-M3",
+  "MiniMax-M2.7",
+  "MiniMax-M2.7-highspeed",
+  "MiniMax-M2.5",
+  "MiniMax-M2.5-highspeed"
+]
