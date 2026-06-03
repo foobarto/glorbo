@@ -58,6 +58,15 @@ Post-implementation hardening from a final full-auth-surface review:
 - **Bootstrap token stripped from the `/setup` URL** — a `?token=` is
   stashed in the session and the request 302s to a bare `/setup`, keeping
   the raw token out of the address bar / history / Referer.
+- **`/api/search` CSRF gate.** The cookie-authenticated `dashboard_api`
+  pipeline now runs `:protect_from_forgery` — a no-op for the only current
+  route (`GET /api/search`, a safe method) but it enforces a CSRF token the
+  moment any state-changing route is added to a session-authed pipeline
+  (and clears the SAST gate without silencing the check globally).
+- **`http_only` set explicitly on the session cookie (D20).** The director
+  session cookie's `HttpOnly` flag is now declared on `@session_options`
+  rather than inherited from Plug's default, so a dependency change can't
+  silently drop it; a regression test pins the flag on the wire.
 
 
 Browser dashboard auth via a director passphrase (PBKDF2-HMAC-SHA512),

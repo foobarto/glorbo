@@ -54,6 +54,19 @@ defmodule GlorboWeb.AuthFlowTest do
     end
   end
 
+  describe "session cookie hardening (GEP-0053 D20)" do
+    test "the director session cookie is HttpOnly", %{anon: anon} do
+      # GET /login runs the :browser pipeline (protect_from_forgery), which
+      # writes a CSRF token into the session and so emits the session
+      # Set-Cookie. D20 pins http_only explicitly on @session_options; this
+      # asserts the flag survives on the wire regardless of Plug defaults.
+      conn = get(anon, "/login")
+      cookie = conn.resp_cookies["_glorbo_key"]
+      assert cookie, "expected /login to set the _glorbo_key session cookie"
+      assert cookie[:http_only] == true
+    end
+  end
+
   describe "live socket re-validation (D1)" do
     test "a passphrase change disconnects an already-open tab on the next re-check", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/companies")

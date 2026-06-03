@@ -4,11 +4,21 @@ defmodule GlorboWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  #
+  # GEP-0053 D20: the director session cookie carries the auth marker, so
+  # `http_only: true` is load-bearing against XSS cookie theft (the dashboard
+  # renders agent-authored markdown; CSP is the other layer). It is set
+  # EXPLICITLY rather than relying on Plug.Session's default so a future Plug
+  # change or refactor can't silently drop it. `secure:` is deliberately left
+  # off: the dashboard binds loopback-only (config/runtime.exs hardcodes
+  # `ip: {127,0,0,1}`), so the cookie never traverses a network and a Secure
+  # flag would break the plain-HTTP loopback listener.
   @session_options [
     store: :cookie,
     key: "_glorbo_key",
     signing_salt: "qLM7LEAG",
-    same_site: "Lax"
+    same_site: "Lax",
+    http_only: true
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

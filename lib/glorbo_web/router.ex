@@ -64,9 +64,17 @@ defmodule GlorboWeb.Router do
   # ride the SAME passphrase gate as the dashboard — not the dashboard_token
   # (which is MCP/CLI-only once configured, D2). Same-origin browser fetches
   # carry the session cookie, so DirectorAuth authorises them.
+  #
+  # Because authorisation here is the session COOKIE (not a per-request
+  # bearer token), this pipeline is the CSRF-relevant case: `protect_from_forgery`
+  # is a no-op for the only current route (`GET /api/search`, a safe method)
+  # but enforces token checks the moment any state-changing (non-GET) route is
+  # added to a cookie-authenticated pipeline. Keeping it here also clears the
+  # SAST gate (sobelow Config.CSRF) instead of silencing the check globally.
   pipeline :dashboard_api do
     plug :accepts, ["json"]
     plug :fetch_session
+    plug :protect_from_forgery
     plug GlorboWeb.DirectorAuth
   end
 
