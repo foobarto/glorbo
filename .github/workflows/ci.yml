@@ -52,6 +52,17 @@ jobs:
 
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
           otp-version: '28.5'
@@ -323,6 +334,17 @@ jobs:
 
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
           otp-version: '28.5'
@@ -480,6 +502,17 @@ jobs:
 
       - name: Install Erlang + Elixir
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
           otp-version: '28.5'
