@@ -417,7 +417,8 @@ Native-provider credentials live in
 `~/.local/etc/glorbo/credentials/<provider>.toml` and are also
 bind-mounted read-only. The company directory holds no secrets.
 `~/.glorbo/config.md` stores dashboard settings (bind address,
-dashboard token) — not provider credentials.
+`dashboard_token`, and — since GEP-0053 — the `director_password_hash`
+for browser login) — but no provider credentials.
 
 ### 4.4  bwrap — The Kernel Guard
 
@@ -914,7 +915,9 @@ glorbo new skill <co> <name>    # Scaffold a new skill (--template supported).
 glorbo templates list [kind]    # List agent/skill templates.
 glorbo templates show <kind> <name>
                                 # Print a template's contents.
-glorbo import paperclip <src>   # Import a paperclip.ai agentcompanies tree.
+glorbo import paperclip <src> [--as <slug>]
+                                # Import a paperclip.ai tree — flat git-template
+                                # or live-instance layout (auto-detected, GEP-0054).
 
 glorbo logs <co> [agent] [--follow]
                                 # Tail audit log or agent stdout.
@@ -1056,7 +1059,13 @@ glorbo up
   home directory (`~/.claude/`, `~/.codex/`, `~/.config/gcloud/`, …).
   Glorbo never handles keys, never copies them into the company
   directory, never injects them as env vars. `~/.glorbo/config.md`
-  stores dashboard settings (bind address, dashboard token) only.
+  stores dashboard settings (bind address, `dashboard_token`, and the
+  GEP-0053 `director_password_hash`) only — no provider credentials.
+- **Two-credential dashboard model (GEP-0053):** the browser dashboard is
+  gated by a director **passphrase** (PBKDF2-HMAC-SHA512 hash in
+  `config.md`), while MCP/CLI clients authenticate with the
+  `dashboard_token` Bearer header. Once a passphrase is set, a token leak
+  no longer grants browser access; the token is MCP/CLI-only.
 - **Kernel-layer enforcement:** Even if an LLM attempts to access
   restricted paths, the kernel blocks it via bwrap mount namespaces.
 - **Reply-file size cap:** Invocations are bounded at 1 MiB by default

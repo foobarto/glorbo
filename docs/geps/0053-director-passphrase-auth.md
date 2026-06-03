@@ -2,7 +2,7 @@
 gep: 0053
 title: Director passphrase login — browser auth distinct from the MCP/CLI token
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-05-29
 requires: [48]
@@ -37,6 +37,15 @@ history:
       same-origin guard (optional — post-login redirect is hardcoded to
       `/`, so there is no open-redirect today). Flip to Implemented on the
       version cut.
+  - date: 2026-06-03
+    status: Implemented
+    note: |
+      Flipped to Implemented as part of the v0.25.0 cut. A pre-release
+      adversarial review of the full auth surface added two LOW hardenings
+      (dashboard_api `:protect_from_forgery`; explicit `http_only` on the
+      session cookie, D20) and recorded four as-shipped deltas from the
+      design prose — see the "As-shipped deltas" note under Implementation
+      status. D6 (idle timeout) and D11 (return_to) remain deferred.
 ---
 
 # GEP-0053: Director passphrase login — browser auth distinct from the MCP/CLI token
@@ -61,7 +70,32 @@ single-shot setup; the `/login` escalating-delay throttle (D14/D15); the
   redirect is currently hardcoded to `/`, so there is no open-redirect to
   guard against today.
 
-Flip status to Implemented on the version cut.
+**As-shipped deltas (recorded at the v0.25.0 cut).** The design prose and
+decision log below describe the original design; where the shipped code
+refined it, the truth is:
+
+- **Throttle gates `/login` only, not `/setup`** (cf. §Rate limiting / D14).
+  `/setup` is single-shot (D7): `Config.put_password_hash_if_absent/2` is a
+  node-global compare-and-set, so at most one PBKDF2 hash is ever computed
+  there and no throttle is owed.
+- **No `@reference_hash` per-mode timing flattener** (cf. §timing / D12). The
+  no-hash (BOOTSTRAP) state is handled by the route-level `/login` → `/setup`
+  redirect — itself the already-accepted BOOTSTRAP-vs-CONFIGURED oracle — so
+  the constant-cost reference hash was unnecessary and not built. Within
+  CONFIGURED, any non-empty guess pays the full 210k-round verify; an empty
+  submission is rejected pre-hash. The residual empty-vs-real timing
+  distinguisher is non-actionable given the work factor + the D14 throttle.
+- **Logout drops the issuing browser's cookie only** (cf. the actions /
+  failure-modes tables). It does not broadcast a socket disconnect;
+  live-tab revocation is via passphrase **reset** (hash rotation), enforced
+  by the ~60 s `on_mount` revalidation timer.
+- **No LAN `host != 127.0.0.1` startup warning** (cf. D20). Unnecessary: the
+  dashboard hard-binds loopback (`config/runtime.exs` `ip: {127,0,0,1}`), so
+  the LAN-exposure scenario is unreachable through normal config — stricter
+  than the spec. `http_only: true` is now set explicitly on `@session_options`
+  per D20 (added at the cut).
+
+Status flipped to Implemented at the v0.25.0 cut.
 
 ## Problem
 
@@ -246,7 +280,7 @@ per-route `protect_from_forgery` skip is permitted** (D8) — skipping
 |---|---|---|---|
 | `/setup` | GET/POST | BOOTSTRAP only + valid token | Sets the PBKDF2 hash, `renew`s + opens session, redirects in. Single-shot: re-reads disk inside the write critical section and rejects if a hash already exists (409/redirect). 404/redirect in CONFIGURED. |
 | `/login` | GET/POST | CONFIGURED only | Verifies passphrase, `renew`s + sets marker, redirects to a same-origin target. Generic error. Rate-limited *before* hashing. |
-| `/logout` | POST | any | `configure_session(conn, drop: true)`; broadcasts a socket disconnect. |
+| `/logout` | POST | any | `configure_session(conn, drop: true)` — drops the issuing browser's cookie. (Live-tab revocation is via passphrase reset + the ~60 s revalidation, not a logout broadcast — see As-shipped deltas.) |
 
 **Post-auth redirect**: default to `~p"/companies"`. If a `return_to`
 is honored it MUST pass the existing same-origin guard
@@ -395,7 +429,7 @@ Pre-1.0, atomic cut (project-profile: no soft-migration shims).
 | **`config.md` unparseable** post-configuration | Fatal boot / 503 | No ephemeral tokenless fallback once a hash existed (D10) |
 | **`reset-password` while daemon running** | CLI refuses, prints "stop server" | Daemon re-reads on next boot; in-place reset is no-op otherwise (D17) |
 | **Leaked session cookie** | — | 14-day cap + 72h idle timeout; "change passphrase" rotates the marker and kills all cookies. `store: :cookie` gives no instant server-side revoke — GEP-49's server-side store would (see-also) |
-| **Live socket survives logout/reset** | — | `on_mount` revalidation timer (~60 s) re-checks the marker and disconnects; logout broadcasts a socket disconnect (D1) |
+| **Live socket survives logout/reset** | — | `on_mount` revalidation timer (~60 s) re-checks the marker and disconnects after a passphrase **reset** (hash rotation). Logout drops the issuing browser's cookie only — no socket-disconnect broadcast (D1; see As-shipped deltas) |
 | **`/login` flood** | — | Throttle rejects pre-PBKDF2; no CPU burned for throttled attempts; immediate rejection holds no connection (D14) |
 | **DoS-by-lockout** | — | No hard lockout — escalating delay self-clears (D15) |
 | **Plain HTTP on LAN** (`host: 0.0.0.0`) | — | No `Secure` flag → cookie sniffable in transit. Loud startup warning when `host != 127.0.0.1`; operator must set `PHX_HOST` so `check_origin` matches, and is warned that director sessions are unprotected without TLS. Default bind stays loopback (D20) |

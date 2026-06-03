@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-06-03
+
 ### Added
 
 - **`glorbo import paperclip` reads live paperclip installs (GEP-0054).**
@@ -40,7 +42,7 @@ change between minor versions. Pin exact versions in downstream usage.
   `~/.local/etc/glorbo/credentials/minimax.toml`; select with
   `provider: minimax` + `model: MiniMax-M2.7` in `AGENT.md`.
 
-### Security — director passphrase login (GEP-0053, in progress)
+### Security — director passphrase login (GEP-0053)
 
 Post-implementation hardening from a final full-auth-surface review:
 
@@ -76,7 +78,7 @@ six-lens security red-team); hashing is PBKDF2 via `pbkdf2_elixir` — pure
 Elixir, chosen over Argon2id to keep the Burrito cross-build NIF-free
 (GEP-0053 D13).
 
-Landing incrementally. So far (config layer):
+Shipped in full this release:
 
 - `config.md` gains an optional `director_password_hash` key. Absent ⇒
   BOOTSTRAP, a valid `$pbkdf2-sha512$…` hash ⇒ CONFIGURED, any malformed
@@ -7194,7 +7196,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
 [0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0
 [0.23.1]: https://github.com/foobarto/glorbo/releases/tag/v0.23.1
 [0.23.0]: https://github.com/foobarto/glorbo/releases/tag/v0.23.0

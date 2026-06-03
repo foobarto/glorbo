@@ -253,6 +253,23 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
+- [ ] **Post-0.25.0 review follow-ups (non-blocking).** From the pre-release
+  adversarial review of the v0.25.0 diff (all LOW/nit, deferred past the cut):
+  - GEP-0054 D9: optionally lstat the glorbo-home *leaf* itself (refuse a
+    symlinked `~/.glorbo` final component) without re-walking OS ancestors —
+    restores PR #38's leaf protection without the `/home → /var/home`
+    false-positive. Documented as an accepted trade-off in GEP-0054 D9.
+  - `import_paperclip` companion-file read is lstat-then-`File.read!`
+    (narrow TOCTOU); close with `:file.read_link_info` on an open fd if a
+    future hardening pass wants it. Not exploitable single-user.
+  - CHANGELOG GEP-0053 entry reads as commit-by-commit accretion (4 blocks,
+    hardening before the feature intro) — reorder into one coherent narrative.
+  - GEP-29 `see-also` could gain `53` for link symmetry (GEP-0053 already
+    backlinks 29). Cosmetic.
+  - `assets/index.html` hard-codes the version in 3 spots; the Pages deploy
+    auto-syncs it from mix.exs, so committed source drifts harmlessly — can
+    `sed` it in sync at cut time if desired.
+
 - [ ] **Peer-review `:reroute` verdict (or deep-revision-as-subtask).**
   From the multi-agent orchestration benchmark
   (`docs/research/2026-04-25-multi-agent-orchestration-comparison.md`):

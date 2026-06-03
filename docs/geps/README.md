@@ -76,8 +76,8 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0050 | [Per-agent egress authorization — default-deny + caller-identity authz](./0050-per-agent-egress-authorization.md) | Standards | Draft |
 | 0051 | [Trusted peer-review verdict store — derive provenance from the audit log](./0051-trusted-peer-review-verdict-store.md) | Standards | Draft |
 | 0052 | [Provider-CLI credential hardening via in-sandbox guard hooks](./0052-provider-cli-hook-hardening.md) | Standards | Draft |
-| 0053 | [Director passphrase login — browser auth distinct from the MCP/CLI token](./0053-director-passphrase-auth.md) | Standards | Accepted |
-| 0054 | [Import the live paperclip-instance on-disk layout](./0054-paperclip-instance-layout-import.md) | Standards | Accepted |
+| 0053 | [Director passphrase login — browser auth distinct from the MCP/CLI token](./0053-director-passphrase-auth.md) | Standards | Implemented |
+| 0054 | [Import the live paperclip-instance on-disk layout](./0054-paperclip-instance-layout-import.md) | Standards | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

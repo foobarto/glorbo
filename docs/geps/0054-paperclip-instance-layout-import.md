@@ -2,7 +2,7 @@
 gep: 0054
 title: Import the live paperclip-instance on-disk layout
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-06-02
 requires: [3, 7, 15]
@@ -42,9 +42,22 @@ history:
       (D9). Live import succeeded (10 agents); company is DB-visible
       after reindex. The same flaw in the shared SymlinkGuard (reindex /
       sandbox) is logged in docs/todo.md as out-of-scope follow-up.
+  - date: 2026-06-03
+    status: Implemented
+    note: |
+      Flipped to Implemented as part of the v0.25.0 cut. A pre-release
+      review noted that the D9 narrowing also stops lstat-checking the
+      glorbo-home *leaf* itself (only segments strictly below it) — a
+      symlinked `~/.glorbo` would be followed. This is a deliberate,
+      now-documented trade-off (see D9): exploiting it requires write
+      access to the operator's home, at which point files can be written
+      directly, so it is not an escalation. Logged in docs/todo.md as an
+      optional follow-up (lstat the leaf, refusing only a symlinked final
+      component without re-introducing the `/home -> /var/home` ancestor
+      false-positive).
 ---
 
-# GEP-54: Import the live paperclip-instance on-disk layout
+# GEP-0054: Import the live paperclip-instance on-disk layout
 
 ## Problem
 
@@ -307,6 +320,15 @@ modifies `companies/<slug>/` without explicit Director action".
   above the home are operator-owned and may legitimately be symlinks.
   Realpath-canonicalising the base was rejected as more invasive and
   unnecessary once the trust boundary is drawn at the home.
+
+  Known narrowing: the walk now starts *at* the home leaf and only
+  lstat-checks segments strictly below it, so the home leaf itself
+  (e.g. a symlinked `~/.glorbo`) is no longer checked (it was, under
+  PR #38's walk-from-`/`). This is an accepted trade-off — a symlinked
+  config root implies the operator's home is already attacker-writable,
+  at which point the import guard is moot. An optional hardening (lstat
+  only the leaf, refusing a symlinked final component without re-walking
+  the OS ancestors) is tracked in docs/todo.md.
 
   Note: the shared `Glorbo.Sandbox.SymlinkGuard` used by `reindex`,
   `company_boot`, and the sandbox mappers has the *same* walk-from-`/`

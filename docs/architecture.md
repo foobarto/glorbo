@@ -107,6 +107,15 @@ Plus specialty LVs: Costs, Providers, Goals, BrainDump, Projects.
 (ApprovalQueueLive was folded into Inbox in backlog #14 — the Mine
 tab renders the same sentinel data with approve/deny buttons.)
 
+**Browser auth (GEP-0053):** the dashboard is gated by a director
+passphrase, not the MCP/CLI token. `GlorboWeb.DirectorAuth` is the gate
+(a plug for the dead render + an `on_mount` hook for the LiveView socket,
+since the socket bypasses the router pipeline); `GlorboWeb.AuthController`
+serves `/setup` / `/login` / `/logout`; `GlorboWeb.LoginThrottle` is the
+escalating-delay brute-force throttle; `GlorboWeb.Plugs.DashboardToken`
+remains the MCP/CLI Bearer gate. Once a passphrase is set the token grants
+no browser access.
+
 ### 5. MCP server (GEP-29) — `lib/glorbo_web/mcp/`
 
 **Entry points:** `GlorboWeb.MCP.Plug` (HTTP transport),
