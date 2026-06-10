@@ -33,14 +33,33 @@ defmodule GlorboWeb.ConnCase do
 
   setup tags do
     Glorbo.DataCase.setup_sandbox(tags)
-    # DashboardToken plug requires a bearer token on every request.
-    # Inject the test sentinel so ConnCase tests pass through the gate.
+    # DashboardToken plug (MCP/CLI surface) requires a bearer token. Inject
+    # the test sentinel so :api tests pass that gate.
     token = Application.get_env(:glorbo, :dashboard_token, "test-token")
 
     conn =
       Phoenix.ConnTest.build_conn()
       |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+      |> GlorboWeb.ConnCase.with_director_session()
 
     {:ok, conn: conn}
+  end
+
+  @doc """
+  Seed a valid `director_auth` passphrase session (GEP-0053) so the conn
+  passes `GlorboWeb.DirectorAuth` on the browser dashboard. The marker is
+  derived from the CONFIGURED test hash set in `test_helper.exs`; if the
+  app-env hash is absent (a test forced BOOTSTRAP), this is a no-op.
+  """
+  def with_director_session(conn) do
+    case Application.get_env(:glorbo, :director_password_hash) do
+      hash when is_binary(hash) ->
+        Plug.Test.init_test_session(conn, %{
+          GlorboWeb.DirectorAuth.session_key() => GlorboWeb.DirectorAuth.session_marker(hash)
+        })
+
+      _ ->
+        conn
+    end
   end
 end

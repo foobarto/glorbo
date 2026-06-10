@@ -20,6 +20,22 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
+- [ ] **`SymlinkGuard` false-positives on `/home → /var/home` (atomic
+  Fedora).** The shared `Glorbo.Sandbox.SymlinkGuard` (used by
+  `reindex`, `company_boot`, `sandbox/bwrap`, `permission_mapper`) walks
+  ancestors from `/` and rejects any symlinked segment. On Silverblue /
+  Bazzite / Kinoite, `/home` is a symlink to `/var/home`, so a default
+  `~/.glorbo` (= `/home/<user>/.glorbo`) makes `reindex` reject **every**
+  file (`indexed=0`) and would block company boot — glorbo only works
+  via the canonical `/var/home/...` path today. Discovered 2026-06-02
+  during the GEP-54 live import; the importer's *own* dest guard was
+  fixed in GEP-54 D9, but the shared guard is load-bearing sandbox
+  security (GEP-5) and needs its own design: scope the walk to at/below
+  the glorbo home (matching D9), or canonicalise the base via realpath.
+  **Likely warrants a GEP.** Interim: run with
+  `GLORBO_HOME=/var/home/<user>/.glorbo` or `default_root/0`
+  canonicalisation.
+
 - [x] **Agent-detail page re-render thrash while working.** Reported
   2026-05-21; the specific `document.scrollHeight` oscillation could not
   be reproduced (measured stable 900 px under load). Root cause addressed
@@ -236,6 +252,23 @@ it's been in CHANGELOG for a cycle.
   tally 100 / 34 waves.
 
 ## P2 — nice to have
+
+- [ ] **Post-0.25.0 review follow-ups (non-blocking).** From the pre-release
+  adversarial review of the v0.25.0 diff (all LOW/nit, deferred past the cut):
+  - GEP-0054 D9: optionally lstat the glorbo-home *leaf* itself (refuse a
+    symlinked `~/.glorbo` final component) without re-walking OS ancestors —
+    restores PR #38's leaf protection without the `/home → /var/home`
+    false-positive. Documented as an accepted trade-off in GEP-0054 D9.
+  - `import_paperclip` companion-file read is lstat-then-`File.read!`
+    (narrow TOCTOU); close with `:file.read_link_info` on an open fd if a
+    future hardening pass wants it. Not exploitable single-user.
+  - CHANGELOG GEP-0053 entry reads as commit-by-commit accretion (4 blocks,
+    hardening before the feature intro) — reorder into one coherent narrative.
+  - GEP-29 `see-also` could gain `53` for link symmetry (GEP-0053 already
+    backlinks 29). Cosmetic.
+  - `assets/index.html` hard-codes the version in 3 spots; the Pages deploy
+    auto-syncs it from mix.exs, so committed source drifts harmlessly — can
+    `sed` it in sync at cut time if desired.
 
 - [ ] **Peer-review `:reroute` verdict (or deep-revision-as-subtask).**
   From the multi-agent orchestration benchmark

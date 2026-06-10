@@ -57,6 +57,39 @@ is unavailable.
 
 ---
 
+## A0. Director passphrase auth (GEP-0053)
+
+Run against a **fresh** workspace (`/tmp/glorbo-uat-*`) so you exercise
+the bootstrap path.
+
+- [ ] **A0-1** — Fresh `glorbo serve`/`up` banner prints a
+  `…/setup?token=…` URL (NOT `/?token=`). Opening it shows the "Set your
+  passphrase" form.
+- [ ] **A0-2** — `/setup` without a valid `?token=` (or session) → 401.
+- [ ] **A0-3** — Submitting a passphrase < 8 chars or a mismatched
+  confirmation → inline error, no passphrase saved.
+- [ ] **A0-4** — Valid passphrase → redirected into the dashboard;
+  `~/.glorbo/config.md` now has a `director_password_hash: "$pbkdf2-…"`
+  line.
+- [ ] **A0-5** — Visiting `/setup` again now redirects to `/login`
+  (single-shot — can't re-plant).
+- [ ] **A0-6** — Open a dashboard page in a fresh browser (no session)
+  → redirected to `/login`. The old `?token=` URL no longer lets the
+  browser in.
+- [ ] **A0-7** — Wrong passphrase at `/login` → generic "Incorrect
+  passphrase" error. Several rapid wrong attempts → "Too many attempts —
+  wait Ns" (throttle); a correct passphrase during the cooldown is also
+  rejected until it elapses.
+- [ ] **A0-8** — Correct passphrase → dashboard. Restart the browser →
+  must sign in again (session cookie, no persistence by default).
+- [ ] **A0-9** — `glorbo down` then `glorbo reset-password` → "back in
+  first-run setup"; next start's banner is the `…/setup?token=` URL again.
+  Running `reset-password` while the daemon is up → refused with a "stop
+  it first" message.
+- [ ] **A0-10** — `glorbo up`/`serve` banner once configured prints a
+  bare `…/login` (no token in the URL). MCP/CLI `Authorization: Bearer
+  <dashboard_token>` still works against `/mcp` + `/api`.
+
 ## A. Overview & entry points (paperclip §1 · §10 · §16)
 
 - [ ] **A1** — `/companies` renders every `~/.glorbo/companies/<slug>/`

@@ -81,8 +81,8 @@ headers. No JS framework, no CSS build step.
   escapes the bind-mount list.
 - **Two provider kinds.** CLI adapters for `claude`, `gemini`, `codex`,
   `opencode`, `hermes`, `pi`, etc., plus native OpenAI-compatible endpoints
-  (`openai`, `openrouter`, drop-in LM Studio / Ollama / llama.cpp / LocalAI /
-  vLLM via `glorbo detect-providers` + `+ enable`). See GEP-32.
+  (`openai`, `openrouter`, `minimax`, drop-in LM Studio / Ollama / llama.cpp /
+  LocalAI / vLLM via `glorbo detect-providers` + `+ enable`). See GEP-32.
 - **Budget governance.** Per-agent AND per-company monthly budgets in
   frontmatter; dispatch refuses at 100%, warns at 80%.
 - **Permission model.** Declared in `AGENT.md`, enforced at both the Elixir
@@ -180,9 +180,15 @@ api_key = "sk-..."
 EOF
 ```
 
-Then point an agent at `provider: openai` (or `openrouter`) in `AGENT.md`.
-The native tool catalog is `read_file` / `write_file` / `edit_file` / `glob`
-/ `grep` / `bash` / `web_fetch`. See GEP-32 for the contract.
+Then point an agent at `provider: openai` (or `openrouter` / `minimax`) in
+`AGENT.md`. The native tool catalog is `read_file` / `write_file` /
+`edit_file` / `glob` / `grep` / `bash` / `web_fetch`. See GEP-32 for the
+contract.
+
+MiniMax ships with a static model catalog — `MiniMax-M3`, `MiniMax-M2.7`
+(+`-highspeed`), and `MiniMax-M2.5` (+`-highspeed`); the `-highspeed`
+variants are MiniMax's lower-latency serving tier with identical output.
+Credentials go in `~/.local/etc/glorbo/credentials/minimax.toml`.
 
 Or auto-detect a local server:
 
@@ -225,6 +231,16 @@ glorbo logs acme ceo --follow
 glorbo down
 ```
 
+**Signing in (GEP-0053).** On first run the startup banner prints a
+`http://127.0.0.1:4000/setup?token=…` URL — open it and choose a director
+**passphrase**. After that the dashboard is reached at `/login` with that
+passphrase; the one-time setup token is no longer needed in the browser.
+MCP clients and CLIs keep using the `dashboard_token` (in
+`~/.glorbo/config.md`) as an `Authorization: Bearer` API key — a token
+leak no longer grants browser access once a passphrase is set. Forgot the
+passphrase? Stop the daemon and run `glorbo reset-password` to return to
+first-run setup.
+
 To run as a user-level systemd service that survives shell sessions:
 
 ```bash
@@ -238,6 +254,7 @@ glorbo uninstall       # disable + remove the unit (keeps ~/.glorbo intact)
 ```
 glorbo init [--force] [--no-example]    Bootstrap ~/.glorbo/ and verify deps
 glorbo up | down | status | serve       Daemon lifecycle
+glorbo reset-password                   Clear the dashboard passphrase → first-run setup (GEP-0053)
 glorbo run <co>/<agent> <task>          One-shot agent dispatch (no dashboard)
 glorbo install [--force] [--no-start]   Install user-systemd service (Linux)
 glorbo uninstall                        Remove user-systemd service
@@ -330,7 +347,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.24.0** (2026-05-23). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.25.0** (2026-06-03). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /

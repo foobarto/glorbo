@@ -58,6 +58,7 @@ defmodule Glorbo.CLI do
           | :shell
           | :install
           | :uninstall
+          | :reset_password
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -126,6 +127,8 @@ defmodule Glorbo.CLI do
   def dispatch(["down" | rest]), do: Lifecycle.Down.run(rest)
   def dispatch(["status" | rest]), do: Lifecycle.Status.run(rest)
   def dispatch(["serve" | rest]), do: Lifecycle.Serve.run(rest)
+  # GEP-0053: clear the director dashboard passphrase (recovery → bootstrap).
+  def dispatch(["reset-password" | rest]), do: Lifecycle.ResetPassword.run(rest)
   def dispatch(["run" | rest]), do: Lifecycle.Run.run(rest)
 
   # Phase-5 scaffolding (Plan 02 fills). `new` without a subcommand or with
@@ -608,6 +611,7 @@ defmodule Glorbo.CLI do
               [--no-start]
       uninstall                Disable + remove the user systemd service
       console                  Open iex --remsh into the running release
+      reset-password           Clear the dashboard passphrase → first-run setup (GEP-0053)
       help [<verb>]            Print help (verb-specific when given)
       version                  Print the binary's version (also: --version, -V)
 
@@ -621,6 +625,7 @@ defmodule Glorbo.CLI do
   defp verb_help_text("down"), do: Lifecycle.Down.help_text()
   defp verb_help_text("status"), do: Lifecycle.Status.help_text()
   defp verb_help_text("serve"), do: Lifecycle.Serve.help_text()
+  defp verb_help_text("reset-password"), do: Lifecycle.ResetPassword.help_text()
   defp verb_help_text("run"), do: Lifecycle.Run.help_text()
   defp verb_help_text("harness"), do: Harness.help_text()
   defp verb_help_text("new"), do: new_help_text()

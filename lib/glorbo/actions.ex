@@ -127,6 +127,53 @@ defmodule Glorbo.Actions do
     end
   end
 
+  @doc """
+  Create the Director↔agent DM channel file
+  (`channels/dm-director--<agent>.md`) with its canonical `channel-log/v1`
+  header, if it does not already exist. Idempotent.
+
+  GEP-0053 D19: DM channel files are created **lazily on the first director
+  message** (a CSRF-protected LiveView/WS event) — never on the
+  `GET /companies/:co/dms/:agent` redirect, which is forgeable under
+  `SameSite=Lax`. `ChannelLive` renders an empty DM thread until this runs.
+  """
+  @spec ensure_dm_channel(String.t(), String.t(), keyword()) :: ok_or_err
+  def ensure_dm_channel(company, agent, opts \\ []) do
+    base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
+
+    with :ok <- validate_slug(company),
+         :ok <- validate_slug(agent) do
+      slug = "dm-director--#{agent}"
+      channels_dir = Path.join([base, "companies", company, "channels"])
+      path = Path.join(channels_dir, "#{slug}.md")
+
+      header = """
+      ---
+      kind: channel-log/v1
+      channel: #{slug}
+      ---
+      # DM · director ↔ #{agent}
+      """
+
+      # First-write-wins, atomically: `:exclusive` (O_CREAT|O_EXCL)
+      # makes "create if absent" a single syscall, so two
+      # near-simultaneous first posts can't interleave an
+      # exists?-then-write and clobber a thread back to its header.
+      # `:eexist` therefore IS the idempotent success path. The
+      # lstat gate (M03 seam) rejects a pre-planted symlink before
+      # we touch the path; O_EXCL also refuses to follow one at
+      # create time, closing the lstat→open TOCTOU window.
+      with :ok <- File.mkdir_p(channels_dir),
+           :ok <- ensure_regular_file_for_write(path) do
+        case File.write(path, header, [:exclusive]) do
+          :ok -> :ok
+          {:error, :eexist} -> :ok
+          {:error, _} = err -> err
+        end
+      end
+    end
+  end
+
   @task_path_re ~r{\Aprojects/[a-z0-9-]+/tasks/[a-z0-9-]+\.md\z}
 
   @doc """

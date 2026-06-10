@@ -66,34 +66,59 @@ defmodule GlorboWeb.ChannelLive do
     base = base_dir()
     path = channel_path(base, co, ch)
 
-    if File.exists?(path) do
-      if connected?(socket) do
-        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels:#{ch}")
-        Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
-      end
+    cond do
+      File.exists?(path) ->
+        mount_channel(co, ch, socket, base, path, load_messages(path, co))
 
-      {:ok,
-       socket
-       |> assign(:page_title, "#{ch} — #{co} — Glorbo")
-       |> assign(:sidebar_active, :chat)
-       |> assign(:current_company, co)
-       |> assign(:company_slug, co)
-       |> assign(:channel, ch)
-       |> assign(:base, base)
-       |> assign(:compose_body, "")
-       |> assign(:channels, list_channels(base, co))
-       |> assign(:dm_threads, list_dm_threads(base, co))
-       |> assign(:messages, load_messages(path, co))
-       |> assign(:archives, list_archive_segments(base, co, ch))
-       |> assign(:open_archive, nil)
-       |> assign(:open_archive_messages, [])
-       |> assign(:new_channel_slug, "")
-       |> ChatDrawer.State.wire_drawer()}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "Channel \"#{ch}\" not found in #{co}.")
-       |> push_navigate(to: ~p"/companies/#{co}")}
+      # GEP-0053 D19: a DM thread renders even before its file exists — the
+      # file is created lazily on the first director post (a CSRF-protected
+      # socket event), never on this GET dead render. Empty thread until
+      # then. Only for a DM whose counterparty agent actually exists.
+      dm_channel?(ch) and dm_agent_exists?(base, co, ch) ->
+        mount_channel(co, ch, socket, base, path, [])
+
+      true ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Channel \"#{ch}\" not found in #{co}.")
+         |> push_navigate(to: ~p"/companies/#{co}")}
+    end
+  end
+
+  defp mount_channel(co, ch, socket, base, _path, messages) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:channels:#{ch}")
+      Phoenix.PubSub.subscribe(Glorbo.PubSub, "company:#{co}:agents:status")
+    end
+
+    {:ok,
+     socket
+     |> assign(:page_title, "#{ch} — #{co} — Glorbo")
+     |> assign(:sidebar_active, :chat)
+     |> assign(:current_company, co)
+     |> assign(:company_slug, co)
+     |> assign(:channel, ch)
+     |> assign(:base, base)
+     |> assign(:compose_body, "")
+     |> assign(:channels, list_channels(base, co))
+     |> assign(:dm_threads, list_dm_threads(base, co))
+     |> assign(:messages, messages)
+     |> assign(:archives, list_archive_segments(base, co, ch))
+     |> assign(:open_archive, nil)
+     |> assign(:open_archive_messages, [])
+     |> assign(:new_channel_slug, "")
+     |> ChatDrawer.State.wire_drawer()}
+  end
+
+  defp dm_channel?(ch), do: match?({:ok, _}, dm_agent(ch))
+
+  defp dm_agent("dm-director--" <> agent) when agent != "", do: {:ok, agent}
+  defp dm_agent(_), do: :error
+
+  defp dm_agent_exists?(base, co, ch) do
+    case dm_agent(ch) do
+      {:ok, agent} -> File.dir?(Path.join([base, "companies", co, "agents", agent]))
+      :error -> false
     end
   end
 
@@ -226,10 +251,21 @@ defmodule GlorboWeb.ChannelLive do
 
   def handle_event("post", %{"body" => body}, socket) do
     trimmed = String.trim(body)
+    co = socket.assigns.company_slug
+    ch = socket.assigns.channel
+
+    # GEP-0053 D19: lazily materialise a DM channel file on the first post.
+    # This runs on the CSRF-protected socket event, NOT a GET — the
+    # `redirect_to_dm` GET and the dead-render mount no longer write. No-op
+    # for an existing or non-DM channel.
+    case dm_agent(ch) do
+      {:ok, agent} -> Glorbo.Actions.ensure_dm_channel(co, agent, base: socket.assigns.base)
+      :error -> :ok
+    end
 
     case GlorboWeb.Actions.post_message(
-           socket.assigns.company_slug,
-           socket.assigns.channel,
+           co,
+           ch,
            trimmed,
            base: socket.assigns.base
          ) do

@@ -70,18 +70,23 @@ defmodule Glorbo.CLI.Lifecycle.Up do
       # NOTE: detail MUST NOT include the cookie (T-05-02).
       Audit.emit("up", "complete", %{pid: os_pid})
 
-      # Derive the token URL from config so the operator can click straight
-      # through to the authenticated dashboard without hunting for the token.
-      token_url =
+      # Derive the dashboard URL from config. GEP-0053 D18: state-aware —
+      # `?token=` (→ /setup) only in bootstrap; bare /login once a passphrase
+      # is set (the token is MCP/CLI-only then and shouldn't be reprinted).
+      dashboard_url =
         case Glorbo.Config.load(base) do
-          {:ok, %{dashboard_token: t}} when is_binary(t) and t != "" ->
-            "http://127.0.0.1:4000/?token=#{t}"
+          {:ok, cfg} ->
+            Glorbo.CLI.Lifecycle.Banner.dashboard_url(
+              "http://127.0.0.1:4000",
+              cfg.director_password_hash,
+              cfg.dashboard_token
+            )
 
           _ ->
-            "http://127.0.0.1:4000  (token: see ~/.glorbo/config.md)"
+            "http://127.0.0.1:4000  (see ~/.glorbo/config.md)"
         end
 
-      {:up, 0, "glorbo up (pid=#{os_pid}). Dashboard: #{token_url}\n"}
+      {:up, 0, "glorbo up (pid=#{os_pid}). Dashboard: #{dashboard_url}\n"}
     else
       {:error, {:pidfile_write, os_pid, reason}} ->
         # WR-04: daemon was already spawned by setsid but we cannot

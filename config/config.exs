@@ -36,6 +36,27 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# GEP-0053 D21: keep the director passphrase out of request logs. Phoenix
+# filters params whose key contains any listed term; "passphrase" covers
+# the /login + /setup fields (incl. passphrase_confirmation). "password"
+# is the framework default, kept; "token" masks dashboard_token if a param
+# ever carries it.
+config :phoenix, :filter_parameters, ["password", "passphrase", "token"]
+
+# GEP-0053 — director passphrase login. PBKDF2-HMAC-SHA512 work factor.
+# 210k rounds is the OWASP 2023 minimum for PBKDF2-SHA512. `config/test.exs`
+# overrides this to 1 so the suite isn't paying 210k rounds on every login
+# assertion. The stored hash envelope (`$pbkdf2-sha512$<rounds>$…`) is the
+# source of truth for verify cost; this value only sets the cost for NEW
+# hashes (first `/setup`, and the timing-parity reference hash).
+config :pbkdf2_elixir, rounds: 210_000
+
+# GEP-0053 D14/D15 — /login escalating-delay throttle. `base_ms` is the
+# first backoff after a failed attempt, doubling per consecutive failure
+# up to `max_ms`; `free_attempts` failures incur no delay. Mild for the
+# sole director (a 0.5s pause after a typo), punishing for a brute-forcer.
+config :glorbo, GlorboWeb.LoginThrottle, base_ms: 500, max_ms: 5_000, free_attempts: 0
+
 # Phase 3 config — LLM rate table (D-30) + proxy network policy allowlist (D-16).
 # These are loaded BEFORE the env-specific import so test/dev/prod can override.
 import_config "llm_rates.exs"

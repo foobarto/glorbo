@@ -4,7 +4,7 @@ defmodule Glorbo.MixProject do
   def project do
     [
       app: :glorbo,
-      version: "0.24.0",
+      version: "0.25.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -95,6 +95,12 @@ defmodule Glorbo.MixProject do
       {:phoenix_html, "~> 4.2"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.1"},
+      # GEP-0053 — director passphrase login. PBKDF2-HMAC-SHA512 hashing
+      # for the browser passphrase. Pure-Elixir (preserves Burrito — no
+      # NIF to cross-compile to the 4 release targets); chosen over
+      # argon2_elixir for exactly that reason (GEP-0053 D13). Rounds are
+      # pinned in config/config.exs (210k, OWASP) + config/test.exs (1).
+      {:pbkdf2_elixir, "~> 2.2"},
       {:floki, ">= 0.37.0", only: :test},
       # Phoenix LiveView 1.1's `Phoenix.LiveViewTest` requires `lazy_html`
       # for DOM parsing in connected-mount tests (Plan 04-02 Wave 1).

@@ -10,6 +10,164 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **DM channel creation race + symlink follow** (PR #42 review,
+  Copilot): `Glorbo.Actions.ensure_dm_channel/3` used a non-atomic
+  `exists?` + write, letting two near-simultaneous first posts clobber
+  a thread back to its header, and never lstat-gated the path. Now an
+  `O_CREAT|O_EXCL` exclusive create (`:eexist` = idempotent success)
+  behind the M03 `AgentWritableFile` guard.
+- **Zero-rounds PBKDF2 hash accepted as CONFIGURED** (PR #42 review,
+  Codex P2): a hand-edited/torn `$pbkdf2-…$0$…` value passed the
+  structural check and would hang/crash `/login` inside
+  `Pbkdf2.verify_pass/2`. The rounds segment now requires a positive
+  integer with no leading zero; bad values fail closed as DEGRADED.
+- **CI: pin OTP to 28.5.0.1** — `otp-version: '28.5'` started
+  resolving to 28.5.0.2, whose precompiled linux musl ERTS Beam
+  Machine has not published yet, 404-ing every Burrito build.
+
+### Changed
+
+- **Dependency bumps** (folded from dependabot PRs #43/#44):
+  earmark 1.4.49, phoenix_live_view 1.1.31, yaml_elixir 2.12.2,
+  thousand_island 1.5.0 (transitive); GitHub Actions pins
+  `actions/checkout` v6.0.3 and `github/codeql-action` v4.36.1.
+
+## [0.25.0] — 2026-06-03
+
+### Added
+
+- **`glorbo import paperclip` reads live paperclip installs (GEP-0054).**
+  The importer now auto-detects the on-disk layout of a *running*
+  paperclip instance (`<src>/agents/<uuid>/instructions/AGENTS.md`) in
+  addition to the flat `paperclipai/companies:main` git template
+  (`<src>/<agent>/AGENTS.md`). Point it at a paperclip company directory
+  and it descends into `agents/`, reads each agent's contract files from
+  `instructions/`, and imports under the agent's UUID directory name
+  (rename later + `glorbo reindex`). Paperclip `memory/`/`life/` dirs are
+  not carried over (flagged in the report, not dropped silently), and a
+  zero-match import now says so loudly instead of scaffolding an empty
+  company. All existing C-098 symlink/lstat guards extend to the deeper
+  paths; flat-layout behaviour is unchanged. The importer's
+  destination-directory guard now scopes its symlink checks to segments
+  at/below the glorbo home (the threat is a symlink planted *inside* the
+  home, not OS dirs above it), so `glorbo import paperclip` works with
+  the default `~/.glorbo` on atomic-Fedora hosts where `/home` itself is
+  a symlink (`/home → /var/home`).
+
+- **MiniMax native provider.** New built-in `minimax` provider
+  (`priv/providers/minimax.toml`) targeting MiniMax's OpenAI-compatible
+  endpoint (`https://api.minimax.io/v1`) via the existing native harness
+  (GEP-32) — bearer auth, `native-v1` usage tracking. Ships a static model
+  catalog: `MiniMax-M3`, plus the M2.x family `MiniMax-M2.7` and
+  `MiniMax-M2.5` each with their `-highspeed` low-latency serving-tier
+  variant. Credentials live in
+  `~/.local/etc/glorbo/credentials/minimax.toml`; select with
+  `provider: minimax` + `model: MiniMax-M2.7` in `AGENT.md`.
+
+### Security — director passphrase login (GEP-0053)
+
+Post-implementation hardening from a final full-auth-surface review:
+
+- **`/login` parallel-burst gate.** The throttle's check+record is now one
+  atomic `reserve/0` call, so a burst of concurrent `/login` requests can't
+  all slip past the pre-PBKDF2 gate (only one verify proceeds per backoff
+  window). A throttled attempt no longer ratchets the delay — a flood can't
+  extend the operator's own lockout.
+- **`/setup` single-shot is now atomic** (`Config.put_password_hash_if_absent/2`
+  under a node-global lock; proven by a concurrency test) — concurrent
+  bootstrap POSTs can't double-write; the loser sees `:already_set`.
+- **`/api/search` is gated by the passphrase session, not the token** — a
+  `dashboard_token` holder without the passphrase can no longer enumerate
+  task titles once a passphrase is set.
+- **Bootstrap token stripped from the `/setup` URL** — a `?token=` is
+  stashed in the session and the request 302s to a bare `/setup`, keeping
+  the raw token out of the address bar / history / Referer.
+- **`/api/search` CSRF gate.** The cookie-authenticated `dashboard_api`
+  pipeline now runs `:protect_from_forgery` — a no-op for the only current
+  route (`GET /api/search`, a safe method) but it enforces a CSRF token the
+  moment any state-changing route is added to a session-authed pipeline
+  (and clears the SAST gate without silencing the check globally).
+- **`http_only` set explicitly on the session cookie (D20).** The director
+  session cookie's `HttpOnly` flag is now declared on `@session_options`
+  rather than inherited from Plug's default, so a dependency change can't
+  silently drop it; a regression test pins the flag on the wire.
+
+
+Browser dashboard auth via a director passphrase (PBKDF2-HMAC-SHA512),
+distinct from the MCP/CLI `dashboard_token`. Once a passphrase is set the
+token no longer grants browser access. Specced in GEP-0053 (hardened by a
+six-lens security red-team); hashing is PBKDF2 via `pbkdf2_elixir` — pure
+Elixir, chosen over Argon2id to keep the Burrito cross-build NIF-free
+(GEP-0053 D13).
+
+Shipped in full this release:
+
+- `config.md` gains an optional `director_password_hash` key. Absent ⇒
+  BOOTSTRAP, a valid `$pbkdf2-sha512$…` hash ⇒ CONFIGURED, any malformed
+  value ⇒ DEGRADED (fail-closed — a corrupt byte never silently re-opens
+  setup). Written double-quoted + atomically at mode 0600; survives
+  `mix glorbo fmt`.
+- `Glorbo.Config.put_password_hash/2` + `clear_password_hash/1` patch the
+  key **frontmatter-scoped** (a body line can't divert the write) and
+  span-aware (a multiline value can't orphan lines onto a neighbour).
+  Runtime wires `:director_password_hash` (prod + dev), with a fail-closed
+  fallback when the config can't be read.
+- PBKDF2 work factor pinned: 210k rounds (OWASP) in prod, 1 in test.
+- `GlorboWeb.DirectorAuth` — the browser-auth gate. One module, two entry
+  points (a plug for the dead render + an `on_mount` hook for the LiveView
+  socket, since the socket bypasses the router pipeline). BOOTSTRAP →
+  `/setup`, CONFIGURED → requires the passphrase session (the token marker
+  is never honoured here), DEGRADED → 503 fail-closed. The connected
+  socket re-checks every 60s so a passphrase reset disconnects open tabs.
+- **`glorbo reset-password`** — recovery from a forgotten/compromised
+  passphrase: clears `director_password_hash` from `config.md`, returning
+  the dashboard to first-run setup (the `dashboard_token` is untouched).
+  Refuses while the daemon is running (a separate CLI process can't update
+  the live node's in-memory hash, so the reset wouldn't take effect — stop
+  it with `glorbo down` first).
+- **State-aware startup banner** — `glorbo serve` / `up` print the
+  `?token=` URL only in bootstrap (→ `/setup`); once a passphrase is set
+  they print a bare `/login` and never reprint the token (it grants no
+  browser access then, and stays out of scrollback/journals).
+- Director passphrase params are kept out of request logs
+  (`:phoenix, :filter_parameters` gains `passphrase`/`token`).
+- **CSRF: no GET mutates state.** `GET /companies/:c/dms/:agent` no longer
+  writes a DM channel file (a state-changing GET is forgeable under
+  `SameSite=Lax`); it's now a pure redirect. The DM thread renders empty
+  until the director's first message, which materialises the file on the
+  CSRF-protected socket event (`Glorbo.Actions.ensure_dm_channel/3`). This
+  was the only state-changing GET in the router (D19).
+- **`/login` brute-force throttle** (`GlorboWeb.LoginThrottle`): an
+  escalating per-failure delay (capped), consulted *before* the PBKDF2
+  verify so a throttled attempt burns zero hashing cost and holds no
+  connection. Deliberately **no hard lockout** — a lockout on a single-user
+  loopback box is a self-inflicted DoS; the delay self-clears, so the
+  director gets in after one short backoff while a brute-forcer is reduced
+  to a few guesses/minute (irrelevant against a real passphrase + 210k-round
+  PBKDF2). `/setup` needs no throttle — it's single-shot, so at most one
+  hash is ever computed.
+- The browser dashboard is now **wired behind the passphrase gate**:
+  `DirectorAuth` gates the dead render + the dashboard `live_session`
+  gates the socket; `DashboardToken` is now MCP/CLI-only (`:api` + `:mcp`)
+  — a token leak no longer grants dashboard access once a passphrase is
+  set. `/login`, first-run `/setup` (bootstrap + token-gated, single-shot),
+  and `/logout` are live, with CSRF-protected forms; on success the
+  session is rotated (anti-fixation) and `/setup` flips the running node to
+  configured without a restart.
+
+Hardening to the shared secret-write path (also covers `dashboard_token`
++ `erl_cookie`), surfaced by the GEP-0053 security review:
+
+- `~/.glorbo/` is now chmod'd to `0700` (was umask-default, typically
+  0755). Closes a local-user read of every secret at rest — config token,
+  password hash, `secret_key_base`, `erl_cookie`, the SQLite projection,
+  and the audit log. `atomic_write_secret!` also forces its parent dir
+  `0700` before writing, so the brief umask-default window on a freshly
+  created temp file is unreachable from other accounts (an open fd
+  survives a later chmod, so the directory is the real boundary).
+
 ### Tooling — bump Elixir 1.18.4 → 1.19.5 and OTP 28.0.2 → 28.5
 
 Latest stable on both runtimes. Picks up the security patches that
@@ -7062,7 +7220,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
 [0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0
 [0.23.1]: https://github.com/foobarto/glorbo/releases/tag/v0.23.1
 [0.23.0]: https://github.com/foobarto/glorbo/releases/tag/v0.23.0

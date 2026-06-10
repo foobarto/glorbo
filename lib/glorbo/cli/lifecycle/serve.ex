@@ -106,16 +106,16 @@ defmodule Glorbo.CLI.Lifecycle.Serve do
     :ok
   end
 
-  # Build the dashboard URL, appending the token when one has been loaded
-  # into app env by runtime.exs (production) or explicitly set in tests.
+  # Build the dashboard URL. GEP-0053 D18: state-aware — the `?token=` URL
+  # is printed only in BOOTSTRAP (to reach /setup); once a passphrase is
+  # set the banner points at /login with no token (the token grants no
+  # browser access anymore + stays out of scrollback).
   defp build_url do
-    case Application.get_env(:glorbo, :dashboard_token) do
-      token when is_binary(token) and token != "" ->
-        "http://127.0.0.1:4000/?token=#{token}"
-
-      _ ->
-        "http://127.0.0.1:4000"
-    end
+    Glorbo.CLI.Lifecycle.Banner.dashboard_url(
+      "http://127.0.0.1:4000",
+      Application.get_env(:glorbo, :director_password_hash),
+      Application.get_env(:glorbo, :dashboard_token)
+    )
   end
 
   @spec help_text() :: String.t()

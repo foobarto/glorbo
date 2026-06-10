@@ -58,6 +58,20 @@ config :glorbo, :serve_starts_endpoint, false
 # ConnCase/LiveCase can inject it into every conn without reading config files.
 config :glorbo, :dashboard_token, "test-token"
 
+# GEP-0053 — director passphrase login. Drop PBKDF2 to 1 round under test
+# so every /setup + /login assertion (and the DirectorAuth reference-hash
+# timing path) is fast. Test fixtures that bake a stored hash MUST be
+# generated at this same round count (GEP-0053 D13) so a 1-round dummy
+# never mixes with a 210k-round fixture.
+config :pbkdf2_elixir, rounds: 1
+
+# GEP-0053: a 2s base window so the throttle-engaged integration assertion
+# is deterministic (one reserve → the next request within ~2s is throttled,
+# comfortably longer than a GET+POST round-trip). Tests reset
+# GlorboWeb.LoginThrottle in setup; only the auth-flow suite exercises
+# /login.
+config :glorbo, GlorboWeb.LoginThrottle, base_ms: 2_000, max_ms: 5_000, free_attempts: 0
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

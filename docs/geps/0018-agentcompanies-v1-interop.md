@@ -6,6 +6,7 @@ status: Placeholder
 type: Informational
 created: 2026-04-18
 see-also: [3, 4, 10, 13, 14, 15]
+extended-by: [54]
 history:
   - date: 2026-04-18
     status: Placeholder
@@ -15,6 +16,14 @@ history:
       neutral. This GEP is a placeholder to think about whether
       Glorbo's on-disk layout should converge onto that schema, or
       stay divergent and document the differences.
+  - date: 2026-06-02
+    status: Placeholder
+    note: >-
+      GEP-54 extends this placeholder on the read side: it teaches
+      `glorbo import paperclip` the live paperclip-instance on-disk
+      layout (deep, UUID-named agent dirs, contract files under
+      `instructions/`). No write-side schema convergence — the open
+      questions here remain open.
 ---
 
 # GEP-18: agentcompanies/v1 interop — adopt paperclip.ai's schema?

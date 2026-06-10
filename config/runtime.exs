@@ -59,7 +59,12 @@ if config_env() == :prod do
           secret_key_base: :crypto.strong_rand_bytes(64) |> Base.url_encode64(),
           host: "127.0.0.1",
           port: 4000,
-          dashboard_token: nil
+          dashboard_token: nil,
+          # GEP-0053 D9/D10: a failed config load is a degraded posture, not
+          # bootstrap. `:malformed` makes DirectorAuth fail CLOSED (browser
+          # denied) rather than silently re-opening `/setup`. (dashboard_token:
+          # nil already 500s the token gate, so MCP/CLI are denied too.)
+          director_password_hash: :malformed
         }
     end
 
@@ -69,6 +74,11 @@ if config_env() == :prod do
 
   config :glorbo, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
   config :glorbo, :dashboard_token, cfg.dashboard_token
+  # GEP-0053 — director passphrase hash. `nil` ⇒ BOOTSTRAP, a
+  # `$pbkdf2-sha512$…` string ⇒ CONFIGURED, `:malformed` ⇒ DEGRADED.
+  # The in-daemon `/setup` handler `put_env`s this after writing the hash
+  # so the gate engages without a restart (D3).
+  config :glorbo, :director_password_hash, cfg.director_password_hash
 
   # Derive the LiveView signing_salt from the runtime secret_key_base
   # so we don't ship a hardcoded value. The compile-time config.exs
@@ -110,7 +120,12 @@ end
 # `config/test.exs`, so this load is dev-only.
 if config_env() == :dev do
   case Glorbo.Config.load() do
-    {:ok, cfg} -> config :glorbo, :dashboard_token, cfg.dashboard_token
-    {:error, _reason} -> :ok
+    {:ok, cfg} ->
+      config :glorbo, :dashboard_token, cfg.dashboard_token
+      # GEP-0053 dev parity — DirectorAuth reads this for the browser gate.
+      config :glorbo, :director_password_hash, cfg.director_password_hash
+
+    {:error, _reason} ->
+      :ok
   end
 end

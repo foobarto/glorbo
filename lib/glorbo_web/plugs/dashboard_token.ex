@@ -67,6 +67,40 @@ defmodule GlorboWeb.Plugs.DashboardToken do
     end
   end
 
+  @doc """
+  True if `conn` already carries a valid `dashboard_token` — via a prior
+  bootstrap session cookie, a `?token=` query param, or an
+  `Authorization: Bearer` header. Pure predicate, no side effects.
+
+  Used by `GlorboWeb.AuthController` to gate `/setup` during BOOTSTRAP
+  (GEP-0053): the token is what authorises setting a passphrase before one
+  exists. Returns `false` when no token is configured.
+  """
+  @spec authorized?(Plug.Conn.t()) :: boolean()
+  def authorized?(conn) do
+    case Application.get_env(:glorbo, :dashboard_token) do
+      token when is_binary(token) and token != "" ->
+        authenticated_via_session?(conn, token) or valid_token_supplied?(conn, token)
+
+      _ ->
+        false
+    end
+  end
+
+  @doc """
+  Persist the token fingerprint into the session so subsequent requests
+  in the BOOTSTRAP setup flow need no `?token=` (keeps the raw token out
+  of the rendered `/setup` form). No-op when no token is configured or no
+  session is loaded.
+  """
+  @spec remember(Plug.Conn.t()) :: Plug.Conn.t()
+  def remember(conn) do
+    case Application.get_env(:glorbo, :dashboard_token) do
+      token when is_binary(token) and token != "" -> persist_session(conn, token)
+      _ -> conn
+    end
+  end
+
   defp check_token(conn, expected) do
     cond do
       # 1. Browser already authenticated this session.

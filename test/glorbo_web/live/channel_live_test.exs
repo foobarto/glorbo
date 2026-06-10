@@ -106,15 +106,40 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert html =~ ~r/<a [^>]*href="\/companies\/acme\/dms\/ceo"[^>]*>\s*ceo\s*<\/a>/
   end
 
-  test "dm channel URL auto-creates + redirects to ChannelLive", %{conn: conn, base: base} do
+  test "dm channel URL is a PURE redirect — no file written on the GET (GEP-0053 D19)", %{
+    conn: conn,
+    base: base
+  } do
+    dm_path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+    refute File.exists?(dm_path)
+
     {:error, {:redirect, %{to: dest}}} = live(conn, "/companies/acme/dms/ceo")
     assert dest == "/companies/acme/channels/dm-director--ceo"
 
-    # ensure_dm_channel/3 side-effect: the file was seeded.
-    dm_path =
-      Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+    # The state-changing-GET CSRF gap is closed: the redirect created nothing.
+    refute File.exists?(dm_path)
+  end
+
+  test "an unstarted DM renders empty, then the first post lazily creates the file (D19)", %{
+    conn: conn,
+    base: base
+  } do
+    dm_path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+    refute File.exists?(dm_path)
+
+    # ChannelLive renders the DM thread even though no file exists yet, and
+    # the dead-render mount writes nothing.
+    {:ok, view, _html} = live(conn, "/companies/acme/channels/dm-director--ceo")
+    refute File.exists?(dm_path)
+
+    # The first director message (a CSRF-protected socket event) materialises
+    # the file with its canonical header, then appends.
+    render_submit(view, "post", %{"body" => "first message"})
 
     assert File.exists?(dm_path)
+    content = File.read!(dm_path)
+    assert content =~ "kind: channel-log/v1"
+    assert content =~ "first message"
   end
 
   test "public channel list hides dm-director--* entries", %{conn: conn, base: base} do

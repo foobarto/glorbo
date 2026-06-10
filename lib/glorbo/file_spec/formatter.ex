@@ -315,6 +315,12 @@ defmodule Glorbo.FileSpec.Formatter do
   # Quote a scalar when (a) it's empty, (b) it collides with a YAML
   # special, or (c) it contains characters that wouldn't round-trip
   # unquoted. Keep the list narrow — over-quoting is ugly.
+  #
+  # `$` is in the leading-char set for GEP-0053: the director passphrase
+  # hash is `$pbkdf2-sha512$…`. It happens to round-trip unquoted today
+  # (its base64 alphabet has no YAML-significant bytes), but quoting it is
+  # the load-bearing guard (D16) against a future envelope byte or operator
+  # edit turning the credential line into unparseable YAML.
   defp needs_quoting?(""), do: true
   defp needs_quoting?("true"), do: true
   defp needs_quoting?("false"), do: true
@@ -323,7 +329,7 @@ defmodule Glorbo.FileSpec.Formatter do
 
   defp needs_quoting?(s) do
     starts_special =
-      String.starts_with?(s, [" ", "\t", "#", "&", "*", "!", "|", ">", "%", "@", "`"])
+      String.starts_with?(s, [" ", "\t", "#", "&", "*", "!", "|", ">", "%", "@", "`", "$"])
 
     cond do
       starts_special -> true

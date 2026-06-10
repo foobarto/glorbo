@@ -32,6 +32,16 @@ defmodule Glorbo.CLI.ImportPaperclipTest do
     dir
   end
 
+  # GEP-54: live paperclip-instance layout — agents live at
+  # <src>/agents/<uuid>/instructions/AGENTS.md (one level deeper, with
+  # companion files inside instructions/). Returns the agent dir.
+  defp seed_instance_agent(src, uuid, files) do
+    instr = Path.join([src, "agents", uuid, "instructions"])
+    File.mkdir_p!(instr)
+    Enum.each(files, fn {name, body} -> File.write!(Path.join(instr, name), body) end)
+    Path.join([src, "agents", uuid])
+  end
+
   describe "run/1 argv handling" do
     test "no args prints usage and exits 1" do
       assert {:import_paperclip, 1, out} = ImportPaperclip.run([])
@@ -151,6 +161,146 @@ defmodule Glorbo.CLI.ImportPaperclipTest do
     end
   end
 
+  describe "instance layout (GEP-54)" do
+    @ceo_uuid "a9722683-6e12-4a31-921f-9b5a5ef6aa2d"
+    @writer_uuid "f2e45260-ee53-44ad-8912-1dbe21659fe7"
+
+    test "imports agents nested under agents/<uuid>/instructions/", %{src: src, home: home} do
+      seed_instance_agent(src, @ceo_uuid, %{
+        "AGENTS.md" => "You are the CEO.\n\nUse $AGENT_HOME for memory.\n",
+        "HEARTBEAT.md" => "# CEO heartbeat\n",
+        "SOUL.md" => "Direct.\n",
+        "TOOLS.md" => "- paperclip-create-agent\n"
+      })
+
+      seed_instance_agent(src, @writer_uuid, %{
+        "AGENTS.md" => "You are Riven March.\n"
+      })
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "blade"])
+
+      co = Path.join([home, "companies", "blade"])
+      assert File.dir?(co)
+      assert out =~ "agents: 2"
+
+      # Agents imported under their UUID dir names (no slug derivation).
+      ceo = Path.join([co, "agents", @ceo_uuid])
+      assert File.dir?(ceo)
+      agent_md = File.read!(Path.join(ceo, "AGENT.md"))
+      assert agent_md =~ ~r/^---\n/
+      assert agent_md =~ "imported_from: paperclip"
+      assert agent_md =~ "imported_company: blade"
+      assert agent_md =~ "You are the CEO."
+
+      # Companion files copied from instructions/ into the agent root.
+      assert File.exists?(Path.join(ceo, "HEARTBEAT.md"))
+      assert File.exists?(Path.join(ceo, "SOUL.md"))
+      assert File.exists?(Path.join(ceo, "TOOLS.md"))
+
+      assert File.exists?(Path.join([co, "agents", @writer_uuid, "AGENT.md"]))
+    end
+
+    test "excludes _templates and other _-prefixed dirs", %{src: src, home: home} do
+      seed_instance_agent(src, @ceo_uuid, %{"AGENTS.md" => "You are the CEO.\n"})
+
+      # Paperclip ships a _templates/base-bundle scaffold under agents/.
+      tmpl = Path.join([src, "agents", "_templates", "base-bundle"])
+      File.mkdir_p!(tmpl)
+      File.write!(Path.join(tmpl, "AGENTS.md"), "You are <ROLE NAME>.\n")
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "blade2"])
+      assert out =~ "agents: 1"
+      refute File.dir?(Path.join([home, "companies", "blade2", "agents", "_templates"]))
+    end
+
+    test "does not carry memory/ but notes it in the report", %{src: src, home: home} do
+      agent_dir = seed_instance_agent(src, @ceo_uuid, %{"AGENTS.md" => "You are the CEO.\n"})
+      File.mkdir_p!(Path.join(agent_dir, "memory"))
+      File.write!(Path.join([agent_dir, "memory", "2026-04-14.md"]), "old note\n")
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "blade3"])
+
+      refute File.dir?(Path.join([home, "companies", "blade3", "agents", @ceo_uuid, "memory"]))
+      assert out =~ "memory"
+    end
+
+    test "reports loudly when zero agents match", %{src: src} do
+      # An agents/ container that holds only a non-agent dir.
+      File.mkdir_p!(Path.join([src, "agents", "_templates"]))
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "empty1"])
+      assert out =~ "agents: 0"
+      assert out =~ "0 agents"
+    end
+
+    test "a flat agent literally named `agents` is not mistaken for an instance container",
+         %{src: src, home: home} do
+      seed_paperclip_agent(src, "agents", %{"AGENTS.md" => "You are the ops bot.\n"})
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "You are the CEO.\n"})
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "flat1"])
+      assert out =~ "agents: 2"
+      assert File.exists?(Path.join([home, "companies", "flat1", "agents", "agents", "AGENT.md"]))
+      assert File.exists?(Path.join([home, "companies", "flat1", "agents", "ceo", "AGENT.md"]))
+    end
+
+    test "refuses a symlinked instructions/AGENTS.md (deep C-098)", %{src: src, home: home} do
+      secret = Path.join(home, "deep-secret.txt")
+      File.write!(secret, "SSH PRIVATE KEY MATERIAL\n")
+
+      instr = Path.join([src, "agents", @ceo_uuid, "instructions"])
+      File.mkdir_p!(instr)
+      File.ln_s!(secret, Path.join(instr, "AGENTS.md"))
+
+      assert {:import_paperclip, code, out} = ImportPaperclip.run([src, "--as", "victim3"])
+
+      agent_md = Path.join([home, "companies", "victim3", "agents", @ceo_uuid, "AGENT.md"])
+      refute File.exists?(agent_md)
+      assert code in [0, 1]
+      refute out =~ "SSH PRIVATE KEY"
+    end
+  end
+
+  describe "destination home under a symlinked ancestor (GEP-54)" do
+    # Regression: `/home -> /var/home` on atomic Fedora made the dest
+    # guard false-positive when walking from `/`. The guard must trust
+    # ancestors at/above the glorbo home and only police segments below
+    # it.
+    test "imports into a glorbo home whose ancestor is a symlink", %{home: home} do
+      real = Path.join(home, "real")
+      File.mkdir_p!(real)
+      link = Path.join(home, "link")
+      File.ln_s!(real, link)
+      linked_home = Path.join(link, ".glorbo")
+      File.mkdir_p!(linked_home)
+      System.put_env("GLORBO_HOME", linked_home)
+
+      src = Path.join(home, "src-anc")
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "You are the CEO.\n"})
+
+      assert {:import_paperclip, 0, out} = ImportPaperclip.run([src, "--as", "anc1"])
+      assert out =~ "agents: 1"
+
+      assert File.exists?(
+               Path.join([linked_home, "companies", "anc1", "agents", "ceo", "AGENT.md"])
+             )
+    end
+
+    test "still refuses a symlink planted at companies/<slug> inside the home", %{
+      home: home,
+      src: src
+    } do
+      File.mkdir_p!(Path.join(home, "companies"))
+      # Dangling symlink: the `Target exists` check (File.exists? follows
+      # links) won't short-circuit, so the dest guard is exercised.
+      File.ln_s!(Path.join(home, "no-such-target"), Path.join([home, "companies", "evilco"]))
+
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "You are the CEO.\n"})
+
+      assert_raise File.Error, fn -> ImportPaperclip.run([src, "--as", "evilco"]) end
+    end
+  end
+
   describe "symlink hardening (C-098)" do
     # A symlinked AGENTS.md -> host secret must NOT be discovered as an
     # agent (lstat refuses the non-regular file), so its contents never
@@ -188,6 +338,34 @@ defmodule Glorbo.CLI.ImportPaperclipTest do
       refute File.exists?(
                Path.join([home, "companies", "victim2", "agents", "linked", "AGENT.md"])
              )
+    end
+
+    # On --force re-import, a pre-planted symlink at the destination
+    # AGENT.md must NOT be followed (it would redirect the write outside
+    # the company tree). safe_write! refuses; the symlink target is
+    # untouched.
+    test "refuses to write through a symlinked destination AGENT.md on --force", %{
+      src: src,
+      home: home
+    } do
+      seed_paperclip_agent(src, "ceo", %{"AGENTS.md" => "first body\n"})
+      assert {:import_paperclip, 0, _} = ImportPaperclip.run([src, "--as", "victim4"])
+
+      outside = Path.join(home, "outside-secret.txt")
+      File.write!(outside, "DO NOT OVERWRITE\n")
+
+      dest_agent_md = Path.join([home, "companies", "victim4", "agents", "ceo", "AGENT.md"])
+      File.rm!(dest_agent_md)
+      File.ln_s!(outside, dest_agent_md)
+
+      File.write!(Path.join([src, "ceo", "AGENTS.md"]), "second body\n")
+
+      assert_raise File.Error, fn ->
+        ImportPaperclip.run([src, "--as", "victim4", "--force"])
+      end
+
+      # The symlink target outside the company tree is untouched.
+      assert File.read!(outside) == "DO NOT OVERWRITE\n"
     end
 
     # A real AGENTS.md imports fine, but a symlinked companion
