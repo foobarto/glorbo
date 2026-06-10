@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **DM channel creation race + symlink follow** (PR #42 review,
+  Copilot): `Glorbo.Actions.ensure_dm_channel/3` used a non-atomic
+  `exists?` + write, letting two near-simultaneous first posts clobber
+  a thread back to its header, and never lstat-gated the path. Now an
+  `O_CREAT|O_EXCL` exclusive create (`:eexist` = idempotent success)
+  behind the M03 `AgentWritableFile` guard.
+- **Zero-rounds PBKDF2 hash accepted as CONFIGURED** (PR #42 review,
+  Codex P2): a hand-edited/torn `$pbkdf2-…$0$…` value passed the
+  structural check and would hang/crash `/login` inside
+  `Pbkdf2.verify_pass/2`. The rounds segment now requires a positive
+  integer with no leading zero; bad values fail closed as DEGRADED.
+- **CI: pin OTP to 28.5.0.1** — `otp-version: '28.5'` started
+  resolving to 28.5.0.2, whose precompiled linux musl ERTS Beam
+  Machine has not published yet, 404-ing every Burrito build.
+
 ### Changed
 
 - **Dependency bumps** (folded from dependabot PRs #43/#44):

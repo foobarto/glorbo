@@ -147,19 +147,28 @@ defmodule Glorbo.Actions do
       channels_dir = Path.join([base, "companies", company, "channels"])
       path = Path.join(channels_dir, "#{slug}.md")
 
-      if File.exists?(path) do
-        :ok
-      else
-        header = """
-        ---
-        kind: channel-log/v1
-        channel: #{slug}
-        ---
-        # DM · director ↔ #{agent}
-        """
+      header = """
+      ---
+      kind: channel-log/v1
+      channel: #{slug}
+      ---
+      # DM · director ↔ #{agent}
+      """
 
-        with :ok <- File.mkdir_p(channels_dir) do
-          File.write(path, header)
+      # First-write-wins, atomically: `:exclusive` (O_CREAT|O_EXCL)
+      # makes "create if absent" a single syscall, so two
+      # near-simultaneous first posts can't interleave an
+      # exists?-then-write and clobber a thread back to its header.
+      # `:eexist` therefore IS the idempotent success path. The
+      # lstat gate (M03 seam) rejects a pre-planted symlink before
+      # we touch the path; O_EXCL also refuses to follow one at
+      # create time, closing the lstat→open TOCTOU window.
+      with :ok <- File.mkdir_p(channels_dir),
+           :ok <- ensure_regular_file_for_write(path) do
+        case File.write(path, header, [:exclusive]) do
+          :ok -> :ok
+          {:error, :eexist} -> :ok
+          {:error, _} = err -> err
         end
       end
     end

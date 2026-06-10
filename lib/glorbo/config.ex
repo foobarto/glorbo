@@ -68,7 +68,11 @@ defmodule Glorbo.Config do
   # `Pbkdf2.verify_pass/2` raise on a broken envelope. Shape:
   # `$pbkdf2-{sha256|sha512}$<rounds>$<salt>$<hash>` (segments are the
   # crypt-base64 alphabet — no `$` or whitespace within a segment).
-  @pbkdf2_hash_regex ~r/^\$pbkdf2-sha(?:256|512)\$\d+\$[^$\s]+\$[^$\s]+$/
+  # Rounds must be a POSITIVE integer with no leading zero: pbkdf2's
+  # verifier iterates `rounds - 1` and a stored `$0$` never reaches
+  # its base case, so a hand-edited/torn zero-rounds value must be
+  # DEGRADED (fail-closed), not CONFIGURED. (Codex PR-42 P2 finding.)
+  @pbkdf2_hash_regex ~r/^\$pbkdf2-sha(?:256|512)\$[1-9]\d*\$[^$\s]+\$[^$\s]+$/
 
   @doc """
   Load the config map from `<base>/config.md`, creating the file with a

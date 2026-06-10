@@ -65,7 +65,15 @@ jobs:
           ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
-          otp-version: '28.5'
+          # Pinned to the exact patch release: '28.5' resolves to the
+          # NEWEST patch (28.5.0.2 as of 2026-06-10), but Burrito
+          # fetches a Beam Machine precompiled ERTS for that exact
+          # version and beam-machine-universal only has 28.5.0.1 for
+          # linux (404 on 28.5.0.2 broke the build). Bump once
+          # https://beam-machine-universal.b-cdn.net publishes the
+          # matching linux musl tarball. Keep all three setup-beam
+          # blocks in this file on the same pin.
+          otp-version: '28.5.0.1'
 
       - name: Install bubblewrap (bwrap)
         run: |
@@ -347,7 +355,9 @@ jobs:
           ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
-          otp-version: '28.5'
+          # Exact patch pin — see the comment on the first setup-beam
+          # block (Beam Machine 28.5.0.2 linux ERTS not published yet).
+          otp-version: '28.5.0.1'
           version-type: strict
 
       - name: Cache mix deps + build
@@ -515,7 +525,9 @@ jobs:
           ImageOS: ubuntu24
         with:
           elixir-version: '1.19.5'
-          otp-version: '28.5'
+          # Exact patch pin — see the comment on the first setup-beam
+          # block (Beam Machine 28.5.0.2 linux ERTS not published yet).
+          otp-version: '28.5.0.1'
           version-type: strict
 
       - name: Cache mix deps

@@ -386,6 +386,23 @@ defmodule Glorbo.ConfigTest do
       assert cfg.director_password_hash == :malformed
     end
 
+    test "zero-rounds hash coerces to :malformed — verify_pass would never terminate (D9)" do
+      base = TmpGlorboHome.setup()
+      # `$0$` rounds: pbkdf2's verifier iterates `rounds - 1` and never
+      # reaches its base case, so a hand-edited/torn zero must be DEGRADED
+      # (hard deny), not CONFIGURED. (Codex PR-42 P2 finding.)
+      write_config(base, ~s(director_password_hash: "$pbkdf2-sha512$0$c2FsdA$aGFzaA"))
+      assert {:ok, cfg} = Config.load(base)
+      assert cfg.director_password_hash == :malformed
+    end
+
+    test "leading-zero rounds coerces to :malformed (no octal-looking rounds)" do
+      base = TmpGlorboHome.setup()
+      write_config(base, ~s(director_password_hash: "$pbkdf2-sha512$0160000$c2FsdA$aGFzaA"))
+      assert {:ok, cfg} = Config.load(base)
+      assert cfg.director_password_hash == :malformed
+    end
+
     test "put_password_hash/2 persists a quoted hash that round-trips + stays 0600" do
       base = TmpGlorboHome.setup()
       {:ok, before} = Config.load(base)

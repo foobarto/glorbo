@@ -76,6 +76,44 @@ defmodule GlorboWeb.ActionsTest do
     test "rejects an invalid agent slug (no traversal)", %{base: base} do
       assert {:error, _} = Glorbo.Actions.ensure_dm_channel("acme", "../etc", base: base)
     end
+
+    test "refuses a pre-planted symlink at the DM path (M03 — no symlink follow)", %{base: base} do
+      channels_dir = Path.join([base, "companies", "acme", "channels"])
+      File.mkdir_p!(channels_dir)
+      victim = Path.join(channels_dir, "victim.md")
+      File.write!(victim, "untouched")
+
+      path = Path.join(channels_dir, "dm-director--ceo.md")
+      File.ln_s!(victim, path)
+
+      assert {:error, {:path_not_regular, :symlink}} =
+               Glorbo.Actions.ensure_dm_channel("acme", "ceo", base: base)
+
+      # The symlink target was never written through.
+      assert File.read!(victim) == "untouched"
+    end
+
+    test "concurrent first posts: exactly one creator wins, none clobber", %{base: base} do
+      # Race N exclusive creates at the same path. The O_CREAT|O_EXCL
+      # semantics mean every caller returns :ok (create or :eexist→ok)
+      # and the file holds exactly one canonical header — the old
+      # exists?-then-write shape could interleave and reset a thread.
+      results =
+        1..8
+        |> Task.async_stream(
+          fn _ -> Glorbo.Actions.ensure_dm_channel("acme", "ceo", base: base) end,
+          max_concurrency: 8
+        )
+        |> Enum.map(fn {:ok, res} -> res end)
+
+      assert Enum.all?(results, &(&1 == :ok))
+
+      path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
+      content = File.read!(path)
+      assert content =~ "kind: channel-log/v1"
+      # Exactly one header, not several concatenated/torn copies.
+      assert length(String.split(content, "channel: dm-director--ceo")) == 2
+    end
   end
 
   # ---------------------------------------------------------------------------
