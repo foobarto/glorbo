@@ -10,6 +10,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency bumps** (folded from dependabot PRs #43/#44):
+  earmark 1.4.49, phoenix_live_view 1.1.31, yaml_elixir 2.12.2,
+  thousand_island 1.5.0 (transitive); GitHub Actions pins
+  `actions/checkout` v6.0.3 and `github/codeql-action` v4.36.1.
+
 ## [0.25.0] — 2026-06-03
 
 ### Added
