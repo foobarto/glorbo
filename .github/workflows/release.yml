@@ -1,0 +1,604 @@
+# .github/workflows/release.yml
+#
+# Release pipeline — runs ONLY on version tags (`v*.*.*`).
+#
+# Trigger:
+#   - push tag v*.*.*  : full build+test matrix (Linux x86_64/aarch64 +
+#                        macOS x86_64/arm64 cross-build), then the release job
+#                        signs SHA256SUMS via Cosign keyless (Sigstore OIDC),
+#                        attests SLSA build provenance, publishes the GitHub
+#                        Release, and updates the Homebrew tap.
+#
+# PR + main CI (tests/quality gates, no builds) lives in ci.yml. The Burrito
+# binary builds were moved here so PRs run only tests — builds happen at
+# release time. The `tags` ruleset requires the four status checks produced
+# by the build jobs below: `x86_64 build + test`, `aarch64 build + test`,
+# `x86_64 macOS cross-build (from Linux)`, `arm64 macOS cross-build (from
+# Linux)`. Their job names MUST stay byte-for-byte identical or tag pushes
+# block forever waiting on a check that never reports.
+#
+# Note: the build-and-test job intentionally RE-RUNS the quality gates
+# (compile/test/credo/format/sobelow/audits/dialyzer) before building, so a
+# release is never signed from an unvalidated tree even though the same gates
+# ran on the PR that produced the tagged commit. Keep those steps in sync with
+# ci.yml's `test` job.
+#
+# Security note: all ${{ ... }} interpolations in `run:` blocks reference
+# either matrix values (trusted, defined in this file) or `runner.arch`
+# (set by the GitHub Actions runner itself). No user-controlled strings
+# (issue titles, PR bodies, commit messages, etc.) flow into shell commands.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel an in-progress release — each tag gets its own group and
+  # runs to completion (signing + publish must not be interrupted).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.arch }} build + test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            binary_name: glorbo-linux-x86_64
+            burrito_out: glorbo_linux_x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            binary_name: glorbo-linux-aarch64
+            burrito_out: glorbo_linux_aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Erlang + Elixir
+        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
+        with:
+          elixir-version: '1.20.1'
+          # Exact patch pin matching .tool-versions. Burrito fetches a
+          # Beam Machine precompiled ERTS for this exact version;
+          # beam-machine-universal publishes 29.0.2 for linux x86_64 +
+          # aarch64 and macOS universal (verified 2026-06-12 — HEAD 200
+          # on all four Burrito targets), so the release build resolves.
+          # If a newer patch 404s on https://beam-machine-universal.b-cdn.net,
+          # keep this pin until the matching tarball is published. Keep all
+          # three setup-beam blocks in this file on the same pin.
+          otp-version: '29.0.2'
+
+      - name: Install bubblewrap (bwrap)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          bwrap --version
+
+      - name: Allow bwrap under AppArmor (Ubuntu 24.04 userns restriction)
+        run: |
+          # Ubuntu 24.04 ships kernel.apparmor_restrict_unprivileged_userns=1,
+          # which blocks bwrap's --unshare-net from bringing up loopback
+          # (RTM_NEWADDR: Operation not permitted). Install an unconfined
+          # AppArmor profile for /usr/bin/bwrap so userns transitions are
+          # allowed. Scoped to bwrap only — does not weaken host-wide policy.
+          # Refs: containers/bubblewrap#632, ocaml/opam#5968, Ubuntu 23.10 blog.
+          sudo tee /etc/apparmor.d/bwrap > /dev/null <<'EOF'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+            include if exists <local/bwrap>
+          }
+          EOF
+          sudo systemctl reload apparmor
+
+      - name: Cache mix deps + build
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-${{ matrix.arch }}-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Test
+        run: mix test
+
+      - name: Credo (strict)
+        run: mix credo --strict
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Sobelow (SAST)
+        # Reads .sobelow-conf (exit: true + documented ignore list).
+        # Fails the build on any non-ignored finding. See .sobelow-conf
+        # for the per-check false-positive rationale.
+        run: mix sobelow --exit
+
+      - name: Hex audit (dependency retirements)
+        run: mix hex.audit
+
+      - name: Dependency audit (mix_audit / advisories)
+        # GHSA-rhv4-8758-jx7v (decimal unbounded-exponent DoS) is ignored:
+        # it is first patched in decimal 3.0.0, but our dependency tree
+        # (ecto family) constrains decimal to `~> 2.0`, so 3.0.0 is not
+        # installable until those upstreams widen their constraint. The
+        # advisory is MODERATE and requires parsing attacker-controlled
+        # decimal strings with huge exponents — Glorbo does not parse
+        # untrusted decimals (budgets are integer cents). Re-evaluate when
+        # the ecto family allows decimal 3.x.
+        run: mix deps.audit --ignore-advisory-ids "GHSA-rhv4-8758-jx7v"
+
+      # Dialyzer (success-typing static analysis). x86_64 only — the PLT
+      # build is slow and arch-independent for our pure-Elixir code.
+      # Count-regression gate: the codebase has a documented baseline of
+      # pre-existing warnings (docs/testing/dialyzer-baseline.md); CI fails
+      # only when the count EXCEEDS the baseline, i.e. a change introduced a
+      # NEW typing error. Burn the baseline down over time, then make it
+      # blocking outright.
+      - name: Cache Dialyzer PLT
+        if: matrix.arch == 'x86_64'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: _build/dialyzer_plts
+          # Bumped key prefix (`plt2-`) after the codex-deep-dive PLT
+          # relocation: PLTs moved from `priv/plts` (which Mix releases
+          # bundle as runtime data) into `_build/dialyzer_plts` (release-
+          # excluded). Old cache entries still point at the old path; the
+          # key bump forces a one-time rebuild.
+          key: plt2-ubuntu24-otp29.0.2-ex1.20.1-${{ hashFiles('mix.lock') }}
+          restore-keys: plt2-ubuntu24-otp29.0.2-ex1.20.1-
+
+      - name: Dialyzer (type analysis — fails on NEW warnings vs baseline)
+        if: matrix.arch == 'x86_64'
+        run: |
+          # Build the PLT first so a genuine PLT build error fails the step
+          # (rather than being masked by the `|| true` on the analysis run).
+          mix dialyzer --plt
+          mix dialyzer --format short > dialyzer.out 2>&1 || true
+          count=$(grep -cE '^(lib|lib_dev|test)/[^[:space:]]+:[0-9]+' dialyzer.out || true)
+          # 163 -> 166: the P2 security wave added 4 private helpers
+          # (bound_target/bound_detail, approval_detail, valid_replay_slug?)
+          # whose callers are themselves already-baselined unused_fun
+          # false-positives, so dialyzer flags the new callees too. They are
+          # verifiably called + tested; net +3. See docs/testing/dialyzer-baseline.md.
+          #
+          # 166 -> 167: PR #35 round-3 review-feedback wave added
+          # `sanitise_rejected_action/1` (dispatch.ex) — reachable only via
+          # `emit_tool_audits/5`, which is already baselined as unused_fun
+          # (dialyzer can't trace the audit-fold call graph). Same false-
+          # positive class as the P2 wave; net +1.
+          #
+          # 167 -> 168: PR #37 round-5 wave added several new private helpers
+          # (stat_memory_candidate/2, read_memory_entry/2 in agent_live.ex;
+          # memory_dir_safe?/1; candidate_safe?/1 in formatter.ex;
+          # ensure_real_directory/1 in doctor/fixer.ex; refuse_dedicated_subtree/1
+          # in actions/agents.ex). One of these gets flagged as unused_fun
+          # because its caller is in the already-baselined dead-fn set
+          # (same false-positive class as rounds P2 and round-3). Net +1.
+          #
+          # 168 -> 169: Elixir 1.19.5 + OTP 28.5 upgrade (this PR). 1.19's
+          # inference produces +3 new findings (all in lib/glorbo/cli/lifecycle/
+          # cascading from a no_return on `do_start/0` — bare `rescue` in
+          # `ensure_epmd/0` + OTP-28.5 narrowed Node.start/2 typespec
+          # interact in a way 1.18's older inferencer didn't catch) and
+          # resolves -2 (socket-shutdown false positives in
+          # `network/proxy.ex` that 1.19 types correctly). Net +1, same
+          # false-positive class as the rest of the baseline. See
+          # docs/testing/dialyzer-baseline.md for the full delta + the
+          # `mise exec elixir@1.18.4-otp-28` cross-check that confirms
+          # the count.
+          #
+          # 169 (ceiling unchanged): Elixir 1.19.5 -> 1.20.1 + OTP 28.5 ->
+          # 29.0.2 bump (2026-06-12). 1.20's set-theoretic checker + OTP-29
+          # narrowed specs RESOLVE false positives — local count drops to
+          # ~111. The 169 ceiling is deliberately kept (not tightened to
+          # 111) until a CI run confirms the exact count in the
+          # ubuntu24/OTP-29.0.2 environment; dialyzer counts vary slightly
+          # across hosts. Retighten once observed. See dialyzer-baseline.md.
+          baseline=169
+          echo "Dialyzer warnings: ${count} (baseline ${baseline})"
+          if [ "${count}" -gt "${baseline}" ]; then
+            echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."
+            grep -E '^(lib|lib_dev|test)/' dialyzer.out || true
+            exit 1
+          fi
+
+      - name: Install Zig 0.15.2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        with:
+          version: 0.15.2
+
+      - name: Install xz
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+
+      # Phase 01 has no asset pipeline (esbuild/tailwind/heroicons stripped by
+      # Plan 01). Phase 04 will reintroduce `mix assets.deploy` when the
+      # LiveView dashboard lands. Until then this step is intentionally absent.
+      - name: Build release (prod)
+        env:
+          MIX_ENV: prod
+        run: |
+          mix deps.get --only prod
+          mix compile --warnings-as-errors
+          mix release --overwrite
+
+      - name: Rename binary to release convention
+        env:
+          BURRITO_OUT: ${{ matrix.burrito_out }}
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          test -f "burrito_out/$BURRITO_OUT"
+          mv "burrito_out/$BURRITO_OUT" "burrito_out/$BINARY_NAME"
+          test -x "burrito_out/$BINARY_NAME"
+
+      - name: Smoke-test binary
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          # Read expected version from mix.exs so CI tracks bumps without manual edits.
+          expected_version=$(grep -E '^\s*version:' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Expected version: $expected_version"
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e --arg v "$expected_version" '.version == $v'
+          # Check count grows as phases add new doctor probes (Phase 1: 5,
+          # Phase 2: +8, Phase 3: +2 = 16). Assert it's non-empty rather
+          # than pinning to a phase-specific count.
+          "./burrito_out/$BINARY_NAME" doctor --json | jq -e '.checks | length >= 5'
+          # No-args must exit 0 with help text
+          out=$("./burrito_out/$BINARY_NAME") && echo "$out" | grep -q USAGE
+          # Unknown command must exit 1. `set +e` around the call so bash
+          # -e doesn't abort on the expected non-zero exit; then assert
+          # the captured code explicitly.
+          set +e
+          "./burrito_out/$BINARY_NAME" bogus >/dev/null 2>&1
+          ec=$?
+          set -e
+          test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.binary_name }}
+          path: burrito_out/${{ matrix.binary_name }}
+          retention-days: 30
+          if-no-files-found: error
+
+      # GEP-44 visual-regression check — informational gate.
+      # Boots phx.server with a fresh tmp GLORBO_HOME, screenshots
+      # all 18 LV routes via Playwright, diffs each PNG against
+      # test/fixtures/ui-baselines/current/. Reports drift > 0.5%
+      # via job annotations but does NOT fail the build
+      # (`continue-on-error: true`) until we've measured per-PR
+      # flake rate over a few weeks.
+      #
+      # x86_64 only: committed baselines were captured on x86_64;
+      # aarch64 font-rendering subtly differs and would create
+      # false positives across the matrix.
+      - name: Visual regression check
+        if: matrix.arch == 'x86_64'
+        continue-on-error: true
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          # Harness expects `./glorbo` to be the burrito binary.
+          # The `Rename binary` step earlier moved it to a
+          # release-named path; symlink it back into place.
+          ln -snf "burrito_out/$BINARY_NAME" glorbo
+          ./glorbo --help | head -1
+          # Install esbuild + build assets so phx.server can serve
+          # the dashboard (mix test doesn't need this; the harness
+          # boots the dev endpoint which does).
+          mix assets.setup
+          mix assets.build
+          # Install harness node deps + Playwright Chrome.
+          # `npm ci` installs strictly from the committed scripts/package-lock.json
+          # (hash-pinned) — satisfies OpenSSF Scorecard Pinned-Dependencies, vs
+          # `npm install` which can drift.
+          (cd scripts && npm ci --no-audit --no-fund)
+          # The capture script calls `chromium.launch()` which needs
+          # the chromium browser, not Chrome stable — they're separate
+          # downloads in Playwright's cache. Invoke the lockfile-pinned
+          # local playwright binary directly (installed by `npm ci` above)
+          # rather than `npm exec`/`npx`, which OpenSSF Scorecard flags as an
+          # un-pinned npmCommand and which can fetch an unpinned version.
+          (cd scripts && ./node_modules/.bin/playwright install --with-deps chromium)
+          # Run the diff. `continue-on-error` swallows a non-zero
+          # exit, but the per-LV drift lines still appear in the
+          # log so reviewers can eyeball regressions.
+          bash scripts/ui-baseline.sh check
+
+  # R30 — macOS builds, via Burrito's Zig-based cross-compile from
+  # Linux. Burrito downloads the universal macOS ERTS tarball from
+  # `beam-machine-universal.b-cdn.net`, `zig cc -target <arch>-macos`
+  # recompiles any :elixir_make NIF (exqlite), and `archiver.zig`
+  # wraps the whole payload in a darwin-targeted launcher. No macOS
+  # runner needed — the GHA free-tier macOS queue has backed up
+  # twice this week (incidents 2026-04-22 + 2026-04-23), so staying
+  # on ubuntu-24.04 for darwin keeps the release path predictable.
+  build-macos-cross:
+    name: ${{ matrix.arch }} macOS cross-build (from Linux)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos_x86_64
+            arch: x86_64
+            triple: x86_64-macos
+            binary_name: glorbo-darwin-x86_64
+            burrito_out: glorbo_macos_x86_64
+          - target: macos_arm64
+            arch: arm64
+            triple: aarch64-macos
+            binary_name: glorbo-darwin-arm64
+            burrito_out: glorbo_macos_arm64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Erlang + Elixir
+        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
+        with:
+          elixir-version: '1.20.1'
+          # Exact patch pin — see the comment on the first setup-beam
+          # block (Beam Machine ERTS confirmed published for 29.0.2).
+          otp-version: '29.0.2'
+          version-type: strict
+
+      - name: Cache mix deps + build
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            deps
+            _build
+          key: mix-darwin-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-darwin-${{ matrix.arch }}-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Install Zig 0.15.2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        with:
+          version: 0.15.2
+
+      - name: Install xz
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+
+      - name: Cross-compile release for ${{ matrix.target }}
+        env:
+          MIX_ENV: prod
+          BURRITO_TARGET: ${{ matrix.target }}
+        run: |
+          mix deps.get --only prod
+          mix compile --warnings-as-errors
+          mix release --overwrite
+
+      - name: Rename binary to release convention
+        env:
+          BURRITO_OUT: ${{ matrix.burrito_out }}
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          test -f "burrito_out/$BURRITO_OUT"
+          mv "burrito_out/$BURRITO_OUT" "burrito_out/$BINARY_NAME"
+          test -x "burrito_out/$BINARY_NAME"
+
+      - name: Verify binary is a Mach-O executable for ${{ matrix.arch }}
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          # `file` recognises Mach-O; assert the reported arch matches
+          # the matrix cell so a cross-compile misconfiguration (wrong
+          # BURRITO_TARGET, stale deps cache, bad Zig toolchain) shows
+          # up here rather than at runtime on an actual Mac.
+          file_out=$(file "./burrito_out/$BINARY_NAME")
+          echo "$file_out"
+          echo "$file_out" | grep -q "Mach-O" || { echo "not a Mach-O binary"; exit 1; }
+          case "$EXPECTED_ARCH" in
+            x86_64) echo "$file_out" | grep -q "x86_64" ;;
+            arm64)  echo "$file_out" | grep -qE "arm64|aarch64" ;;
+            *) echo "unknown arch: $EXPECTED_ARCH"; exit 1 ;;
+          esac
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.binary_name }}
+          path: burrito_out/${{ matrix.binary_name }}
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Publish signed release
+    needs: [build-and-test, build-macos-cross]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write      # create the GitHub Release
+      id-token: write      # Sigstore OIDC token for keyless signing
+      attestations: write  # SLSA build provenance (attest-build-provenance)
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -la artifacts/
+
+      - name: Generate SHA256SUMS
+        working-directory: artifacts/
+        run: |
+          sha256sum glorbo-linux-x86_64 glorbo-linux-aarch64 \
+                    glorbo-darwin-x86_64 glorbo-darwin-arm64 \
+                    > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: 'v3.0.6'
+
+      - name: Sign SHA256SUMS (keyless, Sigstore OIDC)
+        working-directory: artifacts/
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sig SHA256SUMS
+
+      - name: Sign each binary (keyless, Sigstore OIDC)
+        working-directory: artifacts/
+        run: |
+          cosign sign-blob --yes --bundle glorbo-linux-x86_64.sig glorbo-linux-x86_64
+          cosign sign-blob --yes --bundle glorbo-linux-aarch64.sig glorbo-linux-aarch64
+          cosign sign-blob --yes --bundle glorbo-darwin-x86_64.sig glorbo-darwin-x86_64
+          cosign sign-blob --yes --bundle glorbo-darwin-arm64.sig glorbo-darwin-arm64
+
+      # SLSA build provenance — generates a signed attestation binding
+      # each released artifact to this workflow run (the builder). The
+      # `subject-path` glob covers the four binaries + SHA256SUMS; the
+      # signature bundles (.sig) are covered by Cosign above and do not
+      # need their own provenance. Complements Cosign sign-blob: Cosign
+      # attests "these bytes were signed by this identity", provenance
+      # attests "these bytes were built by this workflow from this source".
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            artifacts/glorbo-linux-x86_64
+            artifacts/glorbo-linux-aarch64
+            artifacts/glorbo-darwin-x86_64
+            artifacts/glorbo-darwin-arm64
+            artifacts/SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          files: |
+            artifacts/glorbo-linux-x86_64
+            artifacts/glorbo-linux-x86_64.sig
+            artifacts/glorbo-linux-aarch64
+            artifacts/glorbo-linux-aarch64.sig
+            artifacts/glorbo-darwin-x86_64
+            artifacts/glorbo-darwin-x86_64.sig
+            artifacts/glorbo-darwin-arm64
+            artifacts/glorbo-darwin-arm64.sig
+            artifacts/SHA256SUMS
+            artifacts/SHA256SUMS.sig
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+
+  publish-homebrew-tap:
+    name: Publish Homebrew tap formula
+    needs: [release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Erlang + Elixir
+        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        env:
+          # The `ubuntu-24.04-arm` runner started reporting
+          # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
+          # setup-beam v1.24.0's OS-map doesn't recognise — it only knows
+          # `ubuntu24` — so a job on that runner fails fast at this step.
+          # Force `ubuntu24`; the BEAM architecture is detected separately, so
+          # the arm64 OTP build is still fetched. No-op on x86_64 ubuntu-24.04
+          # runners (already `ubuntu24`). Restores the behaviour that was green
+          # through 2026-05-29. Drop once a newer setup-beam maps
+          # `ubuntu24-arm64` natively.
+          ImageOS: ubuntu24
+        with:
+          elixir-version: '1.20.1'
+          # Exact patch pin — see the comment on the first setup-beam
+          # block (Beam Machine ERTS confirmed published for 29.0.2).
+          otp-version: '29.0.2'
+          version-type: strict
+
+      - name: Cache mix deps
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            deps
+            _build
+          key: mix-tap-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-tap-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Clone homebrew-tap with write access
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/foobarto/homebrew-tap.git" ../homebrew-tap
+
+      - name: Resolve and validate version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Strict semver gate: any tag carrying shell metacharacters fails
+          # the regex and aborts the job before the version reaches a shell.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.]+)?$'; then
+            echo "Refusing non-semver tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate formula against the just-published release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mix glorbo.release_formula --write \
+            --tap-path ../homebrew-tap \
+            --version "$VERSION"
+
+      - name: Commit + push tap if the formula changed
+        working-directory: ../homebrew-tap
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "glorbo release-bot"
+          git config user.email "releases@glorbo.foobarto"
+
+          if git diff --quiet Formula/glorbo.rb; then
+            echo "Formula unchanged — nothing to push."
+            exit 0
+          fi
+
+          git add Formula/glorbo.rb
+          git commit -m "glorbo v${VERSION}"
+          git push origin HEAD:main
