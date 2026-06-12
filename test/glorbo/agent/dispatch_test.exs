@@ -1562,12 +1562,21 @@ defmodule Glorbo.Agent.DispatchTest do
     # — the assertions below pin that the *_BASE_URL env points at
     # the inference proxy, never at the CONNECT proxy.
     defp via_proxy_opts(ctx, run_fun) do
+      # A native via_proxy dispatch re-execs the glorbo binary, so it resolves
+      # self_binary/0. Stub it with a fake so the suite never depends on a
+      # built ./glorbo (absent in CI before the release step) — the same
+      # self_binary_fun pattern the native-dispatch tests above already use.
+      self_binary = Path.join(ctx.base, "fake-glorbo")
+      File.write!(self_binary, "#!/bin/sh\n")
+      File.chmod!(self_binary, 0o755)
+
       [
         base: ctx.base,
         run_fun: run_fun,
         provider_fun: fn _ -> via_proxy_provider() end,
         proxy_url_fun: fn "acme" -> {:ok, "http://localhost:4321"} end,
         openai_proxy_url_fun: fn "acme", "engineer" -> {:ok, "http://127.0.0.1:18091"} end,
+        self_binary_fun: fn -> self_binary end,
         audit_fun: ctx.audit_fun
       ]
     end
@@ -1671,6 +1680,12 @@ defmodule Glorbo.Agent.DispatchTest do
         {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
       end
 
+      # Stub the re-exec target (native dispatch resolves self_binary/0); see
+      # the via_proxy_opts/2 note — keeps the suite off a built ./glorbo.
+      self_binary = Path.join(ctx.base, "fake-glorbo")
+      File.write!(self_binary, "#!/bin/sh\n")
+      File.chmod!(self_binary, 0o755)
+
       assert {:ok, _} =
                Dispatch.execute(proxy_spec, ctx.task,
                  base: ctx.base,
@@ -1680,6 +1695,7 @@ defmodule Glorbo.Agent.DispatchTest do
                  openai_proxy_url_fun: fn _, _ ->
                    flunk("inference-proxy URL must not be resolved for non-via_proxy providers")
                  end,
+                 self_binary_fun: fn -> self_binary end,
                  audit_fun: ctx.audit_fun
                )
 
