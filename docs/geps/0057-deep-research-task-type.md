@@ -2,9 +2,10 @@
 gep: 57
 title: Deep-research task type — governed multi-step gather/read/synthesise
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Placeholder
+status: Draft
 type: Standards
 created: 2026-06-12
+requires: [56]
 see-also: [13, 24, 26, 32, 40, 56]
 history:
   - date: 2026-06-12
@@ -13,8 +14,16 @@ history:
       Parked from the 2026-06-12 odysseus cross-pollination review. Adapts the
       odysseus Deep Research pipeline (services/research/*, src/deep_research.py)
       into a first-class glorbo task kind that emits a portable, sanitised report
-      artifact into the company tree. Design space NOT yet worked out; see Open
-      questions.
+      artifact into the company tree.
+  - date: 2026-06-12
+    status: Draft
+    note: |
+      Design resolved in brainstorm. D3 shape = template + orchestration module
+      (no FileSpec schema change; YAGNI). D4 budget = degrade-to-partial-report
+      (falls out of the existing 80%/100% gates). D5 source content framed as
+      untrusted via GEP-56 (now Draft). D6 runner = any agent holding the
+      research template + web_fetch + network (a `researcher` role ships as the
+      example). Draft-only this cycle; implementation follows GEP-56/59.
 ---
 
 # GEP-57: Deep-research task type
@@ -39,6 +48,7 @@ hoc, with no consistent output an operator can review or `scp`.
   (GEP-3).
 - Reuse existing rails: native web tools (GEP-32), budget governance, task IDs
   (GEP-13), task-chain observability (GEP-40), scheduler (GEP-24).
+- Treat every fetched source as **untrusted content** (GEP-56) end to end.
 
 ## Non-goals
 
@@ -46,49 +56,118 @@ hoc, with no consistent output an operator can review or `scp`.
 - **Not** a new crawler/search engine — rides `web_fetch` + the egress proxy.
 - Does not bypass `network:` policy or per-agent egress authz (GEP-50).
 - No bundled headless browser or JS rendering in v1.
+- **Not** a new `kind:` in the FileSpec — a template + module (D3).
 
-## Design (sketch — to be worked out before Draft)
+## Design
 
-Likely a task **template + orchestration module** rather than a brand-new task
-schema: a `research/` skill/template (GEP-10) whose frontmatter declares
-`max_steps`, `max_sources`, `budget_usd`, and a `Glorbo.Research` module that
-drives the loop (plan → fetch N sources via `web_fetch` → extract → synthesise →
-render report). Each step is an ordinary budgeted LLM call so company/agent
-budgets and the audit log apply unchanged. Output is `report.md` + a
-`report.html` rendered through Earmark + `html_sanitize_ex`.
+### Shape: template + orchestration module (D3)
 
-## Open questions
+A `research/` skill template (GEP-10) whose frontmatter declares the bounds:
 
-*(load-bearing — these gate promotion to Draft)*
+```yaml
+max_steps: 8
+max_sources: 20
+budget_usd: 2.00
+```
 
-- **First-class task kind vs. template?** A new `kind: task/research` in the
-  FileSpec (GEP-25) is cleaner for the dashboard/Kanban but heavier than a
-  template + module. Lean template-first.
-- **Source provenance:** research output is built from untrusted web content —
-  must the report (and the intermediate context) be framed via GEP-56? Almost
-  certainly yes; sequence GEP-56 first.
-- **Budget semantics:** hard-stop at the cap mid-synthesis, or degrade to a
-  partial report? How does it interact with the 80%/100% governance gates?
-- **Who runs it:** any agent with `web_fetch` + a privilege, or a dedicated
-  `researcher` role template?
+driven by a `Glorbo.Research` module:
+
+1. **Plan** — one LLM call turns the task prompt into a search/gather plan.
+2. **Gather** — fetch up to `max_sources` via `web_fetch` (GEP-32), through the
+   agent's `network: proxy` egress (GEP-23/50). Each fetched page is an
+   **untrusted chunk** (GEP-56, D5).
+3. **Read/extract** — per-source extraction LLM calls (untrusted-framed input).
+4. **Synthesise** — a final LLM call composes the report from the framed
+   sources.
+5. **Render** — emit `report.md` + a self-contained, sanitised `report.html`
+   (Earmark → `html_sanitize_ex`) under `projects/<slug>/reports/<id>/`.
+
+No FileSpec schema change: the research task is an ordinary task whose body
+points at the `research/` template; the dashboard/Kanban render it as a normal
+task with a report artifact attached. (Promotion to a first-class
+`kind: task/research` is a deliberate follow-up *if* it earns a board slot.)
+
+### Governance: each step is an ordinary budgeted, audited call (D2)
+
+Every plan/gather/read/synthesise step is a normal dispatch — company/agent
+budgets (80% warn / 100% refuse) and the audit log apply unchanged. No
+special-casing: a research task is exactly as governed as any other.
+
+### Budget semantics: degrade to a partial report (D4)
+
+The cap is enforced by the *existing* gates, not new logic. When the 100% gate
+**refuses** the next step's dispatch (or `max_steps`/`max_sources` is reached),
+the loop **finalizes a partial report** from whatever was gathered, with a
+`> Truncated at budget` banner at the top of `report.md`. The operator always
+gets a reviewable artifact; the gather/read work already paid for is never
+discarded. (A synthesis-reserve refinement — carve out budget so the writeup is
+always coherent rather than mid-sentence — is noted for a follow-up.)
+
+### Source framing (D5)
+
+Research output is built entirely from untrusted web content. Every fetched
+page, every extracted span, and the intermediate context that flows into the
+synthesis call is framed via **GEP-56** (`:untrusted` provenance, matched-random
+boundaries). The rendered report is data; it never re-enters an agent's prompt
+as instructions without re-framing.
+
+### Runner (D6)
+
+Any agent holding the `research/` template **and** `web_fetch` **and** a
+`network:` policy that permits egress can run a research task — no new
+privilege. A `researcher` role `AGENT.md` ships as the canonical example
+(the template + a `network: proxy` grant), but research is template-gated, not
+role-locked.
 
 ## Decision log
 
 ### D1. Output is a portable filesystem artifact *(settled)*
-- **Decided:** reports land as `report.md` + self-contained sanitised
-  `report.html` under `projects/<slug>/reports/<id>/`.
-- **Alternatives:** DB-only storage; an external report service.
-- **Why:** matches GEP-3 (everything is a file) — back up with `tar`, move with
-  `scp`, diff with git (GEP-33).
+- **Decided:** `report.md` + self-contained sanitised `report.html` under
+  `projects/<slug>/reports/<id>/`.
+- **Why:** matches GEP-3 (everything is a file) — `tar`/`scp`/`git` (GEP-33).
 
 ### D2. Reuse budget + audit rails, no special-casing *(settled)*
 - **Decided:** each research step is an ordinary budgeted, audited LLM call.
-- **Why:** governance is glorbo's differentiator; a research task must be as
-  governed as any other dispatch.
+- **Why:** governance is glorbo's differentiator; research must be as governed
+  as any dispatch.
 
-### D3. Task-kind vs template, source-framing, budget semantics
-- *To be captured during the brainstorm that takes this GEP to Draft* (see
-  Open questions).
+### D3. Template + orchestration module, not a new task kind *(settled)*
+- **Decided:** a `research/` template + `Glorbo.Research` module; no FileSpec
+  schema change.
+- **Alternatives:** a first-class `kind: task/research` (cleaner board
+  integration, heavier — schema + validator + UI before the feature is proven).
+- **Why:** YAGNI; ride the existing task rails. Promote to a kind later if it
+  earns a board slot.
+
+### D4. Budget = degrade to a partial report *(settled)*
+- **Decided:** on the 100% gate refusing the next step (or hitting
+  `max_steps`/`max_sources`), finalize a partial report with a truncation
+  banner.
+- **Alternatives:** hard-stop/fail (wastes paid work, no artifact);
+  synthesis-reserve (a refinement, deferred).
+- **Why:** the operator always gets something reviewable; aligns with the
+  existing gates rather than adding new budget logic.
+
+### D5. Sources framed as untrusted via GEP-56 *(settled)*
+- **Decided:** all fetched/extracted content carries `:untrusted` provenance and
+  is matched-random-framed (GEP-56) through to the report.
+- **Why:** research input is the canonical untrusted-content case.
+
+### D6. Runner = template-gated, any qualifying agent *(settled)*
+- **Decided:** any agent with the `research/` template + `web_fetch` + egress;
+  a `researcher` role ships as the example.
+- **Why:** template-first; no new privilege axis.
+
+## Migration
+
+None required — additive, template-first:
+
+- **No FileSpec/schema change** (D3) — a research task is an ordinary task; no
+  validator, SQLite, or dashboard schema change, no `glorbo reindex`.
+- **New content only** — the `research/` template + the `Glorbo.Research` module
+  + the `report.md`/`report.html` output layout. Existing companies gain the
+  capability by installing the template; nothing they already have changes.
+- **Depends on GEP-56** (`requires: [56]`) — source framing must land first.
 
 ## Related
 
