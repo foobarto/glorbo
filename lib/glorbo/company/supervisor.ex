@@ -15,9 +15,12 @@ defmodule Glorbo.Company.Supervisor do
     9. `Glorbo.Network.Proxy` (conditional) — HTTPS CONNECT allowlist for
        proxy agents (GAP-4; started iff at least one AGENT.md declares
        `network: proxy`).
-   10. `Glorbo.Company.ProposalsSink`  — GEP-28 wave 2a audit event emitter
+   10. `Glorbo.OpenAIProxy` (conditional) — in-process inference proxy
+       (GEP-0055; started iff at least one agent's provider has
+       `auth = "via_proxy"`).
+   11. `Glorbo.Company.ProposalsSink`  — GEP-28 wave 2a audit event emitter
        for `proposals/*.md` writes.
-   11. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
+   12. `Glorbo.Company.AgentBoot`      — one-shot enumerator that calls
        `AgentSupervisor.start_agent/2` and `Scheduler.register/3` for
        every on-disk agent; last so every dep is alive by the time it
        runs (gated by `config :glorbo, :auto_boot_agents`).
@@ -66,6 +69,7 @@ defmodule Glorbo.Company.Supervisor do
           | :agent_sup
           | :agent_fleet
           | :network_proxy
+          | :openai_proxy
           | :approvals_gate
           | :path_request_gate
           | :proposals_sink
@@ -130,9 +134,15 @@ defmodule Glorbo.Company.Supervisor do
     #
     # GAP-5: Approvals.Gate always starts — its PubSub subscription is
     # the entry point for Director approval flow (SEC-04).
+    #
+    # GEP-0055: start Glorbo.OpenAIProxy when at least one agent's
+    # provider has `auth = "via_proxy"`. Mirrors the GAP-4 pattern;
+    # `openai_proxy?: true|false` in opts overrides the scan for
+    # tests that want to assert a specific shape.
     children =
       base_children
       |> maybe_append_proxy(opts, company, base)
+      |> maybe_append_openai_proxy(opts, company, base)
       |> append_gate(company, base)
       |> append_path_request_gate(company, base)
       |> append_proposals_sink(company, base)
@@ -173,6 +183,97 @@ defmodule Glorbo.Company.Supervisor do
     else
       children
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Conditional OpenAIProxy (GEP-0055)
+  # ---------------------------------------------------------------------------
+
+  # GEP-0055: start the in-process inference proxy when at least one
+  # agent in the company has a `via_proxy` provider. The decision
+  # tracks the filesystem source of truth (CLAUDE.md invariant) by
+  # parsing each `agents/<slug>/AGENT.md` for its `provider:` field
+  # and cross-referencing the provider-registry for `auth = "via_proxy"`.
+  #
+  # The scan runs once, at supervisor init (same property as the
+  # GAP-4 egress-classifier scan): editing an agent to a `via_proxy`
+  # provider — or flipping a provider TOML + `Registry.refresh` —
+  # while the company is running does NOT retro-start the proxy;
+  # the company must restart. Dispatch fails loudly in that window
+  # (`{:error, :openai_proxy_unavailable}`), it does not degrade
+  # silently.
+  #
+  # `openai_proxy?: true|false` in opts overrides the scan for
+  # tests that want to assert a specific shape.
+  defp maybe_append_openai_proxy(children, opts, company, base) do
+    openai_proxy? =
+      Keyword.get_lazy(opts, :openai_proxy?, fn ->
+        company_has_openai_proxy_provider?(company, base)
+      end)
+
+    if openai_proxy? do
+      children ++
+        [
+          {Glorbo.OpenAIProxy,
+           [
+             name: via(company, :openai_proxy),
+             company: company,
+             port: 0
+           ]}
+        ]
+    else
+      children
+    end
+  end
+
+  # Scans the company's agents for any `via_proxy` provider. Each
+  # AGENT.md goes through the full `Glorbo.Agent.Parser.parse_file/1`
+  # (size-gated first, same as the egress scan below) and the parsed
+  # `provider` name is cross-referenced against the registry. Returns
+  # `true` if any agent's provider has `auth = :via_proxy`.
+  #
+  # The provider-registry may not be loaded at supervisor init
+  # time during tests; we catch the lookup failure and treat
+  # it as "no proxy provider" (no proxy starts). The
+  # `openai_proxy?: true` opt bypass lets tests opt in
+  # explicitly.
+  defp company_has_openai_proxy_provider?(company, base) do
+    agents_dir = Path.join([base, "companies", company, "agents"])
+
+    case File.ls(agents_dir) do
+      {:ok, entries} ->
+        Enum.any?(entries, fn slug ->
+          agent_md = Glorbo.Agent.FileLayout.agent_md(Path.join(agents_dir, slug))
+
+          with :ok <- ensure_under_size(agent_md),
+               {:ok, %{provider: provider_name}} <-
+                 Glorbo.Agent.Parser.parse_file(agent_md),
+               %Glorbo.CLI.Registry.Provider{auth: auth} <-
+                 safe_registry_get(provider_name) do
+            auth == :via_proxy
+          else
+            _ -> false
+          end
+        end)
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  # GEP-0055: look up a single provider by name. The Registry is
+  # an Agent that may not be started in every test context; we
+  # catch the call failure and treat unknown providers as
+  # "not via_proxy" (i.e. don't start the proxy). The
+  # `openai_proxy?: true` opt lets tests opt in explicitly.
+  defp safe_registry_get(name) do
+    Glorbo.CLI.Registry.get(name)
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
   end
 
   # Read every agent.md under the company and pick the first with

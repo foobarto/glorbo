@@ -158,7 +158,7 @@ defmodule Glorbo.CLI.Harness do
          {:ok, usage_path} <- require_env(env, "GLORBO_USAGE_PATH"),
          {:ok, auth} <-
            NativeConfig.parse_auth(blank_to_nil(env.("GLORBO_NATIVE_AUTH")) || provider.auth),
-         {:ok, credentials} <- load_credentials(args.provider, opts),
+         {:ok, credentials} <- load_credentials_for(auth, args.provider, opts),
          {:ok, endpoint} <-
            NativeConfig.resolve_endpoint(
              blank_to_nil(env.("GLORBO_NATIVE_ENDPOINT")) || provider.endpoint,
@@ -200,10 +200,21 @@ defmodule Glorbo.CLI.Harness do
          max_tool_calls_per_turn: max_tool_calls_per_turn,
          reply_path: reply_path,
          usage_path: usage_path,
-         credentials: credentials
+         credentials: via_proxy_credentials(auth, credentials, env)
        }}
     end
   end
+
+  # GEP-0055: under `via_proxy` the harness has no `/creds` mount —
+  # its "API key" is the per-dispatch GLORBO_PROXY_TOKEN, presented
+  # as a Bearer token to the in-process proxy (the endpoint env
+  # already points at the proxy's loopback URL). An absent token
+  # passes through as "" and surfaces as the proxy's clean 401.
+  defp via_proxy_credentials(:via_proxy, _credentials, env) do
+    %{"api_key" => env.("GLORBO_PROXY_TOKEN") || ""}
+  end
+
+  defp via_proxy_credentials(_auth, credentials, _env), do: credentials
 
   defp converse(prompt, config, opts) do
     started_at = monotonic_ms(opts)
@@ -431,7 +442,12 @@ defmodule Glorbo.CLI.Harness do
       NativeConfig.auth_headers(config.auth, Map.get(config, :credentials, %{}))
   end
 
-  defp load_credentials(provider, opts) do
+  # GEP-0055: `via_proxy` has no credentials TOML by design — the
+  # upstream key never enters the sandbox, so there is nothing to
+  # load (and the GLORBO_NATIVE_CREDENTIALS_PATH env is empty).
+  defp load_credentials_for(:via_proxy, _provider, _opts), do: {:ok, %{}}
+
+  defp load_credentials_for(_auth, provider, opts) do
     read_fun = Keyword.get(opts, :credentials_read_fun, &File.read/1)
     path = credentials_path(provider, opts)
     NativeConfig.load_credentials_from_path(path, read_fun: read_fun)

@@ -8,7 +8,6 @@ defmodule Glorbo.Providers.ModelCatalog do
   `provider_models` table as a derived projection of those cache files.
   """
   use GenServer
-  require Logger
 
   import Ecto.Query
 
@@ -374,11 +373,6 @@ defmodule Glorbo.Providers.ModelCatalog do
         :ok = replace_projection(state.repo, alias_name, rows, owner)
         entry = %{status: :ready, model_count: length(rows), refreshed_at: refreshed_at}
         {{:ok, entry}, Map.put(entry, :detail, nil)}
-
-      {:error, reason} ->
-        count = model_count(state.repo, alias_name, owner)
-        entry = %{status: :shape, model_count: count, refreshed_at: nil}
-        {{:error, reason, entry}, Map.put(entry, :detail, reason)}
     end
   end
 
@@ -413,6 +407,7 @@ defmodule Glorbo.Providers.ModelCatalog do
              read_fun: state.credentials_read_fun
            ),
          {:ok, auth} <- NativeConfig.parse_auth(provider.auth),
+         {:ok, credentials} <- via_proxy_catalog_credentials(auth, provider, credentials),
          :ok <- NativeConfig.validate_auth(auth, provider.name, credentials),
          {:ok, endpoint} <- NativeConfig.resolve_endpoint(provider.endpoint, credentials),
          {:ok, url} <- model_list_url(endpoint, provider),
@@ -461,6 +456,21 @@ defmodule Glorbo.Providers.ModelCatalog do
         {:error, reason, :shape}
     end
   end
+
+  # GEP-0055: a `via_proxy` provider has no GEP-32 credentials TOML;
+  # its upstream key lives in the host env var named by
+  # `api_key_env`. The catalog runs host-side (it IS the host), so
+  # reading that env var here is the same access the proxy listener
+  # performs at request time. A missing/empty env var surfaces as
+  # the catalog's existing `:auth` status via `{:missing_api_key, _}`.
+  defp via_proxy_catalog_credentials(:via_proxy, provider, _credentials) do
+    case provider.api_key_env && System.get_env(provider.api_key_env) do
+      key when is_binary(key) and key != "" -> {:ok, %{"api_key" => key}}
+      _ -> {:error, {:missing_api_key, provider.name}}
+    end
+  end
+
+  defp via_proxy_catalog_credentials(_auth, _provider, credentials), do: {:ok, credentials}
 
   defp fetch_body(url, auth, credentials, request_fun) do
     request = %{
@@ -653,7 +663,6 @@ defmodule Glorbo.Providers.ModelCatalog do
 
   defp integer_or_nil(_), do: nil
 
-  defp classify_transport(:timeout), do: :stale
   defp classify_transport(:econnrefused), do: :unreachable
   defp classify_transport(:nxdomain), do: :unreachable
   defp classify_transport(:enetunreach), do: :unreachable
