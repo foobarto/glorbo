@@ -67,6 +67,6 @@ mv cosign-linux-amd64 ~/.local/bin/cosign
 
 ## Reference
 
-- Signing workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) (`release` job)
+- Signing workflow: [`.github/workflows/release.yml`](./.github/workflows/release.yml) (`release` job)
 - Cosign docs: https://docs.sigstore.dev/cosign/signing/overview/
 - GitHub OIDC for Actions: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
