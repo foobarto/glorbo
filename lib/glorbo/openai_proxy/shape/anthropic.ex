@@ -93,8 +93,12 @@ defmodule Glorbo.OpenAIProxy.Shape.Anthropic do
   def stream?(_), do: false
 
   @impl true
-  def translate_request(body, headers),
-    do: {:ok, body, headers}
+  # Empty upstream-header allowlist — never forward inbound host /
+  # content-length / the proxy bearer token. attach_auth/2 adds x-api-key
+  # (Anthropic ignores `authorization`, so a forwarded proxy token would
+  # have leaked upstream). (PR #47 review: codex + Copilot.)
+  def translate_request(body, _headers),
+    do: {:ok, body, %{}}
 
   @impl true
   def attach_auth(headers, api_key) do

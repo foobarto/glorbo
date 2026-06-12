@@ -32,6 +32,26 @@ change between minor versions. Pin exact versions in downstream usage.
   `req >= 0.5.0`, both of which still admit the vulnerable versions).
   `mix deps.audit` clean.
 
+- **GEP-0055 inference-proxy hardening** (PR #47 review — codex +
+  Copilot): three fixes to `Glorbo.OpenAIProxy`, all on the sandbox
+  egress path:
+  - **Inbound headers are no longer forwarded upstream.** The shape
+    adapters passed the inbound header map straight through, so the real
+    provider received the proxy's loopback `Host` (misroute / CDN
+    rejection) and — for Anthropic (adds `x-api-key`, never overwrites
+    `authorization`) and Gemini (query-param auth, no-op `attach_auth`) —
+    the per-dispatch proxy bearer token leaked upstream via the inbound
+    `Authorization`. `translate_request/2` now returns an empty
+    allowlist; auth/host/content-type come from `attach_auth/2` + Req.
+  - **16 KiB header cap enforced on the terminated path.** A complete
+    header block arriving in one read (terminator already present)
+    bypassed the cap; oversized heads now fail closed `:head_too_large`.
+  - **Socket-ownership race removed.** The handler now waits for an
+    explicit hand-off before touching the socket, eliminating the
+    `controlling_process/2` race that yielded intermittent `:not_owner`.
+  Regression tests added (per-shape allowlist, oversized-header
+  rejection, no-leak assertions on the round trip).
+
 ### Fixed
 
 - **DM channel creation race + symlink follow** (PR #42 review,

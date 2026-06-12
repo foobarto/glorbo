@@ -222,8 +222,23 @@ defmodule Glorbo.OpenAIProxy do
         # into a 500. Socket ownership is transferred so the
         # client socket's lifetime is tied to its handler, not to
         # the acceptor.
-        pid = spawn(fn -> handle_request(client_sock, company) end)
-        _ = :gen_tcp.controlling_process(client_sock, pid)
+        #
+        # The handler is spawned WAITING: it must not touch the socket
+        # until `controlling_process/2` has made it the owner, otherwise
+        # an early `:gen_tcp.recv/3` races the ownership transfer and
+        # fails intermittently with `:not_owner`. (PR #47 review: Copilot.)
+        pid = spawn(fn -> await_handoff(client_sock, company) end)
+
+        case :gen_tcp.controlling_process(client_sock, pid) do
+          :ok ->
+            send(pid, :socket_handed_off)
+
+          {:error, _reason} ->
+            # Transfer failed (socket already gone) — the acceptor still
+            # owns it, so close here; the waiting handler times out and
+            # exits without ever reading.
+            :gen_tcp.close(client_sock)
+        end
 
         accept_loop(listen_sock, company)
 
@@ -260,6 +275,23 @@ defmodule Glorbo.OpenAIProxy do
 
   @body_read_timeout_ms 10_000
   @upstream_timeout_ms 30_000
+
+  # Safety net for the handler's wait-for-ownership hand-off. Only reached
+  # on the rare controlling_process/2 failure path (signal never arrives);
+  # the handler exits rather than blocking forever.
+  @handoff_timeout_ms 5_000
+
+  # Per-request handler entry: block until the acceptor confirms socket
+  # ownership has been transferred (see accept_loop/2), then process. The
+  # handler never touches the socket before this signal, so it cannot race
+  # the controlling_process/2 transfer.
+  defp await_handoff(client_sock, company) do
+    receive do
+      :socket_handed_off -> handle_request(client_sock, company)
+    after
+      @handoff_timeout_ms -> :ok
+    end
+  end
 
   # Handles a single HTTP request on `client_sock`. The proxy
   # is request-scoped: one connection, one request, one
@@ -341,6 +373,14 @@ defmodule Glorbo.OpenAIProxy do
   # terminates; the deadline bounds total wall-clock.
   defp read_request_head(sock, acc, deadline) do
     case :binary.match(acc, "\r\n\r\n") do
+      {pos, _len} when pos > @max_request_head_bytes ->
+        # A complete header block can arrive in a single read with the
+        # terminator already present — the cap must be enforced here too,
+        # not only on the still-unterminated `:nomatch` path, or an
+        # oversized one-shot header block bypasses it. (PR #47 review:
+        # codex + Copilot — oversized-header DoS.)
+        {:error, :head_too_large}
+
       {pos, len} ->
         head = binary_part(acc, 0, pos)
         rest = binary_part(acc, pos + len, byte_size(acc) - pos - len)

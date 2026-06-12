@@ -91,8 +91,13 @@ defmodule Glorbo.OpenAIProxy.Shape.Gemini do
   def stream?(_), do: false
 
   @impl true
-  def translate_request(body, headers),
-    do: {:ok, body, headers}
+  # Empty upstream-header allowlist — never forward inbound host /
+  # content-length / the proxy bearer token. Gemini auth is the `?key=`
+  # query param and attach_auth/2 is a no-op, so a forwarded inbound
+  # `authorization` would have leaked the proxy token straight upstream.
+  # (PR #47 review: codex + Copilot.)
+  def translate_request(body, _headers),
+    do: {:ok, body, %{}}
 
   @impl true
   # Gemini's auth is the `?key=` query parameter, not a

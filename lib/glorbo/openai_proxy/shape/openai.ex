@@ -88,8 +88,14 @@ defmodule Glorbo.OpenAIProxy.Shape.OpenAI do
   def stream?(_), do: false
 
   @impl true
-  def translate_request(body, headers),
-    do: {:ok, body, headers}
+  # Upstream headers are built from an EMPTY allowlist — the inbound
+  # headers (host: <proxy loopback:port>, content-length, and the proxy
+  # bearer token in `authorization`) must never reach the real provider.
+  # Req derives host/content-type/content-length from the URL + json body;
+  # the real credential is added by attach_auth/2. (PR #47 review: codex +
+  # Copilot — proxy-token leak + Host misroute.)
+  def translate_request(body, _headers),
+    do: {:ok, body, %{}}
 
   @impl true
   def attach_auth(headers, api_key) do

@@ -125,6 +125,36 @@ defmodule Glorbo.OpenAIProxyTest do
   # Listener — auth, parsing, routing, upstream
   # ---------------------------------------------------------------------------
 
+  describe "translate_request upstream-header allowlist (PR #47 review)" do
+    # Inbound headers carry the proxy loopback Host, content-length, and
+    # the per-dispatch proxy bearer token (Authorization / X-Glorbo-Token).
+    # None may reach the real provider — every shape must return an EMPTY
+    # upstream-header map and leave auth/host/content-type to attach_auth/2
+    # + Req. Anthropic (adds x-api-key, never overwrites authorization) and
+    # Gemini (attach_auth no-op) would otherwise leak the proxy token.
+    @dirty_headers %{
+      "host" => "127.0.0.1:65000",
+      "authorization" => "Bearer glorbo-proxy-token-secret",
+      "content-length" => "123",
+      "x-glorbo-token" => "glorbo-proxy-token-secret"
+    }
+
+    test "OpenAI drops all inbound headers" do
+      assert {:ok, %{"model" => "m"}, %{}} =
+               OpenAI.translate_request(%{"model" => "m"}, @dirty_headers)
+    end
+
+    test "Anthropic drops all inbound headers" do
+      assert {:ok, %{"model" => "m"}, %{}} =
+               Anthropic.translate_request(%{"model" => "m"}, @dirty_headers)
+    end
+
+    test "Gemini drops all inbound headers" do
+      assert {:ok, %{"model" => "m"}, %{}} =
+               Gemini.translate_request(%{"model" => "m"}, @dirty_headers)
+    end
+  end
+
   describe "Glorbo.OpenAIProxy listener" do
     setup do
       # Unnamed on purpose: per-test listeners don't need a name,
@@ -285,6 +315,27 @@ defmodule Glorbo.OpenAIProxyTest do
       end)
     end
 
+    test "rejects an oversized complete header block (cap enforced on the terminated path), keeps accepting",
+         %{port: port} do
+      # PR #47 review (codex/Copilot): a full header block whose terminator
+      # (\r\n\r\n) is already present but which exceeds the 16 KiB head cap
+      # must be rejected, not parsed — the cap applied only on the
+      # still-unterminated path before this fix.
+      big = String.duplicate("x", 20_000)
+
+      raw =
+        "POST /v1/chat/completions HTTP/1.1\r\n" <>
+          "Host: 127.0.0.1:#{port}\r\n" <>
+          "X-Filler: #{big}\r\n" <>
+          "Connection: close\r\n\r\n"
+
+      assert request(port, raw, 5_000) =~ "HTTP/1.1 400"
+
+      # The listener must remain usable on the same port afterwards.
+      assert request(port, "GET /v1/models HTTP/1.1\r\nConnection: close\r\n\r\n", 5_000) =~
+               "HTTP/1.1 401"
+    end
+
     test "full round trip: POST reaches the stub upstream with the real key and path", %{
       port: port
     } do
@@ -314,6 +365,13 @@ defmodule Glorbo.OpenAIProxyTest do
         assert upstream_raw =~ "POST /v1/chat/completions"
         assert upstream_raw =~ "authorization: Bearer sk-upstream-real"
         assert upstream_raw =~ ~s("model":"gpt-test")
+
+        # PR #47 review (codex/Copilot): inbound headers are NOT forwarded.
+        # The proxy's loopback Host and the per-dispatch proxy token must
+        # never reach the real provider — upstream Host is the provider's,
+        # set by Req, and the only credential is the real upstream key.
+        refute upstream_raw =~ "127.0.0.1:#{port}"
+        refute upstream_raw =~ token
       end)
     end
   end
