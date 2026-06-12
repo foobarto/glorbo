@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-06-12
+
 ### Security
 
 - **Snyk Code (SAST) workflow** (`.github/workflows/snyk-security.yml`).
