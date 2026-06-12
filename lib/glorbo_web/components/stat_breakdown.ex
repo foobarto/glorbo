@@ -42,8 +42,7 @@ defmodule GlorboWeb.Components.StatBreakdown do
           :for={{_k, _c, pct, color} <- @segs}
           class="gl-stat-breakdown__seg"
           style={"width: #{pct}%; background: #{color};"}
-        >
-        </span>
+        ></span>
       </div>
       <ul class="gl-stat-breakdown__legend">
         <li :for={{k, c, _pct, color} <- @segs}>

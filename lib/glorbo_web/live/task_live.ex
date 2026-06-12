@@ -493,7 +493,8 @@ defmodule GlorboWeb.TaskLive do
         <div :if={@task.schedule != ""} class="gl-task-page__usage-row">
           <span class="gl-task-page__usage-label">schedule</span>
           <span class="gl-tabular" title={@task.schedule}>
-            ↻ {@task.schedule}<span :if={@next_fire_at} class="gl-muted">
+            ↻ {@task.schedule}
+            <span :if={@next_fire_at} class="gl-muted">
               &nbsp;· next fire {format_next_fire(@next_fire_at)}
             </span>
           </span>

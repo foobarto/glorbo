@@ -37,8 +37,7 @@ defmodule GlorboWeb.Components.Spark do
         class="gl-spark__bar"
         style={"height: #{Float.round(ratio * 100, 1)}%; background: #{@color}; opacity: #{Float.round(0.35 + 0.65 * ratio, 2)};"}
         data-idx={idx}
-      >
-      </span>
+      ></span>
     </div>
     """
   end

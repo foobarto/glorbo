@@ -68,6 +68,11 @@ change between minor versions. Pin exact versions in downstream usage.
   earmark 1.4.49, phoenix_live_view 1.1.31, yaml_elixir 2.12.2,
   thousand_island 1.5.0 (transitive); GitHub Actions pins
   `actions/checkout` v6.0.3 and `github/codeql-action` v4.36.1.
+- **Latest in-range dependency bumps**: phoenix 1.8.7 → 1.8.8,
+  phoenix_live_view 1.1.31 → 1.2.1, bandit 1.11.1 → 1.12.0, credo
+  1.7.18 → 1.7.19. All within existing `~>` constraints; `mix precommit`
+  green (3063 tests). `req` 0.5 → 0.6 deferred (out-of-range major-ish
+  bump on the GEP-0055 proxy client; warrants its own tested pass).
 
 ### Added
 

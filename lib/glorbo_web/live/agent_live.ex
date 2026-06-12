@@ -956,8 +956,7 @@ defmodule GlorboWeb.AgentLive do
                 <span class={[
                   "gl-agent-identity__dot",
                   "gl-agent-identity__dot--" <> Atom.to_string(@detail.pill_status)
-                ]}>
-                </span>
+                ]}></span>
               </div>
               <div class="gl-agent-identity__name">{@detail.name}</div>
               <div class="gl-muted gl-agent-identity__reports">
