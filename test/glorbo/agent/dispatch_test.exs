@@ -1539,4 +1539,171 @@ defmodule Glorbo.Agent.DispatchTest do
       end)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # GEP-0055: in-process inference proxy
+  # ---------------------------------------------------------------------------
+
+  describe "GEP-0055: via_proxy dispatch" do
+    defp via_proxy_provider do
+      stub_provider(
+        name: "openai-via-proxy",
+        binary: "/usr/bin/codex",
+        kind: :native,
+        auth: :via_proxy,
+        api_key_env: "OPENAI_API_KEY",
+        endpoint: "https://api.openai.com/v1"
+      )
+    end
+
+    # The two stub URL funs a via_proxy dispatch needs: the GEP-23
+    # CONNECT proxy (resolve_proxy_url) and the GEP-0055 inference
+    # proxy (resolve_openai_proxy_token). Different ports on purpose
+    # — the assertions below pin that the *_BASE_URL env points at
+    # the inference proxy, never at the CONNECT proxy.
+    defp via_proxy_opts(ctx, run_fun) do
+      # A native via_proxy dispatch re-execs the glorbo binary, so it resolves
+      # self_binary/0. Stub it with a fake so the suite never depends on a
+      # built ./glorbo (absent in CI before the release step) — the same
+      # self_binary_fun pattern the native-dispatch tests above already use.
+      self_binary = Path.join(ctx.base, "fake-glorbo")
+      File.write!(self_binary, "#!/bin/sh\n")
+      File.chmod!(self_binary, 0o755)
+
+      [
+        base: ctx.base,
+        run_fun: run_fun,
+        provider_fun: fn _ -> via_proxy_provider() end,
+        proxy_url_fun: fn "acme" -> {:ok, "http://localhost:4321"} end,
+        openai_proxy_url_fun: fn "acme", "engineer" -> {:ok, "http://127.0.0.1:18091"} end,
+        self_binary_fun: fn -> self_binary end,
+        audit_fun: ctx.audit_fun
+      ]
+    end
+
+    test "via_proxy dispatch: no /creds mount, real proxy env, token registered + revoked",
+         ctx do
+      proxy_spec = %{ctx.spec | network: :proxy}
+      parent = self()
+
+      run_fun = fn _args, env, bwrap_opts, _run_opts ->
+        # Resolve the token DURING the dispatch — it is revoked at
+        # dispatch end, so this is the only window where it must
+        # be live.
+        token = bwrap_opts.cli_env["GLORBO_PROXY_TOKEN"]
+        send(parent, {:bwrap_opts, bwrap_opts, Glorbo.Network.ProxyTokens.resolve(token)})
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      assert {:ok, _} = Dispatch.execute(proxy_spec, ctx.task, via_proxy_opts(ctx, run_fun))
+
+      assert_received {:bwrap_opts, bwrap_opts, in_flight_resolution}
+
+      # No GEP-32 credentials mount — the whole point of via_proxy.
+      refute Enum.any?(bwrap_opts.cli_auth_binds, fn {_host, sandbox} ->
+               sandbox == "/creds/provider.toml"
+             end)
+
+      # The *_BASE_URL env points at the inference proxy (no GEP-23
+      # CONNECT URL, no userinfo token, no port-0 placeholder).
+      cli_env = bwrap_opts.cli_env
+      assert cli_env["GLORBO_PROXY_BASE_URL"] == "http://127.0.0.1:18091"
+      assert cli_env["OPENAI_BASE_URL"] == "http://127.0.0.1:18091"
+
+      # The token is a real, live ProxyTokens entry carrying the
+      # provider alias the listener resolves the upstream with.
+      token = cli_env["GLORBO_PROXY_TOKEN"]
+      assert is_binary(token) and token != ""
+
+      assert {:ok, %{company: "acme", agent: "engineer", provider_alias: "openai-via-proxy"}} =
+               in_flight_resolution
+
+      # bwrap gets the URL so pasta can forward the port (GEP-31).
+      assert bwrap_opts.openai_proxy_url == "http://127.0.0.1:18091"
+
+      # The GEP-23 CONNECT proxy URL is untouched by GEP-0055 and
+      # keeps its own tokenized shape, confined to bwrap proxy_url.
+      assert bwrap_opts.proxy_url =~ ~r{\Ahttp://[A-Za-z0-9_\-]+@localhost:4321\z}
+
+      # Revoked at dispatch end: replay gets the listener's 401.
+      assert Glorbo.Network.ProxyTokens.resolve(token) == :error
+    end
+
+    test "via_proxy provider on a non-:proxy network fails loudly before the sandbox boots",
+         ctx do
+      # ctx.spec is network: :loopback — kernel-level egress block,
+      # so the agent could never reach the proxy listener. Dispatch
+      # must refuse rather than boot a CLI with no usable endpoint.
+      run_fun = fn _args, _env, _bwrap_opts, _run_opts ->
+        flunk("run_fun must not be called when via_proxy cannot reach its proxy")
+      end
+
+      assert {:error, :via_proxy_requires_proxy_network} =
+               Dispatch.execute(ctx.spec, ctx.task, via_proxy_opts(ctx, run_fun))
+    end
+
+    test "via_proxy dispatch fails when the openai_proxy_url_fun reports the proxy down", ctx do
+      proxy_spec = %{ctx.spec | network: :proxy}
+
+      run_fun = fn _args, _env, _bwrap_opts, _run_opts ->
+        flunk("run_fun must not be called when the inference proxy is unavailable")
+      end
+
+      opts =
+        ctx
+        |> via_proxy_opts(run_fun)
+        |> Keyword.put(:openai_proxy_url_fun, fn "acme", "engineer" ->
+          {:error, :openai_proxy_unavailable}
+        end)
+
+      assert {:error, :openai_proxy_unavailable} =
+               Dispatch.execute(proxy_spec, ctx.task, opts)
+    end
+
+    test "non-via_proxy provider gets no proxy env vars and no inference-proxy token", ctx do
+      proxy_spec = %{ctx.spec | network: :proxy}
+      parent = self()
+
+      provider =
+        stub_provider(
+          name: "openai-harness",
+          binary: "/usr/bin/glorbo-harness",
+          kind: :native,
+          auth: :bearer,
+          endpoint: "https://api.openai.com/v1"
+        )
+
+      run_fun = fn _args, env, bwrap_opts, _run_opts ->
+        send(parent, {:cli_env, bwrap_opts.cli_env, bwrap_opts})
+        File.write!(env["GLORBO_REPLY_PATH"], "ok")
+        {:ok, %{exit_status: 0, stdout: "", usage_dir: nil}}
+      end
+
+      # Stub the re-exec target (native dispatch resolves self_binary/0); see
+      # the via_proxy_opts/2 note — keeps the suite off a built ./glorbo.
+      self_binary = Path.join(ctx.base, "fake-glorbo")
+      File.write!(self_binary, "#!/bin/sh\n")
+      File.chmod!(self_binary, 0o755)
+
+      assert {:ok, _} =
+               Dispatch.execute(proxy_spec, ctx.task,
+                 base: ctx.base,
+                 run_fun: run_fun,
+                 provider_fun: fn _ -> provider end,
+                 proxy_url_fun: fn "acme" -> {:ok, "http://localhost:4321"} end,
+                 openai_proxy_url_fun: fn _, _ ->
+                   flunk("inference-proxy URL must not be resolved for non-via_proxy providers")
+                 end,
+                 self_binary_fun: fn -> self_binary end,
+                 audit_fun: ctx.audit_fun
+               )
+
+      assert_received {:cli_env, cli_env, bwrap_opts}
+      refute Map.has_key?(cli_env, "GLORBO_PROXY_BASE_URL")
+      refute Map.has_key?(cli_env, "GLORBO_PROXY_TOKEN")
+      refute Map.has_key?(cli_env, "OPENAI_BASE_URL")
+      assert bwrap_opts.openai_proxy_url == nil
+    end
+  end
 end

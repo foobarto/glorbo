@@ -194,7 +194,7 @@ defmodule GlorboWeb.KanbanLive do
     with {:ok, abs} <- resolve_task_path(task_path, company),
          {:ok, task} <-
            Glorbo.TaskDefinition.parse_file(abs, base: base_dir(), company: company) do
-      prompt = String.trim(task.prompt_body || "")
+      prompt = String.trim(task.prompt_body)
       comments = load_task_comments(abs)
 
       detail = %{
@@ -1509,8 +1509,6 @@ defmodule GlorboWeb.KanbanLive do
   # `assigned_to` form field. Gate on `Slug.valid?/1` before joining
   # it into a path so a crafted `../../other-company/agents/target`
   # cannot probe a sibling company's AGENT.md (cross-company isolation).
-  defp lookup_agent_provider(_base, _company, slug) when not is_binary(slug), do: nil
-
   defp lookup_agent_provider(base, company, slug) do
     if Glorbo.Slug.valid?(slug) do
       do_lookup_agent_provider(base, company, slug)

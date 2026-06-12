@@ -46,7 +46,11 @@ defmodule GlorboWeb.Components.StdoutTail do
   defp stdout_line(%{line: %{kind: :header}} = assigns) do
     ~H"""
     <div id={@dom_id} class="gl-stdout-tail__line gl-stdout-tail__line--header">
-      <span class="gl-stdout-tail__marker">dispatch</span><time class="gl-stdout-tail__ts gl-muted">{Map.get(@line, :ts, "")}</time>
+      <span class="gl-stdout-tail__marker">dispatch</span><time class="gl-stdout-tail__ts gl-muted">{Map.get(
+        @line,
+        :ts,
+        ""
+      )}</time>
     </div>
     """
   end

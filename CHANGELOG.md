@@ -39,6 +39,26 @@ change between minor versions. Pin exact versions in downstream usage.
   `req >= 0.5.0`, both of which still admit the vulnerable versions).
   `mix deps.audit` clean.
 
+- **GEP-0055 inference-proxy hardening** (PR #47 review — codex +
+  Copilot): three fixes to `Glorbo.OpenAIProxy`, all on the sandbox
+  egress path:
+  - **Inbound headers are no longer forwarded upstream.** The shape
+    adapters passed the inbound header map straight through, so the real
+    provider received the proxy's loopback `Host` (misroute / CDN
+    rejection) and — for Anthropic (adds `x-api-key`, never overwrites
+    `authorization`) and Gemini (query-param auth, no-op `attach_auth`) —
+    the per-dispatch proxy bearer token leaked upstream via the inbound
+    `Authorization`. `translate_request/2` now returns an empty
+    allowlist; auth/host/content-type come from `attach_auth/2` + Req.
+  - **16 KiB header cap enforced on the terminated path.** A complete
+    header block arriving in one read (terminator already present)
+    bypassed the cap; oversized heads now fail closed `:head_too_large`.
+  - **Socket-ownership race removed.** The handler now waits for an
+    explicit hand-off before touching the socket, eliminating the
+    `controlling_process/2` race that yielded intermittent `:not_owner`.
+  Regression tests added (per-shape allowlist, oversized-header
+  rejection, no-leak assertions on the round trip).
+
 ### Fixed
 
 - **DM channel creation race + symlink follow** (PR #42 review,
@@ -52,16 +72,55 @@ change between minor versions. Pin exact versions in downstream usage.
   structural check and would hang/crash `/login` inside
   `Pbkdf2.verify_pass/2`. The rounds segment now requires a positive
   integer with no leading zero; bad values fail closed as DEGRADED.
-- **CI: pin OTP to 28.5.0.1** — `otp-version: '28.5'` started
-  resolving to 28.5.0.2, whose precompiled linux musl ERTS Beam
-  Machine has not published yet, 404-ing every Burrito build.
+- **Symlinked-path file opens mislabeled as "not found"** (Elixir 1.20
+  warning audit): `GlorboWeb.AgentLive.read_workspace_file/2` dropped
+  `:symlink_in_path` from its error pass-through, so opening a file
+  through a symlinked directory surfaced "File no longer exists."
+  instead of the symlink-refusal message. The H10 symlink *enforcement*
+  was never affected — only the error label. Regression test added.
 
 ### Changed
+
+- **Toolchain → Elixir 1.20.1 + OTP 29.0.2** (latest stable, up from
+  1.19.5 / 28.5). Elixir 1.20's set-theoretic type checker surfaced 36
+  own-code warnings, all driven to zero (22 dead-code removals, 1 real
+  bug fixed [above], 13 defensive-net cases preserved); 15 deprecated
+  `File.stream!(path, [], :line)` sites updated to the `:line`-second
+  arg order. OTP 28.5 → 29.0.2 lands now that Beam Machine publishes
+  29.0.2 ERTS for every Burrito target (linux x86_64/aarch64 + macOS
+  universal), so the release build resolves; supersedes the interim
+  `28.5.0.1` CI pin.
 
 - **Dependency bumps** (folded from dependabot PRs #43/#44):
   earmark 1.4.49, phoenix_live_view 1.1.31, yaml_elixir 2.12.2,
   thousand_island 1.5.0 (transitive); GitHub Actions pins
   `actions/checkout` v6.0.3 and `github/codeql-action` v4.36.1.
+- **Latest in-range dependency bumps**: phoenix 1.8.7 → 1.8.8,
+  phoenix_live_view 1.1.31 → 1.2.1, bandit 1.11.1 → 1.12.0, credo
+  1.7.18 → 1.7.19. All within existing `~>` constraints; `mix precommit`
+  green. Folds dependabot #46 (bandit + credo, already covered above)
+  and #45 (`github/codeql-action` v4.36.1 → v4.36.2 in scorecard.yml).
+
+### Added
+
+- **In-process inference proxy for sandboxed agents (GEP-0055, slices
+  1–4a).** New `Glorbo.OpenAIProxy` — a per-company loopback listener
+  that lets `auth = "via_proxy"` native providers keep their real API
+  keys on the host: the sandbox only ever sees a per-dispatch token
+  (`GLORBO_PROXY_TOKEN`) and a loopback base URL
+  (`OPENAI_BASE_URL`/`GLORBO_PROXY_BASE_URL`); the proxy reads the
+  upstream key from the host env var named by the new `api_key_env`
+  provider field at request time and forwards the call. Includes the
+  multi-shape `Glorbo.OpenAIProxy.Shape` behaviour (OpenAI v1,
+  Anthropic Messages, Gemini routing), per-dispatch token mint/revoke
+  in dispatch, a second pasta `-T` port forward so the netns admits
+  the listener, a token-company cross-check + provider-auth check at
+  the listener, and `via_proxy` support in the native harness and the
+  model catalog. Not yet included (future slices): SSE streaming,
+  Gemini request translation, claude-code settings.json injection,
+  audit rows, and the `usage.json` write. CLI providers cannot opt in
+  yet — the loader restricts `via_proxy` to `kind = "native"` until
+  the per-CLI injection slice lands.
 
 ## [0.25.0] — 2026-06-03
 

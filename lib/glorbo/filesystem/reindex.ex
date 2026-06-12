@@ -476,7 +476,7 @@ defmodule Glorbo.Filesystem.Reindex do
   # canonical. Returns the dirname if valid-slug-shaped, else nil so
   # the caller skips the row.
   defp dirname_company_slug(dirname) do
-    if is_binary(dirname) and valid_replay_slug?(dirname),
+    if valid_replay_slug?(dirname),
       do: dirname,
       else: nil
   end
@@ -504,7 +504,7 @@ defmodule Glorbo.Filesystem.Reindex do
   defp audit_company_slug(dirname) do
     cond do
       dirname == "_system" -> dirname
-      is_binary(dirname) and valid_replay_slug?(dirname) -> dirname
+      valid_replay_slug?(dirname) -> dirname
       true -> nil
     end
   end
@@ -518,7 +518,7 @@ defmodule Glorbo.Filesystem.Reindex do
     # permits underscores) rather than the Actions carve-out's
     # hyphen-only `valid_slug?/1`, so underscore agents like `data_bot`
     # are not dropped from the budget / approval replay.
-    if is_binary(value) and valid_replay_slug?(value), do: value
+    if valid_replay_slug?(value), do: value
   end
 
   # Shared GEP-34 walker: list `companies/`, filter to dirs, fold each
@@ -620,7 +620,7 @@ defmodule Glorbo.Filesystem.Reindex do
     # warning; reindex never crashes on a malformed audit entry.
     rows =
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Stream.chunk_every(500)
       |> Enum.reduce(0, fn lines, acc ->
         decoded =
@@ -726,7 +726,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   defp fold_approval_file(company, path, acc) do
     path
-    |> File.stream!([], :line)
+    |> File.stream!(:line, [])
     |> Enum.reduce(acc, &fold_approval_line(&1, company, path, &2))
   rescue
     e ->
@@ -890,7 +890,7 @@ defmodule Glorbo.Filesystem.Reindex do
 
   defp sum_budget_file(company, path, acc) do
     path
-    |> File.stream!([], :line)
+    |> File.stream!(:line, [])
     |> Enum.reduce(acc, &sum_budget_line(&1, company, path, &2))
   rescue
     e ->

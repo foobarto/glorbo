@@ -232,7 +232,7 @@ defmodule GlorboWeb.ActivityLive do
   defp tail_jsonl(path, n) do
     if File.regular?(path) do
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.reduce([], fn line, acc ->
         line = String.trim_trailing(line, "\n")
 

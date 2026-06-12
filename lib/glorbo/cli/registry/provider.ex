@@ -26,12 +26,12 @@ defmodule Glorbo.CLI.Registry.Provider do
 
   @prompt_modes ~w(stdin stdin_dash argv tmpfile_argv acp)a
   @kinds ~w(cli native)a
-  @auth_modes ~w(none bearer api_key)a
+  @auth_modes ~w(none bearer api_key via_proxy)a
   @model_list_shapes ~w(openai ollama static none)a
 
   @type prompt_mode :: :stdin | :stdin_dash | :argv | :tmpfile_argv | :acp
   @type kind :: :cli | :native
-  @type auth_mode :: :none | :bearer | :api_key
+  @type auth_mode :: :none | :bearer | :api_key | :via_proxy
   @type model_list_shape :: :openai | :ollama | :static | :none
   @type source :: :builtin | :user
 
@@ -71,6 +71,13 @@ defmodule Glorbo.CLI.Registry.Provider do
           phase_timeout_ms: pos_integer() | nil,
           endpoint: String.t() | nil,
           auth: auth_mode() | nil,
+          # GEP-0055: name of the host env var Glorbo reads at request
+          # time to find the upstream API key. Required when
+          # `auth == :via_proxy`; unused otherwise. Explicit by design
+          # (no auto-mapping from `name`); the user reads their existing
+          # `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / etc. and writes the
+          # actual var name in the TOML.
+          api_key_env: String.t() | nil,
           model_list: model_list() | nil,
           version_flag: String.t(),
           version_regex: String.t() | nil,
@@ -98,6 +105,7 @@ defmodule Glorbo.CLI.Registry.Provider do
     :name,
     :endpoint,
     :auth,
+    :api_key_env,
     :model_list,
     :binary,
     :reply_dir,

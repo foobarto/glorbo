@@ -414,7 +414,7 @@ defmodule Gep.Validator do
          record.status in ~w(Placeholder Accepted Implemented Superseded Withdrawn Rejected) do
       []
     else
-      sections = @required_sections[record.type || "Standards"] || []
+      sections = @required_sections[record.type] || []
 
       missing =
         sections

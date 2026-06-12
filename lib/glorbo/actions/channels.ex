@@ -162,8 +162,6 @@ defmodule Glorbo.Actions.Channels do
       else: :ok
   end
 
-  defp guard_archivable(_), do: {:error, :not_archivable}
-
   defp emit_create_audit(audit, company, channel, actor) do
     entry = %{
       actor: actor,

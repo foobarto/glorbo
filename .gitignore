@@ -132,3 +132,8 @@ TODO.md
 # codex-deep-dive follow-up. Explicit anyway in case `_build/` ever
 # stops being a blanket ignore.
 /_build/dialyzer_plts/
+
+# Stale legacy PLT location (pre-relocation). Some toolchains/older
+# mix.exs configs still drop PLTs here; never commit these multi-MB
+# build artifacts.
+/priv/plts/

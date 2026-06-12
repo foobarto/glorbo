@@ -642,6 +642,25 @@ defmodule GlorboWeb.AgentLiveTest do
 
       assert html =~ "Binary file"
     end
+
+    # Regression: a path crossing a symlinked workspace dir must surface the
+    # symlink-specific refusal — not be masked as :not_found ("File no longer
+    # exists."). read_workspace_file/2 had dropped :symlink_in_path from its
+    # error pass-through list, so the symlink arm in handle_event was dead.
+    test "open_file across a symlinked dir is refused with the symlink message",
+         %{conn: conn, base: base} do
+      workspace = Path.join([base, "companies/acme/agents/ceo/workspace"])
+      File.mkdir_p!(Path.join(workspace, "real"))
+      File.write!(Path.join([workspace, "real", "notes.md"]), "content")
+      File.ln_s!(Path.join(workspace, "real"), Path.join(workspace, "linked"))
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "open_file", %{"path" => "workspace/linked/notes.md"})
+
+      assert html =~ "Path contains a symlink; refused."
+      refute html =~ "File no longer exists."
+      refute html =~ "gl-file-editor"
+    end
   end
 
   # task #143 — agent dir file manager: contracts + subdirs + actions.

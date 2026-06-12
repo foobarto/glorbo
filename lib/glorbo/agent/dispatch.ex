@@ -212,10 +212,37 @@ defmodule Glorbo.Agent.Dispatch do
     dispatch_timeout_s = Map.get(spec, :timeout_seconds, 300)
     proxy_token_result = resolve_proxy_url(spec, invocation_id, dispatch_timeout_s, opts)
 
+    # GEP-0055: mint a second per-dispatch token for the in-process
+    # inference proxy — only when the resolved provider has
+    # `auth = "via_proxy"`. The provider is resolved up-front (same
+    # registry lookup the with-pipeline consumes below) so the mint
+    # can key off `provider.auth` and carry `provider.name` as the
+    # token's `provider_alias`. The token reaches the sandbox as
+    # `GLORBO_PROXY_TOKEN`; the listener resolves it per request to
+    # attribute the call and select the upstream. Revoked in the
+    # cleanup section at the bottom of this function, next to the
+    # GEP-23 token.
+    provider_result = resolve_provider(spec, task, opts)
+
+    openai_proxy_result =
+      case provider_result do
+        {:ok, %{auth: :via_proxy} = provider} ->
+          resolve_openai_proxy_token(spec, provider, invocation_id, dispatch_timeout_s, opts)
+
+        _ ->
+          {:ok, nil, nil}
+      end
+
     proxy_token =
       case proxy_token_result do
         {:ok, _url, token} -> token
         _ -> nil
+      end
+
+    {openai_proxy_url, openai_proxy_token} =
+      case openai_proxy_result do
+        {:ok, url, token} -> {url, token}
+        _ -> {nil, nil}
       end
 
     # GEP-46: claim a per-company dispatch slot. `:throttled` propagates
@@ -237,10 +264,15 @@ defmodule Glorbo.Agent.Dispatch do
            :ok <- check_prompt_size(task.prompt),
            :ok <- check_budget(spec, opts),
            :ok <- check_company_budget(spec, opts),
-           {:ok, provider} <- resolve_provider(spec, task, opts),
+           {:ok, provider} <- provider_result,
            :ok <- check_untracked_allowed(spec, provider, opts),
            :ok <- verify_installed(spec, provider, opts),
            {:ok, proxy_url, _token} <- proxy_token_result,
+           # GEP-0055: {:ok, nil, nil} for non-via_proxy providers; a
+           # via_proxy provider whose proxy is unreachable (or whose
+           # agent isn't `network: :proxy`) fails the dispatch here,
+           # loudly, before the sandbox boots.
+           {:ok, _openai_url, _openai_token} <- openai_proxy_result,
            {:ok, cli_binary} <- resolve_cli_binary(provider, opts),
            {:ok, workspace} <- ensure_workspace(spec, opts),
            :ok <- materialize_skills(spec, run_dir, opts),
@@ -257,7 +289,9 @@ defmodule Glorbo.Agent.Dispatch do
                %{
                  proxy_url: proxy_url,
                  invocation_id: invocation_id,
-                 cli_binary: cli_binary
+                 cli_binary: cli_binary,
+                 openai_proxy_url: openai_proxy_url,
+                 openai_proxy_token: openai_proxy_token
                },
                opts
              ),
@@ -319,6 +353,11 @@ defmodule Glorbo.Agent.Dispatch do
     # keeps the in-memory registry size proportional to concurrent
     # dispatches, not cumulative ones.
     if proxy_token, do: _ = Glorbo.Network.ProxyTokens.revoke(proxy_token)
+
+    # GEP-0055: revoke the inference-proxy token on the same
+    # boundary. A replayed token after this point gets the
+    # listener's 401 (`token unknown or expired`).
+    if openai_proxy_token, do: _ = Glorbo.Network.ProxyTokens.revoke(openai_proxy_token)
 
     # GEP-46: release the per-company dispatch slot. Semaphore monitors
     # the holder pid as a safety net, but immediate release keeps the
@@ -776,6 +815,63 @@ defmodule Glorbo.Agent.Dispatch do
 
   defp resolve_proxy_url(_spec, _dispatch_id, _timeout_s, _opts), do: {:ok, nil, nil}
 
+  # GEP-0055: mint the per-dispatch token for the in-process
+  # inference proxy. The caller gates on the resolved provider's
+  # `auth == :via_proxy`; this function additionally requires
+  # `network: :proxy` — the pasta netns is what forwards the
+  # listener's loopback port into the sandbox, so any other network
+  # policy cannot reach the proxy at the kernel layer and the
+  # dispatch must fail rather than boot an agent with no usable
+  # endpoint.
+  #
+  # Same `ProxyTokens` registry and 2× dispatch-timeout TTL as the
+  # GEP-23 CONNECT token, but a second, distinct token per dispatch:
+  # the entry's `provider_alias` is what lets the listener resolve
+  # the upstream endpoint + `api_key_env` without re-reading
+  # AGENT.md. Tests inject `:openai_proxy_url_fun` via opts (same
+  # seam shape as GEP-23's `:proxy_url_fun`).
+  defp resolve_openai_proxy_token(
+         %{network: :proxy, company: company, slug: slug},
+         provider,
+         dispatch_id,
+         timeout_s,
+         opts
+       ) do
+    fun = Keyword.get(opts, :openai_proxy_url_fun, &default_openai_proxy_url/2)
+
+    with {:ok, base_url} <- normalize_proxy_url_fn(fun.(company, slug)),
+         {:ok, token} <-
+           Glorbo.Network.ProxyTokens.register(%{
+             company: company,
+             agent: slug,
+             dispatch_id: dispatch_id,
+             expires_in_ms: timeout_s * 2_000,
+             provider_alias: provider.name
+           }) do
+      {:ok, base_url, token}
+    end
+  end
+
+  defp resolve_openai_proxy_token(_spec, _provider, _dispatch_id, _timeout_s, _opts),
+    do: {:error, :via_proxy_requires_proxy_network}
+
+  defp default_openai_proxy_url(company, _slug) do
+    # Resolve the real per-company proxy port. The proxy is started
+    # by `Glorbo.Company.Supervisor` (GEP-0055 conditional append)
+    # and registers itself under `via(company, :openai_proxy)`. The
+    # `:via` tuple is the only stable handle — the actual port is
+    # ephemeral. When the listener isn't running (provider flipped
+    # to via_proxy after company start, or supervisor scan said no),
+    # the call exits and the dispatch fails with a typed error.
+    proxy = Glorbo.Company.Supervisor.via(company, :openai_proxy)
+
+    try do
+      {:ok, "http://127.0.0.1:#{Glorbo.OpenAIProxy.port(proxy)}"}
+    catch
+      :exit, _ -> {:error, :openai_proxy_unavailable}
+    end
+  end
+
   defp normalize_proxy_url_fn(url) when is_binary(url), do: {:ok, url}
   defp normalize_proxy_url_fn({:ok, url}) when is_binary(url), do: {:ok, url}
   defp normalize_proxy_url_fn({:error, _} = err), do: err
@@ -814,7 +910,7 @@ defmodule Glorbo.Agent.Dispatch do
     end
   end
 
-  defp build_ctx(spec, task, workspace, run_dir, provider, runtime, _opts) do
+  defp build_ctx(spec, task, workspace, run_dir, provider, runtime, opts) do
     # workspace shape: `<base>/companies/<co>/agents/<slug>/workspace`.
     # `Path.dirname(workspace)` → `…/agents/<slug>`, which is the agent
     # root — parent of inbox/outbox. The previous code stripped one
@@ -859,7 +955,12 @@ defmodule Glorbo.Agent.Dispatch do
         permissions: spec.permissions,
         network_policy: spec.network,
         proxy_url: runtime.proxy_url,
+        # GEP-0055: bwrap derives the second pasta `-T` forward port
+        # from this URL so a via_proxy CLI can reach the inference
+        # proxy at the kernel layer. nil for non-via_proxy dispatches.
+        openai_proxy_url: runtime.openai_proxy_url,
         timeout_seconds: spec.timeout_seconds,
+        cli_env: proxy_cli_env(spec, provider, runtime, opts),
         cli_auth_binds:
           resolve_auth_binds(provider) ++
             native_credentials_binds(provider) ++
@@ -868,6 +969,76 @@ defmodule Glorbo.Agent.Dispatch do
       }
     }
   end
+
+  # GEP-0055: per-shape `*_BASE_URL` env injection for `auth = "via_proxy"`
+  # providers. The agent's CLI process inside the sandbox reads this
+  # env var to discover its API endpoint. We set the *per-CLI* name
+  # (e.g. `OPENAI_BASE_URL` for Codex/opencode/harness,
+  # `ANTHROPIC_BASE_URL` for claude-code/Kiro) and the universal
+  # `GLORBO_PROXY_*` vars for any client that prefers those.
+  #
+  # The URLs point at the GEP-0055 inference proxy
+  # (`runtime.openai_proxy_url`), never at the GEP-23 CONNECT proxy:
+  # the two are different listeners on different loopback ports, and
+  # the CONNECT proxy's URL carries its own token in userinfo — it
+  # must stay confined to `HTTPS_PROXY`. Both runtime fields are
+  # guaranteed non-nil here: the dispatch with-pipeline fails before
+  # build_ctx when a via_proxy provider has no reachable proxy.
+  #
+  # Empty for non-`via_proxy` providers (their `cli_env` is
+  # provider.env, not the proxy env).
+  defp proxy_cli_env(_spec, provider, runtime, _opts) do
+    if provider.auth == :via_proxy do
+      base_env = %{
+        "GLORBO_PROXY_BASE_URL" => runtime.openai_proxy_url,
+        "GLORBO_PROXY_TOKEN" => runtime.openai_proxy_token
+      }
+
+      shape_env = %{proxy_base_url_env_for(provider) => runtime.openai_proxy_url}
+      Map.merge(base_env, shape_env)
+    else
+      %{}
+    end
+  end
+
+  # Per-CLI `*_BASE_URL` env var name lookup. Native providers
+  # (`glorbo harness`) speak OpenAI v1, so always get
+  # `OPENAI_BASE_URL`. The CLI rows are forward-looking: the loader
+  # currently restricts `via_proxy` to `kind = "native"` (GEP-0055
+  # slice boundary), so the `:cli` clause is unreachable until that
+  # restriction lifts with the per-CLI injection slice (D11). Kept —
+  # it implements the GEP's CLI-runtime table. Note claude-code will
+  # use the D11 settings.json mount in production, not
+  # ANTHROPIC_BASE_URL; the row is the conservative env fallback.
+  #
+  # Closed set by design (GEP-12 / T-03-15): never derive an atom
+  # from user input. An unrecognised CLI binary falls back to
+  # "GLORBO_PROXY_BASE_URL" — the universal vars still reach the
+  # agent; no raise.
+  @cli_base_url_env_map %{
+    # OpenAI v1
+    "codex" => "OPENAI_BASE_URL",
+    "opencode" => "OPENAI_BASE_URL",
+    "openai" => "OPENAI_BASE_URL",
+    "hermes" => "OPENAI_BASE_URL",
+    "pi" => "OPENAI_BASE_URL",
+    # Anthropic Messages
+    "claude" => "ANTHROPIC_BASE_URL",
+    "claude-code" => "ANTHROPIC_BASE_URL",
+    "kiro" => "ANTHROPIC_BASE_URL",
+    # Google Gemini
+    "gemini" => "GOOGLE_GEMINI_BASE_URL",
+    "gemini-cli" => "GOOGLE_GEMINI_BASE_URL"
+  }
+
+  defp proxy_base_url_env_for(%{kind: :native}), do: "OPENAI_BASE_URL"
+
+  defp proxy_base_url_env_for(%{kind: :cli, binary: binary}) when is_binary(binary) do
+    basename = Path.basename(binary)
+    Map.get(@cli_base_url_env_map, basename, "GLORBO_PROXY_BASE_URL")
+  end
+
+  defp proxy_base_url_env_for(_), do: "GLORBO_PROXY_BASE_URL"
 
   defp resolve_self_binary(opts) do
     case Keyword.get(opts, :self_binary_fun) do
@@ -957,6 +1128,14 @@ defmodule Glorbo.Agent.Dispatch do
     |> String.downcase()
     |> String.replace(~r/[^a-z0-9._-]+/, "-")
   end
+
+  # GEP-0055: `auth = "via_proxy"` providers route their LLM calls
+  # through the in-process proxy, so the host-side credentials file
+  # (which Glorbo itself doesn't need either) is not mounted. The
+  # proxy reads the upstream key from `System.get_env/1` at request
+  # time using the provider's `api_key_env` field. No file ends up
+  # in the sandbox.
+  defp native_credentials_binds(%{kind: :native, auth: :via_proxy}), do: []
 
   defp native_credentials_binds(%{kind: :native} = provider) do
     case native_credentials_path(provider) do
@@ -1102,7 +1281,7 @@ defmodule Glorbo.Agent.Dispatch do
     # tests that hand-roll bwrap_opts without going through the
     # full dispatcher pipeline).
     agent_root = Path.dirname(host_workspace)
-    invocation_id = Map.get(env || %{}, "GLORBO_INVOCATION_ID")
+    invocation_id = Map.get(env, "GLORBO_INVOCATION_ID")
 
     stdout_log_path =
       if is_binary(invocation_id) and invocation_id != "" do

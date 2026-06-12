@@ -78,6 +78,11 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0052 | [Provider-CLI credential hardening via in-sandbox guard hooks](./0052-provider-cli-hook-hardening.md) | Standards | Draft |
 | 0053 | [Director passphrase login — browser auth distinct from the MCP/CLI token](./0053-director-passphrase-auth.md) | Standards | Implemented |
 | 0054 | [Import the live paperclip-instance on-disk layout](./0054-paperclip-instance-layout-import.md) | Standards | Implemented |
+| 0055 | [In-process inference proxy for sandboxed agents](./0055-openai-v1-proxy-for-sandboxed-agents.md) | Standards | Draft       |
+| 0056 | [Untrusted content framing — data-not-instructions across agent boundaries](./0056-untrusted-content-framing.md) | Standards | Placeholder |
+| 0057 | [Deep-research task type — governed multi-step gather/read/synthesise](./0057-deep-research-task-type.md) | Standards | Placeholder |
+| 0058 | [Semantic recall index — optional, unbundled vector layer over the home tree](./0058-semantic-recall-index.md) | Standards | Placeholder |
+| 0059 | [hwfit — native hardware→model fit scoring, the missing local-readiness step](./0059-hwfit-model-fit-native.md) | Standards | Placeholder |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

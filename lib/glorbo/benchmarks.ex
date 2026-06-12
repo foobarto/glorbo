@@ -327,6 +327,4 @@ defmodule Glorbo.Benchmarks do
   defp valid_run_id?(run_id) when is_binary(run_id) do
     Regex.match?(@run_id_re, run_id) and not String.contains?(run_id, "..")
   end
-
-  defp valid_run_id?(_), do: false
 end

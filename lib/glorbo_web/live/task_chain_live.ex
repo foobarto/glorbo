@@ -65,10 +65,10 @@ defmodule GlorboWeb.TaskChainLive do
        |> assign(:rel_path, rel_path)
        |> assign(:project, project)
        |> assign(:task, task)
-       |> assign(:chain, Enum.with_index(task.handoff_chain || []))
+       |> assign(:chain, Enum.with_index(task.handoff_chain))
        |> assign(:audit_reassigns, reassigns)
        |> assign(:audit_peer_review, peer_review)
-       |> assign(:drift, compute_drift(task.handoff_chain || [], reassigns))}
+       |> assign(:drift, compute_drift(task.handoff_chain, reassigns))}
     else
       _ ->
         {:ok,

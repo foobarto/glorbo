@@ -318,7 +318,7 @@ defmodule Glorbo.Search do
     case File.lstat(path) do
       {:ok, %File.Stat{type: :regular}} ->
         path
-        |> File.stream!([], :line)
+        |> File.stream!(:line, [])
         |> Enum.reduce([], fn line, acc -> push_audit_line(line, acc) end)
 
       _ ->

@@ -101,7 +101,6 @@ defmodule Glorbo.CLI.Lifecycle.Run do
     case Glorbo.Application.start_supervision_tree_for_serve() do
       {:ok, _pid} -> :ok
       {:ok, :already_started, _pid} -> :ok
-      {:error, {:already_started, _pid}} -> :ok
       other -> {:error, {:start_supervision_tree, other}}
     end
   end

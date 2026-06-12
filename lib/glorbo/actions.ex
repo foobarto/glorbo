@@ -781,7 +781,6 @@ defmodule Glorbo.Actions do
   defp validate_body(""), do: {:error, :empty_body}
   defp validate_body(b) when byte_size(b) > @body_max_bytes, do: {:error, :body_too_large}
   defp validate_body(b) when is_binary(b), do: :ok
-  defp validate_body(_), do: {:error, :invalid_body}
 
   defp validate_comment_nonblank(b) when is_binary(b) do
     if String.trim(b) == "", do: {:error, :empty_body}, else: :ok

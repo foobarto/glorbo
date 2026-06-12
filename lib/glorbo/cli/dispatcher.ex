@@ -441,8 +441,6 @@ defmodule Glorbo.CLI.Dispatcher do
   end
 
   defp parse_acp_usage(%Provider{usage_parser: "stado_acp"} = provider, acp_meta, ctx, opts) do
-    module = Parsers.module_for("stado_acp")
-
     source = {
       :stado_session,
       %{
@@ -453,10 +451,10 @@ defmodule Glorbo.CLI.Dispatcher do
       }
     }
 
-    case module.parse(source) do
-      {:ok, usage} -> {usage, nil}
-      {:error, reason} -> {nil, reason}
-    end
+    # module_for/1 is total in practice — the loader hard-fails unknown
+    # parser names at boot (Parsers moduledoc) — but it is typed module() | nil,
+    # so handle nil fail-closed rather than dispatching on nil.
+    run_usage_parser(Parsers.module_for("stado_acp"), source, "stado_acp")
   end
 
   defp parse_acp_usage(%Provider{}, _acp_meta, _ctx, _opts) do
@@ -708,9 +706,9 @@ defmodule Glorbo.CLI.Dispatcher do
     native_env =
       if provider.kind == :native do
         %{
-          "GLORBO_NATIVE_ENDPOINT" => provider.endpoint || "",
+          "GLORBO_NATIVE_ENDPOINT" => native_endpoint(provider, ctx),
           "GLORBO_NATIVE_AUTH" => to_string(provider.auth || ""),
-          "GLORBO_NATIVE_CREDENTIALS_PATH" => "/creds/provider.toml",
+          "GLORBO_NATIVE_CREDENTIALS_PATH" => native_credentials_path_env(provider),
           "GLORBO_NATIVE_HTTP_TIMEOUT_S" => to_string(Map.get(ctx, :http_timeout_s, 120)),
           "GLORBO_NATIVE_HTTP_MAX_RETRIES" => to_string(Map.get(ctx, :http_max_retries, 3)),
           "GLORBO_NATIVE_WEB_FETCH_TIMEOUT_S" =>
@@ -727,6 +725,30 @@ defmodule Glorbo.CLI.Dispatcher do
     |> Map.merge(usage_env)
     |> Map.merge(native_env)
   end
+
+  # GEP-0055: under `via_proxy` the harness's endpoint is the
+  # in-process proxy's loopback URL, never the upstream. Dispatch
+  # placed that URL in `bwrap_opts.cli_env["GLORBO_PROXY_BASE_URL"]`
+  # (proxy_cli_env); read it back here so GLORBO_NATIVE_ENDPOINT
+  # agrees with OPENAI_BASE_URL. Falling back to provider.endpoint
+  # would dial the upstream directly from inside the netns — wrong
+  # listener AND no auth — so prefer an empty endpoint (clean
+  # `:missing_endpoint` from the harness) over a misleading one.
+  defp native_endpoint(%{auth: :via_proxy}, ctx) do
+    ctx
+    |> Map.get(:bwrap_opts, %{})
+    |> Map.get(:cli_env, %{})
+    |> Map.get("GLORBO_PROXY_BASE_URL", "")
+  end
+
+  defp native_endpoint(provider, _ctx), do: provider.endpoint || ""
+
+  # GEP-0055: no `/creds` mount exists under `via_proxy` (that is
+  # the point of the proxy). An empty path keeps the harness's
+  # credentials loader on its `{:ok, %{}}` no-file path instead of
+  # advertising a mount that isn't there.
+  defp native_credentials_path_env(%{auth: :via_proxy}), do: ""
+  defp native_credentials_path_env(_provider), do: "/creds/provider.toml"
 
   # ---------------------------------------------------------------------------
   # Invocation (via injected run_fun)
@@ -827,9 +849,18 @@ defmodule Glorbo.CLI.Dispatcher do
          ctx,
          subs
        ) do
-    module = Parsers.module_for(name)
     source = resolve_source(usage_path, run_result, ctx, subs, provider)
+    run_usage_parser(Parsers.module_for(name), source, name)
+  end
 
+  # Dispatch to a named usage parser, failing closed if the registry has no
+  # module for `name`. module_for/1 is total in practice (the loader rejects
+  # unknown parser names at boot) but is typed module() | nil; matching the nil
+  # head keeps the compiler from inferring a nil.parse/1 call and turns a
+  # would-be runtime crash into the {usage, reason} error contract callers expect.
+  defp run_usage_parser(nil, _source, name), do: {nil, {:unknown_usage_parser, name}}
+
+  defp run_usage_parser(module, source, _name) when is_atom(module) do
     case module.parse(source) do
       {:ok, usage} -> {usage, nil}
       {:error, reason} -> {nil, reason}

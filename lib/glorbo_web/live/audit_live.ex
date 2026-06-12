@@ -372,7 +372,7 @@ defmodule GlorboWeb.AuditLive do
     if File.regular?(path) do
       {tail_lines, total} =
         path
-        |> File.stream!([], :line)
+        |> File.stream!(:line, [])
         |> Enum.reduce({[], 0}, fn line, {acc, count} ->
           line = String.trim_trailing(line, "\n")
 
@@ -401,7 +401,7 @@ defmodule GlorboWeb.AuditLive do
     if File.regular?(path) do
       lines =
         path
-        |> File.stream!([], :line)
+        |> File.stream!(:line, [])
         |> Stream.map(&String.trim_trailing(&1, "\n"))
         |> Stream.reject(&(&1 == ""))
         |> Stream.drop(new_offset)

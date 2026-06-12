@@ -170,6 +170,7 @@ defmodule Glorbo.CLI.Registry.Loader do
          {:ok, reply_max_bytes} <- parse_reply_max_bytes(raw, path),
          {:ok, endpoint} <- parse_endpoint(raw, path, kind),
          {:ok, auth} <- parse_auth(raw, path, kind),
+         {:ok, api_key_env} <- parse_api_key_env(raw, path),
          {:ok, model_list} <- parse_model_list(raw, path),
          {:ok, version_regex} <- parse_version_regex(raw, path),
          {:ok, usage_parser} <- parse_usage_parser(raw, path, kind),
@@ -191,6 +192,7 @@ defmodule Glorbo.CLI.Registry.Loader do
         phase_timeout_ms: phase_timeout_ms,
         endpoint: endpoint,
         auth: auth,
+        api_key_env: api_key_env,
         model_list: model_list,
         version_flag: raw["version_flag"] || "",
         version_regex: version_regex,
@@ -396,11 +398,16 @@ defmodule Glorbo.CLI.Registry.Loader do
     {:error, {:missing_field, path, "endpoint"}}
   end
 
-  @auth_map %{"none" => :none, "bearer" => :bearer, "api-key" => :api_key}
+  @auth_map %{
+    "none" => :none,
+    "bearer" => :bearer,
+    "api-key" => :api_key,
+    "via_proxy" => :via_proxy
+  }
 
-  defp parse_auth(%{"auth" => value}, path, _kind) when is_binary(value) do
+  defp parse_auth(%{"auth" => value}, path, kind) when is_binary(value) do
     case Map.fetch(@auth_map, value) do
-      {:ok, auth} -> {:ok, auth}
+      {:ok, auth} -> validate_auth_kind(auth, kind, path)
       :error -> {:error, {:invalid_auth, path, value}}
     end
   end
@@ -413,6 +420,73 @@ defmodule Glorbo.CLI.Registry.Loader do
 
   defp parse_auth(_raw, path, :native) do
     {:error, {:missing_field, path, "auth"}}
+  end
+
+  # GEP-0055: `auth = "via_proxy"` is the proxy-forward path. The
+  # restriction to `kind = "native"` is a deliberate slice boundary,
+  # not a protocol limit — the proxy is multi-shape (OpenAI v1,
+  # Anthropic Messages, Gemini) precisely so CLI providers can use it
+  # eventually. What CLI providers still lack is the per-CLI base-URL
+  # injection (settings.json mount for claude-code, GEP-0055 D11) and
+  # a review of their `auth_binds` under the no-credentials posture.
+  # Until that slice lands, rejecting `kind = "cli"` at load time is
+  # GEP-8 D9's hard-fail posture: a config error should crash the
+  # registry, not silently dispatch a CLI that can't reach its proxy.
+  defp validate_auth_kind(:via_proxy, :cli, path) do
+    {:error, {:invalid_auth_for_kind, path, "via_proxy", "cli"}}
+  end
+
+  defp validate_auth_kind(:via_proxy, :native, _path), do: {:ok, :via_proxy}
+  defp validate_auth_kind(auth, _kind, _path), do: {:ok, auth}
+
+  # GEP-0055: `api_key_env` names the host env var Glorbo reads at
+  # request time to find the upstream key. Required when
+  # `auth = "via_proxy"`; unused (and ignored) otherwise.
+  #
+  # Validation rules:
+  #
+  #   * On `auth = "via_proxy"`: required, must be a non-empty
+  #     string, must match the same POSIX env-var name shape
+  #     `Glorbo.Sandbox.Bwrap.safe_env?/2` enforces (alphanum +
+  #     underscore, leading alpha or underscore, 1-256 chars).
+  #     The shape check mirrors the bwrap --setenv key check so a
+  #     value that's loadable into a sandboxed CLI process via
+  #     --setenv is the same value the proxy can pass to
+  #     `System.get_env/1` — no surprise-shape drift.
+  #   * On other auth modes: optional. If present and well-formed,
+  #     stored on the struct (harmless). If present and malformed,
+  #     warn-by-rejecting (we don't silently accept
+  #     unparseable env-var names anywhere in the codebase; that
+  #     would let a config influencer plant a malformed name that
+  #     later looks like a valid shell expansion).
+  #   * On `kind = "cli"`: never required (CLI auth modes don't
+  #     read this field; the field is `via_proxy`-only). If
+  #     present, accepted — keeps the TOML shape uniform.
+  @env_name_re ~r/\A[A-Za-z_][A-Za-z0-9_]{0,255}\z/
+
+  defp parse_api_key_env(raw, path) do
+    value = Map.get(raw, "api_key_env")
+    auth = Map.get(raw, "auth")
+
+    cond do
+      is_nil(value) ->
+        if auth == "via_proxy" do
+          {:error, {:missing_field, path, "api_key_env"}}
+        else
+          {:ok, nil}
+        end
+
+      not is_binary(value) or value == "" ->
+        {:error, {:invalid_api_key_env, path, "must be a non-empty string"}}
+
+      not Regex.match?(@env_name_re, value) ->
+        {:error,
+         {:invalid_api_key_env, path,
+          "must match POSIX env-var name shape [A-Za-z_][A-Za-z0-9_]* (1-256 chars)"}}
+
+      true ->
+        {:ok, value}
+    end
   end
 
   @model_list_shapes %{
@@ -729,6 +803,14 @@ defmodule Glorbo.CLI.Registry.Loader do
   def format_error({:invalid_auth, path, value}),
     do:
       "providers config error: #{path} auth #{inspect(value)} not in #{inspect(Provider.auth_modes())}"
+
+  def format_error({:invalid_auth_for_kind, path, value, kind}),
+    do:
+      "providers config error: #{path} auth=#{inspect(value)} is only valid for kind=\"native\", " <>
+        "got kind=\"#{kind}\" (GEP-0055)"
+
+  def format_error({:invalid_api_key_env, path, detail}),
+    do: "providers config error: #{path} api_key_env #{detail} (GEP-0055)"
 
   def format_error({:invalid_model_list, path, detail}),
     do: "providers config error: #{path} model_list: #{detail}"

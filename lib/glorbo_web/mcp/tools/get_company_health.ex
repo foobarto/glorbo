@@ -170,7 +170,7 @@ defmodule GlorboWeb.MCP.Tools.GetCompanyHealth do
     if File.regular?(path) do
       last_line =
         path
-        |> File.stream!([], :line)
+        |> File.stream!(:line, [])
         |> Enum.reduce("", fn line, acc ->
           trimmed = String.trim_trailing(line, "\n")
           if trimmed == "", do: acc, else: trimmed

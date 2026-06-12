@@ -60,7 +60,7 @@ defmodule Glorbo.Audit.Query do
       # is chronologically oldest-first. The final acc IS already
       # newest-first; no Enum.reverse needed.
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.reduce([], &push_match(&1, &2, task_path, task_id, limit))
     else
       []

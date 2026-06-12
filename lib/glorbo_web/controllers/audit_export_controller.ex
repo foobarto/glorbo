@@ -40,7 +40,7 @@ defmodule GlorboWeb.AuditExportController do
       if audit_path_safe_to_read?(path) do
         csv_body =
           path
-          |> File.stream!([], :line)
+          |> File.stream!(:line, [])
           |> Stream.map(&row_from_line/1)
           |> Stream.reject(&is_nil/1)
           |> Enum.join("")

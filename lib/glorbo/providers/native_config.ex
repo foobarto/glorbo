@@ -9,15 +9,18 @@ defmodule Glorbo.Providers.NativeConfig do
           | {:read_fun, (Path.t() -> {:ok, binary()} | {:error, term()})}
 
   @spec parse_auth(nil | atom() | String.t()) ::
-          {:ok, nil | :none | :bearer | :api_key} | {:error, {:invalid_auth, term()}}
+          {:ok, nil | :none | :bearer | :api_key | :via_proxy}
+          | {:error, {:invalid_auth, term()}}
   def parse_auth(nil), do: {:ok, nil}
   def parse_auth(:none), do: {:ok, :none}
   def parse_auth(:bearer), do: {:ok, :bearer}
   def parse_auth(:api_key), do: {:ok, :api_key}
+  def parse_auth(:via_proxy), do: {:ok, :via_proxy}
   def parse_auth("none"), do: {:ok, :none}
   def parse_auth("bearer"), do: {:ok, :bearer}
   def parse_auth("api_key"), do: {:ok, :api_key}
   def parse_auth("api-key"), do: {:ok, :api_key}
+  def parse_auth("via_proxy"), do: {:ok, :via_proxy}
   def parse_auth(other), do: {:error, {:invalid_auth, other}}
 
   @spec credentials_dir(keyword()) :: Path.t()
@@ -99,10 +102,17 @@ defmodule Glorbo.Providers.NativeConfig do
     {:ok, Map.get(credentials, "endpoint") || endpoint}
   end
 
-  @spec validate_auth(nil | :none | :bearer | :api_key, String.t(), credentials()) ::
+  @spec validate_auth(nil | :none | :bearer | :api_key | :via_proxy, String.t(), credentials()) ::
           :ok | {:error, {:missing_api_key, String.t()}}
   def validate_auth(nil, _provider, _credentials), do: :ok
   def validate_auth(:none, _provider, _credentials), do: :ok
+
+  # GEP-0055: under `via_proxy` there is no credentials TOML — the
+  # upstream key lives host-side and the in-sandbox caller presents
+  # the per-dispatch GLORBO_PROXY_TOKEN instead. A missing/empty
+  # token isn't a config error here; it surfaces as a clean 401
+  # from the proxy listener.
+  def validate_auth(:via_proxy, _provider, _credentials), do: :ok
 
   def validate_auth(_auth, provider, credentials) do
     case Map.get(credentials, "api_key") do
@@ -111,11 +121,20 @@ defmodule Glorbo.Providers.NativeConfig do
     end
   end
 
-  @spec auth_headers(nil | :none | :bearer | :api_key, credentials()) :: [
+  @spec auth_headers(nil | :none | :bearer | :api_key | :via_proxy, credentials()) :: [
           {String.t(), String.t()}
         ]
   def auth_headers(nil, _credentials), do: []
   def auth_headers(:none, _credentials), do: []
+
+  # GEP-0055: `via_proxy` callers carry their key in `credentials`
+  # under "api_key" like `:bearer`, but the value is the per-dispatch
+  # proxy token (in-sandbox harness) or the host env var named by the
+  # provider's `api_key_env` (host-side model-catalog refresh) —
+  # never a GEP-32 credentials TOML. Plain Bearer, no extras.
+  def auth_headers(:via_proxy, credentials) do
+    [{"authorization", "Bearer " <> (Map.get(credentials, "api_key") || "")}]
+  end
 
   def auth_headers(:bearer, credentials) do
     key = Map.get(credentials, "api_key")

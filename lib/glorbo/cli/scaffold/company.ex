@@ -101,9 +101,6 @@ defmodule Glorbo.CLI.Scaffold.Company do
 
       {:error, {:bad_manifest, reason}} ->
         {:new_company, 1, "Template '#{template}' manifest invalid: #{inspect(reason)}\n"}
-
-      {:error, reason} ->
-        {:new_company, 1, "Scaffold failed: #{inspect(reason)}\n"}
     end
   end
 

@@ -64,14 +64,21 @@ defmodule Glorbo.Network.ProxyTokens do
           required(:company) => String.t(),
           required(:agent) => String.t(),
           required(:dispatch_id) => String.t(),
-          required(:expires_at) => integer()
+          required(:expires_at) => integer(),
+          # GEP-0055: always present on the entry. When a binary, the
+          # OpenAI-proxy listener uses it to look up the per-provider
+          # upstream URL + api_key_env. When nil, the token is for a
+          # GEP-23 CONNECT-tunnel call and the OpenAI-proxy listener
+          # rejects it (`:token_no_provider`).
+          required(:provider_alias) => String.t() | nil
         }
 
   @type register_opts :: %{
           required(:company) => String.t(),
           required(:agent) => String.t(),
           required(:dispatch_id) => String.t(),
-          required(:expires_in_ms) => pos_integer()
+          required(:expires_in_ms) => pos_integer(),
+          optional(:provider_alias) => String.t()
         }
 
   # ---------------------------------------------------------------------------
@@ -101,27 +108,41 @@ defmodule Glorbo.Network.ProxyTokens do
   the caller should put into `HTTPS_PROXY=http://<token>@...`.
   """
   @spec register(register_opts()) :: {:ok, String.t()}
-  def register(%{
-        company: company,
-        agent: agent,
-        dispatch_id: dispatch_id,
-        expires_in_ms: ttl_ms
-      })
+  def register(
+        %{
+          company: company,
+          agent: agent,
+          dispatch_id: dispatch_id,
+          expires_in_ms: ttl_ms
+        } = opts
+      )
       when is_binary(company) and is_binary(agent) and is_binary(dispatch_id) and
              is_integer(ttl_ms) and ttl_ms > 0 do
+    # GEP-0055: `provider_alias` is the only optional field. Validate
+    # its shape eagerly — a non-binary alias would otherwise be stored
+    # silently and only surface much later as an opaque 401 from the
+    # OpenAI-proxy listener.
+    provider_alias = Map.get(opts, :provider_alias)
+
+    unless is_nil(provider_alias) or is_binary(provider_alias) do
+      raise ArgumentError,
+            "ProxyTokens.register: provider_alias must be a binary or nil, " <>
+              "got #{inspect(provider_alias)}"
+    end
+
     ensure_started()
     token = :crypto.strong_rand_bytes(@token_bytes) |> Base.url_encode64(padding: false)
     expires_at = now_ms() + ttl_ms
 
-    :ets.insert(@table, {
-      token,
-      %{
-        company: company,
-        agent: agent,
-        dispatch_id: dispatch_id,
-        expires_at: expires_at
-      }
-    })
+    entry = %{
+      company: company,
+      agent: agent,
+      dispatch_id: dispatch_id,
+      expires_at: expires_at,
+      provider_alias: provider_alias
+    }
+
+    :ets.insert(@table, {token, entry})
 
     {:ok, token}
   end

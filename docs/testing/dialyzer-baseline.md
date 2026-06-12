@@ -83,6 +83,21 @@ DIALYZER_BASELINE = 169
 > narrowing `ensure_epmd/0`'s bare `rescue` to specific
 > exceptions lets 1.19's inference succeed and drops all three
 > new findings together (would bring baseline to 166).
+>
+> **169 → ~111 (Elixir 1.19.5 → 1.20.1 + OTP 28.5 → 29.0.2 bump,
+> 2026-06-12).** 1.20's set-theoretic type checker plus OTP-29's
+> narrowed specs *resolve* a large block of the pre-existing
+> false-positive findings (`unused_fun` / `pattern_match` /
+> `guard_fail` classes), dropping the local count to **111**
+> (measured on linuxbrew OTP 29.0 + mise Elixir 1.20.1; the new
+> code in `lib/glorbo/openai_proxy.ex` contributes 2 redundant
+> `pattern_match_cov` arms, same dead-defensive class). The
+> `baseline=169` ceiling in `ci.yml` is **deliberately left
+> unchanged** rather than tightened to 111: dialyzer counts vary
+> slightly across hosts, so the exact CI count under
+> ubuntu24/OTP-29.0.2 must be observed on a real run before
+> retightening. Net change is a reduction, so the regression gate
+> (fail only on *increase*) passes with margin.
 
 **Burn-down:** when you fix warnings, lower the baseline number in
 `.github/workflows/ci.yml` (the `baseline=` in the Dialyzer step). When it

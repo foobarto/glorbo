@@ -37,7 +37,6 @@ defmodule Glorbo.Company.TaskScheduler do
   audit event — the scheduler never crashes on a malformed schedule.
   """
   use GenServer
-  require Logger
 
   alias Crontab.CronExpression.Parser, as: CronParser
   alias Crontab.Scheduler, as: CronScheduler

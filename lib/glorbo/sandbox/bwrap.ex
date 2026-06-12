@@ -119,6 +119,12 @@ defmodule Glorbo.Sandbox.Bwrap do
           optional(:cli_env) => %{String.t() => String.t()},
           optional(:proxy_url) => String.t() | nil,
           optional(:proxy_port) => pos_integer(),
+          # GEP-0055: loopback URL of the per-company in-process
+          # inference proxy. When present (via_proxy dispatches), its
+          # port is added to the pasta `-T` forward list so the
+          # sandboxed CLI can reach the listener at the kernel layer.
+          optional(:openai_proxy_url) => String.t() | nil,
+          optional(:openai_proxy_port) => pos_integer(),
           optional(:timeout_seconds) => pos_integer()
         }
 
@@ -205,9 +211,6 @@ defmodule Glorbo.Sandbox.Bwrap do
               if String.contains?(help, "--splice-only"),
                 do: :ok,
                 else: {:error, :too_old}
-
-            _ ->
-              {:error, :too_old}
           end
         rescue
           _ -> {:error, :too_old}
@@ -914,7 +917,7 @@ defmodule Glorbo.Sandbox.Bwrap do
     end
   end
 
-  defp launcher_spec(%{network_policy: :proxy, proxy_port: proxy_port}, sh_path, sh_args)
+  defp launcher_spec(%{network_policy: :proxy, proxy_port: proxy_port} = opts, sh_path, sh_args)
        when is_integer(proxy_port) and proxy_port > 0 do
     with :ok <- pasta_availability(),
          {:ok, pasta_bin} <- fetch_pasta_binary(),
@@ -931,7 +934,7 @@ defmodule Glorbo.Sandbox.Bwrap do
          "-u",
          "none",
          "-T",
-         Integer.to_string(proxy_port),
+         pasta_forward_ports(proxy_port, opts),
          "-U",
          "none",
          "--",
@@ -942,6 +945,23 @@ defmodule Glorbo.Sandbox.Bwrap do
   end
 
   defp launcher_spec(_opts, sh_path, sh_args), do: {:ok, sh_path, sh_args}
+
+  # GEP-0055: pasta `-T` accepts a comma-separated port list. The
+  # GEP-23 CONNECT proxy port is always forwarded for `:proxy`
+  # agents; the in-process inference proxy port is appended only
+  # when a via_proxy dispatch put it in opts. Both values are
+  # integers parsed out of validated loopback URLs
+  # (`parse_proxy_url/1`), so the joined string is digits and a
+  # comma — no argv-injection surface.
+  defp pasta_forward_ports(proxy_port, opts) do
+    case Map.get(opts, :openai_proxy_port) do
+      port when is_integer(port) and port > 0 and port != proxy_port ->
+        "#{proxy_port},#{port}"
+
+      _ ->
+        Integer.to_string(proxy_port)
+    end
+  end
 
   defp fetch_pasta_binary do
     case System.find_executable("pasta") do
@@ -971,17 +991,27 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   defp normalize_proxy_opts(%{network_policy: :proxy, proxy_url: url} = opts)
        when is_binary(url) do
-    case parse_proxy_url(url) do
-      {:ok, canonical_url, port} ->
-        {:ok, opts |> Map.put(:proxy_url, canonical_url) |> Map.put(:proxy_port, port)}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, canonical_url, port} <- parse_proxy_url(url),
+         {:ok, opts} <- normalize_openai_proxy_opts(opts) do
+      {:ok, opts |> Map.put(:proxy_url, canonical_url) |> Map.put(:proxy_port, port)}
     end
   end
 
   defp normalize_proxy_opts(%{network_policy: :proxy}), do: {:error, :proxy_url_missing}
   defp normalize_proxy_opts(opts), do: {:ok, opts}
+
+  # GEP-0055: the inference-proxy URL goes through the same loopback
+  # validation as the GEP-23 proxy URL; only the bare port feeds the
+  # pasta `-T` list (the URL itself reaches the CLI via cli_env, not
+  # here). Absent/nil → no extra forward (non-via_proxy dispatch).
+  defp normalize_openai_proxy_opts(%{openai_proxy_url: url} = opts) when is_binary(url) do
+    case parse_proxy_url(url) do
+      {:ok, _canonical_url, port} -> {:ok, Map.put(opts, :openai_proxy_port, port)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp normalize_openai_proxy_opts(opts), do: {:ok, opts}
 
   defp parse_proxy_url(url) when is_binary(url) do
     uri = URI.parse(url)

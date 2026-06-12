@@ -9,7 +9,7 @@ updated: 2026-04-17
 implemented-in: v0.0.3
 requires: [2, 4]
 see-also: [3, 5]
-extended-by: [16, 32, 45]
+extended-by: [16, 32, 45, 55]
 history:
   - date: 2026-04-17
     status: Draft

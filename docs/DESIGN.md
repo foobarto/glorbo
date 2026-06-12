@@ -264,11 +264,17 @@ The core process.  Runs on the host (not in a container).
 ```
 Glorbo.Application
 ├── Glorbo.Repo                          # SQLite / Ecto (WAL mode)
+├── Glorbo.DB.Bootstrap                  # Schema initialization
+├── DNSCluster                            # Distributed DNS
 ├── Phoenix.PubSub (Glorbo.PubSub)
 ├── Finch (Glorbo.Finch)
 ├── GlorboWeb.Telemetry
 ├── Glorbo.Agent.Registry                # :via registry for per-agent pids
 ├── Glorbo.CLI.Registry                  # Provider snapshot (GEP-8)
+├── Glorbo.Providers.ModelCatalog         # Native provider model cache (GEP-32)
+├── Glorbo.Network.ProxyTokens           # Ephemeral per-dispatch auth tokens (GEP-23)
+├── Glorbo.HomeHistory.Tx               # Durable-history commit buffer (GEP-33)
+├── Glorbo.HomeHistory.WatcherBridge     # Manual-edit fallback (GEP-33)
 ├── Glorbo.CompanySupervisor             # DynamicSupervisor
 │   └── Glorbo.Company.Supervisor (acme)    # Per-company supervisor
 │       ├── Glorbo.Company.AuditLog          # Append-only audit JSONL + PubSub
@@ -282,12 +288,19 @@ Glorbo.Application
 │       ├── Glorbo.PathRequestGate           # Agent sandbox path requests (GEP-27)
 │       ├── Glorbo.Network.Proxy             # Hostname-allowlist HTTPS proxy
 │       │                                    # (only if any agent has network: proxy)
-│       ├── Task.Supervisor                  # Per-agent dispatch tasks
-│       └── Glorbo.Agent.Server (ceo)        # One per agent; idle between wakes;
-│                                        # wakes → bwrap+CLI invocation via
-│                                        # Glorbo.CLI.Dispatcher
+│       ├── Glorbo.OpenAIProxy               # In-process inference proxy (GEP-0055)
+│       │                                    # (only if any agent's provider has auth: via_proxy)
+│       ├── Glorbo.Company.ProposalsSink     # GEP-28 proposal audit events
+│       └── Glorbo.Company.AgentSupervisor  # Per-agent DynamicSupervisor
+│           └── Glorbo.Agent.Server (ceo)   # One per agent; idle between wakes;
+│               Task.Supervisor (sibling)     # Per-agent dispatch tasks
+│               wakes → bwrap+CLI via
+│               Glorbo.CLI.Dispatcher
 ├── GlorboWeb.StdoutStreamer.Supervisor  # LV stdout tail streamers
-└── GlorboWeb.Endpoint                   # Phoenix
+├── GlorboWeb.MCP.SessionRegistry       # Per-MCP-session state
+├── GlorboWeb.MCP.SessionSupervisor     # MCP session DynamicSupervisor
+├── GlorboWeb.LoginThrottle             # Login brute-force throttle (GEP-0053)
+└── GlorboWeb.Endpoint                  # Phoenix
 ```
 
 If an Agent process crashes, only that Agent restarts.  If a Company crashes,
@@ -402,6 +415,7 @@ default boot path.
 | `pi`           | CLI      | `pi`               | Local (typically offline)                          | No             |
 | `openai`       | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openai.toml`      | Yes (JSON)     |
 | `openrouter`   | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openrouter.toml`  | Yes (JSON)     |
+| `minimax`      | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/minimax.toml`     | Yes (JSON)     |
 
 Untracked providers require the agent to opt in via
 `allow_untracked_budget: true` in its `agent.md` — dispatch refuses
@@ -899,14 +913,15 @@ inotify trigger PubSub broadcasts.  The dashboard updates without polling.
 > *Pre-schleemed. Zero hizzard leakage. One command.*
 
 ```
-glorbo init [--force] [--skip-pull] [--example|--no-example]
+glorbo init [--force] [--example|--no-example]
                                 # Bootstrap ~/.glorbo/ and verify deps.
 glorbo up                       # Start detached daemon (dashboard +
                                 # supervision tree).
 glorbo down                     # Graceful SIGTERM → 10s grace → SIGKILL.
 glorbo status                   # Pidfile state + uptime.
 glorbo serve                    # Foreground supervision (for systemd).
-glorbo run <script>             # One-shot script execution.
+glorbo run <co>/<agent> <task> # One-shot agent dispatch without dashboard.
+glorbo reset-password           # Clear dashboard passphrase → first-run setup (GEP-0053).
 
 glorbo new company <slug>       # Scaffold a new company directory.
 glorbo new agent <co>/<slug>    # Scaffold a new agent (--template supported).
@@ -921,7 +936,7 @@ glorbo import paperclip <src> [--as <slug>]
 
 glorbo logs <co> [agent] [--follow]
                                 # Tail audit log or agent stdout.
-glorbo doctor [--json] [--fix] [--dry-run]
+glorbo doctor [--json] [--fix] [--dry-run] [--install-deps]
                                 # Host prerequisite checks + auto-fixers.
 glorbo reindex                  # Rebuild SQLite from filesystem.
 glorbo migrate                  # Run pending Ecto migrations.
@@ -936,12 +951,19 @@ glorbo detect-providers [--json]
                                 # (ollama, llama.cpp, LocalAI, vLLM,
                                 # LM Studio) with Server-header +
                                 # body fingerprints (GEP-32 phase 4).
+glorbo bench                    # Benchmark company templates + A/B dispatch (GEP-26).
+glorbo history <sub>            # Opt-in git history layer (GEP-33).
+                                # Subcommands: init, status, log, show, diff, restore.
+glorbo shell                    # [alpha] Interactive Director terminal (GEP-37).
 
+glorbo install [--force] [--no-start]
+                                # Install + enable user systemd service (Linux).
+glorbo uninstall                # Disable + remove the user systemd service.
 glorbo backup [--output <path>] # tar.gz of ~/.glorbo/ with WAL checkpoint.
-glorbo restore <archive> [--force]
-                                # Extract + migrate + reindex + doctor --fix.
+glorbo restore <archive>        # Extract + migrate + reindex + doctor --fix.
 glorbo harness ...              # Internal native-provider runtime (GEP-32).
 glorbo help [<verb>]            # Usage text.
+glorbo version                  # Print version (also: --version, -V).
 ```
 
 ---

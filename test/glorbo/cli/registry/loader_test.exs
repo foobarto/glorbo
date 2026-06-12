@@ -385,6 +385,177 @@ defmodule Glorbo.CLI.Registry.LoaderTest do
                Loader.load_all(builtin_dir: dir, user_file: nil)
     end
 
+    # GEP-0055: `auth = "via_proxy"` opts the provider into the
+    # in-process multi-shape inference proxy (see Glorbo.OpenAIProxy).
+    # `kind = "cli"` is rejected for now as a deliberate slice
+    # boundary — CLI providers join once the per-CLI base-URL
+    # injection slice (D11) lands; until then the config hard-fails
+    # at load (GEP-8 D9).
+    test "via_proxy auth is accepted on kind=native with valid api_key_env", %{builtin_dir: dir} do
+      write!(dir, "via-proxy.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "via_proxy"
+      api_key_env  = "OPENAI_API_KEY"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:ok,
+              [
+                %Provider{
+                  name: "openai-proxy",
+                  auth: :via_proxy,
+                  kind: :native,
+                  api_key_env: "OPENAI_API_KEY"
+                }
+              ]} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth without api_key_env is rejected", %{builtin_dir: dir} do
+      write!(dir, "missing-key-env.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "via_proxy"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:missing_field, _, "api_key_env"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth with malformed api_key_env is rejected", %{builtin_dir: dir} do
+      write!(dir, "bad-key-env.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "via_proxy"
+      api_key_env  = "1INVALiD-LEADING-DIGIT"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:invalid_api_key_env, _, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth with empty api_key_env is rejected", %{builtin_dir: dir} do
+      write!(dir, "empty-key-env.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "via_proxy"
+      api_key_env  = ""
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:invalid_api_key_env, _, "must be a non-empty string"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth with non-string api_key_env is rejected", %{builtin_dir: dir} do
+      write!(dir, "int-key-env.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "via_proxy"
+      api_key_env  = 123
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:invalid_api_key_env, _, "must be a non-empty string"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "malformed api_key_env on a non-via_proxy provider is still rejected", %{
+      builtin_dir: dir
+    } do
+      # Pins the documented warn-by-rejecting policy: a malformed
+      # env-var name never loads, regardless of auth mode.
+      write!(dir, "bearer-bad-key-env.toml", """
+      name         = "openai-harness"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "bearer"
+      api_key_env  = "NOT A VALID NAME"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:invalid_api_key_env, _, _}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "non-via_proxy auth with no api_key_env is accepted", %{builtin_dir: dir} do
+      # GEP-32 harness path: `auth = "bearer"` does not need api_key_env
+      # (the credentials TOML is the source). The field is just absent.
+      write!(dir, "harness.toml", """
+      name         = "openai-harness"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "bearer"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:ok, [%Provider{auth: :bearer, api_key_env: nil}]} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "non-via_proxy auth with api_key_env present is accepted (ignored)", %{builtin_dir: dir} do
+      # An extra `api_key_env` on a non-proxy provider is harmless —
+      # the proxy never reads it. Stored on the struct for future
+      # use (e.g. an MCP tool that introspects the provider config).
+      write!(dir, "harness-with-env.toml", """
+      name         = "openai-harness"
+      kind         = "native"
+      endpoint     = "https://api.openai.com/v1"
+      auth         = "bearer"
+      api_key_env  = "OPENAI_API_KEY"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:ok, [%Provider{auth: :bearer, api_key_env: "OPENAI_API_KEY"}]} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth is rejected on kind=cli", %{builtin_dir: dir} do
+      write!(dir, "bad-via-proxy.toml", """
+      name         = "weird-cli"
+      binary       = "weird"
+      args         = ["--flag"]
+      prompt_mode  = "stdin"
+
+      reply_dir               = "{workspace}/.glorbo/outbox"
+      reply_filename_template = "{invocation_id}.md"
+
+      kind         = "cli"
+      endpoint     = "https://api.example.com/v1"
+      auth         = "via_proxy"
+      usage_parser = "none"
+      """)
+
+      assert {:error, {:invalid_auth_for_kind, _, "via_proxy", "cli"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
+    test "via_proxy auth on native provider without endpoint is rejected", %{builtin_dir: dir} do
+      # The endpoint is required because the proxy needs an upstream to
+      # forward to. The existing `parse_endpoint` check is upstream of
+      # our new `validate_auth_kind`, so a missing endpoint is the
+      # error that surfaces first. This test pins that the order is
+      # stable — if you ever reorder, the error should still be
+      # `missing_field: "endpoint"`, not a via_proxy-specific one.
+      write!(dir, "no-endpoint.toml", """
+      name         = "openai-proxy"
+      kind         = "native"
+      auth         = "via_proxy"
+      usage_parser = "native-v1"
+      """)
+
+      assert {:error, {:missing_field, _, "endpoint"}} =
+               Loader.load_all(builtin_dir: dir, user_file: nil)
+    end
+
     test "native provider rejects usage_parser = none", %{builtin_dir: dir} do
       write!(dir, "bad-usage.toml", """
       name         = "native"

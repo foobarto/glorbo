@@ -24,7 +24,6 @@ defmodule Mix.Tasks.Glorbo.ReleaseFormula do
   Fails loudly if the release or the expected assets are missing.
   """
   use Mix.Task
-  require Logger
 
   @shortdoc "Regenerate the Homebrew formula for the current mix.exs version"
 

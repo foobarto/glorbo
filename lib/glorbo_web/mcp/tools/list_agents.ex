@@ -108,6 +108,4 @@ defmodule GlorboWeb.MCP.Tools.ListAgents do
   defp network_to_wire(atom) when is_atom(atom) do
     atom |> Atom.to_string() |> String.replace("_", "-")
   end
-
-  defp network_to_wire(other), do: to_string(other)
 end

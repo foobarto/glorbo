@@ -2125,6 +2125,9 @@ defmodule Glorbo.Company.Router do
     end
   end
 
+  # `meta` is always a map here — Frontmatter.parse/1 is specced
+  # `{:ok, map(), binary()} | {:error, term()}` and the caller binds it via
+  # `{:ok, meta, _} <-`, so a non-map extract_to/1 clause is provably dead.
   defp extract_to(%{} = meta) do
     case Map.get(meta, "to") do
       nil -> {:error, :missing_to}
@@ -2132,8 +2135,6 @@ defmodule Glorbo.Company.Router do
       _ -> {:error, :invalid_to}
     end
   end
-
-  defp extract_to(_), do: {:error, :invalid_frontmatter}
 
   defp derive_msg_id(abs_path, meta) do
     case Map.get(meta, "msg_id") do
