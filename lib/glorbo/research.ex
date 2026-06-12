@@ -181,26 +181,33 @@ defmodule Glorbo.Research do
   # every fetched body is wrapped via Untrusted.wrap/1 (D5) the moment it
   # leaves the network and before it can reach synthesise.
   defp gather(candidates, fetch_fun, budget_fun, max_steps, max_sources) do
-    candidates
-    |> Enum.with_index()
-    |> Enum.reduce_while({[], false}, fn {url, idx}, {acc, _partial} ->
-      cond do
-        idx >= max_steps ->
-          {:halt, {acc, true}}
+    {acc, partial?} =
+      candidates
+      |> Enum.with_index()
+      |> Enum.reduce_while({[], false}, fn {url, idx}, {acc, _partial} ->
+        cond do
+          idx >= max_steps ->
+            {:halt, {acc, true}}
 
-        length(acc) >= max_sources ->
-          {:halt, {acc, true}}
+          length(acc) >= max_sources ->
+            {:halt, {acc, true}}
 
-        budget_refused?(budget_fun) ->
-          {:halt, {acc, true}}
+          budget_refused?(budget_fun) ->
+            {:halt, {acc, true}}
 
-        true ->
-          case fetch_source(url, fetch_fun) do
-            {:ok, framed} -> {:cont, {acc ++ [framed], false}}
-            :skip -> {:cont, {acc, false}}
-          end
-      end
-    end)
+          true ->
+            case fetch_source(url, fetch_fun) do
+              # Prepend (O(1)) and reverse once after the reduce, rather than
+              # `acc ++ [framed]` which copies the whole accumulator on every
+              # iteration (O(n²) across the gather loop). Order is preserved by
+              # the final Enum.reverse/1.
+              {:ok, framed} -> {:cont, {[framed | acc], false}}
+              :skip -> {:cont, {acc, false}}
+            end
+        end
+      end)
+
+    {Enum.reverse(acc), partial?}
   end
 
   defp budget_refused?(budget_fun) do
