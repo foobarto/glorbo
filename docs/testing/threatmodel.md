@@ -879,9 +879,10 @@ than open lows. Re-evaluate during the v1 cut.
   aren't load-bearing at runtime, and the validator was
   emitting confusing "compile-time vs runtime" errors against
   Burrito-cached releases when _build/ contained any non-prod
-  compile artefacts. CI always builds with `MIX_ENV: prod`
-  (.github/workflows/ci.yml), so the dev-flag-leak path the
-  finding describes can't actually occur in shipped artefacts.
+  compile artefacts. Shipped releases are always built with
+  `MIX_ENV: prod` (.github/workflows/release.yml), so the
+  dev-flag-leak path the finding describes can't actually occur
+  in shipped artefacts.
   *Paths:* `mix.exs, config/dev.exs`.
 
 ### Informational (correctness / UX — not a direct security gap) — 24

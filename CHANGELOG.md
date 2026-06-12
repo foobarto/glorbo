@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Changed
+
+- **CI split — PRs run tests only; release builds run on tags.** The
+  Burrito single-binary builds (Linux x86_64/aarch64 + macOS x86_64/arm64
+  cross-compile), artifact upload, and visual-regression check moved out of
+  the per-PR `ci.yml` into a new tag-triggered `release.yml`. `ci.yml` now
+  runs a single `test (x86_64)` job — compile-warnings-as-errors, `mix test`,
+  Credo, format, Sobelow, hex/deps audit, and Dialyzer — on every
+  `pull_request` and `push` to `main`. Builds, Cosign signing, SLSA
+  provenance, the GitHub Release, and the Homebrew-tap update now run **only**
+  on `v*.*.*` tags. Faster PR feedback and no per-PR build cost; the four
+  `<arch> build + test` / `<arch> macOS cross-build` status checks the `tags`
+  ruleset requires are preserved (produced by `release.yml`).
+
 ### Security
 
 - **Code-scanning fixes** (GitHub Security → Code scanning):
