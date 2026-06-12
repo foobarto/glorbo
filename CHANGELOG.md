@@ -100,8 +100,6 @@ change between minor versions. Pin exact versions in downstream usage.
   1.7.18 → 1.7.19. All within existing `~>` constraints; `mix precommit`
   green. Folds dependabot #46 (bandit + credo, already covered above)
   and #45 (`github/codeql-action` v4.36.1 → v4.36.2 in scorecard.yml).
-  (`req` is raised to 0.6.1 via the security floor in the Security
-  section above — not deferred.)
 
 ### Added
 

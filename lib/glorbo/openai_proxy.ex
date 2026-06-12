@@ -373,7 +373,7 @@ defmodule Glorbo.OpenAIProxy do
   # terminates; the deadline bounds total wall-clock.
   defp read_request_head(sock, acc, deadline) do
     case :binary.match(acc, "\r\n\r\n") do
-      {pos, _len} when pos > @max_request_head_bytes ->
+      {pos, _len} when pos >= @max_request_head_bytes ->
         # A complete header block can arrive in a single read with the
         # terminator already present — the cap must be enforced here too,
         # not only on the still-unterminated `:nomatch` path, or an
