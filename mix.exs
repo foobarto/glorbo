@@ -128,6 +128,27 @@ defmodule Glorbo.MixProject do
       # ~/.glorbo/providers.toml). Pure-Elixir, dual-licensed MIT OR Apache-2.0.
       {:toml, "~> 0.7"},
       {:finch, "~> 0.21"},
+      # Security floors for the transitive HTTP-client stack (burrito →
+      # req → finch → mint); neither is called by Glorbo directly, both
+      # are declared solely to bar the vulnerable versions OSV/OpenSSF
+      # Scorecard flagged against mix.lock.
+      #
+      # mint < 1.9.0 — four EEF advisories: HTTP/1 request-line CRLF
+      # injection (EEF-CVE-2026-48861), HTTP/1 response smuggling via
+      # lenient Content-Length parsing (EEF-CVE-2026-49753), and two
+      # HTTP/2 client-memory DoS vectors — unbounded PUSH_PROMISE growth
+      # (EEF-CVE-2026-48862) and a CONTINUATION flood (EEF-CVE-2026-49754).
+      # All fixed in 1.9.0; finch only requires `~> 1.8`, which still
+      # admits 1.8.0, so pin the floor here.
+      {:mint, "~> 1.9"},
+      # req < 0.6.1 — decompression-bomb DoS via auto-decoded
+      # compressed/archive bodies (EEF-CVE-2026-49755, fixed 0.6.1) and
+      # multipart header injection via unescaped name/filename/content_type
+      # (EEF-CVE-2026-49756, fixed 0.6.0). 0.6.0 fixes only the latter, so
+      # the floor is 0.6.1. burrito requires only `>= 0.5.0`. req here is
+      # build-time only (ERTS download); req 0.6's opt-in decompression
+      # doesn't affect tarball fetches (no Content-Encoding negotiation).
+      {:req, ">= 0.6.1 and < 1.0.0"},
       # Finch/Mint's TLS certificate verification relies on castore (marked
       # optional by mint). Declaring it here guarantees cert validation
       # works in prod (TODO.md audit Low #2).

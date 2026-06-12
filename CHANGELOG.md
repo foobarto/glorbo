@@ -10,6 +10,28 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security
+
+- **HTTP-client stack advisories — mint → 1.9.0, req → 0.6.1** (OSV /
+  OpenSSF Scorecard). Six EEF advisories flagged against `mix.lock`,
+  all in transitive dependencies (burrito → req → finch → mint) — none
+  in Glorbo's own code, which does not call mint/req/finch directly on
+  this release line:
+  - mint < 1.9.0: HTTP/1 request-line CRLF injection
+    (EEF-CVE-2026-48861), HTTP/1 response smuggling via lenient
+    Content-Length parsing (EEF-CVE-2026-49753), unbounded HTTP/2
+    `PUSH_PROMISE` growth (EEF-CVE-2026-48862), and an HTTP/2
+    `CONTINUATION` flood (EEF-CVE-2026-49754) — all fixed in 1.9.0.
+  - req < 0.6.1: decompression-bomb DoS via auto-decoded
+    compressed/archive bodies (EEF-CVE-2026-49755, fixed 0.6.1) and
+    multipart header injection via unescaped name/filename/content_type
+    (EEF-CVE-2026-49756, fixed 0.6.0).
+
+  Explicit floor pins `{:mint, "~> 1.9"}` and `{:req, ">= 0.6.1"}` added
+  to `mix.exs` (finch only requires `mint ~> 1.8` and burrito only
+  `req >= 0.5.0`, both of which still admit the vulnerable versions).
+  `mix deps.audit` clean.
+
 ### Fixed
 
 - **DM channel creation race + symlink follow** (PR #42 review,
