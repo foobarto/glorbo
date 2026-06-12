@@ -52,6 +52,7 @@ defmodule Glorbo.CLI do
           | :import_paperclip
           | :validate
           | :fmt
+          | :fit
           | :bench
           | :harness
           | :history
@@ -59,6 +60,7 @@ defmodule Glorbo.CLI do
           | :install
           | :uninstall
           | :reset_password
+          | :memory_index
 
   @type result :: {verb(), 0 | 1 | 2 | 3, String.t()}
 
@@ -185,7 +187,7 @@ defmodule Glorbo.CLI do
       output =
         "glorbo reindex — indexed=#{m.indexed} skipped=#{m.skipped} deleted=#{m.deleted} " <>
           "audit_events=#{m.audit_events} approvals=#{m.tasks_approval_state} " <>
-          "budgets=#{m.budgets}\n"
+          "budgets=#{m.budgets} memory_chunks=#{m.memory_chunks}\n"
 
       {:reindex, 0, output}
     after
@@ -286,6 +288,36 @@ defmodule Glorbo.CLI do
 
     exit_code = if Enum.any?(detections, &(&1.status == :ready)), do: 0, else: 1
     {:detect_providers, exit_code, output}
+  end
+
+  # GEP-59 — native hardware → model-fit scoring. Probes the host
+  # (RAM + GPU), scores the curated catalog, and prints a ranked
+  # recommendation plus the AGENT.md model:/provider: lines. Pure
+  # scorer + recommend (D3); no --serve path. `--host` scores a remote
+  # host's hardware over SSH.
+  @fit_switches [
+    json: :boolean,
+    use_case: :string,
+    target_context: :integer,
+    host: :string,
+    limit: :integer
+  ]
+  def dispatch(["fit" | rest]) do
+    {opts, _argv, invalid} = OptionParser.parse(rest, strict: @fit_switches)
+
+    cond do
+      invalid != [] ->
+        unknown = invalid |> Enum.map_join(" ", fn {k, _} -> k end)
+        {:fit, 1, "glorbo fit — unknown switch(es): #{unknown}\n\n" <> fit_help_text()}
+
+      opts[:use_case] && opts[:use_case] not in ~w(general coding chat reasoning) ->
+        {:fit, 1,
+         "glorbo fit — unknown --use-case: #{opts[:use_case]} " <>
+           "(expected one of general, coding, chat, reasoning)\n"}
+
+      true ->
+        run_fit(opts)
+    end
   end
 
   # GEP-33 Phase 1 — opt-in git history layer for ~/.glorbo/.
@@ -449,6 +481,24 @@ defmodule Glorbo.CLI do
     {:history, 1, "Unknown history subcommand: #{verb}\n\n" <> history_help_text()}
   end
 
+  # GEP-0058: semantic recall index — per-company opt-in (default OFF).
+  # `glorbo memory index <company> --enable|--disable`. The index itself
+  # is derived state rebuilt by `glorbo reindex`; this verb only flips
+  # the company's opt-in flag (and, on --disable, purges its rows).
+  @memory_index_switches [enable: :boolean, disable: :boolean]
+  def dispatch(["memory", "index" | rest]) do
+    {opts, argv, _invalid} = OptionParser.parse(rest, strict: @memory_index_switches)
+    run_memory_index(List.first(argv), opts)
+  end
+
+  def dispatch(["memory", sub | _]) do
+    {:unknown, 1, "Unknown subcommand: memory #{sub}\n\nSee: glorbo help memory\n"}
+  end
+
+  def dispatch(["memory"]) do
+    {:unknown, 1, "Usage: glorbo memory index <company> {--enable|--disable}\n"}
+  end
+
   # GEP-37: interactive Director shell. Phase 0 — CLI wiring +
   # placeholder banner; runtime + views land in subsequent rounds.
   def dispatch(["shell" | rest]), do: Glorbo.Shell.run(rest)
@@ -517,6 +567,34 @@ defmodule Glorbo.CLI do
     end
   end
 
+  # GEP-59 — probe + rank + render. Exit 0 when a model fits, 1 when
+  # nothing in the catalog fits the host's budget (so CI/scripts can
+  # branch on "is this box local-ready"). The Fit facade owns all I/O
+  # (the host probe); CLI only parses flags + picks the output mode.
+  defp run_fit(opts) do
+    rec_opts =
+      []
+      |> put_opt(:use_case, opts[:use_case])
+      |> put_opt(:target_context, opts[:target_context])
+      |> put_opt(:host, opts[:host])
+
+    recommendation = Glorbo.Fit.recommend(rec_opts)
+
+    output =
+      if opts[:json] do
+        Glorbo.Fit.render_json(recommendation)
+      else
+        render_opts = if opts[:limit], do: [limit: opts[:limit]], else: []
+        Glorbo.Fit.render(recommendation, render_opts) <> "\n"
+      end
+
+    exit_code = if recommendation.best, do: 0, else: 1
+    {:fit, exit_code, output}
+  end
+
+  defp put_opt(kw, _key, nil), do: kw
+  defp put_opt(kw, key, value), do: Keyword.put(kw, key, value)
+
   defp normalize_detail_for_json(nil), do: nil
   defp normalize_detail_for_json(value) when is_binary(value), do: value
   defp normalize_detail_for_json(value) when is_atom(value), do: Atom.to_string(value)
@@ -544,6 +622,45 @@ defmodule Glorbo.CLI do
     case Glorbo.Repo.start_link() do
       {:ok, _pid} -> true
       {:error, {:already_started, _pid}} -> false
+    end
+  end
+
+  # ------ GEP-0058: memory index opt-in ------
+
+  defp run_memory_index(nil, _opts) do
+    {:memory_index, 1, "glorbo memory index <company> {--enable|--disable}\n"}
+  end
+
+  defp run_memory_index(company, opts) do
+    cond do
+      not Glorbo.Slug.valid?(company) ->
+        {:memory_index, 1, "glorbo memory index — invalid company slug: #{company}\n"}
+
+      opts[:enable] && opts[:disable] ->
+        {:memory_index, 1, "glorbo memory index — pass exactly one of --enable / --disable\n"}
+
+      opts[:enable] ->
+        memory_index_action(company, &Glorbo.Memory.Index.enable/2, "enabled")
+
+      opts[:disable] ->
+        memory_index_action(company, &Glorbo.Memory.Index.disable/2, "disabled (index purged)")
+
+      true ->
+        {:memory_index, 1, "glorbo memory index — pass --enable or --disable\n"}
+    end
+  end
+
+  # Like `reindex`, this needs Glorbo.Repo running. Burrito's CLI path boots
+  # before the supervision tree, so start the Repo on demand and stop it
+  # when done (tolerating the already-started `mix glorbo.cli` dev path).
+  defp memory_index_action(company, fun, label) do
+    repo_started? = ensure_repo_started()
+
+    try do
+      :ok = fun.(company, [])
+      {:memory_index, 0, "glorbo memory index — #{company} #{label}\n"}
+    after
+      if repo_started?, do: Glorbo.Repo.stop(5_000)
     end
   end
 
@@ -597,12 +714,18 @@ defmodule Glorbo.CLI do
       restore <archive>        Extract, migrate, reindex, doctor --fix
       doctor [--json] [--fix]  Verify host prerequisites; --fix repairs what it can
       reindex                  Rebuild ~/.glorbo/glorbo.db from disk
+      memory index <co>        Opt a company into semantic recall (GEP-0058).
+              --enable         Default OFF. --disable purges the company's
+              --disable        derived index. Rebuilt by `glorbo reindex`.
       validate [PATH]          Check on-disk files against file-format specs (GEP-25)
                                Flags: --json, --summary, --severity lvl, --kind kind
       fmt [PATH]               Normalise YAML frontmatter key order + fences (GEP-25)
                                Flags: --check (default, exits 1 on drift), --write
       detect-providers         Probe localhost for native providers (ollama, llama.cpp,
                                LocalAI, vLLM, LM Studio). No side effects. Flags: --json
+      fit                      Probe host hardware (RAM + GPU) and recommend a local
+                               model + quant that fits (GEP-59). Flags: --use-case,
+                               --target-context N, --host <remote>, --json, --limit N
       history <sub>            Opt-in git history layer for ~/.glorbo/ (GEP-33).
                                Subcommands: init, status, log [--limit N],
                                show, diff, restore.
@@ -638,9 +761,27 @@ defmodule Glorbo.CLI do
   defp verb_help_text("console"), do: Console.help_text()
   defp verb_help_text("doctor"), do: doctor_help_text()
   defp verb_help_text("history"), do: history_help_text()
+  defp verb_help_text("fit"), do: fit_help_text()
   defp verb_help_text("install"), do: Install.install_help_text()
   defp verb_help_text("uninstall"), do: Install.uninstall_help_text()
+  defp verb_help_text("memory"), do: memory_help_text()
   defp verb_help_text(_other), do: help_text()
+
+  defp memory_help_text do
+    """
+    glorbo memory — optional semantic recall index (GEP-0058).
+
+    USAGE
+      glorbo memory index <company> --enable     Opt a company in (default OFF)
+      glorbo memory index <company> --disable    Opt out + purge the index
+
+    The index is DERIVED state — keyword (SQLite FTS5) + vector (cosine
+    re-rank, reciprocal-rank fusion) over the company's markdown tree. It
+    is rebuilt by `glorbo reindex` and never the source of truth (GEP-7).
+    Embeddings come from a local `/v1/embeddings` endpoint; nothing extra
+    is bundled into the binary. Keyword/grep stays the always-on path.
+    """
+  end
 
   defp history_help_text do
     """
@@ -660,6 +801,35 @@ defmodule Glorbo.CLI do
     Filesystem remains the source of truth (GEP-3). Git here is
     derivative — it never replaces the audit log or the working tree.
     Restore appends a new commit describing the restore (append-only).
+    """
+  end
+
+  defp fit_help_text do
+    """
+    glorbo fit — native hardware → model-fit scoring (GEP-59).
+
+    Probes the host (RAM via /proc/meminfo; GPU via nvidia-smi / rocm-smi
+    / sysctl) and recommends the highest-quality model + quant from the
+    in-binary catalog that fits the VRAM/RAM budget at a usable tok/s.
+    Prints the AGENT.md model:/provider: lines to use. A probe failure
+    degrades to RAM-only scoring — it never crashes.
+
+    USAGE
+      glorbo fit [--use-case UC] [--target-context N] [--host REMOTE]
+                 [--json] [--limit N]
+
+    FLAGS
+      --use-case UC       Score for general (default) | coding | chat | reasoning.
+      --target-context N  Cap the evaluated context window (tokens).
+      --host REMOTE       Score a remote host's hardware over SSH (user@host).
+      --json              Emit machine-readable JSON.
+      --limit N           Rows in the ranked list (default 5).
+
+    Exit 0 when a model fits, 1 when nothing in the catalog fits.
+
+    Pairs with `glorbo detect-providers` (GEP-8): fit recommends the model,
+    you serve it (e.g. via ollama), then detect-providers wires it up.
+    The --serve download path is deferred (GEP-59 D3).
     """
   end
 

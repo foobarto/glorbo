@@ -973,4 +973,59 @@ defmodule Glorbo.Filesystem.ReindexTest do
       assert Repo.all(Company) == []
     end
   end
+
+  # GEP-0058: reindex rebuilds the semantic recall index LAZILY — only for
+  # companies that opted in via `glorbo memory index --enable` (D6). The
+  # embedder is injected through `:memory_index_opts` so no real
+  # `/v1/embeddings` server is contacted.
+  describe "GEP-0058 lazy memory-index rebuild" do
+    alias Glorbo.Memory.{ChunkVector, Index}
+
+    defp stub_mem_opts do
+      embed_fun = fn _model, texts -> {:ok, Enum.map(texts, fn _ -> [1.0, 0.0] end)} end
+      [memory_index_opts: [embed_fun: embed_fun, model: "stub"]]
+    end
+
+    test "a disabled company is NOT embedded (default OFF)" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      write!(base, "companies/acme/memory/notes.md", "the fox jumped over the lazy dog")
+
+      assert {:ok, %{memory_chunks: 0}} = Reindex.run([base: base] ++ stub_mem_opts())
+      assert Repo.all(ChunkVector) == []
+    end
+
+    test "an enabled company is embedded and its chunks become searchable" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      write!(base, "companies/acme/memory/notes.md", "the fox jumped over the lazy dog")
+
+      :ok = Index.enable("acme")
+
+      assert {:ok, %{memory_chunks: n}} = Reindex.run([base: base] ++ stub_mem_opts())
+      assert n >= 1
+
+      vectors = Repo.all(ChunkVector)
+      assert vectors != []
+      assert Enum.all?(vectors, &(&1.company == "acme"))
+
+      hits = Index.keyword_candidates("acme", "fox")
+      assert Enum.any?(hits, &String.contains?(&1.content, "fox"))
+    end
+
+    test "only the enabled company is embedded, never its neighbour" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      seed_company(base, "globex")
+      write!(base, "companies/acme/memory/a.md", "acme fox notes here")
+      write!(base, "companies/globex/memory/b.md", "globex secret blueprint")
+
+      :ok = Index.enable("acme")
+
+      assert {:ok, _} = Reindex.run([base: base] ++ stub_mem_opts())
+
+      companies = Repo.all(ChunkVector) |> Enum.map(& &1.company) |> Enum.uniq()
+      assert companies == ["acme"]
+    end
+  end
 end
