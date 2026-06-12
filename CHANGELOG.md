@@ -12,6 +12,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Security
 
+- **Snyk Code (SAST) workflow** (`.github/workflows/snyk-security.yml`).
+  Runs Snyk Code over the JavaScript surface (`assets/js` + `scripts/`)
+  and uploads SARIF to Security → Code scanning. Report-only and
+  `SNYK_TOKEN`-guarded (green no-op without the secret); all actions
+  SHA-pinned per repo policy. Snyk Code can't read Elixir, so Sobelow
+  stays the Elixir/Phoenix SAST; no container/IaC steps (Glorbo ships no
+  Dockerfile). Replaces the broken GitHub sample template.
 - **HTTP-client stack advisories — mint → 1.9.0, req → 0.6.1** (OSV /
   OpenSSF Scorecard). Six EEF advisories flagged against `mix.lock`,
   all in transitive dependencies (burrito → req → finch → mint) — none
