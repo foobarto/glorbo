@@ -103,6 +103,20 @@ function currentCompanySlug() {
   const topbarCompany = document.querySelector(".gl-topbar")?.dataset.currentCompany
   return topbarCompany || null
 }
+
+// Same-origin guard for every keyboard / palette navigation target.
+// All destinations we generate are absolute in-app paths ("/companies/…",
+// "/health", …), so refuse anything that could leave the origin:
+// protocol-relative ("//evil.test"), a backslash trick ("/\\evil.test"),
+// a scheme ("javascript:", "https:"), or a non-rooted value. The data
+// sources are already regex-constrained, but this makes the navigation
+// sink provably same-origin (defence-in-depth; code-scanning #15).
+function navigateInApp(dest) {
+  if (typeof dest === "string" && /^\/(?![/\\])/.test(dest)) {
+    window.location.assign(dest)
+  }
+}
+
 let gPrefixActive = false
 let gPrefixTimer = null
 const isTyping = (el) =>
@@ -118,7 +132,7 @@ window.addEventListener("keydown", (e) => {
     const dest = typeof raw === "function" ? raw(currentCompanySlug()) : raw
     if (dest) {
       e.preventDefault()
-      window.location.assign(dest)
+      navigateInApp(dest)
     }
     return
   }
@@ -458,7 +472,7 @@ function toggleCommandPalette() {
       if (chosen) {
         recordPalettePick(chosen)
         hideCommandPalette()
-        window.location.assign(chosen.href)
+        navigateInApp(chosen.href)
       }
     } else if (e.key === "Escape") {
       e.preventDefault()
@@ -473,7 +487,7 @@ function toggleCommandPalette() {
       const chosen = paletteItems[idx]
       if (chosen) recordPalettePick(chosen)
       hideCommandPalette()
-      window.location.assign(row.dataset.href)
+      navigateInApp(row.dataset.href)
     }
   })
 
