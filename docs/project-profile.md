@@ -1,7 +1,7 @@
 ---
 cairn-artifact: project-profile
 version: 1
-last-synthesised: 2026-04-24
+last-synthesised: 2026-06-10
 ---
 
 # Glorbo project profile
@@ -143,6 +143,12 @@ deferred with rationale in that doc.
 - **Performance target: no explicit numbers.** Regressions
   flagged in review. Single-operator scale is the ceiling;
   don't over-optimise for scale that won't happen.
+- **Quality over partial result.** (Operator directive,
+  2026-06-08, during the GEP-0055 reframing.) When a feature's
+  honest scope is bigger than one sitting, ship the smaller
+  *complete* slice — not a wider slice with stubbed-out
+  load-bearing parts. A "done" that only covers the happy
+  path is a partial result, not a result.
 - **Docs: best effort, refreshed before version cuts.** See
   below on pre-release cleanup.
 

@@ -54,8 +54,6 @@ defmodule GlorboWeb.MCP.Session do
   # client DELETEs, the session stays gone.
   use GenServer, restart: :temporary
 
-  require Logger
-
   alias GlorboWeb.MCP.Resources
 
   @registry GlorboWeb.MCP.SessionRegistry
@@ -427,9 +425,9 @@ defmodule GlorboWeb.MCP.Session do
 
   defp schedule_idle_timeout(%{idle_timeout_ms: nil} = state), do: state
 
-  defp schedule_idle_timeout(%{sse_pid: pid} = state) when is_pid(pid),
-    do: cancel_idle_timeout(state)
-
+  # Invariant: an idle timeout is only ever scheduled on a non-SSE session —
+  # touch/1 guards on `sse_pid: nil`, and detach_sse/the DOWN handler clear
+  # `sse_pid` before calling. An SSE-attached session never idle-times-out.
   defp schedule_idle_timeout(state) do
     token = make_ref()
     timer_ref = Process.send_after(self(), {:idle_timeout, token}, state.idle_timeout_ms)

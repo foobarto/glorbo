@@ -42,7 +42,6 @@ defmodule GlorboWeb.MCP.Plug do
   @behaviour Plug
 
   import Plug.Conn
-  require Logger
 
   alias GlorboWeb.MCP.Server
   alias GlorboWeb.MCP.Session

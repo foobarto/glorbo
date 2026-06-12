@@ -20,6 +20,16 @@ it's been in CHANGELOG for a cycle.
 
 ## P1 — next cycle
 
+- [ ] **CI: `goto-bus-stop/setup-zig` runs on Node 20 — forced to
+  Node 24 on 2026-06-16.** GitHub Actions warning on every macOS
+  cross-build job (noticed 2026-06-10 on PR #42): Node 20 actions get
+  forced onto Node 24 starting **2026-06-16** ("may not work as
+  expected") and removed 2026-09-16. Check upstream for a Node-24
+  release of setup-zig and bump the pinned SHA; if none exists by the
+  16th, set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the job and
+  verify the cross-builds still pass, so the forced default doesn't
+  land as a surprise mid-release.
+
 - [ ] **`SymlinkGuard` false-positives on `/home → /var/home` (atomic
   Fedora).** The shared `Glorbo.Sandbox.SymlinkGuard` (used by
   `reindex`, `company_boot`, `sandbox/bwrap`, `permission_mapper`) walks
@@ -252,6 +262,27 @@ it's been in CHANGELOG for a cycle.
   tally 100 / 34 waves.
 
 ## P2 — nice to have
+
+- [ ] **ProxyTokens: explicit token audience/scope field (GEP-0055
+  follow-up).** GEP-23 CONNECT tokens and GEP-0055 inference tokens
+  share one ETS table; today they're distinguished only implicitly
+  (`provider_alias` nil vs set, and the CONNECT proxy treats tokens as
+  audit-only). An explicit `audience: :connect | :inference` asserted
+  inside `resolve/2` would make the separation unforgeable. Touches
+  `Network.Proxy` too. Deferred from the 2026-06-10 review round.
+
+- [ ] **OpenAIProxy: concurrent-handler cap.** The listener bounds
+  per-request memory/time (16 KiB head, 1 MiB body, 15 s read
+  deadline) but not the number of simultaneous handler processes.
+  Loopback + per-company netns means only the company's own agents
+  can connect, so this is hardening, not a hole. Revisit with the
+  slice-5 streaming work (long-lived connections change the math).
+
+- [ ] **ModelCatalog via_proxy refresh: route through the proxy for
+  audit parity.** Today the catalog calls the upstream directly with
+  the env key (host-side, same trust domain). Once GEP-0055 slice 7
+  lands audit rows, consider routing list-models through the listener
+  so all upstream traffic shares one audit path.
 
 - [ ] **Post-0.25.0 review follow-ups (non-blocking).** From the pre-release
   adversarial review of the v0.25.0 diff (all LOW/nit, deferred past the cut):

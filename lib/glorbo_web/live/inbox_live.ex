@@ -21,7 +21,6 @@ defmodule GlorboWeb.InboxLive do
   assignment feeds as later additions.
   """
   use GlorboWeb, :live_view
-  require Logger
 
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
 
@@ -521,7 +520,7 @@ defmodule GlorboWeb.InboxLive do
     # render to an arbitrary host path.
     if audit_path_safe_to_read?(path) do
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.reduce([], &push_audit_row/2)
       |> Enum.reverse()
     else

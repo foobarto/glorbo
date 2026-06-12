@@ -724,7 +724,7 @@ defmodule GlorboWeb.TaskLive do
     # audit_export + inbox_live. Walk ancestors with `SymlinkGuard`.
     if audit_path_safe_to_read?(path) do
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.reduce(zero, fn line, acc -> accumulate_usage(line, rel_path, acc) end)
     else
       zero

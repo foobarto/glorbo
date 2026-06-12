@@ -22,8 +22,6 @@ defmodule Glorbo.CLI.Lifecycle.Daemon do
       and `down` can later locate the daemon.
   """
 
-  require Logger
-
   @type env_entry :: {charlist(), charlist()}
 
   @doc """

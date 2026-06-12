@@ -483,10 +483,6 @@ defmodule Glorbo.Restore do
       {:doctor, code, body} ->
         Logger.warning("post-restore doctor --fix exited #{code}: #{body}")
         :ok
-
-      other ->
-        Logger.warning("post-restore doctor --fix returned unexpected shape: #{inspect(other)}")
-        :ok
     end
   rescue
     e ->

@@ -21,8 +21,6 @@ defmodule Glorbo.Init.Orchestrator do
   CLI is installed on the host.
   """
 
-  require Logger
-
   alias Glorbo.Doctor
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.{Hierarchy, Reindex}
@@ -148,9 +146,6 @@ defmodule Glorbo.Init.Orchestrator do
               "audit_events=#{m.audit_events} approvals=#{m.tasks_approval_state} " <>
               "budgets=#{m.budgets}"
         }
-
-      other ->
-        %{status: :error, detail: inspect(other)}
     end
   end
 

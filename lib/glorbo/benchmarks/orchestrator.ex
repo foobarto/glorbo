@@ -183,7 +183,7 @@ defmodule Glorbo.Benchmarks.Orchestrator do
 
           case dispatch_fun.(spec, task, []) do
             {:ok, %{reply: reply}} -> {:ok, reply}
-            {:ok, %{} = other} -> {:ok, Map.get(other, :reply, inspect(other))}
+            {:ok, %{} = other} -> {:ok, inspect(other)}
             {:error, _} = err -> err
             other -> {:error, {:unexpected_dispatch_shape, other}}
           end

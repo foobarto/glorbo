@@ -366,7 +366,7 @@ mix phx.server      # dashboard on :4000
 mix precommit       # format + compile-warn + credo + tests
 ```
 
-Runtime is Elixir 1.19.5 / OTP 28.5 (pinned in `.tool-versions` —
+Runtime is Elixir 1.20.1 / OTP 29.0.2 (pinned in `.tool-versions` —
 `mise install` picks them up).
 
 ## License

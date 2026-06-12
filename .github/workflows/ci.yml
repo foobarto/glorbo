@@ -64,16 +64,16 @@ jobs:
           # `ubuntu24-arm64` natively.
           ImageOS: ubuntu24
         with:
-          elixir-version: '1.19.5'
-          # Pinned to the exact patch release: '28.5' resolves to the
-          # NEWEST patch (28.5.0.2 as of 2026-06-10), but Burrito
-          # fetches a Beam Machine precompiled ERTS for that exact
-          # version and beam-machine-universal only has 28.5.0.1 for
-          # linux (404 on 28.5.0.2 broke the build). Bump once
-          # https://beam-machine-universal.b-cdn.net publishes the
-          # matching linux musl tarball. Keep all three setup-beam
-          # blocks in this file on the same pin.
-          otp-version: '28.5.0.1'
+          elixir-version: '1.20.1'
+          # Exact patch pin matching .tool-versions. Burrito fetches a
+          # Beam Machine precompiled ERTS for this exact version;
+          # beam-machine-universal publishes 29.0.2 for linux x86_64 +
+          # aarch64 and macOS universal (verified 2026-06-12 — HEAD 200
+          # on all four Burrito targets), so the release build resolves.
+          # If a newer patch 404s on https://beam-machine-universal.b-cdn.net,
+          # keep this pin until the matching tarball is published. Keep all
+          # three setup-beam blocks in this file on the same pin.
+          otp-version: '29.0.2'
 
       - name: Install bubblewrap (bwrap)
         run: |
@@ -160,8 +160,8 @@ jobs:
           # bundle as runtime data) into `_build/dialyzer_plts` (release-
           # excluded). Old cache entries still point at the old path; the
           # key bump forces a one-time rebuild.
-          key: plt2-ubuntu24-otp28.5-ex1.19.5-${{ hashFiles('mix.lock') }}
-          restore-keys: plt2-ubuntu24-otp28.5-ex1.19.5-
+          key: plt2-ubuntu24-otp29.0.2-ex1.20.1-${{ hashFiles('mix.lock') }}
+          restore-keys: plt2-ubuntu24-otp29.0.2-ex1.20.1-
 
       - name: Dialyzer (type analysis — fails on NEW warnings vs baseline)
         if: matrix.arch == 'x86_64'
@@ -202,6 +202,14 @@ jobs:
           # docs/testing/dialyzer-baseline.md for the full delta + the
           # `mise exec elixir@1.18.4-otp-28` cross-check that confirms
           # the count.
+          #
+          # 169 (ceiling unchanged): Elixir 1.19.5 -> 1.20.1 + OTP 28.5 ->
+          # 29.0.2 bump (2026-06-12). 1.20's set-theoretic checker + OTP-29
+          # narrowed specs RESOLVE false positives — local count drops to
+          # ~111. The 169 ceiling is deliberately kept (not tightened to
+          # 111) until a CI run confirms the exact count in the
+          # ubuntu24/OTP-29.0.2 environment; dialyzer counts vary slightly
+          # across hosts. Retighten once observed. See dialyzer-baseline.md.
           baseline=169
           echo "Dialyzer warnings: ${count} (baseline ${baseline})"
           if [ "${count}" -gt "${baseline}" ]; then
@@ -354,10 +362,10 @@ jobs:
           # `ubuntu24-arm64` natively.
           ImageOS: ubuntu24
         with:
-          elixir-version: '1.19.5'
+          elixir-version: '1.20.1'
           # Exact patch pin — see the comment on the first setup-beam
-          # block (Beam Machine 28.5.0.2 linux ERTS not published yet).
-          otp-version: '28.5.0.1'
+          # block (Beam Machine ERTS confirmed published for 29.0.2).
+          otp-version: '29.0.2'
           version-type: strict
 
       - name: Cache mix deps + build
@@ -524,10 +532,10 @@ jobs:
           # `ubuntu24-arm64` natively.
           ImageOS: ubuntu24
         with:
-          elixir-version: '1.19.5'
+          elixir-version: '1.20.1'
           # Exact patch pin — see the comment on the first setup-beam
-          # block (Beam Machine 28.5.0.2 linux ERTS not published yet).
-          otp-version: '28.5.0.1'
+          # block (Beam Machine ERTS confirmed published for 29.0.2).
+          otp-version: '29.0.2'
           version-type: strict
 
       - name: Cache mix deps

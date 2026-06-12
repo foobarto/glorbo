@@ -76,7 +76,6 @@ defmodule Glorbo.FileSpec.Formatter do
     else
       {:error, :json} -> {:ok, :skipped, content}
       {:error, :unknown} -> {:ok, :skipped, content}
-      other -> other
     end
   end
 

@@ -572,7 +572,6 @@ defmodule Glorbo.Agent.Parser do
   defp shape_tag(v) when is_pid(v), do: :pid
   defp shape_tag(v) when is_reference(v), do: :reference
   defp shape_tag(v) when is_function(v), do: :function
-  defp shape_tag(nil), do: nil
   defp shape_tag(_), do: :unknown
 
   # Heartbeat: cron string or nil. Validation of cron SHAPE is the Scheduler's

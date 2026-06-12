@@ -702,7 +702,14 @@ defmodule GlorboWeb.AgentLive do
         {:error, :not_found}
 
       {:error, reason}
-      when reason in [:too_large, :binary, :invalid_path, :not_a_regular_file, :contract_file] ->
+      when reason in [
+             :too_large,
+             :binary,
+             :invalid_path,
+             :not_a_regular_file,
+             :contract_file,
+             :symlink_in_path
+           ] ->
         {:error, reason}
 
       {:error, _} ->
@@ -2290,8 +2297,6 @@ defmodule GlorboWeb.AgentLive do
     end
   end
 
-  defp format_relative_mtime(_), do: "—"
-
   defp format_duration(nil), do: "—"
   defp format_duration(ms) when is_integer(ms) and ms < 1000, do: "#{ms}ms"
   defp format_duration(ms) when is_integer(ms) and ms < 60_000, do: "#{div(ms, 1000)}s"
@@ -2365,7 +2370,7 @@ defmodule GlorboWeb.AgentLive do
 
     if File.regular?(path) do
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.reduce([], &push_history_row(&1, &2, ag))
       |> Enum.reverse()
     else

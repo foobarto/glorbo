@@ -202,8 +202,6 @@ defmodule Glorbo.CLI.Install do
   defp format_reason({:enable_now, code, out}),
     do: "systemctl enable --now exit=#{code}: #{out}"
 
-  defp format_reason(other), do: inspect(other)
-
   @doc """
   Returns the absolute path the unit file is written to.
   Honours `XDG_CONFIG_HOME`; falls back to `$HOME/.config`.

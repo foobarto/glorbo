@@ -129,7 +129,7 @@ defmodule GlorboWeb.MCP.Tools.QueryAudit do
     # avoid materialising the full file in memory at decode time.
     if File.regular?(path) do
       path
-      |> File.stream!([], :line)
+      |> File.stream!(:line, [])
       |> Enum.flat_map(&decode_line/1)
     else
       []

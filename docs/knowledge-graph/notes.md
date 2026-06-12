@@ -799,6 +799,35 @@ contaminated binary.
 
 ---
 
+## 2026-06-10 — GEP-0055 slice-4a review round
+
+### `nil` is an atom — `when is_atom(x)` does not exclude nil
+The OpenAIProxy 404 path was dead code because
+`adapter when is_atom(adapter) <- adapter_or_nil(path)` matched `nil`
+(it IS an atom), so unrouted paths crashed in
+`nil.translate_request/2` instead. Rule: never use a bare `is_atom/1`
+guard to mean "found a module"; return tagged tuples
+(`{:ok, mod} | {:error, :no_adapter}`) from lookups.
+
+### pasta `-T` forwards only the ports you list — new loopback listeners are blocked silently
+GEP-23's launcher passed a single `-T <connect-proxy-port>`. Any new
+host-loopback listener (e.g. the GEP-0055 inference proxy) is
+unreachable from inside the netns until its port joins the (comma-
+separated) `-T` list. Symptom is a plain `econnrefused` inside the
+sandbox — nothing logs on the host. Check `launcher_spec/3` in
+`sandbox/bwrap.ex` whenever a per-company listener is added.
+
+### `spawn_link` + accept loop: handler crashes kill the acceptor; closures don't transfer socket ownership
+A per-request handler spawned with `spawn_link` from a non-trapping
+acceptor takes the acceptor down on any crash (and with it every
+in-flight socket, since `:gen_tcp.accept`'s caller stays the socket
+owner — closure capture does NOT move `controlling_process`). Use an
+unlinked `spawn` + explicit `:gen_tcp.controlling_process/2`, contain
+crashes in the handler with rescue→500, and respawn the acceptor on
+the SAME listen socket (it's owned by the GenServer, so it survives).
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

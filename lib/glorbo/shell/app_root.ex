@@ -139,9 +139,6 @@ defmodule Glorbo.Shell.AppRoot do
         opts = forward_opts(state.sub_state)
         new_sub = view_module(view).init(opts)
         {%{state | chord: :idle, view: view, sub_state: new_sub, chord_hint: nil}, []}
-
-      view ->
-        {%{state | chord: :idle, chord_hint: "view '#{view}' not yet implemented (Phase 3+)"}, []}
     end
   end
 
