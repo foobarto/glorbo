@@ -10,8 +10,91 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added
+
+- **Deep-research task type** (GEP-0057, v1 — template-first). New
+  `Glorbo.Research` orchestrator drives a bounded, governed
+  plan → gather → read/extract → synthesise → render loop and emits a
+  portable artifact pair — `report.md` + a self-contained, sanitised
+  `report.html` (Earmark → `html_sanitize_ex`) — under
+  `companies/<co>/projects/<slug>/reports/<id>/`. Gather rides the GEP-32
+  native `web_fetch` tool; every fetched span is framed as untrusted via
+  `Glorbo.Prompt.Untrusted.wrap/1` (GEP-0056, D5). Budget is
+  degrade-to-partial (D4): when the budget gate refuses the next step — or
+  the `max_steps` / `max_sources` caps bite — the task finalises a *partial*
+  report with a leading `> Truncated at budget` banner instead of crashing.
+  Ships the `research/` skill template declaring `max_steps` / `max_sources`
+  / `budget_usd`.
+- **Semantic recall index (GEP-0058)** — optional, default-OFF hybrid
+  keyword + vector recall over a company's markdown home tree. Modelled
+  on the elasticsearch-style hybrid (D3): an SQLite FTS5 keyword index
+  (`chunks_fts`) for candidate recall, a `chunk_vectors(company,
+  source_path, chunk_id, embedding BLOB, model, dims)` table for the
+  embeddings, a PURE-Elixir cosine re-rank over the FTS5 candidate set,
+  and reciprocal-rank fusion (RRF) for the final ordering — no
+  `sqlite-vec`, no C-NIF (GEP-53 D13). Embeddings come from a local
+  `/v1/embeddings` endpoint over the app's Finch pool via an injectable
+  `Glorbo.Memory.Embedder` (tests stub it; no server needed). The index
+  is DERIVED state (GEP-7): `glorbo reindex` re-chunks and re-embeds
+  opted-in companies LAZILY (D6) and the markdown files stay
+  authoritative. Strict per-company isolation — every query is scoped to
+  the calling company; a company-A search never returns company-B
+  chunks. Opt in/out per company with
+  `glorbo memory index <company> --enable|--disable` (default OFF;
+  `--disable` purges the company's index). New modules under
+  `lib/glorbo/memory/`; migration adds `chunks_fts`, `chunk_vectors`,
+  and `memory_index_enabled`. `glorbo reindex` output gains a
+  `memory_chunks=N` count.
+- **`glorbo fit` — native hardware → model-fit scoring** (GEP-59 v1,
+  scorer + recommend; the `--serve` download path is deferred):
+  - **`Glorbo.Fit`** facade: probe the host, rank the catalog, and print
+    a ranked recommendation (model, quant, est tok/s, fit level) plus the
+    `model:` / `provider:` lines to drop into an `AGENT.md`. Closes the
+    "fully local out of the box" gap — `detect-providers` (GEP-8) only
+    wires an already-running server; `fit` tells you which model to run.
+  - **`Glorbo.Fit.Scorer`** — pure-Elixir scoring ported from odysseus's
+    `hwfit` heuristics (GEP-59 D5): per-quant×context memory estimate,
+    bandwidth-blended tok/s, quality/speed/fit/context composite scores,
+    and a quant-downshift search (Q8_0 → Q2_K, then context-halving)
+    until a candidate fits VRAM/RAM. No C-NIF — Burrito 4-target safe
+    (GEP-59 D1 / GEP-53 D13 precedent).
+  - **`Glorbo.Fit.Probe`** — host probe reading `/proc/meminfo` and, best
+    effort, `nvidia-smi` / `rocm-smi` (Linux) or `sysctl` (macOS Apple
+    Silicon). Every external call is wrapped so a missing binary or
+    driver error **degrades to RAM-only scoring, never crashes**. Runs
+    host-side (not in an agent sandbox); `--host <remote>` probes a
+    remote host over SSH.
+  - **`Glorbo.Fit.Catalog`** — static, compiled-in model + quant catalog
+    (GEP-59 D4): a glorbo-maintained curated set of GGUF-servable models
+    spanning the 1.5B → 70B size ladder plus the quant byte/speed/quality
+    and GPU/Apple-Silicon bandwidth tables. Offline-true, no online
+    refresh.
+  - **CLI**: `glorbo fit [--use-case UC] [--target-context N]
+    [--host REMOTE] [--json] [--limit N]`; exit 0 when a model fits,
+    1 when nothing in the catalog fits the host budget.
+
 ### Security
 
+- **Untrusted content framing (GEP-56)** — defense-in-depth against
+  cross-agent prompt-injection *propagation*. Content that crosses a
+  trust boundary into an agent's prompt — recalled file-based memory
+  (GEP-21, authored elsewhere) and the inbox triggering message
+  (inter-agent bodies routed inbox→outbox, GEP-35) — is now framed as
+  **data, not instructions**. New pure module `Glorbo.Prompt.Untrusted`
+  wraps each untrusted chunk in a fresh matched-random
+  `UNTRUSTED-START-<r>` / `UNTRUSTED-END-<r>` boundary (`r` = 128-bit
+  `:crypto.strong_rand_bytes`), so embedded guessed close markers cannot
+  break out of the frame; `normalise/1` re-frames cross-hop matched
+  pairs and **fails closed** (taints everything after) on an unmatched
+  open; `preamble/0` states the policy once. The wake/dispatch composer
+  (`Glorbo.Agent.Server.compose_prompt/4`) tags each context chunk
+  `provenance: :trusted | :untrusted`, frames untrusted chunks, and
+  emits the preamble once iff any untrusted chunk is present. Own-company
+  scaffolding (AGENT.md system prompt, runtime context) stays trusted and
+  unframed so legitimate delegation is preserved. `SECURITY.md` amended:
+  single-agent injection within grants stays out of scope; cross-agent
+  propagation is mitigated as DiD by GEP-56. Additive — does not touch
+  the sandbox or permission enforcement.
 - **Code-scanning fixes** (GitHub Security → Code scanning):
   - **Same-origin navigation guard** (SnykCode open-redirect #15):
     keyboard/command-palette navigation now routes every

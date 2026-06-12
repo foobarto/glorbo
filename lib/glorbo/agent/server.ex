@@ -1444,6 +1444,19 @@ defmodule Glorbo.Agent.Server do
   # so the CLI invocation has the persona/permissions context. Without
   # this, the agent only sees the raw inbox body ("Please respond to
   # chat!") with zero context about who it is or what it can do.
+  #
+  # GEP-56 — untrusted content framing. Each assembled context chunk
+  # carries a `provenance: :trusted | :untrusted` tag through this
+  # composition seam. Own-company scaffolding (AGENT.md system prompt,
+  # the Glorbo-authored runtime context) is `:trusted` and rendered
+  # verbatim. Content that crossed a trust boundary — the inbox body
+  # (inter-agent messages routed inbox→outbox, GEP-35) and recalled
+  # file-based memory (GEP-21, authored elsewhere) — is `:untrusted`,
+  # wrapped in a fresh matched-random `UNTRUSTED-START/END` frame
+  # (`Glorbo.Prompt.Untrusted.wrap/1`). The policy `preamble/0` is
+  # emitted once, in front of the system prompt, iff any untrusted
+  # chunk is present. The sandbox stays the primary boundary; this is
+  # additive defense-in-depth against cross-agent injection propagation.
   defp compose_prompt(spec, base, inbox_path, trigger) do
     body = if inbox_path, do: read_or_empty(inbox_path), else: ""
     system = read_system_prompt(spec, base)
@@ -1460,8 +1473,21 @@ defmodule Glorbo.Agent.Server do
 
     memory = compose_memory_section(spec, base)
 
+    # GEP-56 provenance-tagged context chunks. The inbox body and the
+    # recalled memory are the only chunks that originate outside the
+    # agent's own trust boundary; everything else is Glorbo-authored.
+    body_chunk = %{provenance: :untrusted, content: body}
+    memory_chunk = %{provenance: :untrusted, content: memory}
+
+    framed_body = render_chunk(body_chunk)
+    framed_memory = render_chunk(memory_chunk)
+
+    # Emit the one-time policy preamble iff any untrusted chunk carries
+    # non-empty content this run.
+    preamble = untrusted_preamble([body_chunk, memory_chunk])
+
     """
-    #{system}
+    #{preamble}#{system}
 
     ---
 
@@ -1486,7 +1512,7 @@ defmodule Glorbo.Agent.Server do
       use.
     - Permission-driven mounts visible to you this run:
     #{permission_mount_summary(spec)}
-    #{memory}
+    #{framed_memory}
 
     ## How to reply
 
@@ -1512,8 +1538,45 @@ defmodule Glorbo.Agent.Server do
 
     Source: `#{source_rel}`
 
-    #{body}
+    #{framed_body}
     """
+  end
+
+  # GEP-56 — render one provenance-tagged context chunk. Trusted chunks
+  # (own-company scaffolding) render verbatim. Untrusted chunks (content
+  # that crossed a trust boundary) are wrapped in a fresh matched-random
+  # `UNTRUSTED-START/END` frame so the model treats them as data, not
+  # instructions. Empty content renders empty either way — an empty body
+  # or absent memory section must not emit a stray frame.
+  #
+  # Public `@doc false` so tests can pin the provenance contract (own
+  # prose not framed; foreign content framed) without faking the whole
+  # disk-reading `compose_prompt` pipeline — same pattern as
+  # `permission_mount_summary/1`.
+  @doc false
+  def render_chunk(%{provenance: _, content: ""}), do: ""
+  def render_chunk(%{provenance: :trusted, content: content}), do: content
+
+  def render_chunk(%{provenance: :untrusted, content: content}),
+    do: Glorbo.Prompt.Untrusted.wrap(content)
+
+  # GEP-56 — the one-time policy line, emitted (with a trailing
+  # separator) iff at least one untrusted chunk has non-empty content;
+  # otherwise the empty string so an all-trusted prompt is unchanged.
+  # Public `@doc false` for the same test-seam reason as `render_chunk/1`.
+  @doc false
+  def untrusted_preamble(chunks) do
+    any_untrusted? =
+      Enum.any?(chunks, fn
+        %{provenance: :untrusted, content: c} -> c != ""
+        _ -> false
+      end)
+
+    if any_untrusted? do
+      Glorbo.Prompt.Untrusted.preamble() <> "\n\n"
+    else
+      ""
+    end
   end
 
   # GEP-21 / #281 — compose the agent's memory section from

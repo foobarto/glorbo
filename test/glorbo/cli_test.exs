@@ -241,6 +241,52 @@ defmodule Glorbo.CLITest do
     assert output =~ "budgets=0"
   end
 
+  # GEP-0058: `glorbo memory index <company> --enable|--disable`. These
+  # cover the pure routing/validation paths that return BEFORE the Repo is
+  # touched (an invalid slug, conflicting flags, a missing flag, a missing
+  # company). The enable/disable side effects against the Repo are covered
+  # in Glorbo.Memory.IndexTest under the SQL sandbox.
+  test ~S|dispatch(["memory", "index"]) without a company asks for usage| do
+    {verb, code, output} = CLI.dispatch(["memory", "index"])
+    assert verb == :memory_index
+    assert code == 1
+    assert output =~ "--enable"
+  end
+
+  test "dispatch memory index rejects an invalid company slug" do
+    {verb, code, output} = CLI.dispatch(["memory", "index", "Bad Slug", "--enable"])
+    assert verb == :memory_index
+    assert code == 1
+    assert output =~ "invalid company slug"
+  end
+
+  test "dispatch memory index rejects passing both --enable and --disable" do
+    {verb, code, output} = CLI.dispatch(["memory", "index", "acme", "--enable", "--disable"])
+    assert verb == :memory_index
+    assert code == 1
+    assert output =~ "exactly one"
+  end
+
+  test "dispatch memory index with no flag asks for one" do
+    {verb, code, output} = CLI.dispatch(["memory", "index", "acme"])
+    assert verb == :memory_index
+    assert code == 1
+    assert output =~ "--enable or --disable"
+  end
+
+  test ~S|dispatch(["memory", "bogus"]) is :unknown| do
+    {verb, code, _output} = CLI.dispatch(["memory", "bogus"])
+    assert verb == :unknown
+    assert code == 1
+  end
+
+  test "help memory prints the GEP-0058 verb help" do
+    {verb, code, output} = CLI.dispatch(["help", "memory"])
+    assert verb == :help
+    assert code == 0
+    assert output =~ "semantic recall"
+  end
+
   test "dispatch([\"bogus\"]) returns :unknown with exit_code 1 and help text" do
     {verb, code, output} = CLI.dispatch(["bogus"])
     assert verb == :unknown

@@ -116,6 +116,12 @@ defmodule Glorbo.Filesystem.Reindex do
 
   Options:
     * `:base` — base directory (default: `~/.glorbo`).
+    * `:memory_index_opts` — opts forwarded to the GEP-0058 semantic
+      recall rebuild (e.g. `:embed_fun`, `:endpoint`, `:model`). The
+      rebuild runs LAZILY: only companies that opted in via
+      `glorbo memory index --enable` are re-embedded (D6). Absent or with
+      no embedder configured, the semantic rebuild is a no-op and the
+      keyword/domain reindex is unaffected.
   """
   @spec run(keyword()) :: {:ok, result()}
   def run(opts \\ []) do
@@ -123,7 +129,7 @@ defmodule Glorbo.Filesystem.Reindex do
     companies_dir = Path.join(base, "companies")
 
     if File.dir?(companies_dir) do
-      do_run(companies_dir)
+      do_run(companies_dir, opts)
     else
       {:ok,
        %{
@@ -132,12 +138,13 @@ defmodule Glorbo.Filesystem.Reindex do
          deleted: 0,
          audit_events: 0,
          tasks_approval_state: 0,
-         budgets: 0
+         budgets: 0,
+         memory_chunks: 0
        }}
     end
   end
 
-  defp do_run(companies_dir) do
+  defp do_run(companies_dir, opts) do
     files = safe_markdown_files(companies_dir)
 
     # CR-01: Group files by company prefix and skip sub-trees that lack a
@@ -174,6 +181,7 @@ defmodule Glorbo.Filesystem.Reindex do
     audit_imported = rebuild_audit_events(companies_dir)
     approvals_imported = rebuild_tasks_approval_state(companies_dir)
     budgets_imported = rebuild_budgets(companies_dir)
+    memory_chunks = rebuild_memory_index(companies_dir, opts)
 
     {:ok,
      %{
@@ -182,8 +190,52 @@ defmodule Glorbo.Filesystem.Reindex do
        deleted: deleted,
        audit_events: audit_imported,
        tasks_approval_state: approvals_imported,
-       budgets: budgets_imported
+       budgets: budgets_imported,
+       memory_chunks: memory_chunks
      }}
+  end
+
+  # ---------------------------------------------------------------------------
+  # GEP-0058: semantic recall index rebuild (lazy — opted-in companies only)
+  # ---------------------------------------------------------------------------
+
+  # D6: embed LAZILY at reindex time. Walk only the companies that opted in
+  # via `glorbo memory index --enable`; for each, re-chunk its markdown tree
+  # and rebuild the keyword (FTS5) + vector (chunk_vectors) projection. The
+  # embedder is injectable through `:memory_index_opts` so tests stub it; in
+  # production an absent endpoint makes the rebuild a logged no-op rather than
+  # a crash — keyword/grep stays the always-on path (GEP-0058 D1). Returns the
+  # total number of chunks (re)indexed across enabled companies.
+  defp rebuild_memory_index(companies_dir, opts) do
+    base = Path.dirname(companies_dir)
+    mem_opts = Keyword.get(opts, :memory_index_opts, [])
+
+    case File.ls(companies_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(fn co ->
+          File.dir?(Path.join(companies_dir, co)) and
+            Glorbo.Memory.Index.enabled?(co, mem_opts)
+        end)
+        |> Enum.reduce(0, fn co, acc ->
+          chunks = Glorbo.Memory.Chunker.chunk_company(base, co)
+
+          case Glorbo.Memory.Index.reindex_company(co, chunks, mem_opts) do
+            {:ok, n} ->
+              acc + n
+
+            {:error, reason} ->
+              Logger.warning(
+                "memory index rebuild skipped #{co}: #{inspect(reason)} (keyword/grep unaffected)"
+              )
+
+              acc
+          end
+        end)
+
+      _ ->
+        0
+    end
   end
 
   # Returns the absolute path to the immediate child of `companies_dir` that

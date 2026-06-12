@@ -73,10 +73,19 @@ The following are **high-severity** by default and warrant immediate triage:
 
 ## Out of Scope
 
-- **Prompt injection within already-granted permissions.** If an LLM
-  decides to use its legitimate `projects:write:foo` capability
+- **Single-agent prompt injection within already-granted permissions.**
+  If an LLM decides to use its legitimate `projects:write:foo` capability
   destructively, that is a capability/policy question, not a vulnerability.
-  Tighten `agent.md` frontmatter.
+  Tighten `agent.md` frontmatter. Note the *multi-agent* refinement: the
+  **propagation** of injected instructions *across* agents (a steered
+  agent A emitting text that reads to agent B as a peer instruction) is
+  mitigated as **defense-in-depth** by GEP-56 untrusted-content framing —
+  content that crosses a trust boundary into an agent's prompt
+  (web-fetched pages, inter-agent message bodies, recalled memory,
+  installed skills) is framed as data, not instructions. That framing is
+  additive DiD, not a sandbox replacement; bypasses of it are accepted as
+  hardening reports (see "Missing defense-in-depth" below), whereas a
+  *single* agent misusing its own grants remains out of scope.
 - **Bugs in upstream agent CLIs** (Claude Code, Gemini, Codex). Report
   those to their respective projects. If Glorbo's sandboxing fails to
   contain a known upstream bug, that *is* in scope — file it here.
