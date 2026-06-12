@@ -91,10 +91,10 @@ change between minor versions. Pin exact versions in downstream usage.
 - **Latest in-range dependency bumps**: phoenix 1.8.7 → 1.8.8,
   phoenix_live_view 1.1.31 → 1.2.1, bandit 1.11.1 → 1.12.0, credo
   1.7.18 → 1.7.19. All within existing `~>` constraints; `mix precommit`
-  green (3063 tests). `req` 0.5 → 0.6 deferred (out-of-range major-ish
-  bump on the GEP-0055 proxy client; warrants its own tested pass).
-  Folds dependabot #46 (bandit + credo, already covered above) and #45
-  (`github/codeql-action` v4.36.1 → v4.36.2 in scorecard.yml).
+  green. Folds dependabot #46 (bandit + credo, already covered above)
+  and #45 (`github/codeql-action` v4.36.1 → v4.36.2 in scorecard.yml).
+  (`req` is raised to 0.6.1 via the security floor in the Security
+  section above — not deferred.)
 
 ### Added
 

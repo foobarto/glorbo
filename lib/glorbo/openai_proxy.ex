@@ -668,10 +668,25 @@ defmodule Glorbo.OpenAIProxy do
   defp call_upstream(%{endpoint: endpoint}, method, path, body, headers) do
     url = upstream_url(endpoint, path)
 
+    # Reuse the app-supervised Finch pool (Glorbo.Finch in the app tree)
+    # rather than letting Req spin up its own default Finch instance.
+    # (PR #47 review: Copilot.)
     result =
       case method do
-        "GET" -> Req.get(url, headers: headers, receive_timeout: @upstream_timeout_ms)
-        _ -> Req.post(url, json: body, headers: headers, receive_timeout: @upstream_timeout_ms)
+        "GET" ->
+          Req.get(url,
+            finch: Glorbo.Finch,
+            headers: headers,
+            receive_timeout: @upstream_timeout_ms
+          )
+
+        _ ->
+          Req.post(url,
+            finch: Glorbo.Finch,
+            json: body,
+            headers: headers,
+            receive_timeout: @upstream_timeout_ms
+          )
       end
 
     case result do
