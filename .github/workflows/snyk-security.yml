@@ -1,0 +1,78 @@
+# Snyk Security — Snyk Code (SAST) over the JavaScript surface
+# (assets/js + scripts/), with results uploaded to GitHub Security →
+# Code scanning as SARIF.
+#
+# Scope notes:
+#   - Snyk Code does NOT support Elixir, so `lib/` is out of scope —
+#     Sobelow stays the Elixir/Phoenix SAST and mix_audit the Hex SCA.
+#   - Snyk Open Source (SCA over the npm surface) and the per-PR
+#     `code/snyk` / `security/snyk` status checks are provided by the
+#     Snyk GitHub App; this workflow only adds the SAST→SARIF path.
+#   - No container / IaC steps: Glorbo ships no Dockerfile and has no
+#     container runtime (project invariant), and there is no IaC tree.
+#
+# Posture: report-only and SNYK_TOKEN-guarded. Every Snyk step is gated
+# on the secret, so the job is a clean green no-op on forks and until
+# SNYK_TOKEN is configured (Settings → Secrets and variables → Actions;
+# Snyk is free for public/OSS repos). Findings surface in Security →
+# Code scanning rather than blocking the PR.
+#
+# All third-party actions are pinned to a full-length commit SHA per
+# repo policy (uses the same pins as the other workflows).
+name: Snyk Security
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  snyk:
+    permissions:
+      contents: read # actions/checkout
+      security-events: write # codeql-action/upload-sarif uploads the SARIF
+      actions: read # upload-sarif run status (private repos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Secrets can't be referenced in `if:`, so surface SNYK_TOKEN
+      # presence as a step output and gate every Snyk step on it. Absent
+      # secret → all scan steps skip → job is a green no-op.
+      - name: Check for SNYK_TOKEN
+        id: gate
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SNYK_TOKEN not set — skipping Snyk scan (no-op)."
+          fi
+
+      - name: Set up Snyk CLI
+        if: steps.gate.outputs.enabled == 'true'
+        uses: snyk/actions/setup@806182742461562b67788a64410098c9d9b96adb # snyk/actions setup (pinned)
+
+      # Snyk Code (SAST) → SARIF. `continue-on-error` keeps findings from
+      # failing the PR; they land in Security → Code scanning instead.
+      # `--sarif-file-output` writes the report even when issues are found
+      # (the CLI exits non-zero on findings).
+      - name: Snyk Code test (SAST)
+        if: steps.gate.outputs.enabled == 'true'
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk code test --sarif-file-output=snyk-code.sarif
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: steps.gate.outputs.enabled == 'true' && hashFiles('snyk-code.sarif') != ''
+        uses: github/codeql-action/upload-sarif@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4.36.1
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
