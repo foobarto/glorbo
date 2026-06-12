@@ -10,6 +10,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Security
+
+- **Code-scanning fixes** (GitHub Security → Code scanning):
+  - **Same-origin navigation guard** (SnykCode open-redirect #15):
+    keyboard/command-palette navigation now routes every
+    `window.location.assign` through `navigateInApp/1`, which only
+    accepts rooted same-origin paths (rejects `//host`, `/\host`,
+    schemes). Defence-in-depth — the sources were already
+    regex-constrained to `[a-z0-9_-]` slugs.
+  - **Pinned npm dependencies** (Scorecard Pinned-Dependencies #2/#10):
+    `scripts/ui-baseline.sh` uses `npm ci` (hash-pinned from
+    `package-lock.json`) instead of `npm install`; CI installs the
+    Playwright browser via the lockfile-pinned local binary
+    (`./node_modules/.bin/playwright`) instead of `npm exec`.
+
+  The four SnykCode DOM-XSS alerts (#11–#14) are false positives — every
+  dynamic value is `escapeHtml`-escaped and the only URL-derived input is
+  the regex-constrained company slug — and are dismissed as such.
+
 ## [0.26.0] — 2026-06-12
 
 ### Security

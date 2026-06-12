@@ -66,9 +66,12 @@ PAGES=(
 
 ensure_node_deps() {
   if [[ ! -d "$REPO_ROOT/scripts/node_modules" ]]; then
-    echo "→ scripts/node_modules missing — running npm install"
-    (cd "$REPO_ROOT/scripts" && npm install --no-audit --no-fund >/dev/null) || {
-      echo "FATAL: npm install in scripts/ failed." >&2
+    echo "→ scripts/node_modules missing — running npm ci"
+    # `npm ci` installs strictly from the committed package-lock.json
+    # (hash-pinned) — satisfies OpenSSF Scorecard Pinned-Dependencies,
+    # unlike `npm install`, which can resolve drifted versions.
+    (cd "$REPO_ROOT/scripts" && npm ci --no-audit --no-fund >/dev/null) || {
+      echo "FATAL: npm ci in scripts/ failed." >&2
       return 1
     }
   fi
