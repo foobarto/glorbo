@@ -73,6 +73,8 @@ change between minor versions. Pin exact versions in downstream usage.
   1.7.18 → 1.7.19. All within existing `~>` constraints; `mix precommit`
   green (3063 tests). `req` 0.5 → 0.6 deferred (out-of-range major-ish
   bump on the GEP-0055 proxy client; warrants its own tested pass).
+  Folds dependabot #46 (bandit + credo, already covered above) and #45
+  (`github/codeql-action` v4.36.1 → v4.36.2 in scorecard.yml).
 
 ### Added
 
