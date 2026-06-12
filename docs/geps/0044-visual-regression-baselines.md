@@ -22,7 +22,7 @@ history:
       Tier-2 + Tier-3 baselines added (16/18 LVs gated; `/health`
       and `/providers` excluded via `DIFF_SKIP` because their
       content is env-dependent — captured but not diffed).
-      `.github/workflows/ci.yml` runs the VR check step as an
+      `.github/workflows/release.yml` runs the VR check step as an
       informational `continue-on-error` gate (x86_64 only — VR
       harness depends on Playwright Chromium which isn't
       available on aarch64 GHA runners). Cross-run drift settled

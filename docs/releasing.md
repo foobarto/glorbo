@@ -85,8 +85,11 @@ rely on `echo $?` alone.
 
 ### 3. Tag + push
 
-Annotated tags only. The signed-release CI pipeline triggers on
-`refs/tags/v*`, so the tag name MUST start with `v`.
+Annotated tags only. The signed-release CI pipeline
+(`.github/workflows/release.yml`) triggers on `refs/tags/v*`, so the
+tag name MUST start with `v`. (PR + main CI — tests and quality gates
+only, no builds — lives in `ci.yml`; the Burrito binary builds run
+only at release time, on the tag.)
 
 ```bash
 git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -95,9 +98,11 @@ git push origin vX.Y.Z
 
 ### 4. Wait for CI
 
-The `publish` job in `.github/workflows/ci.yml`:
+The release pipeline in `.github/workflows/release.yml`:
 
-  1. Runs `build-and-test` on both Linux arches.
+  1. Runs `build-and-test` on both Linux arches (re-running the full
+     quality gate before building, so a release is never signed from an
+     unvalidated tree).
   2. Builds Burrito releases for `glorbo-linux-x86_64` and
      `glorbo-linux-aarch64`.
   3. Signs each binary with cosign using the GHA OIDC token.
@@ -188,7 +193,7 @@ list is incomplete.
 ## Automation
 
 Steps 6–7 above are now handled automatically by the
-`publish-homebrew-tap` job in `.github/workflows/ci.yml`. On a
+`publish-homebrew-tap` job in `.github/workflows/release.yml`. On a
 successful tag-triggered `release`, the job clones
 `foobarto/homebrew-tap` with write access via the
 `HOMEBREW_TAP_TOKEN` repo secret, regenerates `Formula/glorbo.rb`

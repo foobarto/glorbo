@@ -73,6 +73,20 @@ change between minor versions. Pin exact versions in downstream usage.
     [--host REMOTE] [--json] [--limit N]`; exit 0 when a model fits,
     1 when nothing in the catalog fits the host budget.
 
+### Changed
+
+- **CI split — PRs run tests only; release builds run on tags.** The
+  Burrito single-binary builds (Linux x86_64/aarch64 + macOS x86_64/arm64
+  cross-compile), artifact upload, and visual-regression check moved out of
+  the per-PR `ci.yml` into a new tag-triggered `release.yml`. `ci.yml` now
+  runs a single `test (x86_64)` job — compile-warnings-as-errors, `mix test`,
+  Credo, format, Sobelow, hex/deps audit, and Dialyzer — on every
+  `pull_request` and `push` to `main`. Builds, Cosign signing, SLSA
+  provenance, the GitHub Release, and the Homebrew-tap update now run **only**
+  on `v*.*.*` tags. Faster PR feedback and no per-PR build cost; the four
+  `<arch> build + test` / `<arch> macOS cross-build` status checks the `tags`
+  ruleset requires are preserved (produced by `release.yml`).
+
 ### Security
 
 - **Untrusted content framing (GEP-56)** — defense-in-depth against
