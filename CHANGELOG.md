@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-06-12
+
 ### Security
 
 - **Snyk Code (SAST) workflow** (`.github/workflows/snyk-security.yml`).
@@ -7308,7 +7310,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0
 [0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
 [0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0
 [0.23.1]: https://github.com/foobarto/glorbo/releases/tag/v0.23.1

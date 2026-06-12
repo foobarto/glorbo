@@ -6,7 +6,7 @@
   <a href="https://github.com/foobarto/glorbo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/foobarto/glorbo/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/foobarto/glorbo/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/foobarto/glorbo?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg"></a>
-  <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.19.5-6E4A7E?logo=elixir&logoColor=white"></a>
+  <a href="https://elixir-lang.org"><img alt="Elixir" src="https://img.shields.io/badge/elixir-1.20.1-6E4A7E?logo=elixir&logoColor=white"></a>
   <a href="SECURITY.md"><img alt="Security Policy" src="https://img.shields.io/badge/security-policy-informational"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/foobarto/glorbo"><img alt="OpenSSF Scorecard" src="https://api.securityscorecards.dev/projects/github.com/foobarto/glorbo/badge"></a>
   <a href="https://www.bestpractices.dev/projects/12943"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/12943/badge"></a>
@@ -347,7 +347,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.25.0** (2026-06-03). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.26.0** (2026-06-12). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /
