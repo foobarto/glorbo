@@ -2,7 +2,8 @@
 gep: 55
 title: In-process inference proxy for sandboxed agents
 author: Glorbo Maintainers <security@example.invalid>
-status: Draft
+status: Implemented
+implemented-in: v0.26.0
 type: Standards
 created: 2026-06-07
 requires: [8, 23, 31, 32]
@@ -20,6 +21,15 @@ history:
     status: Draft
     note: |
       Slice 1-4a review round (multi-agent review + fixes). Fixed pre-commit: nested {:ok, token} tuple in the dispatch mint, *_BASE_URL pointing at the GEP-23 CONNECT proxy (with its userinfo token), token never revoked at dispatch end, head/body buffering stall on single-segment POSTs, acceptor-death respawn re-binding on a new port/0.0.0.0, upstream auth headers dropped, missing token-company cross-check, nil-adapter crash, and the harness/model-catalog `via_proxy` gap. Implementation-plan table added; CLI first wave re-gated behind D11 + loader lift; pasta -T now forwards the inference-proxy port.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. Slices 1–4a shipped in v0.26.0
+      (`Glorbo.OpenAIProxy` + `…/shape.ex`); hardened post-PR-#47.
+      Per the v0.26.0 CHANGELOG, these slices remain deferred (tracked,
+      not yet shipped): SSE streaming, Gemini request translation,
+      settings.json injection, egress audit rows, usage.json, and
+      CLI-provider opt-in — so this is the v1 surface, not the full GEP.
 ---
 
 # GEP-0055: In-process inference proxy for sandboxed agents

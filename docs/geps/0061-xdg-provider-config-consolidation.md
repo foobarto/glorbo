@@ -2,7 +2,7 @@
 gep: 61
 title: Consolidate provider config + credentials under XDG (~/.config/glorbo)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-06-13
 requires: [8, 32, 45]
@@ -30,6 +30,12 @@ history:
       repointed. New `Glorbo.Filesystem.ConfigMigration` runs once on real-binary
       start (`run_cli_and_halt/1`) — copy-then-remove, no-clobber, perms-preserving,
       best-effort. Flip to Implemented on merge to main.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. Provider config + credentials consolidated
+      under ~/.config/glorbo via `Glorbo.Filesystem.ConfigMigration`.
+      Merged in PR #55, [Unreleased]; `implemented-in:` at the next cut.
 ---
 
 # GEP-61: Consolidate provider config + credentials under XDG
