@@ -624,6 +624,7 @@ defmodule Glorbo.Actions.Tasks do
         with :ok <- Support.validate_slug(company, :company),
              :ok <- Support.validate_slug(actor, :agent),
              :ok <- validate_note(note),
+             :ok <- guard_verdict_reason(verdict, note),
              {:ok, _project} <- project_of(task_rel_path),
              abs_path = Path.join([base, "companies", company, task_rel_path]),
              {:ok, task} <-
@@ -709,6 +710,14 @@ defmodule Glorbo.Actions.Tasks do
   defp validate_note(""), do: :ok
   defp validate_note(v) when is_binary(v) and byte_size(v) <= 500, do: :ok
   defp validate_note(_), do: {:error, :invalid_note}
+
+  # GEP-41 failure-mode: a `revise` or `block` verdict MUST carry a reason
+  # (the reviewer prompt declares NOTE "required for revise / block"). An
+  # `approve` may be noteless. `note` is already trimmed by the caller.
+  defp guard_verdict_reason(verdict, "") when verdict in [:revise, :block],
+    do: {:error, :reason_required}
+
+  defp guard_verdict_reason(_verdict, _note), do: :ok
 
   defp guard_review_required(%Glorbo.TaskDefinition{peer_review_required: true}), do: :ok
   defp guard_review_required(_), do: {:error, :not_required}

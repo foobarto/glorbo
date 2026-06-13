@@ -326,9 +326,29 @@ defmodule Glorbo.Actions.TasksTest do
                  "projects/demo/tasks/demo-99.md",
                  :block,
                  actor: "critiqueops",
+                 note: "ships a SQL injection in the search filter",
                  base: base,
                  audit: audit
                )
+    end
+
+    # GEP-41 failure-mode: a block/revise verdict MUST carry a reason
+    # (the reviewer prompt declares NOTE "required for revise / block").
+    for verdict <- [:block, :revise] do
+      test "#{verdict} verdict without a reason is rejected", %{base: base, audit: audit} do
+        assert {:error, :reason_required} =
+                 Tasks.record_peer_review_verdict(
+                   "acme",
+                   "projects/demo/tasks/demo-99.md",
+                   unquote(verdict),
+                   actor: "critiqueops",
+                   base: base,
+                   audit: audit
+                 )
+
+        # No audit row, no status flip — the verdict never landed.
+        assert FakeAudit.calls(audit) == []
+      end
     end
 
     test "rejects when peer_review_required is false", %{base: base, audit: audit, src: src} do
@@ -364,6 +384,7 @@ defmodule Glorbo.Actions.TasksTest do
           "projects/demo/tasks/demo-99.md",
           :revise,
           actor: "critiqueops",
+          note: "needs a regression test before this clears",
           base: base,
           audit: audit
         )
