@@ -2,7 +2,7 @@
 gep: 61
 title: Consolidate provider config + credentials under XDG (~/.config/glorbo)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-06-13
 requires: [8, 32, 45]
@@ -20,6 +20,16 @@ history:
       Operator decision (2026-06-13): consolidate EVERYTHING provider —
       overrides + registry + native credentials — under XDG_CONFIG_HOME
       (`~/.config/glorbo/`), with a one-time migration. Full consolidation.
+  - date: 2026-06-13
+    status: Accepted
+    note: |
+      Approved + implemented in the same PR. `Hierarchy.config_root/0`
+      (+ `:glorbo_config_root` test override) anchors `~/.config/glorbo`;
+      `native_credentials_dir/0`, `providers_config_path/0`, and
+      `providers_override_dir/0` resolve under it; `enable.ex` / registry loader
+      repointed. New `Glorbo.Filesystem.ConfigMigration` runs once on real-binary
+      start (`run_cli_and_halt/1`) — copy-then-remove, no-clobber, perms-preserving,
+      best-effort. Flip to Implemented on merge to main.
 ---
 
 # GEP-61: Consolidate provider config + credentials under XDG

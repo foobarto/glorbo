@@ -31,6 +31,10 @@ done
 
 exec "$release_root/bin/glorbo" eval "
 argv = File.read!(\"$argv_file\") |> String.split(<<0>>, trim: true)
+# GEP-61: one-time, best-effort provider-config/credentials migration into the
+# XDG config root — mirrors the Burrito path (run_cli_and_halt/1) so OTP-release
+# users get it too. Idempotent + self-rescuing; never blocks the CLI. (codex #55)
+_ = Glorbo.Filesystem.ConfigMigration.run()
 {_verb, code, output} = Glorbo.CLI.dispatch(argv)
 if is_binary(output) and output != \"\", do: IO.puts(output)
 System.halt(code)

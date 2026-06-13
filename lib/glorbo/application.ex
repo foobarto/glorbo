@@ -222,6 +222,12 @@ defmodule Glorbo.Application do
   # WR-06: using `:timer.apply_after/4` (no extra unlinked process) is more
   # deterministic than `Task.start` under scheduler contention.
   defp run_cli_and_halt(argv) do
+    # GEP-61: one-time, best-effort migration of provider config + credentials
+    # out of ~/.glorbo into the XDG config root. Runs only on the real binary
+    # (this path is gated on a non-empty release argv), before any verb reads
+    # provider config. Idempotent + self-rescuing — never blocks the CLI.
+    _ = Glorbo.Filesystem.ConfigMigration.run()
+
     {_verb, exit_code, output} = Glorbo.CLI.dispatch(argv)
     IO.puts(output)
 

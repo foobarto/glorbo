@@ -6,7 +6,7 @@ defmodule Glorbo.CLI.Registry.Loader do
 
     * **Built-ins** — one file per provider under `priv/providers/*.toml`,
       tagged `source: :builtin`.
-    * **User** — optional `~/.glorbo/providers.toml` with an optional
+    * **User** — optional `~/.config/glorbo/providers.toml` with an optional
       `[[providers]]` array-of-tables, tagged `source: :user`.
 
   Both files use the same schema (`Glorbo.CLI.Registry.Provider`).
@@ -37,7 +37,7 @@ defmodule Glorbo.CLI.Registry.Loader do
     * `:builtin_dir` — directory containing `priv/providers/*.toml`
       (default: `:glorbo` app's `priv/providers`).
     * `:user_file` — path to the optional user TOML
-      (default: `~/.glorbo/providers.toml`).
+      (default: `~/.config/glorbo/providers.toml`).
   """
   @spec load_all!(keyword()) :: [Provider.t()]
   def load_all!(opts \\ []) do
@@ -746,7 +746,7 @@ defmodule Glorbo.CLI.Registry.Loader do
   end
 
   defp default_user_file do
-    path = Path.join(Glorbo.Filesystem.Hierarchy.default_root(), "providers.toml")
+    path = Glorbo.Filesystem.Hierarchy.providers_config_path()
     if File.exists?(path), do: path, else: nil
   end
 

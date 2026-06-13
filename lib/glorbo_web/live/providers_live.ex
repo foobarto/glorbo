@@ -95,11 +95,13 @@ defmodule GlorboWeb.ProvidersLive do
      |> assign(:scan_results, results)}
   end
 
-  # GEP-32 phase 4 — promote a scan result into `~/.glorbo/providers.toml`.
-  # Refreshes the Registry afterwards so the main grid picks up the
-  # new entry without a full page reload.
+  # GEP-32 phase 4 — promote a scan result into the user provider registry
+  # (`Enable.default_path/0`, under the XDG config root — GEP-61). Refreshes the
+  # Registry afterwards so the main grid picks up the new entry without a full
+  # page reload.
   def handle_event("enable_provider", %{"alias" => alias_name}, socket) do
     detection = Enum.find(socket.assigns.scan_results, &(&1.alias == alias_name))
+    registry_path = Enable.default_path()
 
     case maybe_enable(alias_name, detection) do
       :ok ->
@@ -107,12 +109,11 @@ defmodule GlorboWeb.ProvidersLive do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Enabled #{alias_name} — added to ~/.glorbo/providers.toml.")
+         |> put_flash(:info, "Enabled #{alias_name} — added to #{registry_path}.")
          |> assign_registry_snapshot()}
 
       {:error, :already_enabled} ->
-        {:noreply,
-         put_flash(socket, :info, "#{alias_name} was already in ~/.glorbo/providers.toml.")}
+        {:noreply, put_flash(socket, :info, "#{alias_name} was already in #{registry_path}.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Enable failed: #{inspect(reason)}")}
@@ -132,7 +133,7 @@ defmodule GlorboWeb.ProvidersLive do
             <span class="gl-muted">providers /</span> registry
           </h1>
           <p class="gl-overview__path">
-            <span class="gl-muted">priv/providers/*.toml · </span>{GlorboWeb.LiveHelpers.display_base()}/providers.toml
+            <span class="gl-muted">priv/providers/*.toml · </span>{GlorboWeb.LiveHelpers.display_config_base()}/providers.toml
           </p>
           <p class="gl-overview__quote">
             // Config-driven, not code-driven. Add a TOML file, get a new provider.
