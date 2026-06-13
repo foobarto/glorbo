@@ -2,7 +2,7 @@
 gep: 59
 title: hwfit — native hardware→model fit scoring, the missing local-readiness step
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-06-12
 see-also: [8, 11, 32]
@@ -22,6 +22,13 @@ history:
       takes on no inference-engine process-management burden yet. D4 catalog =
       static in-binary for v1 (offline-true; online refresh deferred). D5 scoring
       = port the proven odysseus heuristics into a glorbo-maintained table.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented (v1). `glorbo fit` scorer + recommend ship
+      (`lib/glorbo/fit.ex` + `lib/glorbo/fit/`); the `--serve` model-download
+      path is deferred (tracked). Merged to main, [Unreleased];
+      `implemented-in:` at the next release cut.
 ---
 
 # GEP-59: hwfit — native hardware→model fit

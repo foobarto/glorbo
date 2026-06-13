@@ -2,7 +2,7 @@
 gep: 62
 title: Multi-instance support via per-instance node identity
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-06-13
 requires: [48]
@@ -34,6 +34,12 @@ history:
       app (D4). PORT fail-fast (D3) endpoint pre-check deferred to a follow-up
       — the threading + identity is the load-bearing part. Flip to Implemented
       on merge to main.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. Multi-instance support via per-instance node
+      identity (`node_id` minted in config.md; `glorbo-<id>@127.0.0.1`).
+      Merged in PR #57, [Unreleased]; `implemented-in:` at the next cut.
 ---
 
 # GEP-62: Multi-instance support via per-instance node identity

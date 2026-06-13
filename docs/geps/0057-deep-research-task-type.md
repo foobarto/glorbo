@@ -2,7 +2,7 @@
 gep: 57
 title: Deep-research task type — governed multi-step gather/read/synthesise
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-06-12
 requires: [56]
@@ -24,6 +24,13 @@ history:
       untrusted via GEP-56 (now Draft). D6 runner = any agent holding the
       research template + web_fetch + network (a `researcher` role ships as the
       example). Draft-only this cycle; implementation follows GEP-56/59.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented (v1, template-first). `Glorbo.Research`
+      orchestrator ships the governed plan→gather→read→synthesise loop
+      emitting report.md + sanitised report.html. Merged to main,
+      [Unreleased]; `implemented-in:` at the next release cut.
 ---
 
 # GEP-57: Deep-research task type

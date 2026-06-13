@@ -2,7 +2,8 @@
 gep: 0037
 title: "`glorbo shell` — interactive terminal session for the Director"
 author: Glorbo Maintainers <security@example.invalid>
-status: Accepted
+status: Implemented
+implemented-in: v0.15.0
 type: Standards
 created: 2026-04-24
 history:
@@ -685,6 +686,16 @@ history:
       ~50 new tests across these slices; 2571 total green
       after a parallel test-suite cleanup round dropped
       ~13 dead-weight assertions.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. The v1 surface — all seven D10 chord-target
+      views, reachable + tested — shipped in v0.15.0 (`Glorbo.Shell.*`);
+      Phase-3-revisit slices (Repo-backed columns, chat composer/switcher,
+      slash commands, status pills, help overlay, audit paging) shipped
+      v0.15.1 → v0.17.0. The documented deferrals (Tasks last-wake column,
+      Overview in_progress/goals rollups, Audit live-tail EventBus) remain
+      out of scope for v1 and are recorded in the prior history entry.
 requires: [2]
 extended-by: [39]
 see-also: [6, 29, 30, 35, 36, 38]

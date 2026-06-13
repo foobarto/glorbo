@@ -60,7 +60,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0034 | [Reindex v2 — full derived-state rebuild](./0034-reindex-v2-derived-state-rebuild.md)       | Standards     | Implemented |
 | 0035 | [Router split + AgentWritableFile seam](./0035-router-split-and-agent-writable-file-seam.md) | Standards   | Placeholder |
 | 0036 | [Actions layer as single Director-write channel](./0036-actions-layer-as-single-director-write-channel.md) | Standards | Implemented |
-| 0037 | [`glorbo shell` — interactive terminal session for the Director](./0037-glorbo-shell.md) | Standards     | Accepted    |
+| 0037 | [`glorbo shell` — interactive terminal session for the Director](./0037-glorbo-shell.md) | Standards     | Implemented |
 | 0038 | [Frontend adapter contracts — one internal service layer, N frontends](./0038-frontend-adapter-contracts.md) | Standards | Superseded  |
 | 0039 | [Configurable TUI keybinding schemes — Emacs, Vim, VS Code](./0039-configurable-tui-keybindings.md) | Standards | Placeholder |
 | 0040 | [Task chain observability — `done_when:`, `handoff_chain:`, chain audit view](./0040-task-chain-observability.md) | Standards | Implemented |
@@ -78,14 +78,14 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0052 | [Provider-CLI credential hardening via in-sandbox guard hooks](./0052-provider-cli-hook-hardening.md) | Standards | Draft |
 | 0053 | [Director passphrase login — browser auth distinct from the MCP/CLI token](./0053-director-passphrase-auth.md) | Standards | Implemented |
 | 0054 | [Import the live paperclip-instance on-disk layout](./0054-paperclip-instance-layout-import.md) | Standards | Implemented |
-| 0055 | [In-process inference proxy for sandboxed agents](./0055-openai-v1-proxy-for-sandboxed-agents.md) | Standards | Draft       |
-| 0056 | [Untrusted content framing — data-not-instructions across agent boundaries](./0056-untrusted-content-framing.md) | Standards | Draft |
-| 0057 | [Deep-research task type — governed multi-step gather/read/synthesise](./0057-deep-research-task-type.md) | Standards | Draft |
-| 0058 | [Semantic recall index — optional hybrid keyword+vector retrieval over the home tree](./0058-semantic-recall-index.md) | Standards | Draft |
-| 0059 | [hwfit — native hardware→model fit scoring, the missing local-readiness step](./0059-hwfit-model-fit-native.md) | Standards | Draft |
-| 0061 | [Consolidate provider config + credentials under XDG (~/.config/glorbo)](./0061-xdg-provider-config-consolidation.md) | Standards | Accepted |
-| 0062 | [Multi-instance support via per-instance node identity](./0062-multi-instance-node-identity.md) | Standards | Accepted |
-| 0063 | [Goals as `goal/v1` files (file-canonical store)](./0063-goals-as-files-canonical.md) | Standards | Accepted |
+| 0055 | [In-process inference proxy for sandboxed agents](./0055-openai-v1-proxy-for-sandboxed-agents.md) | Standards | Implemented |
+| 0056 | [Untrusted content framing — data-not-instructions across agent boundaries](./0056-untrusted-content-framing.md) | Standards | Implemented |
+| 0057 | [Deep-research task type — governed multi-step gather/read/synthesise](./0057-deep-research-task-type.md) | Standards | Implemented |
+| 0058 | [Semantic recall index — optional hybrid keyword+vector retrieval over the home tree](./0058-semantic-recall-index.md) | Standards | Implemented |
+| 0059 | [hwfit — native hardware→model fit scoring, the missing local-readiness step](./0059-hwfit-model-fit-native.md) | Standards | Implemented |
+| 0061 | [Consolidate provider config + credentials under XDG (~/.config/glorbo)](./0061-xdg-provider-config-consolidation.md) | Standards | Implemented |
+| 0062 | [Multi-instance support via per-instance node identity](./0062-multi-instance-node-identity.md) | Standards | Implemented |
+| 0063 | [Goals as `goal/v1` files (file-canonical store)](./0063-goals-as-files-canonical.md) | Standards | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 <!-- 0060 reserved for the planned SymlinkGuard /home→/var/home GEP. -->

@@ -2,7 +2,7 @@
 gep: 58
 title: Semantic recall index — optional hybrid keyword+vector retrieval over the home tree
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-06-12
 see-also: [7, 8, 21, 34, 43]
@@ -24,6 +24,14 @@ history:
       over the FTS5 candidate set + reciprocal-rank fusion; no `sqlite-vec` C-NIF
       (Burrito constraint, GEP-53 D13). D4 embedder = local `/v1/embeddings`
       (GEP-8 discovery) with a sidecar alternative. D5 lazy embed at reindex v1.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. Optional, default-OFF hybrid keyword+vector
+      recall under `lib/glorbo/memory/`. Merged to main, [Unreleased].
+      Known gap (tracked separately): the `memory_index_enabled` opt-in is
+      SQLite-only, so `rm glorbo.db && reindex` loses it — a GEP-3
+      rebuildability violation to resolve. `implemented-in:` at next cut.
 ---
 
 # GEP-58: Semantic recall index

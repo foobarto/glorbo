@@ -2,7 +2,7 @@
 gep: 56
 title: Untrusted content framing — data-not-instructions across agent boundaries
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-06-12
 see-also: [16, 21, 22, 23, 32, 35, 50]
@@ -24,6 +24,14 @@ history:
       breakout-proof, dissolving the carrier-vs-randomness tension); SECURITY.md
       carve-out approved (D5); native-enforced / CLI-best-effort tiers (D6).
       Slated for implementation this cycle alongside GEP-59.
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Flipped to Implemented. `Glorbo.Prompt.Untrusted` ships the
+      data-not-instructions framing across agent boundaries
+      (defense-in-depth vs cross-agent prompt-injection). Merged to main,
+      in the [Unreleased] CHANGELOG (Security); `implemented-in:` will be
+      set at the next release cut.
 ---
 
 # GEP-56: Untrusted content framing
