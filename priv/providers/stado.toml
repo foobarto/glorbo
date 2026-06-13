@@ -92,7 +92,7 @@ mode    = "ro"
 # without an HTTP probe (GEP-32 ↔ GEP-45 wiring).
 #
 # Operators who want a different default set can drop a user override
-# at `~/.glorbo/providers/stado.toml` with their own `model_list.models`
+# at `~/.config/glorbo/providers/stado.toml` with their own `model_list.models`
 # list — GEP-8 already supports this override pattern.
 #
 # `auto` first because that's stado's recommended setting (delegate

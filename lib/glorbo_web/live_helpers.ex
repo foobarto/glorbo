@@ -85,6 +85,19 @@ defmodule GlorboWeb.LiveHelpers do
   end
 
   @doc """
+  Display string for the XDG config root (GEP-61) — where provider config +
+  credentials live, out of the `~/.glorbo` data tree. `~`-abbreviated when it
+  is the default `~/.config/glorbo`.
+  """
+  @spec display_config_base() :: String.t()
+  def display_config_base do
+    root = Hierarchy.config_root()
+    default = Path.expand("~/.config/glorbo")
+
+    if root == default, do: "~/.config/glorbo", else: root
+  end
+
+  @doc """
   Current UTC year-month as `"YYYY-MM"` — the bucket key used by
   `Glorbo.Budget.Ledger` and `Glorbo.Company.AuditLog` month files.
   """

@@ -10,7 +10,7 @@ defmodule Glorbo.CLI.Registry.Provider do
 
     * **`:builtin`** — loaded from `priv/providers/*.toml` (shipped in the
       release). `allow_version_probe` defaults to `true`.
-    * **`:user`** — loaded from `~/.glorbo/providers.toml` (local-only).
+    * **`:user`** — loaded from `~/.config/glorbo/providers.toml` (local-only).
       `allow_version_probe` defaults to `false` (GEP-8 D13) — running
       `<arbitrary-user-binary> --version` without explicit opt-in would
       execute untrusted code on the host.

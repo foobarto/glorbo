@@ -88,16 +88,69 @@ defmodule Glorbo.Filesystem.Hierarchy do
   end
 
   @doc """
-  Default directory for native-provider credentials.
+  XDG config root for glorbo — `$XDG_CONFIG_HOME/glorbo` (default
+  `~/.config/glorbo`).
 
-  Lives outside `~/.glorbo/` on purpose so naive home-folder backups of
-  Glorbo state do not sweep API keys into the archive.
+  Holds provider config + credentials OUT of the `~/.glorbo/` data tree
+  (GEP-61) so naive home-folder backups of `~/.glorbo/` never sweep secrets
+  into the archive. `~/.glorbo/` stays pure user data.
+
+  Precedence:
+    1. `config :glorbo, :glorbo_config_root, "..."` (tests / integration)
+    2. `$XDG_CONFIG_HOME/glorbo` when `XDG_CONFIG_HOME` is set + absolute
+    3. `~/.config/glorbo`
+  """
+  @spec config_root() :: Path.t()
+  def config_root do
+    case Application.get_env(:glorbo, :glorbo_config_root) do
+      nil -> xdg_config_root()
+      root -> root
+    end
+  end
+
+  # XDG_CONFIG_HOME must be an absolute path per the spec; fall back to
+  # ~/.config if it is unset, empty, or relative (a relative XDG_CONFIG_HOME
+  # is invalid and must be ignored).
+  defp xdg_config_root do
+    base =
+      case System.get_env("XDG_CONFIG_HOME") do
+        dir when is_binary(dir) and dir != "" ->
+          if String.starts_with?(dir, "/"), do: dir, else: Path.expand("~/.config")
+
+        _ ->
+          Path.expand("~/.config")
+      end
+
+    Path.join(base, "glorbo")
+  end
+
+  @doc """
+  Default directory for native-provider credentials —
+  `<config_root>/credentials` (GEP-61), overridable via
+  `GLORBO_CREDENTIALS_DIR`.
+
+  Lives under `config_root/0` (outside `~/.glorbo/`) on purpose so naive
+  home-folder backups of Glorbo state do not sweep API keys into the archive.
   """
   @spec native_credentials_dir() :: Path.t()
   def native_credentials_dir do
     System.get_env("GLORBO_CREDENTIALS_DIR") ||
-      Path.expand("~/.local/etc/glorbo/credentials")
+      Path.join(config_root(), "credentials")
   end
+
+  @doc """
+  Canonical path to the user provider registry — `<config_root>/providers.toml`
+  (GEP-61, moved out of `~/.glorbo/providers.toml`).
+  """
+  @spec providers_config_path() :: Path.t()
+  def providers_config_path, do: Path.join(config_root(), "providers.toml")
+
+  @doc """
+  Canonical directory for per-provider override TOMLs —
+  `<config_root>/providers/` (GEP-61, moved out of `~/.glorbo/providers/`).
+  """
+  @spec providers_override_dir() :: Path.t()
+  def providers_override_dir, do: Path.join(config_root(), "providers")
 
   @doc """
   Cache directory for derived provider-model catalogs.

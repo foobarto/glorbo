@@ -25,7 +25,7 @@ usage_path   = { kind = "json_file", path = "{workspace}/.glorbo-run/{task_id}/u
 # needs the alias set to populate the agent-wizard combobox + Kanban
 # model picker (ModelCatalog projects `:static` lists directly, no
 # network). Operators wanting a different set can override the list via a
-# user provider TOML at `~/.glorbo/providers/minimax.toml` (GEP-8).
+# user provider TOML at `~/.config/glorbo/providers/minimax.toml` (GEP-8).
 #
 # `*-highspeed` is MiniMax's performance-tuned serving tier: identical
 # output to the base model at higher throughput / lower latency. It is a

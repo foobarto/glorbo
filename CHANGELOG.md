@@ -86,6 +86,18 @@ change between minor versions. Pin exact versions in downstream usage.
   on `v*.*.*` tags. Faster PR feedback and no per-PR build cost; the four
   `<arch> build + test` / `<arch> macOS cross-build` status checks the `tags`
   ruleset requires are preserved (produced by `release.yml`).
+- **Provider config + credentials consolidated under `~/.config/glorbo/`**
+  (GEP-61) — out of the `~/.glorbo/` data tree so naive home-folder backups
+  never sweep secrets. The per-provider overrides (`providers/<name>.toml`,
+  e.g. `stado.toml`), the enabled-providers registry (`providers.toml`), and
+  the native API-key store (previously the non-standard
+  `~/.local/etc/glorbo/credentials`) now all live under
+  `$XDG_CONFIG_HOME/glorbo` (default `~/.config/glorbo`), `0700`. A new
+  `Glorbo.Filesystem.ConfigMigration` moves any legacy files into place once
+  on startup — copy-then-remove, no-clobber, perms-preserving, best-effort —
+  so existing credentials are never orphaned. `~/.glorbo/` is now pure user
+  data (companies, audit, derived SQLite). `GLORBO_CREDENTIALS_DIR` still
+  overrides the credential path.
 
 ### Fixed
 

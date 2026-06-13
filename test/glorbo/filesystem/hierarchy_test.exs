@@ -135,4 +135,40 @@ defmodule Glorbo.Filesystem.HierarchyTest do
       |> MapSet.new()
     end
   end
+
+  describe "config_root/0 + provider paths (GEP-61)" do
+    setup do
+      prev_root = Application.get_env(:glorbo, :glorbo_config_root)
+      prev_creds_env = System.get_env("GLORBO_CREDENTIALS_DIR")
+      Application.put_env(:glorbo, :glorbo_config_root, "/cfg/glorbo")
+      # Clear the env override so `native_credentials_dir/0` resolves under
+      # config_root deterministically (async: false → safe to mutate + restore).
+      System.delete_env("GLORBO_CREDENTIALS_DIR")
+
+      on_exit(fn ->
+        if prev_root,
+          do: Application.put_env(:glorbo, :glorbo_config_root, prev_root),
+          else: Application.delete_env(:glorbo, :glorbo_config_root)
+
+        if prev_creds_env,
+          do: System.put_env("GLORBO_CREDENTIALS_DIR", prev_creds_env),
+          else: System.delete_env("GLORBO_CREDENTIALS_DIR")
+      end)
+
+      :ok
+    end
+
+    test "config_root honours the :glorbo_config_root override" do
+      assert Hierarchy.config_root() == "/cfg/glorbo"
+    end
+
+    test "provider config + override dir live under config_root (out of ~/.glorbo)" do
+      assert Hierarchy.providers_config_path() == "/cfg/glorbo/providers.toml"
+      assert Hierarchy.providers_override_dir() == "/cfg/glorbo/providers"
+    end
+
+    test "native credentials default under config_root (GLORBO_CREDENTIALS_DIR unset)" do
+      assert Hierarchy.native_credentials_dir() == "/cfg/glorbo/credentials"
+    end
+  end
 end

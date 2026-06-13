@@ -1,7 +1,7 @@
 defmodule Glorbo.Providers.Enable do
   @moduledoc """
   Append a discovered localhost native provider to
-  `~/.glorbo/providers.toml` (GEP-32 phase 4).
+  `~/.config/glorbo/providers.toml` (GEP-32 phase 4).
 
   "Enable" is the Director-triggered step that promotes a
   `Detect.run/0` result into a routable provider. The action is
@@ -23,12 +23,12 @@ defmodule Glorbo.Providers.Enable do
 
   @spec default_path() :: Path.t()
   def default_path do
-    Path.join(Hierarchy.default_root(), "providers.toml")
+    Hierarchy.providers_config_path()
   end
 
   @doc """
   Append the TOML entry for `alias_name` to `opts[:path]` (default
-  `~/.glorbo/providers.toml`).
+  `~/.config/glorbo/providers.toml`).
 
   Options:
     * `:path` — override the target file (tests).
