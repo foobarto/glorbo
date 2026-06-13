@@ -87,6 +87,25 @@ change between minor versions. Pin exact versions in downstream usage.
   `<arch> build + test` / `<arch> macOS cross-build` status checks the `tags`
   ruleset requires are preserved (produced by `release.yml`).
 
+### Fixed
+
+- **Crashed glorbo no longer wedges every subsequent start (orphaned EPMD
+  registration).** A hard crash can leave `glorbo@127.0.0.1` registered with
+  EPMD even though the node is gone (a child process that inherited the EPMD
+  socket fd holds it open), so the next `glorbo up` / `serve` failed
+  immediately. Two bugs fixed in `Glorbo.CLI.Lifecycle.Distribution`: (1) the
+  collision was matched as `{:already_started, _}`, but a cross-process EPMD
+  name collision actually surfaces as a net_kernel `:nodistribution`
+  shutdown (verified on OTP 29) — so the friendly path never ran and `serve`
+  raised an opaque error; (2) there was no recovery. `Distribution.start/0`
+  now probes the registered distribution port to tell a *running* glorbo
+  (genuine collision → "run `glorbo down`") from a *stale* registration
+  (no listener), and on a stale one reclaims its own orphan — SIGKILL the
+  EPMD and respawn a clean one, then retry once. Recovery is fail-safe and
+  gated on glorbo being EPMD's sole registrant, so a shared EPMD's other
+  live nodes are never disturbed; EPMD stays hardened (no
+  `-relaxed_command_check`, GEP-48).
+
 ### Security
 
 - **Untrusted content framing (GEP-56)** — defense-in-depth against
