@@ -362,3 +362,9 @@ No integration test yet. See "Open questions" below.
   dependency.
 - **GEP-16** (agent wake/dispatch pipeline) — scheduler feeds
   into this pipeline at the inbox-write step.
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record per GEP-1: the body of an Accepted/Implemented GEP is not rewritten, so the deviation below is logged here rather than edited into the Non-goals / Design / Decision-log sections above.
+
+- **Natural-language schedule parsing — GEP says Non-goal, code ships it (known-gap, doc drift).** GEP-0024 lists NL parsing as an explicit Non-goal (lines 72-75) and D6 (lines 300-312) decides for a "Closed keyword-alias table, not NL parsing," promising "If users demand NL, add it in a follow-up GEP with a real parser library." That follow-up GEP was never written. The code now routes schedules through an NL parser: `Glorbo.Company.TaskScheduler.parse_cron/1` calls `match_nl/1` (`lib/glorbo/company/task_scheduler.ex:615,621-626`), which delegates to `Glorbo.ScheduleNL.parse/1` (`lib/glorbo/schedule_nl.ex`, a ~6 KB English-to-cron parser handling "every morning at 9am", "every weekday", "every 5 minutes", etc.). It is fully shipped with its own unit test (`test/glorbo/schedule_nl_test.exs`) and an integration test (`test/integration/scheduled_task_e2e_test.exs`), and its moduledoc references it as #233 / #280; `docs/todo.md:756` marks "#280 Round 16: NL schedule parser" as done `[x]`. No GEP records this reversal — the lone grep hit in GEP-0036 is a false positive (a `#L1140-L1280` source-line URL fragment, not a reference). Disposition: real documentation gap. The Non-goal and D6 in the body are now stale; the fix is to either write the D6-promised follow-up GEP for `Glorbo.ScheduleNL` (#280) with bidirectional links to/from GEP-0024, or add a `superseded-by`/`extended-by` pointer plus a history entry flagging that the NL Non-goal and D6 were reversed in code. No body edit is made here per GEP-1.

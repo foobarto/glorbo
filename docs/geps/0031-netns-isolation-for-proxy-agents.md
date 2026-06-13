@@ -270,3 +270,11 @@ should either enforce it or refuse it.
 - **Q2:** Interaction with `GEP-27` path requests. Path-request
   file mounts are filesystem-level and unrelated to netns, so no
   interaction expected — confirm with an integration test.
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record (GEP-1: an Accepted/Implemented GEP's body is not rewritten in place; deviations from the original text are recorded here instead).
+
+- **D-8 loopback-unreachability test runs only when `pasta --splice-only` is present, which CI lacks — known-gap.** GEP D-8 (lines 202–207) mandates a `connect()`-level negative assertion that the agent cannot reach `127.0.0.1:4000` on every `:proxy` integration test. The only such test is `test/integration/sandbox_network_proxy_test.exs:133` ("IP2"), and the whole module is load-time-gated by `@moduletag skip` when `BwrapHelpers.pasta_available?/0` is false (lines 19–21). CI runs on `ubuntu-24.04` (.github/workflows/ci.yml:39) with no `passt`/`pasta` install step anywhere under `.github/`, so this security invariant is never exercised in CI — it skips cleanly and gates nothing. Confirmed; fix is to install a `passt` with `--splice-only` in CI or add a unit-level argv assertion of the `pasta --splice-only -T <port>` launcher line.
+
+- **Fail-closed `agent.netns_unavailable` refusal path has zero test coverage — known-gap.** The GEP's fail-closed guarantee (lines 143–154, 247–250, Implementation shape #1) is implemented in `lib/glorbo/agent/dispatch.ex`: `proxy_netns_unavailable?/1` (1345–1348) refuses Linux `network: proxy` dispatch with `{:error, :netns_unavailable}` and emits a once-per-company `agent.netns_unavailable` audit via `emit_netns_unavailable_audit_once/1` (1406–1429) when `Bwrap.pasta_availability/0` is not `:ok` (1311–1313). A `grep -rn netns_unavailable test/` returns zero matches — neither the refusal return value, the short-circuit (no `Bwrap.start` call), nor the single-audit-emission behavior is tested. Confirmed; fix is a dispatch-level unit test stubbing `pasta_availability/0` to `{:error, :unavailable}` on a `linux?()` host and asserting the `{:error, :netns_unavailable}` return plus exactly one audit entry.

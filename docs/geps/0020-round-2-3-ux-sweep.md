@@ -373,3 +373,10 @@ bootstrap).
   injection that the CEO reads).
 - GEP-19 — Director approval workflow (the InboxLive archive
   augments this pipeline).
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record appended under GEP-1: an Accepted/Implemented GEP's body is not rewritten in place; design deviations discovered after acceptance are logged here instead.
+
+- **GoalsLive read source + Goals CRUD (§7, lines 170-176; Open Questions, lines 281-283) — as-shipped (body is stale).** Reproduced. GEP-0020 §7 specs GoalsLive as reading `company.md` frontmatter `goals:` and says GoalsLive is read-only with full CRUD deferred. The shipped code instead reads the canonical `goals/<id>.md` files via `Glorbo.Company.Goals.list/1` (lib/glorbo_web/live/goals_live.ex:6-7, lib/glorbo/company/goals.ex:72) and supports inline add-goal CRUD: the `new_goal_submit` handler (goals_live.ex:72-76) calls `Glorbo.Company.Goals.add_goal/3` (goals_live.ex:15, goals_live.ex:76; lib/glorbo/company/goals.ex:180), which writes a new `goals/<id>.md` file. This is the intended state after GEP-0063 made goal/v1 files canonical and added inline add-goal; GEP-0020's §7 prose and its "Full Goals CRUD … would need a new write_goal path" Open Question are correctly superseded, not a regression. The §7 design is **superseded by GEP-0063**: GoalsLive now reads canonical `goals/<id>.md` files and supports inline add-goal CRUD.
+- **Missing bidirectional supersession link between GEP-0020 and GEP-0063 — known-gap (documentation cross-reference).** Reproduced. GEP-0020 frontmatter `see-also: [0003, 0006, 0007, 0008, 0010, 0018, 0019]` (docs/geps/0020-round-2-3-ux-sweep.md:15) omits 0063, and GEP-0063's `see-also: [6]` (docs/geps/0063-*.md:9) omits 0020, so neither GEP points at the other despite 0063 superseding §7's GoalsLive design. The fix is doc-only: add 0063 to GEP-0020's see-also and add 0020 to GEP-0063's see-also, plus the one-line supersession note in §7 and the "Full Goals CRUD" Open Question — exactly as this reconciliation record now captures.

@@ -588,3 +588,9 @@ where `glorbo validate` fails on its own seed data. Atomic cut.
 - GEP-19 — approval sentinel frontmatter, audit event shapes.
 - GEP-21 — memory file caps, type/filename agreement rule.
 - GEP-24 — `schedule:` frontmatter, keyword-alias enum.
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record (GEP-1: an Accepted/Implemented GEP's body is not rewritten; deviations are noted here instead).
+
+- **`:type_filename_mismatch` check (memory prefix ≠ frontmatter `type:`)** — **known-gap.** The GEP lists `:type_filename_mismatch` as an error-severity check (line 256) and names the rule in Problem #2 ("that every memory file matches its type/filename convention", line 78); `Glorbo.FileSpec.MemoryEntryMd`'s moduledoc and `docs/0` summary both assert the prefix must equal the frontmatter `type:` (lib/glorbo/file_spec/memory_entry_md.ex:2-6, 40-42). The validator does not implement it: `check_kind_specific/3` has exactly one real clause — for `TaskMd` (lib/glorbo/file_spec/validator.ex:340-353) — followed by a catch-all (line 355), and the code `:type_filename_mismatch` appears nowhere in `lib/` or `test/` (only in the GEP table). The filename regex (memory_entry_md.ex:9) merely captures the prefix via an alternation, not a backreference, so it constrains the prefix to the valid set but never ties it to `type:`. Net effect: a file named `user_role.md` carrying a valid `type: feedback` passes every current check (`check_enums` only rejects a `type:` outside the enum). Real, unimplemented; fix as suggested by adding a `check_kind_specific/3` clause for `MemoryEntryMd` that compares the filename prefix to frontmatter `type:`, emitting an error-level `:type_filename_mismatch`, plus a validator test fixture covering the mismatch.
