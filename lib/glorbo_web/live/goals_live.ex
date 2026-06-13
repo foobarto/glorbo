@@ -106,6 +106,10 @@ defmodule GlorboWeb.GoalsLive do
 
   defp goal_error_message(:id_taken), do: "ID is already in use."
   defp goal_error_message(:name_required), do: "Name is required."
+
+  defp goal_error_message(:goals_not_a_directory),
+    do: "The goals/ directory is not a real directory — refusing to write."
+
   defp goal_error_message({:error, _} = e), do: inspect(e)
   defp goal_error_message(other), do: "Could not save goal: #{inspect(other)}"
 

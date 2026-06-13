@@ -73,6 +73,25 @@ defmodule Glorbo.Company.GoalsTest do
       assert [%{id: "round-trip", title: "Round Trip", status: "active"}] =
                Goals.list(dir)
     end
+
+    test "refuses to write through a symlinked goals/ dir", %{dir: dir} do
+      # An attacker-planted `goals` symlink must NOT redirect the write
+      # into the symlink's target directory (codex P1, #59).
+      target = Path.join(dir, "elsewhere")
+      File.mkdir_p!(target)
+
+      case File.ln_s(target, Path.join(dir, "goals")) do
+        :ok ->
+          assert {:error, :goals_not_a_directory} =
+                   Goals.add_goal(dir, %{id: "evil", name: "Evil"})
+
+          # Nothing was written into the symlink target.
+          assert File.ls!(target) == []
+
+        {:error, _} ->
+          :ok
+      end
+    end
   end
 
   describe "list/1 (GEP-63 — shared hardened loader)" do

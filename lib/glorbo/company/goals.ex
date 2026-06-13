@@ -211,9 +211,23 @@ defmodule Glorbo.Company.Goals do
   defp do_write_goal(tx_id, company_dir, goal_path, id, name, description) do
     raw = build_goal_content(id, name, description)
 
-    with :ok <- File.mkdir_p(Path.join(company_dir, "goals")),
+    with :ok <- ensure_real_goals_dir(Path.join(company_dir, "goals")),
          {:ok, _change, content} <- Glorbo.FileSpec.Formatter.format_content(goal_path, raw) do
       atomic_open_and_rename(tx_id, goal_path, content)
+    end
+  end
+
+  # Symmetric with the loader's `real_directory?` guard (and the task
+  # writers' discipline): if `goals/` already exists as a symlink (or a
+  # regular file), refuse rather than let `File.mkdir_p` succeed through
+  # it and the tmp+rename write land in the symlink's target dir. Only
+  # create / write into a real directory.
+  defp ensure_real_goals_dir(goals_dir) do
+    case File.lstat(goals_dir) do
+      {:ok, %File.Stat{type: :directory}} -> :ok
+      {:ok, _other} -> {:error, :goals_not_a_directory}
+      {:error, :enoent} -> File.mkdir_p(goals_dir)
+      {:error, _} = err -> err
     end
   end
 
