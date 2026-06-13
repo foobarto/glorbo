@@ -83,6 +83,28 @@ defmodule GlorboWeb.AuthFlowTest do
     end
   end
 
+  describe "live socket re-validation — DEGRADED (D1/D9)" do
+    test "a hash that goes :malformed mid-session disconnects an open tab on the next re-check",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/companies")
+
+      # The stored hash becomes corrupt while the tab is open (DEGRADED, D9):
+      # auth_state/0 now returns :degraded, not {:configured, _}. The next
+      # re-check must fail CLOSED and force-log-out the open socket rather
+      # than silently reverting to bootstrap.
+      Application.put_env(:glorbo, :director_password_hash, :malformed)
+
+      # Fire the periodic re-check the on_mount hook armed (the real timer
+      # fires every 60s; we trigger it directly). The revalidate_hook's
+      # catch-all branch (anything not {:configured, hash}) redirects.
+      send(view.pid, :director_revalidate)
+
+      assert_redirect(view, "/login")
+      # The suite-level setup snapshots + restores :director_password_hash in
+      # on_exit, so no per-test restore is needed here.
+    end
+  end
+
   describe "/login" do
     test "renders the form with a CSRF token (CONFIGURED)", %{anon: anon} do
       html = anon |> get("/login") |> html_response(200)
@@ -179,6 +201,25 @@ defmodule GlorboWeb.AuthFlowTest do
       assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
         post(conn, "/login", %{"passphrase" => "test-director-passphrase"})
       end
+    end
+  end
+
+  # Gap #2 (P0): POST /logout was the only AuthController action with zero web
+  # coverage. Prove it drops the director session (configure_session drop: true)
+  # and that the dropped session no longer validates on a protected route.
+  describe "POST /logout (CONFIGURED)" do
+    test "redirects to /login", %{conn: conn} do
+      assert redirected_to(post(conn, "/logout")) == "/login"
+    end
+
+    # The real proof the session was dropped: recycle the post-logout conn
+    # (carrying whatever cookie state /logout left) and confirm a protected
+    # route now bounces. (get_session/2 can't show the drop — it reads the
+    # request's in-memory session, not the cleared response cookie.)
+    test "the dropped session no longer validates on a protected route", %{conn: conn} do
+      out = post(conn, "/logout")
+      bounced = out |> recycle() |> get("/companies")
+      assert redirected_to(bounced) == "/login"
     end
   end
 

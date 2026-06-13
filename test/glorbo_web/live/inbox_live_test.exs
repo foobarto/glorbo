@@ -112,6 +112,36 @@ defmodule GlorboWeb.InboxLiveTest do
     assert html =~ "reason (optional)"
   end
 
+  # Gap #1 (P0): the tests above only assert the approve/deny BUTTON TEXT +
+  # that the deny modal opens. They never exercise the click → set_approval →
+  # status-flip-on-disk wiring for the inbox's {task_path} handler (distinct
+  # from proposals' {id} handler), so the load-bearing approval gate was
+  # unverified for the Inbox path. These two close that gap.
+  test "approve flips the task to approved on disk and flashes", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/inbox")
+
+    html = render_click(view, "approve", %{"task_path" => "projects/demo/tasks/demo-1.md"})
+    assert html =~ "Approved"
+
+    task = File.read!(Path.join([base, "companies/acme/projects/demo/tasks/demo-1.md"]))
+    assert task =~ "status: approved"
+  end
+
+  test "deny writes status: denied + denial_reason on disk via the deny modal",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/inbox")
+
+    # deny_prompt stashes the task_path; deny_confirm submits the reason.
+    render_click(view, "deny_prompt", %{"task_path" => "projects/demo/tasks/demo-1.md"})
+    html = render_submit(view, "deny_confirm", %{"reason" => "not this quarter"})
+    assert html =~ "Denied"
+
+    task = File.read!(Path.join([base, "companies/acme/projects/demo/tasks/demo-1.md"]))
+    assert task =~ "status: denied"
+    assert task =~ "denial_reason:"
+    assert task =~ "not this quarter"
+  end
+
   describe "stuck-on sentinels (LoopDetector)" do
     setup %{base: base} do
       state_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])

@@ -81,4 +81,20 @@ defmodule GlorboWeb.AuditExportControllerTest do
     conn = get(conn, "/companies/BAD!/audit.csv")
     assert response(conn, 400) == "invalid company slug"
   end
+
+  # Gap #8 (P1): an audit-log export is sensitive data behind the passphrase
+  # gate. Prove a request WITHOUT a director session (even with a valid bearer
+  # token) is bounced to /login by DirectorAuth — the export is passphrase-gated,
+  # not token-gated.
+  test "without a director session it is bounced to /login (not token-gated)" do
+    token = Application.get_env(:glorbo, :dashboard_token, "test-token")
+
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+      |> Plug.Test.init_test_session(%{})
+      |> get("/companies/acme/audit.csv")
+
+    assert redirected_to(conn) == "/login"
+  end
 end

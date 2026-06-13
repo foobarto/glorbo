@@ -231,6 +231,40 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert html =~ "50%"
   end
 
+  # P1 — submitting the new-project modal form scaffolds
+  # projects/<slug>/project.md on disk (status:active) and flashes
+  # the created-project confirmation. Exercises the
+  # `new_project_create` handle_event → Scaffold.Project path end to
+  # end. No `?wizard=` query param, so the non-wizard branch fires
+  # (plain flash, no push_patch chain).
+  test "new_project_create scaffolds projects/<slug>/project.md on disk",
+       %{conn: conn, base: base} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+    # `marketing` doesn't collide with the seeded `website` project,
+    # so we hit the create branch (not the "already exists" no-op).
+    proj_md = Path.join([base, "companies", "acme", "projects", "marketing", "project.md"])
+    refute File.exists?(proj_md)
+
+    html = render_submit(view, "new_project_create", %{"slug" => "marketing"})
+
+    # Modal closes and the flash confirms the scaffold.
+    assert html =~ "Created project: marketing"
+
+    # project.md scaffolded on disk with the active-status frontmatter
+    # block Scaffold.Project.do_scaffold/3 writes.
+    assert File.exists?(proj_md)
+    contents = File.read!(proj_md)
+    assert contents =~ "kind: project/v1"
+    assert contents =~ "slug: marketing"
+    assert contents =~ "status: active"
+
+    # README.md sibling is part of the same scaffold.
+    assert File.exists?(
+             Path.join([base, "companies", "acme", "projects", "marketing", "README.md"])
+           )
+  end
+
   # C-113 / C-101 / C-102 — the overview reads agent-controlled task
   # .md files, the shared chat drawer reads channels/general.md, and
   # the sparklines read the month audit file. All three must be
@@ -343,6 +377,116 @@ defmodule GlorboWeb.CompanyLiveTest do
         })
 
       assert html =~ "first project"
+    end
+  end
+
+  # Direct (non-wizard) `new_agent_create` coverage. The wizard-chain
+  # test above only proves the success path *patches* to the next
+  # wizard step; it never asserts the on-disk AGENT.md scaffold nor any
+  # of the three reject paths (duplicate / invalid slug / reserved
+  # `mcp`). Those all run through `Glorbo.CLI.Scaffold.Agent.run/1`,
+  # which `base_dir()` points at the per-test tmp tree (LiveCase sets
+  # `:glorbo_base`; no `GLORBO_HOME` in play).
+  describe "new_agent_create (direct, non-wizard)" do
+    test "writes a valid AGENT.md scaffold to disk with default frontmatter",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "new-eng",
+          "role" => "Backend Engineer",
+          "provider" => ""
+        })
+
+      assert html =~ "Created agent: new-eng"
+
+      agent_md =
+        Path.join([base, "companies", "acme", "agents", "new-eng", "AGENT.md"])
+
+      assert File.exists?(agent_md)
+      body = File.read!(agent_md)
+
+      # D-12 contract defaults — must match Scaffold.Agent.scaffold_default/4.
+      assert body =~ "kind: agent/v1"
+      assert body =~ "slug: new-eng"
+      # name: is the slug upcased (`new-eng` -> `NEW-ENG`).
+      assert body =~ "name: NEW-ENG"
+      assert body =~ ~s(role: "Backend Engineer")
+      # Empty provider falls back to the claude-code default.
+      assert body =~ "provider: claude-code"
+      assert body =~ "model: claude-sonnet-4-5"
+      assert body =~ "network: proxy"
+      assert body =~ "heartbeat: null"
+      # threatmodel M21: fresh agents start with zero permissions.
+      assert body =~ "permissions: []"
+      assert body =~ "monthly_usd: 10.00"
+
+      # Canonical sub-dir layout is scaffolded alongside AGENT.md.
+      ag_dir = Path.join([base, "companies", "acme", "agents", "new-eng"])
+
+      for sub <- ~w(inbox outbox workspace history state) do
+        assert File.dir?(Path.join(ag_dir, sub))
+      end
+    end
+
+    test "duplicate slug (ceo) is a no-op and does not overwrite the seeded AGENT.md",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+      ceo_md =
+        Path.join([base, "companies", "acme", "agents", "ceo", "AGENT.md"])
+
+      before = File.read!(ceo_md)
+
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "ceo",
+          "role" => "Impostor",
+          "provider" => ""
+        })
+
+      # Scaffold returns exit 0 with an "already exists" message; the LV
+      # rewrites it to the friendly no-change flash.
+      assert html =~ "Agent ceo already exists"
+
+      # The seeded CEO AGENT.md (role "Chief Executive Officer") is
+      # byte-for-byte untouched — no clobber, no role: "Impostor".
+      assert File.read!(ceo_md) == before
+      refute File.read!(ceo_md) =~ "Impostor"
+    end
+
+    test "invalid slug (uppercase + space) is rejected with an error flash and no dir",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "Bad Name",
+          "role" => "",
+          "provider" => ""
+        })
+
+      assert html =~ "Invalid slug in"
+
+      # Neither the trimmed-but-spaced nor an upcased variant lands a dir.
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "Bad Name"]))
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "Bad"]))
+    end
+
+    test "reserved slug `mcp` is refused with an error flash and no dir",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "mcp",
+          "role" => "",
+          "provider" => ""
+        })
+
+      assert html =~ "Refusing to scaffold reserved agent slug"
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "mcp"]))
     end
   end
 

@@ -33,6 +33,22 @@ defmodule GlorboWeb.SearchControllerTest do
     :ok
   end
 
+  # Gap #3 (P0): /api/search rides :dashboard_api = DirectorAuth via the session
+  # cookie. A dashboard_token holder WITHOUT a passphrase session must NOT be
+  # able to enumerate task titles. The other cases all use the fully-authenticated
+  # ConnCase conn; this one proves the negative.
+  test "without a director session it is bounced to /login (token alone can't enumerate)" do
+    token = Application.get_env(:glorbo, :dashboard_token, "test-token")
+
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("authorization", "Bearer #{token}")
+      |> Plug.Test.init_test_session(%{})
+      |> get("/api/search?co=acme&q=hello")
+
+    assert redirected_to(conn) == "/login"
+  end
+
   test "returns results for a matching query", %{conn: conn} do
     conn = get(conn, "/api/search?co=acme&q=hello")
     body = json_response(conn, 200)
