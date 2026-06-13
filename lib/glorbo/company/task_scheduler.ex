@@ -19,12 +19,13 @@ defmodule Glorbo.Company.TaskScheduler do
     3. Emit a `task.scheduled_dispatch` audit event with `task_path`,
        `cron_expr`, `fired_at`, `next_at`.
 
-  **Audit-log de-dup (D-45 style).** There is no state file — on boot
-  we read the current-month audit and skip any `(task_path, fire_ts)`
-  pair that already appears. Keeps us from double-firing if the BEAM
-  restarts within the same cron tick. Matches the rest of Glorbo's
-  filesystem-is-truth invariant — nothing to corrupt, nothing to
-  drift.
+  **No restart de-dup (GEP-24 D3).** There is no state file and no
+  boot-time audit replay: a fire that lands during a restart within the
+  same cron tick can be missed *or* re-fired. Per GEP-24 D3 this is an
+  accepted trade-off (a missed/duplicate fire across restart is cheap to
+  absorb); scan-on-boot-with-audit-dedup is left to a future GEP. (An
+  earlier draft of this moduledoc claimed such a de-dup existed — it
+  never shipped.)
 
   **Dep-injection:** `clock_fun`, `send_after_fun`, `audit_fun`,
   `write_inbox_fun`, and `subscribe?` for tests. `subscribe?: false`

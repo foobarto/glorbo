@@ -448,13 +448,19 @@ standing container, no long-lived namespace, no privileged daemon.
 > the Python runtime itself. bwrap is the only isolation layer, and
 > it's permanent.
 
-**Base sandbox flags (every invocation):**
+**Base sandbox flags (every invocation, from
+`Glorbo.Sandbox.Bwrap.baseline_flags/0`):**
 
 ```
---die-with-parent --unshare-user-try --unshare-ipc --unshare-pid
---unshare-uts --unshare-cgroup-try --new-session --cap-drop ALL
---proc /proc --dev /dev --tmpfs /tmp
+--die-with-parent --unshare-user --unshare-ipc --unshare-pid
+--unshare-uts --unshare-cgroup --new-session --cap-drop ALL --clearenv
 ```
+
+`--clearenv` is load-bearing — it wipes the host environment so no host
+secrets / `PATH` leak into the sandbox (the harness re-injects only the
+whitelisted vars). The namespaces are hard `--unshare-*` (not the weaker
+`-try` variants). `--proc /proc`, `--dev /dev`, and `--tmpfs /tmp` are emitted
+by the per-agent mount builder below, not the base flag set.
 
 **Filesystem mounts (derived per agent):**
 
@@ -552,8 +558,9 @@ permissions:
   - chat:read:*
   - proposals:propose:*        # Can file hiring/budget/project proposals via outbox (GEP-28)
   - proposals:decide:*         # Can approve/deny proposals the agent didn't propose
-  - tools:execute:code-runner
-  - budget:read:self
+  # NOTE: `tools:`, `budget:`, `company:`, `skills:`, `goals:`, `channels:` are
+  # reserved and NOT enforced by the ACL mapper — a permission naming them is
+  # rejected at parse time and fails the whole agent.md load. See §7.1.
 ---
 
 ## System Prompt
@@ -732,13 +739,19 @@ syntax:
 resource:action:scope
 ```
 
-**Resources:** `projects`, `tasks`, `agents`, `chat`, `channels`, `tools`,
-`budget`, `goals`, `skills`, `company`
+**Resources (enforced):** `projects`, `tasks`, `chat`, `agents`, `proposals`
 
-**Actions:** `read`, `write`, `create`, `update`, `delete`, `list`, `execute`,
-`message`
+The parser (`Glorbo.Security.ACLMapper.parse_permission/1`) is **fail-closed**:
+a permission naming any other resource is rejected at parse time, which fails
+the entire `agent.md` load (`Glorbo.Agent.Parser.validate_permissions/1` halts
+on the first bad entry). `channels`, `tools`, `budget`, `goals`, `skills`, and
+`company` appeared in earlier design drafts but are **reserved — not yet wired
+into the ACL mapper**, so they must not appear in a live `agent.md`.
 
-**Scopes:** `*` (all within company), a specific name, or `self`
+**Actions (enforced):** `read`, `write`, `create`, `update`, `list`, `message`
+(`execute`, `delete` are reserved alongside their resources)
+
+**Scopes:** `*` (all within company) or a specific name
 
 **Examples:**
 
@@ -747,14 +760,10 @@ permissions:
   - projects:read:*                    # Can read all projects
   - projects:write:website-redesign    # Can write only to this project
   - tasks:create:website-redesign      # Can create tasks in this project
+  - tasks:update:website-redesign      # Can update tasks in this project
   - agents:message:cto                 # Can message the CTO
-  - agents:message:engineer            # Can message the Engineer
   - chat:write:engineering             # Can write to #engineering
   - chat:read:*                        # Can read all channels
-  - tools:execute:code-runner          # Can use the code-runner tool
-  - tools:execute:web-search           # Can use web search
-  - budget:read:self                   # Can see own budget usage
-  - company:read                       # Can read company mission/goals
 ```
 
 ### 7.2  Enforcement — Two Layers

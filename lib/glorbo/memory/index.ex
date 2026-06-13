@@ -30,12 +30,20 @@ defmodule Glorbo.Memory.Index do
   WHERE clause here. This mirrors the absolute company-isolation
   invariant (CLAUDE.md / GEP isolation).
 
-  ## Derived, rebuildable (D2 / GEP-7)
+  ## Derived, rebuildable (D2 / GEP-7) — with one caveat
 
-  All three tables are disposable. `glorbo reindex` re-walks an enabled
-  company's markdown tree, re-chunks, re-embeds (lazily — D6), and
-  repopulates. The markdown files stay authoritative; dropping
-  `glorbo.db` loses nothing.
+  The chunk/vector/FTS tables are disposable: `glorbo reindex` re-walks
+  an *enabled* company's markdown tree, re-chunks, re-embeds (lazily —
+  D6), and repopulates. The markdown files stay authoritative.
+
+  **Known gap (GEP-3 rebuildability):** the per-company opt-in itself
+  lives only in the `memory_index_enabled` table — there is no on-disk
+  representation. So `rm glorbo.db && glorbo reindex` recreates the table
+  empty, no company is considered enabled, and recall silently reverts
+  to OFF until re-enabled with `glorbo memory index <co> --enable`. The
+  authoritative markdown is never lost, but the opt-in + derived
+  embeddings are. Resolving this (persist the opt-in to disk, or carve it
+  out of the GEP-3 invariant) is tracked against GEP-58.
   """
 
   import Ecto.Query
