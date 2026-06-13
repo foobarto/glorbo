@@ -32,21 +32,27 @@ defmodule GlorboWeb.OverviewLiveTest do
          %{conn: conn, base: base} do
       co_dir = Path.join([base, "companies", "acme"])
 
-      # Seed goals on company.md and a project with tasks tagged
-      # to those goals — one done, one in-progress. Expected
-      # rollup: 2 goals, 3 tasks total, 1 done → 33%.
-      File.write!(Path.join(co_dir, "company.md"), """
+      # Seed two goal/v1 files and a project with tasks tagged to those
+      # goals — one done, one in-progress. Expected rollup: 2 goals,
+      # 3 tasks total, 1 done → 33%.
+      goals_dir = Path.join(co_dir, "goals")
+      File.mkdir_p!(goals_dir)
+
+      File.write!(Path.join(goals_dir, "ship-v1.md"), """
       ---
-      kind: company/v1
-      slug: acme
-      name: acme
-      goals:
-        - slug: ship-v1
-          title: Ship v1
-          status: active
-        - slug: docs
-          title: Docs pass
-          status: active
+      kind: goal/v1
+      id: ship-v1
+      name: Ship v1
+      status: active
+      ---
+      """)
+
+      File.write!(Path.join(goals_dir, "docs.md"), """
+      ---
+      kind: goal/v1
+      id: docs
+      name: Docs pass
+      status: active
       ---
       """)
 
@@ -95,38 +101,104 @@ defmodule GlorboWeb.OverviewLiveTest do
       assert html =~ "(1/3)"
     end
 
-    # T9 — malformed goal.slug values in company.md (list/map/nil)
-    # previously crashed the /companies LiveView via
-    # `to_string/1` → `Protocol.UndefinedError`. The render must now
-    # skip those entries silently rather than taking the whole
-    # overview down.
-    test "T9: malformed goal slugs (list/map/nil) are silently dropped, render survives",
+    # GEP-63 scope call: the /companies overview card is a *task-completion
+    # rollup* (done/total across goals) — touchpoint #6 keeps its "summary
+    # math unchanged", and D4's explicit-`progress:` override is scoped to
+    # the per-goal *bars* on CompanyLive + GoalsLive (Design §"Progress
+    # source-of-truth"), NOT this aggregate. This pins that an explicit
+    # `progress:` does NOT move the overview number.
+    test "explicit goal progress: does not change the overview task rollup",
          %{conn: conn, base: base} do
-      File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+      goals_dir = Path.join([base, "companies", "acme", "goals"])
+      File.mkdir_p!(goals_dir)
+
+      # Pin progress: 100, but only 1 of 2 linked tasks is done.
+      File.write!(Path.join(goals_dir, "ship-v1.md"), """
       ---
-      slug: acme
-      name: Acme
-      goals:
-        - slug: good-goal
-          name: shippable goal
-        - slug:
-            - one
-            - two
-          name: list slug (should be dropped)
-        - slug: {m: apples}
-          name: map slug (should be dropped)
-        - slug: null
-          name: nil slug (should be dropped)
+      kind: goal/v1
+      id: ship-v1
+      name: Ship v1
+      status: active
+      progress: 100
       ---
       """)
 
-      # LV must render without raising even though three of the four
-      # goal entries are malformed.
+      File.mkdir_p!(Path.join([base, "companies", "acme", "projects", "blog", "tasks"]))
+
+      File.write!(Path.join([base, "companies/acme/projects/blog/tasks/a.md"]), """
+      ---
+      kind: task/v1
+      title: done one
+      status: done
+      goal: ship-v1
+      ---
+      """)
+
+      File.write!(Path.join([base, "companies/acme/projects/blog/tasks/b.md"]), """
+      ---
+      kind: task/v1
+      title: open one
+      status: todo
+      goal: ship-v1
+      ---
+      """)
+
+      {:ok, _view, html} = live(conn, ~p"/companies")
+
+      # Task rollup: 1 done / 2 total → 50% (1/2). The explicit 100 is
+      # ignored at the aggregate level.
+      assert html =~ "50%"
+      assert html =~ "(1/2)"
+    end
+
+    # T9 — malformed goal/v1 files (bad YAML, map-valued scalars,
+    # non-slug filenames) must be skipped silently by the shared loader
+    # rather than crashing the /companies LiveView via `to_string/1` →
+    # `Protocol.UndefinedError`.
+    test "T9: malformed goal files are silently dropped, render survives",
+         %{conn: conn, base: base} do
+      goals_dir = Path.join([base, "companies", "acme", "goals"])
+      File.mkdir_p!(goals_dir)
+
+      # One valid goal so the card renders at all.
+      File.write!(Path.join(goals_dir, "good-goal.md"), """
+      ---
+      kind: goal/v1
+      id: good-goal
+      name: shippable goal
+      ---
+      """)
+
+      # Unclosed flow sequence — unparseable frontmatter → dropped.
+      File.write!(Path.join(goals_dir, "broken.md"), """
+      ---
+      kind: goal/v1
+      id: broken
+      tags: [a, b
+      ---
+      """)
+
+      # Map-valued status would crash a naive `to_string/1` → dropped/coerced.
+      File.write!(Path.join(goals_dir, "weird.md"), """
+      ---
+      kind: goal/v1
+      id: weird
+      status:
+        nested: map
+      ---
+      """)
+
+      # Non-slug filename → skipped by the `Slug.valid?` gate.
+      File.write!(Path.join(goals_dir, "Bad Caps.md"), """
+      ---
+      kind: goal/v1
+      id: x
+      ---
+      """)
+
       {:ok, _view, html} = live(conn, ~p"/companies")
 
       assert html =~ "gl-company-card__goals"
-      # Exactly one usable goal → "1 goal" singular, or else
-      # the pluralised rendering. The important bit is no crash.
       refute html =~ "Protocol.UndefinedError"
     end
   end

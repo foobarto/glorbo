@@ -332,7 +332,8 @@ defmodule GlorboWeb.OverviewLive do
   # pct}` or nil if the company has no goals defined — the card
   # hides the row entirely in that case.
   defp goals_summary(base, slug, path) do
-    goals = company_goals(path)
+    # GEP-63: goals are canonical `goals/<id>.md` files (shared loader).
+    goals = Glorbo.Company.Goals.list(path)
 
     if goals == [] do
       nil
@@ -352,40 +353,8 @@ defmodule GlorboWeb.OverviewLive do
     end
   end
 
-  defp company_goals(path) do
-    case File.read(Path.join(path, "company.md")) do
-      {:ok, content} ->
-        case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, %{"goals" => g}, _} when is_list(g) ->
-            # Threatmodel T9: `goal.slug` comes from attacker-controlled
-            # YAML. A list or map value previously made `to_string/1`
-            # raise `Protocol.UndefinedError` and took down the /companies
-            # overview for everyone. Filter down to real scalars before
-            # coercing; silently drop malformed entries.
-            for item <- g,
-                is_map(item),
-                slug = safe_goal_slug(Map.get(item, "slug")),
-                slug != "" do
-              %{slug: slug}
-            end
-
-          _ ->
-            []
-        end
-
-      _ ->
-        []
-    end
-  end
-
-  defp safe_goal_slug(v) when is_binary(v), do: v
-  defp safe_goal_slug(v) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
-  defp safe_goal_slug(v) when is_integer(v), do: Integer.to_string(v)
-  defp safe_goal_slug(_), do: ""
-
-  # Same shape as safe_goal_slug but used inline for any agent-
-  # controlled scalar field (status, etc). Refuses to coerce
-  # maps/lists which would crash `to_string/1`.
+  # Coerce any agent-controlled scalar field (task status, etc) safely.
+  # Refuses to coerce maps/lists which would crash `to_string/1`.
   defp safe_scalar(v) when is_binary(v), do: v
   defp safe_scalar(v) when is_atom(v) and not is_nil(v), do: Atom.to_string(v)
   defp safe_scalar(v) when is_number(v), do: to_string(v)
@@ -424,8 +393,8 @@ defmodule GlorboWeb.OverviewLive do
     end
   end
 
-  defp merge_goal_stats(%{slug: s} = goal, counts) do
-    {total, done} = Map.get(counts, s, {0, 0})
+  defp merge_goal_stats(%{id: id} = goal, counts) do
+    {total, done} = Map.get(counts, id, {0, 0})
     pct = if total == 0, do: 0, else: div(done * 100, total)
     Map.merge(goal, %{task_count: total, done_count: done, progress_pct: pct})
   end

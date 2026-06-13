@@ -85,6 +85,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0059 | [hwfit — native hardware→model fit scoring, the missing local-readiness step](./0059-hwfit-model-fit-native.md) | Standards | Draft |
 | 0061 | [Consolidate provider config + credentials under XDG (~/.config/glorbo)](./0061-xdg-provider-config-consolidation.md) | Standards | Accepted |
 | 0062 | [Multi-instance support via per-instance node identity](./0062-multi-instance-node-identity.md) | Standards | Accepted |
+| 0063 | [Goals as `goal/v1` files (file-canonical store)](./0063-goals-as-files-canonical.md) | Standards | Accepted |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 <!-- 0060 reserved for the planned SymlinkGuard /home→/var/home GEP. -->

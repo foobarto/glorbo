@@ -3,16 +3,16 @@ defmodule GlorboWeb.GoalsLive do
   Goals view — GET `/companies/:company/goals`
   (paperclip-ux-gaps §7).
 
-  Reads `company.md` frontmatter `goals:` list and aggregates each
-  goal's tasks (tasks whose `goal: <slug>` matches). For each goal
-  shows: title, description, status, open task count, status
-  breakdown, and a deep link to Kanban filtered by the goal slug.
+  Reads the canonical `goals/<id>.md` files via
+  `Glorbo.Company.Goals.list/1` (GEP-63) and aggregates each goal's
+  tasks (tasks whose `goal: <id>` matches). For each goal shows: title,
+  description, status, a progress bar (explicit `progress:` wins, else
+  derived from done/total tasks), open task count, status breakdown,
+  and a deep link to Kanban filtered by the goal `id`.
 
   Tasks with no `goal:` frontmatter are grouped under an "(no goal)"
-  pseudo-row at the bottom so the director sees unassigned work.
-  Read-only — editing goals still happens by editing `company.md`
-  from the sidebar file editor, which keeps `company.md` the source
-  of truth.
+  pseudo-row at the bottom so the director sees unassigned work. The
+  "+ add goal" form writes a new `goals/<id>.md` file directly.
   """
   use GlorboWeb, :live_view
 
@@ -71,11 +71,11 @@ defmodule GlorboWeb.GoalsLive do
 
   def handle_event("new_goal_submit", %{"goal" => params}, socket) do
     co = socket.assigns.company_slug
-    path = Path.join([base_dir(), "companies", co, "company.md"])
+    co_path = Path.join([base_dir(), "companies", co])
 
-    case Glorbo.Company.Goals.add_goal(path, %{
-           slug: params["slug"] || "",
-           title: params["title"] || "",
+    case Glorbo.Company.Goals.add_goal(co_path, %{
+           id: params["id"] || "",
+           name: params["name"] || "",
            description: params["description"] || ""
          }) do
       :ok ->
@@ -87,8 +87,8 @@ defmodule GlorboWeb.GoalsLive do
 
       {:error, reason} ->
         form = %{
-          slug: params["slug"] || "",
-          title: params["title"] || "",
+          id: params["id"] || "",
+          name: params["name"] || "",
           description: params["description"] || "",
           error: goal_error_message(reason)
         }
@@ -97,15 +97,19 @@ defmodule GlorboWeb.GoalsLive do
     end
   end
 
-  defp empty_goal_form, do: %{slug: "", title: "", description: "", error: nil}
+  defp empty_goal_form, do: %{id: "", name: "", description: "", error: nil}
 
-  defp goal_error_message(:slug_required), do: "Slug is required."
+  defp goal_error_message(:id_required), do: "ID is required."
 
-  defp goal_error_message(:invalid_slug),
-    do: "Slug must be lowercase letters, digits, and hyphens (max 64 chars)."
+  defp goal_error_message(:invalid_id),
+    do: "ID must be lowercase letters, digits, and hyphens (max 64 chars)."
 
-  defp goal_error_message(:slug_taken), do: "Slug is already in use."
-  defp goal_error_message(:title_required), do: "Title is required."
+  defp goal_error_message(:id_taken), do: "ID is already in use."
+  defp goal_error_message(:name_required), do: "Name is required."
+
+  defp goal_error_message(:goals_not_a_directory),
+    do: "The goals/ directory is not a real directory — refusing to write."
+
   defp goal_error_message({:error, _} = e), do: inspect(e)
   defp goal_error_message(other), do: "Could not save goal: #{inspect(other)}"
 
@@ -120,9 +124,8 @@ defmodule GlorboWeb.GoalsLive do
           </h1>
           <p class="gl-overview__path">
             <span class="gl-muted">
-              <code>company.md</code>
-              frontmatter <code>goals:</code>
-              · referenced from task frontmatter <code>goal:</code>
+              <code>goals/</code>
+              <code>&lt;id&gt;.md</code> · referenced from task frontmatter <code>goal:</code>
             </span>
           </p>
         </div>
@@ -146,11 +149,11 @@ defmodule GlorboWeb.GoalsLive do
           </header>
           <div class="gl-modal__body">
             <label class="gl-form__row">
-              <span class="gl-form__label">slug</span>
+              <span class="gl-form__label">id</span>
               <input
                 type="text"
-                name="goal[slug]"
-                value={@new_goal.slug}
+                name="goal[id]"
+                value={@new_goal.id}
                 class="gl-input"
                 placeholder="my-goal"
                 pattern="[a-z][a-z0-9-]{0,63}"
@@ -159,11 +162,11 @@ defmodule GlorboWeb.GoalsLive do
               />
             </label>
             <label class="gl-form__row">
-              <span class="gl-form__label">title</span>
+              <span class="gl-form__label">name</span>
               <input
                 type="text"
-                name="goal[title]"
-                value={@new_goal.title}
+                name="goal[name]"
+                value={@new_goal.name}
                 class="gl-input"
                 placeholder="Ship the thing"
                 required
@@ -189,9 +192,9 @@ defmodule GlorboWeb.GoalsLive do
       </div>
 
       <p :if={@goals == [] and @unassigned_count == 0} class="gl-muted">
-        No goals declared in <code>company.md</code>
-        yet. Edit it from the sidebar to add <code>goals:</code>
-        entries with <code>slug</code>, <code>title</code>, and optional <code>description</code>.
+        No goals yet. Use <strong>+ add goal</strong>
+        to create a <code>goals/&lt;id&gt;.md</code>
+        file with an <code>id</code>, <code>name</code>, and optional <code>description</code>.
       </p>
 
       <div :if={@goals != [] or @unassigned_count > 0} class="gl-goals-list">
@@ -199,12 +202,12 @@ defmodule GlorboWeb.GoalsLive do
           <header class="gl-goal-card__head">
             <div>
               <strong>{g.title}</strong>
-              <span class="gl-muted gl-goal-card__slug">· {g.slug}</span>
+              <span class="gl-muted gl-goal-card__slug">· {g.id}</span>
             </div>
             <div class="gl-goal-card__actions">
               <span class={["gl-badge", "gl-badge--" <> g.status]}>{g.status}</span>
               <.link
-                navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.slug}"}
+                navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.id}"}
                 class="gl-btn gl-btn--sm"
               >
                 open in kanban →
@@ -213,7 +216,7 @@ defmodule GlorboWeb.GoalsLive do
           </header>
           <p :if={g.description != ""} class="gl-goal-card__desc gl-muted">{g.description}</p>
           <div
-            :if={g.task_count > 0}
+            :if={g.task_count > 0 or is_integer(g.progress)}
             class="gl-goal-card__progress"
             aria-label={"Goal progress: #{g.progress_pct}%"}
           >
@@ -227,7 +230,7 @@ defmodule GlorboWeb.GoalsLive do
               />
             </div>
             <div class="gl-goal-card__progress-label gl-tabular">
-              {g.done_count} / {g.task_count} done · {g.progress_pct}%
+              <span :if={g.task_count > 0}>{g.done_count} / {g.task_count} done · </span>{g.progress_pct}%
             </div>
           </div>
           <div class="gl-goal-card__stats">
@@ -280,7 +283,7 @@ defmodule GlorboWeb.GoalsLive do
 
   defp load_and_assign(socket, co) do
     co_path = Path.join([base_dir(), "companies", co])
-    goals_raw = load_goals(co_path)
+    goals_raw = Glorbo.Company.Goals.list(co_path)
     tasks_fm = collect_task_frontmatters(co_path)
 
     {goals_with_stats, unassigned_fms} = attach_task_stats(goals_raw, tasks_fm)
@@ -296,44 +299,6 @@ defmodule GlorboWeb.GoalsLive do
     |> assign_new(:new_goal, fn -> nil end)
     |> ChatDrawer.State.wire_drawer()
   end
-
-  defp load_goals(co_path) do
-    case File.read(Path.join(co_path, "company.md")) do
-      {:ok, content} ->
-        case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, %{"goals" => goals}, _} when is_list(goals) ->
-            goals |> Enum.map(&normalize_goal/1) |> Enum.reject(&is_nil/1)
-
-          _ ->
-            []
-        end
-
-      _ ->
-        []
-    end
-  end
-
-  defp normalize_goal(%{} = g) do
-    slug = to_string(Map.get(g, "slug", "") || "")
-
-    if slug == "" do
-      nil
-    else
-      # R25 — also accept `name:` as a title fallback. Nothing else
-      # in company.md uses `title:` (top-level is `name:`) so directors
-      # reach for `name:` by muscle memory. Either key works.
-      title = Map.get(g, "title") || Map.get(g, "name") || slug
-
-      %{
-        slug: slug,
-        title: to_string(title),
-        description: to_string(Map.get(g, "description", "") || ""),
-        status: to_string(Map.get(g, "status", "active") || "active")
-      }
-    end
-  end
-
-  defp normalize_goal(_), do: nil
 
   defp collect_task_frontmatters(co_path) do
     projects_dir = Path.join(co_path, "projects")
@@ -381,12 +346,16 @@ defmodule GlorboWeb.GoalsLive do
 
     with_stats =
       Enum.map(goals, fn goal ->
-        fms = Map.get(by_goal, goal.slug, [])
+        fms = Map.get(by_goal, goal.id, [])
         total = length(fms)
         done = Enum.count(fms, &(safe_scalar_str(&1["status"], "todo") == "done"))
         open = total - done
 
-        pct = if total == 0, do: 0, else: div(done * 100, total)
+        # GEP-63 D4: explicit `progress:` wins; else derive from tasks.
+        # task_count / done_count still come from linked tasks for the
+        # "N / M done" label even when the bar value is overridden.
+        derived = if total == 0, do: 0, else: div(done * 100, total)
+        pct = if is_integer(goal.progress), do: goal.progress, else: derived
 
         Map.merge(goal, %{
           task_count: total,

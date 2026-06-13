@@ -213,8 +213,9 @@ defmodule Glorbo.FileSpec.Formatter do
   end
 
   # List-item emission. For scalar items, one line. For nested maps
-  # (rare in our frontmatter — only `goals:` and `budget:` do it),
-  # emit the first key inline with `- ` and subsequent keys indented.
+  # (rare in our frontmatter — only `budget:` does it now that GEP-63
+  # moved goals out of `company.md`), emit the first key inline with
+  # `- ` and subsequent keys indented.
   defp emit_list_item(item, _indent) when is_binary(item) do
     emit_scalar(item)
   end

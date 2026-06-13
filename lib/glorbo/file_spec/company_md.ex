@@ -1,8 +1,11 @@
 defmodule Glorbo.FileSpec.CompanyMd do
   @moduledoc """
   Spec for `companies/<co>/company.md` — the top-level metadata for
-  a company directory. Declares the slug, display name, and the
-  list of top-level goals referenced by tasks via `goal:` frontmatter.
+  a company directory. Declares the slug and display name.
+
+  GEP-63: goals are no longer a `company.md` frontmatter list — they
+  live one-file-per-goal under `goals/<id>.md` (`Glorbo.FileSpec.GoalMd`).
+  A stray `goals:` key here is an `unknown_key` Validator finding.
 
   Canonical path: `~/.glorbo/companies/<co>/company.md`.
   """
@@ -26,7 +29,6 @@ defmodule Glorbo.FileSpec.CompanyMd do
         :description,
         :mission,
         :created_at,
-        :goals,
         :icon,
         :budget,
         # `Glorbo.Company.Router.read_headcount_budget/1` reads this to
@@ -70,8 +72,7 @@ defmodule Glorbo.FileSpec.CompanyMd do
       :template_version,
       :provider_pin,
       :model_pin,
-      :created_at,
-      :goals
+      :created_at
     ]
   end
 
@@ -81,8 +82,8 @@ defmodule Glorbo.FileSpec.CompanyMd do
       title: "company.md — company metadata",
       summary: """
       Top-level metadata for a company directory. Declares the
-      canonical slug, the display name, and optional goals list
-      consumed by GoalsLive and the per-goal Kanban filter.
+      canonical slug and the display name. Goals live one-file-per-goal
+      under `goals/<id>.md` (GEP-63), not in this frontmatter.
       """,
       examples: [
         """
@@ -91,9 +92,6 @@ defmodule Glorbo.FileSpec.CompanyMd do
         slug: acme
         name: Acme
         description: Test company
-        goals:
-          - slug: ship-v5
-            name: Ship v0.0.5
         ---
         # Acme
 

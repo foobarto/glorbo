@@ -4,16 +4,18 @@
      `mix glorbo.docs.file_formats`. Do not edit by hand;
      regen after changing the spec module. -->
 
-Time-bounded outcome the director tracks. Progress bars on
-CompanyLive + GoalsLive read `progress:` when present;
-falls back to deriving progress from linked tasks if
-unspecified.
+Time-bounded outcome the director tracks. One file per goal —
+the canonical goal store (GEP-63). Progress bars on CompanyLive +
+GoalsLive use `progress:` (an integer `0..100`) when present and
+in range; otherwise they derive progress from linked tasks (tasks
+whose `goal:` equals this `id`). `id` MUST equal the filename
+basename.
 
 ## Frontmatter schema
 
 **Required:** `kind`, `id`
 
-**Optional:** `status`, `name`, `owner`, `due`, `progress`
+**Optional:** `status`, `name`, `description`, `owner`, `due`, `progress`
 
 ### Enums
 
@@ -26,7 +28,7 @@ unspecified.
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `id`, `name`, `status`, `owner`, `due`, `progress`
+`kind`, `id`, `name`, `description`, `status`, `owner`, `due`, `progress`
 
 Unknown keys fall after the known block, sorted alphabetically.
 
@@ -37,7 +39,9 @@ Unknown keys fall after the known block, sorted alphabetically.
 kind: goal/v1
 id: q3-2026
 name: Q3 2026
+description: Ship a thing. Learn a thing. Repeat.
 status: active
+progress: 40
 ---
 # Q3 2026
 
