@@ -26,7 +26,7 @@ isolation primitives. Other hosts will not work for running agents.
 
 Required toolchain (see [`.tool-versions`](./.tool-versions)):
 
-- Elixir 1.18.4 / Erlang OTP 28.0.2
+- Elixir 1.20.1 / Erlang OTP 29.0.2
 - `bubblewrap` (bwrap) — available as an OS package on every major
   distro. On Ubuntu 24.04 you also need an unconfined AppArmor profile
   for bwrap (see `.github/workflows/ci.yml` for the canonical fix).

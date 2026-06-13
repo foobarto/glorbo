@@ -1,21 +1,26 @@
 # State
 
-Last updated: 2026-04-23
+Last updated: 2026-06-13
 
-> Maintenance note: keep this file updated whenever a GEP ships, a
-> release is cut, threatmodel counts change, or the current primary
-> implementation target changes.
+> **Superseded (2026-06-13).** This file is no longer the live state of
+> record — the project moved to the cairn workflow. Current state lives in
+> `docs/project-profile.md` (stance), `docs/sessions/<date>-<topic>.md`
+> (running journal), and `docs/todo.md` (punch list). The snapshot below is
+> kept only so its facts aren't actively wrong; treat the cairn docs as
+> authoritative.
 
 ## Repo
 
 - Branch: `main`
 - Worktree status: check with `git status --short`
 - HEAD: check with `git log -1 --oneline`
-- Latest shipped version: `v0.4.1`
+- Latest shipped version: `v0.26.0`
 
 ## Implementation Status
 
-- GEP-32 is implemented through **phase 2b** and shipped in `v0.4.0`.
+- GEP-32 is fully **Implemented** — native agent harness (filesystem
+  tools, bash, web_fetch, native usage.json, audit replay, provider model
+  catalog). See `docs/geps/README.md` for the canonical status.
 - GEP-31 is shipped on Linux: `network: proxy` now wraps the sandbox
   launch in `pasta`, so only the per-company proxy port is reachable
   inside the agent netns.
@@ -33,7 +38,8 @@ Last updated: 2026-04-23
   reuse the same agent slug.
 - Threatmodel waves 1-8 are complete, and the medium-severity queue is
   now at zero.
-- GEP-33 exists as a draft only; it is not implemented yet.
+- GEP-33 is **Implemented** — git history layer for `~/.glorbo/` (init,
+  status, log, show, diff, restore).
 - Core docs are aligned with the current release surface:
   `CHANGELOG.md`, `README.md`, `docs/DESIGN.md`,
   `docs/architecture.md`, and `docs/todo.md`.
@@ -50,9 +56,9 @@ Last updated: 2026-04-23
   queue**
 - Planned scope: keep closing bounded DoS / integrity gaps now that the
   open medium count is `0`
-- Secondary feature target: GEP-33 remains draft-only and is the next
-  larger design/implementation track once the next hardening batch is
-  chosen
+- Secondary feature target: see `docs/todo.md` for the live punch list.
+  (GEP-33 — git history — has since shipped; this snapshot's target list
+  is historical. Treat the cairn docs as authoritative.)
 
 ## Remaining Work Themes
 

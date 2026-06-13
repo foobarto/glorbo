@@ -180,6 +180,11 @@ api_key = "sk-..."
 EOF
 ```
 
+> The next release (GEP-61) consolidates provider config + credentials under
+> `~/.config/glorbo/` and auto-migrates existing files on first run; the
+> current release (v0.26.0) reads them from `~/.local/etc/glorbo/credentials`.
+> `GLORBO_CREDENTIALS_DIR` overrides the location in either case.
+
 Then point an agent at `provider: openai` (or `openrouter` / `minimax`) in
 `AGENT.md`. The native tool catalog is `read_file` / `write_file` /
 `edit_file` / `glob` / `grep` / `bash` / `web_fetch`. See GEP-32 for the
@@ -188,7 +193,8 @@ contract.
 MiniMax ships with a static model catalog — `MiniMax-M3`, `MiniMax-M2.7`
 (+`-highspeed`), and `MiniMax-M2.5` (+`-highspeed`); the `-highspeed`
 variants are MiniMax's lower-latency serving tier with identical output.
-Credentials go in `~/.local/etc/glorbo/credentials/minimax.toml`.
+Credentials go in `~/.local/etc/glorbo/credentials/minimax.toml` (→
+`~/.config/glorbo/credentials/minimax.toml` from the next release, GEP-61).
 
 Or auto-detect a local server:
 
