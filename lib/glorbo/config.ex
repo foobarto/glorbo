@@ -557,6 +557,13 @@ defmodule Glorbo.Config do
   # hand-edited config.md could carry junk that would break the node atom.
   defp handle_node_id(path, content, meta, _body) do
     case meta["node_id"] do
+      # An all-digit id (e.g. "12345678" — ~1.6% of 8-hex ids) is written
+      # unquoted and the YAML parser reads it back as an INTEGER. Coerce to its
+      # string form (already node-name-safe + stable: the same integer always
+      # stringifies the same way) rather than re-minting every call. (copilot #57)
+      id when is_integer(id) and id >= 0 ->
+        {:ok, Integer.to_string(id)}
+
       id when is_binary(id) and id != "" ->
         if Regex.match?(~r/\A[a-z0-9_-]+\z/, id),
           do: {:ok, id},

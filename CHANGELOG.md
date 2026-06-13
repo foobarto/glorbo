@@ -128,6 +128,14 @@ change between minor versions. Pin exact versions in downstream usage.
   gated on glorbo being EPMD's sole registrant, so a shared EPMD's other
   live nodes are never disturbed; EPMD stays hardened (no
   `-relaxed_command_check`, GEP-48).
+- **Per-instance node id is now stable and race-free** (GEP-0062 follow-ups).
+  (1) `glorbo up` mints+persists the `node_id` *before* spawning the daemon, so
+  a `glorbo console` that races in right after the pidfile write can no longer
+  mint a *different* id than the daemon registered (upgrade path: a config with
+  `erl_cookie` but no `node_id`). (2) An all-digit minted id (e.g. `12345678` —
+  ~1.6% of 8-hex ids) is written unquoted and YAML re-reads it as an integer;
+  `Glorbo.Config` now coerces it back to its (stable) string form instead of
+  failing the `is_binary` guard and re-minting a fresh id on every call.
 
 ### Security
 
