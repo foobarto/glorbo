@@ -155,10 +155,10 @@ prompt instructions.
 > *A schlami organises the blamfs into nested hizzard compartments. This is standard.*
 
 ```
-~/.glorbo/
+~/.glorbo/                          # user DATA only — provider config + credentials
+│                                   # live under ~/.config/glorbo (GEP-61)
 ├── glorbo                          # Elixir release binary (self-contained BEAM)
 ├── config.md                       # Global settings (host, port, dashboard token)
-├── providers.toml                  # (optional) user-declared provider registry entries
 ├── glorbo.db                       # SQLite index (rebuildable, disposable)
 │
 ├── state/
@@ -343,7 +343,7 @@ For each agent wake, Elixir:
 The provider runtime is trusted, but Glorbo still does not run an
 in-process SDK client. CLI providers manage their own credentials
 (Claude Code's login, `gcloud`/`GEMINI_API_KEY`, `OPENAI_API_KEY`);
-native providers read `~/.local/etc/glorbo/credentials/<provider>.toml`
+native providers read `~/.config/glorbo/credentials/<provider>.toml`
 via a per-dispatch bind at `/creds/provider.toml`. In all cases the
 company directory sees no API keys. Complex orchestration logic lives in
 Elixir; the runtime's job is: receive a prompt on stdin, do the work
@@ -396,7 +396,7 @@ is a TOML entry declaring:
 - A version probe flag + regex (opt-in for user-declared entries)
 
 Built-in providers ship under `priv/providers/*.toml`. User-declared
-providers drop in at `~/.glorbo/providers.toml`. `Glorbo.CLI.Registry`
+providers drop in at `~/.config/glorbo/providers.toml`. `Glorbo.CLI.Registry`
 loads both at boot, PATH-detects CLI binaries, classifies native
 providers, and caches the snapshot. The `/providers` LiveView and
 doctor surface the current state; explicit version probes go through
@@ -413,9 +413,9 @@ default boot path.
 | `hermes`       | CLI      | `hermes`           | Whatever hermes is configured against              | No             |
 | `opencode`     | CLI      | `opencode`         | Whatever opencode is configured against            | No             |
 | `pi`           | CLI      | `pi`               | Local (typically offline)                          | No             |
-| `openai`       | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openai.toml`      | Yes (JSON)     |
-| `openrouter`   | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/openrouter.toml`  | Yes (JSON)     |
-| `minimax`      | Native   | `glorbo harness`   | `~/.local/etc/glorbo/credentials/minimax.toml`     | Yes (JSON)     |
+| `openai`       | Native   | `glorbo harness`   | `~/.config/glorbo/credentials/openai.toml`         | Yes (JSON)     |
+| `openrouter`   | Native   | `glorbo harness`   | `~/.config/glorbo/credentials/openrouter.toml`     | Yes (JSON)     |
+| `minimax`      | Native   | `glorbo harness`   | `~/.config/glorbo/credentials/minimax.toml`        | Yes (JSON)     |
 
 Untracked providers require the agent to opt in via
 `allow_untracked_budget: true` in its `agent.md` — dispatch refuses
@@ -428,7 +428,7 @@ Glorbo never stores provider secrets in `~/.glorbo/`. CLI-tool
 credentials stay in the user's home directory and are bind-mounted
 read-only into the sandbox if the agent's provider requires them.
 Native-provider credentials live in
-`~/.local/etc/glorbo/credentials/<provider>.toml` and are also
+`~/.config/glorbo/credentials/<provider>.toml` and are also
 bind-mounted read-only. The company directory holds no secrets.
 `~/.glorbo/config.md` stores dashboard settings (bind address,
 `dashboard_token`, and — since GEP-0053 — the `director_password_hash`
