@@ -15,8 +15,12 @@ defmodule Glorbo.Memory.ChunkVector do
   the contract.
 
   **Derived, rebuildable (GEP-7):** this table is disposable derived
-  state. `glorbo reindex` re-embeds the enabled companies' markdown tree
-  and repopulates it; the markdown files stay authoritative.
+  state. `glorbo reindex` re-embeds the *enabled* companies' markdown
+  tree and repopulates it; the markdown files stay authoritative. Caveat:
+  the enabled-set (`memory_index_enabled`) is itself SQLite-only, so a
+  full `rm glorbo.db` drops the opt-in and reindex repopulates nothing
+  until re-enabled — see `Glorbo.Memory.Index` for the GEP-3
+  rebuildability gap.
   """
   use Ecto.Schema
 

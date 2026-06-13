@@ -273,6 +273,8 @@ glorbo validate [PATH]                  Check files against FileSpec (GEP-25)
 glorbo fmt [PATH] [--write]             Normalise frontmatter (GEP-25)
 glorbo migrate                          Run Ecto migrations against glorbo.db
 glorbo reindex                          Rebuild SQLite index from filesystem
+glorbo fit [--use-case ...] [--host ..] Score local hardware → model fit (GEP-59)
+glorbo memory index <co> --enable|--disable  Toggle a company's semantic-recall opt-in; the vector build runs on the next `reindex` (GEP-58)
 glorbo backup | restore                 tar.gz roundtrip
 glorbo logs <co> [agent] [--follow]     Tail audit or stdout
 glorbo history <sub>                    Opt-in git history for ~/.glorbo/ (GEP-33)
