@@ -202,8 +202,8 @@ prompt instructions.
 │       │       │   └── 002-implement-nav.md
 │       │       └── artifacts/      # Deliverables, outputs
 │       │
-│       ├── goals/
-│       │   └── q3-2026.md          # High-level objective, broken into projects
+│       ├── goals/                  # Canonical goal store: one goal/v1 file per goal (GEP-63)
+│       │   └── q3-2026.md          # High-level objective; company.md carries no goals: list
 │       │
 │       ├── skills/
 │       │   ├── web-search.md

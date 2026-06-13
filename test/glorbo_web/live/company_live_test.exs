@@ -136,63 +136,57 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert render(view) =~ "projects/foo/tasks/deferred.md"
   end
 
-  test "goals: frontmatter renders a goals panel with a tasks deep link",
+  defp write_goal_file(base, filename, body) do
+    dir = Path.join([base, "companies", "acme", "goals"])
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, filename), body)
+  end
+
+  test "goal/v1 files render a goals panel with a tasks deep link",
        %{conn: conn, base: base} do
-    # Overlay a company.md that has a goals list.
-    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    write_goal_file(base, "q4-launch.md", """
     ---
-    kind: task/v1
-    slug: acme
-    name: Acme
-    mission: Test
-    goals:
-      - slug: q4-launch
-        title: Launch v2 by end of Q4
-        description: Ship the next major release
-        status: active
+    kind: goal/v1
+    id: q4-launch
+    name: Launch v2 by end of Q4
+    description: Ship the next major release
+    status: active
     ---
-    # Acme
     """)
 
     {:ok, _view, html} = live(conn, ~p"/companies/acme")
     assert html =~ "goals/"
     assert html =~ "Launch v2 by end of Q4"
     assert html =~ "Ship the next major release"
-    # Deep link to kanban filtered by goal slug.
+    # Deep link to kanban filtered by goal id.
     assert html =~ "kanban?goal=q4-launch"
   end
 
-  # R25 — goal normalizer accepts `name:` as a title fallback to
-  # match muscle memory from the rest of company.md.
-  test "goals panel accepts `name:` as title fallback",
+  # GEP-63: the goal title is the `name` field; absent it, the id.
+  test "goal title falls back to id when name absent",
        %{conn: conn, base: base} do
-    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    write_goal_file(base, "bare-goal.md", """
     ---
-    slug: acme
-    name: Acme
-    goals:
-      - slug: alt
-        name: Friendly Name
+    kind: goal/v1
+    id: bare-goal
+    status: active
     ---
     """)
 
     {:ok, _view, html} = live(conn, ~p"/companies/acme")
-    assert html =~ "Friendly Name"
+    assert html =~ "bare-goal"
   end
 
-  # #253 part 2 — goal progress mini-bar renders when tasks
-  # reference the goal via `goal:` frontmatter.
+  # #253 part 2 — goal progress mini-bar derives from done/total tasks
+  # referencing the goal via `goal:` frontmatter.
   test "goals panel shows progress bar with done/total",
        %{conn: conn, base: base} do
-    File.write!(Path.join([base, "companies", "acme", "company.md"]), """
+    write_goal_file(base, "q4-launch.md", """
     ---
-    kind: task/v1
-    slug: acme
-    name: Acme
-    goals:
-      - slug: q4-launch
-        title: Launch v2
-        status: active
+    kind: goal/v1
+    id: q4-launch
+    name: Launch v2
+    status: active
     ---
     """)
 
@@ -229,6 +223,25 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert html =~ "gl-goals-row__progress-fill--mid"
     assert html =~ "1 / 2"
     assert html =~ "50%"
+  end
+
+  # GEP-63 D4 — explicit `progress:` overrides the derived value (no
+  # linked tasks here, so the derived value would be 0%).
+  test "goals panel honours explicit progress:",
+       %{conn: conn, base: base} do
+    write_goal_file(base, "pinned.md", """
+    ---
+    kind: goal/v1
+    id: pinned
+    name: Pinned goal
+    status: active
+    progress: 100
+    ---
+    """)
+
+    {:ok, _view, html} = live(conn, ~p"/companies/acme")
+    assert html =~ "gl-goals-row__progress-fill--done"
+    assert html =~ "100%"
   end
 
   # P1 — submitting the new-project modal form scaffolds

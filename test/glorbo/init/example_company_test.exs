@@ -39,10 +39,26 @@ defmodule Glorbo.Init.ExampleCompanyTest do
 
       assert company_md =~ "name: acme"
       assert company_md =~ "mission:"
+      # GEP-63: goals live in goals/<id>.md, never company.md frontmatter.
+      refute company_md =~ "goals:"
       assert ceo_md =~ "name: ceo"
       assert ceo_md =~ "provider: claude-code"
       assert ceo_md =~ "network: proxy"
       assert ceo_md =~ "model:"
+    end
+
+    test "the scaffolded goal/v1 file is read by the canonical loader (F1 fix)", %{base: base} do
+      :ok = ExampleCompany.scaffold!(base: base)
+      co_dir = Path.join([base, "companies", "acme"])
+
+      assert [
+               %{
+                 id: "q3-2026",
+                 title: "Q3 2026",
+                 description: "Ship a thing. Learn a thing. Repeat.",
+                 status: "active"
+               }
+             ] = Glorbo.Company.Goals.list(co_dir)
     end
 
     test "Test 3: scaffold!/1 is idempotent — second call returns :already_exists", %{

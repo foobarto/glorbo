@@ -229,12 +229,34 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       slug: acme
       name: Acme
       # genuinely broken YAML — an unclosed flow sequence
-      goals: [alpha, beta
+      tags: [alpha, beta
       ---
       """)
 
       %{findings: findings} = Validator.validate_path(base)
       assert Enum.any?(findings, &(&1.code == :yaml_parse_error))
+    end
+  end
+
+  describe "GEP-63 — goals: removed from company.md" do
+    test "a stray company.md goals: key is an unknown_key finding", %{base: base} do
+      seed(base, "companies/acme/company.md", """
+      ---
+      kind: company/v1
+      slug: acme
+      name: Acme
+      goals:
+        - slug: ship-v1
+          name: Ship v1
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+
+      assert Enum.any?(
+               findings,
+               &(&1.code == :unknown_key and &1.message =~ "goals")
+             )
     end
   end
 

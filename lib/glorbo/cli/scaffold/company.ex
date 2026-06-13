@@ -115,7 +115,11 @@ defmodule Glorbo.CLI.Scaffold.Company do
       Audit.emit("new_company", "start", %{slug: slug})
 
       File.mkdir_p!(co)
-      Enum.each(~w(agents projects channels audit proposals), &File.mkdir_p!(Path.join(co, &1)))
+
+      Enum.each(
+        ~w(agents projects channels goals skills audit proposals),
+        &File.mkdir_p!(Path.join(co, &1))
+      )
 
       File.write!(Path.join(co, "company.md"), """
       ---
@@ -182,7 +186,9 @@ defmodule Glorbo.CLI.Scaffold.Company do
         company.md   (frontmatter + markdown body)
         agents/      (empty)
         projects/    (empty)
-        channels/    (empty)
+        channels/    (general.md stub)
+        goals/       (empty — goal/v1 files land here)
+        skills/      (empty)
         audit/       (empty)
 
     BEHAVIOR (--template)

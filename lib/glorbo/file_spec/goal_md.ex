@@ -1,9 +1,14 @@
 defmodule Glorbo.FileSpec.GoalMd do
   @moduledoc """
   Spec for `companies/<co>/goals/<id>.md` — company-level goal
-  files. A goal is a time-bounded outcome the director tracks;
-  progress bars on CompanyLive + GoalsLive read these files to
-  surface status.
+  files. A goal is a time-bounded outcome the director tracks.
+
+  GEP-63: these files are the **single canonical goal store**. The
+  goals UI (`GoalsLive`, `CompanyLive`, `OverviewLive`) reads them via
+  `Glorbo.Company.Goals.list/1`; `company.md` no longer carries a
+  `goals:` list. `id` is the one identifier — it MUST equal the
+  filename basename and doubles as the `task/v1` `goal:` join key and
+  the Kanban `?goal=<id>` filter value.
   """
   @behaviour Glorbo.FileSpec
 
@@ -21,7 +26,7 @@ defmodule Glorbo.FileSpec.GoalMd do
   def frontmatter_schema do
     %{
       required: [:kind, :id],
-      optional: [:status, :name, :owner, :due, :progress],
+      optional: [:status, :name, :description, :owner, :due, :progress],
       enums: %{status: ["active", "paused", "done", "cancelled"]},
       patterns: %{},
       caps: %{}
@@ -30,7 +35,7 @@ defmodule Glorbo.FileSpec.GoalMd do
 
   @impl true
   def canonical_key_order do
-    [:kind, :id, :name, :status, :owner, :due, :progress]
+    [:kind, :id, :name, :description, :status, :owner, :due, :progress]
   end
 
   @impl true
@@ -38,10 +43,12 @@ defmodule Glorbo.FileSpec.GoalMd do
     %{
       title: "goals/<id>.md — company goal",
       summary: """
-      Time-bounded outcome the director tracks. Progress bars on
-      CompanyLive + GoalsLive read `progress:` when present;
-      falls back to deriving progress from linked tasks if
-      unspecified.
+      Time-bounded outcome the director tracks. One file per goal —
+      the canonical goal store (GEP-63). Progress bars on CompanyLive +
+      GoalsLive use `progress:` (an integer `0..100`) when present and
+      in range; otherwise they derive progress from linked tasks (tasks
+      whose `goal:` equals this `id`). `id` MUST equal the filename
+      basename.
       """,
       examples: [
         """
@@ -49,7 +56,9 @@ defmodule Glorbo.FileSpec.GoalMd do
         kind: goal/v1
         id: q3-2026
         name: Q3 2026
+        description: Ship a thing. Learn a thing. Repeat.
         status: active
+        progress: 40
         ---
         # Q3 2026
 

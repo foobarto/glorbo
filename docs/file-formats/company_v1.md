@@ -5,14 +5,14 @@
      regen after changing the spec module. -->
 
 Top-level metadata for a company directory. Declares the
-canonical slug, the display name, and optional goals list
-consumed by GoalsLive and the per-goal Kanban filter.
+canonical slug and the display name. Goals live one-file-per-goal
+under `goals/<id>.md` (GEP-63), not in this frontmatter.
 
 ## Frontmatter schema
 
 **Required:** `kind`, `slug`, `name`
 
-**Optional:** `description`, `mission`, `created_at`, `goals`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `imported_from`
+**Optional:** `description`, `mission`, `created_at`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `imported_from`
 
 ### Patterns
 
@@ -25,7 +25,7 @@ consumed by GoalsLive and the per-goal Kanban filter.
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `slug`, `name`, `description`, `mission`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `created_at`, `goals`
+`kind`, `slug`, `name`, `description`, `mission`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `created_at`
 
 Unknown keys fall after the known block, sorted alphabetically.
 
@@ -37,9 +37,6 @@ kind: company/v1
 slug: acme
 name: Acme
 description: Test company
-goals:
-  - slug: ship-v5
-    name: Ship v0.0.5
 ---
 # Acme
 

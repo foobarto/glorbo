@@ -107,6 +107,7 @@ defmodule Glorbo.Init.ExampleCompany do
   kind: goal/v1
   id: q3-2026
   name: Q3 2026
+  description: Ship a thing. Learn a thing. Repeat.
   status: active
   ---
   # Q3 2026

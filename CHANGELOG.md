@@ -86,6 +86,31 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Changed
 
+- **Goals are now `goal/v1` files, not `company.md` frontmatter** (GEP-63).
+  Each goal is its own `companies/<co>/goals/<id>.md` file (the same
+  one-file-per-entity model as tasks/agents/projects), read by the dashboard
+  through a single hardened `Glorbo.Company.Goals.list/1` loader — collapsing
+  the three drifting per-LiveView readers. `id` is the one identifier (it is
+  the filename basename and the `task/v1` `goal:` join key). The add-goal form
+  writes a file directly; the long-promised `progress:` field is now wired
+  (an explicit integer `0..100` wins, else progress derives from linked
+  tasks). **Breaking, manual migration (no automated migrator):** for each
+  goal previously declared under `company.md`'s `goals:` list, create
+  `companies/<co>/goals/<slug>.md`:
+
+  ```yaml
+  ---
+  kind: goal/v1
+  id: <slug>          # = the old goals: slug, and the filename basename
+  name: <title>       # = the old goals: title
+  status: active      # one of: active | paused | done | cancelled
+  ---
+  ```
+
+  then delete the `goals:` block from `company.md` (equivalently: re-add each
+  goal through the dashboard's add-goal form). A leftover `company.md goals:`
+  key is now an `unknown_key` finding on `glorbo validate`. `glorbo reindex`
+  is unaffected — it stays a pure derived-state read (GEP-3/7).
 - **CI split — PRs run tests only; release builds run on tags.** The
   Burrito single-binary builds (Linux x86_64/aarch64 + macOS x86_64/arm64
   cross-compile), artifact upload, and visual-regression check moved out of

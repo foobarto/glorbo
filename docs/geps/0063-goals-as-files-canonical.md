@@ -2,7 +2,7 @@
 gep: 63
 title: Goals as `goal/v1` files (file-canonical store)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Accepted
+status: Implemented
 type: Standards
 created: 2026-06-13
 requires: [3, 7, 13]
@@ -28,6 +28,22 @@ history:
       automated migrator; document the manual migration in CHANGELOG.md. Other
       recommendations accepted (progress validated 0..100; dangling-refs +
       CLI/MCP goal CRUD deferred to follow-up GEPs).
+  - date: 2026-06-13
+    status: Implemented
+    note: |
+      Shipped all 13 touchpoints. `Glorbo.Company.Goals` rewritten: `list/1`
+      is the single hardened loader the three LiveViews call; `add_goal/3`
+      writes `goals/<id>.md` via `FileSpec.Formatter` + atomic tmp+rename in a
+      HomeHistory `goal.create` Tx. `GoalMd` gained `:description`; `CompanyMd`
+      lost `:goals` (stray `goals:` is now an `unknown_key` finding). Form
+      fields renamed `slug`/`title` → `id`/`name` (D1 all the way). Progress is
+      loader-validated (`integer 0..100` wins, else derive) — the Validator has
+      no numeric-range primitive, so no kind-specific check was added; GoalMd
+      `patterns` stays `%{}`. Docs regenerated; maximal-valid golden fixture
+      added. Full precommit + Credo + Sobelow green. Manual migration documented
+      in CHANGELOG (D3). Note: the `CLAUDE.md` invariant lives only locally
+      (that file is gitignored) — the tracked canonical invariant is in
+      `docs/DESIGN.md`.
 ---
 
 # GEP-63: Goals as `goal/v1` files (file-canonical store)

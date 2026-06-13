@@ -617,7 +617,10 @@ defmodule GlorboWeb.CompanyLive do
                     <div :if={g.description != ""} class="gl-muted gl-goals-row__desc">
                       {g.description}
                     </div>
-                    <div :if={Map.get(g, :task_count, 0) > 0} class="gl-goals-row__progress">
+                    <div
+                      :if={Map.get(g, :task_count, 0) > 0 or is_integer(g.progress)}
+                      class="gl-goals-row__progress"
+                    >
                       <div class="gl-goals-row__progress-bar">
                         <div
                           class={[
@@ -628,12 +631,12 @@ defmodule GlorboWeb.CompanyLive do
                         />
                       </div>
                       <span class="gl-muted gl-tabular">
-                        {g.done_count} / {g.task_count} · {g.progress_pct}%
+                        <span :if={g.task_count > 0}>{g.done_count} / {g.task_count} · </span>{g.progress_pct}%
                       </span>
                     </div>
                   </div>
                   <.link
-                    navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.slug}"}
+                    navigate={~p"/companies/#{@company_slug}/kanban?goal=#{g.id}"}
                     class="gl-btn gl-btn--sm gl-btn--ghost"
                   >
                     open tasks →
@@ -1326,37 +1329,28 @@ defmodule GlorboWeb.CompanyLive do
     end
   end
 
-  # `goals:` is a list of objects on `company.md`'s frontmatter.
-  # Each goal has `slug`, `title`, optional `description` + `status`.
-  # PLAN P2-2 — no sub-issues; tasks optionally reference a goal
-  # via `goal: <slug>`. Rendered on CompanyLive + available as a
-  # Kanban filter.
+  # GEP-63: goals are canonical `goals/<id>.md` files, read via the
+  # shared `Glorbo.Company.Goals.list/1` loader. Each goal carries
+  # `id`, `title`, `description`, `status`, and optional `progress`.
+  # Tasks reference a goal via `goal: <id>`. Rendered on CompanyLive +
+  # available as a Kanban filter.
   defp load_goals(co_path) do
-    raw_goals =
-      case File.read(Path.join(co_path, "company.md")) do
-        {:ok, content} ->
-          case Frontmatter.parse(content) do
-            {:ok, %{"goals" => goals}, _} when is_list(goals) ->
-              goals |> Enum.map(&normalize_goal/1) |> Enum.reject(&is_nil/1)
+    case Glorbo.Company.Goals.list(co_path) do
+      [] ->
+        []
 
-            _ ->
-              []
-          end
+      raw_goals ->
+        task_counts = collect_goal_task_counts(co_path)
 
-        _ ->
-          []
-      end
+        Enum.map(raw_goals, fn goal ->
+          {total, done} = Map.get(task_counts, goal.id, {0, 0})
 
-    if raw_goals == [] do
-      []
-    else
-      task_counts = collect_goal_task_counts(co_path)
+          # GEP-63 D4: explicit `progress:` wins; else derive from tasks.
+          derived = if total == 0, do: 0, else: div(done * 100, total)
+          pct = if is_integer(goal.progress), do: goal.progress, else: derived
 
-      Enum.map(raw_goals, fn goal ->
-        {total, done} = Map.get(task_counts, goal.slug, {0, 0})
-        pct = if total == 0, do: 0, else: div(done * 100, total)
-        Map.merge(goal, %{task_count: total, done_count: done, progress_pct: pct})
-      end)
+          Map.merge(goal, %{task_count: total, done_count: done, progress_pct: pct})
+        end)
     end
   end
 
@@ -1418,28 +1412,6 @@ defmodule GlorboWeb.CompanyLive do
       _ -> acc
     end
   end
-
-  defp normalize_goal(%{} = g) do
-    slug = to_string(Map.get(g, "slug", "") || "")
-
-    if slug == "" do
-      nil
-    else
-      # R25 — accept `name:` as a title fallback; directors reach
-      # for it by muscle memory since the rest of company.md uses
-      # `name:` (company/agent/project). Either key works.
-      title = Map.get(g, "title") || Map.get(g, "name") || slug
-
-      %{
-        slug: slug,
-        title: to_string(title),
-        description: to_string(Map.get(g, "description", "") || ""),
-        status: to_string(Map.get(g, "status", "active") || "active")
-      }
-    end
-  end
-
-  defp normalize_goal(_), do: nil
 
   # For each agent directory, load agent.md and derive: status pill,
   # activity (one-liner from the most recent inbox task file if any),
