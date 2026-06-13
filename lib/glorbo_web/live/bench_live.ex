@@ -44,9 +44,20 @@ defmodule GlorboWeb.BenchLive do
 
   def handle_event("select_rank", %{"panel" => panel}, socket) do
     ranking =
-      case Enum.member?(socket.assigns.ranking, panel) do
-        true -> List.delete(socket.assigns.ranking, panel)
-        false -> socket.assigns.ranking ++ [panel]
+      cond do
+        # Ignore tokens that aren't a real panel for this run. Without this an
+        # out-of-range / stale token (e.g. "Z") would land in @ranking, render
+        # in "Selected order:", and — once the length-based submit guard is
+        # satisfied — crash submit_ranking on Map.fetch!/2 (KeyError). Keeping
+        # @ranking well-formed makes the panel_map lookup total. (codex #58)
+        not Map.has_key?(panel_map(socket.assigns.run.blind_order), panel) ->
+          socket.assigns.ranking
+
+        Enum.member?(socket.assigns.ranking, panel) ->
+          List.delete(socket.assigns.ranking, panel)
+
+        true ->
+          socket.assigns.ranking ++ [panel]
       end
 
     {:noreply, assign(socket, :ranking, ranking)}
