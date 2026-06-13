@@ -748,8 +748,16 @@ on the first bad entry). `channels`, `tools`, `budget`, `goals`, `skills`, and
 `company` appeared in earlier design drafts but are **reserved — not yet wired
 into the ACL mapper**, so they must not appear in a live `agent.md`.
 
-**Actions (enforced):** `read`, `write`, `create`, `update`, `list`, `message`
-(`execute`, `delete` are reserved alongside their resources)
+**Actions:** `read`, `write`, `create`, `update`, `list`, `message`,
+`propose`, `decide`
+
+Note the asymmetry: the parser validates the **resource** (fail-closed
+whitelist, above) and the **scope** shape, but does **not** apply a global
+action allowlist. Action semantics are enforced *per resource downstream* — the
+ACL→`bwrap` mapping for filesystem resources, and `Glorbo.Company.Router` for
+`agents:message`, `proposals:propose`, and `proposals:decide`
+(router.ex). So an unfamiliar action on a *whitelisted* resource is not
+rejected at parse time; only an unknown resource is.
 
 **Scopes:** `*` (all within company) or a specific name
 
