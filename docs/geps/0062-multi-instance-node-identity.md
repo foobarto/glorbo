@@ -2,7 +2,7 @@
 gep: 62
 title: Multi-instance support via per-instance node identity
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Accepted
 type: Standards
 created: 2026-06-13
 requires: [48]
@@ -18,6 +18,22 @@ history:
       cross-contamination / accidental clustering). Decisions (2026-06-13):
       D1 = random `node_id` minted in each home's config.md → `glorbo-<id>@
       127.0.0.1`; D3 = explicit PORT, fail-fast on clash (no auto-assign).
+  - date: 2026-06-13
+    status: Accepted
+    note: |
+      Approved + implemented in the same PR. `Config.node_id/1` mints/persists
+      `node_id` in config.md (and `write_default!` now ships it);
+      `Distribution.canonical_node/1` builds `glorbo-<id>@127.0.0.1` and the
+      #54 EPMD recovery is parameterised by the instance alive-name;
+      `Console` derives the remsh target from it; `vm.args.eex` gains
+      `-kernel dist_auto_connect never`. Two refinements noted during build:
+      (1) the EPMD-recovery sole-registrant gate means a crashed instance can't
+      auto-recover its stale registration *while a sibling is live* — safe but
+      a documented limitation (Failure modes); (2) `-connect_all false` was
+      dropped as redundant with `dist_auto_connect never` for our single-node
+      app (D4). PORT fail-fast (D3) endpoint pre-check deferred to a follow-up
+      — the threading + identity is the load-bearing part. Flip to Implemented
+      on merge to main.
 ---
 
 # GEP-62: Multi-instance support via per-instance node identity
@@ -107,8 +123,10 @@ it makes the dashboard URL non-deterministic.)
   guessed. This is the primary isolation guarantee; keep it.
 - **No auto-connect**: glorbo never calls `Node.connect/1` / pings peers (verified
   — single-node app). To harden against any transitive auto-connect, set
-  `-kernel dist_auto_connect never` (and `-connect_all false`) in `rel/vm.args.eex`
-  so the BEAM never auto-forms a mesh.
+  `-kernel dist_auto_connect never` in `rel/vm.args.eex` so the BEAM never
+  auto-forms a mesh. (`-connect_all false` was considered but dropped as
+  redundant for a single-node app — `dist_auto_connect never` already blocks it;
+  `console`'s explicit remsh still works.)
 - Loopback-only EPMD + node (`127.0.0.1`) is unchanged (GEP-48 / T-05-04).
 
 ## Migration
@@ -127,12 +145,21 @@ Forward-only, no data migration (pre-1.0 atomic cut):
 
 ## Failure modes
 
-- **Port already bound** → fail fast with the offending port + remediation.
+- **Port already bound** → today the endpoint bind fails (tree crash); a clean
+  "port N in use, set PORT" pre-check message is a deferred follow-up (the
+  identity threading is the load-bearing part of this GEP).
 - **`config.md` missing `node_id`** → mint + persist (idempotent).
 - **`console` with no running instance for this home** → the existing clear
   "glorbo is not running" message (now keyed to the computed name).
 - **Two instances racing first-boot on the same home** → out of scope (one home
   = one instance; the pidfile already guards this).
+- **Crashed instance can't auto-recover its stale EPMD registration while a
+  sibling instance is live** → the #54 recovery's sole-registrant gate refuses
+  to kill a *shared* EPMD when other `glorbo-<id>` names are registered (it
+  would take the live siblings down). Safe but a documented limitation: the
+  stale registration recovers automatically once it's the sole registrant, or
+  the operator clears it (restart all / manual). The common single-instance
+  case recovers automatically as before.
 
 ## Test strategy
 
@@ -182,10 +209,11 @@ Forward-only, no data migration (pre-1.0 atomic cut):
 
 ### D4. Isolation by per-home cookie + no auto-connect *(settled)*
 - **Decided:** keep the per-home `erl_cookie` (the primary anti-clustering
-  guarantee) and add `-kernel dist_auto_connect never` / `-connect_all false`
-  to belt-and-suspenders against any transitive auto-mesh.
-- **Why:** distinct cookies already prevent cross-instance connects; the flags
-  make the no-clustering posture explicit + robust.
+  guarantee) and add `-kernel dist_auto_connect never` to make the no-mesh
+  posture explicit. `-connect_all false` was considered but dropped as
+  redundant for a single-node app (and untested via the suite).
+- **Why:** distinct cookies already prevent cross-instance connects; the flag
+  makes the no-clustering posture explicit + robust without weakening EPMD.
 
 ## Related
 

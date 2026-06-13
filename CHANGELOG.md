@@ -12,6 +12,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Added
 
+- **Multiple glorbo instances per machine** (GEP-0062). Each install now gets a
+  stable per-instance node id (`node_id:` minted in its `config.md`), so the
+  Erlang node name is `glorbo-<id>@127.0.0.1` instead of the old fixed
+  `glorbo@127.0.0.1` — two instances with distinct `GLORBO_HOME` (+ `PORT`) no
+  longer collide on the shared EPMD. `Console`'s remsh target and the EPMD
+  stale-registration recovery are derived from the instance's name. Isolation
+  is enforced by the existing per-home `erl_cookie` (distinct cookies ⇒ no
+  cross-instance connect) plus a new `-kernel dist_auto_connect never` in
+  `vm.args` (no accidental clustering; `glorbo console`'s explicit remsh still
+  works). Single-instance installs are unaffected — they just get one stable
+  id, minted transparently on first boot.
 - **Deep-research task type** (GEP-0057, v1 — template-first). New
   `Glorbo.Research` orchestrator drives a bounded, governed
   plan → gather → read/extract → synthesise → render loop and emits a

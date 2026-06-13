@@ -602,4 +602,63 @@ defmodule Glorbo.ConfigTest do
       assert {:ok, %{director_password_hash: ^hash}} = Config.load(base)
     end
   end
+
+  describe "node_id/1 (GEP-62)" do
+    test "mints + persists a node_id when absent" do
+      base = TmpGlorboHome.setup()
+      {:ok, _} = Config.load(base)
+      path = Path.join(base, "config.md")
+      # Deterministic baseline without node_id (write_default!/1 adds one going forward).
+      File.write!(path, String.replace(File.read!(path), ~r/^node_id:.*\n/m, ""))
+
+      assert {:ok, id} = Config.node_id(base)
+      assert id =~ ~r/\A[a-z0-9]+\z/
+      assert File.read!(path) =~ "node_id: #{id}"
+    end
+
+    test "returns an existing node_id without rewriting the file" do
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+
+      File.write!(path, """
+      ---
+      kind: config/v1
+      node_id: cafef00d
+      host: "127.0.0.1"
+      port: 4000
+      ---
+
+      # notes
+      """)
+
+      File.chmod!(path, 0o600)
+      {:ok, %File.Stat{mtime: mtime_before}} = File.stat(path)
+      :timer.sleep(1_100)
+
+      assert {:ok, "cafef00d"} = Config.node_id(base)
+
+      {:ok, %File.Stat{mtime: mtime_after}} = File.stat(path)
+      assert mtime_before == mtime_after
+    end
+
+    test "re-mints a malformed node_id (not node-name-safe)" do
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+
+      File.write!(path, """
+      ---
+      kind: config/v1
+      node_id: "has spaces / slashes"
+      host: "127.0.0.1"
+      port: 4000
+      ---
+      """)
+
+      File.chmod!(path, 0o600)
+
+      assert {:ok, id} = Config.node_id(base)
+      assert id =~ ~r/\A[a-z0-9]+\z/
+      refute id == "has spaces / slashes"
+    end
+  end
 end
