@@ -95,4 +95,101 @@ defmodule GlorboWeb.BenchmarksLiveTest do
     assert scores =~ "Because."
     assert scores =~ "**Ranking:**"
   end
+
+  test "submit with a partial ranking is rejected: error flash, no scores.md, panels stay masked",
+       %{conn: conn, base: base} do
+    seed_run!(base, "run-partial", ["claude-code", "codex"])
+
+    {:ok, view, _html} = live(conn, ~p"/benchmarks/run-partial")
+
+    # Only one of two panels picked — the submit handler maps it through
+    # the blind order and hands a single-provider ranking to
+    # `Benchmarks.score/3`, which fails `validate_ranking` because the
+    # ranked set doesn't equal the provider set.
+    render_click(view, "select_rank", %{"panel" => "A"})
+
+    html = render_submit(view, "submit_ranking", %{"rationale" => "Partial."})
+
+    assert html =~ "Score failed"
+    assert html =~ "ranking_mismatch"
+
+    # Nothing was written, and the run is still masked (the scoring form
+    # is still on the page because `unmasked?` stayed false).
+    refute File.exists?(Path.join([base, "benchmarks/runs/run-partial/scores.md"]))
+    assert html =~ "submit ranking"
+    refute html =~ "Panels unmasked"
+  end
+
+  test "re-scoring an already-scored run appends a second section to scores.md",
+       %{conn: conn, base: base} do
+    seed_run!(base, "run-rescore", ["claude-code", "codex"])
+
+    # Establish a prior score on disk (the "already scored" state). This
+    # also flips the manifest status to "scored".
+    :ok =
+      Glorbo.Benchmarks.score("run-rescore", ["claude-code", "codex"],
+        base: base,
+        rationale: "First pass."
+      )
+
+    # Fresh mount sees the run still masked (scoring history is rendered,
+    # the form is present) — re-rank and submit a second time.
+    {:ok, view, html} = live(conn, ~p"/benchmarks/run-rescore")
+    assert html =~ "scoring history"
+    assert html =~ "First pass."
+
+    render_click(view, "select_rank", %{"panel" => "A"})
+    render_click(view, "select_rank", %{"panel" => "B"})
+    render_submit(view, "submit_ranking", %{"rationale" => "Second pass."})
+
+    scores = File.read!(Path.join([base, "benchmarks/runs/run-rescore/scores.md"]))
+
+    # Both events are preserved — the second appends, it does not overwrite.
+    assert scores =~ "First pass."
+    assert scores =~ "Second pass."
+
+    ranking_sections =
+      scores |> String.split("**Ranking:**") |> length() |> Kernel.-(1)
+
+    assert ranking_sections == 2
+  end
+
+  test "select_rank discards an invalid panel token (it never enters @ranking)",
+       %{conn: conn, base: base} do
+    seed_run!(base, "run-badpanel", ["claude-code", "codex"])
+
+    {:ok, view, _html} = live(conn, ~p"/benchmarks/run-badpanel")
+
+    # "Z" isn't a real panel for a two-provider run (only A and B exist). The
+    # handler must DROP it — otherwise it lands in @ranking, renders in
+    # "Selected order:", and crashes submit_ranking on Map.fetch! once the
+    # length guard is satisfied. (codex #58)
+    html = render_click(view, "select_rank", %{"panel" => "Z"})
+
+    # Selected order stays the empty-state — Z was discarded, not tracked.
+    assert html =~ "(none — click panels in best-to-worst order)"
+    refute html =~ "Selected order: Z"
+    refute html =~ "rank 1"
+    refute html =~ "Panels unmasked"
+    refute html =~ "Score failed"
+  end
+
+  test "a bogus token then a full valid ranking submits without crashing",
+       %{conn: conn, base: base} do
+    seed_run!(base, "run-badpanel-submit", ["claude-code", "codex"])
+
+    {:ok, view, _html} = live(conn, ~p"/benchmarks/run-badpanel-submit")
+
+    # Bogus token is dropped, then a complete valid ranking is picked; the
+    # follow-up submit must score cleanly rather than raising on Map.fetch!
+    # (the crash path codex flagged before select_rank validated tokens).
+    render_click(view, "select_rank", %{"panel" => "Z"})
+    render_click(view, "select_rank", %{"panel" => "A"})
+    render_click(view, "select_rank", %{"panel" => "B"})
+
+    html = render_submit(view, "submit_ranking", %{"rationale" => "no crash."})
+
+    assert html =~ "Panels unmasked"
+    assert File.exists?(Path.join([base, "benchmarks/runs/run-badpanel-submit/scores.md"]))
+  end
 end

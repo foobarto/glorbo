@@ -741,6 +741,52 @@ defmodule GlorboWeb.KanbanLiveTest do
     assert render(view) =~ "Kanban"
   end
 
+  # P2 real-time content-correctness, runs by DEFAULT (no :inotify /
+  # :integration tag). The companion `kanban_realtime_test.exs` proves
+  # the same propagation through the full Watcher → PubSub pipeline but
+  # is excluded from a plain `mix test` because the Watcher needs
+  # inotify-tools. Here we write the new task to disk and broadcast the
+  # `{:file_event, rel, events}` message DIRECTLY on the
+  # `company:<co>:projects` topic the LiveView subscribes to (see
+  # KanbanLive.mount/3 + Glorbo.Filesystem.Watcher.maybe_broadcast/5),
+  # bypassing the filesystem watcher entirely. The handler re-scans disk
+  # via `load_tasks/2`, so the new card must render.
+  test "PubSub :file_event broadcast renders a new task (real-time content, no inotify)",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
+    refute render(view) =~ "Fix navbar"
+
+    # Materialise the new task on disk first — the handler reloads from
+    # the filesystem (CLAUDE.md: no in-memory state not rebuildable), so
+    # the file must exist before the event fires.
+    rel = "projects/website/tasks/t-02.md"
+    abs = Path.join([base, "companies", "acme", rel])
+
+    File.write!(abs, """
+    ---
+    kind: task/v1
+    title: "Fix navbar"
+    status: in-progress
+    assigned_to: ceo
+    ---
+
+    Fix the navbar dropdowns.
+    """)
+
+    # Broadcast on the exact topic KanbanLive subscribed to at mount,
+    # with the same message shape the real Watcher emits.
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:projects",
+      {:file_event, rel, [:modified]}
+    )
+
+    # Let the message flow through the LiveView process, then assert the
+    # re-scanned board includes the new card's content.
+    Process.sleep(50)
+    assert render(view) =~ "Fix navbar"
+  end
+
   test "open_task rejects a traversal path", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/kanban")
 
@@ -1143,6 +1189,43 @@ defmodule GlorboWeb.KanbanLiveTest do
 
       assert body =~ "model: gpt-5-alpha"
       assert body =~ "assigned_to: sparky"
+    end
+  end
+
+  # GEP-30 — the bottom-docked chat drawer is rendered into the app
+  # layout on every company-focused LiveView and posts via the global
+  # "chat_drawer_post" event (wired into ~21 LVs through
+  # GlorboWeb.Components.ChatDrawer.State.post/2). KanbanLive sets
+  # `current_company: "acme"`, so a submit must land in the company's
+  # #general channel on disk via Glorbo.Actions.post_message/4.
+  describe "chat drawer (chat_drawer_post)" do
+    test "posting from a company-focused view appends to channels/general.md",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/kanban")
+
+      render_submit(view, "chat_drawer_post", %{"body" => "drawer hello"})
+
+      path = Path.join([base, "companies", "acme", "channels", "general.md"])
+      content = File.read!(path)
+
+      # Matches Glorbo.Actions.post_message/4's append shape:
+      # "\n## <iso-ts> | <actor>\n<body>\n" with actor "director".
+      assert content =~ "drawer hello"
+      assert content =~ "| director"
+    end
+
+    test "empty body is rejected with a flash and writes nothing",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/kanban")
+
+      html = render_submit(view, "chat_drawer_post", %{"body" => "   "})
+
+      assert html =~ "Message is empty"
+
+      path = Path.join([base, "companies", "acme", "channels", "general.md"])
+      # The seeded general.md is just the "# general\n" header — a
+      # rejected post leaves it untouched (no "| director" entry).
+      refute File.read!(path) =~ "| director"
     end
   end
 end

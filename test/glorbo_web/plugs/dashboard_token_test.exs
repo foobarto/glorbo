@@ -344,4 +344,150 @@ defmodule GlorboWeb.Plugs.DashboardTokenTest do
       refute result.halted
     end
   end
+
+  # GEP-0053 BOOTSTRAP: AuthController gates `/setup` on the dashboard
+  # token via these two helpers. They are exercised indirectly through
+  # `/setup`, but the predicate / persistence semantics deserve direct
+  # unit coverage:
+  #   * `authorized?/1` is a pure predicate (no halt, no resp, no
+  #     session write) — `false` when no token is configured, `true`
+  #     when a valid token is supplied or an established session marker
+  #     matches.
+  #   * `remember/1` is a no-op without a loaded session (the `:api`
+  #     path) and writes the sha256 fingerprint (never the raw token)
+  #     when a session is loaded.
+  describe "authorized?/1 (bootstrap predicate)" do
+    test "false when no token is configured (nil)" do
+      Application.put_env(:glorbo, :dashboard_token, nil)
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      refute GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "false when the configured token is the empty string" do
+      Application.put_env(:glorbo, :dashboard_token, "")
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      refute GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "false when a token is configured but none is supplied" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      refute GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "true when a valid query-param token is supplied" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+      conn = conn(:get, "/setup?token=secret") |> Plug.Test.init_test_session(%{})
+      assert GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "true when a valid Authorization: Bearer token is supplied" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      conn =
+        conn(:post, "/setup", "{}")
+        |> Plug.Conn.put_req_header("authorization", "Bearer secret")
+
+      assert GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "true when an established session fingerprint matches" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      # Establish the auth marker via remember/1, then carry the exact
+      # session it wrote into a fresh request with no ?token=.
+      remembered =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.remember()
+
+      conn =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(Plug.Conn.get_session(remembered))
+
+      assert GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "is a pure predicate — no halt, no response, no session write" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+      conn = conn(:get, "/setup?token=secret") |> Plug.Test.init_test_session(%{})
+
+      assert GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+      # Calling the predicate must not mutate the conn it inspects.
+      refute conn.halted
+      assert is_nil(conn.status)
+      assert Plug.Conn.get_session(conn) == %{}
+    end
+  end
+
+  describe "remember/1 (bootstrap session persistence)" do
+    test "no-op (returns conn unchanged) when no token is configured" do
+      Application.put_env(:glorbo, :dashboard_token, nil)
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      result = GlorboWeb.Plugs.DashboardToken.remember(conn)
+      assert Plug.Conn.get_session(result) == %{}
+      refute result.halted
+    end
+
+    test "no-op when no session is loaded (the :api / MCP path)" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+      # No init_test_session — mirrors the :api pipeline; remember/1
+      # must not raise and must leave the conn unchanged.
+      conn = conn(:post, "/mcp", "{}")
+      result = GlorboWeb.Plugs.DashboardToken.remember(conn)
+      refute result.halted
+      assert is_nil(result.status)
+    end
+
+    test "writes the auth marker into the session when one is loaded" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      result = GlorboWeb.Plugs.DashboardToken.remember(conn)
+
+      assert Plug.Conn.get_session(result) != %{},
+             "expected remember/1 to persist an auth marker into the session"
+    end
+
+    test "persists the sha256 fingerprint, never the raw token" do
+      Application.put_env(:glorbo, :dashboard_token, "super-secret-42")
+      conn = conn(:get, "/setup") |> Plug.Test.init_test_session(%{})
+      result = GlorboWeb.Plugs.DashboardToken.remember(conn)
+      refute result |> Plug.Conn.get_session() |> inspect() =~ "super-secret-42"
+    end
+
+    test "a session written by remember/1 makes authorized?/1 pass with no token" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      remembered =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.remember()
+
+      # Carry the marker into a fresh request; the predicate accepts the
+      # cookie alone, no ?token= needed.
+      conn =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(Plug.Conn.get_session(remembered))
+
+      assert GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+
+    test "a marker from remember/1 is invalidated by a rotated token" do
+      Application.put_env(:glorbo, :dashboard_token, "secret")
+
+      remembered =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(%{})
+        |> GlorboWeb.Plugs.DashboardToken.remember()
+
+      old_session = Plug.Conn.get_session(remembered)
+      Application.put_env(:glorbo, :dashboard_token, "rotated")
+
+      conn =
+        conn(:get, "/setup")
+        |> Plug.Test.init_test_session(old_session)
+
+      refute GlorboWeb.Plugs.DashboardToken.authorized?(conn)
+    end
+  end
 end

@@ -99,4 +99,26 @@ defmodule GlorboWeb.CostsLiveTest do
     {:ok, _view, html} = live(conn, "/costs")
     refute html =~ "company caps"
   end
+
+  # GEP-30 — the chat drawer renders on no-company views (/costs,
+  # /providers, /health) too, but disabled: ChatDrawer.State.post/2's
+  # company-bound clause is guarded `when is_binary(co)`, and CostsLive
+  # mounts with `current_company: nil`, so a submit hits the catch-all
+  # no-op clause. It must NOT write to any channel and (per the current
+  # implementation) produces no flash — the drawer just shows the static
+  # "pick a company to chat" empty state.
+  test "chat_drawer_post is a silent no-op when no company is focused",
+       %{conn: conn, base: base} do
+    {:ok, view, _html} = live(conn, "/costs")
+
+    html = render_submit(view, "chat_drawer_post", %{"body" => "should not write"})
+
+    # No write to acme's #general (or any channel) from a no-company view.
+    general = Path.join([base, "companies", "acme", "channels", "general.md"])
+    refute File.read!(general) =~ "should not write"
+
+    # The static empty-state hint is what the drawer shows here; there
+    # is no event-handler flash on the no-op path.
+    assert html =~ "pick a company to chat"
+  end
 end
