@@ -48,6 +48,16 @@
 #     arg shape. Reviewed individually during the OpenSSF hardening pass
 #     — no true positive. Re-triage if a future finding uses a string
 #     command or splices user input into argv.
+#
+#   DOS.BinToAtom
+#     One finding: `Glorbo.CLI.Lifecycle.Distribution.canonical_node/1` builds
+#     the node atom `:"glorbo-#{id}@127.0.0.1"` at runtime (GEP-62). `Node.start/2`
+#     requires an atom node name, so the name MUST be built at runtime from the
+#     per-instance `node_id`. That id is glorbo-minted, validated `[a-z0-9_-]+`
+#     in `Glorbo.Config`, and bounded (one stable id per install / operator-owned
+#     config.md) — it is NOT request-derived, so the atom table cannot be
+#     exhausted (distinct from the GEP-12 user-input-atom DoS this check targets).
+#     Re-triage if a future finding atomises a request-derived or unbounded value.
 [
   exit: true,
   threshold: :low,
@@ -58,7 +68,8 @@
     "XSS.Raw",
     "XSS.SendResp",
     "SQL.Query",
-    "CI.System"
+    "CI.System",
+    "DOS.BinToAtom"
   ],
   ignore_files: [],
   skip: false,

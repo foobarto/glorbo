@@ -2,7 +2,8 @@ defmodule Glorbo.CLI.Console do
   @moduledoc """
   `glorbo console` — open `iex --remsh` into the running release (D-24).
 
-  Node name (`glorbo@127.0.0.1`) comes from `rel/vm.args.eex` and uses
+  The remsh target is this instance's node — `glorbo-<id>@127.0.0.1` (GEP-62),
+  resolved from `config.md` via `Distribution.canonical_node/1` — using
   `--name` (long-name) per WR-09 correction. Cookie is read from
   `~/.glorbo/config.md` via `Glorbo.Config.erl_cookie/1`.
 
@@ -23,11 +24,9 @@ defmodule Glorbo.CLI.Console do
   and the audit event detail payloads are empty maps (no cookie, no
   binary path).
   """
+  alias Glorbo.CLI.Lifecycle.Distribution
   alias Glorbo.CLI.Lifecycle.Pidfile
   alias Glorbo.CLI.Audit
-
-  @remote_node "glorbo@127.0.0.1"
-  @console_node "console@127.0.0.1"
 
   @spec run([String.t()], keyword()) :: Glorbo.CLI.result()
   def run(argv, opts \\ []) do
@@ -47,18 +46,28 @@ defmodule Glorbo.CLI.Console do
 
       :running ->
         case Glorbo.Config.erl_cookie(base) do
-          {:ok, cookie} -> launch(cookie, skip_exec?)
-          {:error, reason} -> {:console, 2, "Cookie read failed: #{inspect(reason)}\n"}
+          {:ok, cookie} ->
+            # GEP-62: target THIS instance's node (glorbo-<id>@127.0.0.1),
+            # resolved from its config.md — single source of truth via
+            # Distribution.canonical_node/1. The transient console node mirrors
+            # the id so two consoles attached to different instances don't
+            # collide.
+            remote = Distribution.canonical_node(base) |> Atom.to_string()
+            console_node = String.replace_prefix(remote, "glorbo", "console")
+            launch(cookie, remote, console_node, skip_exec?)
+
+          {:error, reason} ->
+            {:console, 2, "Cookie read failed: #{inspect(reason)}\n"}
         end
     end
   end
 
-  defp launch(cookie, skip_exec?) do
+  defp launch(cookie, remote, console_node, skip_exec?) do
     argv = [
       "--name",
-      @console_node,
+      console_node,
       "--remsh",
-      @remote_node
+      remote
     ]
 
     env = [{~c"ERL_AFLAGS", String.to_charlist(erl_aflags(cookie))}]
@@ -99,10 +108,11 @@ defmodule Glorbo.CLI.Console do
       glorbo console
 
     BEHAVIOR
-      Spawns `iex --name console@127.0.0.1 --remsh
-      glorbo@127.0.0.1` and injects the Erlang cookie from config.md
-      via `ERL_AFLAGS=-setcookie ...`. Exits with code 3 if glorbo is
-      not running.
+      Spawns `iex --name console-<id>@127.0.0.1 --remsh
+      glorbo-<id>@127.0.0.1` (this instance's node, per its config.md)
+      and injects the Erlang cookie from config.md via
+      `ERL_AFLAGS=-setcookie ...`. Exits with code 3 if glorbo is not
+      running.
     """
   end
 

@@ -79,9 +79,48 @@ defmodule Glorbo.CLI.Lifecycle.DistributionTest do
     end
   end
 
-  describe "canonical_node/0" do
-    test "is the loopback-pinned long name" do
-      assert Distribution.canonical_node() == :"glorbo@127.0.0.1"
+  describe "canonical_node/1 (GEP-62 per-instance name)" do
+    setup do
+      base = Path.join(System.tmp_dir!(), "glorbo-dist-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(base)
+      on_exit(fn -> File.rm_rf(base) end)
+      %{base: base}
+    end
+
+    test "builds glorbo-<node_id>@127.0.0.1 from the home's config.md", %{base: base} do
+      File.write!(Path.join(base, "config.md"), """
+      ---
+      kind: config/v1
+      node_id: deadbeef
+      host: "127.0.0.1"
+      port: 4000
+      ---
+
+      # config
+      """)
+
+      assert Distribution.canonical_node(base) == :"glorbo-deadbeef@127.0.0.1"
+    end
+
+    test "is stable across calls for a given home (read-only)", %{base: base} do
+      File.write!(Path.join(base, "config.md"), """
+      ---
+      kind: config/v1
+      node_id: cafef00d
+      host: "127.0.0.1"
+      port: 4000
+      ---
+      """)
+
+      assert Distribution.canonical_node(base) == :"glorbo-cafef00d@127.0.0.1"
+      assert Distribution.canonical_node(base) == :"glorbo-cafef00d@127.0.0.1"
+    end
+
+    test "falls back to glorbo@127.0.0.1 when config is unreadable", %{base: base} do
+      # A non-existent home would MINT (Config writes a default); a directory
+      # where config.md is itself a directory makes the read fail → fallback.
+      File.mkdir_p!(Path.join(base, "config.md"))
+      assert Distribution.canonical_node(base) == :"glorbo@127.0.0.1"
     end
   end
 end

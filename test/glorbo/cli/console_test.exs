@@ -39,9 +39,10 @@ defmodule Glorbo.CLI.ConsoleTest do
       # Use :skip_exec to avoid actually launching iex.
       assert {:console, 0, out} = Console.run([], base: home, skip_exec: true)
       assert out =~ "--remsh"
-      assert out =~ "glorbo@127.0.0.1"
+      # GEP-62: per-instance node name glorbo-<id>@127.0.0.1 (+ console-<id>).
+      assert out =~ ~r/glorbo-[a-z0-9]+@127\.0\.0\.1/
       assert out =~ "--name"
-      assert out =~ "console@127.0.0.1"
+      assert out =~ ~r/console-[a-z0-9]+@127\.0\.0\.1/
       assert out =~ "ERL_AFLAGS=<redacted>"
       refute out =~ "--cookie"
       refute out =~ cookie, "preview should not contain the actual cookie value"

@@ -26,3 +26,10 @@
 ## daemon never pins a predictable port in another BEAM's way.
 -kernel inet_dist_listen_min 0
 -kernel inet_dist_listen_max 0
+##
+## GEP-62: never auto-connect / form a mesh. Multiple glorbo instances can
+## share one EPMD on a box; distinct per-home cookies already prevent any
+## cross-instance connect, and this makes the no-clustering posture explicit —
+## automatic/transitive connects are blocked. `glorbo console`'s remsh uses an
+## EXPLICIT connect, which `dist_auto_connect never` still permits.
+-kernel dist_auto_connect never

@@ -159,6 +159,7 @@ defmodule Glorbo.Config do
     secret = generate_secret()
     cookie = generate_cookie()
     token = generate_token()
+    node_id = generate_node_id()
 
     body = """
     ---
@@ -166,6 +167,7 @@ defmodule Glorbo.Config do
     secret_key_base: #{secret}
     dashboard_token: #{token}
     erl_cookie: #{cookie}
+    node_id: #{node_id}
     host: "127.0.0.1"
     port: 4000
     ---
@@ -196,6 +198,14 @@ defmodule Glorbo.Config do
 
   defp generate_token do
     :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
+  end
+
+  # GEP-62: per-instance node-id, 8 lowercase-hex chars (4 bytes). Plenty for
+  # per-machine uniqueness, and node-name-safe (the alive part of an Erlang
+  # long name allows `[A-Za-z0-9_-]`). NOT a secret — it appears in the node
+  # name (EPMD listings, `glorbo console`).
+  defp generate_node_id do
+    :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
   end
 
   defp maybe_string(nil), do: nil
@@ -509,6 +519,75 @@ defmodule Glorbo.Config do
       end
 
     atomic_write_secret!(path, new_content)
+  end
+
+  @doc """
+  Return the per-instance node id for this Glorbo install (GEP-62).
+
+  Ensures `node_id:` is present in `<base>/config.md`; if absent (or
+  malformed), mints a fresh 8-hex-char id, persists it (preserving other
+  frontmatter + body), and returns it. The id is the stable `<id>` in the node
+  name `glorbo-<id>@127.0.0.1`, so `up` / `down` / `status` / `console` all
+  resolve the same node. NOT a secret — it appears in the node name.
+  """
+  @spec node_id(Path.t()) :: {:ok, String.t()} | {:error, :config_parse}
+  def node_id(base \\ Glorbo.Filesystem.Hierarchy.default_root()),
+    do: node_id(base, _retried? = false)
+
+  defp node_id(base, retried?) do
+    path = Path.join(base, "config.md")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case Frontmatter.parse(content) do
+          {:ok, meta, body} -> handle_node_id(path, content, meta, body)
+          _ -> {:error, :config_parse}
+        end
+
+      {:error, :enoent} when not retried? ->
+        write_default!(path)
+        node_id(base, true)
+
+      {:error, _} ->
+        {:error, :config_parse}
+    end
+  end
+
+  # Accept a present, node-name-safe id (`[a-z0-9_-]+`); otherwise mint one. A
+  # hand-edited config.md could carry junk that would break the node atom.
+  defp handle_node_id(path, content, meta, _body) do
+    case meta["node_id"] do
+      # An all-digit id (e.g. "12345678" — ~1.6% of 8-hex ids) is written
+      # unquoted and the YAML parser reads it back as an INTEGER. Coerce to its
+      # string form (already node-name-safe + stable: the same integer always
+      # stringifies the same way) rather than re-minting every call. (copilot #57)
+      id when is_integer(id) and id >= 0 ->
+        {:ok, Integer.to_string(id)}
+
+      id when is_binary(id) and id != "" ->
+        if Regex.match?(~r/\A[a-z0-9_-]+\z/, id),
+          do: {:ok, id},
+          else: mint_node_id(path, content, meta)
+
+      _ ->
+        mint_node_id(path, content, meta)
+    end
+  rescue
+    _ -> {:error, :config_parse}
+  end
+
+  defp mint_node_id(path, content, meta) do
+    id = generate_node_id()
+
+    new_content =
+      if Map.has_key?(meta, "node_id") do
+        String.replace(content, ~r/^node_id:.*$/m, "node_id: #{id}")
+      else
+        String.replace(content, "---\n", "---\nnode_id: #{id}\n", global: false)
+      end
+
+    atomic_write_secret!(path, new_content)
+    {:ok, id}
   end
 
   # WR-07: write-then-chmod leaves a window where the file is

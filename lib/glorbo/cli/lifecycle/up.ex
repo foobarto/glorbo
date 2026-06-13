@@ -54,6 +54,13 @@ defmodule Glorbo.CLI.Lifecycle.Up do
     Audit.emit("up", "start", %{})
 
     with {:ok, cookie} <- Glorbo.Config.erl_cookie(base),
+         # Mint+persist the per-instance node_id HERE, before spawning, so the
+         # daemon and any `glorbo console` that races in right after the pidfile
+         # write both read the SAME persisted id. If we deferred minting to the
+         # daemon's first canonical_node/1 call, an upgrade-path config (cookie
+         # present, node_id absent) could have console and daemon mint DIFFERENT
+         # ids → console targets a node the daemon never registered. (codex #57)
+         {:ok, _node_id} <- Glorbo.Config.node_id(base),
          {:ok, binary} <- locate_binary(),
          env <- [
            {~c"RELEASE_COOKIE", String.to_charlist(cookie)},
