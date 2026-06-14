@@ -3,6 +3,7 @@ gep: 56
 title: Untrusted content framing — data-not-instructions across agent boundaries
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-12
 see-also: [16, 21, 22, 23, 32, 35, 50]

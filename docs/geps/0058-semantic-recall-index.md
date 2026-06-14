@@ -3,6 +3,7 @@ gep: 58
 title: Semantic recall index — optional hybrid keyword+vector retrieval over the home tree
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-12
 see-also: [7, 8, 21, 34, 43]

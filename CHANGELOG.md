@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-06-14
+
 ### Added
 
 - **Multiple glorbo instances per machine** (GEP-0062). Each install now gets a
@@ -160,6 +162,12 @@ change between minor versions. Pin exact versions in downstream usage.
   never clobbered. And `mix phx.server` now prints the state-aware
   `…/setup?token=…` URL on boot (gated to bootstrap/degraded), so the dev
   dashboard is reachable — previously only `glorbo serve`/`up` printed it.
+- **BenchLive ranking no longer crashes on a stale / out-of-range rank
+  token.** An out-of-range or stale rank token (e.g. `"Z"`) could land in
+  `@ranking` and, once the length-based submit guard passed, crash
+  `submit_ranking` with a `KeyError` on `Map.fetch!/2`. The handler now
+  ignores any token not in the panel map, keeping `@ranking` well-formed.
+  (PR #58.)
 - **`glorbo validate` now flags dangling `depends_on:` targets** (GEP-47). The
   spec promised a `task.dependency_missing` finding (D1 + failure-modes table +
   `DependencyGate` moduledoc), but only the runtime half shipped — the scheduler
@@ -7598,7 +7606,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0
 [0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
 [0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0

@@ -3,6 +3,7 @@ gep: 60
 title: SymlinkGuard must resolve the glorbo home and not trip on system symlinks above it (atomic-distro `/home → /var/home`)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-14
 requires: [5]

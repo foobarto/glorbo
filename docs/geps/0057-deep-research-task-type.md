@@ -3,6 +3,7 @@ gep: 57
 title: Deep-research task type — governed multi-step gather/read/synthesise
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-12
 requires: [56]

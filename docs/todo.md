@@ -300,11 +300,6 @@ it's been in CHANGELOG for a cycle.
 
 <!-- Promoted from session journals 2026-06-14 (before clearing them). -->
 
-- [ ] **`priv/providers/minimax.toml` advertises the OLD credential path.**
-  Lines 7-9 still document `~/.local/etc/glorbo/credentials/minimax.toml`;
-  GEP-61 moved native credentials to `~/.config/glorbo/credentials/`. Fix the
-  setup comment (doc-drift, also flagged in the gap report). (from
-  `2026-06-02-minimax-provider`)
 - [ ] **Director passphrase-auth open design questions (GEP-49).** Three left
   unanswered in the 2026-05-29 design: (1) session TTL — keep browser-close
   cookie or add a persistent cap + idle timeout (~7-day)? (2) re-scope GEP-49
