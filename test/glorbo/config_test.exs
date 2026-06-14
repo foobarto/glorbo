@@ -62,6 +62,96 @@ defmodule Glorbo.ConfigTest do
       refute content =~ "dashboard_token: null"
       assert content =~ "dashboard_token: "
     end
+
+    test "a 0-byte config.md self-heals: full frontmatter is regenerated + persisted" do
+      # The P0 (web-ui-uat): `ensure!` plants an empty config.md, which parsed
+      # to empty meta and never persisted the dashboard_token (the patcher had
+      # no `---` fence to anchor on) — the dashboard locked into an
+      # un-unlockable BOOTSTRAP. Treating empty==absent regenerates it.
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+      File.write!(path, "")
+      assert File.stat!(path).size == 0
+
+      assert {:ok, cfg} = Config.load(base)
+      assert is_binary(cfg.dashboard_token) and byte_size(cfg.dashboard_token) >= 16
+
+      # The token is now PERSISTED to disk (the whole point) — a fresh load
+      # returns the same one, and the file is no longer empty + stays 0600.
+      content = File.read!(path)
+      assert content =~ "---\n"
+      assert content =~ "dashboard_token: #{cfg.dashboard_token}"
+      assert File.stat!(path).size > 0
+      assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+
+      assert {:ok, cfg2} = Config.load(base)
+      assert cfg2.dashboard_token == cfg.dashboard_token
+    end
+
+    test "erl_cookie + node_id also self-heal a 0-byte config.md (persisted)" do
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+      File.write!(path, "")
+
+      assert {:ok, cookie} = Config.erl_cookie(base)
+      assert byte_size(cookie) >= 16
+      # Persisted, not in-memory-only: a second call returns the same value.
+      assert {:ok, ^cookie} = Config.erl_cookie(base)
+
+      assert {:ok, node_id} = Config.node_id(base)
+      assert {:ok, ^node_id} = Config.node_id(base)
+      assert File.read!(path) =~ "erl_cookie: "
+      assert File.read!(path) =~ "node_id: "
+    end
+
+    test "a file with leading blank lines before the fence self-heals (parser-empty meta)" do
+      # blank_or_unfenced? string heuristic missed this (it trim-leads); the
+      # parser-based predicate catches it: Frontmatter.parse yields empty meta
+      # because the `---\n` fence isn't at byte 0, so the token never persisted.
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+      File.write!(path, "\n\n---\nport: 4000\n---\n")
+
+      assert {:ok, cfg} = Config.load(base)
+      assert is_binary(cfg.dashboard_token) and byte_size(cfg.dashboard_token) >= 16
+      assert File.read!(path) =~ "dashboard_token: #{cfg.dashboard_token}"
+    end
+
+    test "a hand-written unfenced config.md is backed up to .bak before regenerating" do
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+      hand_written = "# my notes\n\nsome important text I was drafting\n"
+      File.write!(path, hand_written)
+
+      assert {:ok, _cfg} = Config.load(base)
+
+      # Regenerated with real frontmatter…
+      assert File.read!(path) =~ "kind: config/v1"
+      # …and the prior content is preserved (not silently lost) at 0600.
+      assert File.read!(path <> ".bak") == hand_written
+      assert Bitwise.band(File.stat!(path <> ".bak").mode, 0o777) == 0o600
+    end
+
+    test "a fenced config.md with a bad hash is NOT clobbered (stays fail-closed)" do
+      # Scope guard: only an UNFENCED file is regenerated. A file that opens
+      # with `---` flows to coerce and must keep failing closed (GEP-0053 D9),
+      # never silently overwritten.
+      base = TmpGlorboHome.setup()
+      path = Path.join(base, "config.md")
+
+      bad = """
+      ---
+      secret_key_base: "unterminated
+      ---
+
+      # ugly
+      """
+
+      File.write!(path, bad)
+      assert {:error, :config_parse} = Config.load(base)
+      # Untouched — not regenerated.
+      assert File.read!(path) == bad
+    end
   end
 
   describe "parsing an existing config.md" do

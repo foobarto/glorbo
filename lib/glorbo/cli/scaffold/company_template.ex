@@ -315,7 +315,7 @@ defmodule Glorbo.CLI.Scaffold.CompanyTemplate do
   end
 
   defp glorbo_home do
-    System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    Glorbo.Filesystem.Hierarchy.home_root()
   end
 
   # B2 (UAT 2026-04-22): the sidebar Chat link targets

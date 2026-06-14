@@ -2,7 +2,7 @@
 gep: 60
 title: SymlinkGuard must resolve the glorbo home and not trip on system symlinks above it (atomic-distro `/home → /var/home`)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
-status: Draft
+status: Implemented
 type: Standards
 created: 2026-06-14
 requires: [5]
@@ -23,17 +23,50 @@ history:
       `HOME=/home/<user>` resolves to `/var/home/<user>`, so the guard trips
       on the very first segment. Design + decisions still open — this is a
       Draft, not yet Accepted.
+  - date: 2026-06-14
+    status: Accepted
+    note: |
+      Decisions locked (D1–D3 below) after an adversarial security review
+      confirmed the canonicalise-the-home-root approach is SOUND and
+      SECURITY-NEUTRAL: the SymlinkGuard is left entirely unchanged, so it
+      still refuses agent-planted symlinks below the home — only the trusted
+      home PREFIX is resolved. Chosen over the original D2 sketch's
+      `trust_root` skip (which would have trusted-a-prefix-forever inside the
+      guard).
+  - date: 2026-06-14
+    status: Implemented
+    note: |
+      Shipped. `Glorbo.Filesystem.Hierarchy.canonicalize_home_root/1` (a
+      per-segment `:file.read_link` resolver, root-only, loop-guarded)
+      resolves the home through symlinked ancestors; `default_root/0`
+      canonicalises the `GLORBO_HOME`/`~/.glorbo` branches (the `:glorbo_base`
+      test override stays verbatim), and a new `home_root/0` carries the same
+      canonicalisation to the 16 CLI/lifecycle/scaffold call sites that
+      previously re-implemented `System.get_env("GLORBO_HOME") ||
+      default_root()` — so an EXPLICIT `GLORBO_HOME=/home/<user>/...` is
+      resolved too, not just the unset default. SymlinkGuard untouched.
+      Tests: `test/glorbo/sandbox/symlink_guard_test.exs` (atomic-passes /
+      agent-symlink-still-refused / off-home-refused + the ROOT-ONLY
+      invariant that a mount path reaches the guard verbatim) +
+      canonicalisation cases in `hierarchy_test.exs`. Verified on-host:
+      `default_root/0` now returns `/var/home/<user>/.glorbo`.
+      NON-GOAL kept as-is: GEP-27 off-home operator grants
+      (`Bwrap.approved_path_flags`) still get full-ancestor symlink checking
+      — canonicalising an off-home grant ancestor would be a weakening, not a
+      fix. If an operator grants a path under a symlinked system ancestor it
+      is still refused by design.
 ---
 
 # GEP-60: SymlinkGuard must resolve the glorbo home, not trip on system symlinks above it
 
 ## Status
 
-**Draft / placeholder.** The problem and the intended fix-direction are
-recorded here so the work has a home; the load-bearing decisions (where the
-trust anchor sits, where canonicalisation happens) are **not yet locked**.
-Do not treat this as Accepted. Implementation is test-first (see §Test
-strategy).
+**Implemented** (2026-06-14). Shipped by canonicalising the glorbo home root
+in `Glorbo.Filesystem.Hierarchy` (`canonicalize_home_root/1` +
+`default_root/0` + a new `home_root/0` for the CLI call sites);
+`SymlinkGuard` itself is unchanged. The §Design sketch below is what shipped;
+D1–D3 in the Decision log are locked. The only deliberate carve-out is GEP-27
+off-home grants (still full-ancestor checked — a non-goal, not a gap).
 
 ## Problem
 
@@ -86,61 +119,62 @@ the box" there.
 - Not changing where `~/.glorbo` lives (that is GEP-3 / GEP-53) nor the XDG
   config split (GEP-61).
 
-## Design (DRAFT — decisions open)
+## Design (as shipped)
 
 The threat model is **agent-controllable** symlinks. An agent can only write
 beneath its own company/agent subtree of the glorbo home; it can never alter
-`/home`, `/var`, or the home root itself. So the segments that need walking
-are those **at or below the resolved glorbo home root**; everything above it
-is host-trusted and immutable to agents.
+`/home`, `/var`, or the home root itself. So the only symlinks worth detecting
+are those **at or below the resolved glorbo home root**; everything above it is
+host-trusted and immutable to agents.
 
-Sketch (not locked):
+What shipped — **canonicalise the home root, leave `SymlinkGuard` untouched**
+(simpler and strictly safer than the original `trust_root`-skip sketch, which
+would have taught the guard to trust-a-prefix-forever):
 
-1. **Canonicalise the home root once.** Resolve the glorbo home
-   (`Hierarchy.default_root/0`) through its symlinks up front — e.g.
-   `:file.read_link_info`-based realpath, or `Path.expand` + link
-   resolution — to get the true root (`/home/<user>/.glorbo` →
-   `/var/home/<user>/.glorbo`). Mount sources / approved paths under the home
-   are expressed relative to this resolved root.
-2. **Anchor the guard at the resolved root.** `assert_no_symlink_segment!`
-   gains a `trust_root` (the resolved glorbo home): walk and symlink-check
-   only the segments **from `trust_root` down to the leaf**, treating the
-   resolved-root prefix as trusted. A path that does not descend from
-   `trust_root` (GEP-27 external grant) keeps full-ancestor checking.
+1. **`Hierarchy.canonicalize_home_root/1`** — resolve the home through any
+   symlinked ancestors. It `Path.expand`s, then walks the path segment by
+   segment following symlinks via `:file.read_link` (loop-guarded at
+   `@max_symlink_hops`), re-appending a not-yet-created tail verbatim. So
+   `/home/<user>/.glorbo` → `/var/home/<user>/.glorbo`, whose ancestors
+   (`/var`, `/var/home`, …) are all real directories.
+2. **`Hierarchy.default_root/0`** canonicalises its `GLORBO_HOME` / `~/.glorbo`
+   branches (the `:glorbo_base` test override is used verbatim — it already
+   names a real tmp path).
+3. **`Hierarchy.home_root/0`** (new) carries the same canonicalisation to the
+   16 CLI/lifecycle/scaffold sites that re-implemented `System.get_env(
+   "GLORBO_HOME") || default_root()`, so an EXPLICIT `GLORBO_HOME` under a
+   symlinked ancestor is resolved too.
 
-Open questions to resolve before Accepted:
+Because every consumer derives its paths from the (now resolved) home, the
+**unmodified** `SymlinkGuard` walks a symlink-free prefix and passes — while
+still refusing any agent-planted symlink in the agent-controlled *suffix*,
+which is appended AFTER canonicalisation and never resolved.
 
-- **Trust anchor:** the resolved glorbo home specifically, or a configurable
-  trust-root? (Default: resolved home.)
-- **Where canonicalisation happens:** at the guard, at the call sites
-  (PermissionMapper / Bwrap), or in `Hierarchy` when the home is first
-  computed? (Leaning: resolve in `Hierarchy` so the whole system sees the
-  canonical root, and have the guard verify the supplied `trust_root` is
-  itself symlink-free up to `/` exactly once at boot.)
-- **Boot-time validation:** prove the resolved-root prefix really is
-  symlink-free *once* at startup (so we don't blindly trust it forever), then
-  skip re-walking it per-mount.
-- **`GLORBO_HOME` interaction:** an explicitly-set `GLORBO_HOME` should be
-  canonicalised the same way.
+**ROOT-ONLY invariant (load-bearing):** `canonicalize_home_root/1` must never
+be applied to a mount source / approved path — it follows symlinks, so it
+would resolve away a planted `tasks → /etc` and neutralise the guard. Pinned
+by a test that a threat-case mount path reaches the guard verbatim.
 
 ## Decision log
 
-Draft — nothing locked yet. Candidate decisions, to be ratified when this
-moves to Accepted:
+Locked at Accept (2026-06-14):
 
-- **D1 (proposed).** The trust anchor is the **resolved glorbo home** (its
-  realpath), not a free-form configurable root. Rationale: agents can only
-  write below the home; the home's own resolved prefix is host-trusted.
-- **D2 (proposed).** Canonicalise the home **once, in `Hierarchy`**, so the
-  whole system shares the resolved root; the guard verifies the supplied
-  `trust_root` is symlink-free up to `/` exactly once at boot, then skips
-  re-walking the prefix per mount.
-- **D3 (proposed).** Off-home paths (GEP-27 external grants) are unchanged —
-  full-ancestor symlink checking still applies; the trust-root shortcut is
-  *only* for descendants of the resolved home.
-- **Open.** Boot-time prefix validation mechanics; `GLORBO_HOME`
-  canonicalisation parity; whether `read_link_info` realpath or an explicit
-  `Path.expand` + loop is the resolver.
+- **D1.** The trust anchor is the **resolved glorbo home** (its realpath), not
+  a free-form configurable root. Agents can only write below the home; the
+  home's own resolved prefix is host-trusted.
+- **D2.** Canonicalise **in `Hierarchy`** (`default_root/0` + `home_root/0`),
+  so the whole system shares the resolved root and **`SymlinkGuard` is left
+  unchanged**. (Chosen over teaching the guard a `trust_root` skip: keeping the
+  guard dumb-but-total means it can never be tricked into trusting a prefix it
+  shouldn't.) The resolver is `Path.expand` + a per-segment `:file.read_link`
+  loop — `read_link_info`-realpath would also work but OTP has no realpath and
+  the explicit loop is what the existing detector in `agent_writable_file.ex`
+  uses too.
+- **D3.** Off-home paths (GEP-27 external grants) are unchanged —
+  full-ancestor symlink checking still applies; canonicalisation is *only* for
+  the home root, never off-home grants.
+- **D4.** `GLORBO_HOME` parity: the explicit override is canonicalised the
+  same way via `home_root/0` (not just the unset `~/.glorbo` default).
 
 ## Migration
 

@@ -125,6 +125,24 @@ if config_env() == :dev do
       # GEP-0053 dev parity — DirectorAuth reads this for the browser gate.
       config :glorbo, :director_password_hash, cfg.director_password_hash
 
+      # web-ui-uat P0: `mix phx.server` boots into BOOTSTRAP but — unlike
+      # `glorbo serve`/`up` — never prints the first-run URL, so the only
+      # credential that unlocks /setup (the dashboard_token) is invisible and
+      # the dev dashboard is a dead lockout. Surface the state-aware URL here,
+      # gated on bootstrap/degraded so a CONFIGURED node never reprints the
+      # token into scrollback (GEP-0053 D18). `Config.load` above self-heals a
+      # 0-byte config.md first, so the printed token is the persisted one.
+      unless match?(h when is_binary(h) and h != "", cfg.director_password_hash) do
+        IO.puts(
+          "\n  glorbo dashboard (first-run setup): " <>
+            Glorbo.CLI.Lifecycle.Banner.dashboard_url(
+              "http://127.0.0.1:4000",
+              cfg.director_password_hash,
+              cfg.dashboard_token
+            ) <> "\n"
+        )
+      end
+
     {:error, _reason} ->
       :ok
   end

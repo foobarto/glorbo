@@ -85,7 +85,17 @@ defmodule Glorbo.Config do
   @spec load(Path.t()) :: {:ok, config()} | {:error, :config_parse}
   def load(base \\ Glorbo.Filesystem.Hierarchy.default_root()) do
     path = Path.join(base, "config.md")
-    unless File.exists?(path), do: write_default!(path)
+    # A config.md that is absent OR parses to EMPTY frontmatter (0-byte, the
+    # empty file `ensure!` plants on first materialise, a torn write, or a
+    # leading-junk file the parser can't read) must be regenerated: otherwise
+    # the minted dashboard_token/secret never persist (the in-place patchers
+    # have no `---\n` fence to anchor on) and the dashboard locks into an
+    # un-unlockable BOOTSTRAP. A file the parser CAN read (non-empty meta) or
+    # one that errors on a real fence (malformed YAML) is left alone so a bad
+    # passphrase hash still fails closed via coerce (GEP-0053 D9). `load/1` is
+    # linear (regenerate at most once, then a single non-recursing read), so
+    # it needs no `retried?` guard.
+    if needs_default?(path), do: regenerate_default!(path)
 
     with {:ok, content} <- File.read(path),
          {:ok, meta, _body} <- Frontmatter.parse(content),
@@ -95,6 +105,44 @@ defmodule Glorbo.Config do
     else
       _ -> {:error, :config_parse}
     end
+  end
+
+  # True when config.md is missing OR `Frontmatter.parse` extracts NO keys from
+  # it (the parser's own empty-meta verdict — the predicate is exactly the
+  # parser's so we regenerate precisely the files that can't be patched in
+  # place). A file the parser reads keys from, or one that errors on a real
+  # `---\n` fence (malformed YAML), is NOT reported here — it flows to coerce
+  # and stays fail-closed (GEP-0053 D9), never clobbered.
+  defp needs_default?(path) do
+    case File.read(path) do
+      {:ok, content} -> empty_frontmatter?(content)
+      {:error, :enoent} -> true
+      {:error, _} -> false
+    end
+  end
+
+  defp empty_frontmatter?(content) do
+    case Frontmatter.parse(content) do
+      {:ok, meta, _body} -> map_size(meta) == 0
+      _ -> false
+    end
+  end
+
+  # Regenerate config.md from defaults. Any pre-existing NON-EMPTY (but
+  # unparseable) content is preserved as `config.md.bak` (0600) first, so a
+  # hand-written markdown body is never silently lost — it had no usable
+  # frontmatter, so no secrets are involved, but the operator can recover it.
+  defp regenerate_default!(path) do
+    case File.read(path) do
+      {:ok, content} when content != "" ->
+        _ = File.cp(path, path <> ".bak")
+        _ = File.chmod(path <> ".bak", 0o600)
+
+      _ ->
+        :ok
+    end
+
+    write_default!(path)
   end
 
   # Private — coerce parsed frontmatter to the typed config map. Fills
@@ -472,11 +520,19 @@ defmodule Glorbo.Config do
     path = Path.join(base, "config.md")
 
     case File.read(path) do
-      {:ok, content} ->
-        case Frontmatter.parse(content) do
-          {:ok, meta, body} -> handle_cookie(path, content, meta, body)
-          _ -> {:error, :config_parse}
+      # A file with empty frontmatter can't be patched in place (no `---\n`
+      # anchor), so the minted cookie would never persist — regenerate defaults
+      # first, exactly like the :enoent case.
+      {:ok, content} when not retried? ->
+        if empty_frontmatter?(content) do
+          regenerate_default!(path)
+          erl_cookie(base, true)
+        else
+          parse_for_cookie(path, content)
         end
+
+      {:ok, content} ->
+        parse_for_cookie(path, content)
 
       {:error, :enoent} when not retried? ->
         write_default!(path)
@@ -484,6 +540,13 @@ defmodule Glorbo.Config do
 
       {:error, _} ->
         {:error, :config_parse}
+    end
+  end
+
+  defp parse_for_cookie(path, content) do
+    case Frontmatter.parse(content) do
+      {:ok, meta, body} -> handle_cookie(path, content, meta, body)
+      _ -> {:error, :config_parse}
     end
   end
 
@@ -538,11 +601,18 @@ defmodule Glorbo.Config do
     path = Path.join(base, "config.md")
 
     case File.read(path) do
-      {:ok, content} ->
-        case Frontmatter.parse(content) do
-          {:ok, meta, body} -> handle_node_id(path, content, meta, body)
-          _ -> {:error, :config_parse}
+      # Empty-frontmatter file → regenerate defaults first (can't patch in
+      # place without a `---\n` anchor), mirroring the :enoent self-heal.
+      {:ok, content} when not retried? ->
+        if empty_frontmatter?(content) do
+          regenerate_default!(path)
+          node_id(base, true)
+        else
+          parse_for_node_id(path, content)
         end
+
+      {:ok, content} ->
+        parse_for_node_id(path, content)
 
       {:error, :enoent} when not retried? ->
         write_default!(path)
@@ -550,6 +620,13 @@ defmodule Glorbo.Config do
 
       {:error, _} ->
         {:error, :config_parse}
+    end
+  end
+
+  defp parse_for_node_id(path, content) do
+    case Frontmatter.parse(content) do
+      {:ok, meta, body} -> handle_node_id(path, content, meta, body)
+      _ -> {:error, :config_parse}
     end
   end
 

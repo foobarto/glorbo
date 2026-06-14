@@ -658,7 +658,7 @@ defmodule Glorbo.HomeHistory do
   # ----------------------------------------------------------------
 
   defp default_base do
-    System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    Glorbo.Filesystem.Hierarchy.home_root()
   end
 
   defp ensure_base_exists(base) do

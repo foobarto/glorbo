@@ -130,7 +130,7 @@ defmodule Glorbo.CLI.Lifecycle.Up do
   end
 
   defp glorbo_home do
-    System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    Glorbo.Filesystem.Hierarchy.home_root()
   end
 
   @spec help_text() :: String.t()
