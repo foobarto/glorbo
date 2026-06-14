@@ -46,7 +46,11 @@ change between minor versions. Pin exact versions in downstream usage.
   watcher still reverted it, but the application layer didn't refuse). Extracted
   the guard into the shared `GlorboWeb.TaskApprovalGuard` used by both the
   Kanban shelf and the task page, restoring two-layer enforcement and removing
-  the drift that caused the gap.
+  the drift that caused the gap. The shared guard blocks only an actual
+  *transition* into `done`/`in-progress` from a still-gated, unapproved task —
+  a no-op save (editing the title/body of a task already past approval, where
+  `requires_approval: director` legitimately remains) is allowed, which also
+  corrects an over-aggressive case the Kanban guard carried since #37.
 
 ## [0.27.0] — 2026-06-14
 

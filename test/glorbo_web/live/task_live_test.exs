@@ -219,6 +219,46 @@ defmodule GlorboWeb.TaskLiveTest do
     assert content =~ "status: todo"
   end
 
+  # codex P2 (PR #74): the guard must only block a TRANSITION into a gated
+  # status, not a no-op save. After approval, `set_approval/4` leaves
+  # `requires_approval: director` in place, so a task can validly sit at
+  # `requires_approval: director` + `status: in-progress`/`done`. Editing its
+  # title/body (status unchanged) must NOT be rejected as a bypass.
+  test "save_task allows editing an already-progressed gated task (no status change)",
+       %{conn: conn, base: base} do
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: progressed gated task
+    assigned_to: ceo
+    status: in-progress
+    requires_approval: director
+    ---
+
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    html =
+      render_submit(view, "save_task", %{
+        "title" => "renamed after approval",
+        "status" => "in-progress",
+        "assigned_to" => "ceo",
+        "priority" => "",
+        "severity" => "",
+        "body" => "edited body after approval"
+      })
+
+    refute html =~ "requires director approval"
+    content = File.read!(path)
+    assert content =~ ~r/title: "?renamed after approval"?/
+    assert content =~ "status: in-progress"
+    assert content =~ "edited body after approval"
+  end
+
   # C-094 — a task frontmatter edit is a state-changing dashboard
   # mutation; it must leave an append-only audit record (crown jewel)
   # so the editor can't be used as a silent mutation path.

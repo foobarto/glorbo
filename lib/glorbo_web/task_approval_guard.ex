@@ -32,9 +32,21 @@ defmodule GlorboWeb.TaskApprovalGuard do
         case Frontmatter.parse(content) do
           {:ok, fm, _body} ->
             requires? = to_string(Map.get(fm, "requires_approval", "")) == "director"
-            approved? = to_string(Map.get(fm, "status", "")) == "approved"
+            current_status = to_string(Map.get(fm, "status", ""))
+            approved? = current_status == "approved"
 
-            if requires? and not approved? do
+            # A save that does NOT change the status is a title/body edit, not a
+            # transition into the gated status — never a bypass. This matters
+            # because `set_approval/4` leaves `requires_approval: director` in
+            # place after approving, so a task can validly sit at
+            # `requires_approval: director` + `status: in-progress`/`done` once
+            # it has moved past approval; re-saving it (e.g. to edit the title
+            # or body) must not be rejected. Only an actual transition INTO
+            # done/in-progress from a still-gated, not-yet-approved task is a
+            # bypass attempt.
+            no_transition? = current_status == target_status
+
+            if requires? and not approved? and not no_transition? do
               {:error, :approval_gate_bypass}
             else
               :ok
