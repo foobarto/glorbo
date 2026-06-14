@@ -35,9 +35,40 @@ defmodule Glorbo.Memory.IndexTest do
     ]
   end
 
+  # GEP-3: `enable/2` now persists the opt-in to `company.md`, so every
+  # company these tests enable needs a real company.md to write into. Seed
+  # minimal ones under the shared test base (mirrors the disk-persisted
+  # describe's "persisted" fixture). Idempotent across the run.
+  setup do
+    for co <- ~w(acme globex) do
+      co_dir = Path.join([Glorbo.Filesystem.Hierarchy.default_root(), "companies", co])
+      File.mkdir_p!(co_dir)
+      path = Path.join(co_dir, "company.md")
+
+      File.write!(path, """
+      ---
+      kind: company/v1
+      slug: #{co}
+      name: #{String.capitalize(co)}
+      ---
+      # #{String.capitalize(co)}
+      """)
+    end
+
+    :ok
+  end
+
   describe "enable/disable (default-OFF opt-in)" do
     test "a company is disabled by default" do
       refute Index.enabled?("acme")
+    end
+
+    test "enable on a company with no company.md errors, leaving the cache clean" do
+      # "ghost" is not seeded → no company.md to persist the opt-in into.
+      # The opt-in must NOT be cached when the disk write never happened
+      # (else it evaporates on the next reindex / DB wipe — GEP-3).
+      assert {:error, :company_md_missing} = Index.enable("ghost")
+      refute Index.enabled?("ghost")
     end
 
     test "enable then enabled? is true; disable flips it back" do

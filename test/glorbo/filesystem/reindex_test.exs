@@ -16,7 +16,7 @@ defmodule Glorbo.Filesystem.ReindexTest do
   # Helper: write a minimal `companies/acme/company.md` so reindex's
   # group-by-company filter accepts the audit JSONL siblings the test
   # then writes. Returns the file path.
-  defp seed_company(base, slug \\ "acme") do
+  defp seed_company(base, slug) do
     write!(base, "companies/#{slug}/company.md", "---\nname: #{slug}\n---\n")
   end
 
@@ -1030,6 +1030,29 @@ defmodule Glorbo.Filesystem.ReindexTest do
 
       companies = Repo.all(ChunkVector) |> Enum.map(& &1.company) |> Enum.uniq()
       assert companies == ["acme"]
+    end
+
+    test "reindex reconciles a stale cache: a company opted out on disk is purged" do
+      base = TmpGlorboHome.setup()
+      seed_company(base, "acme")
+      write!(base, "companies/acme/memory/notes.md", "the fox jumped over the lazy dog")
+
+      # Opt in + reindex → cache row + derived chunks exist.
+      :ok = Index.enable("acme", base: base)
+      assert {:ok, %{memory_chunks: n}} = Reindex.run([base: base] ++ stub_mem_opts())
+      assert n >= 1
+      assert Index.enabled?("acme")
+      refute Repo.all(ChunkVector) == []
+
+      # Opt OUT on disk directly — NOT via disable/2 — to prove reindex
+      # itself reconciles the SQLite cache against the company.md source of
+      # truth (GEP-3). The stale `memory_index_enabled` row must not survive.
+      write!(base, "companies/acme/company.md", "---\nname: acme\nmemory_index: false\n---\n")
+
+      assert {:ok, %{memory_chunks: 0}} = Reindex.run([base: base] ++ stub_mem_opts())
+
+      refute Index.enabled?("acme")
+      assert Repo.all(ChunkVector) == []
     end
   end
 end

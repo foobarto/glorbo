@@ -215,12 +215,20 @@ defmodule Glorbo.Filesystem.Reindex do
 
     case File.ls(companies_dir) do
       {:ok, entries} ->
-        entries
-        |> Enum.filter(fn co ->
-          File.dir?(Path.join(companies_dir, co)) and
-            Glorbo.Memory.Index.company_memory_enabled?(co, mem_opts)
-        end)
-        |> Enum.reduce(0, fn co, acc ->
+        enabled =
+          Enum.filter(entries, fn co ->
+            File.dir?(Path.join(companies_dir, co)) and
+              Glorbo.Memory.Index.company_memory_enabled?(co, mem_opts)
+          end)
+
+        # GEP-3: reconcile the cache the other way too. Any company the
+        # SQLite cache still lists but disk no longer opts in (memory_index
+        # set false/removed, or the company directory deleted) is stale —
+        # drop its cache row + derived rows so `enabled?` / search can't keep
+        # serving hits the disk source of truth says should be gone.
+        reconcile_stale_memory_cache(enabled, mem_opts)
+
+        Enum.reduce(enabled, 0, fn co, acc ->
           # Re-seed the SQLite cache from the disk truth so reindex_company's
           # `enabled?` guard (and later runtime reads) see the opt-in.
           Glorbo.Memory.Index.mark_enabled(co, mem_opts)
@@ -242,6 +250,12 @@ defmodule Glorbo.Filesystem.Reindex do
       _ ->
         0
     end
+  end
+
+  # Evict every cached-enabled company that disk no longer opts in.
+  defp reconcile_stale_memory_cache(enabled_on_disk, mem_opts) do
+    stale = Glorbo.Memory.Index.cached_companies(mem_opts) -- enabled_on_disk
+    Enum.each(stale, &Glorbo.Memory.Index.unmark_disabled(&1, mem_opts))
   end
 
   # Returns the absolute path to the immediate child of `companies_dir` that

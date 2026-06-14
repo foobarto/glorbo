@@ -145,6 +145,13 @@ change between minor versions. Pin exact versions in downstream usage.
   `company.md`'s `memory_index:` boolean (the source of truth), `glorbo reindex`
   re-derives the enabled set from it and re-seeds the SQLite cache, so the
   opt-in + embeddings survive a DB wipe. New `company/v1` `memory_index:` field.
+  Two follow-up correctness fixes: (1) `enable/2` now writes the disk flag
+  **first** and refuses to cache an opt-in that never reached `company.md` (a
+  missing file or write error is returned, not masked by a cache row that would
+  evaporate on the next reindex); (2) `glorbo reindex` reconciles the cache the
+  *other* way too — a company opted out on disk (or whose directory was deleted)
+  has its stale `memory_index_enabled` row + derived chunks purged, so the cache
+  never outlives the disk truth.
 
 - **Kanban status moves now go through the single Director write channel**
   (GEP-36). `KanbanLive`'s drag/drop handler wrote task status directly via
