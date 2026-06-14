@@ -3481,6 +3481,26 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   color: var(--glorbo-amber, var(--gl-amber));
   font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
 }
+/* Channel selector — render the native <select> as inline amber text so
+   it reads like the static #channel label it replaces. */
+.gl-chat-drawer__channel-form {
+  display: inline;
+  margin: 0;
+}
+.gl-chat-drawer__channel-select {
+  color: var(--glorbo-amber, var(--gl-amber));
+  font-family: var(--glorbo-ff-mono, var(--gl-ff-mono));
+  font-size: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.gl-chat-drawer__channel-select:focus-visible {
+  outline: 1px solid var(--glorbo-amber, var(--gl-amber));
+}
 .gl-chat-drawer__sep {
   color: var(--glorbo-fg-mute, var(--gl-fg-subtle));
 }

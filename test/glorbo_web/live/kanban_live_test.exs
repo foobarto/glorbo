@@ -1227,5 +1227,40 @@ defmodule GlorboWeb.KanbanLiveTest do
       # rejected post leaves it untouched (no "| director" entry).
       refute File.read!(path) =~ "| director"
     end
+
+    # 2026-06-14: the drawer can now tail any channel, not just #general.
+    # The `chat_drawer_channel` event is handled centrally by
+    # ChatDrawer.State's on_mount hook (no per-LV clause), and the
+    # selector only renders when the company has >1 channel.
+    test "switching channel re-tails + routes posts to the selected channel",
+         %{conn: conn, base: base} do
+      File.write!(Path.join([base, "companies", "acme", "channels", "dev.md"]), "# dev\n")
+
+      {:ok, view, html} = live(conn, ~p"/companies/acme/kanban")
+      assert html =~ "chat_drawer_channel"
+
+      html = render_hook(view, "chat_drawer_channel", %{"channel" => "dev"})
+      assert html =~ "#dev"
+
+      render_submit(view, "chat_drawer_post", %{"body" => "hi dev"})
+      assert File.read!(Path.join([base, "companies", "acme", "channels", "dev.md"])) =~ "hi dev"
+
+      refute File.read!(Path.join([base, "companies", "acme", "channels", "general.md"])) =~
+               "hi dev"
+    end
+
+    test "switching to an unknown channel is a no-op (rejects traversal)",
+         %{conn: conn, base: base} do
+      File.write!(Path.join([base, "companies", "acme", "channels", "dev.md"]), "# dev\n")
+      {:ok, view, _html} = live(conn, ~p"/companies/acme/kanban")
+
+      # An unknown / traversal channel name is ignored — the drawer stays
+      # on #general, so a post still lands there (proving no switch).
+      render_hook(view, "chat_drawer_channel", %{"channel" => "../../etc/passwd"})
+      render_submit(view, "chat_drawer_post", %{"body" => "still general"})
+
+      assert File.read!(Path.join([base, "companies", "acme", "channels", "general.md"])) =~
+               "still general"
+    end
   end
 end
