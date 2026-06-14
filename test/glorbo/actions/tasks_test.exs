@@ -820,4 +820,109 @@ defmodule Glorbo.Actions.TasksTest do
       assert head.sha == initial_sha
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # move/4 (GEP-36 single write path for status flips)
+  # ---------------------------------------------------------------------------
+
+  describe "move/4" do
+    setup %{tasks_dir: tasks_dir} do
+      File.write!(Path.join(tasks_dir, "demo-01.md"), """
+      ---
+      kind: task/v1
+      id: demo-01
+      title: a task
+      status: todo
+      ---
+      body
+      """)
+
+      :ok
+    end
+
+    test "flips status and emits task.move", %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      assert {:ok, %{from: "todo", to: "in-progress"}} =
+               Tasks.move("acme", "projects/demo/tasks/demo-01.md", "in-progress",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.read!(Path.join(tasks_dir, "demo-01.md")) =~ ~r/^status: in-progress$/m
+
+      [event] = FakeAudit.calls(audit)
+      assert event[:action] == "task.move"
+      assert event[:target] == "projects/demo/tasks/demo-01.md"
+      assert event[:changed] == ["status"]
+      assert event[:detail] == %{new_status: "in-progress"}
+    end
+
+    test "rejects an unknown status", %{base: base, audit: audit} do
+      assert {:error, {:invalid_status, "bogus"}} =
+               Tasks.move("acme", "projects/demo/tasks/demo-01.md", "bogus",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects a path outside projects/<p>/tasks/", %{base: base, audit: audit} do
+      assert {:error, {:invalid_task_rel_path, _}} =
+               Tasks.move("acme", "channels/general.md", "done",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "refuses an approval-gate bypass (director-approval task → done)",
+         %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      File.write!(Path.join(tasks_dir, "demo-01.md"), """
+      ---
+      kind: task/v1
+      id: demo-01
+      title: needs director
+      status: pending
+      requires_approval: director
+      ---
+      body
+      """)
+
+      assert {:error, :approval_gate_bypass} =
+               Tasks.move("acme", "projects/demo/tasks/demo-01.md", "done",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      # Status untouched, no audit row.
+      assert File.read!(Path.join(tasks_dir, "demo-01.md")) =~ ~r/^status: pending$/m
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "allows an approved director-approval task to move to done",
+         %{base: base, audit: audit, tasks_dir: tasks_dir} do
+      File.write!(Path.join(tasks_dir, "demo-01.md"), """
+      ---
+      kind: task/v1
+      id: demo-01
+      title: approved
+      status: approved
+      requires_approval: director
+      ---
+      body
+      """)
+
+      assert {:ok, %{to: "done"}} =
+               Tasks.move("acme", "projects/demo/tasks/demo-01.md", "done",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+    end
+  end
 end

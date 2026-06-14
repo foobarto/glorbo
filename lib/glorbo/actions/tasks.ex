@@ -10,15 +10,18 @@ defmodule Glorbo.Actions.Tasks do
     * `create/4` — new task file in `projects/<p>/tasks/<id>.md`.
       Called by `KanbanLive.handle_event("new_task_create", ...)`
       and MCP's `create_task` tool.
+    * `move/4` — status / column flip (GEP-36 single write path).
+      Called by `KanbanLive.handle_event("kanban:move", ...)`.
+    * `trash/3`, `archive_to_history/3`, `reassign/4`,
+      `record_peer_review_verdict/4`.
 
   Planned next (not yet implemented):
 
-    * `move/4` — status/column flip.
-    * `update_status/4` — any status change.
+    * `update/4` — full frontmatter+body edit (the save_task form
+      handlers still write via `TaskDefinition.write*` directly).
     * `assign/4` — `assigned_to:` flip + `handoff_chain:` append
       (GEP-40 consumer).
     * `dispatch/3` — wake agent + record dispatch.
-    * `request_peer_review/3` + `resolve_peer_review/4` (GEP-41).
 
   ## Contract
 
@@ -175,6 +178,93 @@ defmodule Glorbo.Actions.Tasks do
       {:ok, result, _tx_id} -> {:ok, result}
       {:error, _} = err -> err
     end
+  end
+
+  @doc """
+  Flip a task's `status:` — the single GEP-36 write path for a Kanban
+  column move / status change.
+
+  `task_rel_path` is the `projects/<project>/tasks/<id>.md` path relative to
+  the company. Validates the company slug, the rel-path shape, and the target
+  status; refuses an **approval-gate bypass** (a `requires_approval: director`
+  task that has not been `approved` may not jump straight to `in-progress`
+  or `done`); writes the new status atomically via `TaskDefinition.write/2`
+  inside the HomeHistory Tx; and emits `task.move`. Replaces the direct
+  `TaskDefinition.write` the KanbanLive drag/drop handler used to call, so the
+  same validation + audit applies to every caller (LV / MCP / shell).
+
+  Emits `task.move` with `changed: ["status"]` and `detail.new_status`.
+  Returns `{:ok, %{from: old_status, to: new_status}}`.
+  """
+  @spec move(String.t(), String.t(), String.t(), verdict_opts()) ::
+          {:ok, %{from: String.t(), to: String.t()}} | {:error, term()}
+  def move(company, task_rel_path, new_status, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and is_binary(new_status) and
+             is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.move",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             {:ok, _project} <- project_of(task_rel_path),
+             :ok <- validate_status(new_status),
+             abs_path = Path.join([base, "companies", company, task_rel_path]),
+             # Symlink-ancestor + leaf guard (parity with the path resolution
+             # KanbanLive did inline): an agent must not plant a symlinked
+             # project/tasks dir to redirect the write cross-tenant.
+             :ok <- ensure_no_symlink_directory(Path.dirname(abs_path)),
+             :ok <- ensure_regular_file(abs_path),
+             {:ok, task} <-
+               Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+             :ok <- guard_approval_gate(task, new_status),
+             :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: new_status}),
+             :ok <- Tx.mark_path(tx_id, abs_path),
+             :ok <- emit_move_audit(audit, company, task_rel_path, new_status, actor),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          {:ok, %{from: task.status, to: new_status}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = err -> err
+    end
+  end
+
+  @move_statuses ~w(todo in-progress pending pending-approval approved denied done blocked cancelled)
+
+  defp validate_status(status) when status in @move_statuses, do: :ok
+  defp validate_status(status), do: {:error, {:invalid_status, status}}
+
+  # GEP-36 / approval gate: a task requiring director approval that has not
+  # been approved must not be moved straight to in-progress/done (the
+  # dashboard's drag-to-done bypass KanbanLive used to guard inline).
+  defp guard_approval_gate(
+         %Glorbo.TaskDefinition{requires_approval: :director, status: status},
+         target
+       )
+       when target in ["done", "in-progress"] and status != "approved",
+       do: {:error, :approval_gate_bypass}
+
+  defp guard_approval_gate(_task, _target), do: :ok
+
+  defp emit_move_audit(audit, company, task_rel_path, new_status, actor) do
+    Support.append_audit(audit, company, %{
+      actor: actor,
+      action: "task.move",
+      target: task_rel_path,
+      company: company,
+      changed: ["status"],
+      detail: %{new_status: new_status}
+    })
   end
 
   # GEP-41 D1: if severity is major or critical and the caller did NOT
