@@ -41,8 +41,13 @@ scan, not a vector search.
   month's `audit/YYYY-MM.jsonl` rows (matched on `actor`, `action`, `target`).
 - Each result carries `kind` (`"task"` | `"audit"`), a human `label`, and an
   `href` to navigate to.
-- **Route:** `GET /api/search?co=<slug>&q=<prefix>`, gated by the dashboard
-  bearer token (GEP-48) — *not* a new unauthenticated surface.
+- **Route:** `GET /api/search?co=<slug>&q=<prefix>`, behind the
+  `:dashboard_api` pipeline — it fetches the browser session and runs
+  `GlorboWeb.DirectorAuth`, so it is **session-gated** like the rest of the
+  dashboard. A bearer token alone is redirected to `/login`
+  (`SearchControllerTest`); this is not a token-authenticated or
+  unauthenticated surface, and CLI/MCP callers cannot reach it without a
+  director session.
 - The `schedule:` value is searchable as a substring, so `daily` surfaces every
   daily-scheduled task without grepping audit.
 
@@ -81,7 +86,8 @@ Operators want the orchestrator to survive logout / reboot without a manual
 ## Related
 
 - **GEP-30 / GEP-20** — the Ctrl+K palette that consumes `/api/search`.
-- **GEP-48** — the dashboard bearer token gating `/api/search`.
+- **GEP-48** — dashboard auth; `/api/search` rides the `:dashboard_api`
+  session pipeline (`DirectorAuth`), not the bearer-token path.
 - **GEP-58** — semantic recall (the optional layer above this keyword baseline).
 - `lib/glorbo/search.ex`, `lib/glorbo_web/controllers/search_controller.ex`,
   `lib/glorbo/cli/install.ex`.

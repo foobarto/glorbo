@@ -57,9 +57,15 @@ Three sequential refusal gates run over `:erl_tar.table/2` **before** any
 2. **Link entries (PR #36 round-4).** Symlink / hardlink entries are refused
    outright — `:erl_tar.extract` materialises entries in archive order, so a
    crafted `evil` (symlink → `/tmp`) + `evil/payload` pair could write outside
-   the tree *during* extract, before any post-extract walk. Genuine Glorbo
-   backups never contain link entries (built via `:erl_tar.create` on a flat
-   file list), so any link entry signals a hostile or non-Glorbo archive.
+   the tree *during* extract, before any post-extract walk. The refusal is
+   **fail-closed**: it does not try to distinguish a "safe" symlink from a
+   hostile one. **Known limitation / tension (D2):** `Glorbo.Backup` archives
+   without `:dereference`, so a symlink living under an allowlisted tree
+   (`companies/`, `audit/`) is stored as a tar link entry — which `restore`
+   then refuses. So a backup of a home that contains such a symlink will not
+   restore. This is the deliberate, security-first trade-off below; the proper
+   fix (have `backup` either refuse or dereference symlinks so the round-trip
+   is total) is tracked as follow-up work, not yet shipped.
 3. **Uncompressed size cap (WR-03).** Total uncompressed bytes ≤ 10 GiB
    (archive-bomb guard).
 
@@ -76,7 +82,12 @@ restored filesystem (consistent with GEP-3/7: the DB is derived).
   tracked scope and GEP-3's "filesystem is the source of truth"; derived state
   is rebuilt on restore, never archived as authoritative.
 - **D2. Fail-closed on any link entry.** Cheaper and safer than trying to make
-  symlink extraction safe; legitimate backups never need it.
+  symlink extraction safe. Trade-off accepted: because `backup` preserves
+  symlinks (no `:dereference`), a home with a symlink under an allowlisted tree
+  produces an archive `restore` will reject — so the backup→restore round-trip
+  is **not total** for such homes. Closing that gap (refuse-or-dereference at
+  backup time) is follow-up work; the security refusal at restore stays
+  fail-closed regardless.
 - **D3. Migrations, then reindex on restore.** The schema is owned by
   migrations (GEP-7), not by the archive, so a restore onto a newer binary
   self-migrates.
