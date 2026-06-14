@@ -86,6 +86,9 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0061 | [Consolidate provider config + credentials under XDG (~/.config/glorbo)](./0061-xdg-provider-config-consolidation.md) | Standards | Implemented |
 | 0062 | [Multi-instance support via per-instance node identity](./0062-multi-instance-node-identity.md) | Standards | Implemented |
 | 0063 | [Goals as `goal/v1` files (file-canonical store)](./0063-goals-as-files-canonical.md) | Standards | Implemented |
+| 0064 | [Backup / Restore portability](./0064-backup-restore-portability.md) | Standards | Implemented |
+| 0065 | [Emergency-stop kill switch](./0065-emergency-stop-kill-switch.md) | Standards | Implemented |
+| 0066 | [Operational surfaces — content search + systemd-unit lifecycle](./0066-operational-cli-surfaces.md) | Standards | Implemented |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 <!-- 0060 reserved for the planned SymlinkGuard /home→/var/home GEP. -->
