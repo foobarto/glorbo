@@ -398,6 +398,168 @@ defmodule Glorbo.FileSpec.ValidatorTest do
     end
   end
 
+  describe "GEP-47 depends_on resolution (task.dependency_missing)" do
+    test "dangling depends_on is an error", %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Depends on a ghost
+      status: todo
+      depends_on:
+        - ghost-01
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+
+      assert Enum.any?(
+               findings,
+               &(&1.code == :task_dependency_missing and &1.severity == :error)
+             )
+
+      assert Validator.exit_code(findings) == 1
+    end
+
+    test "a live task in the same project resolves the dependency", %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/release-01.md", """
+      ---
+      kind: task/v1
+      id: release-01
+      title: Upstream
+      status: done
+      ---
+      """)
+
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Downstream
+      status: todo
+      depends_on:
+        - release-01
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
+    test "a task_id unique across projects resolves (cross-project)", %{base: base} do
+      seed(base, "companies/acme/projects/infra/tasks/infra-09.md", """
+      ---
+      kind: task/v1
+      id: infra-09
+      title: Infra upstream
+      status: in-progress
+      ---
+      """)
+
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Cross-project dependent
+      status: todo
+      depends_on:
+        - infra-09
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
+    test "an archived (history) task resolves the dependency", %{base: base} do
+      seed(base, "companies/acme/projects/release/history/tasks/release-01.md", """
+      ---
+      kind: task/v1
+      id: release-01
+      title: Archived upstream
+      status: done
+      ---
+      """)
+
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Depends on archived
+      status: todo
+      depends_on:
+        - release-01
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
+    test "a malformed depends_on entry (path-escape) is flagged, never resolved off-tree",
+         %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Malformed dep
+      status: todo
+      depends_on:
+        - ../../../etc/passwd
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      assert Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
+    test "no depends_on key produces no dependency finding", %{base: base} do
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: No deps
+      status: todo
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
+    test "resolution is robust when the base path itself contains a projects/ segment",
+         %{base: outer} do
+      # Nest the whole glorbo tree under a `projects/` dir: the company-root
+      # derivation must not anchor on the wrong `/projects/` (a naive split on
+      # the first occurrence would look under <outer>/projects and miss it).
+      base = Path.join([outer, "projects", "glorbo-home"])
+      File.mkdir_p!(base)
+
+      seed(base, "companies/acme/projects/release/tasks/release-01.md", """
+      ---
+      kind: task/v1
+      id: release-01
+      title: Upstream
+      status: done
+      ---
+      """)
+
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Downstream
+      status: todo
+      depends_on:
+        - release-01
+      ---
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+  end
+
   describe "stats" do
     test "stats count files_examined and severity buckets", %{base: base} do
       seed(base, "companies/acme/company.md", """
