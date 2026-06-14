@@ -93,6 +93,10 @@ defmodule Glorbo.Application do
       # (no probe or spawn until the Director acts), so it's harmless on
       # instances that never touch Ollama.
       Glorbo.Ollama.Daemon,
+      # GEP-67 Phase 3: one-at-a-time `ollama pull` queue, streaming
+      # progress on the "ollama:pulls" PubSub topic. Inert until a pull
+      # is requested.
+      Glorbo.Ollama.Pull,
       # GEP-23 Phase 5: ephemeral per-dispatch Proxy-Authorization tokens.
       # Reaper GenServer also owns the ETS table; starts before
       # CompanySupervisor so the first dispatch can register + the

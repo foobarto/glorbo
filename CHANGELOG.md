@@ -29,6 +29,14 @@ change between minor versions. Pin exact versions in downstream usage.
   auto-replaces a vanished external one, and bounds restarts of a crashing
   managed daemon before parking at `:down`. Inert at boot — no probe or spawn
   until the Director acts.
+- **Ollama model pull with live progress (GEP-67, Phase 3).**
+  `Glorbo.Ollama.Pull` runs `ollama pull <model>` host-side, **one at a time**
+  (further requests queue, D9), streaming `{:started/:progress/:done/:error/
+  :cancelled}` events on the `"ollama:pulls"` PubSub topic. The user-supplied
+  model name is validated against Ollama's `name[:tag]` grammar (rejecting
+  shell metacharacters, flags, `..`, whitespace) and passed as a discrete
+  argv element after `--` via `MuonTrap.Daemon` — execve, never a shell (D10).
+  Pulls are cancellable.
 
 ## [0.27.1] — 2026-06-14
 
