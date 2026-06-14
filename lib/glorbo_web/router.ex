@@ -107,7 +107,11 @@ defmodule GlorboWeb.Router do
     # dashboard LiveView in a `live_session` whose `on_mount` re-checks the
     # passphrase session on the (connected) socket too — the plug alone is
     # a near-total bypass over the WebSocket.
-    live_session :director, on_mount: {GlorboWeb.DirectorAuth, :ensure_director} do
+    live_session :director,
+      on_mount: [
+        {GlorboWeb.DirectorAuth, :ensure_director},
+        {GlorboWeb.Components.ChatDrawer.State, :default}
+      ] do
       live "/companies", OverviewLive
       live "/companies/:company", CompanyLive
       live "/companies/:company/kanban", KanbanLive

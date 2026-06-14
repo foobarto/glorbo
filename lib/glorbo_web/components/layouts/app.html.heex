@@ -32,6 +32,8 @@
   </main>
   <GlorboWeb.Components.ChatDrawer.chat_drawer
     current_company={assigns[:current_company]}
+    current_channel={assigns[:chat_drawer_channel] || "general"}
+    channels={assigns[:chat_drawer_channels] || []}
     messages={assigns[:chat_drawer_messages] || []}
   />
   <GlorboWeb.Components.Statusbar.statusbar />

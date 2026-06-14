@@ -10,6 +10,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added
+
+- **Chat drawer channel switching.** The bottom-docked chat drawer (GEP-30) was
+  hardcoded to `#general`; its header now has a channel selector to tail + post
+  to any of the company's channels. Handled centrally via a `live_session`
+  `on_mount` hook (`ChatDrawer.State`), so the ~19 host LiveViews need no
+  per-view wiring, and the selection is persisted to `localStorage` so it
+  survives the drawer's per-navigation re-mount. Unknown / traversal channel
+  names are rejected server-side against the company's real channel list.
+
 ## [0.27.1] — 2026-06-14
 
 ### Fixed

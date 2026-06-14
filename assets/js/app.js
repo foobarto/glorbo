@@ -618,6 +618,7 @@ const SidebarCollapse = {
 const CHAT_DRAWER_H_KEY = "glorbo.chatdrawer.height"
 const CHAT_DRAWER_MIN_KEY = "glorbo.chatdrawer.minimized"
 const CHAT_DRAWER_TOGGLE_KEY = "glorbo.chatdrawer.toggle_key"
+const CHAT_DRAWER_CHANNEL_KEY = "glorbo.chatdrawer.channel"
 // Default toggle: Ctrl + backtick. Matches VS Code terminal.
 // Match on `code` (physical key) so AZERTY / Dvorak / IME layouts
 // still hit the VS-Code-style affordance. `key` is kept as a fallback
@@ -638,14 +639,37 @@ const ChatDrawer = {
     this._bindHandle()
     this._bindHeader()
     this._bindKeybind()
+    this._restoreChannel()
   },
   updated() {
     // Re-apply on LV re-render so the persisted state survives.
     this._applyStored()
+    this._saveChannel()
   },
   destroyed() {
     if (this._keydownHandler) {
       window.removeEventListener("keydown", this._keydownHandler)
+    }
+  },
+  // Persist the tailed channel so the selection survives the drawer's
+  // per-navigation re-mount (it's in the global layout, so it remounts
+  // on every page). `data-channel` carries the server's current channel.
+  _saveChannel() {
+    const ch = this.el.dataset.channel
+    if (ch && ch !== this._lastSavedChannel) {
+      localStorage.setItem(CHAT_DRAWER_CHANNEL_KEY, ch)
+      this._lastSavedChannel = ch
+    }
+  },
+  _restoreChannel() {
+    this._lastSavedChannel = this.el.dataset.channel
+    const stored = localStorage.getItem(CHAT_DRAWER_CHANNEL_KEY)
+    // The drawer mounts on #general (server default). If the user last
+    // picked another channel, ask the server to switch. The server
+    // validates the name against THIS company's channels, so a stored
+    // channel that doesn't exist here is harmlessly ignored.
+    if (stored && stored !== this.el.dataset.channel) {
+      this.pushEvent("chat_drawer_channel", {channel: stored})
     }
   },
   _applyStored() {
