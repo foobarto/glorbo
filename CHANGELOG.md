@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.27.1] — 2026-06-14
+
 ### Fixed
 
 - **Semantic-recall embedder silently stored zero-dim vectors on a malformed
@@ -7642,7 +7644,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/foobarto/glorbo/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0
 [0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
