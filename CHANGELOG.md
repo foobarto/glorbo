@@ -21,6 +21,14 @@ change between minor versions. Pin exact versions in downstream usage.
   detect → scan → pull → managed-daemon → use lifecycle; detection runs only on
   request (no boot-time host-binary probe). Agents reach the model through the
   per-company GEP-55 proxy, never raw `:11434` (GEP-67 D5).
+- **Ollama daemon lifecycle manager (GEP-67, Phase 2).** `Glorbo.Ollama.Daemon`
+  — a supervised singleton (GEP-67 D8) that adopts an already-running Ollama
+  daemon if one answers on `:11434` (systemd/manual), or spawns + supervises
+  its own `ollama serve` as a `MuonTrap.Daemon` child bound to the BEAM (dies
+  with glorbo, D3). It never stops a daemon it didn't start (D2), never
+  auto-replaces a vanished external one, and bounds restarts of a crashing
+  managed daemon before parking at `:down`. Inert at boot — no probe or spawn
+  until the Director acts.
 
 ## [0.27.1] — 2026-06-14
 

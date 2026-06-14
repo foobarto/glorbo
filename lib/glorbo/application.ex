@@ -88,6 +88,11 @@ defmodule Glorbo.Application do
       Glorbo.CLI.Registry,
       # GEP-32 phase 3: host-side native-provider model catalog cache.
       Glorbo.Providers.ModelCatalog,
+      # GEP-67 Phase 2: local Ollama daemon lifecycle manager (adopt /
+      # start / monitor). A supervised singleton (D8) — inert at boot
+      # (no probe or spawn until the Director acts), so it's harmless on
+      # instances that never touch Ollama.
+      Glorbo.Ollama.Daemon,
       # GEP-23 Phase 5: ephemeral per-dispatch Proxy-Authorization tokens.
       # Reaper GenServer also owns the ETS table; starts before
       # CompanySupervisor so the first dispatch can register + the
