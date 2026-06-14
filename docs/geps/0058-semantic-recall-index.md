@@ -194,3 +194,9 @@ None required — additive, opt-in, default-off:
   (local embedder readiness).
 - Prior art: odysseus `src/memory_vector.py` (Chroma + fastembed, vector +
   keyword hybrid).
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record. Per GEP-1, an Accepted/Implemented GEP's body is not rewritten — the body above reflects design-time intent, and any divergence from the shipped code is captured here.
+
+- **GEPs README lists 0058 as "Draft" while the feature is shipped** — *as-shipped (body/index stale).* The GEP frontmatter (`status: Draft`, line 5) and Migration section ("Implementation deferred… not built this cycle", lines 176-178) both claim the feature is design-complete-but-unbuilt; the code contradicts this. The semantic recall index is fully implemented: migration `priv/repo/migrations/20260612120000_create_memory_index.exs`, the `lib/glorbo/memory/` tree (`index.ex`, `chunk_vector.ex`, `vector.ex`, `embedder.ex`, `chunker.ex`), CLI wiring (`lib/glorbo/cli.ex:484-491,628-661` — `glorbo memory index <company> --enable|--disable`), reindex wiring (`lib/glorbo/filesystem/reindex.ex:119-124`, the `:memory_index_opts` D6 lazy-embed path), and tests (`test/glorbo/memory/{index,vector,embedder}_test.exs`) — all landed in commit `4c4a9ce` ("feat(geps): implement GEPs 0056-0059"). The README index row at `docs/geps/README.md:84` reads `Draft`, whereas every comparably-shipped GEP in the same table uses `Implemented` (e.g. lines 29-47). Disposition: flip the GEP-0058 frontmatter to `Implemented` and the README row from `Draft` to `Implemented` in one change so the index, the frontmatter, and the shipped code all agree; the design body stays as-is per GEP-1.

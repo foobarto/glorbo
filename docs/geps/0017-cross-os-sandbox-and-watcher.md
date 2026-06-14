@@ -267,3 +267,9 @@ is already 90% there via `file_system`.
    Probably no — Burrito-bundled `inotifywait` is easier.
 
 All three stay unanswered until someone is actually doing the work.
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record per GEP-1: the body of an Accepted/Implemented GEP is not rewritten in place, so deviations found during reconciliation are logged here instead.
+
+- **macOS CI build "still disabled / build from source" (as-shipped — body is stale).** The GEP-0017 history note dated 2026-04-23 (`docs/geps/0017-cross-os-sandbox-and-watcher.md:20-22`) states "The CI `build-macos` matrix is still disabled pending GHA runner capacity; macOS users build from source." That is no longer true. `.github/workflows/release.yml` defines an **enabled** `build-macos-cross` job (line 343) that cross-compiles both darwin targets (`macos_x86_64` / `macos_arm64`) via Zig on `runs-on: ubuntu-24.04` (line 359) — no macOS runner is needed, sidestepping the "runner capacity" blocker the note cites. That job is a hard dependency of the publish job (`needs: [build-and-test, build-macos-cross]`, line 449), so every tagged release builds it; the darwin artifacts are signed with `cosign sign-blob` (`glorbo-darwin-x86_64.sig` / `glorbo-darwin-arm64.sig`, lines 486-487) and shipped in the GitHub Release (lines 514-517). Disposition: code/CI is correct and shipping signed macOS binaries; the history note is stale. The note's surrounding claim that R30 shipped the runtime fallback without adopting the GEP's abstraction framework still holds — only the "CI disabled / build from source" sentence needs superseding here. No code change required; this entry records the correction.

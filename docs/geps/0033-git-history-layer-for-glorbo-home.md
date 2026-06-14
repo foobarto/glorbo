@@ -1410,3 +1410,9 @@ That is intentional, but the command:
 - **Why:** this follows the existing Glorbo preference for boring,
   observable subprocesses over new in-process dependency stacks. It also
   keeps history debugging straightforward for contributors.
+
+## Implementation reconciliation (2026-06-14)
+
+This is an append-only record of where the shipped code diverges from the GEP-0033 body above. Per GEP-1, an Accepted/Implemented GEP's body is not rewritten; deviations are captured here instead.
+
+- **`history.enabled: true` config flag (§Migration steps 4–5, lines 1172–1175; §Failure modes precondition, line 1191) — as-shipped (body is stale).** The GEP says `glorbo history init` "writes `history.enabled: true` to `config.md`" and that boot reads that flag to start automatic capture. The code never writes or reads any such flag. `HomeHistory.init/1` (`lib/glorbo/home_history.ex:183-194`) only runs `git init` + writes `.gitignore` + makes the initial commit — it never touches `config.md` (the only `config.md` references in that module, e.g. line 631 and the `.gitignore` template, are about *excluding* config.md from tracked scope because it carries secrets). Enablement is purely presence-of-`.git/`: `HomeHistory.status/1` keys off `File.dir?(base/.git)` (`home_history.ex:206`, returning `enabled: false` when absent at :225), every CLI subcommand gates on that status (`lib/glorbo/cli.ex:362, 537` "disabled (run `glorbo history init`)"), and at boot `Glorbo.HomeHistory.Tx`/`WatcherBridge` start unconditionally (`lib/glorbo/application.ex:96-109`) with the Tx flush translating `:not_initialised` into a clean no-op when `.git/` is absent — no boot-time flag read exists. The only `history.enabled` strings in the repo are in this GEP itself; none appear in `lib/`. The `.git/`-presence-as-enable-signal design is cleaner and is what shipped, so the spec text in steps 4–5 and the §Failure-modes precondition should be read as superseded by presence-of-`.git/`.
