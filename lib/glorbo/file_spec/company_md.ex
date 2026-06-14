@@ -44,6 +44,11 @@ defmodule Glorbo.FileSpec.CompanyMd do
         :template_version,
         :provider_pin,
         :model_pin,
+        # GEP-58 semantic-recall opt-in, persisted to disk (GEP-3
+        # rebuildability): `glorbo memory index <co> --enable/--disable`
+        # writes this boolean, and `glorbo reindex` re-derives the enabled
+        # set from it (the SQLite `memory_index_enabled` table is a cache).
+        :memory_index,
         # Set by `glorbo import paperclip` so Directors can grep
         # for imported companies later.
         :imported_from
@@ -72,6 +77,7 @@ defmodule Glorbo.FileSpec.CompanyMd do
       :template_version,
       :provider_pin,
       :model_pin,
+      :memory_index,
       :created_at
     ]
   end

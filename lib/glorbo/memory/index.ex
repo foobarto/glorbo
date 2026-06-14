@@ -30,20 +30,19 @@ defmodule Glorbo.Memory.Index do
   WHERE clause here. This mirrors the absolute company-isolation
   invariant (CLAUDE.md / GEP isolation).
 
-  ## Derived, rebuildable (D2 / GEP-7) — with one caveat
+  ## Derived, rebuildable (D2 / GEP-7)
 
-  The chunk/vector/FTS tables are disposable: `glorbo reindex` re-walks
-  an *enabled* company's markdown tree, re-chunks, re-embeds (lazily —
-  D6), and repopulates. The markdown files stay authoritative.
-
-  **Known gap (GEP-3 rebuildability):** the per-company opt-in itself
-  lives only in the `memory_index_enabled` table — there is no on-disk
-  representation. So `rm glorbo.db && glorbo reindex` recreates the table
-  empty, no company is considered enabled, and recall silently reverts
-  to OFF until re-enabled with `glorbo memory index <co> --enable`. The
-  authoritative markdown is never lost, but the opt-in + derived
-  embeddings are. Resolving this (persist the opt-in to disk, or carve it
-  out of the GEP-3 invariant) is tracked against GEP-58.
+  Fully rebuildable from disk (GEP-3). The chunk/vector/FTS tables are
+  disposable, AND the per-company opt-in is persisted to disk —
+  `enable/2`/`disable/2` write `company.md`'s `memory_index:` boolean (the
+  source of truth), so the `memory_index_enabled` SQLite table is a pure
+  cache. `glorbo reindex` re-derives the enabled set from `company.md`
+  (`company_memory_enabled?/2`), re-seeds the cache (`mark_enabled/2`), and
+  re-embeds. So `rm glorbo.db && glorbo reindex` restores both the opt-in
+  and the embeddings — the markdown files stay authoritative throughout.
+  Reindex also reconciles the cache the *other* way: a company opted out
+  on disk (or deleted) has its stale cache row + derived rows purged
+  (`unmark_disabled/2`), so the cache never outlives the disk truth.
   """
 
   import Ecto.Query
@@ -60,9 +59,36 @@ defmodule Glorbo.Memory.Index do
 
   @doc """
   Opt `company` into semantic indexing. Idempotent.
+
+  Persists the opt-in to disk (`company.md` `memory_index: true`) so it
+  survives a `rm glorbo.db && glorbo reindex` (GEP-3 rebuildability), then
+  marks the SQLite cache so runtime reads see it immediately.
+
+  The disk write is authoritative and happens **first**: if `company.md`
+  is missing or the write fails, the error is returned and the cache is
+  left untouched. Caching an opt-in that never reached `company.md` would
+  silently evaporate on the next reindex / DB wipe — so a failed
+  persistence must fail the whole call, not be masked by a cache row.
   """
-  @spec enable(String.t(), keyword()) :: :ok
+  @spec enable(String.t(), keyword()) :: :ok | {:error, term()}
   def enable(company, opts \\ []) when is_binary(company) do
+    case write_memory_flag(company, true, opts) do
+      :ok ->
+        mark_enabled(company, opts)
+        :ok
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  @doc """
+  Mark `company` enabled in the SQLite cache only (no disk write).
+  Idempotent. Used by `glorbo reindex` to re-seed the cache from the disk
+  source of truth after a DB wipe.
+  """
+  @spec mark_enabled(String.t(), keyword()) :: :ok
+  def mark_enabled(company, opts \\ []) when is_binary(company) do
     repo = repo(opts)
 
     repo.insert_all("memory_index_enabled", [%{company: company}],
@@ -76,17 +102,94 @@ defmodule Glorbo.Memory.Index do
   @doc """
   Opt `company` out of semantic indexing and purge its derived rows.
 
-  Disabling MUST drop the company's vectors + FTS rows so a disabled
-  company carries no stale index (and no storage cost). Scoped to the
-  one company — never touches another company's rows.
+  Clears the disk opt-in (`company.md` `memory_index: false`), drops the
+  SQLite enabled row, and purges the company's vectors + FTS rows so a
+  disabled company carries no stale index (and no storage cost). Scoped to
+  the one company — never touches another company's rows.
   """
   @spec disable(String.t(), keyword()) :: :ok
   def disable(company, opts \\ []) when is_binary(company) do
     repo = repo(opts)
 
+    # Disabling is the safe direction: even if the disk flag can't be
+    # flipped (e.g. company.md gone), the cache + derived rows MUST go so
+    # search stops returning hits immediately. Best-effort on disk.
+    _ = write_memory_flag(company, false, opts)
     repo.delete_all(from(e in "memory_index_enabled", where: e.company == ^company))
     purge_company(company, repo)
     :ok
+  end
+
+  @doc """
+  Read the on-disk opt-in for `company` — `company.md`'s `memory_index:`
+  frontmatter (the GEP-3 source of truth). `false` when the file or key is
+  absent. `opts[:base]` overrides the glorbo home root.
+  """
+  @spec company_memory_enabled?(String.t(), keyword()) :: boolean()
+  def company_memory_enabled?(company, opts \\ []) when is_binary(company) do
+    path = company_md_path(company, opts)
+
+    with {:ok, content} <- File.read(path),
+         {:ok, fm, _body} <- Glorbo.Filesystem.Frontmatter.parse(content) do
+      Map.get(fm, "memory_index") == true
+    else
+      _ -> false
+    end
+  end
+
+  # Returns `:ok` only when the `memory_index:` flag actually reached
+  # `company.md`. A missing file or a write error is surfaced so callers
+  # never cache an opt-in the disk source of truth does not carry.
+  defp write_memory_flag(company, value, opts) do
+    path = company_md_path(company, opts)
+
+    with true <- File.exists?(path),
+         {:ok, content} <- File.read(path),
+         :ok <-
+           Glorbo.Filesystem.FrontmatterWriter.atomic_write(
+             path,
+             upsert_memory_index(content, value)
+           ) do
+      :ok
+    else
+      false -> {:error, :company_md_missing}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Update the `memory_index:` frontmatter line if present, else append it to
+  # the frontmatter block. (`FrontmatterWriter.update_keys/2` only rewrites
+  # existing keys; this opt-in may be absent on first enable.)
+  defp upsert_memory_index(content, value) do
+    scalar = "memory_index: #{Glorbo.Filesystem.FrontmatterWriter.yaml_scalar(value)}"
+
+    case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
+      ["", fm, body] ->
+        new_fm = set_memory_index_line(String.split(fm, "\n"), scalar)
+        "---\n" <> new_fm <> "\n---\n" <> body
+
+      _ ->
+        content
+    end
+  end
+
+  defp set_memory_index_line(lines, scalar) do
+    if Enum.any?(lines, &memory_index_line?/1) do
+      Enum.map_join(lines, "\n", &replace_memory_index_line(&1, scalar))
+    else
+      Enum.join(lines ++ [scalar], "\n")
+    end
+  end
+
+  defp replace_memory_index_line(line, scalar) do
+    if memory_index_line?(line), do: scalar, else: line
+  end
+
+  defp memory_index_line?(line), do: String.match?(line, ~r/\A\s*memory_index\s*:/)
+
+  defp company_md_path(company, opts) do
+    base = Keyword.get_lazy(opts, :base, &Glorbo.Filesystem.Hierarchy.default_root/0)
+    Path.join([base, "companies", company, "company.md"])
   end
 
   @doc "Returns true iff `company` has opted into semantic indexing."
@@ -95,6 +198,35 @@ defmodule Glorbo.Memory.Index do
     repo = repo(opts)
 
     repo.exists?(from(e in "memory_index_enabled", where: e.company == ^company))
+  end
+
+  @doc """
+  Every company currently flagged enabled in the SQLite cache. `glorbo
+  reindex` diffs this against the `company.md` disk truth (GEP-3) to find
+  stale rows — a company the cache still lists but disk no longer opts in.
+  """
+  @spec cached_companies(keyword()) :: [String.t()]
+  def cached_companies(opts \\ []) do
+    repo = repo(opts)
+
+    repo.all(from(e in "memory_index_enabled", select: e.company))
+  end
+
+  @doc """
+  Drop `company`'s SQLite enabled-cache row and purge its derived index
+  rows WITHOUT touching the disk opt-in — the cache-only inverse of
+  `mark_enabled/2`. `glorbo reindex` calls this to evict a company whose
+  `company.md` no longer opts in (a stale cache row left from a prior
+  enable, or a company directory that was removed). Scoped to the one
+  company — never touches another company's rows.
+  """
+  @spec unmark_disabled(String.t(), keyword()) :: :ok
+  def unmark_disabled(company, opts \\ []) when is_binary(company) do
+    repo = repo(opts)
+
+    repo.delete_all(from(e in "memory_index_enabled", where: e.company == ^company))
+    purge_company(company, repo)
+    :ok
   end
 
   # ---------------------------------------------------------------------------

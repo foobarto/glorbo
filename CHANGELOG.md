@@ -137,6 +137,22 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Semantic-recall opt-in is now rebuildable from disk** (GEP-3 / GEP-58). The
+  per-company memory-index opt-in lived only in the `memory_index_enabled`
+  SQLite table, so `rm glorbo.db && glorbo reindex` silently lost it (recall
+  reverted to OFF) — a GEP-3 "nothing in SQLite that can't be rebuilt from disk"
+  violation. `glorbo memory index <co> --enable/--disable` now also writes
+  `company.md`'s `memory_index:` boolean (the source of truth), `glorbo reindex`
+  re-derives the enabled set from it and re-seeds the SQLite cache, so the
+  opt-in + embeddings survive a DB wipe. New `company/v1` `memory_index:` field.
+  Two follow-up correctness fixes: (1) `enable/2` now writes the disk flag
+  **first** and refuses to cache an opt-in that never reached `company.md` (a
+  missing file or write error is returned, not masked by a cache row that would
+  evaporate on the next reindex); (2) `glorbo reindex` reconciles the cache the
+  *other* way too — a company opted out on disk (or whose directory was deleted)
+  has its stale `memory_index_enabled` row + derived chunks purged, so the cache
+  never outlives the disk truth.
+
 - **Kanban status moves now go through the single Director write channel**
   (GEP-36). `KanbanLive`'s drag/drop handler wrote task status directly via
   `TaskDefinition.write/2`, bypassing `Glorbo.Actions` — the one path GEP-36

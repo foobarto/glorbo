@@ -657,8 +657,17 @@ defmodule Glorbo.CLI do
     repo_started? = ensure_repo_started()
 
     try do
-      :ok = fun.(company, [])
-      {:memory_index, 0, "glorbo memory index — #{company} #{label}\n"}
+      case fun.(company, []) do
+        :ok ->
+          {:memory_index, 0, "glorbo memory index — #{company} #{label}\n"}
+
+        {:error, :company_md_missing} ->
+          {:memory_index, 1,
+           "glorbo memory index — #{company}: no company.md (is it a real company?)\n"}
+
+        {:error, reason} ->
+          {:memory_index, 1, "glorbo memory index — #{company} failed: #{inspect(reason)}\n"}
+      end
     after
       if repo_started?, do: Glorbo.Repo.stop(5_000)
     end
