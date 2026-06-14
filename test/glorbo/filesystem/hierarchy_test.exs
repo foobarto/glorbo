@@ -176,14 +176,17 @@ defmodule Glorbo.Filesystem.HierarchyTest do
       assert Hierarchy.native_credentials_dir() == "/secrets/glorbo"
     end
 
-    test "GLORBO_CREDENTIALS_DIR ignores a relative override (GEP-61 guard)" do
+    # GEP-61: native_credentials_dir delegates to the single guard authority
+    # (NativeConfig.credentials_dir), so a bad override fails LOUD everywhere
+    # rather than being silently honoured in one path and rejected in another.
+    test "GLORBO_CREDENTIALS_DIR raises on a relative override (GEP-61 guard)" do
       System.put_env("GLORBO_CREDENTIALS_DIR", "relative/creds")
-      assert Hierarchy.native_credentials_dir() == "/cfg/glorbo/credentials"
+      assert_raise ArgumentError, ~r/absolute path/, &Hierarchy.native_credentials_dir/0
     end
 
-    test "GLORBO_CREDENTIALS_DIR ignores a `..`-bearing override (GEP-61 guard)" do
+    test "GLORBO_CREDENTIALS_DIR raises on a `..`-bearing override (GEP-61 guard)" do
       System.put_env("GLORBO_CREDENTIALS_DIR", "/etc/../root/.creds")
-      assert Hierarchy.native_credentials_dir() == "/cfg/glorbo/credentials"
+      assert_raise ArgumentError, ~r/must not contain/, &Hierarchy.native_credentials_dir/0
     end
   end
 end

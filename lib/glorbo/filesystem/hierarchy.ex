@@ -134,25 +134,22 @@ defmodule Glorbo.Filesystem.Hierarchy do
   """
   @spec native_credentials_dir() :: Path.t()
   def native_credentials_dir do
-    case System.get_env("GLORBO_CREDENTIALS_DIR") do
-      dir when is_binary(dir) and dir != "" ->
-        if valid_credentials_override?(dir),
-          do: dir,
-          else: Path.join(config_root(), "credentials")
-
-      _ ->
-        Path.join(config_root(), "credentials")
-    end
+    # Single guard authority: `Glorbo.Providers.NativeConfig.credentials_dir/1`
+    # reads + validates `GLORBO_CREDENTIALS_DIR` (must be absolute, no `..`, no
+    # system path) and raises on a bad value. Delegating here keeps every
+    # caller consistent — a relative or `..`-bearing override fails loud
+    # everywhere instead of being honoured in one path and rejected in another.
+    Glorbo.Providers.NativeConfig.credentials_dir()
   end
 
-  # GEP-61 / GEP-32: a `GLORBO_CREDENTIALS_DIR` override is honoured only when
-  # it is an absolute path with no `..` segment. A relative or `..`-bearing
-  # value could redirect the credential store — and its read-only sandbox bind
-  # (GEP-55) — outside the intended tree, so an invalid override is ignored and
-  # the default `<config_root>/credentials` is used.
-  defp valid_credentials_override?(dir) do
-    String.starts_with?(dir, "/") and ".." not in Path.split(dir)
-  end
+  @doc """
+  The default credentials directory — `<config_root>/credentials`, with no
+  `GLORBO_CREDENTIALS_DIR` override. This is the fallback
+  `NativeConfig.credentials_dir/1` resolves to when the env var is unset (kept
+  separate from `native_credentials_dir/0` to avoid a delegation cycle).
+  """
+  @spec default_credentials_dir() :: Path.t()
+  def default_credentials_dir, do: Path.join(config_root(), "credentials")
 
   @doc """
   Canonical path to the user provider registry — `<config_root>/providers.toml`

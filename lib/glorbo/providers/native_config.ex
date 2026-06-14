@@ -29,10 +29,10 @@ defmodule Glorbo.Providers.NativeConfig do
 
     case env_fun.("GLORBO_CREDENTIALS_DIR") do
       nil ->
-        Hierarchy.native_credentials_dir()
+        Hierarchy.default_credentials_dir()
 
       "" ->
-        Hierarchy.native_credentials_dir()
+        Hierarchy.default_credentials_dir()
 
       override when is_binary(override) ->
         # Refuse obviously-wrong overrides so setting
