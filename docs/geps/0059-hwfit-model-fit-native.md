@@ -7,6 +7,7 @@ implemented-in: v0.27.0
 type: Standards
 created: 2026-06-12
 see-also: [8, 11, 32]
+extended-by: [67]
 history:
   - date: 2026-06-12
     status: Placeholder
