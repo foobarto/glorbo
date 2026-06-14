@@ -143,22 +143,27 @@ defmodule Glorbo.Memory.Index do
 
     case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
       ["", fm, body] ->
-        lines = String.split(fm, "\n")
-        key_line? = &String.match?(&1, ~r/\A\s*memory_index\s*:/)
-
-        new_fm =
-          if Enum.any?(lines, key_line?) do
-            Enum.map_join(lines, "\n", fn line -> if key_line?.(line), do: scalar, else: line end)
-          else
-            Enum.join(lines ++ [scalar], "\n")
-          end
-
+        new_fm = set_memory_index_line(String.split(fm, "\n"), scalar)
         "---\n" <> new_fm <> "\n---\n" <> body
 
       _ ->
         content
     end
   end
+
+  defp set_memory_index_line(lines, scalar) do
+    if Enum.any?(lines, &memory_index_line?/1) do
+      Enum.map_join(lines, "\n", &replace_memory_index_line(&1, scalar))
+    else
+      Enum.join(lines ++ [scalar], "\n")
+    end
+  end
+
+  defp replace_memory_index_line(line, scalar) do
+    if memory_index_line?(line), do: scalar, else: line
+  end
+
+  defp memory_index_line?(line), do: String.match?(line, ~r/\A\s*memory_index\s*:/)
 
   defp company_md_path(company, opts) do
     base = Keyword.get_lazy(opts, :base, &Glorbo.Filesystem.Hierarchy.default_root/0)
