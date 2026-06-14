@@ -134,8 +134,24 @@ defmodule Glorbo.Filesystem.Hierarchy do
   """
   @spec native_credentials_dir() :: Path.t()
   def native_credentials_dir do
-    System.get_env("GLORBO_CREDENTIALS_DIR") ||
-      Path.join(config_root(), "credentials")
+    case System.get_env("GLORBO_CREDENTIALS_DIR") do
+      dir when is_binary(dir) and dir != "" ->
+        if valid_credentials_override?(dir),
+          do: dir,
+          else: Path.join(config_root(), "credentials")
+
+      _ ->
+        Path.join(config_root(), "credentials")
+    end
+  end
+
+  # GEP-61 / GEP-32: a `GLORBO_CREDENTIALS_DIR` override is honoured only when
+  # it is an absolute path with no `..` segment. A relative or `..`-bearing
+  # value could redirect the credential store — and its read-only sandbox bind
+  # (GEP-55) — outside the intended tree, so an invalid override is ignored and
+  # the default `<config_root>/credentials` is used.
+  defp valid_credentials_override?(dir) do
+    String.starts_with?(dir, "/") and ".." not in Path.split(dir)
   end
 
   @doc """

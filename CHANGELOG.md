@@ -171,6 +171,14 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Security
 
+- **`GLORBO_CREDENTIALS_DIR` override is path-guarded again** (GEP-61). The
+  GEP-32→GEP-61 refactor dropped the absolute-path / no-`..` validation the GEP
+  says it keeps: `Hierarchy.native_credentials_dir/0` used any
+  `GLORBO_CREDENTIALS_DIR` value verbatim, so a relative or `..`-bearing value
+  could redirect the credential store (and its read-only GEP-55 sandbox bind)
+  outside the intended tree. An override is now honoured only when absolute with
+  no `..` segment; an invalid value is ignored and the default
+  `<config_root>/credentials` is used.
 - **Untrusted content framing (GEP-56)** — defense-in-depth against
   cross-agent prompt-injection *propagation*. Content that crosses a
   trust boundary into an agent's prompt — recalled file-based memory
