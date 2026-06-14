@@ -137,6 +137,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Peer-review sentinels no longer misclassify as generic inbox messages**
+  (GEP-42). `Glorbo.FileSpec.classify_by_path/1` is first-match-wins, but
+  `InboxMessageMd`'s `inbox/*.md` regex (a superset of the
+  `peer-review-<id>.md` / `peer-review-feedback-<id>.md` sentinel paths) was
+  registered *ahead* of the dedicated peer-review specs — so a not-yet-parsed
+  sentinel (the validator/formatter path-fallback for brand-new files) routed
+  to `inbox-message/v1` instead of its own validator. Reordered `@specs` so
+  `PeerReviewFeedbackMd` → `PeerReviewRequestMd` → `InboxMessageMd` (most
+  specific first; feedback before request since `peer-review-feedback-…` also
+  matches the request regex). GEP-42's "routes without ambiguity" claim now
+  holds. Regression test added.
 - **`glorbo validate` now flags memory `type:`↔filename mismatches**
   (GEP-25). The spec's `:type_filename_mismatch` check was documented but never
   implemented: a memory file whose filename prefix (`user_` / `feedback_` /

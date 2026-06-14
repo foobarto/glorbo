@@ -200,6 +200,26 @@ defmodule Glorbo.FileSpecTest do
                )
     end
 
+    test "peer-review sentinels are NOT shadowed by InboxMessageMd (GEP-42)" do
+      inbox = "/home/u/.glorbo/companies/acme/agents/critiqueops/inbox"
+
+      # A peer-review-request sentinel must route to its own spec, even
+      # though its path also matches InboxMessageMd's generic `inbox/*.md`
+      # regex — the registry orders the specific spec first (first-match).
+      assert {:ok, Glorbo.FileSpec.PeerReviewRequestMd} =
+               FileSpec.classify_by_path("#{inbox}/peer-review-release-01.md")
+
+      # Feedback is more specific still (`peer-review-feedback-…` also matches
+      # the request regex) and must win over BOTH request and inbox-message.
+      assert {:ok, Glorbo.FileSpec.PeerReviewFeedbackMd} =
+               FileSpec.classify_by_path("#{inbox}/peer-review-feedback-release-01.md")
+
+      # A plain inbox message (no peer-review- prefix) still classifies as
+      # the generic inbox spec — the reorder didn't over-capture.
+      assert {:ok, Glorbo.FileSpec.InboxMessageMd} =
+               FileSpec.classify_by_path("#{inbox}/msg-2026-04-21-1030.md")
+    end
+
     test "classifies channel logs" do
       assert {:ok, Glorbo.FileSpec.ChannelLogMd} =
                FileSpec.classify_by_path("/home/u/.glorbo/companies/acme/channels/general.md")
