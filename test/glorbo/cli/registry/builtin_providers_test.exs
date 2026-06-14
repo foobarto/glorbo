@@ -25,11 +25,11 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
   end
 
   test "all built-in providers load without error", %{providers: p} do
-    assert map_size(p) == 13
+    assert map_size(p) == 14
 
     for name <-
-          ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter minimax stado
-             gemini-cli-acp claude-code-acp codex-acp) do
+          ~w(claude-code codex gemini-cli hermes opencode pi openai openrouter minimax ollama
+             stado gemini-cli-acp claude-code-acp codex-acp) do
       assert Map.has_key?(p, name), "missing built-in provider: #{name}"
     end
 
@@ -39,7 +39,7 @@ defmodule Glorbo.CLI.Registry.BuiltinProvidersTest do
       assert p[name].kind == :cli, "#{name} must stay on the CLI registry path"
     end
 
-    for name <- ~w(openai openrouter minimax) do
+    for name <- ~w(openai openrouter minimax ollama) do
       assert p[name].kind == :native, "#{name} must stay on the native registry path"
     end
   end

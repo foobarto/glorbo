@@ -10,6 +10,18 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Added
+
+- **Built-in `ollama` provider + local-install detection (GEP-67, Phase 1).**
+  `ollama` is now a first-class built-in native provider (`auth = "none"`,
+  model list from `/api/tags`), and `Glorbo.Ollama` / `Glorbo.Ollama.Detect`
+  report whether the `ollama` binary is installed, its version, and whether a
+  daemon is answering on `127.0.0.1:11434` (reusing the GEP-32 detect
+  fingerprint). This is the foundation for the
+  detect → scan → pull → managed-daemon → use lifecycle; detection runs only on
+  request (no boot-time host-binary probe). Agents reach the model through the
+  per-company GEP-55 proxy, never raw `:11434` (GEP-67 D5).
+
 ## [0.27.1] — 2026-06-14
 
 ### Fixed
