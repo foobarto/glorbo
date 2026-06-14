@@ -239,7 +239,13 @@ defmodule Glorbo.Actions.Tasks do
     end
   end
 
-  @move_statuses ~w(todo in-progress pending pending-approval approved denied done blocked cancelled)
+  # The approval-lifecycle statuses (`pending-approval`, `approved`, `denied`)
+  # are NOT settable via the generic move: `Approvals.Gate` checks a
+  # Director-decision marker that `move/4` doesn't write, so an unmarked
+  # approve/deny is treated as `:agent_bypass` and reverted. Those transitions
+  # go through `Glorbo.Actions.set_approval/4`. The Kanban only ever moves to
+  # todo/in-progress/pending/done, so excluding them costs the UI nothing.
+  @move_statuses ~w(todo in-progress pending done blocked cancelled)
 
   defp validate_status(status) when status in @move_statuses, do: :ok
   defp validate_status(status), do: {:error, {:invalid_status, status}}

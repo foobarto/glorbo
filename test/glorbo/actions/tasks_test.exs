@@ -868,6 +868,24 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
 
+    # Approval-lifecycle statuses go through Glorbo.Actions.set_approval/4
+    # (which writes the Director-decision marker the Gate checks); move/4 must
+    # refuse them so a shell/MCP caller can't approve/deny via a bare status flip
+    # (the Gate would otherwise revert it as :agent_bypass).
+    for status <- ["approved", "denied", "pending-approval"] do
+      test "rejects moving to the approval-lifecycle status #{status}",
+           %{base: base, audit: audit} do
+        assert {:error, {:invalid_status, unquote(status)}} =
+                 Tasks.move("acme", "projects/demo/tasks/demo-01.md", unquote(status),
+                   actor: "director",
+                   base: base,
+                   audit: audit
+                 )
+
+        assert FakeAudit.calls(audit) == []
+      end
+    end
+
     test "rejects a path outside projects/<p>/tasks/", %{base: base, audit: audit} do
       assert {:error, {:invalid_task_rel_path, _}} =
                Tasks.move("acme", "channels/general.md", "done",
