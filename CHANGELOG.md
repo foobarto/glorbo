@@ -137,6 +137,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **`glorbo validate` now flags memory `type:`↔filename mismatches**
+  (GEP-25). The spec's `:type_filename_mismatch` check was documented but never
+  implemented: a memory file whose filename prefix (`user_` / `feedback_` /
+  `project_` / `reference_`) disagrees with its frontmatter `type:` mis-files
+  the entry for recall. The validator now emits a `:type_filename_mismatch`
+  error when the prefix and `type:` differ. Closes a GEP↔code reconciliation
+  finding.
 - **Peer-review `block`/`revise` verdicts now require a reason** (GEP-41
   failure-mode). `Glorbo.Actions.Tasks.record_peer_review_verdict/4` previously
   accepted an empty note for any verdict, so a reviewer (or an agent's verdict
