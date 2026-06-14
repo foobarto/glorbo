@@ -137,6 +137,17 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **`glorbo validate` now flags dangling `depends_on:` targets** (GEP-47). The
+  spec promised a `task.dependency_missing` finding (D1 + failure-modes table +
+  `DependencyGate` moduledoc), but only the runtime half shipped — the scheduler
+  auto-cancels on a missing target, while parse/reindex-time validation stayed
+  silent. The validator's `task/v1` check now resolves each `depends_on` entry
+  against the on-disk task set (live `projects/*/tasks/<id>.md` or archived
+  `projects/*/history/tasks/<id>.md`, across all of the company's projects since
+  `task_id` is company-unique) and emits an `error`-severity
+  `:task_dependency_missing` when an entry resolves to neither. The id is
+  charset-guarded before any filesystem lookup, so a malformed/`..`-bearing
+  entry is reported as unresolved rather than escaping the tree.
 - **Peer-review sentinels no longer misclassify as generic inbox messages**
   (GEP-42). `Glorbo.FileSpec.classify_by_path/1` is first-match-wins, but
   `InboxMessageMd`'s `inbox/*.md` regex (a superset of the

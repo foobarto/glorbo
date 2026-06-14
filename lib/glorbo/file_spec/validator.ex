@@ -337,19 +337,10 @@ defmodule Glorbo.FileSpec.Validator do
   end
 
   # Per-kind extras the generic schema can't express (R28).
-  defp check_kind_specific(acc, path, _fm, Glorbo.FileSpec.TaskMd) do
-    if Glorbo.FileSpec.TaskMd.canonical_filename?(path) do
-      acc
-    else
-      [
-        info(
-          path,
-          :non_canonical_task_filename,
-          "task filename doesn't match GEP-13 `<project>-NN.md` convention"
-        )
-        | acc
-      ]
-    end
+  defp check_kind_specific(acc, path, fm, Glorbo.FileSpec.TaskMd) do
+    acc
+    |> check_task_filename(path)
+    |> check_task_dependencies(path, fm)
   end
 
   # GEP-25: a memory file's filename prefix (`user_` / `feedback_` /
@@ -378,6 +369,118 @@ defmodule Glorbo.FileSpec.Validator do
   end
 
   defp check_kind_specific(acc, _path, _fm, _mod), do: acc
+
+  defp check_task_filename(acc, path) do
+    if Glorbo.FileSpec.TaskMd.canonical_filename?(path) do
+      acc
+    else
+      [
+        info(
+          path,
+          :non_canonical_task_filename,
+          "task filename doesn't match GEP-13 `<project>-NN.md` convention"
+        )
+        | acc
+      ]
+    end
+  end
+
+  # GEP-47 D1: every `depends_on:` entry is a bare `task_id`, unique within
+  # the company (GEP-13). Emit `task.dependency_missing` (error) when an entry
+  # resolves to neither a live task (`projects/*/tasks/<id>.md`) nor an
+  # archived one (`projects/*/history/tasks/<id>.md`) — the scheduler would
+  # auto-cancel the dependent as failure-terminal, so a dangling dep is a real
+  # break, not a cosmetic lint.
+  defp check_task_dependencies(acc, path, fm) do
+    case Map.get(fm, "depends_on") do
+      deps when is_list(deps) ->
+        Enum.reduce(deps, acc, fn dep, inner ->
+          if is_binary(dep) and not dependency_resolves?(path, dep) do
+            [
+              error(
+                path,
+                :task_dependency_missing,
+                "depends_on `#{dep}` resolves to no live or archived task"
+              )
+              | inner
+            ]
+          else
+            inner
+          end
+        end)
+
+      _ ->
+        acc
+    end
+  end
+
+  # Resolve a `depends_on` id against the filesystem WITHOUT globbing the id
+  # (it is interpolated into a filename, so a glob/`..`/separator could escape
+  # the tree). A non-GEP-13-shaped id can't name a real task, so it is treated
+  # as unresolved (→ finding).
+  defp dependency_resolves?(task_path, dep_id) do
+    if Regex.match?(~r/\A[a-z0-9][a-z0-9-]*\z/, dep_id) do
+      # A TaskMd path is canonically `.../companies/<co>/projects/<proj>/tasks/
+      # <file>.md` (TaskMd.@task_path_regex pins exactly one project + filename
+      # segment), so three `dirname`s land on the company's `projects/` dir —
+      # robust even when the base path itself contains a `projects/` segment.
+      projects_dir = task_path |> Path.dirname() |> Path.dirname() |> Path.dirname()
+      dependency_file_present?(projects_dir, dep_id)
+    else
+      false
+    end
+  end
+
+  defp dependency_file_present?(projects_dir, dep_id) do
+    case File.ls(projects_dir) do
+      {:ok, projects} ->
+        Enum.any?(projects, fn proj -> live_or_archived?(projects_dir, proj, dep_id) end)
+
+      # Can't enumerate projects (tree not present) — don't false-positive.
+      _ ->
+        true
+    end
+  end
+
+  defp live_or_archived?(projects_dir, proj, dep_id) do
+    proj_dir = Path.join(projects_dir, proj)
+
+    real_dir?(proj_dir) and
+      (real_file_under?(proj_dir, ["tasks", "#{dep_id}.md"]) or
+         real_file_under?(proj_dir, ["history", "tasks", "#{dep_id}.md"]))
+  end
+
+  # Walk `segments` under `dir`, requiring EVERY intermediate component to be a
+  # real directory and the leaf a real regular file — all via lstat
+  # (`read_link_info`). `File.regular?/1` / `File.dir?/1` follow symlinks, so a
+  # planted symlink (the target file, or any project/`tasks` dir above it) would
+  # otherwise fake a resolution and suppress the finding — even though the
+  # validator's own traversal skips symlinks and the dispatch-time reader
+  # (`AgentWritableFile`, `read_link_info`) rejects them, leaving the task
+  # genuinely missing at runtime (codex #71 P2).
+  defp real_file_under?(dir, segments) do
+    {ancestors, [leaf]} = Enum.split(segments, length(segments) - 1)
+
+    walked =
+      Enum.reduce_while(ancestors, dir, fn seg, cur ->
+        next = Path.join(cur, seg)
+        if real_dir?(next), do: {:cont, next}, else: {:halt, nil}
+      end)
+
+    walked != nil and regular_file?(Path.join(walked, leaf))
+  end
+
+  defp real_dir?(path), do: link_info_type(path) == :directory
+  defp regular_file?(path), do: link_info_type(path) == :regular
+
+  # The lstat'd type of `path` (does NOT follow a final symlink), or nil if the
+  # path is absent/unreadable. `:file_info`'s 3rd tuple element is the type.
+  defp link_info_type(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} -> elem(info, 2)
+      _ -> nil
+    end
+  end
 
   # Anchor to the basename — an ancestor dir like `/memory/user_backup/` must
   # not be mistaken for the file's own prefix.
