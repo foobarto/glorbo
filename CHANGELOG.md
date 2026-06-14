@@ -137,6 +137,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Peer-review `block`/`revise` verdicts now require a reason** (GEP-41
+  failure-mode). `Glorbo.Actions.Tasks.record_peer_review_verdict/4` previously
+  accepted an empty note for any verdict, so a reviewer (or an agent's verdict
+  reply) could `block` a task — flipping it to `denied` — with no justification.
+  A `block` or `revise` with an empty/whitespace note is now rejected with
+  `{:error, :reason_required}` and lands no audit row or status flip; `approve`
+  stays noteless-OK. Closes a gap surfaced by the GEP↔codebase reconciliation.
 - **Crashed glorbo no longer wedges every subsequent start (orphaned EPMD
   registration).** A hard crash can leave `glorbo@127.0.0.1` registered with
   EPMD even though the node is gone (a child process that inherited the EPMD
