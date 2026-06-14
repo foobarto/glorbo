@@ -12,7 +12,7 @@ under `goals/<id>.md` (GEP-63), not in this frontmatter.
 
 **Required:** `kind`, `slug`, `name`
 
-**Optional:** `description`, `mission`, `created_at`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `imported_from`
+**Optional:** `description`, `mission`, `created_at`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `memory_index`, `imported_from`
 
 ### Patterns
 
@@ -25,7 +25,7 @@ under `goals/<id>.md` (GEP-63), not in this frontmatter.
 
 When the formatter rewrites this file, keys appear in this order:
 
-`kind`, `slug`, `name`, `description`, `mission`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `created_at`
+`kind`, `slug`, `name`, `description`, `mission`, `icon`, `budget`, `headcount_budget`, `max_concurrent_dispatches`, `template`, `template_version`, `provider_pin`, `model_pin`, `memory_index`, `created_at`
 
 Unknown keys fall after the known block, sorted alphabetically.
 

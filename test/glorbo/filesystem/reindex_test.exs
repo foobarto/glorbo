@@ -1000,7 +1000,9 @@ defmodule Glorbo.Filesystem.ReindexTest do
       seed_company(base, "acme")
       write!(base, "companies/acme/memory/notes.md", "the fox jumped over the lazy dog")
 
-      :ok = Index.enable("acme")
+      # GEP-3: the opt-in is persisted to this base's company.md (the disk
+      # source of truth reindex re-derives from), so pass `base:`.
+      :ok = Index.enable("acme", base: base)
 
       assert {:ok, %{memory_chunks: n}} = Reindex.run([base: base] ++ stub_mem_opts())
       assert n >= 1
@@ -1020,7 +1022,9 @@ defmodule Glorbo.Filesystem.ReindexTest do
       write!(base, "companies/acme/memory/a.md", "acme fox notes here")
       write!(base, "companies/globex/memory/b.md", "globex secret blueprint")
 
-      :ok = Index.enable("acme")
+      # GEP-3: the opt-in is persisted to this base's company.md (the disk
+      # source of truth reindex re-derives from), so pass `base:`.
+      :ok = Index.enable("acme", base: base)
 
       assert {:ok, _} = Reindex.run([base: base] ++ stub_mem_opts())
 

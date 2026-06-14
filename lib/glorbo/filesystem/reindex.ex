@@ -208,16 +208,22 @@ defmodule Glorbo.Filesystem.Reindex do
   # total number of chunks (re)indexed across enabled companies.
   defp rebuild_memory_index(companies_dir, opts) do
     base = Path.dirname(companies_dir)
-    mem_opts = Keyword.get(opts, :memory_index_opts, [])
+    # GEP-3: the opt-in source of truth is `company.md` on disk, so a
+    # `rm glorbo.db && reindex` re-derives the enabled set (the SQLite
+    # `memory_index_enabled` table is just a cache we re-seed here).
+    mem_opts = opts |> Keyword.get(:memory_index_opts, []) |> Keyword.put(:base, base)
 
     case File.ls(companies_dir) do
       {:ok, entries} ->
         entries
         |> Enum.filter(fn co ->
           File.dir?(Path.join(companies_dir, co)) and
-            Glorbo.Memory.Index.enabled?(co, mem_opts)
+            Glorbo.Memory.Index.company_memory_enabled?(co, mem_opts)
         end)
         |> Enum.reduce(0, fn co, acc ->
+          # Re-seed the SQLite cache from the disk truth so reindex_company's
+          # `enabled?` guard (and later runtime reads) see the opt-in.
+          Glorbo.Memory.Index.mark_enabled(co, mem_opts)
           chunks = Glorbo.Memory.Chunker.chunk_company(base, co)
 
           case Glorbo.Memory.Index.reindex_company(co, chunks, mem_opts) do

@@ -71,6 +71,56 @@ defmodule Glorbo.Memory.IndexTest do
     end
   end
 
+  describe "GEP-3 disk-persisted opt-in" do
+    setup do
+      # Persist the opt-in needs a real company.md to write into.
+      base = Glorbo.Filesystem.Hierarchy.default_root()
+      co_dir = Path.join([base, "companies", "persisted"])
+      File.mkdir_p!(co_dir)
+
+      File.write!(Path.join(co_dir, "company.md"), """
+      ---
+      kind: company/v1
+      slug: persisted
+      name: Persisted
+      ---
+      # Persisted
+      """)
+
+      {:ok, co_md: Path.join(co_dir, "company.md")}
+    end
+
+    test "enable writes memory_index: true to company.md", %{co_md: co_md} do
+      :ok = Index.enable("persisted")
+      assert File.read!(co_md) =~ ~r/^memory_index: true$/m
+      assert Index.company_memory_enabled?("persisted")
+    end
+
+    test "disable writes memory_index: false to company.md", %{co_md: co_md} do
+      :ok = Index.enable("persisted")
+      :ok = Index.disable("persisted")
+      assert File.read!(co_md) =~ ~r/^memory_index: false$/m
+      refute Index.company_memory_enabled?("persisted")
+    end
+
+    test "opt-in survives a glorbo.db wipe (re-derivable from disk)" do
+      :ok = Index.enable("persisted")
+
+      # Simulate `rm glorbo.db`: clear the SQLite enabled cache directly.
+      Glorbo.Repo.delete_all("memory_index_enabled")
+      refute Index.enabled?("persisted")
+
+      # The disk source of truth still says enabled; reindex re-seeds it.
+      assert Index.company_memory_enabled?("persisted")
+      :ok = Index.mark_enabled("persisted")
+      assert Index.enabled?("persisted")
+    end
+
+    test "company_memory_enabled? is false for a company.md without the key" do
+      refute Index.company_memory_enabled?("persisted")
+    end
+  end
+
   describe "FTS5 keyword recall" do
     setup do
       :ok = Index.enable("acme")
