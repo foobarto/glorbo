@@ -16,9 +16,10 @@ defmodule GlorboWeb.KanbanLive do
   boundary).
 
   v0.0.3 adds drag-and-drop between lanes (M4.1): a `"kanban:move"`
-  event carries `task_path` + target column name; the handler validates
-  the status, rewrites frontmatter via `Glorbo.TaskDefinition.write/2`,
-  and lets inotify re-fire the view. Writes still go through the
+  event carries `task_path` + target column name; the handler routes the
+  status flip through `Glorbo.Actions.Tasks.move/4` (GEP-36 single write
+  channel — validation + symlink-ancestor + approval-gate guards + audit +
+  history), and lets inotify re-fire the view. Writes still go through the
   filesystem — no in-memory mutations (CLAUDE.md: SQLite is derived).
   """
   use GlorboWeb, :live_view
@@ -681,24 +682,18 @@ defmodule GlorboWeb.KanbanLive do
   end
 
   def handle_event("kanban:move", %{"task_path" => task_path, "to" => to}, socket) do
+    co = socket.assigns.company_slug
+
+    # GEP-36: the single write path. `Actions.Tasks.move/4` validates the
+    # slug + rel-path + status, runs the symlink-ancestor + approval-gate
+    # guards, writes atomically in a HomeHistory Tx, and emits `task.move` —
+    # everything the drag/drop handler used to do inline.
     with {:ok, status} <- column_to_status(to),
-         {:ok, abs_path} <- resolve_task_path(task_path, socket.assigns.company_slug),
-         :ok <- refuse_if_bypasses_approval_gate(abs_path, status),
-         :ok <- Glorbo.TaskDefinition.write(abs_path, %{status: status}) do
-      # Codex round-5 finding (PR #37, MED): drag/drop status
-      # change wrote the new status without emitting any audit
-      # entry (the sibling save_task path does call
-      # `emit_task_edit_audit/3`). Drag-to-done left no forensic
-      # trail of who moved the task, when, or from where. Emit
-      # the same shape `emit_task_edit_audit` uses so the audit
-      # JSONL has parity across both edit paths.
-      emit_kanban_move_audit(socket, task_path, status)
-
-      base = base_dir()
-
+         {:ok, _} <-
+           Glorbo.Actions.Tasks.move(co, task_path, status, actor: "director", base: base_dir()) do
       tasks =
-        base
-        |> load_tasks(socket.assigns.company_slug)
+        base_dir()
+        |> load_tasks(co)
         |> apply_project_filter(socket.assigns.project_filter)
         |> apply_goal_filter(socket.assigns.goal_filter)
         |> apply_who_filter(socket.assigns.who_filter)
@@ -1368,16 +1363,6 @@ defmodule GlorboWeb.KanbanLive do
       action: "task.edit",
       target: task.task_path,
       changed: fm |> Map.keys() |> Enum.sort()
-    })
-  end
-
-  defp emit_kanban_move_audit(socket, task_path, new_status) do
-    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
-      actor: "director",
-      action: "task.move",
-      target: task_path,
-      changed: ["status"],
-      detail: %{new_status: new_status}
     })
   end
 

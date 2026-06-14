@@ -137,6 +137,19 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Kanban status moves now go through the single Director write channel**
+  (GEP-36). `KanbanLive`'s drag/drop handler wrote task status directly via
+  `TaskDefinition.write/2`, bypassing `Glorbo.Actions` — the one path GEP-36
+  centralises validation + symlink guards + audit + history through. New
+  `Glorbo.Actions.Tasks.move/4` is that path: it validates the company slug,
+  the `projects/<p>/tasks/<id>.md` shape, and the target status; runs the
+  symlink-ancestor + leaf guards and the approval-gate guard (a
+  `requires_approval: director` task can't jump to `in-progress`/`done` until
+  approved); writes atomically inside a HomeHistory `task.move` Tx; and emits
+  the `task.move` audit row — so MCP/shell callers get the same guarantees, not
+  just the LiveView. (The `save_task` full-edit handlers still write directly,
+  pending an `Actions.Tasks.update/4`.) Closes part of a GEP↔code reconciliation
+  finding.
 - **Peer-review `block`/`revise` verdicts now require a reason** (GEP-41
   failure-mode). `Glorbo.Actions.Tasks.record_peer_review_verdict/4` previously
   accepted an empty note for any verdict, so a reviewer (or an agent's verdict
