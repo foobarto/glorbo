@@ -148,6 +148,25 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       %{findings: findings} = Validator.validate_path(base)
       refute Enum.any?(findings, &(&1.code == :type_filename_mismatch))
     end
+
+    test "a non-string type: (YAML mapping) does not crash validate", %{base: base} do
+      seed(base, "companies/acme/agents/ceo/memory/feedback_role.md", """
+      ---
+      kind: agent-memory/v1
+      name: Weird
+      description: type is a mapping, not a scalar
+      type:
+        value: user
+      ---
+      Body.
+      """)
+
+      # The mismatch check must skip a non-binary type rather than raise
+      # Protocol.UndefinedError on to_string/1 and abort the whole validate.
+      %{findings: findings} = Validator.validate_path(base)
+      assert is_list(findings)
+      refute Enum.any?(findings, &(&1.code == :type_filename_mismatch))
+    end
   end
 
   describe "enum checks" do

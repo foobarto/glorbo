@@ -357,28 +357,32 @@ defmodule Glorbo.FileSpec.Validator do
   # loader keys recall off both, so a prefix/type disagreement silently
   # mis-files the entry — flag it as an error.
   defp check_kind_specific(acc, path, fm, Glorbo.FileSpec.MemoryEntryMd) do
-    type = fm |> Map.get("type") |> to_string()
+    # Guard: a non-binary `type:` (e.g. a YAML mapping) is already flagged by
+    # the enum check; never run it through string interpolation here (would
+    # raise Protocol.UndefinedError and abort the whole `glorbo validate`).
+    type = Map.get(fm, "type")
+    prefix = memory_filename_prefix(path)
 
-    case memory_filename_prefix(path) do
-      prefix when is_binary(prefix) and type != "" and prefix != type ->
-        [
-          error(
-            path,
-            :type_filename_mismatch,
-            "filename prefix `#{prefix}_` does not match frontmatter `type: #{type}`"
-          )
-          | acc
-        ]
-
-      _ ->
-        acc
+    if is_binary(type) and is_binary(prefix) and type != "" and prefix != type do
+      [
+        error(
+          path,
+          :type_filename_mismatch,
+          "filename prefix `#{prefix}_` does not match frontmatter `type: #{type}`"
+        )
+        | acc
+      ]
+    else
+      acc
     end
   end
 
   defp check_kind_specific(acc, _path, _fm, _mod), do: acc
 
+  # Anchor to the basename — an ancestor dir like `/memory/user_backup/` must
+  # not be mistaken for the file's own prefix.
   defp memory_filename_prefix(path) do
-    case Regex.run(~r"/memory/(user|feedback|project|reference)_", path) do
+    case Regex.run(~r"\A(user|feedback|project|reference)_", Path.basename(path)) do
       [_, prefix] -> prefix
       _ -> nil
     end
