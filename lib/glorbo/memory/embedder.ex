@@ -87,19 +87,30 @@ defmodule Glorbo.Memory.Embedder do
 
   # Order the returned embeddings by their `index` field so the caller can
   # zip them back to the input list. Defends against a server that returns
-  # the data array out of order.
-  defp parse_response(%{"data" => data}) when is_list(data) do
+  # the data array out of order. `@doc false` (public only so the
+  # malformed-response guards are unit-testable; the documented surface
+  # stays `embed/3` + the `:embed_fun` seam).
+  @doc false
+  def parse_response(%{"data" => data}) when is_list(data) do
     vectors =
       data
       |> Enum.sort_by(fn row -> Map.get(row, "index", 0) end)
       |> Enum.map(fn row -> Map.get(row, "embedding", []) end)
 
-    if Enum.all?(vectors, &is_list/1) do
+    # Reject NON-EMPTY lists only: a row missing the `embedding` field
+    # defaults to `[]` above, which is still a list — accepting it would
+    # store a zero-dim vector. That write goes through `insert_all`, which
+    # bypasses the `ChunkVector` changeset's `dims > 0` validation, so the
+    # empty vector lands on disk and then silently scores 0.0 on every query
+    # (cosine's length-mismatch fallback). A legitimate embeddings endpoint
+    # always returns a non-empty vector on a 2xx, so this only rejects a
+    # malformed / partial server response — fail loud instead.
+    if vectors != [] and Enum.all?(vectors, &(is_list(&1) and &1 != [])) do
       {:ok, vectors}
     else
       {:error, :embeddings_malformed}
     end
   end
 
-  defp parse_response(_), do: {:error, :embeddings_malformed}
+  def parse_response(_), do: {:error, :embeddings_malformed}
 end

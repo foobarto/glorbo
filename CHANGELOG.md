@@ -10,6 +10,48 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.27.1] — 2026-06-14
+
+### Fixed
+
+- **Semantic-recall embedder silently stored zero-dim vectors on a malformed
+  response.** A `/embeddings` reply whose `data` row was missing the
+  `embedding` field defaulted to `[]`, which passed the `is_list/1`-only guard;
+  the empty vector was then written via `insert_all` (bypassing the
+  `ChunkVector` `dims > 0` changeset validation) and silently scored 0.0 on
+  every query. `parse_response/1` now rejects empty or absent embeddings with
+  `:embeddings_malformed` — failing loud instead of degrading a chunk's recall
+  forever. Matters most when pointed at a local model server (ollama /
+  llama.cpp / LM Studio), where partial responses are a realistic edge case.
+
+- **Slug-input validation crashed in modern Chrome.** Every "new" modal with a
+  slug field (new company, agent, project, channel, goal) carried an HTML
+  `pattern=` whose character class put a hyphen in a position that is invalid
+  under the RegExp `v` flag — which current Chrome now uses to compile
+  `pattern` attributes. The result was an uncaught `SyntaxError` on every modal
+  open and **silently disabled client-side validation** (the browser couldn't
+  compile the pattern, so it enforced nothing). Escaped the hyphen (`\-`) in all
+  five patterns; server-side slug validation was always the real gate, but the
+  client hint now works and the console is clean.
+- **Task detail page silently discarded body edits.** On
+  `/companies/:co/tasks/:id` (the full-page task view) the prompt-body textarea
+  was editable but `save_task` only wrote frontmatter, so body rewrites
+  vanished on submit. It now persists the body too (matching the Kanban shelf),
+  while a frontmatter-only save still preserves the existing body rather than
+  blanking it.
+- **Task detail page could bypass the director approval gate.** `save_task` on
+  the task page lacked the approval-gate guard the Kanban shelf gained in
+  PR #37, so a task with `requires_approval: director` could be flipped straight
+  to `done` from there without going through the Inbox (the kernel-layer Gate
+  watcher still reverted it, but the application layer didn't refuse). Extracted
+  the guard into the shared `GlorboWeb.TaskApprovalGuard` used by both the
+  Kanban shelf and the task page, restoring two-layer enforcement and removing
+  the drift that caused the gap. The shared guard blocks only an actual
+  *transition* into `done`/`in-progress` from a still-gated, unapproved task —
+  a no-op save (editing the title/body of a task already past approval, where
+  `requires_approval: director` legitimately remains) is allowed, which also
+  corrects an over-aggressive case the Kanban guard carried since #37.
+
 ## [0.27.0] — 2026-06-14
 
 ### Added
@@ -7606,7 +7648,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/foobarto/glorbo/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0
 [0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0

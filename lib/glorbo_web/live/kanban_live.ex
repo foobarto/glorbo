@@ -714,75 +714,17 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  # A task with `requires_approval: director` in its frontmatter
-  # must NOT skip the approval workflow by being dragged straight to
-  # done. Opencode round-3 flagged: `column_to_status("done") →
-  # {:ok, "done"}` was written unconditionally, so drag-to-done
-  # bypassed the gate. Refuse the move unless the task has already
-  # been approved (status == "approved").
-  defp refuse_if_bypasses_approval_gate(abs_path, target_status)
-       when target_status in ["done", "in-progress"] do
-    case File.read(abs_path) do
-      {:ok, content} ->
-        case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, fm, _body} ->
-            requires? = to_string(Map.get(fm, "requires_approval", "")) == "director"
-            approved? = to_string(Map.get(fm, "status", "")) == "approved"
+  # Approval-gate guards live in `GlorboWeb.TaskApprovalGuard` so the
+  # Kanban shelf and the TaskLive detail page share one implementation
+  # (they previously drifted — TaskLive lacked these checks). Thin
+  # delegations keep KanbanLive's call sites unchanged. A task with
+  # `requires_approval: director` must not skip the Inbox approval flow
+  # by being dragged/saved straight to done, nor by clearing the gate.
+  defp refuse_if_bypasses_approval_gate(abs_path, target_status),
+    do: GlorboWeb.TaskApprovalGuard.refuse_if_bypasses_approval_gate(abs_path, target_status)
 
-            if requires? and not approved? do
-              {:error, :approval_gate_bypass}
-            else
-              :ok
-            end
-
-          _ ->
-            :ok
-        end
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp refuse_if_bypasses_approval_gate(_abs, _status), do: :ok
-
-  # Codex round-5 finding (PR #37, HIGH): the agent or
-  # Director-via-the-form could clear `requires_approval` on a
-  # task currently awaiting approval — bypassing the gate by
-  # simply removing the gate. Fires only when the caller asserts
-  # an explicit clear attempt (form had the field with an empty
-  # value); partial submissions where the field was absent
-  # entirely are preserved upstream and don't trigger this gate.
-  defp refuse_if_clears_required_approval(abs_path, true),
-    do: refuse_if_currently_required(abs_path)
-
-  defp refuse_if_clears_required_approval(_abs, false), do: :ok
-
-  defp refuse_if_currently_required(abs_path) do
-    case File.read(abs_path) do
-      {:ok, content} ->
-        case Glorbo.Filesystem.Frontmatter.parse(content) do
-          {:ok, fm, _body} ->
-            currently_required? =
-              to_string(Map.get(fm, "requires_approval", "")) == "director"
-
-            currently_approved? =
-              to_string(Map.get(fm, "status", "")) == "approved"
-
-            if currently_required? and not currently_approved? do
-              {:error, :clears_required_approval}
-            else
-              :ok
-            end
-
-          _ ->
-            :ok
-        end
-
-      _ ->
-        :ok
-    end
-  end
+  defp refuse_if_clears_required_approval(abs_path, explicit_clear?),
+    do: GlorboWeb.TaskApprovalGuard.refuse_if_clears_required_approval(abs_path, explicit_clear?)
 
   @impl true
   def render(assigns) do

@@ -235,12 +235,10 @@ defmodule GlorboWeb.TaskLive do
   # PLAN item — shared-task-detail-component. The shared
   # TaskDetailForm emits `save_task` / `delete_task` / `close_task`
   # events; TaskLive handles them to keep parity with KanbanLive's
-  # shelf (without which the form would throw on submit).
-  # The shared TaskDetailForm emits save/delete/close events. Save
-  # writes frontmatter only (body editing remains KanbanLive-only
-  # for now — TaskLive's textarea is editable but the submit ignores
-  # the body field; users who need to rewrite the body open the
-  # shelf view from Kanban).
+  # shelf (without which the form would throw on submit). Save writes
+  # both the frontmatter AND the body (the form's body textarea), and
+  # routes through the same `GlorboWeb.TaskApprovalGuard` as Kanban so
+  # an approval-gated task can't be flipped past the Inbox gate here.
   def handle_event("save_task", params, socket) do
     abs =
       Path.join([base_dir(), "companies", socket.assigns.company_slug, socket.assigns.rel_path])
@@ -272,15 +270,25 @@ defmodule GlorboWeb.TaskLive do
         v -> Map.put(updates, "done_when", String.trim(v))
       end
 
-    case Glorbo.TaskDefinition.write_frontmatter(abs, updates) do
-      :ok ->
-        # C-094: a frontmatter edit is a state-changing mutation on a
-        # dashboard route. The append-only audit log must record it
-        # (crown jewel) so the forensic trail can't be bypassed via the
-        # task editor. Emit AFTER the write so we only audit edits that
-        # actually landed; capture actor + the keys that changed.
-        emit_task_edit_audit(socket, updates)
-        {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
+    with :ok <-
+           GlorboWeb.TaskApprovalGuard.refuse_if_bypasses_approval_gate(abs, params["status"]),
+         :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, updates),
+         :ok <- maybe_write_body(abs, params) do
+      # C-094: a frontmatter+body edit is a state-changing mutation on a
+      # dashboard route. The append-only audit log must record it
+      # (crown jewel) so the forensic trail can't be bypassed via the
+      # task editor. Emit AFTER the writes so we only audit edits that
+      # actually landed; capture actor + the keys that changed.
+      emit_task_edit_audit(socket, updates)
+      {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
+    else
+      {:error, :approval_gate_bypass} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This task requires director approval — approve it via the Inbox before changing status to done."
+         )}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not save task.")}
@@ -327,6 +335,16 @@ defmodule GlorboWeb.TaskLive do
       changed: updates |> Map.keys() |> Enum.sort()
     })
   end
+
+  # GEP-30 D8: comments live in the sibling `.comments.md` file, so a body
+  # save only rewrites the prompt body of the task file. Rewrite ONLY when
+  # the form actually carried the `body` field — a submit that omits it
+  # (e.g. a frontmatter-only save) must preserve the existing body, never
+  # blank it (`write_body/2` treats "" as "clear the body").
+  defp maybe_write_body(abs, %{"body" => body}),
+    do: Glorbo.TaskDefinition.write_body(abs, String.trim(body))
+
+  defp maybe_write_body(_abs, _params), do: :ok
 
   # ---------------------------------------------------------------------------
   # Helpers

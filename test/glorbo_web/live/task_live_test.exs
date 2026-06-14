@@ -141,6 +141,124 @@ defmodule GlorboWeb.TaskLiveTest do
     assert content =~ "priority: low"
   end
 
+  # UAT 2026-06-14: TaskLive's body textarea was editable but the submit
+  # silently dropped it (body editing was KanbanLive-only) — a save now
+  # rewrites the prompt body too, matching the shelf.
+  test "save_task persists an edited body", %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    render_submit(view, "save_task", %{
+      "title" => "hello task",
+      "status" => "todo",
+      "assigned_to" => "ceo",
+      "priority" => "high",
+      "severity" => "",
+      "body" => "rewritten prompt body via task page"
+    })
+
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+    content = File.read!(path)
+    assert content =~ "rewritten prompt body via task page"
+    refute content =~ "original prompt body"
+  end
+
+  # A body-less save (frontmatter-only) must PRESERVE the existing body,
+  # not blank it — `write_body("")` would clear it, so the handler skips
+  # the body write when the form omits the field.
+  test "save_task without a body param preserves the existing body",
+       %{conn: conn, base: base} do
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    render_submit(view, "save_task", %{
+      "title" => "frontmatter only",
+      "status" => "in-progress",
+      "assigned_to" => "ceo",
+      "priority" => "low",
+      "severity" => ""
+    })
+
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+    content = File.read!(path)
+    assert content =~ "original prompt body"
+  end
+
+  # UAT 2026-06-14: TaskLive's save_task lacked the approval-gate guard
+  # that KanbanLive's shelf has (PR #37) — a director could flip an
+  # approval-gated task straight to `done` from the task page, bypassing
+  # the Inbox. Both now share `GlorboWeb.TaskApprovalGuard`.
+  test "save_task refuses flipping an approval-gated task to done",
+       %{conn: conn, base: base} do
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: gated task
+    assigned_to: ceo
+    status: todo
+    requires_approval: director
+    ---
+
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    html =
+      render_submit(view, "save_task", %{
+        "title" => "gated task",
+        "status" => "done",
+        "assigned_to" => "ceo",
+        "priority" => "",
+        "severity" => ""
+      })
+
+    assert html =~ "requires director approval"
+    content = File.read!(path)
+    refute content =~ "status: done"
+    assert content =~ "status: todo"
+  end
+
+  # codex P2 (PR #74): the guard must only block a TRANSITION into a gated
+  # status, not a no-op save. After approval, `set_approval/4` leaves
+  # `requires_approval: director` in place, so a task can validly sit at
+  # `requires_approval: director` + `status: in-progress`/`done`. Editing its
+  # title/body (status unchanged) must NOT be rejected as a bypass.
+  test "save_task allows editing an already-progressed gated task (no status change)",
+       %{conn: conn, base: base} do
+    path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])
+
+    File.write!(path, """
+    ---
+    kind: task/v1
+    title: progressed gated task
+    assigned_to: ceo
+    status: in-progress
+    requires_approval: director
+    ---
+
+    body
+    """)
+
+    {:ok, view, _} = live(conn, ~p"/companies/acme/tasks/foo-1")
+
+    html =
+      render_submit(view, "save_task", %{
+        "title" => "renamed after approval",
+        "status" => "in-progress",
+        "assigned_to" => "ceo",
+        "priority" => "",
+        "severity" => "",
+        "body" => "edited body after approval"
+      })
+
+    refute html =~ "requires director approval"
+    content = File.read!(path)
+    assert content =~ ~r/title: "?renamed after approval"?/
+    assert content =~ "status: in-progress"
+    assert content =~ "edited body after approval"
+  end
+
   # C-094 — a task frontmatter edit is a state-changing dashboard
   # mutation; it must leave an append-only audit record (crown jewel)
   # so the editor can't be used as a silent mutation path.

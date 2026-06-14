@@ -298,6 +298,20 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
+- [ ] **Approval queue: file-glob (inbox) vs DB-row (Gate) divergence.** The
+  inbox lists pending approvals from `agents/*/state/awaiting-approval-*.md`
+  file globs, but `Approvals.Gate.resolve_status` grants by a
+  `tasks_approval_state` **DB row** (`find_awaiting_row`). A sentinel file
+  without a matching row shows an approve button whose grant audits
+  `approval.spurious` and never clears the sentinel / wakes the agent. The real
+  `Gate.request_approval` writes both, so this only bites on hand-edited /
+  reindex-raced state — but a single source of truth (or a reconcile on
+  inbox-load) would close it. (from `2026-06-14-web-ui-e2e-uat`)
+- [ ] **Chat drawer: tail channels other than `#general`.** `chat_drawer.ex`
+  hardcodes `#general` (`#TBD`); add a channel selector so the drawer can
+  monitor/post to any channel without navigating to the full chat view. (from
+  `2026-06-14-web-ui-e2e-uat`)
+
 <!-- Promoted from session journals 2026-06-14 (before clearing them). -->
 
 - [ ] **Director passphrase-auth open design questions (GEP-49).** Three left

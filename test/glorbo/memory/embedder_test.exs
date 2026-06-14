@@ -32,4 +32,34 @@ defmodule Glorbo.Memory.EmbedderTest do
       assert {:error, :endpoint_missing} = Embedder.embed("m", ["x"], [])
     end
   end
+
+  # Regression (2026-06-14): a server response whose `data` row is missing
+  # the `embedding` field defaulted to `[]`, which passed the old
+  # `is_list/1`-only guard — storing a zero-dim vector (via `insert_all`,
+  # bypassing the ChunkVector `dims > 0` changeset) that then scored 0.0 on
+  # every query. parse_response now rejects empty/absent embeddings loudly.
+  describe "parse_response/1 guards malformed embedding responses" do
+    test "accepts a well-formed response" do
+      resp = %{"data" => [%{"index" => 0, "embedding" => [0.1, 0.2]}]}
+      assert {:ok, [[0.1, 0.2]]} = Embedder.parse_response(resp)
+    end
+
+    test "rejects a row missing the embedding field" do
+      resp = %{"data" => [%{"index" => 0, "embedding" => [0.1, 0.2]}, %{"index" => 1}]}
+      assert {:error, :embeddings_malformed} = Embedder.parse_response(resp)
+    end
+
+    test "rejects an explicitly empty embedding" do
+      resp = %{"data" => [%{"index" => 0, "embedding" => []}]}
+      assert {:error, :embeddings_malformed} = Embedder.parse_response(resp)
+    end
+
+    test "rejects an empty data array for a non-empty request" do
+      assert {:error, :embeddings_malformed} = Embedder.parse_response(%{"data" => []})
+    end
+
+    test "rejects a non-list / shapeless body" do
+      assert {:error, :embeddings_malformed} = Embedder.parse_response(%{"oops" => true})
+    end
+  end
 end
