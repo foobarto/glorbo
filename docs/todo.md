@@ -16,9 +16,44 @@ it's been in CHANGELOG for a cycle.
 
 ## P0 — actively wrong (broken/lying/crashy)
 
-*(empty — knock on wood)*
+- [x] **`~/.glorbo/config.md` is 0 bytes — default dev dashboard locked out.**
+  FIXED 2026-06-14 (GEP-0060 branch, commit `5218925c`): `Glorbo.Config.load`
+  (+`erl_cookie`/`node_id`) now self-heal an empty/unparseable config.md
+  (regenerate when the parser yields empty meta, preserving any prior body to
+  `config.md.bak`), and `mix phx.server` prints the `…/setup?token=…` URL on
+  boot (gated to bootstrap/degraded). A fenced-but-bad file still fails closed
+  (GEP-0053 D9). Shipped alongside the SymlinkGuard `/home→/var/home` fix.
 
 ## P1 — next cycle
+
+<!-- Promoted from session journals 2026-06-14 (before clearing them). -->
+
+- [ ] **Auth HTML forms (setup/login) don't submit via browser
+  automation.** The first-run `/setup` + `/login` forms failed to submit
+  under browser automation in the 2026-06-13 web-ui UAT; may also bite real
+  users with password managers / autofill. Repro + fix the form submit path.
+  (from `2026-06-13-web-ui-uat-report`)
+- [ ] **Security nits from the v0.25.0 review (still open).** (1) GEP-54 D9
+  — the paperclip-import dest guard should `lstat` the *leaf*, not just
+  ancestors; (2) `import_paperclip` TOCTOU — harden the fd handling on the
+  copy path. Low-severity but real. (from `2026-06-03-v0250-release`)
+- [ ] **Deferred GEP↔code capability gaps** (detail in the gap report,
+  `docs/sessions/2026-06-14-gep-codebase-reconciliation.md`): GEP-36
+  `Actions.Tasks.update/4` (route `save_task`/task-editor through Actions),
+  GEP-41 standalone peer-review trigger, GEP-23 egress audit+sentinel, GEP-46
+  concurrency integration tests. (from `2026-06-14-gep-gap-implementation`)
+
+- [ ] **Statusbar health contradicts sidebar badge.** Footer shows
+  `daemon stale pidfile` (red) while sidebar reads “all systems
+  operational” (green); agent counts oscillate without matching running
+  processes. Violates observability “no lying zeros” stance. UAT
+  2026-06-13 — unify daemon/agent health across statusbar, sidebar, and
+  `/health`.
+
+- [ ] **`mix phx.server` should print bootstrap URL when config empty.**
+  When `config.md` is empty/malformed, dev server lands in bootstrap auth
+  but does not log `…/setup?token=…` (only `glorbo serve` banner does).
+  UAT 2026-06-13.
 
 - [ ] **CI: `goto-bus-stop/setup-zig` runs on Node 20 — forced to
   Node 24 on 2026-06-16.** GitHub Actions warning on every macOS
@@ -263,6 +298,24 @@ it's been in CHANGELOG for a cycle.
 
 ## P2 — nice to have
 
+<!-- Promoted from session journals 2026-06-14 (before clearing them). -->
+
+- [ ] **Director passphrase-auth open design questions (GEP-49).** Three left
+  unanswered in the 2026-05-29 design: (1) session TTL — keep browser-close
+  cookie or add a persistent cap + idle timeout (~7-day)? (2) re-scope GEP-49
+  under the GEP-53 session-store layer, or keep independent? (3) `return_to`
+  post-login bounce-back (same-origin-guarded) vs hardcoded `/`. (from
+  `2026-05-29-director-passphrase-auth`)
+- [ ] **`priv/uat_seed/` (or a `mix` task) for repeatable browser UAT.**
+  Scaffold a project + task + approval + scheduled task + audit rows so the
+  browser-UAT sweep is reproducible. (from `2026-06-13-web-ui-uat-report`)
+- [ ] **Human-slug agent dir names.** Some imported companies (e.g.
+  `bladeandblaster`) have UUID agent directory names; rename to human slugs
+  (or leave to the operator). (from `2026-06-02-paperclip-instance-import`)
+- [ ] **Fold the GEP-0063 `uat.md` K1/K1b goal-file update into the next
+  UAT-sweep commit.** The 4-line UAT doc update for the file-canonical goals
+  was deferred pending that commit. (from `2026-06-13-gep0063-goals-file-canonical`)
+
 - [ ] **ProxyTokens: explicit token audience/scope field (GEP-0055
   follow-up).** GEP-23 CONNECT tokens and GEP-0055 inference tokens
   share one ETS table; today they're distinguished only implicitly
@@ -371,6 +424,21 @@ it's been in CHANGELOG for a cycle.
   approval throughput.
 
 ## P3 — thinking out loud
+
+<!-- Promoted from session journals 2026-06-14 (before clearing them). -->
+
+- [ ] **Widen `Agent.Dispatch` `@type dispatch_result`** to include the
+  `:reply` / `:reply_path` variants (`agent/dispatch.ex:71`). Minor typing
+  accuracy. (from `2026-06-12-gep-batch-elixir-1.20-warning-zeroing`)
+- [ ] **Remove the stale untracked `priv/plts/`** leftover sitting in the
+  worktree. (from `2026-06-10-gep0055-review-round`)
+- [ ] **Reconstruct (or consciously skip) the missing GEP-0055 2026-06-07/08
+  session journals** — decide whether the GEP history is enough. (from
+  `2026-06-10-gep0055-review-round`)
+- [ ] **Confirm Overview progress-bar semantics (GEP-0063).** Per-goal bars
+  honour explicit `progress:`, while the `/companies` card % stays
+  done-tasks/total-tasks — confirm that split is intended. (from
+  `2026-06-13-gep0063-goals-file-canonical`)
 
 - [x] **InotifyToBwrapHappyPathTest suite-pollution — root-caused
   + fixed (2026-04-25).** Wasn't pollution at all: an inotify

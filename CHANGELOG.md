@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-06-14
+
 ### Added
 
 - **Multiple glorbo instances per machine** (GEP-0062). Each install now gets a
@@ -137,6 +139,35 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **The default `~/.glorbo` works on atomic-distro homes** (GEP-0060). On
+  Bazzite/Silverblue/Kinoite `/home` is a symlink to `/var/home`, so
+  `Glorbo.Sandbox.SymlinkGuard` (which walks every ancestor from `/`) refused
+  every path under the default `~/.glorbo` — `glorbo reindex` indexed 0 files
+  and agent permission mounts failed unless `GLORBO_HOME` was pointed at the
+  canonical `/var/home/<user>/.glorbo` by hand. `Glorbo.Filesystem.Hierarchy`
+  now canonicalises the home root through symlinked ancestors
+  (`canonicalize_home_root/1` + `default_root/0`, plus a new `home_root/0` the
+  16 CLI/lifecycle/scaffold call sites use so an explicit `GLORBO_HOME` is
+  resolved too). The SymlinkGuard is **unchanged** — agent-planted symlinks
+  inside the workspace are still refused; only the trusted home prefix is
+  resolved. Off-home GEP-27 grants keep full-ancestor checking.
+- **A 0-byte / frontmatter-less `~/.glorbo/config.md` no longer locks the
+  dashboard out.** An empty `config.md` (the placeholder `Hierarchy.ensure!`
+  writes on first materialise) parsed to empty config, so the minted
+  `dashboard_token`/`secret_key_base` never persisted (the in-place patchers
+  had no `---` fence to anchor on) — leaving the dashboard in an un-unlockable
+  BOOTSTRAP. `Glorbo.Config.load/1` (and `erl_cookie`/`node_id`) now treat an
+  empty/unfenced file like an absent one and regenerate canonical frontmatter;
+  a file that opens with `---` still fails closed via `coerce` (GEP-0053 D9),
+  never clobbered. And `mix phx.server` now prints the state-aware
+  `…/setup?token=…` URL on boot (gated to bootstrap/degraded), so the dev
+  dashboard is reachable — previously only `glorbo serve`/`up` printed it.
+- **BenchLive ranking no longer crashes on a stale / out-of-range rank
+  token.** An out-of-range or stale rank token (e.g. `"Z"`) could land in
+  `@ranking` and, once the length-based submit guard passed, crash
+  `submit_ranking` with a `KeyError` on `Map.fetch!/2`. The handler now
+  ignores any token not in the panel map, keeping `@ranking` well-formed.
+  (PR #58.)
 - **`glorbo validate` now flags dangling `depends_on:` targets** (GEP-47). The
   spec promised a `task.dependency_missing` finding (D1 + failure-modes table +
   `DependencyGate` moduledoc), but only the runtime half shipped — the scheduler
@@ -7575,7 +7606,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0
 [0.25.0]: https://github.com/foobarto/glorbo/releases/tag/v0.25.0
 [0.24.0]: https://github.com/foobarto/glorbo/releases/tag/v0.24.0

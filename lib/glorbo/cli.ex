@@ -178,7 +178,7 @@ defmodule Glorbo.CLI do
     # CLI path boots BEFORE the supervision tree — so we start the Repo
     # on demand and stop it when done. Tolerates already-started for the
     # `mix glorbo.cli` dev path where the app is already up.
-    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    base = Glorbo.Filesystem.Hierarchy.home_root()
     repo_started? = ensure_repo_started()
 
     try do
@@ -203,7 +203,7 @@ defmodule Glorbo.CLI do
   def dispatch(["validate" | rest]) do
     {opts, argv, _invalid} = OptionParser.parse(rest, strict: @validate_switches)
 
-    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    base = Glorbo.Filesystem.Hierarchy.home_root()
     path = List.first(argv) || base
 
     findings_opts = []
@@ -242,7 +242,7 @@ defmodule Glorbo.CLI do
   def dispatch(["fmt" | rest]) do
     {opts, argv, _invalid} = OptionParser.parse(rest, strict: @fmt_switches)
 
-    base = System.get_env("GLORBO_HOME") || Glorbo.Filesystem.Hierarchy.default_root()
+    base = Glorbo.Filesystem.Hierarchy.home_root()
     path = List.first(argv) || base
 
     result =

@@ -189,4 +189,83 @@ defmodule Glorbo.Filesystem.HierarchyTest do
       assert_raise ArgumentError, ~r/must not contain/, &Hierarchy.native_credentials_dir/0
     end
   end
+
+  describe "canonicalize_home_root/1 + home_root/0 (GEP-0060)" do
+    setup do
+      real = TmpGlorboHome.setup()
+      link = real <> "-home-link"
+      File.ln_s!(real, link)
+      on_exit(fn -> File.rm(link) end)
+      {:ok, real: real, link: link}
+    end
+
+    test "resolves a symlinked ancestor to its real path", %{real: real, link: link} do
+      assert Hierarchy.canonicalize_home_root(Path.join(link, ".glorbo")) ==
+               Path.join(real, ".glorbo")
+    end
+
+    test "resolves only the existing prefix, keeping a not-yet-created tail lexically",
+         %{real: real, link: link} do
+      # companies/acme doesn't exist yet — the symlinked prefix resolves, the
+      # tail is appended verbatim (this is what a fresh install hits).
+      assert Hierarchy.canonicalize_home_root(Path.join([link, ".glorbo", "companies", "acme"])) ==
+               Path.join([real, ".glorbo", "companies", "acme"])
+    end
+
+    test "is idempotent on an already-canonical path", %{real: real} do
+      p = Path.join(real, ".glorbo")
+      assert Hierarchy.canonicalize_home_root(p) == p
+    end
+
+    test "home_root: explicit GLORBO_HOME wins over :glorbo_base and is canonicalised",
+         %{real: real, link: link} do
+      prev = System.get_env("GLORBO_HOME")
+      prev_base = Application.get_env(:glorbo, :glorbo_base)
+      # :glorbo_base would normally win for default_root/0; home_root must
+      # prefer the explicit GLORBO_HOME (CLI semantics) and resolve its symlink.
+      Application.put_env(:glorbo, :glorbo_base, "/some/test/base")
+      System.put_env("GLORBO_HOME", Path.join(link, ".glorbo"))
+
+      on_exit(fn ->
+        if prev, do: System.put_env("GLORBO_HOME", prev), else: System.delete_env("GLORBO_HOME")
+
+        if prev_base,
+          do: Application.put_env(:glorbo, :glorbo_base, prev_base),
+          else: Application.delete_env(:glorbo, :glorbo_base)
+      end)
+
+      assert Hierarchy.home_root() == Path.join(real, ".glorbo")
+    end
+
+    test "home_root falls back to default_root when GLORBO_HOME unset" do
+      prev = System.get_env("GLORBO_HOME")
+      System.delete_env("GLORBO_HOME")
+      on_exit(fn -> if prev, do: System.put_env("GLORBO_HOME", prev) end)
+      # :glorbo_base is set by config/test.exs → default_root returns it verbatim.
+      assert Hierarchy.home_root() == Hierarchy.default_root()
+    end
+
+    # A symlink cycle in the home ancestor chain must NOT hang (the hop budget
+    # is global across the whole resolution). Run under a timeout so a
+    # regression fails the test instead of wedging the suite.
+    test "terminates on a self-referential symlink (no infinite loop)" do
+      base = TmpGlorboHome.setup()
+      x = Path.join(base, "x")
+      File.ln_s!(x, x)
+      task = Task.async(fn -> Hierarchy.canonicalize_home_root(Path.join(x, "sub")) end)
+      assert {:ok, result} = Task.yield(task, 5_000) || Task.shutdown(task)
+      assert is_binary(result)
+    end
+
+    test "terminates on a mutual symlink loop a→b→a (no infinite loop)" do
+      base = TmpGlorboHome.setup()
+      a = Path.join(base, "a")
+      b = Path.join(base, "b")
+      File.ln_s!(b, a)
+      File.ln_s!(a, b)
+      task = Task.async(fn -> Hierarchy.canonicalize_home_root(Path.join(a, ".glorbo")) end)
+      assert {:ok, result} = Task.yield(task, 5_000) || Task.shutdown(task)
+      assert is_binary(result)
+    end
+  end
 end

@@ -174,16 +174,15 @@ Windows port planned (bwrap / inotify / user namespaces).
 ### Add a native provider
 
 ```bash
-mkdir -p ~/.local/etc/glorbo/credentials && chmod 700 $_
-cat > ~/.local/etc/glorbo/credentials/openai.toml <<'EOF'
+mkdir -p ~/.config/glorbo/credentials && chmod 700 $_
+cat > ~/.config/glorbo/credentials/openai.toml <<'EOF'
 api_key = "sk-..."
 EOF
 ```
 
-> The next release (GEP-61) consolidates provider config + credentials under
-> `~/.config/glorbo/` and auto-migrates existing files on first run; the
-> current release (v0.26.0) reads them from `~/.local/etc/glorbo/credentials`.
-> `GLORBO_CREDENTIALS_DIR` overrides the location in either case.
+> Provider config + credentials live under `~/.config/glorbo/` (GEP-61); a
+> legacy `~/.local/etc/glorbo/credentials` tree is auto-migrated on first run.
+> `GLORBO_CREDENTIALS_DIR` overrides the location.
 
 Then point an agent at `provider: openai` (or `openrouter` / `minimax`) in
 `AGENT.md`. The native tool catalog is `read_file` / `write_file` /
@@ -193,8 +192,8 @@ contract.
 MiniMax ships with a static model catalog — `MiniMax-M3`, `MiniMax-M2.7`
 (+`-highspeed`), and `MiniMax-M2.5` (+`-highspeed`); the `-highspeed`
 variants are MiniMax's lower-latency serving tier with identical output.
-Credentials go in `~/.local/etc/glorbo/credentials/minimax.toml` (→
-`~/.config/glorbo/credentials/minimax.toml` from the next release, GEP-61).
+Credentials go in `~/.config/glorbo/credentials/minimax.toml` (GEP-61;
+`GLORBO_CREDENTIALS_DIR` overrides).
 
 Or auto-detect a local server:
 
@@ -355,7 +354,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.26.0** (2026-06-12). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.27.0** (2026-06-14). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /

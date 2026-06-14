@@ -3,6 +3,7 @@ gep: 61
 title: Consolidate provider config + credentials under XDG (~/.config/glorbo)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-13
 requires: [8, 32, 45]

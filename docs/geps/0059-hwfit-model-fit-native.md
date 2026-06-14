@@ -3,6 +3,7 @@ gep: 59
 title: hwfit — native hardware→model fit scoring, the missing local-readiness step
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-12
 see-also: [8, 11, 32]

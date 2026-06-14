@@ -5,7 +5,7 @@
 # harness as `openai` / `openrouter` (GEP-32) — no provider CLI binary.
 #
 # Setup: drop a credentials file at
-# `~/.local/etc/glorbo/credentials/minimax.toml` (or under
+# `~/.config/glorbo/credentials/minimax.toml` (or under
 # $GLORBO_CREDENTIALS_DIR) with:
 #
 #     api_key = "<MINIMAX_API_KEY>"

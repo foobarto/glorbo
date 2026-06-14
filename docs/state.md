@@ -14,7 +14,7 @@ Last updated: 2026-06-13
 - Branch: `main`
 - Worktree status: check with `git status --short`
 - HEAD: check with `git log -1 --oneline`
-- Latest shipped version: `v0.26.0`
+- Latest shipped version: `v0.27.0`
 
 ## Implementation Status
 

@@ -3,6 +3,7 @@ gep: 63
 title: Goals as `goal/v1` files (file-canonical store)
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-13
 requires: [3, 7, 13]

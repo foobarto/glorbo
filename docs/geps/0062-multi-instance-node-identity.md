@@ -3,6 +3,7 @@ gep: 62
 title: Multi-instance support via per-instance node identity
 author: Bartosz Ptaszynski <foobarto@gmail.com>
 status: Implemented
+implemented-in: v0.27.0
 type: Standards
 created: 2026-06-13
 requires: [48]
