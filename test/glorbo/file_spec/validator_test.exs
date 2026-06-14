@@ -116,6 +116,59 @@ defmodule Glorbo.FileSpec.ValidatorTest do
     end
   end
 
+  describe "GEP-25 memory type↔filename" do
+    test "a memory filename prefix that disagrees with type: is a type_filename_mismatch error",
+         %{base: base} do
+      # filename says feedback_, frontmatter says type: user.
+      seed(base, "companies/acme/agents/ceo/memory/feedback_role.md", """
+      ---
+      kind: agent-memory/v1
+      name: Mislabelled
+      description: prefix says feedback, type says user
+      type: user
+      ---
+      Body.
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      assert Enum.any?(findings, &(&1.code == :type_filename_mismatch and &1.severity == :error))
+    end
+
+    test "a matching prefix and type: validates clean", %{base: base} do
+      seed(base, "companies/acme/agents/ceo/memory/feedback_role.md", """
+      ---
+      kind: agent-memory/v1
+      name: Matched
+      description: prefix and type agree
+      type: feedback
+      ---
+      Body.
+      """)
+
+      %{findings: findings} = Validator.validate_path(base)
+      refute Enum.any?(findings, &(&1.code == :type_filename_mismatch))
+    end
+
+    test "a non-string type: (YAML mapping) does not crash validate", %{base: base} do
+      seed(base, "companies/acme/agents/ceo/memory/feedback_role.md", """
+      ---
+      kind: agent-memory/v1
+      name: Weird
+      description: type is a mapping, not a scalar
+      type:
+        value: user
+      ---
+      Body.
+      """)
+
+      # The mismatch check must skip a non-binary type rather than raise
+      # Protocol.UndefinedError on to_string/1 and abort the whole validate.
+      %{findings: findings} = Validator.validate_path(base)
+      assert is_list(findings)
+      refute Enum.any?(findings, &(&1.code == :type_filename_mismatch))
+    end
+  end
+
   describe "enum checks" do
     test "task status out of enum is an error", %{base: base} do
       seed(base, "companies/acme/projects/release/tasks/release-01.md", """

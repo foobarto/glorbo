@@ -137,6 +137,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **`glorbo validate` now flags memory `type:`↔filename mismatches**
+  (GEP-25). The spec's `:type_filename_mismatch` check was documented but never
+  implemented: a memory file whose filename prefix (`user_` / `feedback_` /
+  `project_` / `reference_`) disagrees with its frontmatter `type:` mis-files
+  the entry for recall. The validator now emits a `:type_filename_mismatch`
+  error when the prefix and `type:` differ. Closes a GEP↔code reconciliation
+  finding.
 - **Semantic-recall opt-in is now rebuildable from disk** (GEP-3 / GEP-58). The
   per-company memory-index opt-in lived only in the `memory_index_enabled`
   SQLite table, so `rm glorbo.db && glorbo reindex` silently lost it (recall
@@ -152,7 +159,6 @@ change between minor versions. Pin exact versions in downstream usage.
   *other* way too — a company opted out on disk (or whose directory was deleted)
   has its stale `memory_index_enabled` row + derived chunks purged, so the cache
   never outlives the disk truth.
-
 - **Kanban status moves now go through the single Director write channel**
   (GEP-36). `KanbanLive`'s drag/drop handler wrote task status directly via
   `TaskDefinition.write/2`, bypassing `Glorbo.Actions` — the one path GEP-36

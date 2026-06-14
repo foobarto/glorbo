@@ -137,7 +137,7 @@ defmodule Glorbo.FileSpec.Validator do
             |> check_patterns(path, fm, schema)
             |> check_caps(path, fm, body, schema)
             |> check_unknown_keys(path, fm, schema)
-            |> check_kind_specific(path, mod)
+            |> check_kind_specific(path, fm, mod)
 
           {:error, :missing_kind_wrapper_json} ->
             [error(path, :missing_kind, "top-level `kind` field missing")]
@@ -337,7 +337,7 @@ defmodule Glorbo.FileSpec.Validator do
   end
 
   # Per-kind extras the generic schema can't express (R28).
-  defp check_kind_specific(acc, path, Glorbo.FileSpec.TaskMd) do
+  defp check_kind_specific(acc, path, _fm, Glorbo.FileSpec.TaskMd) do
     if Glorbo.FileSpec.TaskMd.canonical_filename?(path) do
       acc
     else
@@ -352,7 +352,41 @@ defmodule Glorbo.FileSpec.Validator do
     end
   end
 
-  defp check_kind_specific(acc, _path, _mod), do: acc
+  # GEP-25: a memory file's filename prefix (`user_` / `feedback_` /
+  # `project_` / `reference_`) MUST equal its frontmatter `type:`. The memory
+  # loader keys recall off both, so a prefix/type disagreement silently
+  # mis-files the entry — flag it as an error.
+  defp check_kind_specific(acc, path, fm, Glorbo.FileSpec.MemoryEntryMd) do
+    # Guard: a non-binary `type:` (e.g. a YAML mapping) is already flagged by
+    # the enum check; never run it through string interpolation here (would
+    # raise Protocol.UndefinedError and abort the whole `glorbo validate`).
+    type = Map.get(fm, "type")
+    prefix = memory_filename_prefix(path)
+
+    if is_binary(type) and is_binary(prefix) and type != "" and prefix != type do
+      [
+        error(
+          path,
+          :type_filename_mismatch,
+          "filename prefix `#{prefix}_` does not match frontmatter `type: #{type}`"
+        )
+        | acc
+      ]
+    else
+      acc
+    end
+  end
+
+  defp check_kind_specific(acc, _path, _fm, _mod), do: acc
+
+  # Anchor to the basename — an ancestor dir like `/memory/user_backup/` must
+  # not be mistaken for the file's own prefix.
+  defp memory_filename_prefix(path) do
+    case Regex.run(~r"\A(user|feedback|project|reference)_", Path.basename(path)) do
+      [_, prefix] -> prefix
+      _ -> nil
+    end
+  end
 
   # ------------------------------------------------------------------
   # Finding builders
