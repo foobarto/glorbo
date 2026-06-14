@@ -10,6 +10,32 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Slug-input validation crashed in modern Chrome.** Every "new" modal with a
+  slug field (new company, agent, project, channel, goal) carried an HTML
+  `pattern=` whose character class put a hyphen in a position that is invalid
+  under the RegExp `v` flag — which current Chrome now uses to compile
+  `pattern` attributes. The result was an uncaught `SyntaxError` on every modal
+  open and **silently disabled client-side validation** (the browser couldn't
+  compile the pattern, so it enforced nothing). Escaped the hyphen (`\-`) in all
+  five patterns; server-side slug validation was always the real gate, but the
+  client hint now works and the console is clean.
+- **Task detail page silently discarded body edits.** On
+  `/companies/:co/tasks/:id` (the full-page task view) the prompt-body textarea
+  was editable but `save_task` only wrote frontmatter, so body rewrites
+  vanished on submit. It now persists the body too (matching the Kanban shelf),
+  while a frontmatter-only save still preserves the existing body rather than
+  blanking it.
+- **Task detail page could bypass the director approval gate.** `save_task` on
+  the task page lacked the approval-gate guard the Kanban shelf gained in
+  PR #37, so a task with `requires_approval: director` could be flipped straight
+  to `done` from there without going through the Inbox (the kernel-layer Gate
+  watcher still reverted it, but the application layer didn't refuse). Extracted
+  the guard into the shared `GlorboWeb.TaskApprovalGuard` used by both the
+  Kanban shelf and the task page, restoring two-layer enforcement and removing
+  the drift that caused the gap.
+
 ## [0.27.0] — 2026-06-14
 
 ### Added

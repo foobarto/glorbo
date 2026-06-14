@@ -156,7 +156,7 @@ defmodule GlorboWeb.GoalsLive do
                 value={@new_goal.id}
                 class="gl-input"
                 placeholder="my-goal"
-                pattern="[a-z][a-z0-9-]{0,63}"
+                pattern="[a-z][a-z0-9\-]{0,63}"
                 autofocus
                 required
               />

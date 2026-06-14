@@ -828,6 +828,55 @@ the SAME listen socket (it's owned by the GenServer, so it survives).
 
 ---
 
+## 2026-06-14 — browser E2E UAT sweep
+
+### HTML `pattern=` with a hyphen in the char class breaks under Chrome's `v` flag
+Current Chrome compiles `<input pattern="...">` with the RegExp **`v`
+flag** (unicodeSets, ES2024), under which a literal `-` inside a
+character class is invalid in **any** position (start, middle, or end)
+unless escaped. So `pattern="[a-z0-9][-a-z0-9]*"` (and even
+`[a-z0-9][a-z0-9-]*`) throws `Invalid character in character class` —
+an **uncaught `SyntaxError` on every render** AND it **silently disables
+client-side validation** (the browser can't compile the pattern → it
+enforces nothing). Fix: escape the hyphen — `[a-z0-9][a-z0-9\-]*`. HEEx
+passes attribute values through literally, so `\-` in the `.ex` source
+reaches the browser verbatim. Verify with
+`node -e 'new RegExp(p, "v")'`, not the default flag — `u`/no-flag
+accept the broken form, so a quick REPL check hides it. Found 5
+occurrences (new company/agent/project/channel/goal modals); fixed
+2026-06-14. Server-side `Glorbo.Slug.valid?` was always the real gate.
+
+### Two `save_task` handlers (Kanban shelf + TaskLive page) had drifted
+The Kanban shelf and the full-page `TaskLive` both render the same
+`TaskDetailForm` and both have a `save_task` handler — but they were
+**separate copies that drifted**. TaskLive's copy (a) dropped the body
+field (editable textarea, silently discarded on submit) and (b) lacked
+the approval-gate guard Kanban got in PR #37 (could flip a
+`requires_approval: director` task straight to `done`, bypassing the
+Inbox — the kernel-layer Gate watcher reverted it, but the app layer
+didn't refuse → violates two-layer enforcement). Lesson: when two
+LiveViews share a form/component, the **event handlers must share an
+implementation too**, or they drift. Fixed by extracting
+`GlorboWeb.TaskApprovalGuard` (both delegate) + wiring body writes into
+TaskLive. When auditing parity bugs, diff the handlers of every
+LiveView that mounts a shared component.
+
+### Browser UAT on this host: both browser MCPs want `/opt/google/chrome`
+`claude-in-chrome` (extension not connected), `playwright` MCP, and
+`chrome-devtools-mcp` all default to the system **`stable`/`chrome`
+channel at `/opt/google/chrome/chrome`**, which does not exist on the
+atomic-Fedora host (only flatpak Chrome). `npx playwright install
+chrome` can't write the immutable `/opt`. **What works:** drive
+Playwright from a Node script using its **bundled chromium** —
+`require('<repo>/scripts/node_modules/playwright').chromium.launch()`
+(no `channel:`), binary at
+`~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`. Pattern:
+one script does first-run setup (`/setup?token=`, set passphrase),
+saves `storageState`, and every probe reuses it. See
+[[reference_agent_browser_bazzite]] / [[project_glorbo_uat_boot_seed_recipe]].
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |
