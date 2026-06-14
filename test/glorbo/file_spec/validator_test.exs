@@ -527,6 +527,33 @@ defmodule Glorbo.FileSpec.ValidatorTest do
       refute Enum.any?(findings, &(&1.code == :task_dependency_missing))
     end
 
+    test "a symlinked dependency target does NOT resolve (codex #71 P2)", %{base: base} do
+      # An agent could plant `<dep_id>.md` as a symlink to an existing file to
+      # fake resolution. The dispatch-time reader rejects symlinks, so the dep is
+      # still missing at runtime — the validator must agree (lstat, not follow).
+      # Seed the dependent first so `tasks/` exists before the symlink lands.
+      seed(base, "companies/acme/projects/release/tasks/release-02.md", """
+      ---
+      kind: task/v1
+      id: release-02
+      title: Depends on a symlink
+      status: todo
+      depends_on:
+        - release-01
+      ---
+      """)
+
+      decoy = seed(base, "companies/acme/projects/release/notes.md", "decoy\n")
+
+      File.ln_s!(
+        decoy,
+        Path.join(base, "companies/acme/projects/release/tasks/release-01.md")
+      )
+
+      %{findings: findings} = Validator.validate_path(base)
+      assert Enum.any?(findings, &(&1.code == :task_dependency_missing))
+    end
+
     test "resolution is robust when the base path itself contains a projects/ segment",
          %{base: outer} do
       # Nest the whole glorbo tree under a `projects/` dir: the company-root

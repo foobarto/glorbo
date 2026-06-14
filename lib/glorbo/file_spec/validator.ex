@@ -434,14 +434,51 @@ defmodule Glorbo.FileSpec.Validator do
   defp dependency_file_present?(projects_dir, dep_id) do
     case File.ls(projects_dir) do
       {:ok, projects} ->
-        Enum.any?(projects, fn proj ->
-          File.regular?(Path.join([projects_dir, proj, "tasks", "#{dep_id}.md"])) or
-            File.regular?(Path.join([projects_dir, proj, "history", "tasks", "#{dep_id}.md"]))
-        end)
+        Enum.any?(projects, fn proj -> live_or_archived?(projects_dir, proj, dep_id) end)
 
       # Can't enumerate projects (tree not present) — don't false-positive.
       _ ->
         true
+    end
+  end
+
+  defp live_or_archived?(projects_dir, proj, dep_id) do
+    proj_dir = Path.join(projects_dir, proj)
+
+    real_dir?(proj_dir) and
+      (real_file_under?(proj_dir, ["tasks", "#{dep_id}.md"]) or
+         real_file_under?(proj_dir, ["history", "tasks", "#{dep_id}.md"]))
+  end
+
+  # Walk `segments` under `dir`, requiring EVERY intermediate component to be a
+  # real directory and the leaf a real regular file — all via lstat
+  # (`read_link_info`). `File.regular?/1` / `File.dir?/1` follow symlinks, so a
+  # planted symlink (the target file, or any project/`tasks` dir above it) would
+  # otherwise fake a resolution and suppress the finding — even though the
+  # validator's own traversal skips symlinks and the dispatch-time reader
+  # (`AgentWritableFile`, `read_link_info`) rejects them, leaving the task
+  # genuinely missing at runtime (codex #71 P2).
+  defp real_file_under?(dir, segments) do
+    {ancestors, [leaf]} = Enum.split(segments, length(segments) - 1)
+
+    walked =
+      Enum.reduce_while(ancestors, dir, fn seg, cur ->
+        next = Path.join(cur, seg)
+        if real_dir?(next), do: {:cont, next}, else: {:halt, nil}
+      end)
+
+    walked != nil and regular_file?(Path.join(walked, leaf))
+  end
+
+  defp real_dir?(path), do: link_info_type(path) == :directory
+  defp regular_file?(path), do: link_info_type(path) == :regular
+
+  # The lstat'd type of `path` (does NOT follow a final symlink), or nil if the
+  # path is absent/unreadable. `:file_info`'s 3rd tuple element is the type.
+  defp link_info_type(path) do
+    case :file.read_link_info(path) do
+      {:ok, info} -> elem(info, 2)
+      _ -> nil
     end
   end
 
