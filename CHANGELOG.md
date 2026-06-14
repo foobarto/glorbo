@@ -37,6 +37,16 @@ change between minor versions. Pin exact versions in downstream usage.
   shell metacharacters, flags, `..`, whitespace) and passed as a discrete
   argv element after `--` via `MuonTrap.Daemon` — execve, never a shell (D10).
   Pulls are cancellable.
+- **Ollama model knobs — context window, parallelism, temperature (GEP-67).**
+  Director-tunable knobs in `<config_root>/ollama.toml` (`Glorbo.Ollama.Config`):
+  daemon parallelism (`OLLAMA_NUM_PARALLEL` / `OLLAMA_MAX_LOADED_MODELS` /
+  `OLLAMA_KEEP_ALIVE`) applied as env when Glorbo spawns a *managed* daemon,
+  and per-model `num_ctx` / `temperature` / `num_predict` / `top_p` baked into
+  a Glorbo-derived `<base>-glorbo` model via a Modelfile + `/api/create`
+  (`Glorbo.Ollama.Tuning`) — the only reliable way to set the context window,
+  which Ollama's OpenAI-compatible endpoint doesn't accept. Values are
+  range-validated (a bad knob is dropped, never crashes); model-name keys are
+  validated as Ollama refs.
 
 ## [0.27.1] — 2026-06-14
 

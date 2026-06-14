@@ -554,3 +554,36 @@ needed even though nothing breaks.
   live).
 - GEP-3 / GEP-7 — filesystem-as-truth + SQLite-derived (on-disk
   placement).
+
+## Model-knobs addendum (2026-06-14)
+
+Append-only (GEP-1): the accepted body above scopes the *lifecycle*
+(detect → scan → pull → daemon → use); this records the design for the
+"**configure** models" goal — the inference knobs (context window,
+parallelism, temperature) that decide whether a local model is usable.
+
+The knobs live at three layers, each set with the Ollama-canonical
+mechanism, and Glorbo's reach differs per layer:
+
+- **Parallelism** (`OLLAMA_NUM_PARALLEL` / `OLLAMA_MAX_LOADED_MODELS` /
+  `OLLAMA_KEEP_ALIVE`) — daemon-level env, applied when Glorbo SPAWNS a
+  managed daemon (`Glorbo.Ollama.Daemon` `default_spawn`). **Managed-only**
+  — an *adopted* external daemon (D2) is the user's to tune; Glorbo can't
+  re-env it.
+- **Context window** (`num_ctx`) — **not settable over the OpenAI-compat
+  endpoint** (it's a native Ollama option, not an OpenAI field). The only
+  path that works regardless of the request shape is a **Modelfile**:
+  `Glorbo.Ollama.Tuning` derives `<base>-glorbo` `FROM <base>` with the
+  configured `PARAMETER`s baked in, via `/api/create` (base layers shared
+  — no re-download). An agent uses the derived model.
+- **Temperature** (+ `top_p`, `num_predict`) — baked into the same derived
+  model as a default now. Per-*request* temperature override rides the
+  GEP-55 proxy once Phase 4 lands (OpenAI-compat accepts `temperature`).
+
+Config lives in **`<config_root>/ollama.toml`** (`Glorbo.Ollama.Config`) —
+a dedicated file, NOT the `providers/ollama.toml` D6 named, so the
+`[daemon]` / `[models.<ref>]` tables don't collide with the provider
+registry's override parsing. Every value is range-validated (a bad knob is
+dropped, never crashes the daemon); model-name keys are validated as Ollama
+refs (they flow into the `/api/create` payload). Read-only for now; the
+Phase-5 Settings panel writes the file.

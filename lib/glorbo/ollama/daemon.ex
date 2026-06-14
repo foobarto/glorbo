@@ -221,7 +221,11 @@ defmodule Glorbo.Ollama.Daemon do
   defp default_spawn do
     case Detect.binary_path() do
       path when is_binary(path) ->
-        MuonTrap.Daemon.start_link(path, ["serve"], stderr_to_stdout: true)
+        # Apply the Director's daemon knobs (parallelism / keep-alive) as
+        # env on the daemon WE spawn (GEP-67 model-knobs; managed-only —
+        # an adopted external daemon is the user's to tune).
+        env = Glorbo.Ollama.Config.load() |> Glorbo.Ollama.Config.daemon_env()
+        MuonTrap.Daemon.start_link(path, ["serve"], stderr_to_stdout: true, env: env)
 
       _ ->
         {:error, :not_installed}
