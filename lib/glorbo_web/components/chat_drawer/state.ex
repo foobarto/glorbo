@@ -139,8 +139,16 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
         socket
 
       true ->
+        # Subscribe to the new channel, but do NOT unsubscribe from the
+        # old one (codex #75): PubSub subscriptions are per-PROCESS, and
+        # the drawer shares its LiveView process with the host page. On
+        # `ChannelLive`, the page already subscribes to its own
+        # `company:<co>:channels:<ch>`; unsubscribing here would drop the
+        # page's realtime updates too. `maybe_refresh_drawer/2` ignores
+        # events for any channel other than the current one, so a leftover
+        # subscription only delivers harmlessly-ignored messages (and the
+        # whole set is torn down when the LiveView process exits on nav).
         if Phoenix.LiveView.connected?(socket) do
-          Phoenix.PubSub.unsubscribe(Glorbo.PubSub, channel_topic(co, current))
           Phoenix.PubSub.subscribe(Glorbo.PubSub, channel_topic(co, channel))
         end
 
