@@ -35,9 +35,40 @@ defmodule Glorbo.Memory.IndexTest do
     ]
   end
 
+  # GEP-3: `enable/2` now persists the opt-in to `company.md`, so every
+  # company these tests enable needs a real company.md to write into. Seed
+  # minimal ones under the shared test base (mirrors the disk-persisted
+  # describe's "persisted" fixture). Idempotent across the run.
+  setup do
+    for co <- ~w(acme globex) do
+      co_dir = Path.join([Glorbo.Filesystem.Hierarchy.default_root(), "companies", co])
+      File.mkdir_p!(co_dir)
+      path = Path.join(co_dir, "company.md")
+
+      File.write!(path, """
+      ---
+      kind: company/v1
+      slug: #{co}
+      name: #{String.capitalize(co)}
+      ---
+      # #{String.capitalize(co)}
+      """)
+    end
+
+    :ok
+  end
+
   describe "enable/disable (default-OFF opt-in)" do
     test "a company is disabled by default" do
       refute Index.enabled?("acme")
+    end
+
+    test "enable on a company with no company.md errors, leaving the cache clean" do
+      # "ghost" is not seeded → no company.md to persist the opt-in into.
+      # The opt-in must NOT be cached when the disk write never happened
+      # (else it evaporates on the next reindex / DB wipe — GEP-3).
+      assert {:error, :company_md_missing} = Index.enable("ghost")
+      refute Index.enabled?("ghost")
     end
 
     test "enable then enabled? is true; disable flips it back" do
@@ -68,6 +99,56 @@ defmodule Glorbo.Memory.IndexTest do
       # After re-enabling (so the search gate passes) the rows are gone.
       :ok = Index.enable("acme")
       assert Index.search("acme", "fox", opts()) == []
+    end
+  end
+
+  describe "GEP-3 disk-persisted opt-in" do
+    setup do
+      # Persist the opt-in needs a real company.md to write into.
+      base = Glorbo.Filesystem.Hierarchy.default_root()
+      co_dir = Path.join([base, "companies", "persisted"])
+      File.mkdir_p!(co_dir)
+
+      File.write!(Path.join(co_dir, "company.md"), """
+      ---
+      kind: company/v1
+      slug: persisted
+      name: Persisted
+      ---
+      # Persisted
+      """)
+
+      {:ok, co_md: Path.join(co_dir, "company.md")}
+    end
+
+    test "enable writes memory_index: true to company.md", %{co_md: co_md} do
+      :ok = Index.enable("persisted")
+      assert File.read!(co_md) =~ ~r/^memory_index: true$/m
+      assert Index.company_memory_enabled?("persisted")
+    end
+
+    test "disable writes memory_index: false to company.md", %{co_md: co_md} do
+      :ok = Index.enable("persisted")
+      :ok = Index.disable("persisted")
+      assert File.read!(co_md) =~ ~r/^memory_index: false$/m
+      refute Index.company_memory_enabled?("persisted")
+    end
+
+    test "opt-in survives a glorbo.db wipe (re-derivable from disk)" do
+      :ok = Index.enable("persisted")
+
+      # Simulate `rm glorbo.db`: clear the SQLite enabled cache directly.
+      Glorbo.Repo.delete_all("memory_index_enabled")
+      refute Index.enabled?("persisted")
+
+      # The disk source of truth still says enabled; reindex re-seeds it.
+      assert Index.company_memory_enabled?("persisted")
+      :ok = Index.mark_enabled("persisted")
+      assert Index.enabled?("persisted")
+    end
+
+    test "company_memory_enabled? is false for a company.md without the key" do
+      refute Index.company_memory_enabled?("persisted")
     end
   end
 

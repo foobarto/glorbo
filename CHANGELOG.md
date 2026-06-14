@@ -144,6 +144,21 @@ change between minor versions. Pin exact versions in downstream usage.
   the entry for recall. The validator now emits a `:type_filename_mismatch`
   error when the prefix and `type:` differ. Closes a GEP↔code reconciliation
   finding.
+- **Semantic-recall opt-in is now rebuildable from disk** (GEP-3 / GEP-58). The
+  per-company memory-index opt-in lived only in the `memory_index_enabled`
+  SQLite table, so `rm glorbo.db && glorbo reindex` silently lost it (recall
+  reverted to OFF) — a GEP-3 "nothing in SQLite that can't be rebuilt from disk"
+  violation. `glorbo memory index <co> --enable/--disable` now also writes
+  `company.md`'s `memory_index:` boolean (the source of truth), `glorbo reindex`
+  re-derives the enabled set from it and re-seeds the SQLite cache, so the
+  opt-in + embeddings survive a DB wipe. New `company/v1` `memory_index:` field.
+  Two follow-up correctness fixes: (1) `enable/2` now writes the disk flag
+  **first** and refuses to cache an opt-in that never reached `company.md` (a
+  missing file or write error is returned, not masked by a cache row that would
+  evaporate on the next reindex); (2) `glorbo reindex` reconciles the cache the
+  *other* way too — a company opted out on disk (or whose directory was deleted)
+  has its stale `memory_index_enabled` row + derived chunks purged, so the cache
+  never outlives the disk truth.
 - **Kanban status moves now go through the single Director write channel**
   (GEP-36). `KanbanLive`'s drag/drop handler wrote task status directly via
   `TaskDefinition.write/2`, bypassing `Glorbo.Actions` — the one path GEP-36
@@ -191,6 +206,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Security
 
+- **`GLORBO_CREDENTIALS_DIR` is guarded consistently across both resolution
+  paths** (GEP-61). `Hierarchy.native_credentials_dir/0` used the env value
+  verbatim while `Providers.NativeConfig.credentials_dir/1` validated + raised
+  on it — so a relative or `..`-bearing value was honoured in one path and
+  rejected in another, and could redirect the credential store (and its
+  read-only GEP-55 sandbox bind) outside the intended tree. `native_credentials_dir/0`
+  now delegates to the single guard authority (`NativeConfig.credentials_dir/1`:
+  must be absolute, no `..`, no system path), so a bad override fails loud
+  everywhere; the default `<config_root>/credentials` is exposed as
+  `Hierarchy.default_credentials_dir/0`.
 - **Untrusted content framing (GEP-56)** — defense-in-depth against
   cross-agent prompt-injection *propagation*. Content that crosses a
   trust boundary into an agent's prompt — recalled file-based memory
