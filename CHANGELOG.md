@@ -12,6 +12,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Semantic-recall embedder silently stored zero-dim vectors on a malformed
+  response.** A `/embeddings` reply whose `data` row was missing the
+  `embedding` field defaulted to `[]`, which passed the `is_list/1`-only guard;
+  the empty vector was then written via `insert_all` (bypassing the
+  `ChunkVector` `dims > 0` changeset validation) and silently scored 0.0 on
+  every query. `parse_response/1` now rejects empty or absent embeddings with
+  `:embeddings_malformed` — failing loud instead of degrading a chunk's recall
+  forever. Matters most when pointed at a local model server (ollama /
+  llama.cpp / LM Studio), where partial responses are a realistic edge case.
+
 - **Slug-input validation crashed in modern Chrome.** Every "new" modal with a
   slug field (new company, agent, project, channel, goal) carried an HTML
   `pattern=` whose character class put a hyphen in a position that is invalid
