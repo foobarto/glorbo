@@ -103,9 +103,44 @@ preserves, gated→done refused) ✓; browser-verified all three ✓.
 
 ## Commit(s)
 
-- (pending) one commit on a feature branch: the 5 pattern fixes + the
-  TaskApprovalGuard extraction + TaskLive body/gate fix + 3 regression tests +
-  CHANGELOG + notes.md + this journal.
+- `06935980` (branch `fix/web-ui-uat-pattern-and-task-save`): the 5 pattern
+  fixes + the TaskApprovalGuard extraction + TaskLive body/gate fix + 3
+  regression tests + CHANGELOG + notes.md + this journal.
+
+---
+
+## Task picked: verified bug-fix round (post-UAT, "focus on bug fixes first")
+
+**What shipped:** two more adversarially-verified bug hunts (find →
+skeptic-verify pipeline), then real-execution validation.
+
+- **Web-layer hunt** (shared-handler drift · browser-compat footguns ·
+  error-path crashes): 7 candidates, **0 confirmed** after verification. One
+  refutation *validated* my earlier fix — TaskLive correctly does NOT need
+  `refuse_if_clears_required_approval` (its `updates` builder can't produce a
+  clearing value; the asymmetry with Kanban is deliberate). Verifier caught a
+  finder fabricating a "Threatmodel T13" justification and a suggested fix that
+  would have broken working code (matching a map as a tuple).
+- **v0.27.0 subsystem hunt** (hwfit parsing · semantic-recall vector math ·
+  research/actions · config/path security): 14 candidates, **1 confirmed**.
+  → `8f0c8d07`: **embedder rejected malformed `/embeddings` responses** — a
+  row missing `embedding` defaulted to `[]`, passed the `is_list/1` guard, and
+  stored a zero-dim vector (via `insert_all`, bypassing the `dims > 0`
+  changeset) that silently scored 0.0 forever. Now `:embeddings_malformed`.
+  +5 tests; exposed `parse_response/1` as `@doc false` for unit testing.
+- **hwfit real run on this host:** `Glorbo.Fit.recommend/1` correctly detected
+  the RTX 5090 (31.8 GB, cuda) + 62.5 GB RAM, `probe_errors: []`, recommended
+  Qwen2.5-14B Q4_K_M `:perfect`. Real `nvidia-smi`/`/proc` parsing + scoring
+  work — confirming the static refutations.
+
+**Gates:** precommit 3324 passed · credo --strict clean · sobelow clean.
+
+**Design call:** concluded the active hunt here. Two hunts at 7/7 and 13/14
+refuted-after-verification is a clear diminishing-returns signal — the
+codebase is solid. The only unhunted surface is the OLDER core (kernel /
+sandbox / agents), which is the most-tested + security-reviewed = lowest
+expected yield. Continuing would be theater. **4 real bugs fixed total**
+across the two commits, ready to bundle.
 
 ---
 
