@@ -64,10 +64,10 @@ defmodule Glorbo.FileSpec do
             }
 
   # Spec registry — ordered, first-match wins on path classification.
-  # Ordering matters only where regexes overlap; e.g. SkillMd
-  # matches `/skills/<n>.md` distinctly from any other kind so its
-  # position is flexible. Memory/index + sentinel specs have mutually
-  # disjoint regexes.
+  # Ordering matters wherever path regexes overlap: the more specific
+  # spec MUST come first. E.g. TaskCommentsMd before TaskMd, and the
+  # peer-review sentinels before the generic InboxMessageMd (their inbox
+  # paths are a strict subset of its `inbox/*.md` match — GEP-42).
   @specs [
     Glorbo.FileSpec.CompanyMd,
     Glorbo.FileSpec.AgentMd,
@@ -90,14 +90,21 @@ defmodule Glorbo.FileSpec do
     Glorbo.FileSpec.AuditMonthJsonl,
     Glorbo.FileSpec.InboxArchiveJson,
     Glorbo.FileSpec.EmergencyStopMd,
+    # Peer-review sentinels MUST precede InboxMessageMd: their paths
+    # (`/agents/<n>/inbox/peer-review-<id>.md` and `…-feedback-<id>.md`) are
+    # a strict subset of InboxMessageMd's generic `inbox/*.md` regex, so a
+    # not-yet-parsed sentinel would otherwise classify as `inbox-message/v1`
+    # via the first-match `classify_by_path/1` fallback (GEP-42 §Sentinel
+    # shape). Feedback precedes Request because `peer-review-feedback-X` also
+    # matches the Request regex `peer-review-[a-z0-9…]` — most specific wins.
+    Glorbo.FileSpec.PeerReviewFeedbackMd,
+    Glorbo.FileSpec.PeerReviewRequestMd,
     Glorbo.FileSpec.InboxMessageMd,
     Glorbo.FileSpec.GoalMd,
     Glorbo.FileSpec.ConfigMd,
     Glorbo.FileSpec.PathRequestMd,
     Glorbo.FileSpec.ProposalMd,
-    Glorbo.FileSpec.BenchmarkRunMd,
-    Glorbo.FileSpec.PeerReviewRequestMd,
-    Glorbo.FileSpec.PeerReviewFeedbackMd
+    Glorbo.FileSpec.BenchmarkRunMd
   ]
 
   @doc """
