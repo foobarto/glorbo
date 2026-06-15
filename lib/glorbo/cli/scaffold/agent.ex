@@ -42,7 +42,9 @@ defmodule Glorbo.CLI.Scaffold.Agent do
 
   # Reserved agent slugs that MCP tools and other synthetic senders
   # use; refusing to scaffold prevents actor / outbox confusion.
-  @reserved_agent_slugs ~w(mcp)
+  # `director` is the approval-gate sentinel (gate.ex reassign) — a
+  # real agent at that slug would receive pending-approval mentions.
+  @reserved_agent_slugs ~w(director mcp)
   @switches [
     role: :string,
     provider: :string,

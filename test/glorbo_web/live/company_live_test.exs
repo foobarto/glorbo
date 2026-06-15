@@ -501,6 +501,21 @@ defmodule GlorboWeb.CompanyLiveTest do
       assert html =~ "Refusing to scaffold reserved agent slug"
       refute File.exists?(Path.join([base, "companies", "acme", "agents", "mcp"]))
     end
+
+    test "reserved slug `director` is refused with an error flash and no dir (codex L57)",
+         %{conn: conn, base: base} do
+      {:ok, view, _html} = live(conn, ~p"/companies/acme")
+
+      html =
+        render_submit(view, "new_agent_create", %{
+          "slug" => "director",
+          "role" => "",
+          "provider" => ""
+        })
+
+      assert html =~ "Refusing to scaffold reserved agent slug"
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "director"]))
+    end
   end
 
   # #247 — company budget cap status strip at top of CompanyLive.

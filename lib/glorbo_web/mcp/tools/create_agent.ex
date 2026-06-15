@@ -46,7 +46,7 @@ defmodule GlorboWeb.MCP.Tools.CreateAgent do
       "additionalProperties" => false
     }
 
-  @reserved_agent_slugs ~w(mcp)
+  @reserved_agent_slugs ~w(director mcp)
 
   @impl true
   def call(%{"company" => company, "slug" => slug} = args, context)
@@ -61,8 +61,9 @@ defmodule GlorboWeb.MCP.Tools.CreateAgent do
   def call(_args, _context), do: {:error, :missing_args}
 
   # Threatmodel wave 23: `mcp` is the synthetic sender MCP tools use
-  # for proposal / decide outbox writes. A real agent at the same
-  # slug would share the Router-adjacent outbox + sender identity.
+  # for proposal / decide outbox writes. `director` is the approval-gate
+  # sentinel — a real agent at either slug would share Router-adjacent
+  # outbox + sender identity or receive pending-approval mentions.
   defp refuse_reserved_slug(slug) do
     if slug in @reserved_agent_slugs,
       do: {:error, {:reserved_slug, slug}},

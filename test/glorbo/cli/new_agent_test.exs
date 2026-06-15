@@ -87,6 +87,18 @@ defmodule Glorbo.CLI.NewAgentTest do
       assert out =~ "Invalid slug"
     end
 
+    test "reserved slug `director` returns exit 1 (codex L57)" do
+      assert {:new_agent, 1, out} = Agent.run(["acme/director"])
+      assert out =~ "Refusing to scaffold reserved agent slug 'director'"
+      assert out =~ "director"
+      assert out =~ "mcp"
+    end
+
+    test "reserved slug `mcp` returns exit 1" do
+      assert {:new_agent, 1, out} = Agent.run(["acme/mcp"])
+      assert out =~ "Refusing to scaffold reserved agent slug 'mcp'"
+    end
+
     test "invalid co_slash_ag format returns usage" do
       assert {:new_agent, 1, out} = Agent.run(["acme"])
       assert out =~ "Usage: glorbo new agent"

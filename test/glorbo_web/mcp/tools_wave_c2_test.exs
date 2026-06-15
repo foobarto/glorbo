@@ -166,6 +166,21 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
       assert File.exists?(Path.join([base, "companies", "acme", "agents", "writer", "AGENT.md"]))
     end
 
+    test "refuses reserved slug director (codex L57)" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => true, "structuredContent" => %{"reason" => reason}}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{"company" => "acme", "slug" => "director"},
+                 base
+               )
+
+      assert reason =~ "reserved_slug"
+      refute File.exists?(Path.join([base, "companies", "acme", "agents", "director"]))
+    end
+
     test "honors role/provider/model opts" do
       {base, _audit} = setup_base()
       _ = seed_company(base, "acme")

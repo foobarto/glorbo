@@ -12,6 +12,16 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Reserve `director` agent slug (codex L57).** `glorbo new agent` and
+  `glorbo.create_agent` now refuse to scaffold `director` alongside `mcp`.
+  The approval gate reassigns pending tasks to the `director` sentinel;
+  a real agent at that slug could receive approval comments meant for the
+  Director.
+- **`Restore` extract staging dir is chmod `0700` (codex L118).** The
+  sibling `.restore-<ts>` staging directory created during transactional
+  extract is now private immediately after creation, matching the backup
+  archive hardening pattern.
+
 - **Ollama daemon/pull managers no longer crash on an abnormal child exit
   (GEP-67).** `MuonTrap.Daemon.start_link` links the spawned `ollama serve` /
   `ollama pull` OS process to its manager GenServer; an abnormal exit (missing
