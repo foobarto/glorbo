@@ -39,7 +39,10 @@ defmodule Glorbo.Ollama.Pull do
   # Ollama model ref: an optional `registry/` and/or `namespace/` prefix,
   # a `name`, and an optional `:tag`. Lowercase alnum + `.`/`_`/`-`/`/`,
   # each path segment starting alnum. `..` is rejected separately.
-  @model_re ~r/^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){0,2}(:[a-z0-9][a-z0-9._-]*)?$/
+  # `\A`/`\z` (not `^`/`$`): `$` matches before a trailing newline, so
+  # `^…$` would accept "llama3\n". Absolute anchors reject any embedded
+  # or trailing newline.
+  @model_re ~r/\A[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){0,2}(:[a-z0-9][a-z0-9._-]*)?\z/
   @max_model_len 200
 
   # ---------------------------------------------------------------------------
@@ -110,6 +113,12 @@ defmodule Glorbo.Ollama.Pull do
 
   @impl true
   def init(opts) do
+    # The spawned `ollama pull` runs as a MuonTrap.Daemon child LINKED to us.
+    # Trap exits so an abnormal child exit doesn't kill this manager via the
+    # link (we handle the death via the monitor's :DOWN); the link is KEPT so
+    # the child is torn down if this manager itself dies.
+    Process.flag(:trap_exit, true)
+
     state = %{
       current: nil,
       child_pid: nil,
@@ -159,6 +168,15 @@ defmodule Glorbo.Ollama.Pull do
     {:noreply, advance(%{state | current: nil, child_pid: nil, child_ref: nil})}
   end
 
+  # Trapped exits (trap_exit set in init/1): a child's link-{:EXIT} is a no-op
+  # here — its death is driven by the monitor's :DOWN above. The supervisor
+  # shutting us down arrives as {:EXIT, parent, :shutdown}; honour it so we
+  # stop (and the link tears the in-flight child down). A child never exits
+  # with :shutdown, so this reliably distinguishes the parent.
+  def handle_info({:EXIT, _pid, :shutdown}, state), do: {:stop, :shutdown, state}
+  def handle_info({:EXIT, _pid, {:shutdown, _} = reason}, state), do: {:stop, reason, state}
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   # ---------------------------------------------------------------------------
@@ -177,6 +195,10 @@ defmodule Glorbo.Ollama.Pull do
 
     case state.spawn_fun.(model, logger_fun) do
       {:ok, pid} when is_pid(pid) ->
+        # We monitor the child for its death (the :DOWN handler reports the
+        # error and advances the queue). The MuonTrap link stays — `trap_exit`
+        # (init/1) keeps it harmless when the child dies, while still cleaning
+        # the child up if this manager dies.
         ref = Process.monitor(pid)
         publish(state, {:started, model})
         %{state | current: model, child_pid: pid, child_ref: ref}

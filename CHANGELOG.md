@@ -10,6 +10,23 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ollama daemon/pull managers no longer crash on an abnormal child exit
+  (GEP-67).** `MuonTrap.Daemon.start_link` links the spawned `ollama serve` /
+  `ollama pull` OS process to its manager GenServer; an abnormal exit (missing
+  model, network failure, disk full) propagated over that link and killed the
+  manager — before its monitor could report the error and run the bounded
+  restart / advance the pull queue. Both managers now `trap_exit` (so the
+  child's death is handled by the monitor's `:DOWN`, not the link) while
+  keeping the link (so the child is still torn down if the manager dies).
+  Surfaced by pre-release adversarial review; regression tests inject a linked
+  child and assert the manager both survives an abnormal child exit and tears
+  the child down when it stops.
+- **`Ollama.Pull.validate_model/1` rejects trailing/leading newlines.** The
+  model-name grammar anchored with `^…$`, and `$` matches just before a final
+  newline, so `"llama3\n"` was accepted. Switched to absolute `\A…\z` anchors.
+
 ## [0.28.0] — 2026-06-14
 
 ### Added

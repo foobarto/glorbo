@@ -8,7 +8,19 @@ defmodule Glorbo.Ollama.DaemonTest do
   defp sleeper, do: spawn(fn -> Process.sleep(:infinity) end)
 
   defp start_daemon(opts) do
-    {:ok, pid} = start_supervised({Daemon, Keyword.put(opts, :name, nil)})
+    # Default the stop_fun to a kill (the fake children here are plain
+    # processes, not GenServers): now that the manager traps exits, its
+    # terminate/2 stops the managed child on shutdown, and the production
+    # default `GenServer.stop/3` would block 5s on a non-GenServer stand-in.
+    opts =
+      opts
+      |> Keyword.put(:name, nil)
+      |> Keyword.put_new(:stop_fun, fn pid ->
+        Process.exit(pid, :kill)
+        :ok
+      end)
+
+    {:ok, pid} = start_supervised({Daemon, opts})
     pid
   end
 
@@ -155,6 +167,36 @@ defmodule Glorbo.Ollama.DaemonTest do
       Process.exit(pid, :kill)
       refute_receive :spawn, 400
       assert :sys.get_state(d).mode == :down
+    end
+
+    test "an abnormal exit of a LINKED managed child does not crash the manager" do
+      # MuonTrap.Daemon.start_link LINKS the child to the Daemon manager;
+      # mimic with spawn_link. Without the unlink guard the child's abnormal
+      # exit would propagate over the link and kill the manager before the
+      # monitor handler could run the bounded restart.
+      parent = self()
+
+      d =
+        start_daemon(
+          probe_fun: fn -> false end,
+          spawn_fun: fn ->
+            send(parent, :spawn)
+            {:ok, spawn_link(fn -> Process.sleep(:infinity) end)}
+          end
+        )
+
+      {:ok, :managed} = Daemon.ensure_running(d)
+      mref = Process.monitor(d)
+      assert_received :spawn
+
+      child = :sys.get_state(d).child_pid
+      Process.exit(child, :boom)
+
+      # Manager survived the linked child's abnormal exit and respawned.
+      assert_receive :spawn, 1_000
+      assert Process.alive?(d)
+      assert Daemon.status(d).mode == :managed
+      refute_receive {:DOWN, ^mref, :process, ^d, _}, 50
     end
   end
 end
