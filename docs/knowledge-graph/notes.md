@@ -877,6 +877,19 @@ saves `storageState`, and every probe reuses it. See
 
 ---
 
+## 2026-06-15 — `Enable` vs `config_migration.harden` on `providers.toml`
+
+GEP-32 D9 specifies `chmod 600` file + `chmod 700` parent for provider
+credentials. `Glorbo.Filesystem.ConfigMigration.harden/1` chmods existing
+`~/.config/glorbo/{credentials,providers}/` subdirs but **not**
+`providers.toml` itself. A first `Enable.enable/2` append under a
+permissive umask could leave endpoints world-readable until the next
+migration pass. Fix: `Enable.append_entry/2` chmods dir `0700` + file
+`0600` inline (codex L3). Sibling to watch: `Restore.extract/2` staging
+dir (L118) — same pattern gap.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |

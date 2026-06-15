@@ -4,13 +4,15 @@ defmodule Glorbo.Providers.EnableTest do
   alias Glorbo.Providers.Enable
 
   defp tmp_toml(ctx) do
-    path =
+    dir =
       Path.join(
         System.tmp_dir!(),
-        "glorbo-enable-#{ctx.test |> inspect() |> String.replace(~r/\W/, "")}-#{System.unique_integer([:positive])}.toml"
+        "glorbo-enable-#{ctx.test |> inspect() |> String.replace(~r/\W/, "")}-#{System.unique_integer([:positive])}"
       )
 
-    on_exit(fn -> File.rm_rf!(path) end)
+    path = Path.join(dir, "providers.toml")
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf!(dir) end)
     path
   end
 
@@ -91,5 +93,18 @@ defmodule Glorbo.Providers.EnableTest do
 
   test "default_path/0 is ~/.glorbo/providers.toml" do
     assert Enable.default_path() |> String.ends_with?("providers.toml")
+  end
+
+  test "creates config dir and providers.toml with restrictive permissions", ctx do
+    path = tmp_toml(ctx)
+
+    assert :ok = Enable.enable("ollama", path: path, detection: ready("ollama"))
+
+    assert {:ok, %File.Stat{mode: file_mode}} = File.stat(path)
+    assert Bitwise.band(file_mode, 0o777) == 0o600
+
+    dir = Path.dirname(path)
+    assert {:ok, %File.Stat{mode: dir_mode}} = File.stat(dir)
+    assert Bitwise.band(dir_mode, 0o777) == 0o700
   end
 end

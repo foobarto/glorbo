@@ -125,11 +125,17 @@ defmodule Glorbo.Providers.Enable do
   defp shape_for(_), do: %{shape: "openai", path: "/v1/models"}
 
   defp append_entry(path, entry) do
-    File.mkdir_p!(Path.dirname(path))
+    dir = Path.dirname(path)
+    File.mkdir_p!(dir)
+    File.chmod!(dir, 0o700)
 
     case File.open(path, [:append, :binary], fn fd -> IO.binwrite(fd, entry) end) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, {:write_failed, reason}}
+      {:ok, _} ->
+        File.chmod!(path, 0o600)
+        :ok
+
+      {:error, reason} ->
+        {:error, {:write_failed, reason}}
     end
   end
 end

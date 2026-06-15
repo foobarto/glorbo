@@ -8,32 +8,34 @@
 **Mode:** Bugfix (re-verify before fix).
 
 **What shipped:** L3 fix — `Enable.append_entry/2` chmods config dir `0700` +
-`providers.toml` `0600` after write; regression test + CHANGELOG entry.
-PR #77 opened.
+`providers.toml` `0600`; regression test; GEP-32 history + notes.md.
+PR #77 (rebased after #78/#79 landed out of order).
 
-**Gates:** precommit + credo --strict + sobelow — all pass on branch.
+**Gates:** precommit + credo --strict + sobelow — green.
 
-**Commit(s):** `c8f3f17b` on `fix/codex-l3-provider-registry-perms` → PR #77
+**Commit(s):** `c8f3f17b` → PR #77
 
 ---
 
 ## Task: L57 director slug + L118 restore staging perms
 
-**Task picked:** Second permissions/slug theme from TRIAGE §B.
+**What shipped:** Merged via PR #78 (`513cf0bd` on main).
 
-**What shipped:** Reserve `director` in scaffold + MCP create_agent; restore
-staging `chmod 0700`; tests + CHANGELOG.
+---
 
-**Gates:** _(pending precommit on this branch)_
+## Task: release.yml tap hardening
 
-**Commit(s):** _(pending)_
+**What shipped:** Merged via PR #79 (`afde3a47` on main). CHANGELOG entry for
+tap retry still missing on main — follow-up if desired.
 
 ---
 
 ## Blockers / operator decisions
 
-_(none logged)_
+- **PR #77** — was CONFLICTING after #78/#79 merged first; rebased locally.
+  Auto-merge enabled; needs green CI re-run + approval if ruleset requires it.
 
 ## Things I'd like your review
 
-- Merge order: #77 then #78 (L57+L118) then release.yml PR when ready.
+- Merge #77 when CI green (L3 is the only codex fix not yet on main).
+- Optional: add Homebrew tap retry CHANGELOG bullet (missed in #79 squash).
