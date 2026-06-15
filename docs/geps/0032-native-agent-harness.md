@@ -42,6 +42,7 @@ history:
   - date: 2026-06-15
     status: Implemented
     note: "Security hardening (codex L3): `Glorbo.Providers.Enable.append_entry/2` now chmods the config parent to `0700` and `providers.toml` to `0600` on every enable append, matching GEP-32 D9 / credentials-file permissions. `config_migration.harden/1` only chmods existing subdirs — it did not cover a fresh `providers.toml` create under a permissive umask."
+---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
 
