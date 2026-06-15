@@ -12,6 +12,11 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **`Enable` hardens `providers.toml` permissions on write.** Appending a
+  detected provider now chmods the config directory to `0700` and
+  `providers.toml` to `0600`, matching the secret-config standard used
+  elsewhere — closing a gap where a fresh enable under a permissive umask
+  left provider endpoints world-readable.
 - **Reserve `director` agent slug (codex L57).** `glorbo new agent` and
   `glorbo.create_agent` now refuse to scaffold `director` alongside `mcp`.
   The approval gate reassigns pending tasks to the `director` sentinel;

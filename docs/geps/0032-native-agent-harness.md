@@ -39,6 +39,9 @@ history:
   - date: 2026-04-23
     status: Implemented
     note: "macOS builds resurrected via Burrito's Zig cross-compile path from Linux. New `build-macos-cross` ubuntu-24.04 matrix produces both Mach-O arches (universal ERTS from BEAM machine CDN, `zig cc -target <arch>-macos` for the `exqlite` NIF, Zig launcher wrap, `file` smoke check per arch). Host-macOS `build-macos` job retired. Darwin SHAs + signatures back in the release bundle; tap auto-publish pulls them into the formula on the next tag push."
+  - date: 2026-06-15
+    status: Implemented
+    note: "Security hardening (codex L3): `Glorbo.Providers.Enable.append_entry/2` now chmods the config parent to `0700` and `providers.toml` to `0600` on every enable append, matching GEP-32 D9 / credentials-file permissions. `config_migration.harden/1` only chmods existing subdirs — it did not cover a fresh `providers.toml` create under a permissive umask."
 ---
 
 # GEP-32: Native Agent Harness — OpenAI v1-Compatible Provider
