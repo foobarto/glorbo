@@ -601,4 +601,20 @@ jobs:
 
           git add Formula/glorbo.rb
           git commit -m "glorbo v${VERSION}"
-          git push origin HEAD:main
+
+          # Shared tap with stado — concurrent cask pushes race our glorbo
+          # formula push. Rebase onto latest main and retry on non-FF.
+          max_attempts=5
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              echo "Tap pushed on attempt ${attempt}."
+              exit 0
+            fi
+            echo "Tap push failed (attempt ${attempt}/${max_attempts}), retrying..." >&2
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+          echo "Tap push failed after ${max_attempts} attempts." >&2
+          exit 1
