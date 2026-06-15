@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.1] — 2026-06-15
+
 ### Fixed
 
 - **`Enable` hardens `providers.toml` permissions on write.** Appending a
@@ -26,7 +28,11 @@ change between minor versions. Pin exact versions in downstream usage.
   sibling `.restore-<ts>` staging directory created during transactional
   extract is now private immediately after creation, matching the backup
   archive hardening pattern.
-
+- **Homebrew tap push retries on shared-tap race.** The release
+  `publish-homebrew-tap` job now `git pull --rebase origin main` and
+  retries the push up to 5 times when a concurrent push from the shared
+  `foobarto/homebrew-tap` repo (e.g. stado cask updates) causes a
+  non-fast-forward rejection.
 - **Ollama daemon/pull managers no longer crash on an abnormal child exit
   (GEP-67).** `MuonTrap.Daemon.start_link` links the spawned `ollama serve` /
   `ollama pull` OS process to its manager GenServer; an abnormal exit (missing
@@ -7727,7 +7733,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/foobarto/glorbo/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/foobarto/glorbo/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/foobarto/glorbo/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
