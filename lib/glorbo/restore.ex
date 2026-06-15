@@ -286,6 +286,7 @@ defmodule Glorbo.Restore do
     File.mkdir_p!(base)
     staging = staging_dir_for(base)
     File.mkdir_p!(staging)
+    File.chmod!(staging, 0o700)
 
     try do
       with :ok <- extract_into(archive, staging),
