@@ -201,6 +201,30 @@ defmodule Glorbo.Ollama.PullTest do
       refute_receive {:DOWN, ^mref, :process, ^p, _}, 50
     end
 
+    test "the in-flight child is torn down when the manager stops (kept link)" do
+      # The manager keeps the MuonTrap link (it traps exits rather than
+      # unlinking), so stopping/crashing the manager tears the in-flight
+      # `ollama pull` child down instead of orphaning it.
+      # Trap exits here so the manager's :shutdown (it's linked to us via
+      # start_link) is a harmless message, not a kill of the test.
+      Process.flag(:trap_exit, true)
+      parent = self()
+
+      spawn_fun = fn model, _l ->
+        child = spawn_link(fn -> receive do: ({:exit, r} -> exit(r)) end)
+        send(parent, {:child, model, child})
+        {:ok, child}
+      end
+
+      {:ok, p} = Pull.start_link(name: nil, spawn_fun: spawn_fun)
+      Pull.pull(p, "first")
+      assert_receive {:child, "first", child}
+      cref = Process.monitor(child)
+
+      GenServer.stop(p, :shutdown)
+      assert_receive {:DOWN, ^cref, :process, ^child, _}
+    end
+
     test "cancel of a queued (not-yet-running) pull just drops it" do
       parent = self()
 

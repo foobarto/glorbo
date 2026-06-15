@@ -8,7 +8,19 @@ defmodule Glorbo.Ollama.DaemonTest do
   defp sleeper, do: spawn(fn -> Process.sleep(:infinity) end)
 
   defp start_daemon(opts) do
-    {:ok, pid} = start_supervised({Daemon, Keyword.put(opts, :name, nil)})
+    # Default the stop_fun to a kill (the fake children here are plain
+    # processes, not GenServers): now that the manager traps exits, its
+    # terminate/2 stops the managed child on shutdown, and the production
+    # default `GenServer.stop/3` would block 5s on a non-GenServer stand-in.
+    opts =
+      opts
+      |> Keyword.put(:name, nil)
+      |> Keyword.put_new(:stop_fun, fn pid ->
+        Process.exit(pid, :kill)
+        :ok
+      end)
+
+    {:ok, pid} = start_supervised({Daemon, opts})
     pid
   end
 

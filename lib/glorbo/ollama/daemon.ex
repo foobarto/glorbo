@@ -82,6 +82,13 @@ defmodule Glorbo.Ollama.Daemon do
 
   @impl true
   def init(opts) do
+    # A managed `ollama serve` runs as a MuonTrap.Daemon child LINKED to us.
+    # Trap exits so an abnormal child exit doesn't kill this manager via the
+    # link (we handle the death via the monitor's :DOWN and the bounded
+    # restart); the link is KEPT so the child is torn down if this manager
+    # itself dies.
+    Process.flag(:trap_exit, true)
+
     state = %{
       mode: :down,
       reason: nil,
@@ -157,6 +164,15 @@ defmodule Glorbo.Ollama.Daemon do
     end
   end
 
+  # Trapped exits (trap_exit set in init/1): a child's link-{:EXIT} is a no-op
+  # here — its death is driven by the monitor's :DOWN above. The supervisor
+  # shutting us down arrives as {:EXIT, parent, :shutdown}; honour it so we
+  # stop and terminate/2 + the link tear the managed daemon down. A child
+  # never exits with :shutdown, so this reliably distinguishes the parent.
+  def handle_info({:EXIT, _pid, :shutdown}, state), do: {:stop, :shutdown, state}
+  def handle_info({:EXIT, _pid, {:shutdown, _} = reason}, state), do: {:stop, reason, state}
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
@@ -189,12 +205,10 @@ defmodule Glorbo.Ollama.Daemon do
   defp spawn_managed(state) do
     case state.spawn_fun.() do
       {:ok, pid} when is_pid(pid) ->
-        # MuonTrap.Daemon.start_link LINKS the child to us. If the managed
-        # `ollama serve` exits abnormally, that link would kill the Daemon
-        # manager before the monitor's :DOWN handler can run the bounded
-        # crash-restart. Unlink and rely on the monitor. (No-op for the
-        # plain-`spawn` test seam.)
-        Process.unlink(pid)
+        # We monitor the child; its :DOWN drives the bounded crash-restart.
+        # The MuonTrap link stays — `trap_exit` (init/1) keeps it harmless
+        # when the child dies, while still cleaning the child up if this
+        # manager dies.
         ref = Process.monitor(pid)
         {:ok, %{state | mode: :managed, reason: nil, child_pid: pid, child_ref: ref}}
 
