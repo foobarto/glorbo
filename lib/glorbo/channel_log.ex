@@ -41,7 +41,7 @@ defmodule Glorbo.ChannelLog do
         _ -> body
       end
 
-    "\n## #{ts} | #{author} ::#{prov}\n#{String.trim(body)}\n"
+    "\n## #{ts} | #{author} ::#{prov}\n#{body}\n"
   end
 
   @doc """
@@ -78,7 +78,6 @@ defmodule Glorbo.ChannelLog do
         body: String.trim(body)
       }
     end)
-    |> Enum.take(-200)
   end
 
   defp parse_author_provenance(author_raw) do

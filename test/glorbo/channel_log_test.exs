@@ -3,6 +3,12 @@ defmodule Glorbo.ChannelLogTest do
 
   alias Glorbo.ChannelLog
 
+  test "format_post preserves verbatim body (MCP contract)" do
+    entry = ChannelLog.format_post("mcp:cli", "  indented\n", :agent)
+
+    assert entry =~ ~r/\n## \d{4}-\d{2}-\d{2}[^|]* \| mcp:cli ::agent\n  indented\n\n\z/
+  end
+
   test "format_post stamps provenance suffix" do
     entry = ChannelLog.format_post("ceo", "hello", :agent)
 

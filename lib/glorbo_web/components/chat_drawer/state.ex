@@ -226,5 +226,6 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
         body_html: GlorboWeb.Markdown.render(msg.body, company: company)
       }
     end)
+    |> Enum.take(-200)
   end
 end
