@@ -250,7 +250,7 @@ defmodule GlorboWeb.MCP.ToolsWaveC1Test do
       channel = File.read!(Path.join([co_path, "channels", "general.md"]))
       assert channel =~ "hello from cli"
       # Header carries the actor verbatim so the UI can distinguish.
-      assert channel =~ ~r/^## \d{4}-\d{2}-\d{2}T.*\| mcp:claude-code$/m
+      assert channel =~ ~r/^## \d{4}-\d{2}-\d{2}T.*\| mcp:claude-code ::agent$/m
 
       entries = FakeAudit.entries(audit)
       post = Enum.find(entries, &(&1[:action] == "chat.post"))
