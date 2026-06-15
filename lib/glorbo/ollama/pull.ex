@@ -39,7 +39,10 @@ defmodule Glorbo.Ollama.Pull do
   # Ollama model ref: an optional `registry/` and/or `namespace/` prefix,
   # a `name`, and an optional `:tag`. Lowercase alnum + `.`/`_`/`-`/`/`,
   # each path segment starting alnum. `..` is rejected separately.
-  @model_re ~r/^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){0,2}(:[a-z0-9][a-z0-9._-]*)?$/
+  # `\A`/`\z` (not `^`/`$`): `$` matches before a trailing newline, so
+  # `^…$` would accept "llama3\n". Absolute anchors reject any embedded
+  # or trailing newline.
+  @model_re ~r/\A[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){0,2}(:[a-z0-9][a-z0-9._-]*)?\z/
   @max_model_len 200
 
   # ---------------------------------------------------------------------------
@@ -177,6 +180,14 @@ defmodule Glorbo.Ollama.Pull do
 
     case state.spawn_fun.(model, logger_fun) do
       {:ok, pid} when is_pid(pid) ->
+        # MuonTrap.Daemon.start_link LINKS the child to us. An abnormal
+        # `ollama pull` exit (missing model / network fail / disk full)
+        # would otherwise propagate over that link and kill the Pull
+        # manager — losing the queue and never publishing {:error, ...}.
+        # Unlink and rely on the monitor below, whose :DOWN handler
+        # reports the error and advances the queue. (No-op when the
+        # injected spawn_fun used a plain `spawn`, i.e. in tests.)
+        Process.unlink(pid)
         ref = Process.monitor(pid)
         publish(state, {:started, model})
         %{state | current: model, child_pid: pid, child_ref: ref}

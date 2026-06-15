@@ -189,6 +189,12 @@ defmodule Glorbo.Ollama.Daemon do
   defp spawn_managed(state) do
     case state.spawn_fun.() do
       {:ok, pid} when is_pid(pid) ->
+        # MuonTrap.Daemon.start_link LINKS the child to us. If the managed
+        # `ollama serve` exits abnormally, that link would kill the Daemon
+        # manager before the monitor's :DOWN handler can run the bounded
+        # crash-restart. Unlink and rely on the monitor. (No-op for the
+        # plain-`spawn` test seam.)
+        Process.unlink(pid)
         ref = Process.monitor(pid)
         {:ok, %{state | mode: :managed, reason: nil, child_pid: pid, child_ref: ref}}
 

@@ -156,5 +156,35 @@ defmodule Glorbo.Ollama.DaemonTest do
       refute_receive :spawn, 400
       assert :sys.get_state(d).mode == :down
     end
+
+    test "an abnormal exit of a LINKED managed child does not crash the manager" do
+      # MuonTrap.Daemon.start_link LINKS the child to the Daemon manager;
+      # mimic with spawn_link. Without the unlink guard the child's abnormal
+      # exit would propagate over the link and kill the manager before the
+      # monitor handler could run the bounded restart.
+      parent = self()
+
+      d =
+        start_daemon(
+          probe_fun: fn -> false end,
+          spawn_fun: fn ->
+            send(parent, :spawn)
+            {:ok, spawn_link(fn -> Process.sleep(:infinity) end)}
+          end
+        )
+
+      {:ok, :managed} = Daemon.ensure_running(d)
+      mref = Process.monitor(d)
+      assert_received :spawn
+
+      child = :sys.get_state(d).child_pid
+      Process.exit(child, :boom)
+
+      # Manager survived the linked child's abnormal exit and respawned.
+      assert_receive :spawn, 1_000
+      assert Process.alive?(d)
+      assert Daemon.status(d).mode == :managed
+      refute_receive {:DOWN, ^mref, :process, ^d, _}, 50
+    end
   end
 end
