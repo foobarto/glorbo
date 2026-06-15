@@ -12,6 +12,12 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ### Fixed
 
+- **Homebrew tap push retries on shared-tap race.** The release
+  `publish-homebrew-tap` job now `git pull --rebase origin main` and
+  retries the push up to 5 times when a concurrent push from the shared
+  `foobarto/homebrew-tap` repo (e.g. stado cask updates) causes a
+  non-fast-forward rejection.
+
 - **Ollama daemon/pull managers no longer crash on an abnormal child exit
   (GEP-67).** `MuonTrap.Daemon.start_link` links the spawned `ollama serve` /
   `ollama pull` OS process to its manager GenServer; an abnormal exit (missing
