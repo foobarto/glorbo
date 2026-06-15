@@ -54,6 +54,7 @@ defmodule Glorbo.Company.Router do
   require Logger
 
   alias Glorbo.Agent.Parser, as: AgentParser
+  alias Glorbo.ChannelLog
   alias Glorbo.Company.AuditLog
   alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.HomeHistory
@@ -434,8 +435,7 @@ defmodule Glorbo.Company.Router do
   # `## <iso-ts> | <sender>\n<body>` block so ChatDrawer/State and
   # ChannelLive render the agent's reply with proper attribution.
   defp format_chat_post(msg) do
-    ts = DateTime.utc_now() |> DateTime.to_iso8601()
-    "\n## #{ts} | #{msg.sender}\n#{String.trim(msg.body)}\n"
+    ChannelLog.format_post(msg.sender, msg.body, :agent)
   end
 
   # AuditLog.append/2 expects a GenServer.server reference, not a company

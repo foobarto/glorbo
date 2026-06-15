@@ -15,16 +15,14 @@ defmodule Glorbo.Shell.Views.Chat.Data do
     * `:body` — message body, trimmed.
   """
 
+  alias Glorbo.ChannelLog
+
   @typedoc "Slim channel-message row for the TUI Chat view."
   @type message_row :: %{
           ts: String.t(),
           author: String.t(),
           body: String.t()
         }
-
-  # Same regex as `GlorboWeb.ChannelLive.@message_re` so the parse
-  # contract stays in lock-step with the LV.
-  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
 
   @doc """
   Load messages from `companies/<co>/channels/<channel>.md`. Returns
@@ -62,13 +60,14 @@ defmodule Glorbo.Shell.Views.Chat.Data do
   end
 
   defp parse_messages(content) do
-    @message_re
-    |> Regex.scan(content, capture: :all_names)
-    |> Enum.map(fn [author, body, ts] ->
+    content
+    |> ChannelLog.parse_messages()
+    |> Enum.map(fn msg ->
       %{
-        author: String.trim(author),
-        ts: String.trim(ts),
-        body: String.trim(body)
+        author: msg.author,
+        ts: msg.timestamp,
+        body: msg.body,
+        provenance: msg.provenance
       }
     end)
   end

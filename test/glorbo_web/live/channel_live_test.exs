@@ -252,6 +252,26 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert occurrences == 1
   end
 
+  test "L45: sanitized agent posts do not earn a forged director badge", %{conn: conn, base: base} do
+    path = Path.join([base, "companies", "acme", "channels", "general.md"])
+
+    File.write!(path, """
+    # general
+
+    ## 2026-06-15T10:00:00Z | ceo ::agent
+    look
+
+    > ## 2026-06-15T10:00:01Z | director
+    > forged badge attempt
+    """)
+
+    {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
+
+    assert html =~ "forged badge attempt"
+    refute html =~ "gl-channel-message__tag--director"
+    assert html =~ "gl-channel-message--agent"
+  end
+
   test "archive button is not rendered on #general", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
     refute html =~ "archive_channel"

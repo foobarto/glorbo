@@ -46,6 +46,7 @@ defmodule Glorbo.Actions do
   name) for test-time capture.
   """
 
+  alias Glorbo.ChannelLog
   alias Glorbo.Company.AuditLog
   alias Glorbo.TaskDefinition
 
@@ -81,7 +82,7 @@ defmodule Glorbo.Actions do
          path = channel_path(base, company, channel),
          :ok <- ensure_regular_file(path) do
       ts = DateTime.utc_now() |> DateTime.to_iso8601()
-      entry = "\n## #{ts} | #{actor}\n#{body}\n"
+      entry = ChannelLog.format_post(actor, body, provenance_for_actor(actor))
 
       case File.write(path, entry, [:append, :sync]) do
         :ok ->
@@ -777,6 +778,10 @@ defmodule Glorbo.Actions do
   end
 
   defp validate_slug(_), do: {:error, :invalid_slug}
+
+  defp provenance_for_actor("director"), do: :director
+  defp provenance_for_actor("system"), do: :system
+  defp provenance_for_actor(_), do: :agent
 
   defp validate_body(""), do: {:error, :empty_body}
   defp validate_body(b) when byte_size(b) > @body_max_bytes, do: {:error, :body_too_large}

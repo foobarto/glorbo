@@ -22,7 +22,8 @@ defmodule GlorboWeb.Components.ChannelMessage do
   attr :message, :map, required: true
 
   def channel_message(assigns) do
-    assigns = assign(assigns, :kind, author_kind(assigns.message.author))
+    kind = Map.get(assigns.message, :provenance, author_kind(assigns.message.author))
+    assigns = assign(assigns, :kind, kind)
 
     ~H"""
     <article class={["gl-channel-message", "gl-channel-message--" <> Atom.to_string(@kind)]}>
