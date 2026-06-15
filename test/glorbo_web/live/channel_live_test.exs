@@ -38,6 +38,37 @@ defmodule GlorboWeb.ChannelLiveTest do
              live(conn, "/companies/acme/channels/ghost")
   end
 
+  # codex #75 regression: the chat drawer shares this LiveView process, and
+  # PubSub subscriptions are per-process — switching the drawer to another
+  # channel must NOT unsubscribe the host ChannelLive page from its own
+  # `company:<co>:channels:general` topic, or the page stops getting its
+  # realtime updates.
+  test "switching the drawer channel preserves the host channel page's subscription",
+       %{conn: conn, base: base} do
+    File.write!(Path.join([base, "companies", "acme", "channels", "dev.md"]), "# dev\n")
+
+    {:ok, view, _} = live(conn, "/companies/acme/channels/general")
+
+    # Point the drawer at #dev (handled by ChatDrawer.State's on_mount hook).
+    render_hook(view, "chat_drawer_channel", %{"channel" => "dev"})
+
+    # A new #general message + its watcher PubSub event must still reach the
+    # page — its subscription wasn't clobbered by the drawer switch.
+    File.write!(
+      Path.join([base, "companies", "acme", "channels", "general.md"]),
+      "\n## 2026-06-14T12:00:00Z | CEO\nStill receiving general\n",
+      [:append]
+    )
+
+    Phoenix.PubSub.broadcast(
+      Glorbo.PubSub,
+      "company:acme:channels:general",
+      {:file_event, "channels/general.md", [:modified]}
+    )
+
+    assert render(view) =~ "Still receiving general"
+  end
+
   test "sidebar marks Chat nav item active", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/companies/acme/channels/general")
 

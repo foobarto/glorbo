@@ -90,6 +90,7 @@ it for bug fixes, dep bumps, and contained refactors.
 | 0064 | [Backup / Restore portability](./0064-backup-restore-portability.md) | Standards | Implemented |
 | 0065 | [Emergency-stop kill switch](./0065-emergency-stop-kill-switch.md) | Standards | Implemented |
 | 0066 | [Operational surfaces — content search + systemd-unit lifecycle](./0066-operational-cli-surfaces.md) | Standards | Implemented |
+| 0067 | [Ollama local-model integration — scan, pull, managed daemon](./0067-ollama-local-model-integration.md) | Standards | Accepted |
 
 <!-- Add new entries in numerical order. Keep the table tidy. -->
 

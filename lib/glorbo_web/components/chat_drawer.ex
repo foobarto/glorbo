@@ -7,9 +7,12 @@ defmodule GlorboWeb.Components.ChatDrawer do
   in localStorage) to slide up the full transcript + composer.
 
   Always renders when a company is focused (has `current_company`).
-  Tails `#general` for that company — swap-to-another-channel is a
-  follow-up (#TBD). Shows a disabled placeholder when no company is
-  focused (companies list / providers / health).
+  Tails one channel at a time (default `#general`); the header
+  `<select>` swaps it — the `chat_drawer_channel` event is handled
+  centrally by `ChatDrawer.State`'s `on_mount` hook, and the choice is
+  persisted to `localStorage` so it survives the per-navigation
+  re-mount. Shows a disabled placeholder when no company is focused
+  (companies list / providers / health).
 
   ## Features
 
@@ -37,6 +40,8 @@ defmodule GlorboWeb.Components.ChatDrawer do
   use Phoenix.Component
 
   attr :current_company, :string, default: nil
+  attr :current_channel, :string, default: "general"
+  attr :channels, :list, default: []
   attr :messages, :list, default: []
 
   def chat_drawer(assigns) do
@@ -46,6 +51,7 @@ defmodule GlorboWeb.Components.ChatDrawer do
       class="gl-chat-drawer gl-chat-drawer--minimized"
       phx-hook="ChatDrawer"
       data-no-company={is_nil(@current_company) && "1"}
+      data-channel={@current_channel}
     >
       <div class="gl-chat-drawer__handle" aria-label="Resize chat" role="separator" tabindex="0">
       </div>
@@ -53,7 +59,24 @@ defmodule GlorboWeb.Components.ChatDrawer do
         <div class="gl-chat-drawer__title">
           <span class="gl-chat-drawer__glyph" aria-hidden="true">^</span>
           <%= if @current_company do %>
-            <span class="gl-chat-drawer__co">{@current_company}</span><span class="gl-chat-drawer__sep">:</span><span class="gl-chat-drawer__channel">#general</span>
+            <span class="gl-chat-drawer__co">{@current_company}</span><span class="gl-chat-drawer__sep">:</span>
+            <%= if length(@channels) > 1 do %>
+              <form
+                id="gl-chat-drawer-channel-form"
+                phx-change="chat_drawer_channel"
+                class="gl-chat-drawer__channel-form"
+              >
+                <select
+                  name="channel"
+                  class="gl-chat-drawer__channel-select"
+                  aria-label="Switch channel"
+                ><option :for={ch <- @channels} value={ch} selected={ch == @current_channel}>
+                  {"#" <> ch}
+                </option></select>
+              </form>
+            <% else %>
+              <span class="gl-chat-drawer__channel">{"#" <> @current_channel}</span>
+            <% end %>
           <% else %>
             <strong>chat</strong>
             <span class="gl-muted">· pick a company to chat</span>
@@ -81,7 +104,7 @@ defmodule GlorboWeb.Components.ChatDrawer do
 
         <div :if={@current_company != nil and @messages == []} class="gl-chat-drawer__empty">
           <p class="gl-muted">
-            No messages in <code>#general</code> yet. Say hi 👋
+            No messages in <code>{"#" <> @current_channel}</code> yet. Say hi 👋
           </p>
         </div>
 
@@ -114,7 +137,8 @@ defmodule GlorboWeb.Components.ChatDrawer do
           class="gl-chat-drawer__compose"
         >
           <span class="gl-chat-drawer__prompt" aria-hidden="true">
-            <span class="gl-chat-drawer__prompt-user">director</span><span class="gl-chat-drawer__prompt-dim">@</span><span class="gl-chat-drawer__prompt-co">{@current_company}</span><span class="gl-chat-drawer__prompt-dim">:</span><span class="gl-chat-drawer__prompt-channel">#general</span><span class="gl-chat-drawer__prompt-dim">$</span>
+            <span class="gl-chat-drawer__prompt-user">director</span><span class="gl-chat-drawer__prompt-dim">@</span><span class="gl-chat-drawer__prompt-co">{@current_company}</span><span class="gl-chat-drawer__prompt-dim">:</span><span class="gl-chat-drawer__prompt-channel">{"#" <>
+              @current_channel}</span><span class="gl-chat-drawer__prompt-dim">$</span>
           </span>
           <input
             type="text"

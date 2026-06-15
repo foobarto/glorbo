@@ -10,6 +10,53 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-06-14
+
+### Added
+
+- **Built-in `ollama` provider + local-install detection (GEP-67, Phase 1).**
+  `ollama` is now a first-class built-in native provider (`auth = "none"`,
+  model list from `/api/tags`), and `Glorbo.Ollama` / `Glorbo.Ollama.Detect`
+  report whether the `ollama` binary is installed, its version, and whether a
+  daemon is answering on `127.0.0.1:11434` (reusing the GEP-32 detect
+  fingerprint). This is the foundation for the
+  detect → scan → pull → managed-daemon → use lifecycle; detection runs only on
+  request (no boot-time host-binary probe). Agents reach the model through the
+  per-company GEP-55 proxy, never raw `:11434` (GEP-67 D5).
+- **Ollama daemon lifecycle manager (GEP-67, Phase 2).** `Glorbo.Ollama.Daemon`
+  — a supervised singleton (GEP-67 D8) that adopts an already-running Ollama
+  daemon if one answers on `:11434` (systemd/manual), or spawns + supervises
+  its own `ollama serve` as a `MuonTrap.Daemon` child bound to the BEAM (dies
+  with glorbo, D3). It never stops a daemon it didn't start (D2), never
+  auto-replaces a vanished external one, and bounds restarts of a crashing
+  managed daemon before parking at `:down`. Inert at boot — no probe or spawn
+  until the Director acts.
+- **Ollama model pull with live progress (GEP-67, Phase 3).**
+  `Glorbo.Ollama.Pull` runs `ollama pull <model>` host-side, **one at a time**
+  (further requests queue, D9), streaming `{:started/:progress/:done/:error/
+  :cancelled}` events on the `"ollama:pulls"` PubSub topic. The user-supplied
+  model name is validated against Ollama's `name[:tag]` grammar (rejecting
+  shell metacharacters, flags, `..`, whitespace) and passed as a discrete
+  argv element after `--` via `MuonTrap.Daemon` — execve, never a shell (D10).
+  Pulls are cancellable.
+- **Ollama model knobs — context window, parallelism, temperature (GEP-67).**
+  Director-tunable knobs in `<config_root>/ollama.toml` (`Glorbo.Ollama.Config`):
+  daemon parallelism (`OLLAMA_NUM_PARALLEL` / `OLLAMA_MAX_LOADED_MODELS` /
+  `OLLAMA_KEEP_ALIVE`) applied as env when Glorbo spawns a *managed* daemon,
+  and per-model `num_ctx` / `temperature` / `num_predict` / `top_p` baked into
+  a Glorbo-derived `<base>-glorbo` model via a Modelfile + `/api/create`
+  (`Glorbo.Ollama.Tuning`) — the only reliable way to set the context window,
+  which Ollama's OpenAI-compatible endpoint doesn't accept. Values are
+  range-validated (a bad knob is dropped, never crashes); model-name keys are
+  validated as Ollama refs.
+- **Chat drawer channel switching.** The bottom-docked chat drawer (GEP-30) was
+  hardcoded to `#general`; its header now has a channel selector to tail + post
+  to any of the company's channels. Handled centrally via a `live_session`
+  `on_mount` hook (`ChatDrawer.State`), so the ~19 host LiveViews need no
+  per-view wiring, and the selection is persisted to `localStorage` so it
+  survives the drawer's per-navigation re-mount. Unknown / traversal channel
+  names are rejected server-side against the company's real channel list.
+
 ## [0.27.1] — 2026-06-14
 
 ### Fixed
@@ -7648,7 +7695,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/foobarto/glorbo/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/foobarto/glorbo/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/foobarto/glorbo/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/foobarto/glorbo/releases/tag/v0.26.0

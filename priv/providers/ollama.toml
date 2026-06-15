@@ -1,0 +1,16 @@
+# Ollama local-model native provider (GEP-67).
+#
+# `auth = "none"` — a local Ollama daemon needs no API key. Agents do NOT
+# get raw access to the daemon on 127.0.0.1:11434; they reach the model
+# through the per-company GEP-55 inference proxy on `network: proxy`,
+# which forwards to this endpoint (GEP-67 D5). The model list comes from
+# Ollama's `/api/tags` (ModelCatalog `shape: :ollama`, GEP-32 Phase 3).
+
+name         = "ollama"
+kind         = "native"
+endpoint     = "http://127.0.0.1:11434/v1"
+auth         = "none"
+usage_parser = "native-v1"
+usage_path   = { kind = "json_file", path = "{workspace}/.glorbo-run/{task_id}/usage.json" }
+
+model_list = { path = "/api/tags", shape = "ollama" }
