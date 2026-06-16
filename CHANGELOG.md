@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.2] — 2026-06-16
+
 ### Fixed
 
 - **Channel trusted badges use write-time provenance (codex L45).** Agent chat
@@ -7740,7 +7742,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.2...HEAD
+[0.28.2]: https://github.com/foobarto/glorbo/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/foobarto/glorbo/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/foobarto/glorbo/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/foobarto/glorbo/compare/v0.27.0...v0.27.1
