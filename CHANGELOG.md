@@ -10,6 +10,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Channel trusted badges use write-time provenance (codex L45).** Agent chat
+  posts sanitize header-shaped lines in the body and stamp ` ::agent` /
+  ` ::director` provenance on every append; the UI badge follows provenance,
+  not a re-parsed `| director` header an agent could embed.
+
 ## [0.28.1] — 2026-06-15
 
 ### Fixed

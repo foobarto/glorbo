@@ -22,16 +22,13 @@ defmodule GlorboWeb.ChannelLive do
   use GlorboWeb, :live_view
   require Logger
   import GlorboWeb.LiveHelpers, only: [base_dir: 0]
+  alias Glorbo.ChannelLog
   alias Glorbo.Filesystem.AgentWritableFile
   alias GlorboWeb.Components.ChatDrawer
   alias GlorboWeb.Components.ChannelMessage
 
-  # Splits `## <iso8601-ts> | <author>\n<body>` entries. Body may contain
-  # markdown sub-headers (`## Sub-heading`) which we DON'T want to treat
-  # as message boundaries — so the lookahead and the header anchor both
-  # require an ISO date (YYYY-MM-DD) prefix before the `|` separator.
-  # Named captures return alphabetically: [author, body, ts].
-  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
+  # Parsed via `Glorbo.ChannelLog` — provenance suffix + agent body
+  # sanitization prevent forged director badges (codex L45).
 
   # Channel + archive .md files are agent-influenced chat content and
   # grow without bound. Cap the listed archive segments (a director
@@ -600,18 +597,16 @@ defmodule GlorboWeb.ChannelLive do
   end
 
   defp parse_messages(content, company) do
-    # `capture: :all_names` returns each match as a list of values in
-    # alphabetical order of the named-capture keys: [author, body, ts].
-    @message_re
-    |> Regex.scan(content, capture: :all_names)
-    |> Enum.map(fn [author, body, ts] ->
+    content
+    |> ChannelLog.parse_messages()
+    |> Enum.map(fn msg ->
       %{
-        author: String.trim(author),
-        timestamp: String.trim(ts),
-        body_html: GlorboWeb.Markdown.render(String.trim(body), company: company)
+        author: msg.author,
+        provenance: msg.provenance,
+        timestamp: msg.timestamp,
+        body_html: GlorboWeb.Markdown.render(msg.body, company: company)
       }
     end)
-    # Bound rendered messages even within the tail window.
     |> Enum.take(-200)
   end
 end

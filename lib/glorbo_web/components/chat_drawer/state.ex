@@ -31,6 +31,7 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias Glorbo.ChannelLog
   alias Glorbo.Filesystem.AgentWritableFile
 
   @default_channel "general"
@@ -44,11 +45,7 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
   # a hard ceiling on parse/render work.
   @tail_bytes 262_144
 
-  # Split channel messages `## <iso-ts> | <author>\n<body>` without
-  # snagging markdown sub-headers inside message bodies — anchor on
-  # the YYYY-MM-DD prefix of real timestamps. Matches
-  # GlorboWeb.ChannelLive.@message_re.
-  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
+  # Parsed via `Glorbo.ChannelLog` (see ChannelLive).
 
   @doc "The channel the drawer is currently tailing (defaults to #general)."
   def current_channel(socket), do: socket.assigns[:chat_drawer_channel] || @default_channel
@@ -219,13 +216,14 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
   end
 
   defp parse_messages(content, company) do
-    @message_re
-    |> Regex.scan(content, capture: :all_names)
-    |> Enum.map(fn [author, body, ts] ->
+    content
+    |> ChannelLog.parse_messages()
+    |> Enum.map(fn msg ->
       %{
-        author: String.trim(author),
-        timestamp: String.trim(ts),
-        body_html: GlorboWeb.Markdown.render(String.trim(body), company: company)
+        author: msg.author,
+        provenance: msg.provenance,
+        timestamp: msg.timestamp,
+        body_html: GlorboWeb.Markdown.render(msg.body, company: company)
       }
     end)
     |> Enum.take(-200)

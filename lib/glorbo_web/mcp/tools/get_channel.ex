@@ -12,12 +12,10 @@ defmodule GlorboWeb.MCP.Tools.GetChannel do
   """
   @behaviour GlorboWeb.MCP.Tool
 
+  alias Glorbo.ChannelLog
   alias GlorboWeb.MCP.Args
 
-  # Mirrors ChannelLive's @message_re: the lookahead + anchor both
-  # require an ISO date prefix so markdown sub-headers inside a
-  # body aren't misinterpreted as message boundaries.
-  @message_re ~r/^## (?<ts>\d{4}-\d{2}-\d{2}[^|]*?)\s*\|\s*(?<author>.+?)\s*\n(?<body>.*?)(?=\n## \d{4}-|\z)/ms
+  # Parsed via `Glorbo.ChannelLog` (provenance suffix + sanitization).
 
   @impl true
   def name, do: "glorbo.get_channel"
@@ -65,8 +63,8 @@ defmodule GlorboWeb.MCP.Tools.GetChannel do
     case Glorbo.Filesystem.AgentWritableFile.read_bounded(path, 5_242_880) do
       {:ok, content} ->
         messages =
-          @message_re
-          |> Regex.scan(content, capture: :all_names)
+          content
+          |> ChannelLog.parse_messages()
           |> Enum.map(&to_entry/1)
           |> maybe_filter_since(nilify(args["since"]))
           |> Enum.reverse()
@@ -82,11 +80,11 @@ defmodule GlorboWeb.MCP.Tools.GetChannel do
     end
   end
 
-  # Named captures come back alphabetically: [author, body, ts].
-  defp to_entry([author, body, ts]) do
+  defp to_entry(%{author: author, body: body, timestamp: ts, provenance: prov}) do
     %{
-      "timestamp" => String.trim(ts),
-      "author" => String.trim(author),
+      "timestamp" => ts,
+      "author" => author,
+      "provenance" => Atom.to_string(prov),
       "body" => String.trim_trailing(body)
     }
   end

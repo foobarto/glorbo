@@ -888,6 +888,16 @@ migration pass. Fix: `Enable.append_entry/2` chmods dir `0700` + file
 `0600` inline (codex L3). Sibling to watch: `Restore.extract/2` staging
 dir (L118) — same pattern gap.
 
+## 2026-06-15 — channel log provenance suffix (codex L45)
+
+Trusted `:director` / `:system` badges in chat must come from
+**write-time provenance**, not from re-parsing `## ts | author` headers
+inside message bodies — agents can embed `| director` in text and split
+the channel file into a forged structural post. `Glorbo.ChannelLog`
+stamps ` ::agent|director|system` on append, blockquotes header-shaped
+lines in agent bodies, and readers pass `provenance` through to the UI.
+
+
 ---
 
 ## What belongs in this file vs elsewhere
