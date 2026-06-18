@@ -63,6 +63,8 @@ Supporting modules: `Glorbo.Agent.Parser` (validates AGENT.md),
 `Glorbo.Agent.Spec` (struct), `Glorbo.Agent.FileLayout`
 (filename resolution), `Glorbo.Agent.RunLog` (persisted run metadata).
 
+Note: GEP-50 (per-agent default-deny authorization) remains a `Draft` proposal.
+
 ### 3. Filesystem & FileSpec — `lib/glorbo/filesystem/` + `lib/glorbo/file_spec/`
 
 **Entry points:** `Glorbo.Filesystem.Hierarchy.default_root` (74 edges),
@@ -83,6 +85,8 @@ a signal to refactor.
 
 Related: `Glorbo.Filesystem.Watcher` (inotify → PubSub bridge),
 `Glorbo.Filesystem.FrontmatterWriter` (atomic tmp+rename writer).
+
+Note: While GEP-35 (Router split) remains a `Placeholder` and the router has not been split, the proposed `Glorbo.Filesystem.AgentWritableFile` seam has been fully implemented and adopted for sandbox-mutable paths.
 
 ### 4. Phoenix / LiveView dashboard — `lib/glorbo_web/`
 
@@ -189,6 +193,15 @@ Loaders are injected via `:loader_fn` opts so the test
 suite never touches the real filesystem or the Repo. The LV
 remains the canonical surface; the TUI is a bounded subset
 that follows the same Action seams.
+
+### 8. Ollama local-model subsystem — `lib/glorbo/ollama/`
+
+**Entry points:** `Glorbo.Ollama` (facade), `Glorbo.Ollama.Detect`, `Glorbo.Ollama.Daemon`, `Glorbo.Ollama.Pull`.
+
+GEP-67 is **Accepted**; **phases 1–3 shipped** (detect facade, supervised daemon
+manager, execve-safe model pull — both managers are children of
+`Glorbo.Application`). **Phases 4–5 remain open:** GEP-55 proxy local-upstream
+path and the dashboard Settings UI. Do not describe the backend as dead code.
 
 ## Graph caveats
 

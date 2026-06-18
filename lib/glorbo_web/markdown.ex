@@ -46,7 +46,7 @@ defmodule GlorboWeb.Markdown do
 
     body
     |> tokenize_mentions()
-    |> earmark_render()
+    |> markdown_render()
     |> sanitize()
     |> detokenize_mentions(safe_company)
     |> GlorboWeb.Markdown.Linkify.rewrite(safe_company)
@@ -69,9 +69,7 @@ defmodule GlorboWeb.Markdown do
     end)
   end
 
-  defp earmark_render(body) do
-    Earmark.as_html!(body, %Earmark.Options{compact_output: true, smartypants: false, gfm: true})
-  end
+  defp markdown_render(body), do: Glorbo.Markdown.to_html!(body)
 
   defp sanitize(html), do: HtmlSanitizeEx.markdown_html(html)
 end

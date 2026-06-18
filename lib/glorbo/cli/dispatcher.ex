@@ -640,19 +640,14 @@ defmodule Glorbo.CLI.Dispatcher do
   # reply path directly. Strip them at the dispatcher seam so the
   # Director-visible reply + audit log both carry clean text.
   #
-  # Matches the pattern used by StdoutStreamer (`/\x1B\[.../`); adding
-  # OSC (window-title) and standalone CR/BEL suppression too.
-  @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
-
+  # Uses `Glorbo.Terminal.Sanitizer` (linear scan) — not a backtracking
+  # regex — so unbounded agent stdout cannot trigger O(n²) on unterminated
+  # OSC sequences (codex L78).
   @doc false
   def strip_ansi(text) when is_binary(text) do
     # Threatmodel: agent stdout is attacker-controlled and may contain
-    # invalid UTF-8. `String.replace/3` raises ArgumentError on
-    # non-UTF-8 binaries, which would propagate out of the dispatcher
-    # and surface as a 500 in the LV that's reading replies. Coerce to
-    # printable UTF-8 first — `:unicode.characters_to_binary/3` with
-    # `:utf8 / :utf8` and the `:replace` fallback strategy substitutes
-    # the U+FFFD replacement character for invalid bytes.
+    # invalid UTF-8. Coerce to printable UTF-8 first — `:unicode.characters_to_binary/3`
+    # with `:latin1` → `:utf8` substitutes U+FFFD for invalid bytes.
     safe =
       if String.valid?(text) do
         text
@@ -663,7 +658,7 @@ defmodule Glorbo.CLI.Dispatcher do
         end
       end
 
-    String.replace(safe, @ansi_re, "")
+    Glorbo.Terminal.Sanitizer.strip(safe)
   end
 
   def strip_ansi(other), do: other

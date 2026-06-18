@@ -276,7 +276,7 @@ defmodule Glorbo.Research do
   defp render_html(question, markdown) do
     fragment =
       markdown
-      |> Earmark.as_html!(%Earmark.Options{compact_output: true, smartypants: false, gfm: true})
+      |> Glorbo.Markdown.to_html!()
       |> HtmlSanitizeEx.markdown_html()
 
     title = html_escape(String.slice(question, 0, 120))

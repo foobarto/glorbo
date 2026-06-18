@@ -897,6 +897,13 @@ the channel file into a forged structural post. `Glorbo.ChannelLog`
 stamps ` ::agent|director|system` on append, blockquotes header-shaped
 lines in agent bodies, and readers pass `provenance` through to the UI.
 
+## 2026-06-16 — dispatcher ANSI strip must be linear (codex L78)
+
+`Glorbo.CLI.Dispatcher.strip_ansi/1` and `StdoutStreamer` fed **unbounded**
+post-sandbox agent stdout. The old `@ansi_re` used `[^\x07]*` for OSC bodies —
+quadratic on unterminated `\e]` spam. `Glorbo.Terminal.Sanitizer` (already used
+by `glorbo logs`) is the single linear implementation; dispatcher keeps its
+UTF-8 coercion layer then delegates there.
 
 ---
 

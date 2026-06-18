@@ -38,6 +38,7 @@ is a file.
 > - **GEP-18** — `agentcompanies/v1` interop (placeholder).
 > - **GEP-19** — director approval workflow protocol (sentinel
 >   contract, `assigned_to` swap, Gate vs UI code paths).
+> - **GEP-67** — Ollama local-model integration (phases 1–3 shipped; UI + proxy path pending).
 >
 > **Runtime story:** agents are CLI-tool subprocesses under `bwrap`.
 > No Python on the host. No container runtime. No Ollama binary
@@ -272,6 +273,8 @@ Glorbo.Application
 ├── Glorbo.Agent.Registry                # :via registry for per-agent pids
 ├── Glorbo.CLI.Registry                  # Provider snapshot (GEP-8)
 ├── Glorbo.Providers.ModelCatalog         # Native provider model cache (GEP-32)
+├── Glorbo.Ollama.Daemon                 # Managed local daemon (GEP-67)
+├── Glorbo.Ollama.Pull                   # Streaming model downloader (GEP-67)
 ├── Glorbo.Network.ProxyTokens           # Ephemeral per-dispatch auth tokens (GEP-23)
 ├── Glorbo.HomeHistory.Tx               # Durable-history commit buffer (GEP-33)
 ├── Glorbo.HomeHistory.WatcherBridge     # Manual-edit fallback (GEP-33)
@@ -1029,6 +1032,7 @@ glorbo init
 | `inotify-tools`  | Yes      | distro package                  | filesystem watcher               |
 | One or more provider runtimes | Yes | install a CLI or configure native credentials | `claude`, `gemini`, `codex`, or `credentials/<provider>.toml` |
 | BEAM VM          | Bundled  | Burrito release                 | no Erlang install needed         |
+| Ollama / muontrap | Optional | distro package / local binary   | GEP-67 phases 1–3 (detect, daemon, pull); Settings UI + proxy path still pending |
 
 Agents can use local models via CLIs that wrap them (e.g. `pi`,
 `opencode` against a local backend) or cloud providers like Anthropic
@@ -1046,7 +1050,9 @@ choice; cloud providers are opt-in.
 
 Python is **not** a host dependency. There is no container runtime.
 Glorbo bundles neither Podman nor Ollama — those were part of a
-pre-pivot plan dropped in GEP-5 D6.
+pre-pivot plan dropped in GEP-5 D6. GEP-67 (Accepted) adds optional host
+`ollama` management via `MuonTrap` for phases 1–3; phases 4–5 (proxy path +
+dashboard UI) are not yet shipped.
 
 ### Upgrade
 

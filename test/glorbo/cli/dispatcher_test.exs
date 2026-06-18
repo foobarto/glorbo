@@ -464,11 +464,7 @@ defmodule Glorbo.CLI.DispatcherTest do
 
   describe "strip_ansi/1" do
     test "removes SGR colour escapes" do
-      assert Dispatcher.strip_ansi("\e[0mhello\e[31mred\e[0m") == "helloredthere"
-    rescue
-      _ ->
-        # Literal-escape assertion — two colour sequences around two words.
-        assert Dispatcher.strip_ansi("\e[0mhello\e[31mworld\e[0m") == "helloworld"
+      assert Dispatcher.strip_ansi("\e[0mhello\e[31mworld\e[0m") == "helloworld"
     end
 
     test "removes OSC (window-title) sequences" do
@@ -497,6 +493,13 @@ defmodule Glorbo.CLI.DispatcherTest do
       bad = <<0xFF, 0xFE, "hello", 0xC0, 0x80>>
 
       assert is_binary(Dispatcher.strip_ansi(bad))
+    end
+
+    test "unterminated OSC without quadratic blowup (codex L78)" do
+      payload = String.duplicate("\e]", 100_000)
+      {micros, out} = :timer.tc(fn -> Dispatcher.strip_ansi(payload) end)
+      assert out == ""
+      assert micros < 2_000_000, "took #{micros}us — strip_ansi is not linear"
     end
 
     test "reply read strips ANSI from disk-stored reply" do
