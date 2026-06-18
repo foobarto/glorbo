@@ -354,7 +354,7 @@ rules as belt-and-braces for cross-directory transfers.
 
 ## Project Status
 
-Pre-1.0. Latest release **v0.28.3** (2026-06-18). APIs, CLI flags, on-disk
+Pre-1.0. Latest release **v0.28.4** (2026-06-18). APIs, CLI flags, on-disk
 layout, and SQLite schema may change between minor versions. See
 [CHANGELOG.md](CHANGELOG.md) for the full release trail; see
 [`docs/geps/`](docs/geps/) for which GEPs are Draft / Accepted /
