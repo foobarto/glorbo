@@ -10,6 +10,14 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dispatcher ANSI strip uses linear sanitizer (codex L78).** Post-sandbox
+  reply/stdout stripping now delegates to `Glorbo.Terminal.Sanitizer` instead
+  of a backtracking regex, so unterminated OSC sequences cannot trigger
+  quadratic CPU on unbounded agent output. `StdoutStreamer` uses the same
+  path for consistency.
+
 ## [0.28.2] — 2026-06-16
 
 ### Fixed
