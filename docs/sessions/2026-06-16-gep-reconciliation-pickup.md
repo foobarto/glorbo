@@ -38,7 +38,28 @@ Not redone — see `docs/sessions/2026-06-15-codex-genuine-open-queue.md`.
 
 - L78: precommit 3386 pass.
 
+## Task: v0.28.3 release cut (2026-06-18)
+
+**What shipped:** PR [#87](https://github.com/foobarto/glorbo/pull/87) folded
+#83–#86 + earmark→MDEx migration → `49b166dc`; tag `v0.28.3` pushed.
+
+**Commit(s):** squash on main `49b166dc`; tag `v0.28.3`
+
+---
+
+## Task: codex L94 — memory frontmatter scalar guard
+
+**Task picked:** Reject YAML mappings/sequences in memory `name`/`description`/`type` before write; harden read paths.
+
+**What shipped:** Router `check_memory_scalar_fields/1`; `memory_index_scalar/2` in index upsert; `memory_display_scalar/2` in AgentLive memory tab. Regression tests in `router_memory_scalar_test.exs` + `agent_live_test.exs`.
+
+**Gates:** `mix precommit` green (3388 pass).
+
+**Commit(s):** (pending)
+
+---
+
 ## Things I'd like your review
 
-- Merge #85 (L78) then docs PR when ready.
-- Next codex queue: **L94**, **L143**, **L117**, **L81**, **L126**.
+- Release workflow for `v0.28.3` (binaries + tap).
+- PR for L94 → merge → v0.28.4 PATCH if `[Unreleased]` ready.

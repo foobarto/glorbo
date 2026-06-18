@@ -1358,6 +1358,7 @@ defmodule Glorbo.Company.Router do
              :ok <- check_memory_body_size(content),
              {:ok, meta, _body} <- Frontmatter.parse(content),
              :ok <- check_memory_kind(meta),
+             :ok <- check_memory_scalar_fields(meta),
              :ok <- check_memory_type_matches_filename(meta, filename),
              :ok <- File.mkdir_p(memory_dir),
              :ok <- atomic_write(dest_path, content),
@@ -1893,6 +1894,22 @@ defmodule Glorbo.Company.Router do
     end
   end
 
+  # Codex L94: YAML mappings/sequences in scalar slots (name,
+  # description, type) must be rejected before write — otherwise
+  # `to_string/1` raises or `inspect/1` blows up MEMORY.md / the UI.
+  @memory_scalar_keys ~w(name description type)
+
+  defp check_memory_scalar_fields(meta) do
+    case Enum.find(@memory_scalar_keys, &(not memory_scalar_value_ok?(Map.get(meta, &1)))) do
+      nil -> :ok
+      key -> {:error, {:memory_non_scalar_field, key}}
+    end
+  end
+
+  defp memory_scalar_value_ok?(nil), do: true
+  defp memory_scalar_value_ok?(value) when is_binary(value), do: true
+  defp memory_scalar_value_ok?(_), do: false
+
   defp check_memory_type_matches_filename(meta, filename) do
     declared = meta |> Map.get("type") |> to_string()
 
@@ -2055,14 +2072,16 @@ defmodule Glorbo.Company.Router do
 
   defp index_line_for(filename, meta) do
     name =
-      (Map.get(meta, "name") || filename_default_name(filename))
-      |> to_string()
+      meta
+      |> Map.get("name")
+      |> memory_index_scalar(filename_default_name(filename))
       |> String.trim()
       |> cap_line(100)
 
     description =
-      (Map.get(meta, "description") || "")
-      |> to_string()
+      meta
+      |> Map.get("description")
+      |> memory_index_scalar("")
       |> String.trim()
       |> cap_line(120)
 
@@ -2077,6 +2096,10 @@ defmodule Glorbo.Company.Router do
     |> Path.rootname(".md")
     |> String.replace("_", " ")
   end
+
+  defp memory_index_scalar(value, _default) when is_binary(value), do: value
+  defp memory_index_scalar(nil, default), do: default
+  defp memory_index_scalar(_other, default), do: default
 
   defp cap_line(s, max) do
     case byte_size(s) > max do

@@ -2271,8 +2271,8 @@ defmodule GlorboWeb.AgentLive do
         %{
           filename: filename,
           type: type,
-          name: to_string(Map.get(meta, "name") || filename),
-          description: to_string(Map.get(meta, "description") || ""),
+          name: memory_display_scalar(Map.get(meta, "name"), filename),
+          description: memory_display_scalar(Map.get(meta, "description"), ""),
           body: String.trim(body),
           mtime: mtime,
           mtime_iso: DateTime.from_unix!(mtime) |> DateTime.to_iso8601(),
@@ -2283,6 +2283,10 @@ defmodule GlorboWeb.AgentLive do
       _ -> []
     end
   end
+
+  defp memory_display_scalar(value, _default) when is_binary(value), do: value
+  defp memory_display_scalar(nil, default), do: default
+  defp memory_display_scalar(_other, default), do: default
 
   defp format_relative_mtime(unix_ts) when is_integer(unix_ts) do
     diff = System.os_time(:second) - unix_ts

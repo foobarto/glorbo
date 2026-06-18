@@ -905,6 +905,16 @@ quadratic on unterminated `\e]` spam. `Glorbo.Terminal.Sanitizer` (already used
 by `glorbo logs`) is the single linear implementation; dispatcher keeps its
 UTF-8 coercion layer then delegates there.
 
+## 2026-06-18 — memory frontmatter scalar guard (codex L94)
+
+Agent memory writes parse YAML frontmatter before landing on disk. YamlElixir
+turns `name:\n  key: value` into a `%{}` — `to_string/1` on that raises
+`Protocol.UndefinedError`, which could crash `MEMORY.md` upsert *after* the
+memory file was already written (hidden write) or crash the agent Memory tab on
+read. Router now rejects non-binary `name`/`description`/`type` with
+`{:memory_non_scalar_field, key}` before `atomic_write`; read paths fall back
+to filename / empty string.
+
 ---
 
 ## What belongs in this file vs elsewhere

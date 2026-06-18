@@ -10,6 +10,13 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Memory write rejects non-scalar frontmatter (codex L94).** YAML mappings
+  or sequences in `name`, `description`, or `type` are rejected before the
+  memory file is written, preventing hidden writes and `MEMORY.md` / UI
+  crashes from `to_string/1` on forged frontmatter.
+
 ## [0.28.3] — 2026-06-18
 
 ### Fixed
