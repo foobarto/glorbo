@@ -507,6 +507,30 @@ defmodule GlorboWeb.AgentLiveTest do
       refute html =~ "invalid type prefix"
       refute html =~ "not_markdown.txt"
     end
+
+    test "forged non-scalar frontmatter does not crash memory tab (codex L94)",
+         %{conn: conn, base: base} do
+      memory_dir = Path.join([base, "companies/acme/agents/ceo/memory"])
+      File.mkdir_p!(memory_dir)
+
+      File.write!(Path.join(memory_dir, "feedback_forged.md"), """
+      ---
+      kind: agent-memory/v1
+      name:
+        key: value
+      description: still ok
+      type: feedback
+      ---
+
+      forged body
+      """)
+
+      {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
+      html = render_click(view, "tab", %{"tab" => "memory"})
+
+      assert html =~ "feedback_forged.md"
+      refute html =~ "key: value"
+    end
   end
 
   test "+ assign task button links to Kanban with assignee prefilled",
