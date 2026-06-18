@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.4] — 2026-06-18
+
 ### Fixed
 
 - **Memory write rejects non-scalar frontmatter (codex L94).** YAML mappings
@@ -7772,7 +7774,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.3...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.4...HEAD
+[0.28.4]: https://github.com/foobarto/glorbo/compare/v0.28.3...v0.28.4
 [0.28.3]: https://github.com/foobarto/glorbo/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/foobarto/glorbo/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/foobarto/glorbo/compare/v0.28.0...v0.28.1

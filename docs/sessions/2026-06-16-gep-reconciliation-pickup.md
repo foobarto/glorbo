@@ -55,11 +55,19 @@ Not redone — see `docs/sessions/2026-06-15-codex-genuine-open-queue.md`.
 
 **Gates:** `mix precommit` green (3388 pass).
 
+**Commit(s):** squash on main `af6fd271`; PR [#88](https://github.com/foobarto/glorbo/pull/88)
+
+---
+
+## Task: v0.28.4 release cut (2026-06-18)
+
+**What shipped:** L94 scalar guard → tag `v0.28.4`.
+
 **Commit(s):** (pending)
 
 ---
 
 ## Things I'd like your review
 
-- Release workflow for `v0.28.3` (binaries + tap).
-- PR for L94 → merge → v0.28.4 PATCH if `[Unreleased]` ready.
+- Release workflow for `v0.28.4` (binaries + tap).
+- Next codex queue: **L143**, **L117**, **L81**, **L126**.
