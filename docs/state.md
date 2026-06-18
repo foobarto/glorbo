@@ -2,12 +2,11 @@
 
 Last updated: 2026-06-13
 
-> **Superseded (2026-06-13).** This file is no longer the live state of
-> record — the project moved to the cairn workflow. Current state lives in
-> `docs/project-profile.md` (stance), `docs/sessions/<date>-<topic>.md`
-> (running journal), and `docs/todo.md` (punch list). The snapshot below is
-> kept only so its facts aren't actively wrong; treat the cairn docs as
-> authoritative.
+> **⚠️ CRITICAL WARNING: SUPERSEDED (2026-06-13) ⚠️**
+> This file is **NO LONGER** the live state of record — the project has moved to the cairn workflow.
+> **DO NOT** use this document to determine current tasks. This document is fully superseded by the cairn workflow documents (`docs/todo.md` and `docs/project-profile.md`).
+> Developers **MUST** check `docs/todo.md` for the live punch list of current targets.
+> The snapshot below is kept only as a historical reference so its facts aren't actively wrong; treat the cairn docs as authoritative.
 
 ## Repo
 
