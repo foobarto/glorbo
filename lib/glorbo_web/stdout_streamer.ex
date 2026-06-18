@@ -46,12 +46,9 @@ defmodule GlorboWeb.StdoutStreamer do
   # from there.
   @history_replay_bytes 32_000
 
-  # CSI (cursor-move, SGR, clear, etc), OSC (window-title), and
-  # standalone CR/BEL. `\r` survives after CSI/OSC strip and, under
-  # `white-space: pre-wrap`, renders as a line break in Chrome — which
-  # produces ghost blank lines between paragraphs of claude-code output.
-  # Kill them so the tail matches the on-disk log.
-  @ansi_re ~r/\x1B\[[0-9;?]*[A-Za-z]|\x1B\][^\x07]*\x07|[\r\x07]/
+  # Strip CSI/OSC/CR/BEL via `Glorbo.Terminal.Sanitizer` (linear scan).
+  # `\r` under `white-space: pre-wrap` renders as a line break in Chrome —
+  # ghost blank lines between paragraphs of claude-code output without this.
 
   # Threatmodel M8: bound both the pending no-newline buffer and the
   # final per-line payload size so a sandboxed agent cannot grow the
@@ -455,5 +452,5 @@ defmodule GlorboWeb.StdoutStreamer do
   end
 
   defp make_id, do: System.unique_integer([:positive, :monotonic])
-  defp strip_ansi(s), do: Regex.replace(@ansi_re, s, "")
+  defp strip_ansi(s), do: Glorbo.Terminal.Sanitizer.strip(s)
 end
