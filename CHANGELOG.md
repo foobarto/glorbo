@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.3] — 2026-06-18
+
 ### Fixed
 
 - **Dispatcher ANSI strip uses linear sanitizer (codex L78).** Post-sandbox
@@ -17,6 +19,19 @@ change between minor versions. Pin exact versions in downstream usage.
   of a backtracking regex, so unterminated OSC sequences cannot trigger
   quadratic CPU on unbounded agent output. `StdoutStreamer` uses the same
   path for consistency.
+
+### Changed
+
+- **Markdown rendering uses MDEx instead of retired Earmark.** Channel messages
+  and research report HTML now render via `mdex` + `mdex_gfm`, restoring a
+  green `mix hex.audit` gate after Hex marked `earmark` deprecated.
+
+### Dependencies
+
+- Bump `phoenix_live_view` 1.2.3, `exqlite` 0.37.0, `ecto_sqlite3` 0.24.1,
+  `floki` 0.38.4 (dependabot hex-minor-patch group).
+- Pin `snyk/actions/setup` and `github/codeql-action/upload-sarif` v4.36.2
+  (dependabot github-actions group).
 
 ## [0.28.2] — 2026-06-16
 
@@ -7750,7 +7765,8 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.2...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.3...HEAD
+[0.28.3]: https://github.com/foobarto/glorbo/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/foobarto/glorbo/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/foobarto/glorbo/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/foobarto/glorbo/compare/v0.27.1...v0.28.0

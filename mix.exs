@@ -4,7 +4,7 @@ defmodule Glorbo.MixProject do
   def project do
     [
       app: :glorbo,
-      version: "0.28.2",
+      version: "0.28.3",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -161,9 +161,10 @@ defmodule Glorbo.MixProject do
       # pre-built `priv/static/assets/` from `mix assets.deploy`).
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       # Markdown renderer for channel message bodies (UI-SPEC chat profile).
-      {:earmark, "~> 1.4"},
-      # Allowlist HTML sanitizer for Earmark output — Earmark has no
-      # built-in sanitization and explicitly defers to the caller.
+      {:mdex, "~> 0.13.0"},
+      {:mdex_gfm, "~> 0.2.0"},
+      # Allowlist HTML sanitizer for markdown output — MDEx has no
+      # built-in sanitization; caller must sanitize.
       {:html_sanitize_ex, "~> 1.5"},
       # GEP-37: terminal UI runtime for `glorbo shell`. Pure-Elixir
       # (preserves Burrito), MIT, widget set covering the views the
