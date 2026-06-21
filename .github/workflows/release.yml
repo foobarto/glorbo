@@ -245,6 +245,15 @@ jobs:
           MIX_ENV: prod
         run: |
           mix deps.get --only prod
+          # Force a fresh exqlite source compile. The deps/_build cache
+          # above is keyed on mix.lock; a config-only patch (e.g. flipping
+          # `config :exqlite, force_build: true`) leaves mix.lock unchanged,
+          # so the restored cache can carry an already-compiled exqlite NIF
+          # and `mix compile` won't recompile it — meaning :force_build
+          # never re-runs and the wrong-libc sqlite3_nif.so ships anyway.
+          # Recompiling exqlite here guarantees Burrito's zig step produces
+          # a musl NIF matching the bundled ERTS.
+          mix deps.compile exqlite --force
           mix compile --warnings-as-errors
           mix release --overwrite
 
@@ -406,6 +415,11 @@ jobs:
           BURRITO_TARGET: ${{ matrix.target }}
         run: |
           mix deps.get --only prod
+          # Force a fresh exqlite source compile — see the linux build job
+          # for the full rationale. The mix.lock-keyed deps/_build cache can
+          # otherwise carry a stale, wrong-libc sqlite3_nif.so across a
+          # config-only patch, defeating `config :exqlite, force_build: true`.
+          mix deps.compile exqlite --force
           mix compile --warnings-as-errors
           mix release --overwrite
 
