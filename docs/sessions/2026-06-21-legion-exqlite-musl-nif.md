@@ -64,6 +64,42 @@ reading the remote host's `~/.glorbo/log.txt` over ssh (authorized).
 - `07bafba9` fix(release): force exqlite source build (musl NIF match)
 - `chore(release): cut v0.28.5` (this branch)
 
+## RESUME POINT (paused 2026-06-21 for a reboot)
+
+Release **v0.28.5** in flight as **PR #90** (branch `release/v0.28.5`,
+https://github.com/foobarto/glorbo/pull/90). Everything is pushed; git
+state survives the reboot.
+
+Branch commits (on top of `origin/main`):
+`fix(site)` landing CDN pin → `fix(release)` exqlite force_build →
+`docs(session)` → `chore(release): cut v0.28.5` → `docs(session)` privacy
+fix (`bb8c012e`).
+
+Done: local gate green (precommit 3388 pass / sobelow clean), exqlite fix
+verified at ELF level (musl NIF), privacy_check leak fixed + re-pushed.
+
+**Next steps, in order:**
+1. Confirm the re-run **CI `test (x86_64)` is green** on PR #90
+   (`gh run list --branch release/v0.28.5 --workflow CI`). First run
+   failed only on the privacy_check raw-chat-role line, now fixed.
+2. **Resolve ALL PR conversations** — wait a few min for async
+   codex/Copilot bot threads to land AFTER CI goes green; re-poll
+   `mergeStateStatus` + threads; never trust a single green snapshot.
+3. **Squash-merge** PR #90 to main. If `code/snyk` errors on the Snyk
+   free-tier SAST quota, `--admin` is REFUSED — get everything else
+   green + threads resolved, then HAND OFF to operator to merge via UI.
+4. After merge: `git fetch && git switch main && git reset --hard
+   origin/main` (local main currently carries the two fix commits).
+5. **Sign + push the tag**: `git tag -s v0.28.5 -m …` then
+   `git push origin v0.28.5` (GPG key 06FD46A02874AF8D is unlocked in
+   the agent; authorized). `release.yml` publishes on the tag — do NOT
+   pre-create the GH release.
+6. Watch `release.yml` (binaries + tap) AND the Pages `static.yml`
+   redeploy (the landing-page fix ships to glorbo.foobarto.me).
+7. Tell operator legion needs `glorbo` updated to v0.28.5; offer to scp
+   the already-built local `burrito_out/glorbo_linux_x86_64` (musl NIF,
+   verified) as an immediate stopgap.
+
 ## Things I'd like your review
 
 1. After the release publishes, legion needs `glorbo` reinstalled/updated
