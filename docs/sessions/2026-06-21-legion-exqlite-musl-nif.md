@@ -2,9 +2,9 @@
 
 ## Task picked
 
-User: "I installed glorbo on legion.local it fails to start." Bugfix
-mode → then release. Diagnosed remotely via `ssh legion.local` reading
-`~/.glorbo/log.txt` (user-authorized).
+Operator reported that a freshly installed `glorbo` binary on a remote
+host failed to start. Bugfix mode → then release. Diagnosed remotely by
+reading the remote host's `~/.glorbo/log.txt` over ssh (authorized).
 
 ## Investigation (systematic-debugging)
 
