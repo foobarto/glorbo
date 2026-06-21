@@ -137,3 +137,11 @@ TODO.md
 # mix.exs configs still drop PLTs here; never commit these multi-MB
 # build artifacts.
 /priv/plts/
+
+# Session journals are local working notes, not tracked history
+# (2026-06-21 operator decision — reverses the earlier "shared history"
+# convention). The dated `docs/sessions/<date>-<topic>.md` files stay on
+# disk for cross-session continuity but are no longer committed; the
+# README documenting the directory remains tracked.
+docs/sessions/*.md
+!docs/sessions/README.md

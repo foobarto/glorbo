@@ -10,6 +10,39 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.5] — 2026-06-21
+
+### Fixed
+
+- **Release binary failed to start: exqlite NIF libc mismatch.** The
+  Burrito single-file binary bundles a musl ERTS, and Burrito recompiles
+  `:elixir_make` NIFs to musl with `zig cc` only when they build from
+  source. exqlite 0.37.0 ships a precompiled *glibc* NIF that
+  `cc_precompiler` downloads, so it sailed past Burrito's Zig step and a
+  glibc `sqlite3_nif.so` (needing `__memmove_chk`/`__memcpy_chk`) landed
+  in the musl runtime — which can't relocate those symbols (`Error
+  relocating … __memmove_chk: symbol not found`). `Glorbo.Repo` then
+  couldn't open the database, `Glorbo.DB.Bootstrap` failed, and the app
+  exited at boot on every host. (exqlite 0.36.0 had no OTP-29 precompiled
+  artifact, so it built from source and worked — the 0.36→0.37 bump
+  silently regressed releases.) Fixed by `config :exqlite, force_build:
+  true` in `config/prod.exs`, forcing the source build so Burrito's
+  zig-musl path produces a matching musl NIF (`NEEDED libc.so`). Also
+  removes an opaque third-party precompiled binary from the release
+  (supply-chain win). Dev/test keep the fast precompiled NIF.
+
+- **Marketing landing page rendered blank (floating Babel CDN dep).**
+  `assets/index.html` loaded `@babel/standalone` with no version pin, so
+  unpkg began serving Babel 8 — whose `@babel/preset-react` defaults the
+  JSX `runtime` to `"automatic"`, emitting `import { jsx } from
+  "react/jsx-runtime"`. That bare ESM import can't resolve in a plain
+  `<script type="text/babel">`, so React never mounted and the public
+  site (`glorbo.foobarto.me`) went blank with no repo change. Pinned all
+  three CDN scripts (React, ReactDOM, Babel) to exact versions — Babel
+  held at 7.x for the classic `React.createElement` runtime — and added
+  Subresource Integrity (`sha384`) hashes so a future float-and-break or
+  CDN tamper fails loudly instead of silently blanking the page.
+
 ## [0.28.4] — 2026-06-18
 
 ### Fixed
