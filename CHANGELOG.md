@@ -10,6 +10,25 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.6] — 2026-06-21
+
+### Fixed
+
+- **v0.28.5 still failed to start — stale exqlite in the build cache.**
+  v0.28.5's `force_build` fix was correct but defeated by CI caching: the
+  release jobs restore `deps`/`_build` from a `mix.lock`-keyed cache (with
+  a `restore-keys` fallback), which carried a stale `exqlite-0.36.0` dir
+  from before the 0.36→0.37 bump. Burrito's `zig` NIF step recompiled that
+  *stale* 0.36.0 to musl and left the *active, locked* 0.37.0 NIF as the
+  glibc source-build output, so the shipped binary still loaded a glibc
+  `sqlite3_nif.so` under the musl ERTS and died at boot (`Exqlite.Sqlite3NIF
+  is not available`). Fixed by wiping `_build/prod` before each release
+  build (clean build, like `mix glorbo.build_local`) so only the locked
+  exqlite exists for Burrito to recompile to musl. Added a CI backstop that
+  self-extracts the binary and `readelf`-asserts the bundled exqlite NIF is
+  musl (`NEEDED libc.so`) — the `doctor` smoke test never opened the DB, so
+  it could not catch this. **v0.28.5 is marked a broken pre-release.**
+
 ## [0.28.5] — 2026-06-21
 
 ### Fixed

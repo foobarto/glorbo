@@ -244,16 +244,19 @@ jobs:
         env:
           MIX_ENV: prod
         run: |
+          # Clean prod build artifacts so NO stale dep survives from the
+          # mix.lock-keyed deps/_build cache (restore-keys can pull an older
+          # cache even when the key changes). v0.28.5 shipped broken because
+          # a stale `exqlite-0.36.0` dir left in the restored _build got
+          # cross-compiled by Burrito's zig step instead of the locked
+          # 0.37.0, leaving the ACTIVE 0.37.0 NIF glibc (libc.so.6) inside a
+          # musl ERTS → `Exqlite.Sqlite3NIF is not available` at boot. A
+          # clean _build/prod (what `mix glorbo.build_local` does) guarantees
+          # only the locked exqlite exists for Burrito to recompile to musl;
+          # `config :exqlite, force_build: true` makes that a from-source
+          # build. The "Verify musl NIF" step below is the backstop.
+          rm -rf _build/prod
           mix deps.get --only prod
-          # Force a fresh exqlite source compile. The deps/_build cache
-          # above is keyed on mix.lock; a config-only patch (e.g. flipping
-          # `config :exqlite, force_build: true`) leaves mix.lock unchanged,
-          # so the restored cache can carry an already-compiled exqlite NIF
-          # and `mix compile` won't recompile it — meaning :force_build
-          # never re-runs and the wrong-libc sqlite3_nif.so ships anyway.
-          # Recompiling exqlite here guarantees Burrito's zig step produces
-          # a musl NIF matching the bundled ERTS.
-          mix deps.compile exqlite --force
           mix compile --warnings-as-errors
           mix release --overwrite
 
@@ -288,6 +291,35 @@ jobs:
           ec=$?
           set -e
           test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
+
+      # Backstop for the v0.28.5 regression: the bundled exqlite NIF MUST be
+      # musl (`NEEDED libc.so`) to match the musl ERTS — a glibc NIF
+      # (`libc.so.6`) can't relocate `__memmove_chk` under musl and the app
+      # dies at boot (`Exqlite.Sqlite3NIF is not available`). This runs on the
+      # native linux runners (x86_64 + aarch64), which CAN self-extract the
+      # Burrito payload. `doctor` (the smoke test above) never opens the DB,
+      # so it could not catch this — readelf checks the artifact directly.
+      - name: Verify exqlite NIF is musl
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+        run: |
+          # No-op run to self-extract the Burrito payload to ~/.local/share/.burrito
+          "./burrito_out/$BINARY_NAME" version >/dev/null 2>&1 || true
+          nifs=$(find "$HOME/.local/share/.burrito" -path '*exqlite-*/priv/sqlite3_nif.so' 2>/dev/null)
+          if [ -z "$nifs" ]; then echo "::error::no extracted exqlite NIF found to verify"; exit 1; fi
+          fail=0
+          for so in $nifs; do
+            needed=$(readelf -d "$so" | awk '/\(NEEDED\)/ {gsub(/[][]/,"",$NF); print $NF}')
+            echo "NIF $so -> NEEDED: $needed"
+            if echo "$needed" | grep -q 'libc\.so\.6'; then
+              echo "::error::glibc exqlite NIF in a musl release — would fail to start: $so"
+              fail=1
+            fi
+            if echo "$needed" | grep -qx 'libc.so'; then
+              echo "  ok: musl NIF"
+            fi
+          done
+          test "$fail" -eq 0 || { echo "exqlite NIF libc mismatch — refusing to ship"; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -414,12 +446,12 @@ jobs:
           MIX_ENV: prod
           BURRITO_TARGET: ${{ matrix.target }}
         run: |
+          # Clean prod build — see the linux build job for the full
+          # rationale. A stale exqlite dir in the mix.lock-keyed deps/_build
+          # cache could otherwise be cross-compiled instead of the locked
+          # version, shipping a wrong-libc sqlite3_nif.so.
+          rm -rf _build/prod
           mix deps.get --only prod
-          # Force a fresh exqlite source compile — see the linux build job
-          # for the full rationale. The mix.lock-keyed deps/_build cache can
-          # otherwise carry a stale, wrong-libc sqlite3_nif.so across a
-          # config-only patch, defeating `config :exqlite, force_build: true`.
-          mix deps.compile exqlite --force
           mix compile --warnings-as-errors
           mix release --overwrite
 
