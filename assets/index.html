@@ -29,9 +29,20 @@
       #root > div[data-root="true"] { padding: 16px 18px 32px !important; }
     }
   </style>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!--
+    CDN deps are pinned to EXACT versions on purpose. An unpinned
+    `@babel/standalone` silently floated to Babel 8, whose
+    @babel/preset-react defaults `runtime` to "automatic" — that emits
+    `import { jsx } from "react/jsx-runtime"`, a bare ESM import that a
+    plain `<script type="text/babel">` cannot resolve, so React never
+    mounts and the page renders blank. Babel 7 emits classic
+    `React.createElement` against the global React UMD below, which works.
+    Keep Babel on 7.x (or pass runtime:classic) before bumping. Pinning
+    react/react-dom exact too removes the same float-and-break risk.
+  -->
+  <script crossorigin="anonymous" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin="anonymous" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin="anonymous" integrity="sha384-ezQ6HS3FLspd9te19o2McUV6FAK091+GG7KO54f/R8DKgCDi7fULhapNrd5LY+vG" src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
 </head>
 <body>
   <div id="root"><div id="__loading">▚ glorbo — loading…</div></div>

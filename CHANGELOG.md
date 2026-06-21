@@ -10,6 +10,20 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Marketing landing page rendered blank (floating Babel CDN dep).**
+  `assets/index.html` loaded `@babel/standalone` with no version pin, so
+  unpkg began serving Babel 8 — whose `@babel/preset-react` defaults the
+  JSX `runtime` to `"automatic"`, emitting `import { jsx } from
+  "react/jsx-runtime"`. That bare ESM import can't resolve in a plain
+  `<script type="text/babel">`, so React never mounted and the public
+  site (`glorbo.foobarto.me`) went blank with no repo change. Pinned all
+  three CDN scripts (React, ReactDOM, Babel) to exact versions — Babel
+  held at 7.x for the classic `React.createElement` runtime — and added
+  Subresource Integrity (`sha384`) hashes so a future float-and-break or
+  CDN tamper fails loudly instead of silently blanking the page.
+
 ## [0.28.4] — 2026-06-18
 
 ### Fixed
