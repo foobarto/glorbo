@@ -953,6 +953,29 @@ chain win). Dev/test stay on the fast precompiled NIF (glibc host). **Any
 future NIF dep that ships precompiled binaries has this same trap** — verify
 its bundled `.so` is `NEEDED libc.so` after a release build.
 
+**2026-06-21 follow-up (v0.28.5 shipped broken; v0.28.6 fixed it).** The
+`force_build` config above is necessary but NOT sufficient in CI. The release
+jobs restore `deps`/`_build` from a `mix.lock`-keyed cache with a
+`restore-keys: mix-<arch>-` fallback — so a config-only patch (mix.lock
+unchanged) restores a stale `_build` that still contained `exqlite-0.36.0`
+from before the 0.36→0.37 bump. Burrito's `--> Going to recompile NIF for
+cross-build: exqlite` step recompiled the **stale 0.36.0** to musl and left
+the **active, locked 0.37.0** as the glibc source-build output → the shipped
+binary loaded a glibc NIF under musl and died (`Exqlite.Sqlite3NIF is not
+available`). Even `mix deps.compile exqlite --force` didn't help (it rebuilt
+0.37.0 but didn't remove the poisoning 0.36.0 dir). **Real fix: `rm -rf
+_build/prod` before the release build** (clean build, like `build_local`) so
+only the locked exqlite exists. Plus a CI "Verify exqlite NIF is musl" step
+that self-extracts the binary and `readelf`-asserts `NEEDED libc.so`.
+
+**TWO hard lessons:** (1) `glorbo doctor` / `reindex` on an EMPTY home do NOT
+open the DB (reindex tolerates a failed `ensure_repo_started`), so they give
+FALSE PASSES for a broken NIF — only a migrating/querying path
+(`glorbo up`/`DB.Bootstrap`, or `reindex` with a scaffolded company) actually
+loads it. (2) A green release workflow is NOT proof the binary works — its
+smoke test only runs `doctor`. **Always download the published binary and run
+a DB-opening command (or readelf its NIF) before declaring a release done.**
+
 ---
 
 ## What belongs in this file vs elsewhere
