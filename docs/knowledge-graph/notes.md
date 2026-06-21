@@ -917,6 +917,44 @@ to filename / empty string.
 
 ---
 
+## 2026-06-21 — Burrito release: exqlite NIF must compile from source (musl match)
+
+Symptom: an installed Burrito binary (`glorbo` 0.28.4) failed to start on a
+fresh glibc host (Bluefin/atomic Fedora 44) with, in `~/.glorbo/log.txt`:
+`Failed to load NIF library: 'Error relocating .../exqlite-0.37.0/priv/
+sqlite3_nif.so: __memmove_chk: symbol not found'` → `Glorbo.Repo` can't
+open the DB → `Glorbo.DB.Bootstrap` child dies → supervision tree aborts →
+app exits before serving.
+
+Root cause: **libc mismatch between the bundled ERTS and the exqlite NIF.**
+Burrito's ERTS is **musl** (beam-machine-universal; `beam.smp` interp is
+`/tmp/libc-musl-….so`, `NEEDED libc.musl-x86_64.so.1`). Burrito recompiles
+`:elixir_make` NIFs with `zig cc` against that musl target — but ONLY when
+the NIF actually compiles. exqlite 0.37.0's `cc_precompiler` by default
+**downloads a precompiled glibc NIF** (`NEEDED libc.so.6`, needs the
+`__memmove_chk`/`__memcpy_chk` fortify symbols musl doesn't implement); that
+prebuilt `.so` passes through Burrito's Zig step untouched, and the musl
+runtime can't relocate it. exqlite 0.36.0 had no precompiled artifact for
+OTP 29, so it fell back to a source build → Burrito zig-musl → a musl NIF
+(`NEEDED libc.so`) → worked. So the **0.36→0.37 bump silently regressed the
+release** even though nothing in our code changed.
+
+Tells, for next time: `NEEDED libc.so` (no `.6`) on a NIF = musl/zig build
+(good); `NEEDED libc.so.6` = glibc (will NOT load under the musl ERTS).
+"Error relocating … symbol not found" is musl ld phrasing. Two exqlite dirs
+under one `~/.local/share/.burrito/glorbo_erts-*/lib/` is leftover, not the
+cause — check which version the *running* app loaded (the log path).
+
+Fix: `config :exqlite, force_build: true` in `config/prod.exs` (exqlite reads
+it via `Application.get_env(:exqlite, :force_build)` at dep-compile time).
+Forces the source build on every prod/release build → musl NIF matching the
+ERTS, and avoids pulling an opaque third-party precompiled binary (supply-
+chain win). Dev/test stay on the fast precompiled NIF (glibc host). **Any
+future NIF dep that ships precompiled binaries has this same trap** — verify
+its bundled `.so` is `NEEDED libc.so` after a release build.
+
+---
+
 ## What belongs in this file vs elsewhere
 
 | Kind of fact | Where it lives |
