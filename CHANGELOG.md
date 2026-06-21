@@ -10,6 +10,8 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.5] — 2026-06-21
+
 ### Fixed
 
 - **Release binary failed to start: exqlite NIF libc mismatch.** The
