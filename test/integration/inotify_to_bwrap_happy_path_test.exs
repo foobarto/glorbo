@@ -23,8 +23,10 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
   were attached, so the inotify event was silently dropped. A
   readiness probe now writes a non-task sentinel repeatedly and waits
   until the Watcher's PubSub event comes back before creating the real
-  inbox task. This observes actual kernel-watch attachment instead of
-  assuming a fixed sleep is long enough on every CI runner.
+  inbox task; the task write itself is retried until its write event is
+  observed before dispatch is asserted. This observes actual end-to-end
+  delivery instead of assuming a fixed sleep is long enough on every CI
+  runner.
   """
   use ExUnit.Case, async: false
 
@@ -181,7 +183,6 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     # all kernel watches. Observe a real inbox event before proceeding; a
     # fixed sleep passed locally but still lost the race on GitHub runners.
     await_watcher_ready(agent_dir)
-    :ok = Phoenix.PubSub.unsubscribe(Glorbo.PubSub, inbox_topic)
 
     # Per-agent Task.Supervisor + Agent.Server. The server subscribes to
     # `company:<co>:inbox` by default, so PubSub broadcasts from the Watcher
@@ -209,7 +210,9 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     # Agent.Server's handle_info fires → inbox_scan_fun returns the task
     # → dispatch_fun is called with the task.
     task_file = Path.join([agent_dir, "inbox", "t-hp1.md"])
-    File.write!(task_file, "Task: do the thing\n")
+    task_rel = "agents/#{slug}/inbox/t-hp1.md"
+    write_until_watcher_event(task_file, task_rel, "Task: do the thing\n")
+    :ok = Phoenix.PubSub.unsubscribe(Glorbo.PubSub, inbox_topic)
 
     assert_receive {:dispatched, %{argv: argv, env: env, ctx: ctx, bwrap_argv: bwrap_argv}}, 5_000
 
@@ -274,7 +277,8 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
 
     result =
       receive do
-        {:file_event, ^rel, _events} -> :ready
+        {:file_event, ^rel, events} ->
+          if Enum.any?(events, &(&1 in [:created, :modified])), do: :ready, else: :retry
       after
         500 -> :retry
       end
@@ -285,5 +289,27 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       :ready -> :ok
       :retry -> await_watcher_ready(agent_dir, attempts - 1)
     end
+  end
+
+  defp write_until_watcher_event(path, rel, body, attempts \\ 20)
+
+  defp write_until_watcher_event(_path, _rel, _body, 0) do
+    flunk("inotify watcher did not deliver the inbox task event")
+  end
+
+  defp write_until_watcher_event(path, rel, body, attempts) do
+    File.write!(path, body)
+
+    observed? =
+      receive do
+        {:file_event, ^rel, events} ->
+          Enum.any?(events, &(&1 in [:created, :modified]))
+      after
+        500 -> false
+      end
+
+    if observed?,
+      do: :ok,
+      else: write_until_watcher_event(path, rel, body, attempts - 1)
   end
 end
