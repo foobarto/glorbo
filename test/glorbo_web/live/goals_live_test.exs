@@ -226,4 +226,12 @@ defmodule GlorboWeb.GoalsLiveTest do
 
     assert html =~ "ID is already in use."
   end
+
+  test "add-goal modal close button has an accessible name", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/companies/acme/goals")
+
+    view |> element("button[phx-click=new_goal_open]") |> render_click()
+
+    assert has_element?(view, "#new-goal-form .gl-modal__close[aria-label='Close']")
+  end
 end

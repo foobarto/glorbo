@@ -234,6 +234,7 @@ defmodule GlorboWeb.ProposalsLive do
     socket
     |> assign(:page_title, "Proposals — #{co} — Glorbo")
     |> assign(:sidebar_active, :proposals)
+    |> assign(:current_company, co)
     |> assign(:company_slug, co)
     |> assign(:base, base_dir())
     |> assign(:pending, pending)

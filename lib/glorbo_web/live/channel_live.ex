@@ -315,10 +315,6 @@ defmodule GlorboWeb.ChannelLive do
         </div>
       </header>
 
-      <div :if={Phoenix.Flash.get(@flash, :error)} class="gl-banner gl-banner--muted" role="alert">
-        {Phoenix.Flash.get(@flash, :error)}
-      </div>
-
       <div class="gl-channel__layout">
         <aside class="gl-channel__rail" aria-label="Chat">
           <h2 class="gl-panel__header">/chat</h2>

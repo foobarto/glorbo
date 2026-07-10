@@ -428,6 +428,35 @@ Rounds ordered newest-first. Each round records the commit under
 test + the tally, not per-case outcomes (those live in the case
 boxes above).
 
+### Round 10 — 2026-07-10 (full web UI dogfood)
+
+- **Commit under test:** working tree based on `d7cae860`.
+- **Scope:** authenticated Chromium dogfood against isolated home
+  `/tmp/glorbo-uat-full-20260710` on `127.0.0.1:4100`. Exercised
+  setup/login boundaries, company/agent/project/task CRUD, Kanban,
+  comments, chat/channels, inbox, proposals, goals, skills, brain
+  dump conversion, audit filters, global operations pages, Ctrl+K,
+  Ctrl+B, TWEAKS persistence, browser history, console/page errors,
+  1024×768, and an emulated iPhone 12 viewport.
+- **Results:** ✅ eight retained findings reproduced, fixed, and
+  replayed successfully; two initial observations were discarded
+  after immediate replay showed the expected behaviour. Fresh-browser
+  console and page-error logs were empty. Focused regression suite:
+  107 tests passed; asset build passed. Full `mix precommit` passed
+  with 3,451 tests (45 excluded), clean formatting, privacy, Credo,
+  and generated-doc checks.
+- **Findings fixed:** sidebar roster stale after same-page agent/project
+  creation; Proposals missing shared company context; audit filters not
+  reflected in the URL; duplicated ChannelLive flash; unnamed goal-modal
+  close control; persisted density control desynchronised after connected
+  mount; clipped 1024px chrome; unusable fixed-sidebar phone layout.
+- **Responsive verification:** 1024px and 390px viewports both kept
+  `documentElement.scrollWidth == innerWidth`; statusbar height remained
+  24px. Agent, Kanban, Channel, Audit, Costs, and modal layouts were also
+  spot-checked at 390px with no document-level overflow.
+- **Artefacts:** report, before/after screenshots, and repro videos live
+  outside the repo at `/tmp/glorbo-uat-full-20260710-report/`.
+
 ### Round 9 — 2026-07-10 (v0.28.7 release gate)
 
 - **Commit under test:** release working tree based on `ba6d5d55`

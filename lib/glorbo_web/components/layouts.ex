@@ -7,9 +7,11 @@ defmodule GlorboWeb.Layouts do
     * `root.html.heex` — HTML envelope (doctype, `<head>`, CSRF meta,
       `<.live_title>`, asset links). Rendered by the browser pipeline
       via `put_root_layout`.
-    * `app.html.heex` — dashboard shell. CSS-grid 220px sidebar +
-      main pane (D-09). Rendered inside `root.html.heex` when an LV
-      or controller specifies `{GlorboWeb.Layouts, :app}` as its layout.
+    * `app.html.heex` — responsive dashboard shell. CSS-grid 260px
+      sidebar + main pane on wide screens; narrow screens collapse the
+      sidebar into a toggleable overlay. Rendered inside `root.html.heex`
+      when an LV or controller specifies `{GlorboWeb.Layouts, :app}` as
+      its layout.
   """
   use GlorboWeb, :html
 

@@ -522,41 +522,82 @@ function applyTweaks(t) {
   document.documentElement.dataset.vocab = t.vocab || "default"
 }
 applyTweaks(loadTweaks())
-document.addEventListener("DOMContentLoaded", () => {
-  const toggle = document.getElementById("gl-tweaks-toggle")
-  const drawer = document.getElementById("gl-tweaks-drawer")
-  const density = document.getElementById("gl-tweaks-density")
-  const vocab = document.getElementById("gl-tweaks-vocab")
-  if (!toggle || !drawer) return
 
-  const t = loadTweaks()
-  if (density) density.value = t.density || "comfortable"
-  if (vocab) vocab.value = t.vocab || "default"
-
-  toggle.addEventListener("click", () => {
-    const open = !drawer.hasAttribute("hidden")
-    if (open) {
-      drawer.setAttribute("hidden", "")
-      toggle.setAttribute("aria-expanded", "false")
-      toggle.classList.remove("gl-topbar__tweaks--on")
-    } else {
-      drawer.removeAttribute("hidden")
-      toggle.setAttribute("aria-expanded", "true")
-      toggle.classList.add("gl-topbar__tweaks--on")
+// The topbar lives inside the LiveView layout, so its connected mount can
+// patch the server-default <select> values after DOMContentLoaded. Keep the
+// controls in a LiveView hook so persisted values are re-applied after every
+// layout patch, not only during the browser's initial parse.
+const Tweaks = {
+  mounted() {
+    this._open = false
+    this._onToggle = (e) => {
+      e.preventDefault()
+      this._open = !this._open
+      this._renderOpen()
     }
-  })
-
-  const persist = () => {
-    const next = {
-      density: density ? density.value : "comfortable",
-      vocab: vocab ? vocab.value : "default",
+    this._onChange = () => {
+      const next = {
+        density: this._density ? this._density.value : "comfortable",
+        vocab: this._vocab ? this._vocab.value : "default",
+      }
+      saveTweaks(next)
+      applyTweaks(next)
     }
-    saveTweaks(next)
-    applyTweaks(next)
-  }
-  if (density) density.addEventListener("change", persist)
-  if (vocab) vocab.addEventListener("change", persist)
-})
+    this._bindElements()
+    this._syncControls()
+  },
+  beforeUpdate() {
+    this._open = this._drawer ? !this._drawer.hasAttribute("hidden") : this._open
+  },
+  updated() {
+    this._bindElements()
+    this._syncControls()
+  },
+  destroyed() {
+    this._unbindElements()
+  },
+  _bindElements() {
+    const toggle = document.getElementById("gl-tweaks-toggle")
+    const drawer = document.getElementById("gl-tweaks-drawer")
+    const density = document.getElementById("gl-tweaks-density")
+    const vocab = document.getElementById("gl-tweaks-vocab")
+
+    if (this._toggle !== toggle) {
+      if (this._toggle) this._toggle.removeEventListener("click", this._onToggle)
+      this._toggle = toggle
+      if (this._toggle) this._toggle.addEventListener("click", this._onToggle)
+    }
+    if (this._density !== density) {
+      if (this._density) this._density.removeEventListener("change", this._onChange)
+      this._density = density
+      if (this._density) this._density.addEventListener("change", this._onChange)
+    }
+    if (this._vocab !== vocab) {
+      if (this._vocab) this._vocab.removeEventListener("change", this._onChange)
+      this._vocab = vocab
+      if (this._vocab) this._vocab.addEventListener("change", this._onChange)
+    }
+    this._drawer = drawer
+  },
+  _unbindElements() {
+    if (this._toggle) this._toggle.removeEventListener("click", this._onToggle)
+    if (this._density) this._density.removeEventListener("change", this._onChange)
+    if (this._vocab) this._vocab.removeEventListener("change", this._onChange)
+  },
+  _syncControls() {
+    const tweaks = loadTweaks()
+    if (this._density) this._density.value = tweaks.density || "comfortable"
+    if (this._vocab) this._vocab.value = tweaks.vocab || "default"
+    applyTweaks(tweaks)
+    this._renderOpen()
+  },
+  _renderOpen() {
+    if (!this._toggle || !this._drawer) return
+    this._drawer.toggleAttribute("hidden", !this._open)
+    this._toggle.setAttribute("aria-expanded", String(this._open))
+    this._toggle.classList.toggle("gl-topbar__tweaks--on", this._open)
+  },
+}
 
 // Flash banners auto-dismiss after 6s (UAT4 U3 — they were pinned
 // until the next LV event, which could sit in the user's viewport
@@ -582,10 +623,18 @@ const AutoDismissFlash = {
 // top handle. All states persist to localStorage.
 const SIDEBAR_COLLAPSED_KEY = "glorbo.sidebar.collapsed"
 const SIDEBAR_COLLAPSED_CLASS = "gl-app-shell--sidebar-collapsed"
+const SIDEBAR_NARROW_QUERY = "(max-width: 720px)"
 const SidebarCollapse = {
   mounted() {
-    if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") {
+    this._narrow = window.matchMedia(SIDEBAR_NARROW_QUERY)
+    if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1" || this._narrow.matches) {
       this.el.classList.add(SIDEBAR_COLLAPSED_CLASS)
+    }
+    this._onNarrow = (event) => {
+      if (event.matches) this.el.classList.add(SIDEBAR_COLLAPSED_CLASS)
+      else if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "1") {
+        this.el.classList.remove(SIDEBAR_COLLAPSED_CLASS)
+      }
     }
     this._onClick = (e) => {
       const btn = e.target.closest("#gl-sidebar-toggle")
@@ -604,10 +653,12 @@ const SidebarCollapse = {
     }
     document.addEventListener("click", this._onClick)
     window.addEventListener("keydown", this._onKey)
+    this._narrow.addEventListener("change", this._onNarrow)
   },
   destroyed() {
     document.removeEventListener("click", this._onClick)
     window.removeEventListener("keydown", this._onKey)
+    this._narrow.removeEventListener("change", this._onNarrow)
   },
   _toggle() {
     const collapsed = this.el.classList.toggle(SIDEBAR_COLLAPSED_CLASS)
@@ -1113,7 +1164,7 @@ const ClockTick = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, MentionAutocomplete, SubmitOnEnter, SubmitOnCtrlEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
+  hooks: {KanbanLane, KanbanCard, AutoDismissFlash, ChatDrawer, SidebarCollapse, Tweaks, MentionAutocomplete, SubmitOnEnter, SubmitOnCtrlEnter, TailPin, RightPanelCollapse, ResetOnSubmit, ClockTick},
 })
 liveSocket.connect()
 window.liveSocket = liveSocket

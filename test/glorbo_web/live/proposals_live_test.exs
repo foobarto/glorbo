@@ -54,6 +54,14 @@ defmodule GlorboWeb.ProposalsLiveTest do
     assert html =~ "0 denied"
   end
 
+  test "keeps company context in the shared topbar and chat drawer", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/companies/acme/proposals")
+
+    assert html =~ ~s(data-current-company="acme")
+    assert html =~ ~s(href="/companies/acme/braindump")
+    refute html =~ "pick a company to chat"
+  end
+
   test "approve flips pending-approval → approved on disk + audit",
        %{conn: conn, base: base} do
     {:ok, view, _html} = live(conn, ~p"/companies/acme/proposals")

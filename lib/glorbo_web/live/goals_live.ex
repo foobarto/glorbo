@@ -146,7 +146,14 @@ defmodule GlorboWeb.GoalsLive do
         >
           <header class="gl-modal__header">
             <strong>Add goal</strong>
-            <button type="button" class="gl-modal__close" phx-click="new_goal_cancel">×</button>
+            <button
+              type="button"
+              class="gl-modal__close"
+              phx-click="new_goal_cancel"
+              aria-label="Close"
+            >
+              ×
+            </button>
           </header>
           <div class="gl-modal__body">
             <label class="gl-form__row">

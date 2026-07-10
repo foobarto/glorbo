@@ -859,6 +859,13 @@ closed two correctness/reliability issues (dynamic company supervision
 and task-comment sidecar classification); neither introduced a new
 security finding.
 
+**v0.28.8 release re-review (2026-07-10):** Medium and Low remain at
+zero. This patch changes LiveView assign propagation, URL-backed audit
+filters, accessibility labels, and responsive CSS/JavaScript state; it
+does not add a write path, broaden browser authentication, render new
+untrusted content, or change sandbox/network boundaries. The two
+accepted risks below remain explicitly unchanged.
+
 
 ### Accepted risks (by-design / out-of-scope for v1) — 2
 

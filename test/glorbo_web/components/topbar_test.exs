@@ -43,6 +43,8 @@ defmodule GlorboWeb.Components.TopbarTest do
     test "renders a working TWEAKS toggle wired to the drawer" do
       html = render_topbar([])
       assert html =~ "TWEAKS"
+      assert html =~ ~s(id="gl-topbar")
+      assert html =~ ~s(phx-hook="Tweaks")
       assert html =~ ~s(id="gl-tweaks-toggle")
       assert html =~ ~s(aria-controls="gl-tweaks-drawer")
       assert html =~ ~s(id="gl-tweaks-drawer")

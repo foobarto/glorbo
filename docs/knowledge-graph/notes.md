@@ -25,6 +25,17 @@ it's a working memory.
 
 ---
 
+## 2026-07-10 — LiveView layout components need an explicit refresh input
+
+The shared Sidebar reads agents and projects from disk inside a function
+component, but LiveView change tracking can reuse that component when all
+passed attrs are unchanged. Updating only CompanyLive's inner `:company`
+assign therefore refreshed the roster table while leaving the layout sidebar
+stale. Any layout component that performs fresh IO needs a passed assign that
+changes with the underlying data; the sidebar now receives `:sidebar_refresh`
+after same-page scaffolds. The v0.28.8 graph refresh contains 4,319 nodes,
+8,308 edges, and 125 communities across the same 327-file `lib/` corpus.
+
 ## 2026-07-10 — v0.28.7 final review refresh
 
 The post-review `lib/` graph contains 327 files, 4,318 nodes, 8,306

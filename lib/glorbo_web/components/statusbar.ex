@@ -35,30 +35,30 @@ defmodule GlorboWeb.Components.Statusbar do
 
     ~H"""
     <footer class="gl-statusbar" role="contentinfo" {@rest}>
-      <span>
+      <span class="gl-statusbar__daemon">
         <span class={[
           "gl-statusbar__dot",
           @s.daemon == :stopped && "gl-statusbar__dot--stopped"
         ]} /> {daemon_label(@s)}
       </span>
-      <span class="gl-statusbar__sep">│</span>
-      <span>{@s.agents_alive}/{@s.agents_total} agents running</span>
-      <span class="gl-statusbar__sep">│</span>
-      <span>
+      <span class="gl-statusbar__sep gl-statusbar__detail">│</span>
+      <span class="gl-statusbar__detail">{@s.agents_alive}/{@s.agents_total} agents running</span>
+      <span class="gl-statusbar__sep gl-statusbar__metric--optional">│</span>
+      <span class="gl-statusbar__metric--optional">
         sqlite WAL · {@s.sqlite_human}
       </span>
-      <span class="gl-statusbar__sep">│</span>
-      <span>
+      <span class="gl-statusbar__sep gl-statusbar__metric--optional">│</span>
+      <span class="gl-statusbar__metric--optional">
         <span :if={@s.watch_mode == :polling} class="gl-statusbar__warn">polling:</span>
         <span :if={@s.watch_mode != :polling}>inotify:</span> watching {@s.inotify_paths} paths
       </span>
-      <span class="gl-statusbar__sep">│</span>
-      <span>
+      <span class="gl-statusbar__sep gl-statusbar__metric--optional">│</span>
+      <span class="gl-statusbar__metric--optional">
         mcp: <span class="gl-statusbar__mcp">{@s.mcp_endpoint}</span>
       </span>
       <span class="gl-statusbar__spacer"></span>
-      <span>{@s.director}</span>
-      <span class="gl-statusbar__sep">│</span>
+      <span class="gl-statusbar__identity">{@s.director}</span>
+      <span class="gl-statusbar__sep gl-statusbar__identity">│</span>
       <time id="gl-statusbar-clock" phx-hook="ClockTick" datetime={@s.now_iso}>
         {@s.now_str}
       </time>

@@ -63,6 +63,16 @@ defmodule GlorboWeb.AuditLiveTest do
     refute html =~ "company.create"
   end
 
+  test "filter changes patch the URL so the view is shareable", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/audit")
+
+    html = render_change(view, "filter", %{"q" => "general"})
+
+    assert_patch(view, "/companies/acme/audit?q=general")
+    assert html =~ "chat.post"
+    refute html =~ "company.create"
+  end
+
   test "q input is case-insensitive", %{conn: conn} do
     {:ok, view, _} = live(conn, "/companies/acme/audit")
     html = render_change(view, "filter", %{"actor" => "", "action" => "", "q" => "DIRECTOR"})

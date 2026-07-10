@@ -32,6 +32,7 @@ defmodule GlorboWeb.Components.Sidebar do
 
   attr :current_company, :string, default: nil
   attr :active, :atom, default: nil
+  attr :refresh, :any, default: nil
 
   @nav [
     {:overview, "◈", "Overview", :company},
@@ -69,7 +70,7 @@ defmodule GlorboWeb.Components.Sidebar do
       |> assign(:inbox_stuck, count_stuck_sentinels(focus))
 
     ~H"""
-    <aside class="gl-sidebar">
+    <aside class="gl-sidebar" data-refresh={@refresh}>
       <div class="gl-sidebar__section-label">COMPANY</div>
       <nav>
         <.link
