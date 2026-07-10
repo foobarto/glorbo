@@ -58,6 +58,9 @@ change between minor versions. Pin exact versions in downstream usage.
   and path grants are owned by a supervised registry so crashes revoke them.
 - **Concurrent file creation is first-write-wins.** MCP channels and proposals
   use exclusive creation, eliminating exists-then-write clobber windows.
+- **New upstream denial-of-service advisories are patched.** Security floors
+  now require Phoenix 1.8.9, Mint 1.9.1, HPAX 1.0.4, and MDEx 0.13.3; the
+  resolved native Markdown and LiveView dependencies advance with them.
 
 ### Quality
 
