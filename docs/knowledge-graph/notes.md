@@ -514,9 +514,12 @@ different questions.
 
 The Ubuntu 24.04 package is still too old for that flag. CI and release jobs
 therefore build the pinned upstream tag `2026_06_11.a9c61ff` from source and
-install its `pasta` binary before running integration tests. Do not weaken the
-help-text preflight to a `command -v` check: that would turn the proxy-netns
-suite back into a silent skip on GitHub-hosted runners.
+install its `pasta` binary before running integration tests. The runner's
+AppArmor userns restriction also needs narrowly scoped profiles for both
+`/usr/bin/bwrap` and `/usr/local/bin/pasta`; permitting only bwrap leaves pasta
+unable to configure `uid_map`. Do not weaken the help-text preflight to a
+`command -v` check: that would turn the proxy-netns suite back into a silent
+skip on GitHub-hosted runners.
 
 ### ExUnit 1.18 `setup` cannot return `{:skip, reason}`
 

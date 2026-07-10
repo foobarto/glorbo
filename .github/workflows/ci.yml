@@ -72,21 +72,22 @@ jobs:
           command -v inotifywait
           pasta --help | grep -q -- --splice-only
 
-      - name: Allow bwrap under AppArmor (Ubuntu 24.04 userns restriction)
+      - name: Allow bwrap + pasta under AppArmor (Ubuntu 24.04 userns restriction)
         run: |
           # Ubuntu 24.04 ships kernel.apparmor_restrict_unprivileged_userns=1,
-          # which blocks bwrap's --unshare-net from bringing up loopback
-          # (RTM_NEWADDR: Operation not permitted). The sandbox test suite
-          # exercises bwrap, so install an unconfined AppArmor profile for
-          # /usr/bin/bwrap so userns transitions are allowed. Scoped to bwrap
-          # only — does not weaken host-wide policy.
+          # which blocks both bwrap's --unshare-net and pasta's uid_map setup.
+          # Install unconfined profiles with the userns permission for exactly
+          # the two sandbox launchers; do not weaken the host-wide sysctl.
           # Refs: containers/bubblewrap#632, ocaml/opam#5968, Ubuntu 23.10 blog.
-          sudo tee /etc/apparmor.d/bwrap > /dev/null <<'EOF'
+          sudo tee /etc/apparmor.d/glorbo-ci-userns > /dev/null <<'EOF'
           abi <abi/4.0>,
           include <tunables/global>
           profile bwrap /usr/bin/bwrap flags=(unconfined) {
             userns,
             include if exists <local/bwrap>
+          }
+          profile pasta /usr/local/bin/pasta flags=(unconfined) {
+            userns,
           }
           EOF
           sudo systemctl reload apparmor
