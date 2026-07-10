@@ -89,7 +89,13 @@ jobs:
       - name: Install integration system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bubblewrap inotify-tools passt
+          sudo apt-get install -y bubblewrap inotify-tools build-essential
+          # Ubuntu 24.04's passt package predates --splice-only, which the
+          # proxy-netns security tests require. Build a pinned upstream tag
+          # instead of silently skipping that integration coverage.
+          git clone --depth 1 --branch 2026_06_11.a9c61ff https://passt.top/passt /tmp/passt
+          make -C /tmp/passt pasta
+          sudo install -m 0755 /tmp/passt/pasta /usr/local/bin/pasta
           bwrap --version
           inotifywait --help >/dev/null
           pasta --help | grep -q -- --splice-only

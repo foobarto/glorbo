@@ -512,6 +512,12 @@ help/usage output for the flag, not just exit-code the binary**.
 "It runs" and "it understands the flag I'm about to pass" are
 different questions.
 
+The Ubuntu 24.04 package is still too old for that flag. CI and release jobs
+therefore build the pinned upstream tag `2026_06_11.a9c61ff` from source and
+install its `pasta` binary before running integration tests. Do not weaken the
+help-text preflight to a `command -v` check: that would turn the proxy-netns
+suite back into a silent skip on GitHub-hosted runners.
+
 ### ExUnit 1.18 `setup` cannot return `{:skip, reason}`
 
 `setup do ... {:skip, "reason"} end` raises
