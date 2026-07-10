@@ -129,6 +129,36 @@ defmodule Glorbo.Agent.DispatchTest do
     assert_received {:audit, %{action: "agent.complete", duration_ms: 150}}
   end
 
+  test "path grant audit exit cannot abort dispatch or leak the grant", ctx do
+    :ok =
+      Glorbo.PathGrantStore.grant(
+        ctx.spec.company,
+        ctx.spec.slug,
+        ctx.task.task_id,
+        [%{host_path: "/tmp/shared", sandbox_path: "/external/shared", mode: :read}],
+        DateTime.utc_now()
+      )
+
+    audit_fun = fn _company, entry ->
+      if entry.action == "path_access.granted", do: exit(:audit_log_restarted), else: :ok
+    end
+
+    assert {:ok, _} =
+             Dispatch.execute(ctx.spec, ctx.task,
+               base: ctx.base,
+               run_fun: writer(),
+               provider_fun: fn _ -> stub_provider() end,
+               audit_fun: audit_fun
+             )
+
+    assert :not_found =
+             Glorbo.PathGrantStore.lookup(
+               ctx.spec.company,
+               ctx.spec.slug,
+               ctx.task.task_id
+             )
+  end
+
   # ---------------------------------------------------------------------------
   # D2 — budget hard-stop short-circuits before dispatch
   # ---------------------------------------------------------------------------

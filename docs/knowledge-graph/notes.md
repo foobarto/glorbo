@@ -27,8 +27,8 @@ it's a working memory.
 
 ## 2026-07-10 — v0.28.7 final review refresh
 
-The post-review `lib/` graph contains 327 files, 4,317 nodes, 8,302
-edges, and 132 communities (79% extracted / 21% inferred). The refresh
+The post-review `lib/` graph contains 327 files, 4,318 nodes, 8,304
+edges, and 129 communities (79% extracted / 21% inferred). The refresh
 captures the DM-aware slug boundary, supervised grant ownership, and
 trusted-directory exclusive-create path added while closing PR review
 threads.

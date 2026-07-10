@@ -93,9 +93,11 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
   Existing regular files and symlinks are both refused with `:eexist`. A tiny
   POSIX-shell helper is spawned with its cwd set to the validated parent,
   verifies that the kernel-resolved cwd is still the expected directory, and
-  then opens only the basename with noclobber semantics. The child cwd pins the
-  directory inode, so renaming/replacing an ancestor after validation cannot
-  redirect the final create outside the intended tree.
+  stages the complete bytes under a random noclobber name before publishing
+  them with an atomic no-replace hard link. The child cwd pins the directory
+  inode, so renaming/replacing an ancestor after validation cannot redirect the
+  final create outside the intended tree; failed or short writes never expose a
+  partial destination.
   """
   @spec create_exclusive(Path.t(), iodata(), keyword()) :: :ok | {:error, term()}
   def create_exclusive(path, content, opts \\ []) when is_binary(path) do
@@ -120,29 +122,47 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
   # The port runtime performs chdir(parent) before exec. `pwd -P` then asks
   # the kernel which directory inode the child actually holds; if an attacker
   # swapped `parent` for a symlink before chdir, it differs from `expected`.
-  # `set -C` makes `exec 3> "$leaf"` an O_EXCL-style create and keeps that fd
-  # open while dd copies the exact byte count, so the leaf is never reopened.
+  # `set -C` makes `exec 3> "$tmp"` an O_EXCL-style stage create and keeps that
+  # fd open while dd copies the exact byte count. After a size check, `ln`
+  # publishes the inode atomically without replacing an existing leaf. A trap
+  # removes the stage on success, write failure, signal, or short input.
   @secure_create_script """
   set -eu
   set -C
   expected=$1
   leaf=$2
   size=$3
+  tmp=$4
+  cleanup() { rm -f "$tmp"; }
+  trap cleanup 0 1 2 15
   [ "$(pwd -P)" = "$expected" ] || exit 73
   case "$leaf" in
     ''|'.'|'..'|*/*) exit 74 ;;
+  esac
+  case "$tmp" in
+    '.glorbo-create-'*) ;;
+    *) exit 74 ;;
   esac
   if [ -e "$leaf" ] || [ -L "$leaf" ]; then
     exit 75
   fi
   umask 077
-  exec 3> "$leaf" || exit 76
-  dd bs=1 count="$size" >&3 2>/dev/null
+  exec 3> "$tmp" || exit 76
+  dd bs=1 count="$size" >&3 2>/dev/null || exit 77
+  exec 3>&-
+  actual_size=$(wc -c < "$tmp")
+  [ "$actual_size" -eq "$size" ] || exit 77
+  if [ -e "$leaf" ] || [ -L "$leaf" ]; then
+    exit 75
+  fi
+  ln "$tmp" "$leaf" 2>/dev/null || exit 78
   """
 
   @secure_create_timeout_ms 5_000
 
   defp secure_child_create(shell, parent, leaf, content) do
+    tmp_leaf = ".glorbo-create-" <> random_create_suffix()
+
     port =
       Port.open(
         {:spawn_executable, shell},
@@ -159,7 +179,8 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
              "glorbo-safe-create",
              parent,
              leaf,
-             Integer.to_string(byte_size(content))
+             Integer.to_string(byte_size(content)),
+             tmp_leaf
            ]}
         ]
       )
@@ -213,6 +234,12 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
   end
 
   defp path_for_error(parent, leaf), do: Path.join(parent, leaf)
+
+  defp random_create_suffix do
+    16
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
+  end
 
   defp bounded_output(output, data) do
     (output <> data)

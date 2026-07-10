@@ -1591,6 +1591,10 @@ defmodule Glorbo.Agent.Dispatch do
     e ->
       Logger.warning("path-access grant audit emit failed: #{Exception.message(e)}")
       :ok
+  catch
+    :exit, reason ->
+      Logger.warning("path-access grant audit exited: #{inspect(reason)}")
+      :ok
   end
 
   defp emit_complete_audit(spec, task, result, duration_ms, invocation_id, opts) do

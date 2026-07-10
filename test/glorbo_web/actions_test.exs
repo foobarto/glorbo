@@ -573,6 +573,25 @@ defmodule Glorbo.ActionsTest do
       assert File.ls!(mentions) != []
     end
 
+    test "automatic assignee wake preserves an MCP comment actor", %{
+      base: base,
+      audit: audit,
+      task_path: tp
+    } do
+      assert :ok =
+               Actions.post_task_comment("acme", tp, "Please review.",
+                 base: base,
+                 audit: audit,
+                 actor: "mcp:claude-code"
+               )
+
+      mentions = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
+      [file] = File.ls!(mentions)
+      content = File.read!(Path.join(mentions, file))
+      assert content =~ ~s(from: "mcp:claude-code")
+      refute content =~ ~s(from: "director")
+    end
+
     test "@mention in comment wakes that agent too", %{
       base: base,
       audit: audit,

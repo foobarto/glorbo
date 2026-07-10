@@ -74,6 +74,34 @@ defmodule Glorbo.Filesystem.AgentWritableFileTest do
     refute File.exists?(Path.join(original, "reply.md"))
   end
 
+  test "create_exclusive removes a partial stage and never publishes it", %{root: root} do
+    parent = Path.join(root, "outbox")
+    fake_bin = Path.join(root, "fake-bin")
+    fake_dd = Path.join(fake_bin, "dd")
+    wrapper = Path.join(root, "failing-dd-sh")
+    path = Path.join(parent, "reply.md")
+
+    File.mkdir_p!(parent)
+    File.mkdir_p!(fake_bin)
+    File.write!(fake_dd, "#!/bin/sh\nprintf partial\nexit 1\n")
+    File.chmod!(fake_dd, 0o700)
+
+    File.write!(wrapper, """
+    #!/bin/sh
+    PATH="#{fake_bin}:$PATH"
+    export PATH
+    exec /bin/sh "$@"
+    """)
+
+    File.chmod!(wrapper, 0o700)
+
+    assert {:error, {:secure_create_failed, 77, _}} =
+             AgentWritableFile.create_exclusive(path, "complete body", shell: wrapper)
+
+    refute File.exists?(path)
+    refute Enum.any?(File.ls!(parent), &String.starts_with?(&1, ".glorbo-create-"))
+  end
+
   defp eventually(fun, attempts \\ 100)
   defp eventually(fun, 0), do: fun.()
 

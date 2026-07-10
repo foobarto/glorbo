@@ -229,7 +229,7 @@ defmodule Glorbo.Actions do
             target: task_path
           })
 
-          _ = wake_task_assignee(base, company, abs_task, task_id, body, ts, audit)
+          _ = wake_task_assignee(base, company, abs_task, task_id, body, ts, audit, actor)
           _ = route_mentions(base, company, "task-#{task_id}", body, ts, audit, actor)
 
           :ok
@@ -250,7 +250,7 @@ defmodule Glorbo.Actions do
 
   defp validate_task_path_strict(_), do: {:error, :invalid_task_path}
 
-  defp wake_task_assignee(base, company, abs_task_path, task_id, body, ts, audit) do
+  defp wake_task_assignee(base, company, abs_task_path, task_id, body, ts, audit, actor) do
     # threatmodel [41]: assignee comes from the task file, which an
     # agent can author. Without slug validation, values like
     # `../../companies/other/agents/ceo` would let a task comment
@@ -260,7 +260,7 @@ defmodule Glorbo.Actions do
          {:ok, fm} <- extract_frontmatter(content),
          assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to"),
          true <- Glorbo.Slug.valid?(assignee, :agent) do
-      write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, "director")
+      write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, actor)
     else
       _ -> :ok
     end

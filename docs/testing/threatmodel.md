@@ -957,7 +957,7 @@ than open lows. Re-evaluate during the v1 cut.
   *Paths:* `lib/gep/validator.ex`
 - ~~**Inotify follow can skip log bytes during concurrent writes or truncation**~~ — Closed 2026-07-10: incremental reads return and persist the byte offset actually consumed, independent of a later file stat, and both inotify and polling followers reset to byte zero when an in-place truncation shrinks the file.
   *Paths:* `lib/glorbo/cli/logs.ex`
-- ~~**Exclusive outbox creation can be redirected by swapping an ancestor**~~ — Closed 2026-07-10: `AgentWritableFile.create_exclusive/2` now spawns its creator with the validated parent as a kernel-pinned cwd, verifies the resolved cwd, and opens only the basename with noclobber semantics. The regression test renames the parent and replaces it with a victim symlink after child `chdir`.
+- ~~**Exclusive outbox creation can be redirected by swapping an ancestor or expose a partial failure**~~ — Closed 2026-07-10: `AgentWritableFile.create_exclusive/2` now spawns its creator with the validated parent as a kernel-pinned cwd, verifies the resolved cwd, stages and byte-count-checks the payload under a random noclobber name, then publishes via an atomic no-replace hard link. Regression tests swap the parent after child `chdir` and force a partial stage write; neither reaches the destination.
   *Paths:* `lib/glorbo/filesystem/agent_writable_file.ex`
 - ~~**Path-grant ownership replacement can retain stale grants**~~ — Closed 2026-07-10: the application-supervised store no longer has an unlinked fallback owner; different-owner registration revokes stale company grants, and gate-exit races fall back to idempotent store cleanup.
   *Paths:* `lib/glorbo/path_grant_store.ex, lib/glorbo/path_request_gate.ex`
