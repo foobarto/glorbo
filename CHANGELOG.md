@@ -15,9 +15,10 @@ change between minor versions. Pin exact versions in downstream usage.
 ### Added
 
 - **Release-artifact lifecycle coverage.** CI now exercises the tagged binary's
-  first boot, one-shot setup-token flow, passphrase setup, restart, and login.
-  Integration tests run as an explicit CI lane with the Linux runtime tools
-  used by sandbox and proxy paths.
+  `up` → running `status` → `down` → stopped `status` subprocess lifecycle.
+  Setup-token, passphrase, restart, and login behavior remains covered by the
+  application/browser suites. Integration tests run as an explicit CI lane
+  with the Linux runtime tools used by sandbox and proxy paths.
 
 ### Changed
 
@@ -57,7 +58,9 @@ change between minor versions. Pin exact versions in downstream usage.
   entity-aware slug validation consistently supports underscore agent slugs;
   and path grants are owned by a supervised registry so crashes revoke them.
 - **Concurrent file creation is first-write-wins.** MCP channels and proposals
-  use exclusive creation, eliminating exists-then-write clobber windows.
+  use exclusive creation, eliminating exists-then-write clobber windows. The
+  create primitive pins and verifies its parent directory before opening the
+  basename, preventing an agent from redirecting it with an ancestor swap.
 - **New upstream denial-of-service advisories are patched.** Security floors
   now require Phoenix 1.8.9, Mint 1.9.1, HPAX 1.0.4, and MDEx 0.13.3; the
   resolved native Markdown and LiveView dependencies advance with them.

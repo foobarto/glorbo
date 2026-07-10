@@ -13,6 +13,44 @@ defmodule Glorbo.PathRequestGateTest do
 
   @base "/fake/home/.glorbo"
 
+  test "revoke falls back to the store when the looked-up gate exits before replying" do
+    Application.ensure_all_started(:glorbo)
+    company = "revoke-race-#{System.unique_integer([:positive])}"
+    task_id = "task-1"
+
+    :ok =
+      Glorbo.PathGrantStore.grant(
+        company,
+        "engineer",
+        task_id,
+        [%{host_path: "/tmp/x", sandbox_path: "/external/x", mode: :read}],
+        DateTime.utc_now()
+      )
+
+    parent = self()
+
+    gate =
+      spawn(fn ->
+        {:ok, _} =
+          Registry.register(
+            Glorbo.Agent.Registry,
+            {:company_child, company, :path_request_gate},
+            nil
+          )
+
+        send(parent, :gate_ready)
+
+        receive do
+          {:"$gen_call", _from, _request} -> exit(:simulated_gate_crash)
+        end
+      end)
+
+    assert_receive :gate_ready
+    assert :ok = PathRequestGate.revoke(company, "engineer", task_id)
+    assert :not_found = Glorbo.PathGrantStore.lookup(company, "engineer", task_id)
+    refute Process.alive?(gate)
+  end
+
   describe "resolve_cross_company_mode/4 — T4 cross-company downgrade" do
     test "own-company :write stays :write" do
       own = Path.join([@base, "companies", "acme", "projects", "web", "notes.md"])

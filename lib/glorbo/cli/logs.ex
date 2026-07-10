@@ -194,29 +194,40 @@ defmodule Glorbo.CLI.Logs do
     # [:modified, :closed] pair arrives in one tick — the file may have
     # rotated (month rollover) between the two calls. Treat :enoent as
     # rotation and re-resolve the target path before looping.
-    case File.stat(path) do
-      {:ok, %File.Stat{size: new_size}} ->
-        if new_size > last_size do
-          case read_incremental(path, last_size) do
-            {:ok, new_bytes, next_offset} ->
-              IO.write(render_chunk(kind, new_bytes))
-              listen_loop(path, kind, next_offset)
-
-            {:error, :enoent} ->
-              handle_rotation(path, kind)
-
-            {:error, _reason} ->
-              listen_loop(path, kind, last_size)
-          end
-        else
-          listen_loop(path, kind, last_size)
-        end
+    case read_follow_chunk(path, last_size) do
+      {:ok, new_bytes, next_offset} ->
+        IO.write(render_chunk(kind, new_bytes))
+        listen_loop(path, kind, next_offset)
 
       {:error, :enoent} ->
         handle_rotation(path, kind)
 
-      {:error, _} ->
+      {:error, _reason} ->
         listen_loop(path, kind, last_size)
+    end
+  end
+
+  @doc false
+  @spec read_follow_chunk(Path.t(), non_neg_integer()) ::
+          {:ok, binary(), non_neg_integer()} | {:error, term()}
+  def read_follow_chunk(path, last_size) do
+    case File.stat(path) do
+      # In-place truncation starts a new stream at byte zero. Keeping the old
+      # offset would hide every append until the file grew past its prior size.
+      {:ok, %File.Stat{size: size}} when size < last_size ->
+        read_incremental(path, 0)
+
+      {:ok, %File.Stat{size: size}} when size > last_size ->
+        read_incremental(path, last_size)
+
+      {:ok, %File.Stat{size: size}} ->
+        {:ok, "", size}
+
+      {:error, :enoent} ->
+        {:error, :enoent}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -242,19 +253,10 @@ defmodule Glorbo.CLI.Logs do
   defp follow_poll_loop(path, kind, last_size) do
     Process.sleep(@poll_interval_ms)
 
-    case File.stat(path) do
-      {:ok, %File.Stat{size: size}} when size > last_size ->
-        case read_incremental(path, last_size) do
-          {:ok, new_bytes, next_offset} ->
-            IO.write(render_chunk(kind, new_bytes))
-            follow_poll_loop(path, kind, next_offset)
-
-          {:error, _reason} ->
-            follow_poll_loop(path, kind, last_size)
-        end
-
-      {:ok, _} ->
-        follow_poll_loop(path, kind, last_size)
+    case read_follow_chunk(path, last_size) do
+      {:ok, new_bytes, next_offset} ->
+        IO.write(render_chunk(kind, new_bytes))
+        follow_poll_loop(path, kind, next_offset)
 
       {:error, _} ->
         # File disappeared — try to re-resolve (month rollover).

@@ -326,10 +326,13 @@ This is an append-only record (per GEP-1, an Accepted/Implemented GEP's body is 
 
 - **Dispatch-boundary grant auditing and ownership are closed.** The supervised
   application-level `Glorbo.PathGrantStore` owns the ETS table independently of
-  any company sibling, monitors registered company owners, and revokes only that
-  company's grants when its gate terminates. Dispatch emits
+  any company sibling, has no public unlinked fallback owner, monitors registered
+  company owners, revokes stale grants before owner replacement, and revokes only
+  that company's grants when its gate terminates. Dispatch emits
   `path_access.granted` when approved mounts are installed and routes cleanup
-  through `PathRequestGate.revoke/4`, which emits `path_access.revoked`.
+  through `PathRequestGate.revoke/4`, which emits `path_access.revoked`; if the
+  gate exits between lookup and call, cleanup falls back to the idempotent store
+  revoke instead of replacing the dispatch result with `:noproc`.
 - **Lifecycle coverage is improved but the full Router-to-sandbox integration
   scenario remains open.** Store tests cover owner termination, company
   isolation, revoke, and stable-table ownership. The UI downgrade/trim affordance

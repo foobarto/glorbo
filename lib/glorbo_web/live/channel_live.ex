@@ -48,7 +48,7 @@ defmodule GlorboWeb.ChannelLive do
          |> put_flash(:error, "Invalid company identifier.")
          |> push_navigate(to: ~p"/companies")}
 
-      not Glorbo.Slug.valid?(ch) ->
+      not Glorbo.Slug.valid?(ch, :channel) ->
         {:ok,
          socket
          |> put_flash(:error, "Invalid channel identifier.")

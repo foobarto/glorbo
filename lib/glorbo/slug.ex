@@ -18,8 +18,9 @@ defmodule Glorbo.Slug do
   atomic per the pre-1.0 "no kid gloves on breaking changes" rule.
 
   Entity-specific validation is available through `valid?/2`. Agent slugs
-  intentionally allow underscores; company/project/channel slugs retain the
-  generic hyphen-only URL shape.
+  intentionally allow underscores. Company/project slugs retain the generic
+  hyphen-only URL shape; channels additionally accept the reserved
+  `dm-director--<agent>` form and validate its suffix as an agent slug.
   """
 
   @slug_re ~r/\A[a-z0-9-]+\z/
@@ -38,5 +39,8 @@ defmodule Glorbo.Slug do
   @doc "Validate an identifier using the rules for its entity kind."
   @spec valid?(term(), atom()) :: boolean()
   def valid?(s, :agent) when is_binary(s), do: Regex.match?(@agent_slug_re, s)
+
+  def valid?("dm-director--" <> agent, :channel), do: valid?(agent, :agent)
+  def valid?(s, :channel), do: valid?(s)
   def valid?(s, _kind), do: valid?(s)
 end

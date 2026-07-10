@@ -124,17 +124,22 @@ defmodule Glorbo.Security.ACLMapper do
 
     case File.lstat(projects_dir) do
       {:ok, %File.Stat{type: :directory}} ->
-        {:ok, entries} = File.ls(projects_dir)
+        case File.ls(projects_dir) do
+          {:ok, entries} ->
+            entries
+            |> Enum.filter(fn project ->
+              project_dir = Path.join(projects_dir, project)
+              tasks_dir = Path.join(project_dir, "tasks")
 
-        entries
-        |> Enum.filter(fn project ->
-          project_dir = Path.join(projects_dir, project)
-          tasks_dir = Path.join(project_dir, "tasks")
+              Glorbo.Slug.valid?(project) and directory?(project_dir) and directory?(tasks_dir)
+            end)
+            |> Enum.sort()
+            |> Enum.map(&{"tasks", action, &1})
 
-          Glorbo.Slug.valid?(project) and directory?(project_dir) and directory?(tasks_dir)
-        end)
-        |> Enum.sort()
-        |> Enum.map(&{"tasks", action, &1})
+          {:error, reason} ->
+            raise ArgumentError,
+                  "cannot list wildcard task ACL projects at #{projects_dir}: #{inspect(reason)}"
+        end
 
       {:error, :enoent} ->
         []

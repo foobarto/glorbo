@@ -91,9 +91,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap inotify-tools build-essential
           # Ubuntu 24.04's passt package predates --splice-only, which the
-          # proxy-netns security tests require. Build a pinned upstream tag
-          # instead of silently skipping that integration coverage.
-          git clone --depth 1 --branch 2026_06_11.a9c61ff https://passt.top/passt /tmp/passt
+          # proxy-netns security tests require. Fetch the immutable commit
+          # behind upstream tag 2026_06_11.a9c61ff and verify HEAD before
+          # executing its Makefile.
+          git init /tmp/passt
+          git -C /tmp/passt remote add origin https://passt.top/passt
+          git -C /tmp/passt fetch --depth 1 origin a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
+          git -C /tmp/passt checkout --detach a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
+          test "$(git -C /tmp/passt rev-parse HEAD)" = a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
           make -C /tmp/passt pasta
           sudo install -m 0755 /tmp/passt/pasta /usr/local/bin/pasta
           bwrap --version

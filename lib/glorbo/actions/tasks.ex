@@ -281,7 +281,7 @@ defmodule Glorbo.Actions.Tasks do
     title status assigned_to priority severity requires_approval done_when
   )
   @editor_keys ["body" | @editor_frontmatter_keys]
-  @editor_statuses ~w(todo in-progress pending approved denied done blocked cancelled)
+  @editor_statuses ~w(todo in-progress pending pending-approval approved denied done blocked cancelled)
   @priority_values ~w(low medium high)
   @severity_values ~w(info minor major critical)
 
@@ -389,7 +389,7 @@ defmodule Glorbo.Actions.Tasks do
   defp validate_editor_updates(updates, task, base, company) do
     with :ok <- validate_optional_title(updates),
          :ok <- validate_optional_text(updates, "done_when"),
-         :ok <- validate_enum_update(updates, "status", @editor_statuses),
+         :ok <- validate_status_update(updates),
          :ok <- validate_enum_update(updates, "priority", @priority_values),
          :ok <- validate_enum_update(updates, "severity", @severity_values),
          :ok <- validate_requires_approval(updates),
@@ -418,6 +418,14 @@ defmodule Glorbo.Actions.Tasks do
         if value == "" or value in allowed,
           do: :ok,
           else: {:error, {:invalid_editor_value, key, value}}
+    end
+  end
+
+  defp validate_status_update(updates) do
+    case Map.fetch(updates, "status") do
+      :error -> :ok
+      {:ok, value} when value in @editor_statuses -> :ok
+      {:ok, value} -> {:error, {:invalid_editor_value, "status", value}}
     end
   end
 
@@ -461,7 +469,11 @@ defmodule Glorbo.Actions.Tasks do
     target_requirement = effective_value(updates, "requires_approval", task.requires_approval)
 
     cond do
-      target_status in ["approved", "denied"] and target_status != task.status ->
+      target_status in ["pending-approval", "approved", "denied"] and
+          target_status != task.status ->
+        {:error, :approval_status_requires_gate}
+
+      task.status == "pending-approval" and target_status != task.status ->
         {:error, :approval_status_requires_gate}
 
       target_requirement in ["director", :director] and

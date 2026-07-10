@@ -178,5 +178,12 @@ defmodule Glorbo.CLI.LogsTest do
       File.write!(path, "-later", [:append])
       assert {:ok, "-later", 16} = Logs.read_incremental(path, 10)
     end
+
+    test "a truncated followed file resets the consumed offset to zero", %{home: home} do
+      path = Path.join(home, "follow-truncated.log")
+      File.write!(path, "replacement")
+
+      assert {:ok, "replacement", 11} = Logs.read_follow_chunk(path, 100)
+    end
   end
 end

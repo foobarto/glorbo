@@ -208,7 +208,7 @@ defmodule Glorbo.Shell.Views.Inbox do
          tp when is_binary(tp) <- row.task_path,
          co when is_binary(co) <- state.company,
          base when is_binary(base) <- state.base do
-      opts = [base: base]
+      opts = [base: base, actor: "director"]
 
       opts =
         if is_binary(denial_reason),

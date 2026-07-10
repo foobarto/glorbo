@@ -31,9 +31,13 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
       are OK (first write) but every other non-regular type is not.
     * `ensure_regular/1` — lstat + require `:regular` (NO `:enoent`).
       For reads where the file must already exist.
+    * `create_exclusive/2` — pin and verify the parent directory in a child
+      process, then create only the basename with noclobber semantics. This
+      closes the remaining ancestor-swap window for first-write-wins files.
 
-  The three shapes exist because callers split into "read-existing",
-  "write-first-or-replace", and "refuse-anything-weird-but-absent-ok".
+  The shapes exist because callers split into "read-existing",
+  "write-first-or-replace", "exclusive-create", and
+  "refuse-anything-weird-but-absent-ok".
   All callers used to name these subtly differently; having them in
   one module with one naming scheme removes the naming drift.
 
@@ -84,28 +88,135 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
   end
 
   @doc """
-  Create a new file in an agent-writable tree using one exclusive open.
+  Create a new file in an agent-writable tree using a trusted directory handle.
 
-  Existing regular files and symlinks are both refused with `:eexist`; parent
-  symlinks are rejected before and after directory creation. This closes the
-  common `lstat` then `File.write` race for host-generated outbox envelopes.
+  Existing regular files and symlinks are both refused with `:eexist`. A tiny
+  POSIX-shell helper is spawned with its cwd set to the validated parent,
+  verifies that the kernel-resolved cwd is still the expected directory, and
+  then opens only the basename with noclobber semantics. The child cwd pins the
+  directory inode, so renaming/replacing an ancestor after validation cannot
+  redirect the final create outside the intended tree.
   """
-  @spec create_exclusive(Path.t(), iodata()) :: :ok | {:error, term()}
-  def create_exclusive(path, content) when is_binary(path) do
+  @spec create_exclusive(Path.t(), iodata(), keyword()) :: :ok | {:error, term()}
+  def create_exclusive(path, content, opts \\ []) when is_binary(path) do
     parent = Path.dirname(path)
+    leaf = Path.basename(path)
 
     if any_symlink_in_path?(parent) do
       {:error, :symlinked_ancestor}
     else
       with :ok <- File.mkdir_p(parent),
            false <- any_symlink_in_path?(parent),
-           :ok <- File.write(path, content, [:exclusive, :sync]) do
-        :ok
+           :ok <- validate_create_leaf(leaf),
+           {:ok, shell} <- resolve_shell(opts) do
+        secure_child_create(shell, Path.expand(parent), leaf, IO.iodata_to_binary(content))
       else
         true -> {:error, :symlinked_ancestor}
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  # The port runtime performs chdir(parent) before exec. `pwd -P` then asks
+  # the kernel which directory inode the child actually holds; if an attacker
+  # swapped `parent` for a symlink before chdir, it differs from `expected`.
+  # `set -C` makes `exec 3> "$leaf"` an O_EXCL-style create and keeps that fd
+  # open while dd copies the exact byte count, so the leaf is never reopened.
+  @secure_create_script """
+  set -eu
+  set -C
+  expected=$1
+  leaf=$2
+  size=$3
+  [ "$(pwd -P)" = "$expected" ] || exit 73
+  case "$leaf" in
+    ''|'.'|'..'|*/*) exit 74 ;;
+  esac
+  if [ -e "$leaf" ] || [ -L "$leaf" ]; then
+    exit 75
+  fi
+  umask 077
+  exec 3> "$leaf" || exit 76
+  dd bs=1 count="$size" >&3 2>/dev/null
+  """
+
+  @secure_create_timeout_ms 5_000
+
+  defp secure_child_create(shell, parent, leaf, content) do
+    port =
+      Port.open(
+        {:spawn_executable, shell},
+        [
+          :binary,
+          :exit_status,
+          :use_stdio,
+          :stderr_to_stdout,
+          {:cd, parent},
+          {:args,
+           [
+             "-c",
+             @secure_create_script,
+             "glorbo-safe-create",
+             parent,
+             leaf,
+             Integer.to_string(byte_size(content))
+           ]}
+        ]
+      )
+
+    true = Port.command(port, content)
+    await_secure_create(port, path_for_error(parent, leaf), "")
+  rescue
+    error in [ArgumentError, ErlangError] -> {:error, {:secure_create_unavailable, error}}
+  end
+
+  defp await_secure_create(port, path, output) do
+    receive do
+      {^port, {:data, data}} ->
+        await_secure_create(port, path, bounded_output(output, data))
+
+      {^port, {:exit_status, 0}} ->
+        :ok
+
+      {^port, {:exit_status, 73}} ->
+        {:error, :symlinked_ancestor}
+
+      {^port, {:exit_status, 74}} ->
+        {:error, :einval}
+
+      {^port, {:exit_status, 75}} ->
+        {:error, :eexist}
+
+      {^port, {:exit_status, status}} ->
+        case File.lstat(path) do
+          {:ok, _} -> {:error, :eexist}
+          _ -> {:error, {:secure_create_failed, status, output}}
+        end
+    after
+      @secure_create_timeout_ms ->
+        if Port.info(port), do: Port.close(port)
+        {:error, :secure_create_timeout}
+    end
+  end
+
+  defp resolve_shell(opts) do
+    case Keyword.get(opts, :shell) || System.find_executable("sh") do
+      shell when is_binary(shell) -> {:ok, shell}
+      nil -> {:error, :secure_create_unavailable}
+    end
+  end
+
+  defp validate_create_leaf(leaf) do
+    if leaf in ["", ".", ".."] or String.contains?(leaf, "/"),
+      do: {:error, :einval},
+      else: :ok
+  end
+
+  defp path_for_error(parent, leaf), do: Path.join(parent, leaf)
+
+  defp bounded_output(output, data) do
+    (output <> data)
+    |> String.slice(0, 512)
   end
 
   # Threatmodel wave 23: every agent-RW read has the same OOM

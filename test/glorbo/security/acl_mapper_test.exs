@@ -230,6 +230,27 @@ defmodule Glorbo.Security.ACLMapperTest do
       refute Enum.any?(entries, fn {_, _, path} -> String.contains?(path, "escape") end)
     end
 
+    test "wildcard task ACL expansion reports project listing failures clearly" do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "glorbo-acl-unreadable-#{System.unique_integer([:positive])}"
+        )
+
+      projects = Path.join(root, "projects")
+      File.mkdir_p!(projects)
+      File.chmod!(projects, 0o000)
+
+      on_exit(fn ->
+        File.chmod(projects, 0o700)
+        File.rm_rf!(root)
+      end)
+
+      assert_raise ArgumentError, ~r/cannot list wildcard task ACL projects.*eacces/, fn ->
+        ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "read", "*"}], root)
+      end
+    end
+
     test "combined permissions produce deterministic sorted output" do
       perms = [
         {"projects", "write", "website-redesign"},

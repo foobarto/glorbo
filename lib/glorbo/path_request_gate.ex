@@ -87,7 +87,14 @@ defmodule Glorbo.PathRequestGate do
         PathGrantStore.revoke(company, agent_slug, task_id)
 
       pid ->
-        GenServer.call(pid, {:revoke, agent_slug, task_id, opts})
+        try do
+          GenServer.call(pid, {:revoke, agent_slug, task_id, opts})
+        catch
+          # `whereis/1` does not pin the gate process. If it exits between
+          # lookup and call, keep dispatch cleanup fail-closed by revoking the
+          # idempotent ETS grant directly.
+          :exit, _reason -> PathGrantStore.revoke(company, agent_slug, task_id)
+        end
     end
   end
 

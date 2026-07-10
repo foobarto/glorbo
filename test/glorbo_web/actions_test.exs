@@ -61,6 +61,26 @@ defmodule Glorbo.ActionsTest do
       assert content =~ "DM · director ↔ ceo"
     end
 
+    test "supports the reserved DM channel for an underscore agent", %{
+      base: base,
+      audit: audit
+    } do
+      agent = "backend_engineer"
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", agent]))
+
+      assert :ok = Glorbo.Actions.ensure_dm_channel("acme", agent, base: base)
+
+      assert :ok =
+               Actions.post_message("acme", "dm-director--#{agent}", "hello",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
+
+      path = Path.join([base, "companies", "acme", "channels", "dm-director--#{agent}.md"])
+      assert File.read!(path) =~ "hello"
+    end
+
     test "is idempotent — never clobbers an existing thread", %{base: base} do
       path = Path.join([base, "companies", "acme", "channels", "dm-director--ceo.md"])
 
@@ -527,6 +547,32 @@ defmodule Glorbo.ActionsTest do
       assert "agent.wake" in actions
     end
 
+    test "wakes an underscore-bearing assignee without an @mention", %{
+      base: base,
+      audit: audit,
+      task_path: tp
+    } do
+      agent = "backend_engineer"
+      File.mkdir_p!(Path.join([base, "companies", "acme", "agents", agent, "inbox"]))
+
+      abs_task = Path.join([base, "companies", "acme", tp])
+
+      File.write!(
+        abs_task,
+        String.replace(File.read!(abs_task), "assigned_to: ceo", "assigned_to: #{agent}")
+      )
+
+      assert :ok =
+               Actions.post_task_comment("acme", tp, "Please review.",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
+
+      mentions = Path.join([base, "companies", "acme", "agents", agent, "inbox", "mentions"])
+      assert File.ls!(mentions) != []
+    end
+
     test "@mention in comment wakes that agent too", %{
       base: base,
       audit: audit,
@@ -881,6 +927,21 @@ defmodule Glorbo.ActionsTest do
       assert File.read!(path) =~ ~s(reason: "")
     end
 
+    test "accepts underscore-bearing agent slugs", %{base: base, audit: audit} do
+      agent = "backend_engineer"
+
+      assert :ok =
+               Actions.wake_agent("acme", agent, "review",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
+
+      assert File.exists?(
+               Path.join([base, "companies", "acme", "agents", agent, "state", "wake-request.md"])
+             )
+    end
+
     test "rejects invalid agent slug", %{base: base, audit: audit, actor: "director"} do
       assert {:error, :invalid_slug} =
                Actions.wake_agent("acme", "../evil", "oops",
@@ -997,6 +1058,23 @@ defmodule Glorbo.ActionsTest do
       actions = audit |> FakeAudit.calls() |> Enum.map(& &1[:action])
       assert "approval.approved" in actions
       assert "agent.scaffold" in actions
+    end
+
+    test "scaffold audit preserves an MCP approval actor", %{
+      base: base,
+      audit: audit,
+      task_path: task_path
+    } do
+      assert :ok =
+               Actions.set_approval("acme", task_path, :approved,
+                 base: base,
+                 audit: audit,
+                 actor: "mcp:claude-code",
+                 scaffold_fun: fn _ -> {:new_agent, 0, "created"} end
+               )
+
+      event = FakeAudit.calls(audit) |> Enum.find(&(&1[:action] == "agent.scaffold"))
+      assert event[:actor] == "mcp:claude-code"
     end
 
     test "non-hire task does NOT invoke scaffold_fun", %{

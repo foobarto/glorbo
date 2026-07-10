@@ -57,6 +57,9 @@ defmodule GlorboWeb.Components.TaskDetailForm do
             </option>
             <optgroup label="review (approval gate)">
               <option value="pending" selected={@task.status == "pending"}>pending</option>
+              <option value="pending-approval" selected={@task.status == "pending-approval"}>
+                pending-approval
+              </option>
               <option value="approved" selected={@task.status == "approved"}>approved</option>
               <option value="denied" selected={@task.status == "denied"}>denied</option>
             </optgroup>

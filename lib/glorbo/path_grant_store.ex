@@ -48,8 +48,12 @@ defmodule Glorbo.PathGrantStore do
   end
 
   @doc """
-  Ensure the supervised store exists. The application starts it normally;
-  the fallback start supports isolated tests that do not boot the application.
+  Confirm that the application-supervised store exists.
+
+  The public API never starts an unlinked fallback process: doing so during a
+  supervisor restart could steal the registered name and prevent supervision
+  from being restored. Isolated tests must start the application or explicitly
+  supervise this module.
   """
   @spec ensure_started :: :ok
   def ensure_started do
@@ -58,19 +62,16 @@ defmodule Glorbo.PathGrantStore do
         :ok
 
       nil ->
-        case GenServer.start(__MODULE__, [], name: __MODULE__) do
-          {:ok, _pid} -> :ok
-          {:error, {:already_started, _pid}} -> :ok
-          {:error, reason} -> raise "failed to start path grant store: #{inspect(reason)}"
-        end
+        raise "path grant store is not running under Glorbo.Supervisor"
     end
   end
 
   @doc """
   Register the process whose lifetime owns a company's grants.
 
-  Re-registering replaces the previous monitor. Any termination of the owner
-  revokes the company's grants, including abrupt gate crashes.
+  Same-owner registration is idempotent. Replacing an owner revokes the
+  previous owner's grants before installing the new monitor; any later owner
+  termination also revokes the company's grants.
   """
   @spec register_company(String.t(), pid()) :: :ok
   def register_company(company, owner_pid \\ self())
@@ -181,15 +182,21 @@ defmodule Glorbo.PathGrantStore do
 
   @impl true
   def handle_call({:register_company, company, owner_pid}, _from, state) do
-    state = drop_company_monitor(state, company)
-    ref = Process.monitor(owner_pid)
+    case Map.get(state.companies, company) do
+      {^owner_pid, _ref} ->
+        # Idempotent registration from the same live gate must not revoke its
+        # in-flight grants or churn the monitor.
+        {:reply, :ok, state}
 
-    {:reply, :ok,
-     %{
-       state
-       | companies: Map.put(state.companies, company, {owner_pid, ref}),
-         monitors: Map.put(state.monitors, ref, company)
-     }}
+      {_previous_owner, _ref} ->
+        # Ownership changed before the prior monitor's :DOWN was processed.
+        # Revoke first so stale grants cannot be adopted by the replacement.
+        delete_company_grants(company)
+        {:reply, :ok, put_company_owner(drop_company_monitor(state, company), company, owner_pid)}
+
+      nil ->
+        {:reply, :ok, put_company_owner(state, company, owner_pid)}
+    end
   end
 
   @impl true
@@ -199,7 +206,7 @@ defmodule Glorbo.PathGrantStore do
         {:noreply, state}
 
       {company, monitors} ->
-        revoke_all(company)
+        delete_company_grants(company)
         {:noreply, %{state | companies: Map.delete(state.companies, company), monitors: monitors}}
     end
   end
@@ -213,5 +220,21 @@ defmodule Glorbo.PathGrantStore do
         Process.demonitor(ref, [:flush])
         %{state | companies: companies, monitors: Map.delete(state.monitors, ref)}
     end
+  end
+
+  defp put_company_owner(state, company, owner_pid) do
+    ref = Process.monitor(owner_pid)
+
+    %{
+      state
+      | companies: Map.put(state.companies, company, {owner_pid, ref}),
+        monitors: Map.put(state.monitors, ref, company)
+    }
+  end
+
+  defp delete_company_grants(company) do
+    match_key = {{company, :_, :_}, :_}
+    :ets.select_delete(@table, [{match_key, [], [true]}])
+    :ok
   end
 end

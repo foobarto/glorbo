@@ -38,4 +38,51 @@ defmodule Glorbo.Filesystem.AgentWritableFileTest do
 
     refute File.exists?(Path.join(target, "reply.md"))
   end
+
+  test "create_exclusive cannot be redirected by swapping its parent after chdir", %{root: root} do
+    parent = Path.join(root, "outbox")
+    original = Path.join(root, "original-outbox")
+    victim = Path.join(root, "victim")
+    wrapper = Path.join(root, "delayed-sh")
+    ready = Path.join(root, "helper-ready")
+    go = Path.join(root, "helper-go")
+
+    File.mkdir_p!(parent)
+    File.mkdir_p!(victim)
+
+    File.write!(wrapper, """
+    #!/bin/sh
+    : > ../helper-ready
+    while [ ! -e ../helper-go ]; do sleep 0.01; done
+    exec /bin/sh "$@"
+    """)
+
+    File.chmod!(wrapper, 0o700)
+
+    task =
+      Task.async(fn ->
+        AgentWritableFile.create_exclusive(Path.join(parent, "reply.md"), "safe", shell: wrapper)
+      end)
+
+    assert eventually(fn -> File.exists?(ready) end)
+    File.rename!(parent, original)
+    File.ln_s!(victim, parent)
+    File.write!(go, "go")
+
+    assert {:error, :symlinked_ancestor} = Task.await(task)
+    refute File.exists?(Path.join(victim, "reply.md"))
+    refute File.exists?(Path.join(original, "reply.md"))
+  end
+
+  defp eventually(fun, attempts \\ 100)
+  defp eventually(fun, 0), do: fun.()
+
+  defp eventually(fun, attempts) do
+    if fun.() do
+      true
+    else
+      Process.sleep(10)
+      eventually(fun, attempts - 1)
+    end
+  end
 end

@@ -7,9 +7,9 @@ defmodule Glorbo.Actions do
   (CLAUDE.md invariant: filesystem is source of truth).
 
   Lives in `glorbo` core (not `glorbo_web`) per GEP-36 D2: frontends
-  depend on Actions, not the reverse. `Glorbo.Actions` is a thin
-  delegation facade during the v0.8.0 migration window; scheduled for
-  removal in v0.9.0 once no caller references it directly.
+  depend on Actions, not the reverse. The former `GlorboWeb.Actions`
+  facade has been removed; this module is the canonical messaging,
+  approval, and wake boundary shared by every frontend.
 
   ## Functions
 
@@ -26,10 +26,11 @@ defmodule Glorbo.Actions do
 
   ## Security posture (threat register T-04-01..T-04-08)
 
-    * **Slug validation.** `company`, `channel`, and `agent` strings MUST
-      match `~r/\\A[a-z0-9-]+\\z/` — otherwise path-traversal (T-04-08) is
-      possible via `../`. All three public functions reject bad slugs up
-      front with `{:error, :invalid_slug}`.
+    * **Slug validation.** Company and ordinary channel strings use the
+      generic hyphen-only contract; agent strings use the entity-aware
+      underscore-capable contract, including reserved
+      `dm-director--<agent>` channels. All public functions reject traversal
+      and malformed identifiers up front with `{:error, :invalid_slug}`.
     * **Task path validation.** `task_path` passed to `set_approval/4`
       must start with `projects/`, end with `.md`, and contain no `..`
       segments.
@@ -78,7 +79,7 @@ defmodule Glorbo.Actions do
     actor = Keyword.fetch!(opts, :actor)
 
     with :ok <- validate_slug(company),
-         :ok <- validate_slug(channel),
+         :ok <- validate_channel_slug(channel),
          :ok <- validate_body(body),
          path = channel_path(base, company, channel),
          :ok <- ensure_regular_file(path) do
@@ -144,7 +145,7 @@ defmodule Glorbo.Actions do
     base = Keyword.get(opts, :base, Glorbo.Filesystem.Hierarchy.default_root())
 
     with :ok <- validate_slug(company),
-         :ok <- validate_slug(agent) do
+         :ok <- validate_agent_slug(agent) do
       slug = "dm-director--#{agent}"
       channels_dir = Path.join([base, "companies", company, "channels"])
       path = Path.join(channels_dir, "#{slug}.md")
@@ -258,7 +259,7 @@ defmodule Glorbo.Actions do
     with {:ok, content} <- Glorbo.Filesystem.AgentWritableFile.read(abs_task_path),
          {:ok, fm} <- extract_frontmatter(content),
          assignee when is_binary(assignee) and assignee != "" <- Map.get(fm, "assigned_to"),
-         true <- Glorbo.Slug.valid?(assignee) do
+         true <- Glorbo.Slug.valid?(assignee, :agent) do
       write_mention(base, company, "task-#{task_id}", assignee, body, ts, audit, "director")
     else
       _ -> :ok
@@ -539,7 +540,7 @@ defmodule Glorbo.Actions do
           # Glorbo only automates the mechanical scaffold step the
           # Director would otherwise run via CLI.
           if decision == :approved do
-            maybe_scaffold_hired_agent(company, abs, audit,
+            maybe_scaffold_hired_agent(company, abs, audit, actor,
               scaffold_fun: Keyword.get(opts, :scaffold_fun)
             )
           end
@@ -557,7 +558,7 @@ defmodule Glorbo.Actions do
   # automatically and emit an `agent.scaffold` audit event. Opt-out:
   # omit any required field → no scaffold (caller can still run
   # `./glorbo new agent` manually).
-  defp maybe_scaffold_hired_agent(company, abs_path, audit, opts) do
+  defp maybe_scaffold_hired_agent(company, abs_path, audit, actor, opts) do
     scaffold = Keyword.get(opts, :scaffold_fun) || (&Glorbo.CLI.Scaffold.Agent.run/1)
 
     with {:ok, content} <- File.read(abs_path),
@@ -568,7 +569,7 @@ defmodule Glorbo.Actions do
         {:new_agent, 0, msg} ->
           Support.append_audit(audit, company, %{
             company: company,
-            actor: "director",
+            actor: actor,
             action: "agent.scaffold",
             target: "agents/#{Enum.at(args, 0) |> String.split("/") |> List.last()}",
             source: "approval",
@@ -581,7 +582,7 @@ defmodule Glorbo.Actions do
         {:new_agent, code, msg} ->
           Support.append_audit(audit, company, %{
             company: company,
-            actor: "director",
+            actor: actor,
             action: "agent.scaffold_failed",
             target: abs_path,
             source: "approval",
@@ -677,7 +678,7 @@ defmodule Glorbo.Actions do
     reason = reason || ""
 
     with :ok <- validate_slug(company),
-         :ok <- validate_slug(agent),
+         :ok <- validate_agent_slug(agent),
          :ok <- validate_reason(reason),
          dir = Path.join([base, "companies", company, "agents", agent, "state"]),
          # WR-06: use non-bang mkdir_p so a permission/disk failure
@@ -781,6 +782,14 @@ defmodule Glorbo.Actions do
   end
 
   defp validate_slug(_), do: {:error, :invalid_slug}
+
+  defp validate_agent_slug(agent) do
+    if Glorbo.Slug.valid?(agent, :agent), do: :ok, else: {:error, :invalid_slug}
+  end
+
+  defp validate_channel_slug(channel) do
+    if Glorbo.Slug.valid?(channel, :channel), do: :ok, else: {:error, :invalid_slug}
+  end
 
   defp provenance_for_actor("director"), do: :director
   defp provenance_for_actor("system"), do: :system

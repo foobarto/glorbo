@@ -955,7 +955,11 @@ than open lows. Re-evaluate during the v1 cut.
   *Paths:* `lib/glorbo/cli/registry/detection.ex, lib/glorbo/cli/registry/loader.ex`
 - ~~**GEP validator crashes on non-numeric frontmatter values**~~ — Closed 2026-07-10: numeric coercion accepts only a complete `Integer.parse/1`; malformed strings remain data and produce validator findings instead of exceptions.
   *Paths:* `lib/gep/validator.ex`
-- ~~**Inotify follow can skip log bytes during concurrent writes**~~ — Closed 2026-07-10: incremental reads return and persist the byte offset actually consumed, independent of a later file stat.
+- ~~**Inotify follow can skip log bytes during concurrent writes or truncation**~~ — Closed 2026-07-10: incremental reads return and persist the byte offset actually consumed, independent of a later file stat, and both inotify and polling followers reset to byte zero when an in-place truncation shrinks the file.
   *Paths:* `lib/glorbo/cli/logs.ex`
+- ~~**Exclusive outbox creation can be redirected by swapping an ancestor**~~ — Closed 2026-07-10: `AgentWritableFile.create_exclusive/2` now spawns its creator with the validated parent as a kernel-pinned cwd, verifies the resolved cwd, and opens only the basename with noclobber semantics. The regression test renames the parent and replaces it with a victim symlink after child `chdir`.
+  *Paths:* `lib/glorbo/filesystem/agent_writable_file.ex`
+- ~~**Path-grant ownership replacement can retain stale grants**~~ — Closed 2026-07-10: the application-supervised store no longer has an unlinked fallback owner; different-owner registration revokes stale company grants, and gate-exit races fall back to idempotent store cleanup.
+  *Paths:* `lib/glorbo/path_grant_store.ex, lib/glorbo/path_request_gate.ex`
 - ~~**TaskDefinition prefix check allows traversal outside company**~~ — Closed: both company root and candidate paths are expanded before the boundary check, and reads independently refuse symlinked components.
   *Paths:* `lib/glorbo/task_definition.ex`

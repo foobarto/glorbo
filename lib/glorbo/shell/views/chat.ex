@@ -289,7 +289,7 @@ defmodule Glorbo.Shell.Views.Chat do
   defp apply_post(state, buf) do
     with co when is_binary(co) <- state.company,
          base when is_binary(base) <- state.base do
-      result = state.post_fn.(co, state.channel, buf, base: base)
+      result = state.post_fn.(co, state.channel, buf, base: base, actor: "director")
       apply_post_result(state, result)
     else
       _ -> {%{state | mode: :list, last_action: {:error, :post, :no_company}}, []}

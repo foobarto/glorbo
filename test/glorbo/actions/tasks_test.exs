@@ -137,6 +137,53 @@ defmodule Glorbo.Actions.TasksTest do
       assert FakeAudit.calls(audit) == []
     end
 
+    test "an unrelated edit preserves pending-approval but cannot leave it", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      pending = String.replace(File.read!(path), "status: approved", "status: pending-approval")
+      File.write!(path, pending)
+
+      assert {:ok, _} =
+               Tasks.update(
+                 "acme",
+                 rel,
+                 %{"title" => "Still awaiting approval", "status" => "pending-approval"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.read!(path) =~ ~r/^status: pending-approval$/m
+
+      assert {:error, :approval_status_requires_gate} =
+               Tasks.update("acme", rel, %{"status" => "todo"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+    end
+
+    test "empty status is rejected instead of clearing the canonical state", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      before = File.read!(path)
+
+      assert {:error, {:invalid_editor_value, "status", ""}} =
+               Tasks.update("acme", rel, %{"status" => ""},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.read!(path) == before
+    end
+
     test "cannot clear a pending approval requirement", %{
       base: base,
       audit: audit,

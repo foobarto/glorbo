@@ -32,6 +32,23 @@ defmodule Glorbo.PathGrantStoreTest do
     Process.exit(sibling_owner, :kill)
   end
 
+  test "ownership replacement revokes stale grants while same-owner registration preserves them" do
+    company = "grant-replace-#{System.unique_integer([:positive])}"
+    owner = spawn(fn -> Process.sleep(:infinity) end)
+    replacement = spawn(fn -> Process.sleep(:infinity) end)
+
+    :ok = PathGrantStore.register_company(company, owner)
+    grant(company, "task-1")
+    :ok = PathGrantStore.register_company(company, owner)
+    assert {:ok, [_]} = PathGrantStore.lookup(company, "engineer", "task-1")
+
+    :ok = PathGrantStore.register_company(company, replacement)
+    assert :not_found = PathGrantStore.lookup(company, "engineer", "task-1")
+
+    Process.exit(owner, :kill)
+    Process.exit(replacement, :kill)
+  end
+
   defp grant(company, task_id) do
     PathGrantStore.grant(
       company,

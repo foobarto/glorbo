@@ -173,6 +173,22 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert content =~ "first message"
   end
 
+  test "an underscore-agent DM mounts and posts through the reserved channel validator", %{
+    conn: conn,
+    base: base
+  } do
+    agent = "backend_engineer"
+    File.mkdir_p!(Path.join([base, "companies", "acme", "agents", agent]))
+
+    {:ok, view, html} = live(conn, "/companies/acme/channels/dm-director--#{agent}")
+    assert html =~ "DM · #{agent}"
+
+    render_submit(view, "post", %{"body" => "underscore DM"})
+
+    path = Path.join([base, "companies", "acme", "channels", "dm-director--#{agent}.md"])
+    assert File.read!(path) =~ "underscore DM"
+  end
+
   test "public channel list hides dm-director--* entries", %{conn: conn, base: base} do
     # Seed a real DM file so list_channels would pick it up if it weren't filtered.
     File.write!(
