@@ -21,8 +21,9 @@ defmodule Glorbo.Agent.Parser do
     * `@network_map` — `"loopback" → :loopback | "proxy" → :proxy | "full" → :full`
       (GEP-23 D1 rename; pre-1.0 atomic cut away from the older
       `none | proxy | open` set).
-    * `@skill_name_regex` / `@slug_regex` — `~r/\A[a-z][a-z0-9_-]{0,63}\z/`
-      (T-03-19 path-traversal block; bounds slug to kebab-case ASCII).
+    * `@skill_name_regex` and `Glorbo.Slug.valid?/2` enforce
+      `~r/\A[a-z][a-z0-9_-]{0,63}\z/` (T-03-19 path-traversal block;
+      bounds skill and agent slugs to kebab/snake-case ASCII).
     * `model:` is REQUIRED for all three providers (LLM-04 single-model
       invariant). Missing → `{:error, :missing_model}`; list value →
       `{:error, :multiple_models_not_supported}`.
@@ -54,6 +55,7 @@ defmodule Glorbo.Agent.Parser do
   alias Glorbo.Agent.Spec
   alias Glorbo.Filesystem.Frontmatter
   alias Glorbo.Security.ACLMapper
+  alias Glorbo.Slug
 
   # Pre-GEP-8 hardcoded shortlist. Kept as a fallback when the live
   # registry isn't running (unit-test contexts) or hasn't loaded any
@@ -79,7 +81,6 @@ defmodule Glorbo.Agent.Parser do
   @default_http_max_retries 3
   @default_web_fetch_timeout_s 30
   @default_max_tool_calls_per_turn 50
-  @slug_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
   @skill_name_regex ~r/\A[a-z][a-z0-9_-]{0,63}\z/
 
   @type parse_error ::
@@ -356,7 +357,7 @@ defmodule Glorbo.Agent.Parser do
 
     case Enum.reverse(parts) do
       [name, slug | _] when name in ["AGENT.md", "agent.md"] ->
-        if Regex.match?(@slug_regex, slug) do
+        if Slug.valid?(slug, :agent) do
           {:ok, slug}
         else
           {:error, {:invalid_slug, slug}}
@@ -368,7 +369,7 @@ defmodule Glorbo.Agent.Parser do
   end
 
   defp validate_slug(slug) do
-    if Regex.match?(@slug_regex, slug) do
+    if Slug.valid?(slug, :agent) do
       :ok
     else
       {:error, {:invalid_slug, slug}}

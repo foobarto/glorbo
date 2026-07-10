@@ -9,6 +9,8 @@ defmodule Glorbo.SlugTest do
     refute Slug.valid?("1engineer", :agent)
     refute Slug.valid?("UPPER", :agent)
     refute Slug.valid?("agent/escape", :agent)
+    assert Slug.valid?("a" <> String.duplicate("b", 63), :agent)
+    refute Slug.valid?("a" <> String.duplicate("b", 64), :agent)
   end
 
   test "generic URL slugs retain the hyphen-only contract" do
