@@ -455,9 +455,10 @@ it's been in CHANGELOG for a cycle.
   `inotifywait` had attached its kernel watches; concurrent
   scheduler load from preceding agent-spawning tests made the
   file write fire ahead of attachment more often, so events
-  were silently dropped. Fix: 250ms settling sleep after
-  `Watcher.start_link/1` in the test, with rationale captured
-  in the test moduledoc.
+  were silently dropped. The original 250ms settling sleep still
+  raced on a loaded GitHub runner; the test now writes a non-task
+  sentinel until it observes the Watcher's PubSub event, proving
+  kernel-watch readiness before creating the real inbox task.
 - [x] **GEP-33 — git history layer for ~/.glorbo/. STATUS:
   IMPLEMENTED 2026-04-25.** Phase 1 read UX shipped earlier;
   Phase 2 (marked commits from writers) + Phase 3 (watcher

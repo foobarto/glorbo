@@ -21,9 +21,10 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
   watches asynchronously over the next tens of ms. Other tests
   populating the scheduler made the file write fire before watches
   were attached, so the inotify event was silently dropped. A
-  small settling sleep (`Process.sleep(250)`) after `Watcher.
-  start_link/1` and before the file write closes the race
-  deterministically.
+  readiness probe now writes a non-task sentinel repeatedly and waits
+  until the Watcher's PubSub event comes back before creating the real
+  inbox task. This observes actual kernel-watch attachment instead of
+  assuming a fixed sleep is long enough on every CI runner.
   """
   use ExUnit.Case, async: false
 
@@ -161,6 +162,11 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       end
     end
 
+    # Subscribe before starting the Watcher so the readiness probe below
+    # cannot race the test process's own PubSub subscription.
+    inbox_topic = "company:#{company}:inbox"
+    :ok = Phoenix.PubSub.subscribe(Glorbo.PubSub, inbox_topic)
+
     # Start the Watcher (inotify + PubSub broadcast).
     {:ok, watcher_pid} =
       Glorbo.Filesystem.Watcher.start_link(
@@ -171,19 +177,11 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
 
     on_exit(fn -> if Process.alive?(watcher_pid), do: GenServer.stop(watcher_pid) end)
 
-    # `Glorbo.Filesystem.Watcher.start_link/1` returns as soon as the
-    # `:file_system` GenServer is up, but `inotifywait` (the subprocess
-    # `:file_system` spawns) attaches inotify watches asynchronously over
-    # the next tens of milliseconds. Without a small settling pause,
-    # the file write below races the watch attachment — events are
-    # silently dropped — and the failure mode shows up exactly as
-    # the documented suite-pollution: an empty mailbox after 5s. Other
-    # tests filling the BEAM scheduler beforehand make this race far
-    # more likely to lose (which is why this test passed in isolation
-    # but failed after `agent_crash_isolation_test.exs`). 250ms is
-    # well under the assert_receive timeout and on this host enough
-    # for `inotifywait` to settle.
-    Process.sleep(250)
+    # `Watcher.start_link/1` returns before inotifywait necessarily attaches
+    # all kernel watches. Observe a real inbox event before proceeding; a
+    # fixed sleep passed locally but still lost the race on GitHub runners.
+    await_watcher_ready(agent_dir)
+    :ok = Phoenix.PubSub.unsubscribe(Glorbo.PubSub, inbox_topic)
 
     # Per-agent Task.Supervisor + Agent.Server. The server subscribes to
     # `company:<co>:inbox` by default, so PubSub broadcasts from the Watcher
@@ -260,5 +258,32 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     assert bwrap_argv
            |> Enum.chunk_every(3, 1, :discard)
            |> Enum.any?(&(&1 == ["--ro-bind", ctx.inbox_path, "/inbox"]))
+  end
+
+  defp await_watcher_ready(agent_dir, attempts \\ 20)
+
+  defp await_watcher_ready(_agent_dir, 0) do
+    flunk("inotify watcher did not attach within the readiness deadline")
+  end
+
+  defp await_watcher_ready(agent_dir, attempts) do
+    filename = ".watcher-ready-#{attempts}"
+    path = Path.join([agent_dir, "inbox", filename])
+    rel = "agents/engineer/inbox/#{filename}"
+    File.write!(path, "ready\n")
+
+    result =
+      receive do
+        {:file_event, ^rel, _events} -> :ready
+      after
+        500 -> :retry
+      end
+
+    File.rm(path)
+
+    case result do
+      :ready -> :ok
+      :retry -> await_watcher_ready(agent_dir, attempts - 1)
+    end
   end
 end
