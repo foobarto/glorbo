@@ -107,6 +107,14 @@ defmodule GlorboWeb.ChannelLiveTest do
     assert html =~ "Message is empty"
   end
 
+  test "channel validation error is rendered once by the shared flash", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/companies/acme/channels/general")
+
+    html = render_submit(view, "create_channel", %{"slug" => "general"})
+
+    assert length(String.split(html, "Channel #general already exists.")) - 1 == 1
+  end
+
   # M4.2 — left rail lists all channels with the current one marked active.
   test "renders channel switcher rail with active link", %{conn: conn, base: base} do
     # Seed an extra channel so the switcher has something to iterate.

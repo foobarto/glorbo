@@ -13,10 +13,11 @@ defmodule GlorboWeb.AuditLive do
   channel is the only one. A 15s low-rate poll remains as a safety
   net for out-of-band file edits.
 
-  Filter inputs (`actor`, `action`) operate client-side on the
-  loaded tail. A `Load 500 older` button prepends the previous
-  batch from earlier in the file; when the file start is reached
-  the button is replaced with `— beginning of log —`.
+  Filter inputs (`q`, `actor`, `action`, `since`, `until`) patch their
+  state into the URL and operate on the loaded tail. A `Load 500 older`
+  button prepends the previous batch from earlier in the file; when the
+  file start is reached the button is replaced with
+  `— beginning of log —`.
 
   Row expansion uses a `MapSet` of expanded IDs; each click toggles
   a row.
@@ -86,11 +87,11 @@ defmodule GlorboWeb.AuditLive do
   def handle_params(params, _uri, socket) do
     {:noreply,
      socket
-     |> assign(:q, Map.get(params, "q", socket.assigns.q))
-     |> assign(:actor_filter, Map.get(params, "actor", socket.assigns.actor_filter))
-     |> assign(:action_filter, Map.get(params, "action", socket.assigns.action_filter))
-     |> assign(:since_filter, Map.get(params, "since", socket.assigns.since_filter))
-     |> assign(:until_filter, Map.get(params, "until", socket.assigns.until_filter))}
+     |> assign(:q, Map.get(params, "q", ""))
+     |> assign(:actor_filter, Map.get(params, "actor", ""))
+     |> assign(:action_filter, Map.get(params, "action", ""))
+     |> assign(:since_filter, Map.get(params, "since", ""))
+     |> assign(:until_filter, Map.get(params, "until", ""))}
   end
 
   @impl true
@@ -159,13 +160,16 @@ defmodule GlorboWeb.AuditLive do
     do: ChatDrawer.State.post(socket, body)
 
   def handle_event("filter", params, socket) do
+    query =
+      params
+      |> Map.take(~w(q actor action since until))
+      |> Map.reject(fn {_key, value} -> value == "" end)
+
     {:noreply,
-     socket
-     |> assign(:actor_filter, Map.get(params, "actor", ""))
-     |> assign(:action_filter, Map.get(params, "action", ""))
-     |> assign(:q, Map.get(params, "q", ""))
-     |> assign(:since_filter, Map.get(params, "since", ""))
-     |> assign(:until_filter, Map.get(params, "until", ""))}
+     push_patch(socket,
+       to: ~p"/companies/#{socket.assigns.company_slug}/audit?#{query}",
+       replace: true
+     )}
   end
 
   def handle_event("toggle", %{"id" => id}, socket) do

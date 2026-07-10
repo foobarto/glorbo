@@ -10,6 +10,33 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.8] — 2026-07-10
+
+### Fixed
+
+- **Director navigation stays live and company-scoped.** Creating an agent or
+  project refreshes the shared sidebar immediately, and Proposals now retains
+  the active company in the topbar, brain-dump shortcut, and chat drawer.
+- **Audit filters are durable navigation state.** Search, actor, action, and
+  date filters patch the URL, survive reload/back/forward navigation, and can
+  be bookmarked or shared.
+- **Responsive dashboard chrome works at tablet and phone widths.** The 1024px
+  layout no longer clips the topbar or wraps the fixed-height statusbar;
+  phone layouts use the full viewport with a collapsed overlay sidebar,
+  stacked workbench panels, responsive forms/modals, and bounded Kanban
+  horizontal scrolling.
+- **UI feedback and accessibility are consistent.** Channel validation uses
+  the shared flash exactly once, the add-goal close glyph has an accessible
+  name, and persisted TWEAKS density remains synchronized after LiveView's
+  connected mount.
+
+### Quality
+
+- **Full authenticated browser UAT completed.** Desktop, 1024×768, and iPhone
+  12 workflows were replayed against an isolated Glorbo home with no final
+  browser console or page errors. Regression coverage now pins all server-side
+  findings; the full precommit suite passes 3,451 tests (45 excluded).
+
 ## [0.28.7] — 2026-07-10
 
 ### Added

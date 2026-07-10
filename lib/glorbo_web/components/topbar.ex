@@ -4,7 +4,9 @@ defmodule GlorboWeb.Components.Topbar do
 
   Renders the brand, the path breadcrumb for the currently-focused
   company directory, version info (app/bwrap/kernel), the keyboard-
-  shortcut hint line, and the TWEAKS toggle button.
+  shortcut hint line, and the TWEAKS toggle button. The `Tweaks`
+  LiveView hook owns the drawer controls so saved values survive the
+  dead-to-connected layout patch.
 
   ## Attrs
 
@@ -38,7 +40,13 @@ defmodule GlorboWeb.Components.Topbar do
       |> assign(:emergency_stopped?, emergency_stopped?(assigns[:current_company]))
 
     ~H"""
-    <header class="gl-topbar" role="banner" data-current-company={@current_company}>
+    <header
+      id="gl-topbar"
+      class="gl-topbar"
+      role="banner"
+      data-current-company={@current_company}
+      phx-hook="Tweaks"
+    >
       <button
         type="button"
         id="gl-sidebar-toggle"

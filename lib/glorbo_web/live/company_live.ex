@@ -1079,6 +1079,7 @@ defmodule GlorboWeb.CompanyLive do
            socket
            |> assign(:new_agent_open?, false)
            |> assign(:company, data)
+           |> refresh_sidebar()
            |> put_flash(:info, flash_msg)
            |> push_patch(to: ~p"/companies/#{socket.assigns.company_slug}?wizard=new_project")}
         else
@@ -1086,6 +1087,7 @@ defmodule GlorboWeb.CompanyLive do
            socket
            |> assign(:new_agent_open?, false)
            |> assign(:company, data)
+           |> refresh_sidebar()
            |> put_flash(:info, flash_msg)}
         end
 
@@ -1121,6 +1123,7 @@ defmodule GlorboWeb.CompanyLive do
           socket
           |> assign(:new_project_open?, false)
           |> assign(:company, data)
+          |> refresh_sidebar()
           |> put_flash(:info, flash_msg)
 
         # §13 — last wizard step; flash a summary, drop the query param,
@@ -1142,6 +1145,10 @@ defmodule GlorboWeb.CompanyLive do
 
   defp append_if_nonempty(argv, [_flag, ""]), do: argv
   defp append_if_nonempty(argv, extra), do: argv ++ extra
+
+  defp refresh_sidebar(socket) do
+    assign(socket, :sidebar_refresh, System.unique_integer([:positive]))
+  end
 
   # Wake every agent under this company with the :director trigger.
   # Audit + flash the outcome. Extracted so the handle_event clauses

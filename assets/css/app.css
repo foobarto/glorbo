@@ -287,10 +287,20 @@ button { font-family: inherit; font-size: inherit; }
 }
 .gl-topbar__brand-glyph { color: var(--gl-accent); }
 .gl-topbar__sep { color: var(--gl-fg-ghost); }
-.gl-topbar__path { color: var(--gl-fg-muted); }
+.gl-topbar__path {
+  color: var(--gl-fg-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .gl-topbar__path:hover { color: var(--gl-fg); }
 .gl-topbar__path-company { color: var(--gl-fg); }
-.gl-topbar__version { color: var(--gl-fg-subtle); }
+.gl-topbar__version {
+  color: var(--gl-fg-subtle);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .gl-topbar__spacer { flex: 1; }
 .gl-topbar__kbd {
   color: var(--gl-fg-subtle);
@@ -355,6 +365,8 @@ button { font-family: inherit; font-size: inherit; }
   font-size: var(--gl-font-label);
   color: var(--gl-fg-muted);
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .gl-statusbar__dot {
   display: inline-block;
@@ -3609,6 +3621,7 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
 .gl-app-shell:has(.gl-chat-drawer--minimized) .gl-main {
   padding-bottom: calc(30px + var(--gl-space-lg));
 }
+.gl-app-shell--sidebar-collapsed .gl-chat-drawer { left: 0; }
 
 /* ========== company.md edit modal form ========== */
 .gl-company-md-form {
@@ -4256,3 +4269,151 @@ html[data-density="dense"] .gl-main { padding: var(--gl-space-sm) var(--gl-space
   background: var(--gl-danger, #c14);
 }
 .gl-audit__date { font-family: var(--gl-ff-mono); font-size: 12px; max-width: 150px; }
+
+/* ========== Responsive application shell ========== */
+@media (max-width: 1100px) {
+  /* Keep operational controls visible at the documented 1024px viewport.
+     Detailed runtime versions remain available on Health; the breadcrumb,
+     company shortcut, and TWEAKS controls take priority in the topbar. */
+  .gl-topbar__path + .gl-topbar__sep,
+  .gl-topbar__version {
+    display: none;
+  }
+  .gl-topbar__path { flex: 1 1 auto; }
+  .gl-topbar__spacer { flex: 0 0 0; }
+
+  .gl-statusbar__metric--optional { display: none; }
+
+  .gl-view__header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .gl-overview__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gl-overview__main--with-org { grid-template-columns: minmax(0, 1fr); }
+
+  /* The four-column agent workbench cannot fit beside the 260px sidebar.
+     Stack its panels in reading order instead of silently clipping them. */
+  .gl-agent-detail__grid,
+  .gl-agent-detail__grid--right-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gl-agent-detail__right-toggle { display: none; }
+  .gl-agent-detail__grid--right-collapsed #gl-agent-right { display: flex; }
+
+  .gl-audit__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .gl-app-shell,
+  .gl-app-shell--sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "topbar"
+      "main"
+      "statusbar";
+  }
+
+  /* The SidebarCollapse hook starts narrow screens collapsed. Toggling it
+     opens this fixed rail over the content, preserving the full navigation
+     without permanently sacrificing the page width. */
+  .gl-sidebar {
+    position: fixed;
+    z-index: 45;
+    inset: 32px auto 24px 0;
+    width: min(82vw, 260px);
+    box-shadow: 8px 0 24px rgb(0 0 0 / 0.45);
+  }
+  .gl-app-shell--sidebar-collapsed .gl-sidebar { display: none; }
+
+  .gl-topbar {
+    gap: var(--gl-space-sm);
+    padding: 0 var(--gl-space-sm);
+  }
+  .gl-topbar__sep,
+  .gl-topbar__version,
+  .gl-topbar__kbd,
+  .gl-topbar__dump {
+    display: none;
+  }
+  .gl-topbar__path {
+    flex: 1 1 auto;
+    white-space: nowrap;
+  }
+  .gl-topbar__tweaks { flex: 0 0 auto; }
+
+  .gl-main {
+    padding: var(--gl-space-md);
+    padding-bottom: calc(30px + var(--gl-space-lg));
+  }
+  .gl-chat-drawer { left: 0; }
+
+  .gl-statusbar {
+    gap: var(--gl-space-sm);
+    padding: 0 var(--gl-space-sm);
+  }
+  .gl-statusbar__detail,
+  .gl-statusbar__metric--optional,
+  .gl-statusbar__identity {
+    display: none;
+  }
+
+  .gl-view__header,
+  .gl-agent-detail__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .gl-overview__actions {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .gl-heading--display { font-size: 20px; }
+  .gl-overview__path { overflow-wrap: anywhere; }
+
+  .gl-overview__stats,
+  .gl-costs__summary,
+  .gl-channel__layout,
+  .gl-grid--project,
+  .gl-approvals__split,
+  .gl-audit__filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gl-kanban__board {
+    grid-template-columns: repeat(4, minmax(240px, 1fr));
+  }
+  .gl-task-detail,
+  .gl-task-detail--shelf,
+  .gl-modal {
+    min-width: 0;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+  }
+  .gl-task-detail__field,
+  .gl-task-detail__field--check,
+  .gl-new-task-drawer .gl-company-md-form .gl-form__row,
+  .gl-company-md-form .gl-form__row,
+  .gl-new-task-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gl-company-md-form { min-width: 0; }
+
+  .gl-task-page__usage {
+    flex-wrap: wrap;
+    gap: var(--gl-space-sm) var(--gl-space-lg);
+  }
+  .gl-budget-strip,
+  .gl-costs__cap-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gl-budget-strip__text,
+  .gl-costs__cap-text,
+  .gl-costs__cap-label {
+    text-align: left;
+  }
+
+  .gl-tweaks-drawer {
+    left: 12px;
+    right: 12px;
+    min-width: 0;
+  }
+}

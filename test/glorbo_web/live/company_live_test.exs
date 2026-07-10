@@ -276,6 +276,11 @@ defmodule GlorboWeb.CompanyLiveTest do
     assert File.exists?(
              Path.join([base, "companies", "acme", "projects", "marketing", "README.md"])
            )
+
+    assert has_element?(
+             view,
+             ".gl-sidebar a[href='/companies/acme/kanban?project=marketing']"
+           )
   end
 
   # C-113 / C-101 / C-102 — the overview reads agent-controlled task
@@ -441,6 +446,8 @@ defmodule GlorboWeb.CompanyLiveTest do
       for sub <- ~w(inbox outbox workspace history state) do
         assert File.dir?(Path.join(ag_dir, sub))
       end
+
+      assert has_element?(view, ".gl-sidebar a[href='/companies/acme/agents/new-eng']")
     end
 
     test "duplicate slug (ceo) is a no-op and does not overwrite the seeded AGENT.md",

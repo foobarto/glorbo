@@ -44,6 +44,7 @@ defmodule GlorboWeb.Components.StatusbarTest do
     test "renders the MCP endpoint segment (GEP-30)" do
       html = render_statusbar()
       assert html =~ "mcp:"
+      assert html =~ "gl-statusbar__metric--optional"
       # Endpoint is localhost-relative (:PORT/mcp per GEP-29).
       assert html =~ ~r|:\d+/mcp|
     end
