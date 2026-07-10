@@ -36,6 +36,7 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
   alias Glorbo.Agent.Registry, as: AgentRegistry
   alias Glorbo.Agent.Server, as: AgentServer
   alias Glorbo.Agent.Spec
+  alias Glorbo.CLI.Registry.Provider
   alias Glorbo.Sandbox.Bwrap
   alias Glorbo.Test.TmpGlorboHome
 
@@ -93,6 +94,8 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     }
 
     parent = self()
+    auth_dir = Path.join(base, "test-auth/.claude")
+    File.mkdir_p!(auth_dir)
 
     # run_fun records the invocation + re-composes what production's
     # default_bwrap_run_fun would build so we can assert on the concrete
@@ -111,11 +114,20 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
         {:dispatched, %{argv: argv, env: env, ctx: bwrap_opts, bwrap_argv: bwrap_argv}}
       )
 
-      {:ok, %{exit_status: 0, stdout: "ok"}}
+      File.write!(env["GLORBO_REPLY_PATH"], "ok")
+
+      stdout =
+        ~s|{"stats":{"models":{"claude":{"tokens":{"prompt":0,"candidates":0}}}}}|
+
+      {:ok, %{exit_status: 0, stdout: stdout, usage_dir: nil}}
     end
 
     # dispatch_fun wraps Dispatch.execute/3 + injects the recording run_fun
-    # + a stub binary_fun so we don't need a real `claude` on PATH.
+    # and a fully resolved provider so the test never depends on a real
+    # `claude` binary being installed on the host. The old `binary_fun` seam
+    # disappeared when provider resolution moved into the registry; retaining
+    # it here made the test pass on developer machines with Claude installed
+    # but stop before run_fun on clean CI runners.
     # Also stubs `audit_fun` because Dispatch's default routes to a
     # per-company AuditLog GenServer (via-tuple); this test starts a
     # bespoke per-test company without the CompanySupervisor tree, so
@@ -126,7 +138,9 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
       opts =
         opts
         |> Keyword.put(:run_fun, recording_run_fun)
-        |> Keyword.put(:binary_fun, fn _mod -> "/fake/claude" end)
+        |> Keyword.put(:provider_fun, fn "claude-code" -> test_provider(auth_dir) end)
+        |> Keyword.put(:company_budget_fun, fn _company -> :ok end)
+        |> Keyword.put(:dispatch_semaphore_fun, fn -> {:ok, :unsupervised} end)
         |> Keyword.put(:audit_fun, fn _co, _entry -> :ok end)
         |> Keyword.put(:base, base)
 
@@ -261,6 +275,25 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     assert bwrap_argv
            |> Enum.chunk_every(3, 1, :discard)
            |> Enum.any?(&(&1 == ["--ro-bind", ctx.inbox_path, "/inbox"]))
+  end
+
+  defp test_provider(auth_dir) do
+    resolved = System.find_executable("sh") || "/bin/sh"
+
+    %Provider{
+      name: "claude-code",
+      binary: resolved,
+      resolved_path: resolved,
+      installed?: true,
+      args: ["--print", "--model", "{model}"],
+      reply_dir: "{workspace}/.glorbo/outbox",
+      reply_filename_template: "{invocation_id}.md",
+      usage_parser: "gemini_stdout",
+      usage_path: %{kind: :stdout, path: nil},
+      auth_binds: [%{host: auth_dir, sandbox: "/workspace/.claude", mode: :ro}],
+      source: :builtin,
+      source_file: "<test>"
+    }
   end
 
   defp await_watcher_ready(agent_dir, attempts \\ 20)

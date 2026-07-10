@@ -459,7 +459,11 @@ it's been in CHANGELOG for a cycle.
   raced on a loaded GitHub runner; the test now writes a non-task
   sentinel until it observes the Watcher's PubSub event, then retries
   the real task write until its `created|modified` event is observed
-  before asserting dispatch.
+  before asserting dispatch. A second CI-only failure was an unrelated
+  host dependency: the test still injected the retired `binary_fun` seam,
+  so provider verification stopped before `run_fun` when Claude was not
+  installed. It now injects an installed test provider and writes a
+  deterministic reply through the real dispatch pipeline.
 - [x] **GEP-33 — git history layer for ~/.glorbo/. STATUS:
   IMPLEMENTED 2026-04-25.** Phase 1 read UX shipped earlier;
   Phase 2 (marked commits from writers) + Phase 3 (watcher
