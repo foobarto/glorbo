@@ -7918,7 +7918,11 @@ First cut of the CLI-agent runtime milestone. Tag pending the first
 ---
 
 <!-- Link refs for GitHub -->
-[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.4...HEAD
+[Unreleased]: https://github.com/foobarto/glorbo/compare/v0.28.8...HEAD
+[0.28.8]: https://github.com/foobarto/glorbo/compare/v0.28.7...v0.28.8
+[0.28.7]: https://github.com/foobarto/glorbo/compare/v0.28.6...v0.28.7
+[0.28.6]: https://github.com/foobarto/glorbo/compare/v0.28.5...v0.28.6
+[0.28.5]: https://github.com/foobarto/glorbo/compare/v0.28.4...v0.28.5
 [0.28.4]: https://github.com/foobarto/glorbo/compare/v0.28.3...v0.28.4
 [0.28.3]: https://github.com/foobarto/glorbo/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/foobarto/glorbo/compare/v0.28.1...v0.28.2
