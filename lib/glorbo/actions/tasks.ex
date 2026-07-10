@@ -15,10 +15,8 @@ defmodule Glorbo.Actions.Tasks do
     * `trash/3`, `archive_to_history/3`, `reassign/4`,
       `record_peer_review_verdict/4`.
 
-  Planned next (not yet implemented):
+  Planned next:
 
-    * `update/4` — full frontmatter+body edit (the save_task form
-      handlers still write via `TaskDefinition.write*` directly).
     * `assign/4` — `assigned_to:` flip + `handoff_chain:` append
       (GEP-40 consumer).
     * `dispatch/3` — wake agent + record dispatch.
@@ -105,6 +103,12 @@ defmodule Glorbo.Actions.Tasks do
           ]
 
   @type verdict_result :: %{verdict: verdict(), next_status: String.t()}
+
+  @type update_result :: %{
+          changed: [String.t()],
+          task_id: String.t(),
+          assigned_to: String.t() | nil
+        }
 
   @doc """
   Create a new task file under `projects/<project>/tasks/<task_id>.md`.
@@ -271,6 +275,259 @@ defmodule Glorbo.Actions.Tasks do
       changed: ["status"],
       detail: %{new_status: new_status}
     })
+  end
+
+  @editor_frontmatter_keys ~w(
+    title status assigned_to priority severity requires_approval done_when
+  )
+  @editor_keys ["body" | @editor_frontmatter_keys]
+  @editor_statuses ~w(todo in-progress pending pending-approval approved denied done blocked cancelled)
+  @priority_values ~w(low medium high)
+  @severity_values ~w(info minor major critical)
+
+  @doc """
+  Atomically update task editor fields and optionally its body.
+
+  Only the shared task-form fields are accepted. Empty assignee, priority,
+  severity, approval, and done-when values explicitly clear those fields;
+  omitted keys preserve their current values. Approval-only status
+  transitions are rejected and must go through `Glorbo.Actions.set_approval`.
+  """
+  @spec update(String.t(), String.t(), map(), verdict_opts()) ::
+          {:ok, update_result()} | {:error, term()}
+  def update(company, task_rel_path, params, opts \\ [])
+      when is_binary(company) and is_binary(task_rel_path) and is_map(params) and is_list(opts) do
+    actor = opts |> Keyword.fetch!(:actor) |> to_string()
+    base = Keyword.get_lazy(opts, :base, &Support.default_base/0)
+    audit = Keyword.get(opts, :audit, AuditLog)
+
+    history_meta = %{
+      actor: HomeHistory.actor_from_string(actor),
+      action: "task.edit",
+      target: "companies/#{company}/#{task_rel_path}"
+    }
+
+    history_result =
+      Tx.with_tx(history_meta, fn tx_id ->
+        with :ok <- Support.validate_slug(company, :company),
+             {:ok, _project} <- project_of(task_rel_path),
+             :ok <- validate_editor_keys(params),
+             abs_path = Path.join([base, "companies", company, task_rel_path]),
+             :ok <- ensure_no_symlink_directory(Path.dirname(abs_path)),
+             :ok <- ensure_regular_file(abs_path),
+             {:ok, task} <-
+               Glorbo.TaskDefinition.parse_file(abs_path, base: base, company: company),
+             {:ok, updates, body} <- normalize_editor_params(params),
+             :ok <- validate_editor_updates(updates, task, base, company),
+             :ok <- Glorbo.TaskDefinition.write_editor(abs_path, updates, body),
+             :ok <- Tx.mark_path(tx_id, abs_path),
+             changed = editor_changed_keys(params),
+             :ok <- emit_update_audit(audit, company, task_rel_path, changed, actor),
+             :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
+          new_assignee = effective_value(updates, "assigned_to", task.assigned_to)
+          new_title = effective_value(updates, "title", task.title) || task.task_id
+
+          new_body =
+            case body do
+              :preserve -> task.prompt_body
+              value -> value
+            end
+
+          notification = %{
+            company: company,
+            task_id: task.task_id,
+            title: new_title,
+            body: new_body,
+            actor: actor,
+            base: base,
+            audit: audit
+          }
+
+          maybe_deliver_assignment(task.assigned_to, new_assignee, notification)
+
+          {:ok, %{changed: changed, task_id: task.task_id, assigned_to: new_assignee}}
+        end
+      end)
+
+    case history_result do
+      {:ok, result, _tx_id} -> {:ok, result}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_editor_keys(params) do
+    case Map.keys(params) -- @editor_keys do
+      [] -> :ok
+      unknown -> {:error, {:unsupported_editor_keys, Enum.sort(unknown)}}
+    end
+  end
+
+  defp normalize_editor_params(params) do
+    updates =
+      params
+      |> Map.take(@editor_frontmatter_keys)
+      |> Map.new(fn {key, value} -> {key, normalize_editor_value(key, value)} end)
+
+    body =
+      case Map.fetch(params, "body") do
+        {:ok, value} when is_binary(value) -> String.trim(value)
+        {:ok, value} -> value
+        :error -> :preserve
+      end
+
+    if body == :preserve or is_binary(body),
+      do: {:ok, updates, body},
+      else: {:error, {:invalid_editor_value, "body"}}
+  end
+
+  defp normalize_editor_value(key, value) when key in ["title", "assigned_to", "done_when"] do
+    if is_binary(value), do: String.trim(value), else: value
+  end
+
+  defp normalize_editor_value(_key, value), do: value
+
+  defp validate_editor_updates(updates, task, base, company) do
+    with :ok <- validate_optional_title(updates),
+         :ok <- validate_optional_text(updates, "done_when"),
+         :ok <- validate_status_update(updates),
+         :ok <- validate_enum_update(updates, "priority", @priority_values),
+         :ok <- validate_enum_update(updates, "severity", @severity_values),
+         :ok <- validate_requires_approval(updates),
+         :ok <- validate_assignee(updates, base, company) do
+      guard_editor_approval_transition(task, updates)
+    end
+  end
+
+  defp validate_optional_title(%{"title" => title}), do: validate_title(title)
+  defp validate_optional_title(_updates), do: :ok
+
+  defp validate_optional_text(updates, key) do
+    case Map.fetch(updates, key) do
+      :error -> :ok
+      {:ok, value} when is_binary(value) -> :ok
+      {:ok, value} -> {:error, {:invalid_editor_value, key, value}}
+    end
+  end
+
+  defp validate_enum_update(updates, key, allowed) do
+    case Map.fetch(updates, key) do
+      :error ->
+        :ok
+
+      {:ok, value} ->
+        if value == "" or value in allowed,
+          do: :ok,
+          else: {:error, {:invalid_editor_value, key, value}}
+    end
+  end
+
+  defp validate_status_update(updates) do
+    case Map.fetch(updates, "status") do
+      :error -> :ok
+      {:ok, value} when value in @editor_statuses -> :ok
+      {:ok, value} -> {:error, {:invalid_editor_value, "status", value}}
+    end
+  end
+
+  defp validate_requires_approval(updates) do
+    case Map.fetch(updates, "requires_approval") do
+      :error -> :ok
+      {:ok, value} when value in [nil, "", "director"] -> :ok
+      {:ok, value} -> {:error, {:invalid_editor_value, "requires_approval", value}}
+    end
+  end
+
+  defp validate_assignee(updates, base, company) do
+    case Map.fetch(updates, "assigned_to") do
+      :error ->
+        :ok
+
+      {:ok, value} when value in [nil, "", "director"] ->
+        :ok
+
+      {:ok, value} when is_binary(value) ->
+        cond do
+          not Glorbo.Slug.valid?(value, :agent) ->
+            {:error, {:invalid_slug, :agent, value}}
+
+          not directory?(Path.join([base, "companies", company, "agents", value])) ->
+            {:error, :agent_not_found}
+
+          true ->
+            :ok
+        end
+
+      {:ok, value} ->
+        {:error, {:invalid_editor_value, "assigned_to", value}}
+    end
+  end
+
+  defp directory?(path), do: match?({:ok, %File.Stat{type: :directory}}, File.lstat(path))
+
+  defp guard_editor_approval_transition(task, updates) do
+    target_status = effective_value(updates, "status", task.status)
+    target_requirement = effective_value(updates, "requires_approval", task.requires_approval)
+
+    cond do
+      target_status in ["pending-approval", "approved", "denied"] and
+          target_status != task.status ->
+        {:error, :approval_status_requires_gate}
+
+      task.status == "pending-approval" and target_status != task.status ->
+        {:error, :approval_status_requires_gate}
+
+      target_requirement in ["director", :director] and
+        target_status in ["done", "in-progress"] and task.status != "approved" and
+          target_status != task.status ->
+        {:error, :approval_gate_bypass}
+
+      Map.has_key?(updates, "requires_approval") and
+        updates["requires_approval"] in [nil, ""] and task.requires_approval == :director and
+          task.status != "approved" ->
+        {:error, :clears_required_approval}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp effective_value(updates, key, current) do
+    case Map.fetch(updates, key) do
+      {:ok, value} -> value
+      :error -> current
+    end
+  end
+
+  defp editor_changed_keys(params), do: params |> Map.keys() |> Enum.sort()
+
+  defp emit_update_audit(audit, company, task_rel_path, changed, actor) do
+    Support.append_audit(audit, company, %{
+      actor: actor,
+      action: "task.edit",
+      target: task_rel_path,
+      company: company,
+      changed: changed
+    })
+  end
+
+  defp maybe_deliver_assignment(previous, new, _notification)
+       when new in [nil, "", "director"] or new == previous,
+       do: :ok
+
+  defp maybe_deliver_assignment(_previous, new, notification) do
+    case Glorbo.Actions.Inbox.deliver_task_assignment(
+           notification.company,
+           new,
+           notification.task_id,
+           notification.title,
+           notification.body,
+           actor: notification.actor,
+           base: notification.base,
+           audit: notification.audit
+         ) do
+      {:ok, _result} -> :ok
+      {:error, _reason} -> :ok
+    end
   end
 
   # GEP-41 D1: if severity is major or critical and the caller did NOT

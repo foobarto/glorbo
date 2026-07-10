@@ -37,7 +37,11 @@ defmodule GlorboWeb.Components.TaskDetailForm do
 
   def task_detail_form(assigns) do
     ~H"""
-    <form phx-submit="save_task" class="gl-task-detail__save-form">
+    <form
+      id={"task-detail-form-#{@task.task_id}"}
+      phx-submit="save_task"
+      class="gl-task-detail__save-form"
+    >
       <div class="gl-task-detail__fields">
         <label class="gl-task-detail__field">
           <span class="gl-muted">title</span>
@@ -53,6 +57,9 @@ defmodule GlorboWeb.Components.TaskDetailForm do
             </option>
             <optgroup label="review (approval gate)">
               <option value="pending" selected={@task.status == "pending"}>pending</option>
+              <option value="pending-approval" selected={@task.status == "pending-approval"}>
+                pending-approval
+              </option>
               <option value="approved" selected={@task.status == "approved"}>approved</option>
               <option value="denied" selected={@task.status == "denied"}>denied</option>
             </optgroup>
@@ -97,6 +104,7 @@ defmodule GlorboWeb.Components.TaskDetailForm do
         </label>
 
         <label class="gl-task-detail__field gl-task-detail__field--check">
+          <input type="hidden" name="requires_approval" value="" />
           <input
             type="checkbox"
             name="requires_approval"

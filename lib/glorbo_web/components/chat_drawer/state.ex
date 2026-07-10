@@ -95,7 +95,7 @@ defmodule GlorboWeb.Components.ChatDrawer.State do
     if trimmed == "" do
       {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Message is empty.")}
     else
-      case GlorboWeb.Actions.post_message(co, channel, trimmed) do
+      case Glorbo.Actions.post_message(co, channel, trimmed, actor: "director") do
         :ok ->
           # Belt-and-braces: inotify → PubSub can miss the event under
           # load or on first write to a newly-created channel. Reload

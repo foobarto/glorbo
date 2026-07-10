@@ -138,6 +138,7 @@ defmodule GlorboWeb.GoalsLive do
 
       <div :if={@new_goal} class="gl-modal-scrim" phx-click-away="new_goal_cancel">
         <form
+          id="new-goal-form"
           class="gl-modal"
           phx-submit="new_goal_submit"
           phx-window-keydown="new_goal_cancel"

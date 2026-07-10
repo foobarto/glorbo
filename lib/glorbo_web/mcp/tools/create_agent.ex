@@ -51,10 +51,14 @@ defmodule GlorboWeb.MCP.Tools.CreateAgent do
   @impl true
   def call(%{"company" => company, "slug" => slug} = args, context)
       when is_binary(company) and is_binary(slug) do
-    with :ok <- Args.require_slugs(company: company, slug: slug),
+    with :ok <- Args.require_slug(company, :company),
+         true <- Glorbo.Slug.valid?(slug, :agent),
          :ok <- refuse_reserved_slug(slug),
          :ok <- validate_scalar_args(args) do
       do_call(company, slug, args, context)
+    else
+      false -> {:error, {:invalid_slug, {:slug, slug}}}
+      error -> error
     end
   end
 

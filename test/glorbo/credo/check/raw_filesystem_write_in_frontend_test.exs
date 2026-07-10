@@ -1,14 +1,14 @@
-defmodule Glorbo.Credo.Check.RawFilesystemWriteInLiveTest do
+defmodule Glorbo.Credo.Check.RawFilesystemWriteInFrontendTest do
   @moduledoc """
   Regression coverage for the GEP-36 custom Credo check. Runs the
   check against synthetic source files to assert (1) raw File.*
-  mutations in lib/glorbo_web/live/ are flagged, (2) the allowlist
+  mutations anywhere in lib/glorbo_web/ are flagged, (2) the allowlist
   silences matched files, (3) files outside the live/ prefix are
   ignored wholesale, (4) read-only File.* calls never fire.
   """
   use ExUnit.Case, async: false
 
-  alias Glorbo.Credo.Check.RawFilesystemWriteInLive
+  alias Glorbo.Credo.Check.RawFilesystemWriteInFrontend
 
   # Credo.SourceFile.parse/2 talks to an ETS-backed GenServer that
   # Credo starts from its own Application supervisor. When we run in
@@ -29,7 +29,7 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLiveTest do
     # value we expect.
     abs = Path.join(File.cwd!(), relative_path)
     source_file = Credo.SourceFile.parse(source, abs)
-    RawFilesystemWriteInLive.run(source_file, params)
+    RawFilesystemWriteInFrontend.run(source_file, params)
   end
 
   @live_source """
@@ -59,7 +59,33 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLiveTest do
     assert issues == []
   end
 
-  test "silent when the file is outside lib/glorbo_web/live/" do
+  test "flags MCP and other non-LiveView frontend modules" do
+    issues = run("lib/glorbo_web/mcp/tools/demo.ex", @live_source)
+    assert Enum.any?(issues, &(&1.trigger == "File.write!"))
+  end
+
+  test "flags domain writer indirections, not only File calls" do
+    source = """
+    defmodule Demo do
+      def go(path) do
+        TaskDefinition.write_frontmatter(path, %{"status" => "done"})
+        Glorbo.TaskDefinition.write_body(path, "body")
+        FrontmatterWriter.atomic_write(path, "content")
+      end
+    end
+    """
+
+    triggers =
+      run("lib/glorbo_web/mcp/tools/demo.ex", source)
+      |> Enum.map(& &1.trigger)
+      |> MapSet.new()
+
+    assert "TaskDefinition.write_frontmatter" in triggers
+    assert "TaskDefinition.write_body" in triggers
+    assert "FrontmatterWriter.atomic_write" in triggers
+  end
+
+  test "silent when the file is outside lib/glorbo_web/" do
     issues = run("lib/glorbo/some_module.ex", @live_source)
     assert issues == []
   end

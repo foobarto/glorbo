@@ -3,13 +3,13 @@ defmodule GlorboWeb.MCP.Tools.DenyTask do
   MCP tool: `glorbo.deny_task` (GEP-29 wave c.1).
 
   Denies a task awaiting Director review (GEP-19) with a required
-  `denial_reason`. Calls `GlorboWeb.Actions.set_approval/4` so
+  `denial_reason`. Calls `Glorbo.Actions.set_approval/4` so
   behaviour matches the LiveView Deny button exactly. Actor is
   `mcp:<client>` (GEP-29 D4).
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias GlorboWeb.Actions
+  alias Glorbo.Actions
   alias GlorboWeb.MCP.Args
 
   @impl true

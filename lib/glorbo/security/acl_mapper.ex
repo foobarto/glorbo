@@ -14,7 +14,7 @@ defmodule Glorbo.Security.ACLMapper do
   `String.to_atom` or `String.to_existing_atom` is ever called on user input.
   """
 
-  @whitelisted_resources ~w(projects chat agents tasks proposals)
+  alias Glorbo.Security.Capability
 
   @type permission :: {resource :: String.t(), action :: String.t(), scope :: String.t()}
   @type acl_mode :: :rwx | :rx | :r
@@ -30,46 +30,23 @@ defmodule Glorbo.Security.ACLMapper do
   """
   @spec parse_permission(String.t()) ::
           {:ok, permission()}
-          | {:error, :invalid_scope | :unknown_resource | :malformed | :not_implemented}
+          | {:error,
+             :invalid_scope | :unknown_resource | :unknown_action | :malformed | :not_implemented}
   def parse_permission(string) when is_binary(string) do
     case String.split(string, ":", parts: 3) do
       [resource, action, scope]
       when resource != "" and action != "" and scope != "" ->
-        cond do
-          resource not in @whitelisted_resources ->
-            {:error, :unknown_resource}
+        permission = {resource, action, scope}
 
-          not valid_scope?(scope) ->
-            {:error, :invalid_scope}
-
-          # `agents:list:*` is accepted historically but has never had a
-          # kernel-layer implementation: PermissionMapper returned `[]` +
-          # logged a warning, the Router never consulted it, and no
-          # test exercises a positive-enforcement case. Rejecting at
-          # parse time surfaces the problem to agent authors (the
-          # AGENT.md won't load) instead of silently promising a
-          # capability the runtime doesn't enforce. Covered by
-          # codex + opencode reviews (round-2, dual-enforcement gap).
-          resource == "agents" and action == "list" ->
-            {:error, :not_implemented}
-
-          true ->
-            {:ok, {resource, action, scope}}
+        case Capability.validate(permission) do
+          {:ok, _enforcement} -> {:ok, permission}
+          {:error, reason} -> {:error, reason}
         end
 
       _ ->
         {:error, :malformed}
     end
   end
-
-  # Threatmodel wave 6: scope flows into `Path.join` inside
-  # `Glorbo.Sandbox.PermissionMapper`, which emits `--bind` /
-  # `--ro-bind` arguments for bwrap. A scope of `..` or
-  # `../other-co` would escape the agent's sandbox mount view —
-  # the kernel-layer enforcement leaks. Restrict to either `"*"`
-  # or a canonical slug. Nothing else should ever appear here.
-  defp valid_scope?("*"), do: true
-  defp valid_scope?(scope), do: Glorbo.Slug.valid?(scope)
 
   @doc """
   Check whether `permissions` grant the requested `action`.
@@ -100,6 +77,7 @@ defmodule Glorbo.Security.ACLMapper do
   """
   @spec acl_entries(String.t(), [permission()]) :: [acl_entry()]
   def acl_entries(username, permissions) when is_binary(username) and is_list(permissions) do
+    Enum.each(permissions, &validate_permission!/1)
     agent_slug = extract_agent_slug(username)
 
     baseline = [
@@ -118,12 +96,74 @@ defmodule Glorbo.Security.ACLMapper do
     |> Enum.sort_by(fn {_, _, path} -> path end)
   end
 
+  @doc """
+  Generate ACL entries with a company path available for wildcard expansion.
+
+  POSIX ACLs do not understand glob segments. `tasks:read:*` and
+  `tasks:update:*` are therefore expanded to the existing project task
+  directories before the ordinary deterministic mapping is applied.
+  """
+  @spec acl_entries(String.t(), [permission()], String.t()) :: [acl_entry()]
+  def acl_entries(username, permissions, company_path)
+      when is_binary(username) and is_list(permissions) and is_binary(company_path) do
+    expanded = Enum.flat_map(permissions, &expand_wildcard_task_permission(&1, company_path))
+    acl_entries(username, expanded)
+  end
+
   # Extract agent slug from username "glorbo-<company>-<agent>" -> "<agent>"
   defp extract_agent_slug(username) do
     case String.split(username, "-", parts: 3) do
       [_glorbo, _company, agent] -> agent
       _ -> username
     end
+  end
+
+  defp expand_wildcard_task_permission({"tasks", action, "*"}, company_path)
+       when action in ["read", "update"] do
+    projects_dir = Path.join(company_path, "projects")
+
+    case File.lstat(projects_dir) do
+      {:ok, %File.Stat{type: :directory}} ->
+        case File.ls(projects_dir) do
+          {:ok, entries} ->
+            entries
+            |> Enum.filter(fn project ->
+              project_dir = Path.join(projects_dir, project)
+              tasks_dir = Path.join(project_dir, "tasks")
+
+              Glorbo.Slug.valid?(project) and directory?(project_dir) and directory?(tasks_dir)
+            end)
+            |> Enum.sort()
+            |> Enum.map(&{"tasks", action, &1})
+
+          {:error, reason} ->
+            raise ArgumentError,
+                  "cannot list wildcard task ACL projects at #{projects_dir}: #{inspect(reason)}"
+        end
+
+      {:error, :enoent} ->
+        []
+
+      other ->
+        raise ArgumentError,
+              "cannot expand wildcard task ACLs from #{projects_dir}: #{inspect(other)}"
+    end
+  end
+
+  defp expand_wildcard_task_permission(permission, _company_path), do: [permission]
+
+  defp validate_permission!(permission) do
+    case Capability.validate(permission) do
+      {:ok, _enforcement} ->
+        :ok
+
+      {:error, reason} ->
+        raise ArgumentError, "unsupported ACL permission #{inspect(permission)}: #{reason}"
+    end
+  end
+
+  defp directory?(path) do
+    match?({:ok, %File.Stat{type: :directory}}, File.lstat(path))
   end
 
   # Map a permission tuple to zero or more ACL entries.
@@ -152,11 +192,19 @@ defmodule Glorbo.Security.ACLMapper do
   # agents:message — no ACL entry needed (Router mediates)
   defp permission_to_acl(_username, {"agents", "message", _scope}), do: []
 
-  # agents:create — no ACL entry (no agent has this in v1)
-  defp permission_to_acl(_username, {"agents", "create", _scope}), do: []
+  defp permission_to_acl(_username, {"tasks", _action, "*"}) do
+    raise ArgumentError,
+          "wildcard task ACLs require company-path expansion; use acl_entries/3"
+  end
+
+  defp permission_to_acl(username, {"tasks", "read", scope}),
+    do: [{username, :rx, "projects/#{scope}/tasks"}]
 
   defp permission_to_acl(username, {"tasks", "update", scope}),
     do: [{username, :rwx, "projects/#{scope}/tasks"}]
+
+  # tasks:create is Router-mediated through the agent's own outbox.
+  defp permission_to_acl(_username, {"tasks", "create", _scope}), do: []
 
   # proposals:read:* — RO access to the company's proposal tree
   defp permission_to_acl(username, {"proposals", "read", "*"}),
@@ -169,6 +217,10 @@ defmodule Glorbo.Security.ACLMapper do
   defp permission_to_acl(_username, {"proposals", "propose", _scope}), do: []
   defp permission_to_acl(_username, {"proposals", "decide", _scope}), do: []
 
-  # Catch-all for any other permission — no ACL entry
-  defp permission_to_acl(_username, _perm), do: []
+  # Parsed permissions are closed by Capability. Reaching this clause means a
+  # caller bypassed parse_permission/1, so fail loudly instead of weakening the
+  # policy with an unexplained empty ACL mapping.
+  defp permission_to_acl(_username, permission) do
+    raise ArgumentError, "unsupported ACL permission #{inspect(permission)}"
+  end
 end

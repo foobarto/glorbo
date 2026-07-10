@@ -54,8 +54,10 @@ defmodule Glorbo.Sandbox.PermissionMapperTest do
       assert PermissionMapper.to_argv([{"agents", "message", "*"}], @co) == []
     end
 
-    test "PM10: agents:create:* → [] (never granted; AGT-05)" do
-      assert PermissionMapper.to_argv([{"agents", "create", "*"}], @co) == []
+    test "PM10: unsupported permissions fail loudly" do
+      assert_raise ArgumentError, ~r/unsupported permission/, fn ->
+        PermissionMapper.to_argv([{"agents", "create", "*"}], @co)
+      end
     end
 
     test "PM11: tasks:update:<project> → --bind of the project's tasks/ subdir" do
@@ -63,19 +65,48 @@ defmodule Glorbo.Sandbox.PermissionMapperTest do
                ["--bind", "/tmp/co/projects/foo/tasks", "/projects/foo/tasks"]
     end
 
-    # `agents:list:*` used to hit this module as an `[]`+warning
-    # no-op, which promised a capability the runtime never enforced.
-    # Round-3: `ACLMapper.parse_permission/1` now rejects the
-    # permission at parse time, so PermissionMapper never sees it in
-    # a parsed permission list. This test guards that the dead branch
-    # really is gone — any cluster of `{"agents", "list", _}` that
-    # sneaks through now hits the `PM-fallback` default clause.
-    test "PM12: agents:list:* branch is removed — hits the unknown-permission fallback" do
-      # Fallback emits an empty flag list and a Logger.warning; we don't
-      # care about the log text, just that the branch-specific
-      # `agents:list` clause is gone. Tuple is a raw malformed perm
-      # (parse should have rejected it upstream).
-      assert PermissionMapper.to_argv([{"agents", "list", "*"}], @co) == []
+    test "PM12: agents:list:* cannot degrade to an empty policy" do
+      assert_raise ArgumentError, ~r/unsupported permission/, fn ->
+        PermissionMapper.to_argv([{"agents", "list", "*"}], @co)
+      end
+    end
+  end
+
+  describe "to_argv/2 — task capability mappings" do
+    setup do
+      co = Path.join(System.tmp_dir!(), "glorbo-pm-tasks-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(Path.join([co, "projects", "alpha", "tasks"]))
+      File.mkdir_p!(Path.join([co, "projects", "beta", "tasks"]))
+      on_exit(fn -> File.rm_rf!(co) end)
+      {:ok, co: co}
+    end
+
+    test "tasks:read:<project> is an exact read-only task mount", %{co: co} do
+      assert PermissionMapper.to_argv([{"tasks", "read", "alpha"}], co) == [
+               "--ro-bind",
+               Path.join([co, "projects", "alpha", "tasks"]),
+               "/projects/alpha/tasks"
+             ]
+    end
+
+    test "wildcard task permissions expand without exposing project roots", %{co: co} do
+      argv = PermissionMapper.to_argv([{"tasks", "update", "*"}], co)
+
+      assert argv == [
+               "--bind",
+               Path.join([co, "projects", "alpha", "tasks"]),
+               "/projects/alpha/tasks",
+               "--bind",
+               Path.join([co, "projects", "beta", "tasks"]),
+               "/projects/beta/tasks"
+             ]
+
+      refute Path.join(co, "projects") in argv
+      refute "/projects" in argv
+    end
+
+    test "tasks:create is explicitly Router-mediated", %{co: co} do
+      assert PermissionMapper.to_argv([{"tasks", "create", "*"}], co) == []
     end
   end
 

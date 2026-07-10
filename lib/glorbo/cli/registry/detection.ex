@@ -25,6 +25,7 @@ defmodule Glorbo.CLI.Registry.Detection do
   alias Glorbo.CLI.Registry.Provider
 
   @default_probe_timeout_ms 3_000
+  @default_max_concurrency 8
 
   @type opts :: [
           find_executable_fun: (String.t() -> String.t() | nil),
@@ -33,7 +34,8 @@ defmodule Glorbo.CLI.Registry.Detection do
 
   @type probe_opts :: [
           system_cmd_fun: (String.t(), [String.t()], keyword() -> {binary(), integer()}),
-          timeout_ms: pos_integer()
+          timeout_ms: pos_integer(),
+          max_concurrency: pos_integer()
         ]
 
   @doc """
@@ -105,6 +107,12 @@ defmodule Glorbo.CLI.Registry.Detection do
     cmd_fun = Keyword.get(opts, :system_cmd_fun, &system_cmd/3)
     timeout = Keyword.get(opts, :timeout_ms, @default_probe_timeout_ms)
 
+    max_concurrency =
+      opts
+      |> Keyword.get(:max_concurrency, @default_max_concurrency)
+      |> min(@default_max_concurrency)
+      |> max(1)
+
     {probe, passthrough} = Enum.split_with(providers, &probeable?/1)
 
     # `Task.async_stream` enforces the per-task wall-clock cap: the inner
@@ -117,7 +125,7 @@ defmodule Glorbo.CLI.Registry.Detection do
         fn p -> probe_one(p, cmd_fun) end,
         timeout: timeout,
         on_timeout: :kill_task,
-        max_concurrency: max(length(probe), 1)
+        max_concurrency: max_concurrency
       )
       |> Enum.zip(probe)
       |> Enum.map(fn

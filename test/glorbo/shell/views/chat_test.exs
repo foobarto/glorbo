@@ -257,7 +257,7 @@ defmodule Glorbo.Shell.Views.ChatTest do
       {state, []} = Chat.update(:compose_submit, state)
 
       assert calls.() == [
-               {"acme", "general", "Hello world", [base: "/tmp/glorbo"]}
+               {"acme", "general", "Hello world", [base: "/tmp/glorbo", actor: "director"]}
              ]
 
       assert state.last_action == {:ok, :post, nil}
@@ -586,7 +586,9 @@ defmodule Glorbo.Shell.Views.ChatTest do
 
       {_state, []} = Chat.update(:compose_submit, state)
 
-      assert calls.posts.() == [{"acme", "general", " /not a command", [base: "/tmp/glorbo"]}]
+      assert calls.posts.() == [
+               {"acme", "general", " /not a command", [base: "/tmp/glorbo", actor: "director"]}
+             ]
     end
 
     test "view in compose mode appends a hint about /help" do

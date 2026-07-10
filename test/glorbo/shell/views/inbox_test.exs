@@ -99,7 +99,7 @@ defmodule Glorbo.Shell.Views.InboxTest do
 
       assert calls.() == [
                {"acme", "projects/demo/tasks/task-a.md", :approved,
-                [base: "/tmp/glorbo_test_base"]}
+                [base: "/tmp/glorbo_test_base", actor: "director"]}
              ]
 
       assert state.approvals == []
@@ -128,6 +128,7 @@ defmodule Glorbo.Shell.Views.InboxTest do
       assert tp == "projects/demo/tasks/task-a.md"
       assert decision == :denied
       assert Keyword.get(opts, :base) == "/tmp/glorbo_test_base"
+      assert Keyword.get(opts, :actor) == "director"
       assert Keyword.get(opts, :denial_reason) == "out"
 
       assert state.last_action == {:ok, :denied, nil}

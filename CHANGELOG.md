@@ -10,6 +10,71 @@ change between minor versions. Pin exact versions in downstream usage.
 
 ## [Unreleased]
 
+## [0.28.7] — 2026-07-10
+
+### Added
+
+- **Release-artifact lifecycle coverage.** CI now exercises the tagged binary's
+  `up` → running `status` → `down` → stopped `status` subprocess lifecycle.
+  Setup-token, passphrase, restart, and login behavior remains covered by the
+  application/browser suites. Integration tests run as an explicit CI lane
+  with the Linux runtime tools used by sandbox and proxy paths.
+
+### Changed
+
+- **Director writes converge on canonical Actions boundaries.** Task editing,
+  status changes, MCP channel creation, and MCP proposal mutations now share
+  the same validation, atomic-write, HomeHistory, and append-only audit paths.
+  MCP audit actors retain their `mcp:<client>` provenance.
+- **Architecture references match the implementation again.** GEP-27/GEP-36,
+  the capability ledger, threat model, release/UAT guidance, and generated
+  module graph were reconciled with the current runtime and mutation surface.
+
+### Fixed
+
+- **Task edits preserve the complete canonical definition.** Title, body,
+  status, assignee, approval, priority, severity, done criteria, schedule,
+  goals, dependencies, budget, and metadata no longer drift or disappear
+  across editor saves. Duplicate approval guards were removed.
+- **New companies become live immediately.** Dashboard scaffolding now starts
+  the per-company AuditLog, Router, approval gate, watcher, and supporting
+  supervision tree without requiring an application restart.
+- **Task comments no longer crash or confuse approval handling.** Audit writes
+  degrade safely when a company runtime is unavailable, and the approval
+  watcher ignores canonical `*.comments.md` sidecars instead of emitting
+  `approval.parse_error` events.
+- **Runtime setup and lifecycle failures are explicit.** Setup credentials are
+  exposed only through the one-shot serving endpoint, database bootstrap
+  failures stop startup, company monitors clean up stale registrations, and
+  approved companies re-register their runtime state.
+- **UI correctness fixes.** Form IDs are unique, audit pagination uses the
+  requested offset, log following avoids the truncate/append race, health
+  probes are bounded, and GEP validation reports the correct source.
+
+### Security
+
+- **Capability enforcement is closed and symlink-safe.** Unsupported actions
+  fail loudly; task wildcard ACLs and mounts resolve to exact directories;
+  entity-aware slug validation consistently supports underscore agent slugs;
+  and path grants are owned by a supervised registry so crashes revoke them.
+- **Concurrent file creation is first-write-wins.** MCP channels and proposals
+  use exclusive creation, eliminating exists-then-write clobber windows. The
+  create primitive pins and verifies its parent directory, stages and
+  byte-count-checks the complete payload, then publishes with an atomic
+  no-replace hard link. Ancestor swaps cannot redirect it and failed writes
+  cannot leave a visible partial file.
+- **New upstream denial-of-service advisories are patched.** Security floors
+  now require Phoenix 1.8.9, Mint 1.9.1, HPAX 1.0.4, and MDEx 0.13.3; the
+  resolved native Markdown and LiveView dependencies advance with them.
+
+### Quality
+
+- **Static-analysis debt is pinned at the new baseline.** The Dialyzer warning
+  budget drops to 126, integration coverage is part of the normal gate, and
+  release UAT was rerun in real Chromium against an isolated Glorbo home.
+- **Retired Plug patches are excluded.** The lockfile advances Plug from the
+  retired 1.20.1 release to 1.20.3, restoring a clean Hex retirement audit.
+
 ## [0.28.6] — 2026-06-21
 
 ### Fixed

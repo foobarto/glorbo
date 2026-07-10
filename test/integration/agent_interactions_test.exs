@@ -467,12 +467,13 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       audit_pid = spawn_link(fn -> noop_audit_loop() end)
 
       :ok =
-        GlorboWeb.Actions.post_message(
+        Glorbo.Actions.post_message(
           ctx.company,
           "general",
           "@ceo @engineer — standup in 5",
           base: ctx.base,
-          audit: audit_pid
+          audit: audit_pid,
+          actor: "director"
         )
 
       assert_receive {:dispatched, "ceo", :mention}, 2_000
@@ -508,9 +509,10 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       audit_pid = spawn_link(fn -> noop_audit_loop() end)
 
       :ok =
-        GlorboWeb.Actions.post_message(ctx.company, "general", "@ceo ping",
+        Glorbo.Actions.post_message(ctx.company, "general", "@ceo ping",
           base: ctx.base,
-          audit: audit_pid
+          audit: audit_pid,
+          actor: "director"
         )
 
       # Dispatch fires from the safe_wake_mention Registry path, not
@@ -536,9 +538,10 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       audit_pid = spawn_link(fn -> noop_audit_loop() end)
 
       :ok =
-        GlorboWeb.Actions.post_message(ctx.company, "dm-director--ceo", "ping",
+        Glorbo.Actions.post_message(ctx.company, "dm-director--ceo", "ping",
           base: ctx.base,
-          audit: audit_pid
+          audit: audit_pid,
+          actor: "director"
         )
 
       assert_receive {:dispatched, :mention, path}, 2_000
@@ -585,9 +588,10 @@ defmodule Glorbo.Integration.AgentInteractionsTest do
       audit_pid = spawn_link(fn -> noop_audit_loop() end)
 
       :ok =
-        GlorboWeb.Actions.post_task_comment(ctx.company, rel, "any updates?",
+        Glorbo.Actions.post_task_comment(ctx.company, rel, "any updates?",
           base: ctx.base,
-          audit: audit_pid
+          audit: audit_pid,
+          actor: "director"
         )
 
       assert_receive {:dispatched, :mention, _path}, 2_000

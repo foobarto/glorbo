@@ -540,3 +540,17 @@ This is an append-only record (GEP-1: an Accepted/Implemented GEP's body is not 
 - **Credo ratchet only catches `File.*`, cannot enforce against `TaskDefinition.write*`; "allowlist empty = done" claim is misleading — known-gap.** `Glorbo.Credo.Check.RawFilesystemWriteInLive` (`lib_dev/raw_filesystem_write_in_live.ex:40-49`) flags only the literal `File.*` mutator AST; it has no rule for `Glorbo.TaskDefinition.write{,_frontmatter,_body}`, which are themselves domain-state filesystem writes one indirection away and are exactly the calls used to bypass Actions in the three handlers above. The allowlist is `[]` in `.credo.exs:179-182`, and both the check moduledoc (`lib_dev/raw_filesystem_write_in_live.ex:19-21`) and the GEP's Implemented note (lines 78-81) assert "When the allowlist empties, GEP-36 is done" / "every write in lib/glorbo_web/live/ routes through Actions." That claim is true only for `File.*` calls and is misleading given the live `TaskDefinition.write*` bypasses. Real known-gap: extend the check to also flag `TaskDefinition.write{,_frontmatter,_body}` in `lib/glorbo_web/live/` (after migrating the three handlers), and correct the "done" wording.
 
 - **Legacy top-level Actions functions silently default the actor instead of raising — known-gap (D7 violation).** D7 (lines 485-499) mandates a mandatory `:actor` key whose absence raises `ArgumentError` ("Missing actor should *crash*, not silently default, per the security-paranoid posture"). The legacy top-level functions in `lib/glorbo/actions.ex` instead use `Keyword.get(opts, :actor, "director")`, silently defaulting: `post_message` (line 76), `set_approval` (line 476), and `wake_agent` (line 672). `post_task_comment` (def at line 198) is also a legacy top-level function in the same family. Reproduced as described — these are the GEP-36 step-1 functions that should have led by example on the require-actor rule. Disposition: either switch the four to `Keyword.fetch!(opts, :actor)` / an explicit require-actor guard to match the submodules and D7, or amend D7 to scope the requirement (an append-only deviation note) if the `"director"` default is deliberate for these legacy facade paths.
+
+## Implementation reconciliation (2026-07-10)
+
+- **The task-editor and Credo gaps above are closed.** `Glorbo.Actions.Tasks.update/4`
+  now validates the closed editor field set, preserves omitted body/frontmatter,
+  blocks approval-state bypass, and performs one atomic task rewrite. KanbanLive
+  and TaskLive delegate to it. The Credo check now scans the full frontend tree
+  and rejects raw filesystem mutators plus indirect task/frontmatter writers.
+- **The migration facade is removed.** All callers now use `Glorbo.Actions` or a
+  resource module directly; channel and proposal MCP mutations use the same core
+  boundary as the other frontends.
+- **D7 is enforced.** The four legacy mutation functions require explicit
+  `actor:` with `Keyword.fetch!/2`; Director and MCP call sites identify their
+  actor instead of relying on an impersonating default.

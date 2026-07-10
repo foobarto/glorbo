@@ -4,7 +4,7 @@ defmodule Glorbo.MixProject do
   def project do
     [
       app: :glorbo,
-      version: "0.28.6",
+      version: "0.28.7",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -83,7 +83,9 @@ defmodule Glorbo.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8"},
+      # Security floor: 1.8.9 bounds channel joins per connection and fixes
+      # unsafe Presence keys (EEF-CVE-2026-56811/56812).
+      {:phoenix, "~> 1.8.9"},
       # Force decimal past GHSA-rhv4-8758-jx7v (Decimal.new unbounded-exponent
       # DoS, fixed in 3.0). ecto pins `~> 2.0` and ecto_sqlite3 `~> 1.6 or
       # ~> 2.0` — neither admits `~> 3.0` yet, so override until they relax.
@@ -138,9 +140,13 @@ defmodule Glorbo.MixProject do
       # lenient Content-Length parsing (EEF-CVE-2026-49753), and two
       # HTTP/2 client-memory DoS vectors — unbounded PUSH_PROMISE growth
       # (EEF-CVE-2026-48862) and a CONTINUATION flood (EEF-CVE-2026-49754).
-      # All fixed in 1.9.0; finch only requires `~> 1.8`, which still
-      # admits 1.8.0, so pin the floor here.
-      {:mint, "~> 1.9"},
+      # Those were fixed in 1.9.0. EEF-CVE-2026-56810, an unbounded
+      # chunked-response allocation, raises the current floor to 1.9.1;
+      # finch only requires `~> 1.8`, so pin it here.
+      {:mint, "~> 1.9.1"},
+      # hpax 1.0.3 has unbounded HPACK integer decoding
+      # (EEF-CVE-2026-58226). Bandit and Mint both allow it transitively.
+      {:hpax, "~> 1.0.4"},
       # req < 0.6.1 — decompression-bomb DoS via auto-decoded
       # compressed/archive bodies (EEF-CVE-2026-49755, fixed 0.6.1) and
       # multipart header injection via unescaped name/filename/content_type
@@ -161,7 +167,9 @@ defmodule Glorbo.MixProject do
       # pre-built `priv/static/assets/` from `mix assets.deploy`).
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       # Markdown renderer for channel message bodies (UI-SPEC chat profile).
-      {:mdex, "~> 0.13.0"},
+      # 0.13.3 pulls the hardened native renderer and closes the 2026 parser,
+      # URL-scheme, recursion, allocation, and native-memory advisories.
+      {:mdex, "~> 0.13.3"},
       {:mdex_gfm, "~> 0.2.0"},
       # Allowlist HTML sanitizer for markdown output — MDEx has no
       # built-in sanitization; caller must sanitize.

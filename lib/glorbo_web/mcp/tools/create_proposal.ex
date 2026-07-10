@@ -13,10 +13,8 @@ defmodule GlorboWeb.MCP.Tools.CreateProposal do
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias Glorbo.Filesystem.FrontmatterWriter
+  alias Glorbo.Actions.Proposals
   alias GlorboWeb.MCP.Args
-
-  @mcp_sender "mcp"
 
   @impl true
   def name, do: "glorbo.create_proposal"
@@ -64,46 +62,30 @@ defmodule GlorboWeb.MCP.Tools.CreateProposal do
   defp do_call(company, id, subtype, body, context) do
     base = context[:base] || Glorbo.Filesystem.Hierarchy.default_root()
 
-    outbox_dir =
-      Path.join([base, "companies", company, "agents", @mcp_sender, "outbox", "proposals"])
+    opts =
+      [actor: mcp_actor(context), base: base]
+      |> then(fn opts ->
+        if context[:audit], do: Keyword.put(opts, :audit, context[:audit]), else: opts
+      end)
 
-    with :ok <- ensure_company_exists(base, company),
-         :ok <- File.mkdir_p(outbox_dir),
-         path = Path.join(outbox_dir, "#{id}.md"),
-         :ok <- FrontmatterWriter.atomic_write(path, proposal_body(id, subtype, body)) do
-      {:ok,
-       %{
-         "id" => id,
-         "subtype" => subtype,
-         "outbox_path" => Path.relative_to(path, Path.join([base, "companies", company])),
-         "status" => "submitted"
-       }}
-    else
-      {:error, err} -> {:error, {:submit_failed, err}}
+    case Proposals.submit(company, id, subtype, body, opts) do
+      {:ok, %{rel_path: rel_path}} ->
+        {:ok,
+         %{
+           "id" => id,
+           "subtype" => subtype,
+           "outbox_path" => rel_path,
+           "status" => "submitted"
+         }}
+
+      {:error, error} ->
+        {:error, {:submit_failed, error}}
     end
-  end
-
-  defp ensure_company_exists(base, company) do
-    if File.dir?(Path.join([base, "companies", company])),
-      do: :ok,
-      else: {:error, {:company_not_found, company}}
-  end
-
-  defp proposal_body(id, subtype, body) do
-    """
-    ---
-    kind: proposal/v1
-    id: #{id}
-    subtype: #{subtype}
-    status: pending-approval
-    requires_approval: director
-    ---
-
-    #{String.trim_trailing(body)}
-    """
   end
 
   defp require_nonempty(s, field) when is_binary(s) do
     if String.trim(s) == "", do: {:error, {:empty, field}}, else: :ok
   end
+
+  defp mcp_actor(context), do: "mcp:#{Map.get(context, :client, "unknown")}"
 end

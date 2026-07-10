@@ -13,9 +13,9 @@ permissions:
   - projects:write:bugs
   - projects:write:bugs-py
   - projects:write:bugs-go
-  - tasks:write:bugs
-  - tasks:write:bugs-py
-  - tasks:write:bugs-go
+  - tasks:update:bugs
+  - tasks:update:bugs-py
+  - tasks:update:bugs-go
   - chat:read:*
   - chat:write:general
 budget:

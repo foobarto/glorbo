@@ -6,8 +6,10 @@ defmodule Glorbo.PathGrantStore do
   after dispatch completion. A BEAM restart clears all grants —
   agents must re-request, which is correct for task-scoped access.
 
-  The table is created on first call via `ensure_started/0` and
-  named `:glorbo_path_grants` for easy lookup from any process.
+  The table is owned by this application-level GenServer and named
+  `:glorbo_path_grants` for efficient concurrent reads. Company path gates
+  register themselves with the owner; when a gate terminates, all grants for
+  that company are revoked fail-closed.
 
   ## Grant shape
 
@@ -23,22 +25,59 @@ defmodule Glorbo.PathGrantStore do
       }
   """
 
+  use GenServer
+
   @table :glorbo_path_grants
 
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    :ets.new(@table, [
+      :named_table,
+      :set,
+      :public,
+      {:read_concurrency, true},
+      {:write_concurrency, true}
+    ])
+
+    {:ok, %{companies: %{}, monitors: %{}}}
+  end
+
   @doc """
-  Ensure the ETS table exists. Idempotent — safe to call from any
-  process at any time. Called by `Company.Supervisor` at boot.
+  Confirm that the application-supervised store exists.
+
+  The public API never starts an unlinked fallback process: doing so during a
+  supervisor restart could steal the registered name and prevent supervision
+  from being restored. Isolated tests must start the application or explicitly
+  supervise this module.
   """
   @spec ensure_started :: :ok
   def ensure_started do
-    case :ets.info(@table) do
-      :undefined ->
-        :ets.new(@table, [:named_table, :set, :public, {:read_concurrency, true}])
+    case Process.whereis(__MODULE__) do
+      pid when is_pid(pid) ->
         :ok
 
-      _ ->
-        :ok
+      nil ->
+        raise "path grant store is not running under Glorbo.Supervisor"
     end
+  end
+
+  @doc """
+  Register the process whose lifetime owns a company's grants.
+
+  Same-owner registration is idempotent. Replacing an owner revokes the
+  previous owner's grants before installing the new monitor; any later owner
+  termination also revokes the company's grants.
+  """
+  @spec register_company(String.t(), pid()) :: :ok
+  def register_company(company, owner_pid \\ self())
+      when is_binary(company) and is_pid(owner_pid) do
+    ensure_started()
+    GenServer.call(__MODULE__, {:register_company, company, owner_pid})
   end
 
   @doc """
@@ -48,6 +87,7 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec grant(String.t(), String.t(), String.t(), [map()], DateTime.t()) :: :ok
   def grant(company, agent, task_id, paths, granted_at) do
+    ensure_started()
     key = {company, agent, task_id}
 
     value = %{
@@ -68,22 +108,12 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec lookup(String.t(), String.t(), String.t()) :: {:ok, [map()]} | :not_found
   def lookup(company, agent, task_id) do
-    # Table can be missing when a test shuts down the supervisor that
-    # owns it (typical for unit tests that don't boot the full app).
-    # Defensive: treat missing-table as "no grants" rather than
-    # crashing the caller. `revoke/3` already does this; mirror it
-    # here so `lookup/3` doesn't blow up isolated test runs.
-    # Production boot always calls ensure_started/0 at the company-
-    # supervisor layer so this path only fires in test contexts.
-    if :ets.info(@table) == :undefined do
-      :not_found
-    else
-      key = {company, agent, task_id}
+    ensure_started()
+    key = {company, agent, task_id}
 
-      case :ets.lookup(@table, key) do
-        [{^key, %{paths: paths}}] -> {:ok, paths}
-        [] -> :not_found
-      end
+    case :ets.lookup(@table, key) do
+      [{^key, %{paths: paths}}] -> {:ok, paths}
+      [] -> :not_found
     end
   end
 
@@ -92,13 +122,9 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec revoke(String.t(), String.t(), String.t()) :: :ok
   def revoke(company, agent, task_id) do
+    ensure_started()
     key = {company, agent, task_id}
-
-    case :ets.info(@table) do
-      :undefined -> :ok
-      _ -> :ets.delete(@table, key)
-    end
-
+    :ets.delete(@table, key)
     :ok
   end
 
@@ -108,6 +134,7 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec revoke_all(String.t()) :: :ok
   def revoke_all(company) do
+    ensure_started()
     match_key = {{company, :_, :_}, :_}
     :ets.select_delete(@table, [{match_key, [], [true]}])
     :ok
@@ -118,6 +145,7 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec list_all() :: [map()]
   def list_all do
+    ensure_started()
     :ets.foldl(fn {_key, value}, acc -> [value | acc] end, [], @table)
   end
 
@@ -126,6 +154,7 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec list_for_company(String.t()) :: [map()]
   def list_for_company(company) do
+    ensure_started()
     match_key = {{company, :_, :_}, :"$1"}
     :ets.select(@table, [{match_key, [], [:"$1"]}])
   end
@@ -135,6 +164,7 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec list_for_agent(String.t(), String.t()) :: [map()]
   def list_for_agent(company, agent) do
+    ensure_started()
     match_key = {{company, agent, :_}, :"$1"}
     :ets.select(@table, [{match_key, [], [:"$1"]}])
   end
@@ -145,13 +175,66 @@ defmodule Glorbo.PathGrantStore do
   """
   @spec lookup_by_task_id(String.t(), String.t()) :: [map()]
   def lookup_by_task_id(company, task_id) do
-    case :ets.info(@table) do
-      :undefined ->
-        []
+    ensure_started()
+    match_key = {{company, :"$1", task_id}, :"$2"}
+    :ets.select(@table, [{match_key, [], [:"$2"]}])
+  end
 
-      _ ->
-        match_key = {{company, :"$1", task_id}, :"$2"}
-        :ets.select(@table, [{match_key, [], [:"$2"]}])
+  @impl true
+  def handle_call({:register_company, company, owner_pid}, _from, state) do
+    case Map.get(state.companies, company) do
+      {^owner_pid, _ref} ->
+        # Idempotent registration from the same live gate must not revoke its
+        # in-flight grants or churn the monitor.
+        {:reply, :ok, state}
+
+      {_previous_owner, _ref} ->
+        # Ownership changed before the prior monitor's :DOWN was processed.
+        # Revoke first so stale grants cannot be adopted by the replacement.
+        delete_company_grants(company)
+        {:reply, :ok, put_company_owner(drop_company_monitor(state, company), company, owner_pid)}
+
+      nil ->
+        {:reply, :ok, put_company_owner(state, company, owner_pid)}
     end
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    case Map.pop(state.monitors, ref) do
+      {nil, _monitors} ->
+        {:noreply, state}
+
+      {company, monitors} ->
+        delete_company_grants(company)
+        {:noreply, %{state | companies: Map.delete(state.companies, company), monitors: monitors}}
+    end
+  end
+
+  defp drop_company_monitor(state, company) do
+    case Map.pop(state.companies, company) do
+      {nil, _companies} ->
+        state
+
+      {{_pid, ref}, companies} ->
+        Process.demonitor(ref, [:flush])
+        %{state | companies: companies, monitors: Map.delete(state.monitors, ref)}
+    end
+  end
+
+  defp put_company_owner(state, company, owner_pid) do
+    ref = Process.monitor(owner_pid)
+
+    %{
+      state
+      | companies: Map.put(state.companies, company, {owner_pid, ref}),
+        monitors: Map.put(state.monitors, ref, company)
+    }
+  end
+
+  defp delete_company_grants(company) do
+    match_key = {{company, :_, :_}, :_}
+    :ets.select_delete(@table, [{match_key, [], [true]}])
+    :ok
   end
 end

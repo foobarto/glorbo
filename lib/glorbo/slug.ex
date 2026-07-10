@@ -17,13 +17,14 @@ defmodule Glorbo.Slug do
   direction smell codex + opencode reviews both flagged. The move is
   atomic per the pre-1.0 "no kid gloves on breaking changes" rule.
 
-  Related: `Glorbo.Filesystem.Hierarchy.default_root/0` for the base
-  path, `Glorbo.Agent.Parser.@slug_regex` for the stricter
-  `[a-z][a-z0-9_-]{0,63}` agent-slug shape (this module's regex is
-  the looser `[a-z0-9-]+` that web-surface params use).
+  Entity-specific validation is available through `valid?/2`. Agent slugs
+  intentionally allow underscores. Company/project slugs retain the generic
+  hyphen-only URL shape; channels additionally accept the reserved
+  `dm-director--<agent>` form and validate its suffix as an agent slug.
   """
 
   @slug_re ~r/\A[a-z0-9-]+\z/
+  @agent_slug_re ~r/\A[a-z][a-z0-9_-]{0,63}\z/
 
   @doc """
   Returns `true` iff the value is a binary that matches
@@ -34,4 +35,12 @@ defmodule Glorbo.Slug do
   @spec valid?(term()) :: boolean()
   def valid?(s) when is_binary(s), do: Regex.match?(@slug_re, s)
   def valid?(_), do: false
+
+  @doc "Validate an identifier using the rules for its entity kind."
+  @spec valid?(term(), atom()) :: boolean()
+  def valid?(s, :agent) when is_binary(s), do: Regex.match?(@agent_slug_re, s)
+
+  def valid?("dm-director--" <> agent, :channel), do: valid?(agent, :agent)
+  def valid?(s, :channel), do: valid?(s)
+  def valid?(s, _kind), do: valid?(s)
 end

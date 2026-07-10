@@ -31,9 +31,10 @@ defmodule Glorbo.Approvals.Gate do
   ## Defensive posture
 
     * Only files matching `~r{\\Aprojects/.+/tasks/.+\\.md\\z}` trigger
-      approval resolution — prevents feedback loops when the Gate's own
-      sentinel write or the audit log triggers a Watcher event
-      (T-03-24).
+      approval resolution; task-comment sidecars (`*.comments.md`) are
+      explicitly excluded. This prevents feedback loops when the Gate's own
+      sentinel write, comment threads, or the audit log trigger a Watcher
+      event (T-03-24).
     * Sentinel correlation is via `{agent, task_id}` and the unique
       `task_path` index in `tasks_approval_state` — a malicious rename of
       the task file doesn't clobber state (T-03-25).
@@ -120,7 +121,7 @@ defmodule Glorbo.Approvals.Gate do
 
   @doc """
   Mark a Director-driven approval decision as in-flight. Callers
-  (`GlorboWeb.Actions.set_approval`) MUST invoke this **before**
+  (`Glorbo.Actions.set_approval`) MUST invoke this **before**
   writing the task frontmatter. The Gate's watcher-handler later
   checks this mark to distinguish legitimate Director writes from
   agent self-approval attempts (Threatmodel H4).
@@ -210,7 +211,7 @@ defmodule Glorbo.Approvals.Gate do
   @impl true
   def handle_info({:file_event, rel_path, events}, state) do
     state =
-      if :modified in events and Regex.match?(@project_task_re, rel_path) do
+      if :modified in events and canonical_project_task_path?(rel_path) do
         handle_projects_event(rel_path, state)
       else
         state
@@ -220,6 +221,13 @@ defmodule Glorbo.Approvals.Gate do
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  defp canonical_project_task_path?(rel_path) when is_binary(rel_path) do
+    Regex.match?(@project_task_re, rel_path) and
+      not String.ends_with?(rel_path, ".comments.md")
+  end
+
+  defp canonical_project_task_path?(_rel_path), do: false
 
   # ---------------------------------------------------------------------------
   # Approval request

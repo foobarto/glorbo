@@ -3,7 +3,7 @@ defmodule GlorboWeb.MCP.Tools.PostMessage do
   MCP tool: `glorbo.post_message` (GEP-29 wave c.1).
 
   Appends a message to a channel. Calls
-  `GlorboWeb.Actions.post_message/4` so @mentions wake agents and
+  `Glorbo.Actions.post_message/4` so @mentions wake agents and
   the channel-rotation post-hook runs identically to the LV path.
   Actor is `mcp:<client>` (GEP-29 D4) — appears in the message
   header (`## <ts> | mcp:<client>`) and on the `chat.post` audit
@@ -11,7 +11,7 @@ defmodule GlorboWeb.MCP.Tools.PostMessage do
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias GlorboWeb.Actions
+  alias Glorbo.Actions
   alias GlorboWeb.MCP.Args
 
   @impl true

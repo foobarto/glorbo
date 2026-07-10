@@ -113,13 +113,17 @@ defmodule GlorboWeb.AuditLive do
     # stay uniform.
     entry = stringify_keys(record)
 
-    new_entries = append_capped(socket.assigns.entries, entry, @page)
+    window_size = max(length(socket.assigns.entries), @page)
+    {new_entries, dropped_oldest?} = append_capped(socket.assigns.entries, entry, window_size)
     new_total = socket.assigns.total_lines + 1
+    new_offset = socket.assigns.offset + if(dropped_oldest?, do: 1, else: 0)
 
     {:noreply,
      socket
      |> assign(:entries, new_entries)
-     |> assign(:total_lines, new_total)}
+     |> assign(:offset, new_offset)
+     |> assign(:total_lines, new_total)
+     |> assign(:beginning, new_offset == 0)}
   end
 
   def handle_info({:file_event, rel, _events}, socket) do
@@ -146,8 +150,8 @@ defmodule GlorboWeb.AuditLive do
     appended = entries ++ [new_entry]
 
     if length(appended) > cap,
-      do: Enum.take(appended, -cap),
-      else: appended
+      do: {Enum.take(appended, -cap), true},
+      else: {appended, false}
   end
 
   @impl true
@@ -260,7 +264,13 @@ defmodule GlorboWeb.AuditLive do
         </div>
       </header>
 
-      <form phx-change="filter" class="gl-audit__filters" role="search" aria-label="Audit filters">
+      <form
+        id="audit-filter-form"
+        phx-change="filter"
+        class="gl-audit__filters"
+        role="search"
+        aria-label="Audit filters"
+      >
         <label for="audit-q" class="gl-sr-only">Search</label>
         <input
           type="search"

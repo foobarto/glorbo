@@ -19,9 +19,12 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   | `chat:read:<channel>`         | `--ro-bind <co>/channels/<channel>.md /channels/... |
   | `chat:write:*`                | `[]` (Router mediates all channel writes)           |
   | `agents:message:*`            | `[]` (Router mediates all agent messages)           |
-  | `agents:create:*`             | `[]` (never granted in v0.0.1; AGT-05)              |
+  | `tasks:create:<project>`      | `[]` (Router mediates task creation)                |
+  | `tasks:read:<project>`        | `--ro-bind <co>/projects/<project>/tasks ...`        |
+  | `tasks:read:*`                | one exact RO task-directory bind per project        |
   | `agents:list:*`               | REJECTED at parse time (`ACLMapper.parse_permission`) |
   | `tasks:update:<project>`      | `--bind <co>/projects/<project>/tasks /projects/... |
+  | `tasks:update:*`              | one exact RW task-directory bind per project        |
 
   **Sibling invisibility (D-10):** when only a scoped permission is granted
   (e.g. `projects:write:website`), the parent `projects/` directory is NOT
@@ -29,17 +32,15 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   returns ENOENT on any open attempt. No `ls /projects` reveals other
   companies' or sibling projects' existence.
 
-  **`agents:list:*` is rejected at parse time.** The permission never
-  had a kernel-layer implementation (staging-tmpfs filtering of
-  `agents/*/` was the D-12 design but was never shipped). Accepting a
-  permission the runtime cannot enforce is a silent lie, so
-  `Glorbo.Security.ACLMapper.parse_permission/1` now returns
-  `{:error, :not_implemented}` for it and the agent's AGENT.md fails to
-  load. Inter-agent discovery is via the Router's
-  `agents:message:<target>` permission family.
+  Unsupported capability families such as `agents:list:*`,
+  `agents:create:*`, and the obsolete `tasks:write:*` are rejected at parse
+  time. Inter-agent discovery and mutations use explicitly registered Router
+  capabilities instead of unexplained empty mount mappings.
   """
 
   @type permission :: {resource :: String.t(), action :: String.t(), scope :: String.t()}
+
+  alias Glorbo.Security.Capability
 
   @doc """
   Translate a list of permissions into a flat bwrap argv list.
@@ -55,7 +56,19 @@ defmodule Glorbo.Sandbox.PermissionMapper do
   """
   @spec to_argv([permission()], company_path :: String.t()) :: [String.t()]
   def to_argv(permissions, company_path) when is_list(permissions) and is_binary(company_path) do
-    Enum.flat_map(permissions, &permission_to_flags(&1, company_path))
+    Enum.flat_map(permissions, fn permission ->
+      case Capability.enforcement(permission) do
+        {:ok, :router} ->
+          []
+
+        {:ok, :mount} ->
+          permission_to_flags(permission, company_path)
+
+        {:error, reason} ->
+          raise ArgumentError,
+                "permission_mapper: unsupported permission #{inspect(permission)}: #{reason}"
+      end
+    end)
   end
 
   # ---------------------------------------------------------------------------
@@ -95,21 +108,18 @@ defmodule Glorbo.Sandbox.PermissionMapper do
     mount(:read, Path.join([co, "channels", "#{channel}.md"]), "/channels/#{channel}.md")
   end
 
-  # chat:write:* → empty (Router mediates; no direct write)
-  defp permission_to_flags({"chat", "write", _scope}, _co), do: []
+  # tasks:read/update:* → one exact mount per existing project. Enumerating
+  # avoids the old literal `projects/*/tasks` ACL and does not expose project
+  # files outside task directories.
+  defp permission_to_flags({"tasks", action, "*"}, co) when action in ["read", "update"] do
+    mode = if action == "read", do: :read, else: :write
+    task_tree_mounts(mode, co)
+  end
 
-  # agents:message:* → empty (Router mediates; no direct inbox write)
-  defp permission_to_flags({"agents", "message", _scope}, _co), do: []
-
-  # agents:create:* → empty (categorically denied; AGT-05)
-  defp permission_to_flags({"agents", "create", _scope}, _co), do: []
-
-  # `agents:list:*` is now rejected at parse time by
-  # `Glorbo.Security.ACLMapper.parse_permission/1` (returns
-  # `{:error, :not_implemented}`), so this module never sees it in
-  # a parsed permission list. The clause was removed in the
-  # round-3 sweep — dead code that promised a capability the
-  # runtime never enforced.
+  defp permission_to_flags({"tasks", "read", project}, co) when project != "*" do
+    project = assert_safe_scope!(project)
+    mount(:read, Path.join([co, "projects", project, "tasks"]), "/projects/#{project}/tasks")
+  end
 
   # tasks:update:<project> → rw-bind the project's tasks/ subdir
   defp permission_to_flags({"tasks", "update", project}, co) when project != "*" do
@@ -122,17 +132,31 @@ defmodule Glorbo.Sandbox.PermissionMapper do
     mount(:read, Path.join(co, "proposals"), "/proposals")
   end
 
-  # proposals:propose:* / proposals:decide:* → no kernel mount.
-  # GEP-28 D7: agent-sourced proposal writes go through the Router via
-  # `agents/<sender>/outbox/proposals/<id>.md` (outbox is already RW via
-  # the D-07 ACL baseline). The Router validates and writes to
-  # `proposals/<id>.md` from the host side; the agent never holds RW on
-  # the proposals tree.
-  defp permission_to_flags({"proposals", "propose", _scope}, _co), do: []
-  defp permission_to_flags({"proposals", "decide", _scope}, _co), do: []
+  defp task_tree_mounts(mode, co) do
+    projects_dir = Path.join(co, "projects")
 
-  # Unknown permission family → empty (no kernel mount)
-  defp permission_to_flags({_resource, _action, _scope}, _co), do: []
+    case File.ls(projects_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&Glorbo.Slug.valid?/1)
+        |> Enum.sort()
+        |> Enum.flat_map(fn project ->
+          host = Path.join([projects_dir, project, "tasks"])
+
+          if File.dir?(host) do
+            mount(mode, host, "/projects/#{project}/tasks")
+          else
+            []
+          end
+        end)
+
+      {:error, :enoent} ->
+        []
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "list directory", path: projects_dir
+    end
+  end
 
   # Build the `--bind`/`--ro-bind` flag triple AFTER walking the host
   # path's ancestor segments to refuse any symlink.

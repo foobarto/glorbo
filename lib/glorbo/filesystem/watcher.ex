@@ -53,7 +53,7 @@ defmodule Glorbo.Filesystem.Watcher do
       primarily for downstream observers that want "a new line landed").
     * `"company:<co>:agents:<slug>:wake"` for `agents/<slug>/state/wake-request.md`
       (Agent.Server's 4th wake trigger — Director-initiated wake via
-      `GlorboWeb.Actions.wake_agent/3`).
+      `Glorbo.Actions.wake_agent/3`).
     * `"company:<co>:channels:<slug>"` per-channel topic for
       `channels/<slug>.md` — ChannelLive subscribes to exactly one
       channel-slug topic per mount. Emitted IN ADDITION TO the

@@ -148,6 +148,46 @@ defmodule GlorboWeb.AuditLiveTest do
     assert html =~ "Audit entry no longer in view."
   end
 
+  test "realtime tail eviction advances the older-page offset without a gap", %{
+    conn: conn,
+    base: base
+  } do
+    path = Path.join([base, "companies", "acme", "audit", "#{current_year_month()}.jsonl"])
+
+    lines =
+      Enum.map_join(0..500, "", fn i ->
+        Jason.encode!(%{
+          ts: "2026-04-16T12:#{String.pad_leading(Integer.to_string(rem(i, 60)), 2, "0")}:00Z",
+          actor: "system",
+          action: "window.event.#{i}",
+          target: "seq-#{i}",
+          detail: %{}
+        }) <> "\n"
+      end)
+
+    File.write!(path, lines)
+    {:ok, view, _html} = live(conn, "/companies/acme/audit")
+
+    send(view.pid, {
+      :audit_append,
+      %{
+        ts: "2026-04-16T13:00:00Z",
+        actor: "system",
+        action: "window.event.501",
+        target: "seq-501",
+        detail: %{}
+      }
+    })
+
+    _ = render(view)
+    html = render_click(view, "load_older", %{})
+
+    assert html =~ "window.event.0"
+    assert html =~ "window.event.1"
+    assert html =~ "window.event.2"
+    assert html =~ "window.event.501"
+  end
+
   defp current_year_month do
     d = Date.utc_today()
     "#{d.year}-#{String.pad_leading(Integer.to_string(d.month), 2, "0")}"

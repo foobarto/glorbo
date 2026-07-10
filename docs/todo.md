@@ -20,8 +20,9 @@ it's been in CHANGELOG for a cycle.
   FIXED 2026-06-14 (GEP-0060 branch, commit `5218925c`): `Glorbo.Config.load`
   (+`erl_cookie`/`node_id`) now self-heal an empty/unparseable config.md
   (regenerate when the parser yields empty meta, preserving any prior body to
-  `config.md.bak`), and `mix phx.server` prints the `…/setup?token=…` URL on
-  boot (gated to bootstrap/degraded). A fenced-but-bad file still fails closed
+  `config.md.bak`), and a one-shot endpoint child prints the
+  `…/setup?token=…` URL only when an HTTP server is actually starting in
+  bootstrap/degraded mode. A fenced-but-bad file still fails closed
   (GEP-0053 D9). Shipped alongside the SymlinkGuard `/home→/var/home` fix.
 
 ## P1 — next cycle
@@ -37,10 +38,13 @@ it's been in CHANGELOG for a cycle.
   — the paperclip-import dest guard should `lstat` the *leaf*, not just
   ancestors; (2) `import_paperclip` TOCTOU — harden the fd handling on the
   copy path. Low-severity but real. (from `2026-06-03-v0250-release`)
-- [ ] **Deferred GEP↔code capability gaps** (detail in the gap report,
-  `docs/sessions/2026-06-14-gep-codebase-reconciliation.md`): GEP-36
-  `Actions.Tasks.update/4` (route `save_task`/task-editor through Actions),
-  GEP-41 standalone peer-review trigger, GEP-23 egress audit+sentinel, GEP-46
+- [x] **GEP-36 task editor mutation gap.** Closed 2026-07-10:
+  `Glorbo.Actions.Tasks.update/4` now owns both task editors, performs one
+  atomic rewrite, and the frontend Credo ratchet covers indirect domain-file
+  writers as well as raw `File.*` calls.
+- [ ] **Remaining deferred GEP↔code capability gaps** (detail in the gap
+  report, `docs/sessions/2026-06-14-gep-codebase-reconciliation.md`): GEP-41
+  standalone peer-review trigger, GEP-23 egress audit+sentinel, and GEP-46
   concurrency integration tests. (from `2026-06-14-gep-gap-implementation`)
 
 - [ ] **Statusbar health contradicts sidebar badge.** Footer shows
@@ -50,36 +54,18 @@ it's been in CHANGELOG for a cycle.
   2026-06-13 — unify daemon/agent health across statusbar, sidebar, and
   `/health`.
 
-- [ ] **`mix phx.server` should print bootstrap URL when config empty.**
-  When `config.md` is empty/malformed, dev server lands in bootstrap auth
-  but does not log `…/setup?token=…` (only `glorbo serve` banner does).
-  UAT 2026-06-13.
+- [x] **`mix phx.server` prints the bootstrap URL when config is empty.**
+  Closed 2026-07-10 by `GlorboWeb.SetupBanner`; non-server Mix tasks and
+  configured nodes do not leak the token.
 
-- [ ] **CI: `goto-bus-stop/setup-zig` runs on Node 20 — forced to
-  Node 24 on 2026-06-16.** GitHub Actions warning on every macOS
-  cross-build job (noticed 2026-06-10 on PR #42): Node 20 actions get
-  forced onto Node 24 starting **2026-06-16** ("may not work as
-  expected") and removed 2026-09-16. Check upstream for a Node-24
-  release of setup-zig and bump the pinned SHA; if none exists by the
-  16th, set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the job and
-  verify the cross-builds still pass, so the forced default doesn't
-  land as a surprise mid-release.
+- [ ] **Keep `goto-bus-stop/setup-zig` compatible with GitHub's current
+  JavaScript action runtime.** The action is SHA-pinned in release jobs;
+  periodically check upstream runtime support, bump the pin deliberately,
+  and verify all cross-build targets before the next release.
 
-- [ ] **`SymlinkGuard` false-positives on `/home → /var/home` (atomic
-  Fedora).** The shared `Glorbo.Sandbox.SymlinkGuard` (used by
-  `reindex`, `company_boot`, `sandbox/bwrap`, `permission_mapper`) walks
-  ancestors from `/` and rejects any symlinked segment. On Silverblue /
-  Bazzite / Kinoite, `/home` is a symlink to `/var/home`, so a default
-  `~/.glorbo` (= `/home/<user>/.glorbo`) makes `reindex` reject **every**
-  file (`indexed=0`) and would block company boot — glorbo only works
-  via the canonical `/var/home/...` path today. Discovered 2026-06-02
-  during the GEP-54 live import; the importer's *own* dest guard was
-  fixed in GEP-54 D9, but the shared guard is load-bearing sandbox
-  security (GEP-5) and needs its own design: scope the walk to at/below
-  the glorbo home (matching D9), or canonicalise the base via realpath.
-  **Likely warrants a GEP.** Interim: run with
-  `GLORBO_HOME=/var/home/<user>/.glorbo` or `default_root/0`
-  canonicalisation.
+- [x] **`SymlinkGuard` false-positive on `/home → /var/home` (atomic
+  Fedora).** Closed 2026-06-14 by the GEP-60 home-resolution change; the
+  guard still rejects symlinks below the trusted Glorbo root.
 
 - [x] **Agent-detail page re-render thrash while working.** Reported
   2026-05-21; the specific `document.scrollHeight` oscillation could not
@@ -469,9 +455,15 @@ it's been in CHANGELOG for a cycle.
   `inotifywait` had attached its kernel watches; concurrent
   scheduler load from preceding agent-spawning tests made the
   file write fire ahead of attachment more often, so events
-  were silently dropped. Fix: 250ms settling sleep after
-  `Watcher.start_link/1` in the test, with rationale captured
-  in the test moduledoc.
+  were silently dropped. The original 250ms settling sleep still
+  raced on a loaded GitHub runner; the test now writes a non-task
+  sentinel until it observes the Watcher's PubSub event, then retries
+  the real task write until its `created|modified` event is observed
+  before asserting dispatch. A second CI-only failure was an unrelated
+  host dependency: the test still injected the retired `binary_fun` seam,
+  so provider verification stopped before `run_fun` when Claude was not
+  installed. It now injects an installed test provider and writes a
+  deterministic reply through the real dispatch pipeline.
 - [x] **GEP-33 — git history layer for ~/.glorbo/. STATUS:
   IMPLEMENTED 2026-04-25.** Phase 1 read UX shipped earlier;
   Phase 2 (marked commits from writers) + Phase 3 (watcher

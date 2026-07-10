@@ -64,7 +64,7 @@ defmodule Glorbo.CLI.Logs do
       not Glorbo.Slug.valid?(company) ->
         {:logs, 1, "Invalid company slug: #{company}\n"}
 
-      not Glorbo.Slug.valid?(agent) ->
+      not Glorbo.Slug.valid?(agent, :agent) ->
         {:logs, 1, "Invalid agent slug: #{agent}\n"}
 
       true ->
@@ -194,29 +194,40 @@ defmodule Glorbo.CLI.Logs do
     # [:modified, :closed] pair arrives in one tick — the file may have
     # rotated (month rollover) between the two calls. Treat :enoent as
     # rotation and re-resolve the target path before looping.
-    case File.stat(path) do
-      {:ok, %File.Stat{size: new_size}} ->
-        if new_size > last_size do
-          new_bytes = read_incremental(path, last_size)
-          IO.write(render_chunk(kind, new_bytes))
-        end
-
-        case File.stat(path) do
-          {:ok, %File.Stat{size: final_size}} ->
-            listen_loop(path, kind, final_size)
-
-          {:error, :enoent} ->
-            handle_rotation(path, kind)
-
-          {:error, _} ->
-            listen_loop(path, kind, last_size)
-        end
+    case read_follow_chunk(path, last_size) do
+      {:ok, new_bytes, next_offset} ->
+        IO.write(render_chunk(kind, new_bytes))
+        listen_loop(path, kind, next_offset)
 
       {:error, :enoent} ->
         handle_rotation(path, kind)
 
-      {:error, _} ->
+      {:error, _reason} ->
         listen_loop(path, kind, last_size)
+    end
+  end
+
+  @doc false
+  @spec read_follow_chunk(Path.t(), non_neg_integer()) ::
+          {:ok, binary(), non_neg_integer()} | {:error, term()}
+  def read_follow_chunk(path, last_size) do
+    case File.stat(path) do
+      # In-place truncation starts a new stream at byte zero. Keeping the old
+      # offset would hide every append until the file grew past its prior size.
+      {:ok, %File.Stat{size: size}} when size < last_size ->
+        read_incremental(path, 0)
+
+      {:ok, %File.Stat{size: size}} when size > last_size ->
+        read_incremental(path, last_size)
+
+      {:ok, %File.Stat{size: size}} ->
+        {:ok, "", size}
+
+      {:error, :enoent} ->
+        {:error, :enoent}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -242,15 +253,10 @@ defmodule Glorbo.CLI.Logs do
   defp follow_poll_loop(path, kind, last_size) do
     Process.sleep(@poll_interval_ms)
 
-    case File.stat(path) do
-      {:ok, %File.Stat{size: size}} when size > last_size ->
-        new_bytes = read_incremental(path, last_size)
+    case read_follow_chunk(path, last_size) do
+      {:ok, new_bytes, next_offset} ->
         IO.write(render_chunk(kind, new_bytes))
-
-        follow_poll_loop(path, kind, size)
-
-      {:ok, _} ->
-        follow_poll_loop(path, kind, last_size)
+        follow_poll_loop(path, kind, next_offset)
 
       {:error, _} ->
         # File disappeared — try to re-resolve (month rollover).
@@ -308,16 +314,26 @@ defmodule Glorbo.CLI.Logs do
     path |> File.stream!() |> Enum.take(-n)
   end
 
-  defp read_incremental(path, from_byte) do
-    {:ok, io} = File.open(path, [:read, :binary])
-    :file.position(io, from_byte)
-    data = IO.read(io, :eof)
-    File.close(io)
+  @doc false
+  @spec read_incremental(Path.t(), non_neg_integer()) ::
+          {:ok, binary(), non_neg_integer()} | {:error, term()}
+  def read_incremental(path, from_byte) do
+    case File.open(path, [:read, :binary]) do
+      {:ok, io} ->
+        result =
+          with {:ok, _position} <- :file.position(io, from_byte) do
+            case IO.read(io, :eof) do
+              :eof -> {:ok, "", from_byte}
+              data when is_binary(data) -> {:ok, data, from_byte + byte_size(data)}
+              {:error, reason} -> {:error, reason}
+            end
+          end
 
-    case data do
-      :eof -> ""
-      bin when is_binary(bin) -> bin
-      _ -> ""
+        _ = File.close(io)
+        result
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

@@ -80,7 +80,22 @@ defmodule Glorbo.PathRequestGate do
   """
   @spec revoke(String.t(), String.t(), String.t(), keyword()) :: :ok
   def revoke(company, agent_slug, task_id, opts \\ []) do
-    GenServer.call(via(company), {:revoke, agent_slug, task_id, opts})
+    case GenServer.whereis(via(company)) do
+      nil ->
+        # Isolated dispatch tests may run without a company tree. Production
+        # always has a gate, where this same operation is audited.
+        PathGrantStore.revoke(company, agent_slug, task_id)
+
+      pid ->
+        try do
+          GenServer.call(pid, {:revoke, agent_slug, task_id, opts})
+        catch
+          # `whereis/1` does not pin the gate process. If it exits between
+          # lookup and call, keep dispatch cleanup fail-closed by revoking the
+          # idempotent ETS grant directly.
+          :exit, _reason -> PathGrantStore.revoke(company, agent_slug, task_id)
+        end
+    end
   end
 
   @doc """
@@ -115,6 +130,8 @@ defmodule Glorbo.PathRequestGate do
       audit_server: audit_server
     }
 
+    :ok = PathGrantStore.register_company(company, self())
+
     {:ok, state}
   end
 
@@ -126,6 +143,11 @@ defmodule Glorbo.PathRequestGate do
   end
 
   def handle_call({:approve, agent_slug, task_id, granted_paths, _opts}, _from, state) do
+    # Re-register at the mutation boundary as well as init. If the
+    # application-level store was independently restarted, its ETS table is
+    # empty (fail-closed) and its process monitors were lost; this restores
+    # company-lifetime cleanup before accepting a new grant.
+    :ok = PathGrantStore.register_company(state.company, self())
     result = do_approve(agent_slug, task_id, granted_paths, state)
     audit_result(result, state)
     {:reply, result, state}

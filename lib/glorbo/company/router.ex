@@ -209,8 +209,9 @@ defmodule Glorbo.Company.Router do
   #
   # Threatmodel H3/H6 (wave 4): each segment is Path.join'd into the
   # channels/inbox filesystem tree, so anything that isn't a canonical
-  # slug (`[a-z0-9-]+`) is path-traversal fuel. Reject at parse time
-  # — no `..`, no absolute paths, no `/`.
+  # entity slug is path-traversal fuel. Reject at parse time — no `..`,
+  # no absolute paths, no `/`. Agent slugs use the shared agent-specific
+  # shape, which permits underscores consistently with creation/routing.
   defp parse_to("chat:" <> channel) when byte_size(channel) > 0 do
     if Glorbo.Slug.valid?(channel),
       do: {:ok, {:chat, channel}},
@@ -218,7 +219,7 @@ defmodule Glorbo.Company.Router do
   end
 
   defp parse_to("agent:" <> slug) when byte_size(slug) > 0 do
-    if Glorbo.Slug.valid?(slug),
+    if Glorbo.Slug.valid?(slug, :agent),
       do: {:ok, {:agent, slug}},
       else: {:error, {:invalid_message, :invalid_agent_slug}}
   end
@@ -920,7 +921,7 @@ defmodule Glorbo.Company.Router do
       true ->
         assignee = Map.get(meta, "assigned_to") || ""
 
-        with true <- Glorbo.Slug.valid?(assignee),
+        with true <- Glorbo.Slug.valid?(assignee, :agent),
              :ok <- ACLMapper.check_action(perms, {"agents", "message", assignee}) do
           auto_dispatch_if_ready(meta, project, task_id, sender, assignee, state)
         else

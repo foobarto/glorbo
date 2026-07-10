@@ -4,6 +4,11 @@ defmodule Glorbo.Security.ACLMapperTest do
   alias Glorbo.Security.ACLMapper
 
   describe "parse_permission/1" do
+    test "accepts underscore-bearing agent scopes" do
+      assert {:ok, {"agents", "message", "qa_lead"}} =
+               ACLMapper.parse_permission("agents:message:qa_lead")
+    end
+
     test "parses valid three-part permission" do
       assert {:ok, {"projects", "write", "website-redesign"}} =
                ACLMapper.parse_permission("projects:write:website-redesign")
@@ -17,9 +22,22 @@ defmodule Glorbo.Security.ACLMapperTest do
       assert {:error, :unknown_resource} = ACLMapper.parse_permission("unknown:write:foo")
     end
 
-    test "parses agents:create:* (verb in whitelist)" do
-      assert {:ok, {"agents", "create", "*"}} =
-               ACLMapper.parse_permission("agents:create:*")
+    test "rejects known capability families without an implementation" do
+      assert {:error, :not_implemented} = ACLMapper.parse_permission("agents:create:*")
+      assert {:error, :not_implemented} = ACLMapper.parse_permission("agents:list:*")
+      assert {:error, :not_implemented} = ACLMapper.parse_permission("tasks:write:docs")
+    end
+
+    test "rejects unknown actions on known resources" do
+      assert {:error, :unknown_action} = ACLMapper.parse_permission("chat:delete:general")
+      assert {:error, :unknown_action} = ACLMapper.parse_permission("tasks:approve:docs")
+    end
+
+    test "enforces wildcard-only proposal scopes" do
+      assert {:ok, {"proposals", "read", "*"}} =
+               ACLMapper.parse_permission("proposals:read:*")
+
+      assert {:error, :invalid_scope} = ACLMapper.parse_permission("proposals:read:private")
     end
 
     test "returns error for traversal-like scope" do
@@ -147,11 +165,16 @@ defmodule Glorbo.Security.ACLMapperTest do
       assert length(entries) == 4
     end
 
-    test "agents:create produces no ACL entry" do
-      perms = [{"agents", "create", "*"}]
-      entries = ACLMapper.acl_entries("glorbo-acme-eng", perms)
+    test "unsupported direct tuples fail loudly instead of weakening the ACL" do
+      assert_raise ArgumentError, ~r/unsupported ACL permission/, fn ->
+        ACLMapper.acl_entries("glorbo-acme-eng", [{"agents", "create", "*"}])
+      end
+    end
 
-      assert length(entries) == 4
+    test "direct tuples cannot bypass scope validation" do
+      assert_raise ArgumentError, ~r/invalid_scope/, fn ->
+        ACLMapper.acl_entries("glorbo-acme-eng", [{"projects", "write", "../other"}])
+      end
     end
 
     test "tasks:update adds rwx on projects/<scope>/tasks" do
@@ -159,6 +182,73 @@ defmodule Glorbo.Security.ACLMapperTest do
       entries = ACLMapper.acl_entries("glorbo-acme-eng", perms)
 
       assert {"glorbo-acme-eng", :rwx, "projects/website-redesign/tasks"} in entries
+    end
+
+    test "tasks:read adds rx on projects/<scope>/tasks" do
+      entries = ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "read", "docs"}])
+
+      assert {"glorbo-acme-eng", :rx, "projects/docs/tasks"} in entries
+    end
+
+    test "wildcard task ACLs require and use company-path expansion" do
+      root =
+        Path.join(System.tmp_dir!(), "glorbo-acl-wildcard-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join([root, "projects", "alpha", "tasks"]))
+      File.mkdir_p!(Path.join([root, "projects", "beta", "tasks"]))
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      assert_raise ArgumentError, ~r/company-path expansion/, fn ->
+        ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "update", "*"}])
+      end
+
+      entries = ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "update", "*"}], root)
+
+      assert {"glorbo-acme-eng", :rwx, "projects/alpha/tasks"} in entries
+      assert {"glorbo-acme-eng", :rwx, "projects/beta/tasks"} in entries
+      refute Enum.any?(entries, fn {_, _, path} -> String.contains?(path, "*") end)
+    end
+
+    test "wildcard task ACL expansion ignores symlinked project directories" do
+      root =
+        Path.join(System.tmp_dir!(), "glorbo-acl-symlink-#{System.unique_integer([:positive])}")
+
+      victim =
+        Path.join(System.tmp_dir!(), "glorbo-acl-victim-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join([root, "projects"]))
+      File.mkdir_p!(Path.join(victim, "tasks"))
+      :ok = File.ln_s(victim, Path.join([root, "projects", "escape"]))
+
+      on_exit(fn ->
+        File.rm_rf!(root)
+        File.rm_rf!(victim)
+      end)
+
+      entries = ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "update", "*"}], root)
+
+      refute Enum.any?(entries, fn {_, _, path} -> String.contains?(path, "escape") end)
+    end
+
+    test "wildcard task ACL expansion reports project listing failures clearly" do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "glorbo-acl-unreadable-#{System.unique_integer([:positive])}"
+        )
+
+      projects = Path.join(root, "projects")
+      File.mkdir_p!(projects)
+      File.chmod!(projects, 0o000)
+
+      on_exit(fn ->
+        File.chmod(projects, 0o700)
+        File.rm_rf!(root)
+      end)
+
+      assert_raise ArgumentError, ~r/cannot list wildcard task ACL projects.*eacces/, fn ->
+        ACLMapper.acl_entries("glorbo-acme-eng", [{"tasks", "read", "*"}], root)
+      end
     end
 
     test "combined permissions produce deterministic sorted output" do

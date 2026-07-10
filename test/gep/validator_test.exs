@@ -201,6 +201,16 @@ defmodule Gep.ValidatorTest do
       assert no_errors_for_gep(results, 2)
       File.rm_rf!(tmp_dir)
     end
+
+    test "malformed string reference is reported instead of crashing validation" do
+      gep = %{valid_gep(1) | requires: ["not-a-number"]}
+      tmp_dir = tmp_gep_dir([gep])
+
+      results = Validator.validate_all(tmp_dir)
+
+      assert has_error(results, 1, ~r/requires references GEP-not-a-number/)
+      File.rm_rf!(tmp_dir)
+    end
   end
 
   describe "superseded status" do
@@ -543,12 +553,6 @@ defmodule Gep.ValidatorTest do
   defp has_error(results, gep_number, pattern) when is_integer(gep_number) do
     Enum.any?(results, fn r ->
       r.severity == :error and r[:gep_number] == gep_number and r.detail =~ pattern
-    end)
-  end
-
-  defp has_error(results, pattern) when is_binary(pattern) do
-    Enum.any?(results, fn r ->
-      r.severity == :error and r.detail =~ pattern
     end)
   end
 

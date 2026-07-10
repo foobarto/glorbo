@@ -53,7 +53,7 @@ defmodule Glorbo.CompanyBoot do
           |> Enum.filter(fn slug ->
             Glorbo.Slug.valid?(slug) and real_directory?(Path.join(companies_dir, slug))
           end)
-          |> Enum.each(&start_company(&1, base))
+          |> Enum.each(&ensure_started(&1, base))
 
         _ ->
           :ok
@@ -77,7 +77,41 @@ defmodule Glorbo.CompanyBoot do
     end
   end
 
-  defp start_company(slug, base) do
+  @doc """
+  Ensure the runtime supervision tree for an on-disk company is running.
+
+  `CompanyBoot` performs this once for companies present at application boot.
+  Dashboard-created companies use this public seam so their AuditLog, Router,
+  approval gate, and other runtime children become available immediately
+  without requiring an application restart.
+
+  The call is a clean no-op when automatic company startup is disabled (the
+  normal unit-test configuration).
+  """
+  @spec ensure_started(String.t(), Path.t()) ::
+          {:ok, pid() | :already_started | :disabled} | {:error, term()}
+  def ensure_started(slug, base \\ Hierarchy.default_root())
+
+  def ensure_started(slug, base)
+      when is_binary(slug) and is_binary(base) do
+    cond do
+      not Application.get_env(:glorbo, :auto_start_companies, true) ->
+        {:ok, :disabled}
+
+      not Glorbo.Slug.valid?(slug) ->
+        {:error, :invalid_company_slug}
+
+      not real_directory?(Path.join([base, "companies", slug])) ->
+        {:error, :company_not_found}
+
+      true ->
+        start_company_supervisor(slug, base)
+    end
+  end
+
+  def ensure_started(_slug, _base), do: {:error, :invalid_company_slug}
+
+  defp start_company_supervisor(slug, base) do
     spec =
       {CompanySup,
        [
@@ -87,14 +121,16 @@ defmodule Glorbo.CompanyBoot do
        ]}
 
     case DynamicSupervisor.start_child(Glorbo.CompanySupervisor, spec) do
-      {:ok, _pid} ->
+      {:ok, pid} ->
         Logger.info("Started company supervisor for #{slug}")
+        {:ok, pid}
 
       {:error, {:already_started, _pid}} ->
-        :ok
+        {:ok, :already_started}
 
       {:error, reason} ->
         Logger.warning("Failed to start company supervisor for #{slug}: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 end

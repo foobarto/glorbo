@@ -65,7 +65,7 @@ defmodule Glorbo.CLI.UpTest do
       assert Bitwise.band(mode, 0o777) == 0o600
 
       pid = Pidfile.read!(home)
-      assert is_integer(pid) and pid > 0
+      assert pid > 0
       track_pid(t, pid)
     end
 

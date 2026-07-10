@@ -220,11 +220,12 @@ defmodule GlorboWeb.TaskLive do
     if trimmed == "" do
       {:noreply, put_flash(socket, :error, "Comment is empty.")}
     else
-      case GlorboWeb.Actions.post_task_comment(
+      case Glorbo.Actions.post_task_comment(
              socket.assigns.company_slug,
              socket.assigns.rel_path,
              trimmed,
-             base: base_dir()
+             base: base_dir(),
+             actor: "director"
            ) do
         :ok -> {:noreply, socket}
         {:error, reason} -> {:noreply, put_flash(socket, :error, format_error(reason))}
@@ -232,66 +233,21 @@ defmodule GlorboWeb.TaskLive do
     end
   end
 
-  # PLAN item — shared-task-detail-component. The shared
-  # TaskDetailForm emits `save_task` / `delete_task` / `close_task`
-  # events; TaskLive handles them to keep parity with KanbanLive's
-  # shelf (without which the form would throw on submit). Save writes
-  # both the frontmatter AND the body (the form's body textarea), and
-  # routes through the same `GlorboWeb.TaskApprovalGuard` as Kanban so
-  # an approval-gated task can't be flipped past the Inbox gate here.
   def handle_event("save_task", params, socket) do
-    abs =
-      Path.join([base_dir(), "companies", socket.assigns.company_slug, socket.assigns.rel_path])
+    actor = to_string(socket.assigns[:current_user] || "director")
 
-    updates =
-      %{
-        "title" => params["title"],
-        "status" => params["status"],
-        "assigned_to" => params["assigned_to"],
-        "priority" => params["priority"],
-        "severity" => params["severity"]
-      }
-      |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
-      |> Map.new()
+    case Glorbo.Actions.Tasks.update(
+           socket.assigns.company_slug,
+           socket.assigns.rel_path,
+           params,
+           actor: actor,
+           base: base_dir()
+         ) do
+      {:ok, _result} ->
+        {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
 
-    updates =
-      case params["requires_approval"] do
-        "director" -> Map.put(updates, "requires_approval", "director")
-        _ -> updates
-      end
-
-    # `done_when` is intentionally separate from the reject-on-empty
-    # block above: clearing it (empty string) must persist as a
-    # frontmatter clear, not a no-op. `write_frontmatter/2` treats
-    # `""` as "remove this key" so the round-trip is honest.
-    updates =
-      case params["done_when"] do
-        nil -> updates
-        v -> Map.put(updates, "done_when", String.trim(v))
-      end
-
-    with :ok <-
-           GlorboWeb.TaskApprovalGuard.refuse_if_bypasses_approval_gate(abs, params["status"]),
-         :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, updates),
-         :ok <- maybe_write_body(abs, params) do
-      # C-094: a frontmatter+body edit is a state-changing mutation on a
-      # dashboard route. The append-only audit log must record it
-      # (crown jewel) so the forensic trail can't be bypassed via the
-      # task editor. Emit AFTER the writes so we only audit edits that
-      # actually landed; capture actor + the keys that changed.
-      emit_task_edit_audit(socket, updates)
-      {:noreply, put_flash(socket, :info, "Saved #{socket.assigns.task_id}.")}
-    else
-      {:error, :approval_gate_bypass} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "This task requires director approval — approve it via the Inbox before changing status to done."
-         )}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not save task.")}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, GlorboWeb.TaskUpdateError.message(reason))}
     end
   end
 
@@ -319,32 +275,6 @@ defmodule GlorboWeb.TaskLive do
   defp format_error(:empty_body), do: "Comment is empty."
   defp format_error(:body_too_large), do: "Comment exceeds 10 KB."
   defp format_error(reason), do: "Could not post comment: #{inspect(reason)}"
-
-  # C-094: append a `task.edit` entry to the company's append-only
-  # audit log for a frontmatter edit. `changed` is the sorted list of
-  # frontmatter keys this save touched, so a reviewer can see what the
-  # actor altered (status / assigned_to / requires_approval are all
-  # security-relevant — they gate the approval flow).
-  defp emit_task_edit_audit(socket, updates) do
-    actor = to_string(socket.assigns[:current_user] || "director")
-
-    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
-      actor: actor,
-      action: "task.edit",
-      target: socket.assigns.rel_path,
-      changed: updates |> Map.keys() |> Enum.sort()
-    })
-  end
-
-  # GEP-30 D8: comments live in the sibling `.comments.md` file, so a body
-  # save only rewrites the prompt body of the task file. Rewrite ONLY when
-  # the form actually carried the `body` field — a submit that omits it
-  # (e.g. a frontmatter-only save) must preserve the existing body, never
-  # blank it (`write_body/2` treats "" as "clear the body").
-  defp maybe_write_body(abs, %{"body" => body}),
-    do: Glorbo.TaskDefinition.write_body(abs, String.trim(body))
-
-  defp maybe_write_body(_abs, _params), do: :ok
 
   # ---------------------------------------------------------------------------
   # Helpers

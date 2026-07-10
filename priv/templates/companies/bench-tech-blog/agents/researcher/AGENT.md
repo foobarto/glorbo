@@ -11,7 +11,7 @@ heartbeat: null
 permissions:
   - projects:read:*
   - projects:write:posts
-  - tasks:write:posts
+  - tasks:update:posts
   - chat:read:*
   - chat:write:general
 budget:

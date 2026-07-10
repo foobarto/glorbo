@@ -45,7 +45,7 @@ defmodule Glorbo.Actions.Support do
   @spec validate_slug(String.t(), atom()) ::
           :ok | {:error, {:invalid_slug, atom(), term()}}
   def validate_slug(slug, kind) when is_binary(slug) and is_atom(kind) do
-    if valid_slug?(slug), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
+    if Glorbo.Slug.valid?(slug, kind), do: :ok, else: {:error, {:invalid_slug, kind, slug}}
   end
 
   def validate_slug(slug, kind) when is_atom(kind) do

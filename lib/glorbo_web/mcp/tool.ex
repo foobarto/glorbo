@@ -22,7 +22,7 @@ defmodule GlorboWeb.MCP.Tool do
 
   Tools that don't need the context can ignore it.
 
-  Tools that call `GlorboWeb.Actions` (writes) may also receive
+  Tools that call `Glorbo.Actions` (writes) may also receive
   `:audit` — a GenServer pid / via tuple / module name that overrides
   the default Registry-based audit lookup. Production MCP traffic
   leaves this unset; `Actions` then resolves via

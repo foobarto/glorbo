@@ -11,7 +11,7 @@ which isn't portable across CI vs local checkouts; `.dialyzer_ignore.exs`
 is kept intentionally empty).
 
 ```
-DIALYZER_BASELINE = 169
+DIALYZER_BASELINE = 126
 ```
 
 > **163 → 166 (P2 security wave, 2026-05-22).** The wave added 4 private
@@ -98,6 +98,12 @@ DIALYZER_BASELINE = 169
 > ubuntu24/OTP-29.0.2 must be observed on a real run before
 > retightening. Net change is a reduction, so the regression gate
 > (fail only on *increase*) passes with margin.
+>
+> **169 → 126 (stabilization pass, 2026-07-10).** Re-measured the complete
+> tree with Elixir 1.20 / OTP 29 after the environment upgrade had settled.
+> The checked tree reports 126 warnings, so both CI and release ceilings were
+> tightened immediately. This removes 42 warnings of unused headroom; every
+> future reduction must lower the ceiling in the same change.
 
 **Burn-down:** when you fix warnings, lower the baseline number in
 `.github/workflows/ci.yml` (the `baseline=` in the Dialyzer step). When it
@@ -151,7 +157,7 @@ lib/mix/tasks/glorbo.kill.ex:79:9:call The function call exit_with will not succ
 lib/mix/tasks/glorbo.kill.ex:87:7:call The function call exit_with will not succeed.
 ```
 
-## Full baseline inventory (163)
+## Historical full baseline inventory (163)
 
 <details><summary>all current dialyzer warnings</summary>
 

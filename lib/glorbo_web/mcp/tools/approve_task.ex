@@ -3,14 +3,14 @@ defmodule GlorboWeb.MCP.Tools.ApproveTask do
   MCP tool: `glorbo.approve_task` (GEP-29 wave c.1).
 
   Approves a task currently in `status: pending-approval` (GEP-19).
-  Calls the same `GlorboWeb.Actions.set_approval/4` function the
+  Calls the same `Glorbo.Actions.set_approval/4` function the
   LiveView Approve button uses, so the audit shape, `assigned_to`
   restoration, and scaffold-on-approve side effects stay identical.
   Actor on the audit entry is `mcp:<client>` (GEP-29 D4).
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias GlorboWeb.Actions
+  alias Glorbo.Actions
   alias GlorboWeb.MCP.Args
 
   @impl true

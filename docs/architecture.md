@@ -7,16 +7,15 @@ modules cluster together). This file sits between the two — a
 human-written summary keyed to module paths — and is maintained
 alongside code changes per the CLAUDE.md six-phase step 6.
 
-## The seven subsystems
+## The eight subsystems
 
-Glorbo's code clusters into seven roughly-cohesive subsystems. Each
+Glorbo's code clusters into eight roughly-cohesive subsystems. Each
 is rooted at one or two hub modules that show up near the top of
 the knowledge-graph "god nodes" list.
 
 ### 1. Company Router — `lib/glorbo/company/`
 
-**Entry point:** `Glorbo.Company.Router` (96 edges, the highest-
-centrality module in the graph).
+**Entry point:** `Glorbo.Company.Router`.
 
 The single choke point between agent outboxes and their
 destinations. Every agent-initiated write — a message, a task, a
@@ -37,7 +36,7 @@ emits the audit event. Its classmates in the same supervision tree:
 
 ### 2. Agent runtime — `lib/glorbo/agent/`
 
-**Entry points:** `Glorbo.Agent.Server` (53 edges), `Glorbo.Agent.Dispatch` (50 edges).
+**Entry points:** `Glorbo.Agent.Server`, `Glorbo.Agent.Dispatch`.
 
 The lifecycle of a single agent invocation. When the Scheduler
 fires or an inbox message lands, `Agent.Server` enters `:dispatching`
@@ -67,12 +66,12 @@ Note: GEP-50 (per-agent default-deny authorization) remains a `Draft` proposal.
 
 ### 3. Filesystem & FileSpec — `lib/glorbo/filesystem/` + `lib/glorbo/file_spec/`
 
-**Entry points:** `Glorbo.Filesystem.Hierarchy.default_root` (74 edges),
+**Entry points:** `Glorbo.Filesystem.Hierarchy.default_root`,
 `Glorbo.Filesystem.Frontmatter`, `Glorbo.FileSpec` behaviour.
 
 `default_root/0` is load-bearing: every module that touches disk
-calls it to resolve `~/.glorbo`. The knowledge graph flags it as
-bridging 27 communities — changing its behaviour has enormous blast
+calls it to resolve `~/.glorbo`. It bridges many subsystems, so changing
+its behaviour has enormous blast
 radius. Treat it as an API boundary even though it's a plain
 function.
 
@@ -90,11 +89,11 @@ Note: While GEP-35 (Router split) remains a `Placeholder` and the router has not
 
 ### 4. Phoenix / LiveView dashboard — `lib/glorbo_web/`
 
-**Entry points:** `GlorboWeb.AgentLive` (75 edges),
-`GlorboWeb.CompanyLive` (70 edges), `GlorboWeb.KanbanLive` (45
-edges). `GlorboWeb.Actions` is the shared-action layer called from
-every LV and from MCP — it's the enforcement point for permissions
-+ audit and must not be bypassed (GEP-6 D6).
+**Entry points:** `GlorboWeb.AgentLive`, `GlorboWeb.CompanyLive`,
+`GlorboWeb.KanbanLive`. `Glorbo.Actions` and its resource modules are
+the shared mutation layer called from every frontend, including LiveView,
+MCP, and the shell. They are the enforcement point for validation and
+audit and must not be bypassed (GEP-6 D6, GEP-36).
 
 Seven canonical views per GEP-6:
 
@@ -128,8 +127,8 @@ no browser access.
 Streamable HTTP endpoint at `/mcp` exposing 23 tools that map 1:1
 to dashboard capabilities. Actor for every mutation is
 `mcp:<client>` (GEP-29 D4). All writes go through the same
-`GlorboWeb.Actions` layer LiveView calls; proposals specifically
-use the GEP-28 outbox indirection.
+`Glorbo.Actions` resource modules the other frontends call; proposals
+specifically use the GEP-28 outbox indirection.
 
 Tools live in `lib/glorbo_web/mcp/tools/` — one module per tool,
 implementing the `GlorboWeb.MCP.Tool` behaviour. `GlorboWeb.MCP.Args`
@@ -208,7 +207,7 @@ path and the dashboard Settings UI. Do not describe the backend as dead code.
 Reading the knowledge graph well means knowing what's noise:
 
 1. **Generic function-name god nodes are false positives.**
-   `parse()` (93 edges), `get()`, `map()`, `lookup()`, `run()`,
+   `parse()`, `get()`, `map()`, `lookup()`, `run()`,
    `inspect()`, `warning()` appear high on the centrality list
    because tree-sitter collapses cross-module name collisions.
    They aren't single abstractions — they're many.
@@ -231,7 +230,7 @@ Reading the knowledge graph well means knowing what's noise:
 
 5. **Graph corpus must be scoped to `lib/`.** Running
    `graphify update .` includes `deps/` and `_build/` and
-   swamps the signal (21958 nodes vs 2478). Always
+   swamps the signal with dependency internals. Always
    `graphify update lib`.
 
 ## Where to look first for common questions
@@ -251,5 +250,6 @@ Reading the knowledge graph well means knowing what's noise:
 - `docs/DESIGN.md` — authoritative spec.
 - `docs/knowledge-graph/GRAPH_REPORT.md` — the graph output.
 - `docs/geps/` — individual design decisions.
+- `docs/capabilities.md` — current shipped/partial capability ledger.
 - [`CLAUDE.md`](../CLAUDE.md) §"Feature development" — six-phase
   process that keeps this doc + the graph fresh.

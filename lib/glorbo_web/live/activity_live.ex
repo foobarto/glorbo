@@ -130,6 +130,7 @@ defmodule GlorboWeb.ActivityLive do
       </header>
 
       <form
+        id="activity-filter-form"
         phx-change="filter"
         class="gl-audit__filters"
         role="search"

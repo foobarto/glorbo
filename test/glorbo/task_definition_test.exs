@@ -968,5 +968,41 @@ defmodule Glorbo.TaskDefinitionTest do
       assert raw =~ ~r/^model: qwen\/qwen3\.6-35b-a3b$/m
       assert raw =~ ~r/^provider: opencode$/m
     end
+
+    test "canonical task fields survive an unrelated editor rewrite", ctx do
+      content = """
+      ---
+      kind: task/v1
+      id: preserve-all
+      title: Preserve all fields
+      status: todo
+      goal: release-v1
+      schedule: every monday at 9am
+      budget_usd_cents: 2500
+      depends_on:
+        - foundation-1
+        - api-2
+      cancelled_reason: not cancelled yet
+      created_at: "2026-07-10T10:00:00Z"
+      created_by: director
+      ---
+      original body
+      """
+
+      path = write_task(ctx, "preserve-all.md", content)
+
+      assert :ok = TaskDefinition.write_editor(path, %{"priority" => "high"}, :preserve)
+
+      raw = File.read!(path)
+      assert raw =~ ~r/^id: preserve-all$/m
+      assert raw =~ ~r/^goal: release-v1$/m
+      assert raw =~ ~r/^schedule: "every monday at 9am"$/m
+      assert raw =~ ~r/^budget_usd_cents: 2500$/m
+      assert raw =~ ~r/^depends_on:\n  - foundation-1\n  - api-2$/m
+      assert raw =~ ~r/^cancelled_reason: "not cancelled yet"$/m
+      assert raw =~ ~r/^created_at: "2026-07-10T10:00:00Z"$/m
+      assert raw =~ ~r/^created_by: director$/m
+      assert raw =~ "original body"
+    end
   end
 end

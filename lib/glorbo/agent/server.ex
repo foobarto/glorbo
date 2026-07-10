@@ -257,7 +257,7 @@ defmodule Glorbo.Agent.Server do
 
         Enum.each(state.in_flight, fn {_ref, invocation} ->
           if task_id = Map.get(invocation, :task_id) do
-            _ = Glorbo.PathGrantStore.revoke(company, slug, task_id)
+            _ = Glorbo.PathRequestGate.revoke(company, slug, task_id)
           end
 
           pid = Map.get(invocation, :pid)
@@ -1176,7 +1176,8 @@ defmodule Glorbo.Agent.Server do
 
   defp write_outbox_reply(state, body, to) do
     ts = System.system_time(:millisecond)
-    msg_id = "reply-#{ts}"
+    nonce = System.unique_integer([:positive, :monotonic])
+    msg_id = "reply-#{ts}-#{nonce}"
 
     outbox_dir =
       Path.join([
@@ -1199,38 +1200,13 @@ defmodule Glorbo.Agent.Server do
     #{String.trim(body)}
     """
 
-    # threatmodel H11: the agent controls its outbox directory, so
-    # it can pre-seed a symlink at the envelope's expected filename.
-    # File.write follows symlinks, which would let the agent
-    # overwrite any file writable by the Glorbo OS user (e.g.
-    # ~/.glorbo/config.md). lstat-and-refuse anything non-regular
-    # at the target path before we write.
-    try do
-      File.mkdir_p!(outbox_dir)
+    case Glorbo.Filesystem.AgentWritableFile.create_exclusive(path, content) do
+      :ok ->
+        :ok
 
-      case File.lstat(path) do
-        {:ok, %File.Stat{type: :regular}} ->
-          File.write!(path, content)
-          :ok
-
-        {:ok, %File.Stat{type: type}} ->
-          require Logger
-          Logger.warning("reply outbox write refused: #{inspect(type)} at #{path}")
-          :ok
-
-        {:error, :enoent} ->
-          File.write!(path, content)
-          :ok
-
-        {:error, reason} ->
-          require Logger
-          Logger.warning("reply outbox lstat failed: #{inspect(reason)}")
-          :ok
-      end
-    rescue
-      e ->
+      {:error, reason} ->
         require Logger
-        Logger.warning("reply outbox write failed: #{Exception.message(e)}")
+        Logger.warning("reply outbox write refused: #{inspect(reason)} at #{path}")
         :ok
     end
   end

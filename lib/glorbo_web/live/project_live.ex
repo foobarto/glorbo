@@ -240,7 +240,12 @@ defmodule GlorboWeb.ProjectLive do
             </dl>
           </div>
 
-          <form :if={@edit_mode} phx-submit="save_project" class="gl-panel__body gl-project__form">
+          <form
+            :if={@edit_mode}
+            id="project-edit-form"
+            phx-submit="save_project"
+            class="gl-panel__body gl-project__form"
+          >
             <label class="gl-form__row">
               <span class="gl-form__label">name</span>
               <input

@@ -9,7 +9,7 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 - **Host ↔ sandbox boundary:** untrusted agent processes run inside `bwrap` (`lib/glorbo/sandbox/bwrap.ex`). The kernel namespace boundary is the primary security control.
 - **Router boundary:** all agent writes must flow through `Glorbo.Company.Router` (`lib/glorbo/company/router.ex`) which validates sender identity and permissions.
 - **Company boundary:** each company has its own directory tree; bwrap only mounts the active company’s directory to keep siblings invisible.
-- **HTTP boundary:** dashboard and MCP requests are external inputs that can mutate the filesystem via `GlorboWeb.Actions` and MCP tools.
+- **HTTP boundary:** dashboard and MCP requests are external inputs that can mutate the filesystem via `Glorbo.Actions` and MCP tools.
 - **File-format boundary:** YAML frontmatter, markdown bodies, and JSONL logs are untrusted inputs parsed by the system.
 
 ### Attacker-controlled inputs
@@ -57,7 +57,7 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 - Sender identity is derived from the outbox path (anti-spoof), and control characters in `msg_id`/`to` are rejected to prevent YAML/frontmatter injection.
 - `ACLMapper.check_action` enforces permission checks before routing; `agents:create` is explicitly blocked.
 - Channel writes are append-only with `[:append, :sync]` to avoid interleaving races; rejections are audited and archived.
-- Director actions use `GlorboWeb.Actions` with slug/path validation and symlink checks (`File.lstat!`) before writing.
+- Director actions use `Glorbo.Actions` with slug/path validation and symlink checks before writing.
 
 **Attacker stories:**
 - An agent tries to impersonate another sender by crafting an outbox file path; the router’s `verify_sender_slug` should reject it.
@@ -81,7 +81,7 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 **Mitigations:**
 - CSRF protection and secure browser headers are enabled in the `:browser` pipeline.
 - Optional bearer token gate (`lib/glorbo_web/plugs/dashboard_token.ex`) protects LAN exposure; constant-time compare avoids timing leakage.
-- Slug validation (`GlorboWeb.Slug`) and write paths in `GlorboWeb.Actions` prevent path traversal.
+- Entity-aware slug validation (`Glorbo.Slug`) and write paths in `Glorbo.Actions` prevent path traversal.
 - Default binding is loopback (`config/runtime.exs`), limiting remote access by default.
 
 **Attacker stories:**
@@ -94,7 +94,7 @@ Security goals in this codebase are: (1) contain untrusted agent/LLM output, (2)
 **Mitigations:**
 - `GlorboWeb.MCP.Plug` enforces origin allowlists to reduce DNS rebinding risk and validates protocol headers.
 - `GlorboWeb.MCP.Args` validates slugs before any path construction.
-- Tool implementations delegate to `GlorboWeb.Actions` or the Router for consistent validation.
+- Tool implementations delegate to `Glorbo.Actions` or the Router for consistent validation.
 - Default loopback binding is the outer boundary; MCP is intentionally not behind the dashboard token.
 
 **Attacker stories:**
@@ -852,6 +852,13 @@ See `git log -- docs/testing/threatmodel.md` for the raw Codex import (with per-
 
 ### Low (defense-in-depth / bounded DoS / integrity gaps) — 0
 
+**v0.28.7 release re-review (2026-07-10):** Medium and Low remain at
+zero after the runtime-boundary stabilization pass. The two accepted
+risks below remain explicitly unchanged. Browser UAT additionally
+closed two correctness/reliability issues (dynamic company supervision
+and task-comment sidecar classification); neither introduced a new
+security finding.
+
 
 ### Accepted risks (by-design / out-of-scope for v1) — 2
 
@@ -932,23 +939,27 @@ than open lows. Re-evaluate during the v1 cut.
   *Paths:* `lib/glorbo/agent/server.ex`
 - **Workspace ignore rule skips reindex for agent slug "workspace** — The commit adds a classify/1 rule that ignores any path under "agents/" containing the substring "/workspace/". This is intended to skip the agent workspace directory, but it also matches all paths for an agent whose slug is exactly "workspace" (e.g.,…
   *Paths:* `lib/glorbo/filesystem/watcher.ex`
-- **Approval reassignment writes task files without symlink checks** — The commit adds reassign_task/3 calls during approval request and grant. reassign_task builds an absolute path from task_path and calls TaskDefinition.write without validating that the target is a regular file or rejecting symlinks. An agent with tasks:update…
+- ~~**Approval reassignment writes task files without symlink checks**~~ — Closed: all `TaskDefinition` mutation paths lstat-gate the target through `AgentWritableFile` before reading or atomically replacing it.
   *Paths:* `lib/glorbo/approvals/gate.ex, lib/glorbo/task_definition.ex`
-- **Dashboard now accepts underscore slugs but routing rejects them** — This commit updates the client-side slug pattern for new agents to allow underscores and require a leading letter. However, the LiveView routing guard still uses GlorboWeb.Slug.valid?/1, which only allows [a-z0-9-]+. As a result, agents created with…
-  *Paths:* `lib/glorbo_web/live/company_live.ex, lib/glorbo_web/slug.ex, lib/glorbo_web/live/agent_live.ex`
+- ~~**Dashboard accepts underscore slugs but routing rejects them**~~ — Closed 2026-07-10: entity-aware `Glorbo.Slug.valid?/2` is shared by creation, routing, inbox, CLI, and MCP boundaries; agent underscores are accepted consistently.
+  *Paths:* `lib/glorbo/slug.ex, lib/glorbo_web/live/agent_live.ex`
 - **Company dashboard crashes when CLI registry is unavailable** — CompanyLive now calls provider_options() at mount time to populate the new-agent provider dropdown. provider_options/0 calls CLIRegistry.list/0 and rescues only exceptions. CLIRegistry.list/0 uses Agent.get/2; when the registry process is not running (e.g.,…
   *Paths:* `lib/glorbo_web/live/company_live.ex, lib/glorbo/cli/registry.ex`
 - **Heartbeat inbox scans now skip drain/reply due to trigger tagging** — The commit threads the wake trigger into inbox scans and stores it in the task map. For heartbeat wakes, this now produces tasks with trigger=:heartbeat instead of :inbox. Downstream logic only routes replies and drains inbox files for :inbox or :mention…
   *Paths:* `lib/glorbo/agent/server.ex`
-- **AuditLive realtime append leaves pagination offset stale** — AuditLive now handles {:audit_append, record} by appending to the in-memory tail and incrementing total_lines, but it never updates offset or beginning. When the tail is capped to 500 entries, the oldest entry is dropped and the offset should be incremented;…
+- ~~**AuditLive realtime append leaves pagination offset stale**~~ — Closed 2026-07-10: capped realtime appends advance the offset when the oldest row is dropped, preserving gap-free older-page loading.
   *Paths:* `lib/glorbo_web/live/audit_live.ex`
-- **Kanban editor YAML writer fails to escape backslashes** — The save_task handler now takes raw user input (title/assigned_to/priority/etc.) and writes it via TaskDefinition.write_frontmatter. That writer constructs YAML lines with yaml_scalar, but yaml_scalar only escapes double quotes and leaves backslashes…
+- ~~**Kanban editor YAML writer fails to escape backslashes**~~ — Closed 2026-07-10: both task editors call `Actions.Tasks.update/4`, which uses the shared safe YAML scalar writer and a single atomic rewrite.
   *Paths:* `lib/glorbo_web/live/kanban_live.ex, lib/glorbo/task_definition.ex`
-- **Unbounded parallel version probes allow local DoS** — The new detection module runs version probes in parallel using Task.async_stream with max_concurrency set to the full provider list length. The provider list is loaded directly from ~/.config/glorbo/providers.toml without any cap, so a locally writable providers…
+- ~~**Unbounded parallel version probes allow local DoS**~~ — Closed 2026-07-10: registry detection hard-caps concurrent probes at eight regardless of provider count or caller input.
   *Paths:* `lib/glorbo/cli/registry/detection.ex, lib/glorbo/cli/registry/loader.ex`
-- **GEP validator crashes on non-numeric frontmatter values** — Gep.Validator normalizes numeric frontmatter fields (gep, requires, supersedes, superseded-by, extended-by, see-also) by calling String.to_integer/1 on any binary value. If a GEP file contains a non-numeric string (e.g., "GEP-0001" or "foo") in one of these…
+- ~~**GEP validator crashes on non-numeric frontmatter values**~~ — Closed 2026-07-10: numeric coercion accepts only a complete `Integer.parse/1`; malformed strings remain data and produce validator findings instead of exceptions.
   *Paths:* `lib/gep/validator.ex`
-- **Inotify follow can skip log bytes during concurrent writes** — Glorbo.CLI.Logs.handle_modification/3 reads from the previous size to EOF, then sets the next offset using a second File.stat!/1. If the log grows between the read and that stat, last_size jumps past unread bytes. Subsequent events see new_size <= last_size…
+- ~~**Inotify follow can skip log bytes during concurrent writes or truncation**~~ — Closed 2026-07-10: incremental reads return and persist the byte offset actually consumed, independent of a later file stat, and both inotify and polling followers reset to byte zero when an in-place truncation shrinks the file.
   *Paths:* `lib/glorbo/cli/logs.ex`
-- **TaskDefinition prefix check allows traversal outside company** — `relative_task_path/3` trusts `String.starts_with?/2` on the raw `file_path` to decide if a task lives under the target company. Because the path is not normalized or resolved, an attacker who can influence the task path (or place a symlink in the tasks…
+- ~~**Exclusive outbox creation can be redirected by swapping an ancestor or expose a partial failure**~~ — Closed 2026-07-10: `AgentWritableFile.create_exclusive/2` now spawns its creator with the validated parent as a kernel-pinned cwd, verifies the resolved cwd, stages and byte-count-checks the payload under a random noclobber name, then publishes via an atomic no-replace hard link. Regression tests swap the parent after child `chdir` and force a partial stage write; neither reaches the destination.
+  *Paths:* `lib/glorbo/filesystem/agent_writable_file.ex`
+- ~~**Path-grant ownership replacement can retain stale grants**~~ — Closed 2026-07-10: the application-supervised store no longer has an unlinked fallback owner; different-owner registration revokes stale company grants, and gate-exit races fall back to idempotent store cleanup.
+  *Paths:* `lib/glorbo/path_grant_store.ex, lib/glorbo/path_request_gate.ex`
+- ~~**TaskDefinition prefix check allows traversal outside company**~~ — Closed: both company root and candidate paths are expanded before the boundary check, and reads independently refuse symlinked components.
   *Paths:* `lib/glorbo/task_definition.ex`
