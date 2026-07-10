@@ -321,3 +321,17 @@ This is an append-only record (per GEP-1, an Accepted/Implemented GEP's body is 
 - **§2.2 / D5 — director downgrade write→read and per-path trim in the UI — known-gap (server-enforceable, no UI affordance).** The server fully supports downgrade and trim: `validate_subset/2` (`path_request_gate.ex:356-383`) accepts any subset and permits write→read downgrade (rejects escalation and unrequested paths). But the only approval UI, `InboxLive`, sends the requested paths verbatim — the approve button at `inbox_live.ex:751` ships `phx-value-paths={Jason.encode!(pr.paths)}` and the handler at `inbox_live.ex:245-264` forwards exactly what was requested. There are no per-path read/write toggles or remove controls, so a director cannot exercise the least-privilege downgrade/trim flow from the UI. Real gap — fix by adding per-path mode toggles + remove control to the approval card, or amend §2.2/D5 to state downgrade/trim is server-enforced but UI-deferred.
 
 - **§Test strategy — gate lifecycle, Router classification, and integration tests — known-gap (partial coverage).** The promised Router `path-request` classification tests are absent: `router_test.exs` has zero GEP-27 path-request cases. `path_request_gate_test.exs` (23 tests) exercises only pure `@doc false` validators (`resolve_cross_company_mode/4`, `validate_no_symlink_segments/1`, `validate_subset/2`, `validate_request/1`); it never boots the GenServer or drives request→approve→grant→revoke / request→deny. The integration flow (outbox write → Router → Gate → approve → dispatch with mount → revoke) is untested. Partial credit exists outside the named files — `approved_path_flags/1` mount composition is covered in `bwrap_test.exs:685+`, and a `PathGrantStore` grant/revoke lifecycle assertion lives in `server_test.exs:783` (F8) — but the Router-classification, gate-GenServer-lifecycle, and end-to-end integration gaps the strategy calls out are real and unfilled.
+
+## Implementation reconciliation (2026-07-10)
+
+- **Dispatch-boundary grant auditing and ownership are closed.** The supervised
+  application-level `Glorbo.PathGrantStore` owns the ETS table independently of
+  any company sibling, monitors registered company owners, and revokes only that
+  company's grants when its gate terminates. Dispatch emits
+  `path_access.granted` when approved mounts are installed and routes cleanup
+  through `PathRequestGate.revoke/4`, which emits `path_access.revoked`.
+- **Lifecycle coverage is improved but the full Router-to-sandbox integration
+  scenario remains open.** Store tests cover owner termination, company
+  isolation, revoke, and stable-table ownership. The UI downgrade/trim affordance
+  and the end-to-end Router classification flow described above are still
+  follow-ups.

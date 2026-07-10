@@ -81,3 +81,7 @@ config :phoenix, :plug_init_mode, :runtime
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Form recovery is a runtime reliability contract. Missing IDs must fail in
+# CI instead of producing warnings that disappear in noisy negative-path logs.
+config :phoenix_live_view, :test_warnings, missing_form_id: :raise

@@ -125,8 +125,9 @@ defmodule GlorboWeb.InboxLive do
   end
 
   def handle_event("approve", %{"task_path" => tp}, socket) do
-    case GlorboWeb.Actions.set_approval(socket.assigns.company_slug, tp, :approved,
-           base: socket.assigns.base
+    case Glorbo.Actions.set_approval(socket.assigns.company_slug, tp, :approved,
+           base: socket.assigns.base,
+           actor: "director"
          ) do
       :ok ->
         {:noreply, put_flash(socket, :info, "Approved #{tp}.")}
@@ -147,9 +148,10 @@ defmodule GlorboWeb.InboxLive do
   def handle_event("deny_confirm", %{"reason" => reason}, socket) do
     tp = socket.assigns.deny_task_path
 
-    case GlorboWeb.Actions.set_approval(socket.assigns.company_slug, tp, :denied,
+    case Glorbo.Actions.set_approval(socket.assigns.company_slug, tp, :denied,
            base: socket.assigns.base,
-           denial_reason: reason
+           denial_reason: reason,
+           actor: "director"
          ) do
       :ok ->
         {:noreply,
@@ -385,7 +387,7 @@ defmodule GlorboWeb.InboxLive do
   defp agent_slug_from_sentinel_path(sentinel_path, co_dir) do
     case Path.relative_to(sentinel_path, co_dir) |> Path.split() do
       ["agents", agent_slug, "state", _filename] ->
-        if Glorbo.Slug.valid?(agent_slug), do: agent_slug, else: nil
+        if Glorbo.Slug.valid?(agent_slug, :agent), do: agent_slug, else: nil
 
       _ ->
         nil
@@ -952,6 +954,7 @@ defmodule GlorboWeb.InboxLive do
 
       <div :if={@deny_task_path} class="gl-modal-scrim" phx-click-away="deny_cancel">
         <form
+          id="inbox-deny-form"
           class="gl-modal"
           phx-submit="deny_confirm"
           phx-window-keydown="deny_cancel"

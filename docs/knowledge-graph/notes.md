@@ -29,13 +29,13 @@ it's a working memory.
 
 ### Graph caveats (tree-sitter false positives)
 
-The knowledge graph was built with
-`graphify update lib` on the 220-file `lib/` tree (2478 nodes, 4478
-edges, 103 communities, 81% EXTRACTED / 19% INFERRED). Signal
+The knowledge graph was refreshed with
+`graphify update lib` on the 327-file `lib/` tree (4303 nodes, 8274
+edges, 126 communities, 79% EXTRACTED / 21% INFERRED). Signal
 quality is good BUT:
 
 - **Generic function names are not abstractions.** `parse()` shows
-  up as the #2 god node (93 edges) — it's `Frontmatter.parse`,
+  up as a god node — it's `Frontmatter.parse`,
   `TaskDefinition.parse_file`, `Agent.Parser.parse_file`,
   `Glorbo.CLI.Parsers.*.parse` and more, all collapsed into one
   node because tree-sitter doesn't qualify by module. Same for
@@ -55,8 +55,7 @@ quality is good BUT:
 
 ### Load-bearing utility: `default_root/0`
 
-`Glorbo.Filesystem.Hierarchy.default_root/0` (74 edges, bridges 27
-communities) is the entry point for every filesystem-touching
+`Glorbo.Filesystem.Hierarchy.default_root/0` is the entry point for every filesystem-touching
 module. If you ever change its behaviour (env var lookup, default
 path), the blast radius is the whole codebase. Treat it as a
 public API even though it's a plain function.
@@ -218,7 +217,7 @@ Codex scan. A few load-bearing patterns worth keeping in mind:
 
 `Glorbo.Approvals.Gate` keeps a short-lived `director_pending` map
 (10 s TTL) of task_paths that the Director has just flipped through
-`GlorboWeb.Actions.set_approval`. The watcher-driven resolver
+`Glorbo.Actions.set_approval`. The watcher-driven resolver
 consults this before advancing an awaiting row to approved/denied
 — **unmarked transitions are treated as agent self-approval
 attempts, reverted to `awaiting`, and audited as
@@ -262,9 +261,10 @@ semantics (rare).
 
 ### Router slug discipline — chat + agent targets are Path.join fuel
 
-`Glorbo.Company.Router.parse_to/1` now validates both `chat:<name>`
-and `agent:<slug>` segments through `GlorboWeb.Slug.valid?/1`
-(canonical `\A[a-z0-9-]+\z`) before the strings reach `Path.join`
+`Glorbo.Company.Router.parse_to/1` validates both `chat:<name>` and
+`agent:<slug>` segments through `Glorbo.Slug.valid?/1,2` before the
+strings reach `Path.join`. Agent identifiers use the entity-specific
+form so underscores remain valid without weakening channel slugs
 for channel / inbox writes. Wave 4 threatmodel rows 15 & 18 —
 the outbox `to` field had only a control-char filter, so
 `to: chat:../../otherco/channels/general` or
@@ -467,7 +467,7 @@ task file before the row is shown to the director at all.
 
 The `Approvals.Gate` self-approval defense is already live: a task flip
 to `approved` or `denied` is only treated as legitimate when
-`GlorboWeb.Actions.set_approval/4` (or a test helper) calls
+`Glorbo.Actions.set_approval/4` (or a test helper) calls
 `Gate.mark_director_decision/2` before the watcher event lands. Any
 integration test that edits the task file without placing that mark is
 not simulating a Director approval; it is exercising the
@@ -856,10 +856,11 @@ the approval-gate guard Kanban got in PR #37 (could flip a
 Inbox — the kernel-layer Gate watcher reverted it, but the app layer
 didn't refuse → violates two-layer enforcement). Lesson: when two
 LiveViews share a form/component, the **event handlers must share an
-implementation too**, or they drift. Fixed by extracting
-`GlorboWeb.TaskApprovalGuard` (both delegate) + wiring body writes into
-TaskLive. When auditing parity bugs, diff the handlers of every
-LiveView that mounts a shared component.
+implementation too**, or they drift. The interim shared guard has now been
+superseded by `Glorbo.Actions.Tasks.update/4`: both LiveViews delegate the
+entire validated, approval-aware, atomic edit to the same domain boundary.
+When auditing parity bugs, diff the handlers of every LiveView that mounts a
+shared component.
 
 ### Browser UAT on this host: both browser MCPs want `/opt/google/chrome`
 `claude-in-chrome` (extension not connected), `playwright` MCP, and
@@ -975,6 +976,22 @@ FALSE PASSES for a broken NIF — only a migrating/querying path
 loads it. (2) A green release workflow is NOT proof the binary works — its
 smoke test only runs `doctor`. **Always download the published binary and run
 a DB-opening command (or readelf its NIF) before declaring a release done.**
+
+## 2026-07-10 — on-disk creation is not runtime creation
+
+`CompanyBoot` is intentionally one-shot: it enumerates companies only during
+application startup. A company scaffolded later from the dashboard therefore
+existed on disk and rendered in LiveView, but had no `Company.Supervisor` —
+its AuditLog, Router, watcher, approval gate, and schedulers were absent until
+the next Glorbo restart. Any runtime mutation that introduces a new supervised
+filesystem entity must explicitly start or register its process tree; a
+PubSub `company_added` notification only updates presentation state.
+
+The same UAT exposed a classification corollary: a broad
+`projects/*/tasks/*.md` watcher also matches `<task>.comments.md`. Consumers
+that need task definitions must use the canonical task-file distinction, as
+the scheduler already did, rather than treating every Markdown sidecar as a
+task. The approval gate now excludes comment threads before parsing.
 
 ---
 

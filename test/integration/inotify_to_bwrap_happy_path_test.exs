@@ -229,8 +229,11 @@ defmodule Glorbo.Integration.InotifyToBwrapHappyPathTest do
     assert Map.has_key?(env, "GLORBO_WORKSPACE")
     # claude-code provider's auth redirect lands in cli_auth_binds.
     assert Enum.any?(ctx.cli_auth_binds, fn
-             {host, _sandbox} -> String.ends_with?(host, ".claude")
-             _ -> false
+             bind when is_tuple(bind) and tuple_size(bind) >= 2 ->
+               bind |> elem(0) |> String.ends_with?(".claude")
+
+             _ ->
+               false
            end)
 
     # `ctx` here is the `bwrap_opts` map the dispatcher passed to

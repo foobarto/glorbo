@@ -102,6 +102,10 @@ defmodule Glorbo.Application do
       # CompanySupervisor so the first dispatch can register + the
       # Proxy can resolve without racing table creation.
       Glorbo.Network.ProxyTokens,
+      # GEP-27: stable owner for the global ephemeral path-grant ETS table.
+      # Company PathRequestGate processes register with it so a gate/company
+      # crash revokes that company's grants without affecting any sibling.
+      Glorbo.PathGrantStore,
       # GEP-33 Phase 2b: durable-history transaction buffer. Wraps
       # `HomeHistory.commit_marked/3` with the §6.1 debounce window
       # so multi-file logical operations land as one commit. Safe to
@@ -146,7 +150,11 @@ defmodule Glorbo.Application do
       # GEP-0053 D14/D15: escalating-delay throttle for /login passphrase
       # attempts. O(1) global state; must be up before the Endpoint serves.
       GlorboWeb.LoginThrottle,
-      GlorboWeb.Endpoint
+      GlorboWeb.Endpoint,
+      # Development-only one-shot; inert unless an actual Phoenix server was
+      # requested. Kept after Endpoint so the URL is never printed for a
+      # failed server boot or an unrelated Mix task.
+      GlorboWeb.SetupBanner
     ]
 
     # GEP-33 Phase 2c: under `mix test`, drop the Tx server from the
@@ -193,12 +201,12 @@ defmodule Glorbo.Application do
 
   defp apply_surface(children, :tui) do
     children
-    |> Enum.reject(&match?(GlorboWeb.Endpoint, &1))
+    |> Enum.reject(&(&1 in [GlorboWeb.Endpoint, GlorboWeb.SetupBanner]))
     |> Kernel.++([{Glorbo.Shell.Supervisor, [eventbus_opts: shell_eventbus_opts()]}])
   end
 
   defp apply_surface(children, :headless) do
-    Enum.reject(children, &match?(GlorboWeb.Endpoint, &1))
+    Enum.reject(children, &(&1 in [GlorboWeb.Endpoint, GlorboWeb.SetupBanner]))
   end
 
   defp apply_surface(children, _other), do: children

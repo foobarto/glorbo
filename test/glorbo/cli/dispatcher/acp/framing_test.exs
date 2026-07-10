@@ -162,7 +162,7 @@ defmodule Glorbo.CLI.Dispatcher.Acp.FramingTest do
     test "keeps partial line as remainder for next chunk" do
       raw = Message.new_request(1, "initialize") |> Framing.encode() |> IO.iodata_to_binary()
       mid = byte_size(raw) - 5
-      <<first::binary-size(mid), rest::binary>> = raw
+      <<first::binary-size(^mid), rest::binary>> = raw
 
       assert {[], remainder} = Framing.parse_stream("", first)
       assert remainder == first

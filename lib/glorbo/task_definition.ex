@@ -500,6 +500,30 @@ defmodule Glorbo.TaskDefinition do
     end
   end
 
+  @doc """
+  Atomically apply an editor frontmatter update and an optional body update.
+
+  Unlike calling `write_frontmatter/2` followed by `write_body/2`, this reads
+  and rewrites the task once, so a failure cannot leave frontmatter and body
+  at different revisions. Pass `:preserve` to leave the body byte-for-byte
+  unchanged.
+  """
+  @spec write_editor(Path.t(), map(), String.t() | :preserve) :: :ok | {:error, term()}
+  def write_editor(file_path, updates, body)
+      when is_binary(file_path) and is_map(updates) and (is_binary(body) or body == :preserve) do
+    with :ok <- ensure_regular_file(file_path),
+         {:ok, content} <- File.read(file_path),
+         rewritten <- maybe_loop_back_recurring(content, updates),
+         merged <- merge_with_existing(content, rewritten),
+         {:ok, frontmatter_content} <- replace_frontmatter(content, merged),
+         {:ok, new_content} <- maybe_replace_editor_body(frontmatter_content, body) do
+      atomic_write(file_path, new_content)
+    end
+  end
+
+  defp maybe_replace_editor_body(content, :preserve), do: {:ok, content}
+  defp maybe_replace_editor_body(content, body), do: substitute_body(content, body)
+
   # Read + parse existing frontmatter, then merge caller's updates
   # (updates win). Returns a string-keyed map compatible with
   # replace_frontmatter's lookup path. Silently falls back to the
@@ -531,12 +555,15 @@ defmodule Glorbo.TaskDefinition do
   # reassign / peer-review verdict / Kanban save silently regressed
   # dispatch to the agent default (codex P2, v0.8.0 pre-release).
   @editor_keys ~w(
+    id
     title
     status
     assigned_to
     requested_by
     priority
     severity
+    goal
+    schedule
     requires_approval
     peer_review_required
     peer_review_verdict
@@ -548,6 +575,10 @@ defmodule Glorbo.TaskDefinition do
     done_when
     model
     provider
+    budget_usd_cents
+    cancelled_reason
+    created_at
+    created_by
   )
 
   # Keys that carry structured (non-scalar) values in a task frontmatter.
@@ -555,7 +586,7 @@ defmodule Glorbo.TaskDefinition do
   # original rather than re-emitting — our `yaml_scalar/1` emitter is
   # scalar-only, and the canonical YAML shape for list-of-maps /
   # multi-line scalars is owned by `Glorbo.FileSpec.Formatter`.
-  @structured_keys ~w(handoff_chain)
+  @structured_keys ~w(depends_on handoff_chain)
 
   defp replace_frontmatter(content, updates) do
     case String.split(content, ~r/\A---\r?\n|\r?\n---\r?\n/, parts: 3) do
@@ -645,6 +676,15 @@ defmodule Glorbo.TaskDefinition do
   # `FrontmatterWriter.yaml_scalar/1` so string escapes match the
   # rest of the frontmatter.
   defp emit_structured(_key, []), do: ""
+
+  defp emit_structured(key, [first | _] = list) when is_binary(first) do
+    if Enum.all?(list, &is_binary/1) do
+      items = Enum.map_join(list, "\n", &"  - #{yaml_scalar(&1)}")
+      "#{key}:\n#{items}\n"
+    else
+      ""
+    end
+  end
 
   defp emit_structured(key, list) when is_list(list) do
     items =

@@ -191,7 +191,7 @@ defmodule GlorboWeb.ProposalsLive do
 
       <div :if={@deny_id} class="gl-modal" phx-window-keydown="deny_cancel" phx-key="Escape">
         <div class="gl-modal__backdrop" phx-click="deny_cancel"></div>
-        <form phx-submit="deny_confirm" class="gl-modal__card">
+        <form id="proposal-deny-form" phx-submit="deny_confirm" class="gl-modal__card">
           <header class="gl-modal__header">
             <h3 class="gl-heading gl-heading--section">Deny {@deny_id}</h3>
             <button type="button" class="gl-modal__close" phx-click="deny_cancel" aria-label="close">

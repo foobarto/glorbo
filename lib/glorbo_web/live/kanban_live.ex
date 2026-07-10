@@ -373,10 +373,11 @@ defmodule GlorboWeb.KanbanLive do
         {:noreply, put_flash(socket, :error, "Comment is empty.")}
 
       true ->
-        case GlorboWeb.Actions.post_task_comment(
+        case Glorbo.Actions.post_task_comment(
                socket.assigns.company_slug,
                task.task_path,
-               trimmed
+               trimmed,
+               actor: "director"
              ) do
           :ok ->
             # Re-open the task so the refreshed body (with the new comment
@@ -419,126 +420,30 @@ defmodule GlorboWeb.KanbanLive do
   def handle_event("save_task", params, socket) do
     task = socket.assigns.open_task
 
-    case resolve_task_path(task.task_path, socket.assigns.company_slug) do
-      {:ok, abs} ->
-        # Codex round-5 finding (PR #37): the previous shape
-        # always included `requires_approval` in `fm` —
-        # `Map.get(params, "requires_approval", "")` returned
-        # `""` when the form omitted the field, and
-        # `write_frontmatter`'s "drop empty keys" rule treated
-        # that empty as "CLEAR the field on disk". Partial form
-        # submissions (edit title only, no approval-gate UI) thus
-        # silently cleared `requires_approval: director`.
-        #
-        # Codex P2 + Copilot review of 40c8ea6: skip the field
-        # ONLY when the form omits it entirely (param absent);
-        # an EXPLICIT empty value is a legitimate clear-request
-        # that the gate may allow (e.g. task is already
-        # approved). Pass it through to `write_frontmatter` so
-        # the clear actually lands when the gate permits it.
-        base_fm = %{
-          "title" => Map.get(params, "title", "") |> String.trim(),
-          "status" => Map.get(params, "status", task.status),
-          "assigned_to" => Map.get(params, "assigned_to", "") |> String.trim(),
-          "priority" => Map.get(params, "priority", ""),
-          "severity" => Map.get(params, "severity", ""),
-          # GEP-40 — `done_when` is the agent-facing definition of
-          # done. Empty string clears the field via
-          # `TaskDefinition.write_frontmatter/2`'s "drop empty keys"
-          # rule, matching the rest of the form's clear semantics.
-          "done_when" => Map.get(params, "done_when", "") |> String.trim()
-        }
+    case Glorbo.Actions.Tasks.update(
+           socket.assigns.company_slug,
+           task.task_path,
+           params,
+           actor: "director",
+           base: base_dir()
+         ) do
+      {:ok, _result} ->
+        tasks =
+          base_dir()
+          |> load_tasks(socket.assigns.company_slug)
+          |> apply_project_filter(socket.assigns.project_filter)
+          |> apply_goal_filter(socket.assigns.goal_filter)
+          |> apply_who_filter(socket.assigns.who_filter)
+          |> apply_search_filter(socket.assigns.task_search)
 
-        fm =
-          if Map.has_key?(params, "requires_approval") do
-            Map.put(base_fm, "requires_approval", Map.get(params, "requires_approval"))
-          else
-            base_fm
-          end
+        {:noreply,
+         socket
+         |> assign(:columns, group_by_column(tasks))
+         |> assign(:open_task, nil)
+         |> put_flash(:info, "Saved #{task.task_id}.")}
 
-        prompt = Map.get(params, "body", "") |> String.trim()
-        # GEP-30 D8: comments live in the sibling `.comments.md` file,
-        # not inline. Save writes the prompt only — the thread stays
-        # untouched.
-        body = prompt
-
-        # Codex round-5 finding (PR #37, HIGH): sibling
-        # `kanban:move` already gated via
-        # `refuse_if_bypasses_approval_gate/2`, but `save_task`
-        # didn't — so a crafted payload could set an
-        # approval-gated task straight to `done` (or zero its
-        # `requires_approval` field) without going through the
-        # Inbox approval flow. Gate both transitions here. The
-        # clear-required-approval check fires only when the form
-        # EXPLICITLY included an empty `requires_approval` value
-        # (vs the partial-submit case where the field was absent
-        # entirely — that's a no-op preserve handled above).
-        explicit_clear_attempt? =
-          Map.has_key?(params, "requires_approval") and
-            Map.get(params, "requires_approval") in ["", nil]
-
-        with :ok <- refuse_if_bypasses_approval_gate(abs, fm["status"]),
-             :ok <- refuse_if_clears_required_approval(abs, explicit_clear_attempt?),
-             :ok <- Glorbo.TaskDefinition.write_frontmatter(abs, fm),
-             :ok <- Glorbo.TaskDefinition.write_body(abs, body) do
-          # C-094: record the frontmatter+body edit in the company's
-          # append-only audit log. Without this the task editor was a
-          # silent state-changing mutation path (status / assigned_to /
-          # requires_approval all gate the approval flow) that bypassed
-          # the forensic trail. Emit AFTER both writes land.
-          emit_task_edit_audit(socket, task, fm)
-
-          # Task #126 — when assigned_to changed to a real agent (or was
-          # set for the first time), drop a notification into that
-          # agent's inbox so the wake pipeline picks it up. Skips when
-          # the field is empty, matches "director" (not an agent), or
-          # the target dir doesn't exist.
-          maybe_notify_assignee(
-            Map.get(task, :assigned_to, ""),
-            fm["assigned_to"],
-            socket.assigns.company_slug,
-            task.task_id,
-            fm["title"],
-            prompt
-          )
-
-          # Reload everything — filter-aware refresh.
-          tasks =
-            base_dir()
-            |> load_tasks(socket.assigns.company_slug)
-            |> apply_project_filter(socket.assigns.project_filter)
-            |> apply_goal_filter(socket.assigns.goal_filter)
-            |> apply_who_filter(socket.assigns.who_filter)
-            |> apply_search_filter(socket.assigns.task_search)
-
-          {:noreply,
-           socket
-           |> assign(:columns, group_by_column(tasks))
-           |> assign(:open_task, nil)
-           |> put_flash(:info, "Saved #{task.task_id}.")}
-        else
-          {:error, :approval_gate_bypass} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "This task requires director approval — approve it via the Inbox before changing status to done."
-             )}
-
-          {:error, :clears_required_approval} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Cannot clear `requires_approval` on a task currently awaiting director approval."
-             )}
-
-          _ ->
-            {:noreply, put_flash(socket, :error, "Could not save task.")}
-        end
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Invalid task path.")}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, GlorboWeb.TaskUpdateError.message(reason))}
     end
   end
 
@@ -714,18 +619,6 @@ defmodule GlorboWeb.KanbanLive do
     end
   end
 
-  # Approval-gate guards live in `GlorboWeb.TaskApprovalGuard` so the
-  # Kanban shelf and the TaskLive detail page share one implementation
-  # (they previously drifted — TaskLive lacked these checks). Thin
-  # delegations keep KanbanLive's call sites unchanged. A task with
-  # `requires_approval: director` must not skip the Inbox approval flow
-  # by being dragged/saved straight to done, nor by clearing the gate.
-  defp refuse_if_bypasses_approval_gate(abs_path, target_status),
-    do: GlorboWeb.TaskApprovalGuard.refuse_if_bypasses_approval_gate(abs_path, target_status)
-
-  defp refuse_if_clears_required_approval(abs_path, explicit_clear?),
-    do: GlorboWeb.TaskApprovalGuard.refuse_if_clears_required_approval(abs_path, explicit_clear?)
-
   @impl true
   def render(assigns) do
     ~H"""
@@ -745,7 +638,7 @@ defmodule GlorboWeb.KanbanLive do
           >
             ⚙ {@project_filter} config
           </.link>
-          <form phx-change="search_task" class="gl-kanban__search">
+          <form id="kanban-task-search-form" phx-change="search_task" class="gl-kanban__search">
             <input
               type="search"
               name="q"
@@ -832,6 +725,7 @@ defmodule GlorboWeb.KanbanLive do
         phx-click-away="new_task_cancel"
       >
         <form
+          id="kanban-new-task-form"
           phx-submit="new_task_create"
           phx-change="new_task_validate"
           phx-window-keydown="new_task_cancel"
@@ -1295,19 +1189,6 @@ defmodule GlorboWeb.KanbanLive do
   #   - assignee unchanged (avoids duplicate wakes on re-save)
   #   - new assignee is empty or "director" (Director isn't an agent)
   #   - agent dir doesn't exist
-  # C-094: append a `task.edit` entry to the company's append-only
-  # audit log for an edit made through the Kanban task shelf. `changed`
-  # is the sorted list of frontmatter keys the save touched. Mirrors
-  # TaskLive's emitter so both edit surfaces leave the same trail.
-  defp emit_task_edit_audit(socket, task, fm) do
-    Glorbo.Company.AuditLog.append_for(socket.assigns.company_slug, %{
-      actor: "director",
-      action: "task.edit",
-      target: task.task_path,
-      changed: fm |> Map.keys() |> Enum.sort()
-    })
-  end
-
   defp maybe_notify_assignee(prev, new, _co, _id, _title, _body)
        when new == prev or new == "" or new == "director" do
     :ok

@@ -1,17 +1,17 @@
-defmodule Glorbo.Credo.Check.RawFilesystemWriteInLive do
+defmodule Glorbo.Credo.Check.RawFilesystemWriteInFrontend do
   @moduledoc """
-  GEP-36 ratchet: every filesystem write originating from a LiveView
-  handler must go through `Glorbo.Actions.*` so it picks up
+  GEP-36 ratchet: every filesystem write originating from a web frontend
+  must go through `Glorbo.Actions.*` so it picks up
   permission + validation + audit-emit in one place.
 
-  The check scans `lib/glorbo_web/live/**/*.ex` for calls to the
+  The check scans `lib/glorbo_web/**/*.ex` for calls to the
   mutating `File.*` functions (`write`, `write!`, `rename`,
   `rename!`, `mkdir_p`, `mkdir_p!`, `rm`, `rm!`, `rm_rf`, `rm_rf!`,
   `cp`, `cp!`, `cp_r`, `cp_r!`, `ln`, `ln_s`, `ln_s!`, `touch`,
   `touch!`, `chmod`) and reports an issue per offending call.
 
-  Already-migrated LiveViews carry no allowlist entry; the check
-  fails on the first regression there. LiveViews still awaiting
+  Already-migrated frontends carry no allowlist entry; the check
+  fails on the first regression there. Files still awaiting
   migration carry a `:allowlist` entry (below) keyed by their
   relative path, and the check is silent for them so the repo can
   ship GEP-36 in rounds without a flag day.
@@ -26,7 +26,7 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLive do
     param_defaults: [allowlist: []],
     explanations: [
       check: """
-      Raw `File.*` mutations inside LiveView modules must route
+      Raw `File.*` mutations inside web frontend modules must route
       through `Glorbo.Actions.*` instead. The Actions layer owns
       permission checks, input validation, atomic writes, and
       audit emission — all four drift when LiveViews write
@@ -47,15 +47,16 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLive do
     touch touch!
     chmod chmod!
   )a
+  @forbidden_task_definition ~w(write write_body write_frontmatter write_editor)a
 
-  @live_prefix "lib/glorbo_web/live/"
+  @frontend_prefix "lib/glorbo_web/"
 
   @impl true
   def run(%Credo.SourceFile{} = source_file, params) do
     rel = source_file_rel_path(source_file)
 
     cond do
-      not String.starts_with?(rel, @live_prefix) ->
+      not String.starts_with?(rel, @frontend_prefix) ->
         []
 
       rel in Params.get(params, :allowlist, __MODULE__) ->
@@ -85,17 +86,48 @@ defmodule Glorbo.Credo.Check.RawFilesystemWriteInLive do
     {ast, [issue_for(fun, meta[:line] || 0, issue_meta) | issues]}
   end
 
+  defp traverse(
+         {{:., _, [{:__aliases__, _, aliases}, fun]}, meta, _args} = ast,
+         issues,
+         issue_meta
+       )
+       when fun in @forbidden_task_definition do
+    if List.last(aliases) == :TaskDefinition do
+      trigger = "TaskDefinition.#{fun}"
+      {ast, [issue_for(trigger, meta[:line] || 0, issue_meta) | issues]}
+    else
+      {ast, issues}
+    end
+  end
+
+  defp traverse(
+         {{:., _, [{:__aliases__, _, aliases}, :atomic_write]}, meta, _args} = ast,
+         issues,
+         issue_meta
+       ) do
+    if List.last(aliases) == :FrontmatterWriter do
+      trigger = "FrontmatterWriter.atomic_write"
+      {ast, [issue_for(trigger, meta[:line] || 0, issue_meta) | issues]}
+    else
+      {ast, issues}
+    end
+  end
+
   defp traverse(ast, issues, _issue_meta), do: {ast, issues}
 
-  defp issue_for(fun, line, issue_meta) do
+  defp issue_for(fun, line, issue_meta) when is_atom(fun) do
+    issue_for("File.#{fun}", line, issue_meta)
+  end
+
+  defp issue_for(trigger, line, issue_meta) do
     format_issue(
       issue_meta,
       message:
-        "raw File.#{fun}/_ in a LiveView — route through Glorbo.Actions.* " <>
+        "raw #{trigger}/_ mutation in a web frontend — route through Glorbo.Actions.* " <>
           "(GEP-36). If this handler is on the migration queue, add the file " <>
           "to the allowlist in .credo.exs.",
       line_no: line,
-      trigger: "File.#{fun}"
+      trigger: trigger
     )
   end
 end

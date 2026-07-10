@@ -482,9 +482,6 @@ defmodule Glorbo.Company.Supervisor do
   # ---------------------------------------------------------------------------
 
   defp append_path_request_gate(children, company, base) do
-    # Ensure the ETS grant store is initialized before the Gate starts.
-    Glorbo.PathGrantStore.ensure_started()
-
     children ++
       [
         {Glorbo.PathRequestGate,

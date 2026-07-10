@@ -358,6 +358,27 @@ defmodule Glorbo.Approvals.GateTest do
     refute_received {:wake, _, _, _}
   end
 
+  test "G8b: task comment sidecar events are ignored", ctx do
+    %{pid: pid} = start_gate(ctx)
+
+    comments = Path.join([ctx.company_dir, "projects/foo/tasks/t-08.comments.md"])
+
+    File.write!(comments, """
+    ---
+    kind: task-comments/v1
+    task_id: t-08
+    ---
+    ## 2026-07-10T12:00:00Z | director
+    Looks good.
+    """)
+
+    send(pid, {:file_event, "projects/foo/tasks/t-08.comments.md", [:modified]})
+    _ = :sys.get_state(pid)
+
+    refute_received {:audit, _}
+    refute_received {:wake, _, _, _}
+  end
+
   # G9 — unparseable task.md emits approval.parse_error, does not crash
   test "G9: corrupt task.md emits approval.parse_error and Gate stays alive", ctx do
     %{pid: pid} = start_gate(ctx)

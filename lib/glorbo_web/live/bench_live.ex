@@ -156,7 +156,7 @@ defmodule GlorboWeb.BenchLive do
 
       <section :if={not @unmasked?} class="gl-bench__score">
         <h2 class="gl-heading gl-heading--section">submit ranking</h2>
-        <form phx-submit="submit_ranking" class="gl-bench__score-form">
+        <form id="benchmark-ranking-form" phx-submit="submit_ranking" class="gl-bench__score-form">
           <p class="gl-overview__quote">
             Selected order: {render_selected(@ranking)}.
           </p>

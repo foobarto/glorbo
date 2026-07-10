@@ -37,7 +37,11 @@ defmodule GlorboWeb.Components.TaskDetailForm do
 
   def task_detail_form(assigns) do
     ~H"""
-    <form phx-submit="save_task" class="gl-task-detail__save-form">
+    <form
+      id={"task-detail-form-#{@task.task_id}"}
+      phx-submit="save_task"
+      class="gl-task-detail__save-form"
+    >
       <div class="gl-task-detail__fields">
         <label class="gl-task-detail__field">
           <span class="gl-muted">title</span>
@@ -97,6 +101,7 @@ defmodule GlorboWeb.Components.TaskDetailForm do
         </label>
 
         <label class="gl-task-detail__field gl-task-detail__field--check">
+          <input type="hidden" name="requires_approval" value="" />
           <input
             type="checkbox"
             name="requires_approval"

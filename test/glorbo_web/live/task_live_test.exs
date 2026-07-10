@@ -185,7 +185,7 @@ defmodule GlorboWeb.TaskLiveTest do
   # UAT 2026-06-14: TaskLive's save_task lacked the approval-gate guard
   # that KanbanLive's shelf has (PR #37) — a director could flip an
   # approval-gated task straight to `done` from the task page, bypassing
-  # the Inbox. Both now share `GlorboWeb.TaskApprovalGuard`.
+  # the Inbox. Both now delegate to `Glorbo.Actions.Tasks.update/4`.
   test "save_task refuses flipping an approval-gated task to done",
        %{conn: conn, base: base} do
     path = Path.join([base, "companies/acme/projects/foo/tasks/foo-1.md"])

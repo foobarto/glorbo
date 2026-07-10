@@ -428,6 +428,35 @@ Rounds ordered newest-first. Each round records the commit under
 test + the tally, not per-case outcomes (those live in the case
 boxes above).
 
+### Round 9 — 2026-07-10 (v0.28.7 release gate)
+
+- **Commit under test:** release working tree based on `ba6d5d55`
+  (the final release commit is created after this gate).
+- **Scope:** real Chromium session driven against an isolated
+  `/tmp/glorbo-uat-v0287-rerun` home on `127.0.0.1:4100`.
+  Covered one-shot setup-token access, passphrase validation,
+  configured setup/login redirects, failed and successful login,
+  company creation, underscore-agent creation, project creation,
+  canonical task create/edit/status mutation, task comments,
+  audit rendering/filtering, channel posting, and the Kanban at
+  a 1024×768 viewport.
+- **Results:** ✅ all exercised flows passed on the clean rerun;
+  task edits and comments persisted, the audit page showed the
+  expected `task.create`, `task.edit`, and `task.comment` events,
+  the `task.comment` filter returned exactly the two matching
+  entries, and the final page checks had no browser errors or
+  console output.
+- **Findings fixed during the round:** dashboard-created companies
+  existed on disk but did not start a `Company.Supervisor` until
+  the application restarted, leaving their AuditLog/Router/Gate
+  unavailable; `CompanyBoot.ensure_started/2` now starts that tree
+  immediately. The approval watcher also treated
+  `<task>.comments.md` sidecars as task definitions and emitted
+  `approval.parse_error`; those sidecars are now excluded with a
+  regression test.
+- **Artefacts:** screenshots are intentionally outside the repo at
+  `/tmp/glorbo-uat-v0287-rerun-report/screenshots/`.
+
 ### Round 8 — 2026-04-24 (v0.8.0 release gate)
 
 - **Commit under test:** `b54e1be` (pre-release doc-drift pass;

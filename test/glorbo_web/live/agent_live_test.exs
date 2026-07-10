@@ -34,6 +34,13 @@ defmodule GlorboWeb.AgentLiveTest do
              live(conn, ~p"/companies/acme/agents/ghost")
   end
 
+  test "an underscore agent accepted by creation is routable", %{conn: conn, base: base} do
+    seed_engineer(base, "backend_engineer")
+
+    assert {:ok, _view, html} = live(conn, ~p"/companies/acme/agents/backend_engineer")
+    assert html =~ "backend_engineer"
+  end
+
   test "wake button writes state/wake-request.md", %{conn: conn, base: base} do
     {:ok, view, _} = live(conn, ~p"/companies/acme/agents/ceo")
     render_click(view, "wake", %{"reason" => ""})

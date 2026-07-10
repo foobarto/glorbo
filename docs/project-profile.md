@@ -97,7 +97,7 @@ pride of work.
   outbox classification and kind-gating. All mutations from
   the agent side land here first.
 - **`GlorboWeb.MCP.*`.** Localhost-only, single write path
-  through `GlorboWeb.Actions` (GEP-29 D3). Any new tool must
+  through `Glorbo.Actions` (GEP-29 D3, GEP-36). Any new tool must
   follow the same route.
 - **`bwrap` / `pasta` sandbox setup** (`Glorbo.Sandbox.*`).
   Mount namespace + netns construction; typoed allowlists

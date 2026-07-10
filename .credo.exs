@@ -41,7 +41,7 @@
       # If you create your own checks, you must specify the source files for
       # them here, so they can be loaded by Credo before running the analysis.
       #
-      requires: ["lib_dev/raw_filesystem_write_in_live.ex"],
+      requires: [],
       #
       # If you want to enforce a style guide and need a more traditional linting
       # experience, you can change `strict` to `true` below:
@@ -172,11 +172,11 @@
           {Credo.Check.Warning.WrongTestFilename, []},
 
           #
-          # GEP-36 ratchet — raw File.* mutations in LiveView modules must
+          # GEP-36 ratchet — raw File.* mutations in all web frontends must
           # route through `Glorbo.Actions.*`. Allowlist shrinks as each
           # LiveView is migrated.
           #
-          {Glorbo.Credo.Check.RawFilesystemWriteInLive,
+          {Glorbo.Credo.Check.RawFilesystemWriteInFrontend,
            [
              allowlist: []
            ]}

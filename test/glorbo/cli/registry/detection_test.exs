@@ -327,5 +327,40 @@ defmodule Glorbo.CLI.Registry.DetectionTest do
       [result] = Detection.probe_versions([p], system_cmd_fun: cmd_fun)
       assert result.version == "4.2.0"
     end
+
+    test "hard-caps probe fan-out even when a caller requests unbounded concurrency" do
+      providers =
+        Enum.map(1..16, fn i ->
+          provider(
+            name: "provider-#{i}",
+            installed?: true,
+            resolved_path: "/bin/provider-#{i}",
+            version_flag: "--version",
+            allow_version_probe: true
+          )
+        end)
+
+      {:ok, counter} = Agent.start_link(fn -> %{active: 0, max: 0} end)
+
+      cmd_fun = fn _, _, _ ->
+        Agent.update(counter, fn state ->
+          active = state.active + 1
+          %{active: active, max: max(state.max, active)}
+        end)
+
+        Process.sleep(30)
+        Agent.update(counter, &%{&1 | active: &1.active - 1})
+        {"1.0.0", 0}
+      end
+
+      results =
+        Detection.probe_versions(providers,
+          system_cmd_fun: cmd_fun,
+          max_concurrency: 10_000
+        )
+
+      assert length(results) == 16
+      assert Agent.get(counter, & &1.max) <= 8
+    end
   end
 end

@@ -238,6 +238,33 @@ defmodule Glorbo.Company.RouterTest do
     assert_receive {:audit, %{action: "message.route"}}, 500
   end
 
+  test "R3: agent targets with underscores use the same slug contract as creation" do
+    base = TmpGlorboHome.setup()
+    scaffold_company(base, ["engineer", "qa_lead"])
+    {name, _pid} = start_router!(base)
+
+    msg =
+      build_msg(base, "engineer", "m3-underscore", "agent:qa_lead", [
+        {"agents", "message", "qa_lead"}
+      ])
+
+    assert :ok = Router.route(name, msg)
+
+    assert [_] =
+             Path.wildcard(
+               Path.join([
+                 base,
+                 "companies",
+                 @company,
+                 "agents",
+                 "qa_lead",
+                 "inbox",
+                 "from-engineer",
+                 "*.md"
+               ])
+             )
+  end
+
   # ---------------------------------------------------------------------------
   # R4 — wrong target permission
   # ---------------------------------------------------------------------------

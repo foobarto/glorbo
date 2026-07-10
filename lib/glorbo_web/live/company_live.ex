@@ -701,6 +701,7 @@ defmodule GlorboWeb.CompanyLive do
       <%!-- company.md edit modal (opens via `edit_company_md` event) --%>
       <div :if={@edit_company_md} class="gl-modal-scrim" phx-click-away="cancel_company_md">
         <form
+          id="company-edit-form"
           phx-submit="save_company_md"
           phx-window-keydown="cancel_company_md"
           phx-key="Escape"
@@ -783,6 +784,7 @@ defmodule GlorboWeb.CompanyLive do
 
       <div :if={@new_agent_open?} class="gl-modal-scrim" phx-click-away="new_agent_cancel">
         <form
+          id="company-new-agent-form"
           phx-submit="new_agent_create"
           phx-window-keydown="new_agent_cancel"
           phx-key="Escape"
@@ -866,6 +868,7 @@ defmodule GlorboWeb.CompanyLive do
 
       <div :if={@new_project_open?} class="gl-modal-scrim" phx-click-away="new_project_cancel">
         <form
+          id="company-new-project-form"
           phx-submit="new_project_create"
           phx-window-keydown="new_project_cancel"
           phx-key="Escape"

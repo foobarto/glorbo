@@ -19,6 +19,7 @@ defmodule Glorbo.Actions.Channels do
 
   alias Glorbo.Actions.Support
   alias Glorbo.Company.AuditLog
+  alias Glorbo.Filesystem.AgentWritableFile
   alias Glorbo.HomeHistory
   alias Glorbo.HomeHistory.Tx
 
@@ -52,10 +53,11 @@ defmodule Glorbo.Actions.Channels do
       Tx.with_tx(history_meta, fn tx_id ->
         with :ok <- Support.validate_slug(company, :company),
              :ok <- Support.validate_slug(channel, :channel),
+             :ok <- guard_company_exists(base, company),
              abs = channel_path(base, company, channel),
              :ok <- guard_not_exists(abs),
              :ok <- File.mkdir_p(Path.dirname(abs)),
-             :ok <- File.write(abs, render_header(channel)),
+             :ok <- create_channel_file(abs, render_header(channel)),
              :ok <- Tx.mark_path(tx_id, abs),
              :ok <- emit_create_audit(audit, company, channel, actor),
              :ok <- Tx.mark_path(tx_id, HomeHistory.audit_jsonl_path(base, company)) do
@@ -132,6 +134,15 @@ defmodule Glorbo.Actions.Channels do
   defp archive_dir_path(base, company),
     do: Path.join([base, "companies", company, "channels", ".archive"])
 
+  defp guard_company_exists(base, company) do
+    case File.lstat(Path.join([base, "companies", company])) do
+      {:ok, %File.Stat{type: :directory}} -> :ok
+      {:ok, _other} -> {:error, :company_not_found}
+      {:error, :enoent} -> {:error, :company_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # `File.exists?/1` follows symlinks. If an attacker has planted a
   # dangling symlink at `channels/<name>.md -> /tmp/escape`, a
   # follow-and-check would return false and the subsequent
@@ -143,6 +154,13 @@ defmodule Glorbo.Actions.Channels do
       {:ok, _info} -> {:error, :already_exists}
       {:error, :enoent} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_channel_file(path, content) do
+    case AgentWritableFile.create_exclusive(path, content) do
+      {:error, :eexist} -> {:error, :already_exists}
+      result -> result
     end
   end
 

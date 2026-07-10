@@ -164,6 +164,18 @@ defmodule Glorbo.Actions.ChannelsTest do
 
       assert FakeAudit.calls(audit) == []
     end
+
+    test "does not create a phantom company tree", %{base: base, audit: audit} do
+      assert {:error, :company_not_found} =
+               Channels.create("missing", "eng",
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      refute File.exists?(Path.join([base, "companies", "missing"]))
+      assert FakeAudit.calls(audit) == []
+    end
   end
 
   describe "archive/3" do

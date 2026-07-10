@@ -166,6 +166,20 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
       assert File.exists?(Path.join([base, "companies", "acme", "agents", "writer", "AGENT.md"]))
     end
 
+    test "accepts the canonical underscore agent slug" do
+      {base, _audit} = setup_base()
+      _ = seed_company(base, "acme")
+
+      assert {:reply, %{"isError" => false}} =
+               call_tool(
+                 "glorbo.create_agent",
+                 %{"company" => "acme", "slug" => "backend_engineer"},
+                 base
+               )
+
+      assert File.dir?(Path.join([base, "companies", "acme", "agents", "backend_engineer"]))
+    end
+
     test "refuses reserved slug director (codex L57)" do
       {base, _audit} = setup_base()
       _ = seed_company(base, "acme")
@@ -316,14 +330,15 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
 
   describe "glorbo.create_channel" do
     test "creates channel file with canonical frontmatter" do
-      {base, _audit} = setup_base()
+      {base, audit} = setup_base()
       _ = seed_company(base, "acme")
 
       assert {:reply, %{"isError" => false, "structuredContent" => out}} =
                call_tool(
                  "glorbo.create_channel",
                  %{"company" => "acme", "channel" => "engineering"},
-                 base
+                 base,
+                 audit: audit
                )
 
       assert out["status"] == "created"
@@ -334,10 +349,14 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
       assert content =~ "kind: channel-log/v1"
       assert content =~ "channel: engineering"
       assert content =~ "# #engineering"
+
+      assert Enum.any?(FakeAudit.entries(audit), fn entry ->
+               entry.action == "channel.create" and entry.actor == "mcp:claude-code"
+             end)
     end
 
     test "idempotent — existing channel returns status=existed" do
-      {base, _audit} = setup_base()
+      {base, audit} = setup_base()
       co_path = seed_company(base, "acme")
       File.write!(Path.join([co_path, "channels", "general.md"]), "original\n")
 
@@ -345,7 +364,8 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
                call_tool(
                  "glorbo.create_channel",
                  %{"company" => "acme", "channel" => "general"},
-                 base
+                 base,
+                 audit: audit
                )
 
       # File contents untouched.
@@ -361,7 +381,7 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
 
   describe "glorbo.create_proposal" do
     test "writes agents/mcp/outbox/proposals/<id>.md with canonical frontmatter" do
-      {base, _audit} = setup_base()
+      {base, audit} = setup_base()
       _ = seed_company(base, "acme")
 
       assert {:reply, %{"isError" => false, "structuredContent" => out}} =
@@ -373,7 +393,8 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
                    "subtype" => "hire",
                    "body" => "Need a Writer."
                  },
-                 base
+                 base,
+                 audit: audit
                )
 
       assert out["id"] == "hire-writer"
@@ -398,10 +419,14 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
       assert content =~ "subtype: hire"
       assert content =~ "status: pending-approval"
       assert content =~ "Need a Writer."
+
+      assert Enum.any?(FakeAudit.entries(audit), fn entry ->
+               entry.action == "proposal.submit" and entry.actor == "mcp:claude-code"
+             end)
     end
 
     test "isError on missing company" do
-      {base, _audit} = setup_base()
+      {base, audit} = setup_base()
 
       assert {:reply, %{"isError" => true, "structuredContent" => %{"reason" => reason}}} =
                call_tool(
@@ -412,7 +437,8 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
                    "subtype" => "hire",
                    "body" => "body"
                  },
-                 base
+                 base,
+                 audit: audit
                )
 
       assert reason =~ "company_not_found"
@@ -463,7 +489,7 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
 
   describe "glorbo.decide_proposal" do
     test "drops outbox flip file with status + denial_reason" do
-      {base, _audit} = setup_base()
+      {base, audit} = setup_base()
       co_path = seed_company(base, "acme")
 
       # Seed an existing proposal on disk (pretend it was already
@@ -488,7 +514,8 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
                    "decision" => "denied",
                    "denial_reason" => "out of scope"
                  },
-                 base
+                 base,
+                 audit: audit
                )
 
       assert out["decision"] == "denied"
@@ -499,6 +526,11 @@ defmodule GlorboWeb.MCP.ToolsWaveC2Test do
 
       assert content =~ "status: denied"
       assert content =~ "denial_reason: \"out of scope\""
+
+      assert Enum.any?(FakeAudit.entries(audit), fn entry ->
+               entry.action == "proposal.decision_submit" and
+                 entry.actor == "mcp:claude-code"
+             end)
     end
 
     test "isError on nonexistent proposal" do

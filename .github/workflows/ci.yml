@@ -58,11 +58,13 @@ jobs:
           # published for 29.0.2 on all four Burrito targets, 2026-06-12).
           otp-version: '29.0.2'
 
-      - name: Install bubblewrap (bwrap)
+      - name: Install integration system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bubblewrap
+          sudo apt-get install -y bubblewrap inotify-tools passt
           bwrap --version
+          inotifywait --help >/dev/null
+          pasta --help | grep -q -- --splice-only
 
       - name: Allow bwrap under AppArmor (Ubuntu 24.04 userns restriction)
         run: |
@@ -100,6 +102,9 @@ jobs:
 
       - name: Test
         run: mix test
+
+      - name: Integration test
+        run: mix test --only integration
 
       - name: Credo (strict)
         run: mix credo --strict
@@ -151,14 +156,10 @@ jobs:
           mix dialyzer --plt
           mix dialyzer --format short > dialyzer.out 2>&1 || true
           count=$(grep -cE '^(lib|lib_dev|test)/[^[:space:]]+:[0-9]+' dialyzer.out || true)
-          # Baseline history (full delta + cross-version cross-check) lives in
-          # docs/testing/dialyzer-baseline.md. 169 is the current ceiling: the
-          # 1.20.1/OTP-29.0.2 set-theoretic checker resolves several false
-          # positives (local count ~111), but the ceiling is deliberately kept
-          # at 169 until a CI run confirms the exact count in the
-          # ubuntu24/OTP-29.0.2 environment (dialyzer counts vary across
-          # hosts). Retighten once observed.
-          baseline=169
+          # Baseline history lives in docs/testing/dialyzer-baseline.md.
+          # Measured at 126 on Elixir 1.20 / OTP 29 during the 2026-07-10
+          # stabilization pass; keep this ceiling equal to the checked tree.
+          baseline=126
           echo "Dialyzer warnings: ${count} (baseline ${baseline})"
           if [ "${count}" -gt "${baseline}" ]; then
             echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."

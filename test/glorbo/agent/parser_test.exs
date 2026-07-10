@@ -518,7 +518,7 @@ defmodule Glorbo.Agent.ParserTest do
   # ---------------------------------------------------------------------------
 
   describe "AGT-05 agents:create block (P15)" do
-    test "P15: declaring agents:create:* returns :agents_create_forbidden", ctx do
+    test "P15: declaring agents:create:* is rejected as an invalid permission", ctx do
       content = """
       ---
       kind: agent/v1
@@ -531,7 +531,7 @@ defmodule Glorbo.Agent.ParserTest do
       """
 
       path = write_agent(ctx, "k", content)
-      assert {:error, :agents_create_forbidden} = Parser.parse_file(path)
+      assert {:error, {:invalid_permission, "agents:create:*"}} = Parser.parse_file(path)
     end
   end
 

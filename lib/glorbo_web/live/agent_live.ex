@@ -30,7 +30,7 @@ defmodule GlorboWeb.AgentLive do
 
   Header action row: edit AGENT.md (disabled), send message
   (disabled), stop (disabled pending M3.5 server-side sentinel),
-  wake now (wired via `GlorboWeb.Actions.wake_agent/3`).
+  wake now (wired via `Glorbo.Actions.wake_agent/3`).
   """
   use GlorboWeb, :live_view
   require Logger
@@ -58,7 +58,7 @@ defmodule GlorboWeb.AgentLive do
          |> put_flash(:error, "Invalid company identifier.")
          |> push_navigate(to: ~p"/companies")}
 
-      not Glorbo.Slug.valid?(ag) ->
+      not Glorbo.Slug.valid?(ag, :agent) ->
         {:ok,
          socket
          |> put_flash(:error, "Invalid agent identifier.")
@@ -260,11 +260,12 @@ defmodule GlorboWeb.AgentLive do
     reason = Map.get(params, "reason", "")
     base = base_dir()
 
-    case GlorboWeb.Actions.wake_agent(
+    case Glorbo.Actions.wake_agent(
            socket.assigns.company_slug,
            socket.assigns.agent_slug,
            reason,
-           base: base
+           base: base,
+           actor: "director"
          ) do
       :ok ->
         {:noreply,
@@ -1420,6 +1421,7 @@ defmodule GlorboWeb.AgentLive do
               </dl>
               <form
                 :if={@config_editing?}
+                id="agent-config-form"
                 phx-submit="config_save"
                 phx-change="config_form_change"
                 class="gl-agent-config-form"
@@ -1585,6 +1587,7 @@ defmodule GlorboWeb.AgentLive do
       <%!-- task #117 — workspace file editor overlay --%>
       <div :if={@open_file} class="gl-modal-scrim" phx-click-away="close_file">
         <form
+          id="agent-file-editor-form"
           phx-submit="save_file"
           phx-window-keydown="close_file"
           phx-key="Escape"
@@ -1618,6 +1621,7 @@ defmodule GlorboWeb.AgentLive do
 
       <div :if={@wake_open?} class="gl-modal-scrim" phx-click-away="wake_cancel">
         <form
+          id="agent-wake-form"
           phx-submit="wake"
           phx-window-keydown="wake_cancel"
           phx-key="Escape"

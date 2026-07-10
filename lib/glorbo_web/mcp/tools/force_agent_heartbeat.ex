@@ -4,12 +4,12 @@ defmodule GlorboWeb.MCP.Tools.ForceAgentHeartbeat do
 
   Drops a wake-request sentinel for the target agent, triggering its
   next dispatch as if the scheduler had fired. Wraps
-  `GlorboWeb.Actions.wake_agent/4` (same code path as the AgentLive
+  `Glorbo.Actions.wake_agent/4` (same code path as the AgentLive
   "Wake now" button).
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias GlorboWeb.Actions
+  alias Glorbo.Actions
   alias GlorboWeb.MCP.Args
 
   @impl true

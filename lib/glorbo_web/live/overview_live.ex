@@ -112,12 +112,20 @@ defmodule GlorboWeb.OverviewLive do
 
     case Glorbo.CLI.Scaffold.Company.run([slug]) do
       {:new_company, 0, msg} ->
+        runtime_result = Glorbo.CompanyBoot.ensure_started(slug, base_dir())
         Phoenix.PubSub.broadcast(Glorbo.PubSub, "companies", {:company_added, slug})
 
         flash_msg =
-          if String.contains?(msg, "already exists"),
-            do: "Company #{slug} already exists — no change.",
-            else: "Created company: #{slug}"
+          cond do
+            match?({:error, _}, runtime_result) ->
+              "Created company: #{slug}, but its runtime could not start. Restart Glorbo before using it."
+
+            String.contains?(msg, "already exists") ->
+              "Company #{slug} already exists — no change."
+
+            true ->
+              "Created company: #{slug}"
+          end
 
         if guided? do
           # paperclip-ux-gaps §13 — chain into CompanyLive with
@@ -193,6 +201,7 @@ defmodule GlorboWeb.OverviewLive do
 
       <div :if={@new_company_open?} class="gl-modal-scrim" phx-click-away="new_company_cancel">
         <form
+          id="overview-new-company-form"
           phx-submit="new_company_create"
           phx-change="new_company_slug_input"
           phx-window-keydown="new_company_cancel"

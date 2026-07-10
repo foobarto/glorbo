@@ -147,7 +147,12 @@ defmodule GlorboWeb.BrainDumpLive do
 
       <section class="gl-panel gl-braindump__capture">
         <h2 class="gl-panel__header">capture</h2>
-        <form phx-submit="capture" phx-change="draft_change" class="gl-braindump__form">
+        <form
+          id="brain-dump-capture-form"
+          phx-submit="capture"
+          phx-change="draft_change"
+          class="gl-braindump__form"
+        >
           <label class="gl-sr-only" for="gl-bd-body">Brain dump body</label>
           <textarea
             id="gl-bd-body"

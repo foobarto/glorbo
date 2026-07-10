@@ -35,6 +35,154 @@ defmodule Glorbo.Actions.TasksTest do
     %{base: base, audit: audit, tasks_dir: tasks_dir}
   end
 
+  describe "update/4" do
+    setup %{tasks_dir: tasks_dir} do
+      path = Path.join(tasks_dir, "demo-20.md")
+
+      File.write!(path, """
+      ---
+      kind: task/v1
+      id: demo-20
+      title: Original title
+      status: approved
+      assigned_to: director
+      priority: high
+      severity: major
+      requires_approval: director
+      done_when: Original definition
+      ---
+      Original body
+      """)
+
+      {:ok, path: path, rel: "projects/demo/tasks/demo-20.md"}
+    end
+
+    test "atomically updates body and clears explicit blank fields", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      params = %{
+        "title" => "  Updated title  ",
+        "status" => "approved",
+        "assigned_to" => "",
+        "priority" => "",
+        "severity" => "",
+        "requires_approval" => "",
+        "done_when" => "",
+        "body" => "  Updated body  "
+      }
+
+      assert {:ok, %{task_id: "demo-20", assigned_to: ""}} =
+               Tasks.update("acme", rel, params,
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      {:ok, task} = Glorbo.TaskDefinition.parse_file(path, base: base, company: "acme")
+      assert task.title == "Updated title"
+      assert task.assigned_to == nil
+      assert task.priority == nil
+      assert task.severity == nil
+      assert task.requires_approval == nil
+      assert task.done_when == nil
+      assert String.trim(task.prompt_body) == "Updated body"
+
+      [event] = FakeAudit.calls(audit)
+      assert event.action == "task.edit"
+      assert event.target == rel
+      assert event.changed == Enum.sort(Map.keys(params))
+    end
+
+    test "omitted fields and body are preserved", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      assert {:ok, %{changed: ["title"]}} =
+               Tasks.update("acme", rel, %{"title" => "Only title changed"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      {:ok, task} = Glorbo.TaskDefinition.parse_file(path, base: base, company: "acme")
+      assert task.title == "Only title changed"
+      assert task.priority == :high
+      assert task.severity == :major
+      assert task.requires_approval == :director
+      assert task.prompt_body == "Original body\n"
+    end
+
+    test "approval status transitions must use the approval action", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      File.write!(path, String.replace(File.read!(path), "status: approved", "status: pending"))
+      before = File.read!(path)
+
+      assert {:error, :approval_status_requires_gate} =
+               Tasks.update("acme", rel, %{"status" => "approved"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.read!(path) == before
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "cannot clear a pending approval requirement", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      File.write!(path, String.replace(File.read!(path), "status: approved", "status: pending"))
+
+      assert {:error, :clears_required_approval} =
+               Tasks.update("acme", rel, %{"requires_approval" => ""},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert FakeAudit.calls(audit) == []
+    end
+
+    test "rejects phantom assignees before writing", %{
+      base: base,
+      audit: audit,
+      path: path,
+      rel: rel
+    } do
+      before = File.read!(path)
+
+      assert {:error, :agent_not_found} =
+               Tasks.update("acme", rel, %{"assigned_to" => "ghost_agent"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+
+      assert File.read!(path) == before
+    end
+
+    test "rejects keys outside the editor contract", %{base: base, audit: audit, rel: rel} do
+      assert {:error, {:unsupported_editor_keys, ["peer_review_verdict"]}} =
+               Tasks.update("acme", rel, %{"peer_review_verdict" => "approve"},
+                 actor: "director",
+                 base: base,
+                 audit: audit
+               )
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # trash/3 (Round E)
   # ---------------------------------------------------------------------------

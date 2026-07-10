@@ -1,6 +1,6 @@
-defmodule GlorboWeb.ActionsTest do
+defmodule Glorbo.ActionsTest do
   @moduledoc """
-  Plan 04-01 Task 2: `GlorboWeb.Actions` Director write-actions.
+  Plan 04-01 Task 2: `Glorbo.Actions` Director write-actions.
 
   Each action is asserted on two dimensions:
     1. **Filesystem effect** — the correct file is appended/rewritten
@@ -14,7 +14,7 @@ defmodule GlorboWeb.ActionsTest do
   """
   use ExUnit.Case, async: false
 
-  alias GlorboWeb.Actions
+  alias Glorbo.Actions
   alias Glorbo.Test.TmpGlorboHome
 
   # Fake audit sink — a registered GenServer that records every call it
@@ -46,7 +46,7 @@ defmodule GlorboWeb.ActionsTest do
     File.write!(Path.join([co_dir, "channels", "general.md"]), "# general\n")
 
     {:ok, audit} = start_supervised(FakeAudit)
-    %{base: base, audit: audit}
+    %{base: base, audit: audit, actor: "director"}
   end
 
   describe "ensure_dm_channel/3 (GEP-0053 D19 — lazy DM creation)" do
@@ -123,10 +123,15 @@ defmodule GlorboWeb.ActionsTest do
   describe "post_message/4" do
     test "appends Director message with ISO timestamp + writes chat.post audit", %{
       base: base,
-      audit: audit
+      audit: audit,
+      actor: "director"
     } do
       assert :ok =
-               Actions.post_message("acme", "general", "hello world", base: base, audit: audit)
+               Actions.post_message("acme", "general", "hello world",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       content = File.read!(Path.join([base, "companies", "acme", "channels", "general.md"]))
       assert content =~ "# general\n"
@@ -143,31 +148,51 @@ defmodule GlorboWeb.ActionsTest do
       assert event[:channel] == "general"
     end
 
-    test "rejects invalid channel slug (T-04-08 path traversal)", %{base: base, audit: audit} do
+    test "rejects invalid channel slug (T-04-08 path traversal)", %{
+      base: base,
+      audit: audit,
+      actor: "director"
+    } do
       assert {:error, :invalid_slug} =
-               Actions.post_message("acme", "../evil", "x", base: base, audit: audit)
+               Actions.post_message("acme", "../evil", "x",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       # No audit event emitted on validation failure.
       assert FakeAudit.calls(audit) == []
     end
 
-    test "rejects empty body", %{base: base, audit: audit} do
+    test "rejects empty body", %{base: base, audit: audit, actor: "director"} do
       assert {:error, :empty_body} =
-               Actions.post_message("acme", "general", "", base: base, audit: audit)
+               Actions.post_message("acme", "general", "",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       assert FakeAudit.calls(audit) == []
     end
 
-    test "rejects oversize body (> 10 KiB)", %{base: base, audit: audit} do
+    test "rejects oversize body (> 10 KiB)", %{base: base, audit: audit, actor: "director"} do
       huge = String.duplicate("x", 10_241)
 
       assert {:error, :body_too_large} =
-               Actions.post_message("acme", "general", huge, base: base, audit: audit)
+               Actions.post_message("acme", "general", huge,
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       assert FakeAudit.calls(audit) == []
     end
 
-    test "rejects symlink target (T-04-01 symlink attack defense)", %{base: base, audit: audit} do
+    test "rejects symlink target (T-04-01 symlink attack defense)", %{
+      base: base,
+      audit: audit,
+      actor: "director"
+    } do
       # Replace general.md with a symlink pointing elsewhere.
       chan = Path.join([base, "companies", "acme", "channels", "general.md"])
       File.rm!(chan)
@@ -176,13 +201,17 @@ defmodule GlorboWeb.ActionsTest do
       :ok = File.ln_s(decoy, chan)
 
       assert {:error, :not_a_regular_file} =
-               Actions.post_message("acme", "general", "hi", base: base, audit: audit)
+               Actions.post_message("acme", "general", "hi",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       assert FakeAudit.calls(audit) == []
     end
 
     test "@mention of an existing agent writes inbox/mentions file + agent.wake audit",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       # Create the target agent directory so the Director mention has
       # somewhere to land.
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
@@ -193,7 +222,8 @@ defmodule GlorboWeb.ActionsTest do
                  "general",
                  "@ceo can you take a look?",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
@@ -222,7 +252,7 @@ defmodule GlorboWeb.ActionsTest do
     # unbounded `Mcp-Client-Name` could thereby forge director-authored
     # mention frontmatter. The written `from:` must stay MCP-flavoured.
     test "overlong mcp actor does NOT forge director provenance in mention",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       long_client = String.duplicate("a", 200)
@@ -255,7 +285,7 @@ defmodule GlorboWeb.ActionsTest do
     # either — it's untrusted input, not the legitimate default (which
     # passes the literal "director" string through unchanged).
     test "empty actor does NOT forge director provenance in mention",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       assert :ok =
@@ -281,13 +311,17 @@ defmodule GlorboWeb.ActionsTest do
     end
 
     # C-077 regression guard: the legitimate Director default (actor
-    # absent → literal "director") must still stamp `from: "director"`.
-    test "default director actor still stamps director provenance",
-         %{base: base, audit: audit} do
+    # literal "director") must still stamp `from: "director"`.
+    test "explicit director actor stamps director provenance",
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       assert :ok =
-               Actions.post_message("acme", "general", "@ceo hi", base: base, audit: audit)
+               Actions.post_message("acme", "general", "@ceo hi",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
 
@@ -300,14 +334,24 @@ defmodule GlorboWeb.ActionsTest do
       assert content =~ ~s(from: "director")
     end
 
-    test "@mention of unknown agent is a no-op", %{base: base, audit: audit} do
+    test "missing actor raises instead of silently impersonating the director", %{
+      base: base,
+      audit: audit
+    } do
+      assert_raise KeyError, fn ->
+        Actions.post_message("acme", "general", "hello", base: base, audit: audit)
+      end
+    end
+
+    test "@mention of unknown agent is a no-op", %{base: base, audit: audit, actor: "director"} do
       assert :ok =
                Actions.post_message(
                  "acme",
                  "general",
                  "@ghostagent you there?",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       # chat.post still fires; agent.wake does NOT.
@@ -317,7 +361,7 @@ defmodule GlorboWeb.ActionsTest do
     end
 
     test "director DM wakes the counterparty without requiring an explicit @mention",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       File.write!(
@@ -331,7 +375,8 @@ defmodule GlorboWeb.ActionsTest do
                  "dm-director--ceo",
                  "Can you check this?",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       mentions_dir = Path.join([base, "companies", "acme", "agents", "ceo", "inbox", "mentions"])
@@ -356,7 +401,7 @@ defmodule GlorboWeb.ActionsTest do
     # `from: "director"`, spoofing director provenance to downstream
     # agents that read the frontmatter.
     test "T6: @mention preserves the caller's actor in the mention frontmatter",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       assert :ok =
@@ -378,7 +423,7 @@ defmodule GlorboWeb.ActionsTest do
     end
 
     test "T6: actor with embedded newline/quote is sanitised before frontmatter",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "ceo", "inbox"]))
 
       assert :ok =
@@ -432,12 +477,14 @@ defmodule GlorboWeb.ActionsTest do
          %{
            base: base,
            audit: audit,
+           actor: "director",
            task_path: tp
          } do
       assert :ok =
                Actions.post_task_comment("acme", tp, "Looks good.",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       # The task file itself stays diff-clean — only the prompt + frontmatter.
@@ -459,12 +506,14 @@ defmodule GlorboWeb.ActionsTest do
     test "wakes the assignee even without an @mention", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: tp
     } do
       assert :ok =
                Actions.post_task_comment("acme", tp, "Please review.",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       mentions_dir =
@@ -481,6 +530,7 @@ defmodule GlorboWeb.ActionsTest do
     test "@mention in comment wakes that agent too", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: tp
     } do
       File.mkdir_p!(Path.join([base, "companies", "acme", "agents", "cto", "inbox"]))
@@ -488,7 +538,8 @@ defmodule GlorboWeb.ActionsTest do
       assert :ok =
                Actions.post_task_comment("acme", tp, "@cto can you weigh in?",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       cto_mentions =
@@ -498,22 +549,27 @@ defmodule GlorboWeb.ActionsTest do
       assert File.ls!(cto_mentions) != []
     end
 
-    test "rejects a traversal task_path", %{base: base, audit: audit} do
+    test "rejects a traversal task_path", %{base: base, audit: audit, actor: "director"} do
       assert {:error, :invalid_task_path} =
                Actions.post_task_comment(
                  "acme",
                  "../../etc/passwd",
                  "x",
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       assert FakeAudit.calls(audit) == []
     end
 
-    test "rejects empty body", %{base: base, audit: audit, task_path: tp} do
+    test "rejects empty body", %{base: base, audit: audit, actor: "director", task_path: tp} do
       assert {:error, :empty_body} =
-               Actions.post_task_comment("acme", tp, "   ", base: base, audit: audit)
+               Actions.post_task_comment("acme", tp, "   ",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       assert FakeAudit.calls(audit) == []
     end
@@ -547,9 +603,15 @@ defmodule GlorboWeb.ActionsTest do
     test ":approved rewrites status: approved + writes approval.approved audit", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
-      assert :ok = Actions.set_approval("acme", task_path, :approved, base: base, audit: audit)
+      assert :ok =
+               Actions.set_approval("acme", task_path, :approved,
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       content = File.read!(Path.join([base, "companies", "acme", task_path]))
       assert content =~ "status: approved"
@@ -564,9 +626,15 @@ defmodule GlorboWeb.ActionsTest do
     test ":denied rewrites status: denied + writes approval.denied audit", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
-      assert :ok = Actions.set_approval("acme", task_path, :denied, base: base, audit: audit)
+      assert :ok =
+               Actions.set_approval("acme", task_path, :denied,
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       content = File.read!(Path.join([base, "companies", "acme", task_path]))
       assert content =~ "status: denied"
@@ -575,24 +643,30 @@ defmodule GlorboWeb.ActionsTest do
       assert event[:action] == "approval.denied"
     end
 
-    test "rejects task path with .. segments", %{base: base, audit: audit} do
+    test "rejects task path with .. segments", %{base: base, audit: audit, actor: "director"} do
       assert {:error, :invalid_task_path} =
                Actions.set_approval(
                  "acme",
                  "projects/../../etc/passwd.md",
                  :approved,
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       assert FakeAudit.calls(audit) == []
     end
 
-    test "rejects task path not starting with projects/", %{base: base, audit: audit} do
+    test "rejects task path not starting with projects/", %{
+      base: base,
+      audit: audit,
+      actor: "director"
+    } do
       assert {:error, :invalid_task_path} =
                Actions.set_approval("acme", "agents/ceo/inbox/evil.md", :approved,
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       assert FakeAudit.calls(audit) == []
@@ -601,6 +675,7 @@ defmodule GlorboWeb.ActionsTest do
     test "approved restores assigned_to from matching sentinel", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       # Task was reassigned to director by the request-flow; sentinel
@@ -629,7 +704,12 @@ defmodule GlorboWeb.ActionsTest do
       awaiting
       """)
 
-      assert :ok = Actions.set_approval("acme", task_path, :approved, base: base, audit: audit)
+      assert :ok =
+               Actions.set_approval("acme", task_path, :approved,
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       content = File.read!(Path.join([base, "companies", "acme", task_path]))
       assert content =~ "status: approved"
@@ -640,6 +720,7 @@ defmodule GlorboWeb.ActionsTest do
     test "denied carries requesting agent in audit entry", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       sentinel_dir = Path.join([base, "companies", "acme", "agents", "ceo", "state"])
@@ -658,6 +739,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", task_path, :denied,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  denial_reason: "scope creep"
                )
 
@@ -670,6 +752,7 @@ defmodule GlorboWeb.ActionsTest do
     test "denied restores assigned_to from sentinel (with reason)", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       # Task was reassigned to director by request-flow; on deny the
@@ -703,6 +786,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", task_path, :denied,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  denial_reason: "too risky"
                )
 
@@ -716,6 +800,7 @@ defmodule GlorboWeb.ActionsTest do
     test "denied without reason restores assigned_to from sentinel", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       File.write!(Path.join([base, "companies", "acme", task_path]), """
@@ -742,7 +827,12 @@ defmodule GlorboWeb.ActionsTest do
       awaiting
       """)
 
-      assert :ok = Actions.set_approval("acme", task_path, :denied, base: base, audit: audit)
+      assert :ok =
+               Actions.set_approval("acme", task_path, :denied,
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       content = File.read!(Path.join([base, "companies", "acme", task_path]))
       assert content =~ "status: denied"
@@ -757,9 +847,15 @@ defmodule GlorboWeb.ActionsTest do
   describe "wake_agent/3" do
     test "writes state/wake-request.md with frontmatter + audit agent.wake_request", %{
       base: base,
-      audit: audit
+      audit: audit,
+      actor: "director"
     } do
-      assert :ok = Actions.wake_agent("acme", "ceo", "deploy ready", base: base, audit: audit)
+      assert :ok =
+               Actions.wake_agent("acme", "ceo", "deploy ready",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       path = Path.join([base, "companies", "acme", "agents", "ceo", "state", "wake-request.md"])
       assert File.exists?(path)
@@ -777,16 +873,21 @@ defmodule GlorboWeb.ActionsTest do
       assert event[:reason] == "deploy ready"
     end
 
-    test "nil reason writes empty reason string", %{base: base, audit: audit} do
-      assert :ok = Actions.wake_agent("acme", "ceo", nil, base: base, audit: audit)
+    test "nil reason writes empty reason string", %{base: base, audit: audit, actor: "director"} do
+      assert :ok =
+               Actions.wake_agent("acme", "ceo", nil, base: base, audit: audit, actor: "director")
 
       path = Path.join([base, "companies", "acme", "agents", "ceo", "state", "wake-request.md"])
       assert File.read!(path) =~ ~s(reason: "")
     end
 
-    test "rejects invalid agent slug", %{base: base, audit: audit} do
+    test "rejects invalid agent slug", %{base: base, audit: audit, actor: "director"} do
       assert {:error, :invalid_slug} =
-               Actions.wake_agent("acme", "../evil", "oops", base: base, audit: audit)
+               Actions.wake_agent("acme", "../evil", "oops",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       assert FakeAudit.calls(audit) == []
     end
@@ -796,7 +897,7 @@ defmodule GlorboWeb.ActionsTest do
     # the Director's wake fires. Without an lstat guard the Director's
     # write follows the symlink to any host file the user can reach.
     test "refuses to write through an agent-planted symlink at state/wake-request.md",
-         %{base: base, audit: audit} do
+         %{base: base, audit: audit, actor: "director"} do
       secret = Path.join(base, "director-secret.txt")
       File.write!(secret, "sensitive director-only content\n")
 
@@ -806,7 +907,11 @@ defmodule GlorboWeb.ActionsTest do
       :ok = File.ln_s(secret, wake_path)
 
       assert {:error, {:path_not_regular, :symlink}} =
-               Actions.wake_agent("acme", "ceo", "deploy", base: base, audit: audit)
+               Actions.wake_agent("acme", "ceo", "deploy",
+                 base: base,
+                 audit: audit,
+                 actor: "director"
+               )
 
       # Secret file stays untouched.
       assert File.read!(secret) == "sensitive director-only content\n"
@@ -821,14 +926,16 @@ defmodule GlorboWeb.ActionsTest do
   describe "audit-after-write ordering" do
     test "set_approval on a missing task file emits NO audit event", %{
       base: base,
-      audit: audit
+      audit: audit,
+      actor: "director"
     } do
       # Task path is valid shape but the file doesn't exist — TaskDefinition.write
       # should fail first, and no audit event may be emitted.
       assert {:error, _reason} =
                Actions.set_approval("acme", "projects/ghost/tasks/t-00.md", :approved,
                  base: base,
-                 audit: audit
+                 audit: audit,
+                 actor: "director"
                )
 
       assert FakeAudit.calls(audit) == []
@@ -864,6 +971,7 @@ defmodule GlorboWeb.ActionsTest do
     test "kind:hire + :approved fires scaffold_fun with the right argv", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       me = self()
@@ -878,6 +986,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", task_path, :approved,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  scaffold_fun: scaffold_fun
                )
 
@@ -890,7 +999,11 @@ defmodule GlorboWeb.ActionsTest do
       assert "agent.scaffold" in actions
     end
 
-    test "non-hire task does NOT invoke scaffold_fun", %{base: base, audit: audit} do
+    test "non-hire task does NOT invoke scaffold_fun", %{
+      base: base,
+      audit: audit,
+      actor: "director"
+    } do
       # Regular pending task (no `kind: hire`).
       me = self()
       ref = make_ref()
@@ -919,6 +1032,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", "projects/web/tasks/t-regular.md", :approved,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  scaffold_fun: scaffold_fun
                )
 
@@ -928,6 +1042,7 @@ defmodule GlorboWeb.ActionsTest do
     test ":denied on a hire task does NOT scaffold", %{
       base: base,
       audit: audit,
+      actor: "director",
       task_path: task_path
     } do
       me = self()
@@ -942,6 +1057,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", task_path, :denied,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  scaffold_fun: scaffold_fun,
                  denial_reason: "budget hold"
                )
@@ -949,7 +1065,11 @@ defmodule GlorboWeb.ActionsTest do
       refute_receive {^ref, :called}, 50
     end
 
-    test "hire task missing required frontmatter does NOT scaffold", %{base: base, audit: audit} do
+    test "hire task missing required frontmatter does NOT scaffold", %{
+      base: base,
+      audit: audit,
+      actor: "director"
+    } do
       me = self()
       ref = make_ref()
 
@@ -976,6 +1096,7 @@ defmodule GlorboWeb.ActionsTest do
                Actions.set_approval("acme", "projects/web/tasks/hire-partial.md", :approved,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  scaffold_fun: scaffold_fun
                )
 
@@ -983,13 +1104,14 @@ defmodule GlorboWeb.ActionsTest do
     end
 
     test "scaffold failure is captured via agent.scaffold_failed audit",
-         %{base: base, audit: audit, task_path: task_path} do
+         %{base: base, audit: audit, actor: "director", task_path: task_path} do
       scaffold_fun = fn _argv -> {:new_agent, 1, "slug already exists"} end
 
       assert :ok =
                Actions.set_approval("acme", task_path, :approved,
                  base: base,
                  audit: audit,
+                 actor: "director",
                  scaffold_fun: scaffold_fun
                )
 

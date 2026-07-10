@@ -83,6 +83,31 @@ defmodule Glorbo.Filesystem.AgentWritableFile do
     end
   end
 
+  @doc """
+  Create a new file in an agent-writable tree using one exclusive open.
+
+  Existing regular files and symlinks are both refused with `:eexist`; parent
+  symlinks are rejected before and after directory creation. This closes the
+  common `lstat` then `File.write` race for host-generated outbox envelopes.
+  """
+  @spec create_exclusive(Path.t(), iodata()) :: :ok | {:error, term()}
+  def create_exclusive(path, content) when is_binary(path) do
+    parent = Path.dirname(path)
+
+    if any_symlink_in_path?(parent) do
+      {:error, :symlinked_ancestor}
+    else
+      with :ok <- File.mkdir_p(parent),
+           false <- any_symlink_in_path?(parent),
+           :ok <- File.write(path, content, [:exclusive, :sync]) do
+        :ok
+      else
+        true -> {:error, :symlinked_ancestor}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
   # Threatmodel wave 23: every agent-RW read has the same OOM
   # vector (a planted 1 GB regular file). The default cap is 10 MiB
   # — generous for the largest legitimate task / channel files

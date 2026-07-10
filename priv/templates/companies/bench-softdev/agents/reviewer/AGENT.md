@@ -10,9 +10,9 @@ network: proxy
 heartbeat: null
 permissions:
   - projects:read:*
-  - tasks:write:bugs
-  - tasks:write:bugs-py
-  - tasks:write:bugs-go
+  - tasks:update:bugs
+  - tasks:update:bugs-py
+  - tasks:update:bugs-go
   - chat:read:*
   - chat:write:general
 budget:

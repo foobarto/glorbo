@@ -54,7 +54,9 @@ defmodule Glorbo.Sandbox.Bwrap do
 
   Per-agent CLI auth dirs (shared ro-bind from Director's home):
 
-    * `cli_auth_binds :: [{host_path, sandbox_path}]` — each bound ro.
+    * `cli_auth_binds` — `{host, sandbox}`, `{host, sandbox, mode}`, or
+      `{host, sandbox, mode, type}` tuples. Directory entries create the
+      sandbox destination before binding.
 
   Working dir + env:
 
@@ -107,6 +109,10 @@ defmodule Glorbo.Sandbox.Bwrap do
   alias Glorbo.Sandbox.PermissionMapper
 
   @type network_policy :: :loopback | :proxy | :full
+  @type cli_auth_bind ::
+          {String.t(), String.t()}
+          | {String.t(), String.t(), :ro | :rw}
+          | {String.t(), String.t(), :ro | :rw, :dir | :file}
 
   @type invocation_opts :: %{
           required(:agent_workspace) => String.t(),
@@ -115,7 +121,7 @@ defmodule Glorbo.Sandbox.Bwrap do
           required(:company_path) => String.t(),
           required(:permissions) => [PermissionMapper.permission()],
           required(:network_policy) => network_policy(),
-          optional(:cli_auth_binds) => [{String.t(), String.t()}],
+          optional(:cli_auth_binds) => [cli_auth_bind()],
           optional(:cli_env) => %{String.t() => String.t()},
           optional(:proxy_url) => String.t() | nil,
           optional(:proxy_port) => pos_integer(),

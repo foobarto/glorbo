@@ -10,11 +10,13 @@ defmodule Glorbo.Integration.UpDownStatusTest do
 
   @moduletag :integration
 
-  @burrito_bin "_build/prod/rel/glorbo/glorbo"
+  @default_burrito_bin "_build/prod/rel/glorbo/glorbo"
 
   describe "up → status → down → status subprocess round-trip" do
     test "full lifecycle against a real burrito binary" do
-      bin = Path.expand(@burrito_bin, File.cwd!())
+      bin =
+        System.get_env("GLORBO_INTEGRATION_BIN", @default_burrito_bin)
+        |> Path.expand(File.cwd!())
 
       if File.exists?(bin) do
         run_live(bin)

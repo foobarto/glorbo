@@ -167,4 +167,16 @@ defmodule Glorbo.CLI.LogsTest do
       assert msg =~ "Usage: glorbo logs"
     end
   end
+
+  describe "incremental reader" do
+    test "returns the offset actually consumed, not a later stat size", %{home: home} do
+      path = Path.join(home, "incremental.log")
+      File.write!(path, "old-newest")
+
+      assert {:ok, "newest", 10} = Logs.read_incremental(path, 4)
+
+      File.write!(path, "-later", [:append])
+      assert {:ok, "-later", 16} = Logs.read_incremental(path, 10)
+    end
+  end
 end

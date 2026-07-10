@@ -86,11 +86,13 @@ jobs:
           # three setup-beam blocks in this file on the same pin.
           otp-version: '29.0.2'
 
-      - name: Install bubblewrap (bwrap)
+      - name: Install integration system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bubblewrap
+          sudo apt-get install -y bubblewrap inotify-tools passt
           bwrap --version
+          inotifywait --help >/dev/null
+          pasta --help | grep -q -- --splice-only
 
       - name: Allow bwrap under AppArmor (Ubuntu 24.04 userns restriction)
         run: |
@@ -127,6 +129,9 @@ jobs:
 
       - name: Test
         run: mix test
+
+      - name: Integration test
+        run: mix test --only integration
 
       - name: Credo (strict)
         run: mix credo --strict
@@ -214,14 +219,9 @@ jobs:
           # `mise exec elixir@1.18.4-otp-28` cross-check that confirms
           # the count.
           #
-          # 169 (ceiling unchanged): Elixir 1.19.5 -> 1.20.1 + OTP 28.5 ->
-          # 29.0.2 bump (2026-06-12). 1.20's set-theoretic checker + OTP-29
-          # narrowed specs RESOLVE false positives — local count drops to
-          # ~111. The 169 ceiling is deliberately kept (not tightened to
-          # 111) until a CI run confirms the exact count in the
-          # ubuntu24/OTP-29.0.2 environment; dialyzer counts vary slightly
-          # across hosts. Retighten once observed. See dialyzer-baseline.md.
-          baseline=169
+          # Measured on Elixir 1.20 / OTP 29 during the 2026-07-10
+          # stabilization pass. Keep in lockstep with ci.yml.
+          baseline=126
           echo "Dialyzer warnings: ${count} (baseline ${baseline})"
           if [ "${count}" -gt "${baseline}" ]; then
             echo "::error::Dialyzer warnings increased (${count} > ${baseline}) — a change introduced a new typing error. See docs/testing/dialyzer-baseline.md."
@@ -291,6 +291,12 @@ jobs:
           ec=$?
           set -e
           test "$ec" -eq 1 || { echo "expected exit 1, got $ec"; exit 1; }
+
+      - name: Release lifecycle integration test
+        env:
+          BINARY_NAME: ${{ matrix.binary_name }}
+          GLORBO_INTEGRATION_BIN: burrito_out/${{ matrix.binary_name }}
+        run: mix test test/integration/up_down_status_test.exs --include integration
 
       # Backstop for the v0.28.5 regression: the bundled exqlite NIF MUST be
       # musl (`NEEDED libc.so`) to match the musl ERTS — a glibc NIF

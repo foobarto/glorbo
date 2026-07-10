@@ -3,7 +3,7 @@ defmodule GlorboWeb.ChannelLive do
   Per-channel chat view — GET `/companies/:company/channels/:channel` (D-25).
 
   Parses `channels/<channel>.md` by splitting on `## ` headers (the
-  shape Elixir writes via `GlorboWeb.Actions.post_message/4` — Elixir
+  shape Elixir writes via `Glorbo.Actions.post_message/4` — Elixir
   is the sole writer per UI-03). Each message has author + ISO
   timestamp + body; the body flows through `GlorboWeb.Markdown.render/2`
   (mention pre-pass + earmark + sanitizer).
@@ -14,7 +14,7 @@ defmodule GlorboWeb.ChannelLive do
   optimistic append (04-RESEARCH Pitfall 3 — the inotify path's
   ~200 ms round-trip is the only render source).
 
-  Compose form: `phx-submit="post"` calls `GlorboWeb.Actions.post_message/4`,
+  Compose form: `phx-submit="post"` calls `Glorbo.Actions.post_message/4`,
   which performs its own slug + body validation and writes the file.
   The LiveView clears the compose textarea on success; error tuples
   surface via flash.
@@ -260,11 +260,12 @@ defmodule GlorboWeb.ChannelLive do
       :error -> :ok
     end
 
-    case GlorboWeb.Actions.post_message(
+    case Glorbo.Actions.post_message(
            co,
            ch,
            trimmed,
-           base: socket.assigns.base
+           base: socket.assigns.base,
+           actor: "director"
          ) do
       :ok ->
         # Belt-and-braces: inotify → PubSub can miss under load (esp. on
@@ -331,7 +332,7 @@ defmodule GlorboWeb.ChannelLive do
               </.link>
             </li>
           </ul>
-          <form phx-submit="create_channel" class="gl-channel-create">
+          <form id="channel-create-form" phx-submit="create_channel" class="gl-channel-create">
             <input
               type="text"
               name="slug"
@@ -418,7 +419,7 @@ defmodule GlorboWeb.ChannelLive do
             <ChannelMessage.channel_message :for={m <- @messages} message={m} />
           </div>
 
-          <form phx-submit="post" class="gl-compose">
+          <form id="channel-compose-form" phx-submit="post" class="gl-compose">
             <span class="gl-compose__prompt" aria-hidden="true">
               <span class="gl-compose__prompt-user">director</span><span class="gl-compose__prompt-dim">@</span><span class="gl-compose__prompt-co">{@company_slug}</span><span class="gl-compose__prompt-dim">:</span><span class="gl-compose__prompt-channel">#{@channel}</span><span class="gl-compose__prompt-dim">$</span>
             </span>

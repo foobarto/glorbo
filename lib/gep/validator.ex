@@ -160,7 +160,14 @@ defmodule Gep.Validator do
   defp normalize_int(v), do: to_integer(v)
 
   defp to_integer(v) when is_integer(v), do: v
-  defp to_integer(v) when is_binary(v), do: String.to_integer(v)
+
+  defp to_integer(v) when is_binary(v) do
+    case Integer.parse(String.trim(v)) do
+      {integer, ""} -> integer
+      _ -> v
+    end
+  end
+
   defp to_integer(v), do: v
 
   # ---------------------------------------------------------------------------

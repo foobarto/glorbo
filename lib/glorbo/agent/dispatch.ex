@@ -295,6 +295,7 @@ defmodule Glorbo.Agent.Dispatch do
                },
                opts
              ),
+           :ok <- emit_path_access_granted(spec, task, ctx, opts),
            {:ok, dispatcher_result} <- Dispatcher.invoke(provider, ctx, dispatcher_opts(opts)),
            :ok <- check_runtime_untracked_allowed(spec, dispatcher_result, opts),
            duration_ms <- compute_duration(start, opts),
@@ -346,7 +347,7 @@ defmodule Glorbo.Agent.Dispatch do
 
     # GEP-27: revoke any approved external paths after dispatch completes
     # (success or failure). Grants are task-scoped and ephemeral.
-    _ = Glorbo.PathGrantStore.revoke(spec.company, spec.slug, task.task_id)
+    _ = Glorbo.PathRequestGate.revoke(spec.company, spec.slug, task.task_id)
 
     # GEP-23 Phase 5: revoke the per-dispatch proxy token. Tokens
     # have a 2× timeout expiry as a failsafe, but immediate revocation
@@ -1568,6 +1569,27 @@ defmodule Glorbo.Agent.Dispatch do
   rescue
     e ->
       Logger.warning("dispatch audit emit failed: #{Exception.message(e)}")
+      :ok
+  end
+
+  defp emit_path_access_granted(spec, task, ctx, opts) do
+    paths = get_in(ctx, [:bwrap_opts, :approved_paths]) || []
+
+    if paths != [] do
+      audit_fun(opts).(spec.company, %{
+        action: "path_access.granted",
+        actor: "system",
+        agent: spec.slug,
+        task_id: task.task_id,
+        task_path: task.task_path,
+        paths: paths
+      })
+    end
+
+    :ok
+  rescue
+    e ->
+      Logger.warning("path-access grant audit emit failed: #{Exception.message(e)}")
       :ok
   end
 

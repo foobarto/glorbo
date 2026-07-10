@@ -10,7 +10,7 @@ defmodule GlorboWeb.MCP.Tools.CreateChannel do
   """
   @behaviour GlorboWeb.MCP.Tool
 
-  alias Glorbo.Filesystem.FrontmatterWriter
+  alias Glorbo.Actions.Channels
   alias GlorboWeb.MCP.Args
 
   @impl true
@@ -49,33 +49,20 @@ defmodule GlorboWeb.MCP.Tools.CreateChannel do
 
   defp do_call(company, channel, context) do
     base = context[:base] || Glorbo.Filesystem.Hierarchy.default_root()
-    dir = Path.join([base, "companies", company, "channels"])
-    path = Path.join(dir, "#{channel}.md")
 
-    cond do
-      not File.dir?(Path.dirname(dir)) ->
-        {:error, {:company_not_found, company}}
+    opts =
+      [actor: mcp_actor(context), base: base]
+      |> then(fn opts ->
+        if context[:audit], do: Keyword.put(opts, :audit, context[:audit]), else: opts
+      end)
 
-      File.exists?(path) ->
-        {:ok, %{"channel" => channel, "status" => "existed"}}
-
-      true ->
-        File.mkdir_p!(dir)
-
-        content = """
-        ---
-        kind: channel-log/v1
-        channel: #{channel}
-        ---
-
-        # ##{channel}
-
-        """
-
-        case FrontmatterWriter.atomic_write(path, content) do
-          :ok -> {:ok, %{"channel" => channel, "status" => "created"}}
-          {:error, reason} -> {:error, {:write_failed, reason}}
-        end
+    case Channels.create(company, channel, opts) do
+      {:ok, _result} -> {:ok, %{"channel" => channel, "status" => "created"}}
+      {:error, :already_exists} -> {:ok, %{"channel" => channel, "status" => "existed"}}
+      {:error, :company_not_found} -> {:error, {:company_not_found, company}}
+      {:error, reason} -> {:error, {:write_failed, reason}}
     end
   end
+
+  defp mcp_actor(context), do: "mcp:#{Map.get(context, :client, "unknown")}"
 end
