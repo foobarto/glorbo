@@ -97,7 +97,7 @@ jobs:
           make -C /tmp/passt pasta
           sudo install -m 0755 /tmp/passt/pasta /usr/local/bin/pasta
           bwrap --version
-          inotifywait --help >/dev/null
+          command -v inotifywait
           pasta --help | grep -q -- --splice-only
 
       - name: Allow bwrap under AppArmor (Ubuntu 24.04 userns restriction)
