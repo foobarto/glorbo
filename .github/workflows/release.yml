@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Erlang + Elixir
-        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         env:
           # The `ubuntu-24.04-arm` runner started reporting
           # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
@@ -126,7 +126,7 @@ jobs:
           sudo systemctl reload apparmor
 
       - name: Cache mix deps + build
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             deps
@@ -181,7 +181,7 @@ jobs:
       # blocking outright.
       - name: Cache Dialyzer PLT
         if: matrix.arch == 'x86_64'
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: _build/dialyzer_plts
           # Bumped key prefix (`plt2-`) after the codex-deep-dive PLT
@@ -421,7 +421,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Erlang + Elixir
-        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         env:
           # The `ubuntu-24.04-arm` runner started reporting
           # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
@@ -441,7 +441,7 @@ jobs:
           version-type: strict
 
       - name: Cache mix deps + build
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             deps
@@ -559,7 +559,7 @@ jobs:
       # attests "these bytes were signed by this identity", provenance
       # attests "these bytes were built by this workflow from this source".
       - name: Attest build provenance (SLSA)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             artifacts/glorbo-linux-x86_64
@@ -569,7 +569,7 @@ jobs:
             artifacts/SHA256SUMS
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             artifacts/glorbo-linux-x86_64
@@ -594,7 +594,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Erlang + Elixir
-        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         env:
           # The `ubuntu-24.04-arm` runner started reporting
           # `ImageOS=ubuntu24-arm64` (GitHub image rollout ~2026-06), which
@@ -614,7 +614,7 @@ jobs:
           version-type: strict
 
       - name: Cache mix deps
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             deps
