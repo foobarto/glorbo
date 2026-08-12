@@ -57,7 +57,7 @@ jobs:
 
       - name: Set up Snyk CLI
         if: steps.gate.outputs.enabled == 'true'
-        uses: snyk/actions/setup@8e119fbb6c251787721d34ba683ed48eba792766 # snyk/actions setup (pinned)
+        uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd # snyk/actions setup (pinned)
 
       # Snyk Code (SAST) → SARIF. `continue-on-error` keeps findings from
       # failing the PR; they land in Security → Code scanning instead.
@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Code Scanning
         if: steps.gate.outputs.enabled == 'true' && hashFiles('snyk-code.sarif') != ''
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           sarif_file: snyk-code.sarif
           category: snyk-code
