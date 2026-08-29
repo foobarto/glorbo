@@ -239,8 +239,9 @@ Before requesting review, self-check:
 
 ## License
 
-By contributing, you agree that your contribution will be licensed
-under MIT OR Apache-2.0, at your option (see [`LICENSE`](./LICENSE)).
+By contributing, you agree that your contribution will be dual-licensed
+under both MIT and Apache-2.0; recipients may choose either license (see
+[`LICENSE`](./LICENSE)).
 
 ## Questions
 
