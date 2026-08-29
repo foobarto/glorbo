@@ -7,7 +7,7 @@ see [`docs/DESIGN.md`](./docs/DESIGN.md) for the load-bearing invariants. This
 document describes how to get set up, the workflow we use, and what we
 look for in code review.
 
-> **Project status:** pre-1.0 (v0.0.x). APIs, CLI flags, on-disk
+> **Project status:** pre-1.0 (v0.x). APIs, CLI flags, on-disk
 > layout, and SQLite schema may change between minor versions. Pin to
 > exact versions in downstream usage until v1.0.
 
@@ -18,6 +18,8 @@ look for in code review.
 - Read [`CLAUDE.md`](./CLAUDE.md) for the architectural guardrails.
 - For security-sensitive reports, use [`SECURITY.md`](./SECURITY.md)
   — **do not open a public issue** for vulnerabilities.
+- Participation is subject to the account-wide
+  [Code of Conduct](https://github.com/foobarto/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## Development setup
 
@@ -238,9 +240,9 @@ Before requesting review, self-check:
 ## License
 
 By contributing, you agree that your contribution will be licensed
-under the Apache License 2.0 (see [`LICENSE`](./LICENSE)).
+under MIT OR Apache-2.0, at your option (see [`LICENSE`](./LICENSE)).
 
 ## Questions
 
-Open a non-sensitive issue or email `security@example.invalid`. For
+Open a non-sensitive issue or email `bartosz@foobarto.me`. For
 security-sensitive reports, see [`SECURITY.md`](./SECURITY.md).

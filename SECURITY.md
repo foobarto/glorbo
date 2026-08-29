@@ -5,8 +5,8 @@ Glorbo is a multi-agent orchestration platform where AI agents run inside
 the trust boundary between untrusted LLM output and the host, we take
 sandbox-escape and policy-bypass reports seriously.
 
-> **Status:** Glorbo is pre-1.0 (currently v0.0.x). Security fixes target
-> the latest minor only. There are no backports.
+> **Status:** Glorbo is pre-1.0. Security fixes target the latest minor only.
+> There are no backports.
 
 ## Reporting a Vulnerability
 
@@ -14,8 +14,10 @@ sandbox-escape and policy-bypass reports seriously.
 repository. That opens a confidential Security Advisory, supports CVE
 requests, and keeps disclosure coordinated.
 
-**Backup:** email `security@example.invalid` with `[glorbo-security]` in the
-subject. PGP key is not yet published — expect plaintext.
+**Backup:** email `bartosz@foobarto.me` with `[glorbo-security]` in the
+subject. PGP is strongly preferred for sensitive material; the fingerprint is
+`F858 BE96 A0D1 E6FD CAF7 C4D6 06FD 46A0 2874 AF8D` and the public key is at
+<https://foobarto.me/.well-known/openpgpkey/foobarto.me.asc>.
 
 Please include:
 
@@ -33,10 +35,10 @@ We will acknowledge within **72 hours** and aim to ship a fix within
 
 ## Supported Versions
 
-| Version | Status                                   |
-| ------- | ---------------------------------------- |
-| 0.0.x   | Active — security fixes land on `main`.  |
-| < 0.0.1 | Unsupported (pre-release development).   |
+| Version           | Status                                  |
+| ----------------- | --------------------------------------- |
+| Latest v0.x minor | Active — security fixes land on `main`. |
+| Older v0.x minors | Unsupported; no backports.              |
 
 ## Scope — What We Care About Most
 
@@ -137,4 +139,4 @@ request anonymity). There is no monetary bounty program at this time.
 ---
 
 Questions about this policy? Open a non-sensitive issue or email
-`security@example.invalid`.
+`bartosz@foobarto.me`.
