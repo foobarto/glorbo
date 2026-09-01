@@ -127,7 +127,7 @@ the principles are what make them mean something.
 | Artefact              | Principles most load-bearing there                                  |
 |-----------------------|---------------------------------------------------------------------|
 | Session journal       | **1** (*think*) — *Design calls I made without you* surfaces assumptions. **3** (*surgical*) — honest about what didn't change. |
-| Proposal / ep-kit EP  | **1** (*think*) — alternatives in decision log. **2** (*simplicity*) — non-goals kept tight. |
+| Proposal / Strata EP  | **1** (*think*) — alternatives in decision log. **2** (*simplicity*) — non-goals kept tight. |
 | Rolling punch list    | **2** (*simplicity*) — items stay bounded; no "refactor everything" bullets. |
 | Autonomous round/loop | **4** (*goals*) — stop conditions up-front. **3** (*surgical*) — don't scope-creep the bounded task. |
 | Review phase          | **4** (*goals*) — explicit quality + security accept criteria. |

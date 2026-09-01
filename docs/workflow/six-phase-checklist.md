@@ -12,7 +12,7 @@ principles is the failure mode this doc is designed to prevent.
 
 | # | Phase      | Artefact                                            |
 |---|------------|-----------------------------------------------------|
-| 1 | **Spec**   | Proposal draft (via ep-kit, in `docs/eps/` or the equivalent) |
+| 1 | **Spec**   | Proposal draft (via Strata, in `docs/eps/` or the equivalent) |
 | 2 | **Plan**   | Proposal accepted; concrete implementation outline  |
 | 3 | **Build**  | Code changes + any doc-adjacent updates             |
 | 4 | **Test**   | Unit green + E2E/manual where applicable            |
