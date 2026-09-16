@@ -159,7 +159,7 @@ defmodule Glorbo.MixProject do
       # optional by mint). Declaring it here guarantees cert validation
       # works in prod (TODO.md audit Low #2).
       {:castore, ">= 0.0.0"},
-      {:muontrap, "~> 1.6"},
+      {:muontrap, "~> 2.0"},
       # Phase 4 Wave 0 — LiveView dashboard dependencies.
       # `esbuild` bundles `assets/js/app.js` + `assets/css/app.css` into
       # `priv/static/assets/`. `runtime: Mix.env() == :dev` keeps the
