@@ -143,7 +143,7 @@ defmodule Glorbo.MixProject do
       # Those were fixed in 1.9.0. EEF-CVE-2026-56810, an unbounded
       # chunked-response allocation, raises the current floor to 1.9.1;
       # finch only requires `~> 1.8`, so pin it here.
-      {:mint, "~> 1.9.1"},
+      {:mint, "~> 1.10.0"},
       # hpax 1.0.3 has unbounded HPACK integer decoding
       # (EEF-CVE-2026-58226). Bandit and Mint both allow it transitively.
       {:hpax, "~> 1.0.4"},
