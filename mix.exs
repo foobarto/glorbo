@@ -143,10 +143,10 @@ defmodule Glorbo.MixProject do
       # Those were fixed in 1.9.0. EEF-CVE-2026-56810, an unbounded
       # chunked-response allocation, raises the current floor to 1.9.1;
       # finch only requires `~> 1.8`, so pin it here.
-      {:mint, "~> 1.9.1"},
+      {:mint, "~> 1.10.1"},
       # hpax 1.0.3 has unbounded HPACK integer decoding
       # (EEF-CVE-2026-58226). Bandit and Mint both allow it transitively.
-      {:hpax, "~> 1.0.4"},
+      {:hpax, "~> 1.1.0"},
       # req < 0.6.1 — decompression-bomb DoS via auto-decoded
       # compressed/archive bodies (EEF-CVE-2026-49755, fixed 0.6.1) and
       # multipart header injection via unescaped name/filename/content_type
@@ -169,7 +169,7 @@ defmodule Glorbo.MixProject do
       # Markdown renderer for channel message bodies (UI-SPEC chat profile).
       # 0.13.3 pulls the hardened native renderer and closes the 2026 parser,
       # URL-scheme, recursion, allocation, and native-memory advisories.
-      {:mdex, "~> 0.13.3"},
+      {:mdex, "~> 0.14.0"},
       {:mdex_gfm, "~> 0.2.0"},
       # Allowlist HTML sanitizer for markdown output — MDEx has no
       # built-in sanitization; caller must sanitize.
